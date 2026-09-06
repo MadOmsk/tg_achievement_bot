@@ -1,4 +1,4 @@
-"""Steam account linking (M-Steam-1, TODO.md) — URL/ID parsing and the
+"""Steam account linking (M-Steam-1, SPEC 9) — URL/ID parsing and the
 platform_links repo round-trip. The vanity-resolution and profile-fetch
 network calls are mocked at the `_get` boundary; nothing here has ever hit
 a real Steam API key (none configured while this was written)."""

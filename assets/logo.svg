@@ -1,0 +1,14 @@
+<svg width="960" height="240" viewBox="0 0 960 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Achievement Bot logo</title>
+  <desc id="desc">Minimal wordmark for Achievement Bot.</desc>
+  <rect width="960" height="240" rx="32" fill="#0D1117"/>
+  <g transform="translate(92 62)" stroke="#F0F6FC" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M28 18H78V45C78 73 67 92 53 92C39 92 28 73 28 45V18Z"/>
+    <path d="M28 32H12C12 58 25 74 39 78"/>
+    <path d="M78 32H94C94 58 81 74 67 78"/>
+    <path d="M53 92V116"/>
+    <path d="M34 116H72"/>
+  </g>
+  <text x="216" y="132" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="56" font-weight="600" letter-spacing="-1.5" fill="#F0F6FC">Achievement Bot</text>
+  <text x="220" y="170" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="500" letter-spacing="5" fill="#8B949E">XBOX · STEAM · PSN</text>
+</svg>

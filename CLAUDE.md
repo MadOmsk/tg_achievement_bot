@@ -1,191 +1,125 @@
 # CLAUDE.md
 
-## Что это за проект
+## Project
 
-Telegram-бот, публикующий ачивки Xbox участников чата с фильтром по редкости,
-личной статистикой, админ-панелью и ежедневным итогом дня.
-Некоммерческий, на 20–30 человек.
+Achievement Bot is a Telegram bot for a small gaming community. It publishes
+achievements and trophies from Xbox, Steam, and PlayStation Network accounts, with
+rarity filters, cached stats, admin controls, daily summaries, and HowLongToBeat lookup.
 
-**Полное техзадание — в `SPEC.md`. Прочитай его целиком перед началом работы
-и сверяйся с ним.** Раздел 1 («Ключевые архитектурные решения») содержит
-обоснования — если решение кажется избыточным, ответ скорее всего там.
-Приложение А объясняет, что было выкинуто из первой редакции и почему —
-не возвращай это обратно.
+Read `SPEC.md` before making product or architecture changes. It is the source of truth
+for current behavior, invariants, and open work. Keep the project working after every
+change.
 
-Реализация идёт по шагам из раздела 9 SPEC.md. Не забегай вперёд:
-каждый шаг должен оставлять проект в рабочем состоянии.
+## Stack
 
-## Стек
+- Python 3.12+
+- aiogram 3
+- aiohttp, httpx, aiosqlite
+- APScheduler
+- pydantic v2 and pydantic-settings
+- cryptography Fernet
+- xbox-webapi-python, Steam Web API, psnawp, howlongtobeatpy
+- pytest, pytest-asyncio, ruff
 
-Python 3.12+, aiogram 3, xbox-webapi-python, httpx, aiohttp, aiosqlite,
-APScheduler, pydantic v2, cryptography (Fernet). Форматирование и линт — ruff.
-Типизация обязательна.
+## Layout
 
-## Структура
-
-Ниже — верхний уровень с пояснением зачем. Полное дерево всех файлов, включая
-тесты и миграции по отдельности, — в `STRUCTURE.md`, обновляется по факту.
-
-```
+```text
 bot/
-  main.py            точка входа, сборка приложения
-  config.py          настройки из окружения (pydantic-settings)
-  util.py            мелкие общие помощники (время UTC, маскирование секретов)
-  handlers/          роутеры aiogram, только UI-слой
-    connect.py       /start, /connect, /disconnect
-    panel.py         панель пользователя
-    admin.py         админ-панель
-    chat.py          /subscribe, /stats, /online, /who, /recent, /summary
-    hltb.py          /hltb — поиск времени прохождения (SPEC 6.6)
-    steam.py         /connect_steam, /disconnect_steam — привязка аккаунта (M-Steam-1)
-    keyboards.py     инлайн-клавиатуры, общие для панелей и онбординга
-  services/
-    xbox/
-      auth.py        обёртка над xbox-webapi-python: хранение и обновление токенов
-      client.py      запросы к Xbox Live, лимитер, retry, backoff
-      models.py      pydantic-модели ответов (в т.ч. контракт 4 с редкостью)
-    steam/
-      client.py      официальный Steam Web API — резолв профиля, видимость (M-Steam-1)
-    achievements.py  фильтрация и формирование сообщений
-    connect.py       одноразовый state для OAuth, завершение входа
-    stats.py         агрегаты для панелей, /stats, итога дня (без /compare, /top — убраны)
-    hltb.py          обёртка над howlongtobeatpy, кэш в hltb_cache (SPEC 6.6)
-    crypto.py        шифрование токенов
-  poller/
-    scheduler.py     тики APScheduler
-    presence.py      шаг 1: presence, интервалы по состоянию
-    fetcher.py       шаг 2: ачивки по игре, история игр
-    publisher.py     шаг 3: публикация, дайджест, очередь Telegram
-    daily.py         ежедневный итог
-    reminders.py     напоминания о протухшем входе (SPEC 5.1.1)
-  web/
-    oauth.py         aiohttp-колбэк Microsoft
+  main.py          application assembly
+  config.py        environment settings
+  util.py          shared helpers
+  handlers/        aiogram UI layer only
+  services/        business logic, clients, renderers
+  poller/          scheduled background jobs
+  web/             Microsoft OAuth callback
   db/
-    schema.sql       DDL из раздела 3 SPEC.md
-    migrations/
-    repo.py          доступ к данным, никакого SQL за пределами этого слоя
-tests/
-scripts/             вспомогательные скрипты вне приложения
-data/                bot.db, в git не попадает
-logs/                вывод процесса, в git не попадает
-manage.ps1           запуск/остановка/статус бота на машине разработчика
+    schema.sql     fresh database schema
+    migrations/    ordered schema migrations
+    repo.py        data-access layer; no SQL elsewhere
+tests/             mocked pytest suite
+scripts/           operational helpers
+data/              ignored runtime database
+logs/              ignored runtime logs
+manage.ps1         local Windows process manager
 ```
 
-## Запуск
+See `STRUCTURE.md` for the full tracked tree.
 
-Процессом управляет `manage.ps1` — сам себя бот запустить не может:
+## Local run
 
-```
-.\manage.ps1 start | stop | restart | status | logs [-Lines N]
-```
+Use `manage.ps1` locally:
 
-`status` показывает аптайм, занят ли порт 8080, посторонние процессы бота
-(два бота с одним токеном конфликтуют в Telegram) и сводку по базе.
-Логи — `logs/bot.log`, ошибки — `logs/bot.err.log`. На боевом сервере эту роль
-берёт на себя systemd.
-
-**Боевой сервер** — VPS (DigitalOcean, Amsterdam), `xbox.sultanpharm.com`,
-Ubuntu 24.04. Код в `/opt/xbox_achievement_bot`, сервис — `xbox-bot.service`
-(отдельный непривилегированный юзер `botsvc`, автозапуск включён):
-
-```
-systemctl {start|stop|restart|status} xbox-bot
-journalctl -u xbox-bot -f
+```powershell
+.\manage.ps1 start
+.\manage.ps1 stop
+.\manage.ps1 restart
+.\manage.ps1 status
+.\manage.ps1 logs -Lines 100
+.\manage.ps1 dashboard
 ```
 
-nginx на 443 (сертификат Let's Encrypt, автопродление через certbot-таймер)
-проксирует на `127.0.0.1:8080`, где слушает колбэк бота — наружу порт 8080
-не открыт, `OAUTH_LISTEN_HOST=127.0.0.1` в `.env` сервера. Git на сервере ходит
-по deploy key (read-only, `Settings → Deploy keys` в GitHub), не по токену
-аккаунта.
+Production runs under systemd (`xbox-bot.service`) behind nginx. Do not run local and
+production bots with the same `BOT_TOKEN` at the same time.
 
-**Одновременно с этим `manage.ps1` на домашнем ПК не запускать** — два
-процесса с одним `BOT_TOKEN` дерутся за обновления Telegram. Домашний ПК —
-только для разработки; локальный `.env` при этом смотрит на `localhost` или
-временный туннель, а не на боевой домен.
+## Engineering rules
 
-**`.\manage.ps1 dashboard`** (или просто `manage.bat` двойным кликом — им
-теперь запускается дашборд, а не старое меню с цифрами) — живой статус в
-консоли: тот же блок, что и `status`, плюс хвост `bot.log`, весь экран
-перерисовывается каждые 5 секунд (`-RefreshSeconds N` меняет интервал).
-Быстрее по умолчанию не поставлено осознанно — опрос порта и процессов идёт
-через CIM/WMI, это десятки миллисекунд на вызов, и молотить им чаще пары раз
-в секунду смысла нет.
+- Keep handlers thin. They call services and repository methods; they do not contain
+  raw SQL or platform API logic.
+- Keep all SQL in `bot/db/repo.py`, schema files, and migrations.
+- Platform clients must not know about Telegram.
+- Normal UI reads (`/stats`, `/recent`, `/online`, `/summary`, `/panel`, `/admin`) use
+  cached database state, not live platform calls. Explicit manual refresh actions are
+  the exception.
+- Everything async must stay non-blocking. Wrap synchronous libraries with
+  `asyncio.to_thread`.
+- Handle expected external failures as states: private profiles, dead tokens, 429s,
+  timeouts, empty responses, and upstream outages must not crash a poller tick.
+- Pollers isolate failures per user/account or per small API batch.
+- Do not add dependencies unless they are clearly needed.
+- Do not leave stubs or TODO placeholders instead of implementation.
 
-Прямо там же, не выходя из дашборда, работают клавиши:
+## Identity and publication invariants
 
+- `tg_id` is the cross-platform owner key.
+- Xbox XUID is stable for Xbox, but cross-platform aggregation must not use XUID.
+- Insert only unlocked achievements/trophies into `seen_achievements`.
+- First-connect backfill never publishes historical achievements.
+- Rarity thresholds are per chat.
+- Visibility mode is per user per chat: `all`, `rare`, or `hidden`.
+- Platforms without rarity data, currently Xbox 360, are not filtered out only because
+  rarity is missing.
+- Admin-excluded users are not polled, published, or included in summaries.
+
+## Secrets
+
+- Never commit `.env`, databases, logs, tokens, API keys, NPSSO values, or backups.
+- Store Xbox refresh tokens encrypted with Fernet.
+- Store shared PSN secrets encrypted.
+- Never log raw token-bearing payloads, authorization headers, or URLs with API keys.
+- Mask secrets before logging structured data.
+- Save a new Xbox refresh token before making the request that required the refresh.
+- Serialize Xbox refresh attempts per user.
+
+## Tests
+
+Run the smallest relevant checks:
+
+```powershell
+.\.venv\Scripts\pytest
+.\.venv\Scripts\ruff check .
+.\.venv\Scripts\ruff format --check .
 ```
-[2] Запустить   [3] Остановить   [4] Перезапустить   [Q] Выход
-```
 
-Опрос клавиш неблокирующий (`Console.KeyAvailable`), поэтому подсказка снизу
-экрана видна всегда, а не только между обновлениями. Команды `start` / `stop`
-/ `restart` / `status` / `logs` по отдельности никуда не делись — ими удобнее
-пользоваться из терминала одной строкой, когда дашборд не нужен.
+Real Xbox, Steam, PSN, HLTB, and Telegram calls are forbidden in tests. Mock at service
+boundaries.
 
-## Правила
+Core coverage should include deduplication, backfill behavior, rarity filtering, token
+refresh ordering, dead-token handling, excluded users, missing rarity fields, secret
+masking, platform linking, pollers, publication, table rendering, and message cleanup.
 
-**Секреты.** В базе лежит только refresh-токен, зашифрованный Fernet. Токен
-никогда не попадает в логи, в текст исключений и в сообщения пользователю.
-При логировании структур с токенами — маскируй. `.env` в `.gitignore`,
-коммить только `.env.example`.
+## Style
 
-**Обновление токена.** Только лениво, перед запросом, с блокировкой на
-пользователя. Новый refresh-токен записывается в базу до выполнения запроса.
-Подробности и обоснование — SPEC 5.1. Это место ломается тихо и неочевидно.
-
-**Слои.** Хендлеры не ходят в API и не пишут SQL — только вызывают сервисы.
-Весь SQL живёт в `db/repo.py`. Клиент Xbox Live не знает про Telegram.
-
-**Кэш.** Обе панели, `/stats`, `/compare`, `/top`, `/recent` и ежедневный итог
-не имеют права ходить в API. Только чтение из БД. Единственное исключение —
-кнопка «Обновить данные» в карточке пользователя в админ-панели.
-
-**Редкость.** Порог задаёт админ (`app_settings.rare_threshold_percent`),
-не хардкодь 10%. Пользователь выбирает режим `all` / `rare`, а не число.
-
-**Xbox 360.** Отдельная ветка парсинга, `rarity_percent = NULL`. Фильтр по
-редкости к ним не применяется — видимостью управляет `show_x360` (SPEC 5.5).
-Запланировано, ещё не сделано: `show_x360` уйдёт, `rarity_mode` станет одним
-общим переключателем на все платформы (SPEC 9, M-Steam-2e).
-
-**Ачивки.** Берём только `progressState == 'Achieved'`. Запись `InProgress`
-в `seen_achievements` навсегда прячет ачивку от публикации.
-
-**Идентификация.** Везде XUID, не геймертег (SPEC 8).
-
-**Ошибки.** Закрытый профиль, протухший токен, 429, таймаут, пустой ответ —
-ожидаемые состояния, а не исключения. Поллер не должен падать из-за одного
-проблемного юзера: обрабатываем каждого изолированно, ошибку логируем и идём
-дальше.
-
-**Асинхронность.** Всё async. Никаких блокирующих вызовов в event loop.
-
-## Тесты
-
-`pytest` + `pytest-asyncio`. Ответы Xbox Live мокаем фикстурами —
-реальные запросы в тестах запрещены.
-
-Обязательно покрыть:
-
-- дедуп ачивок;
-- бэкфил: при первом подключении **не публикуется ничего**;
-- фильтр `progressState`: `InProgress` не попадает в `seen_achievements`;
-- применение фильтров редкости при разных значениях порога;
-- Xbox 360 с `rarity_percent = NULL` в режиме «только редкие»;
-- обновление refresh-токена: новый сохранён до запроса, параллельные попытки
-  сериализованы, `invalid_grant` помечает токен мёртвым и уведомляет юзера;
-- исключённый админом юзер не опрашивается и не публикуется;
-- юзер с мёртвым токеном не опрашивается, напоминание уходит не чаще раза
-  в 3 дня и не больше 3 раз;
-- парсинг ответа контракта 4 без блока `rarity` — не падает;
-- токен не попадает ни в текст исключения, ни в лог.
-
-## Стиль
-
-- Комментарии и имена — английские, сообщения бота пользователю — русские.
-- Комментируй «почему», а не «что». Особенно в поллере и в обновлении токенов,
-  где логика неочевидна.
-- Не добавляй зависимости без необходимости.
-- Не пиши заглушки и `TODO` вместо реализации — если шаг слишком большой,
-  скажи об этом и раздели его.
+- Code names and comments: English.
+- Bot messages: Russian.
+- Comment why, not what.
+- Prefer precise, small changes that preserve existing behavior.

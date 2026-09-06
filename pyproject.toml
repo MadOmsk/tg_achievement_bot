@@ -1,7 +1,7 @@
 [project]
-name = "xbox-achievement-bot"
+name = "achievement-bot"
 version = "0.1.0"
-description = "Telegram bot publishing Xbox achievements of chat members"
+description = "Telegram bot publishing cross-platform achievements and trophies of chat members"
 requires-python = ">=3.12"
 dependencies = [
     "aiogram>=3.13",

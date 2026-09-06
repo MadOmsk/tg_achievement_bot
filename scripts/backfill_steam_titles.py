@@ -14,7 +14,7 @@ scripts/reconcile_achievements.py's own gap-closing for Xbox.
 Uses GetOwnedGames (the official Web API, same call steam_fetcher.py's own
 backfill() already makes), not the Store API — the Store API needs a
 cc=US/cc=RU dance to avoid dropping games blocked in the Russian store
-(TODO.md's own note on this, from the /hltb description research) and this
+(SPEC.md's /hltb description research note covers this) and this
 already-used endpoint has no such problem.
 
 Safe to run any time, including while the bot is live: `upsert_title` is an

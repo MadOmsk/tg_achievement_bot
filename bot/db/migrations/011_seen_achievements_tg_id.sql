@@ -1,5 +1,5 @@
 -- Adds tg_id to seen_achievements and makes it the leading part of the
--- primary key, replacing xuid there (M-Steam-2, TODO.md and SPEC 9). A
+-- primary key, replacing xuid there (M-Steam-2, SPEC 9). A
 -- person will soon have achievements from more than one platform, each
 -- with its own external_id (Xbox xuid, Steam SteamID64) — summing "how
 -- many ачивок across every platform" for one person needs one stable

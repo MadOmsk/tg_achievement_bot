@@ -1,91 +1,193 @@
-# Xbox Achievement Bot
+# Achievement Bot
 
-Telegram-бот, который публикует ачивки участников чата — Xbox и Steam —
-с фильтром по редкости, личной статистикой, ежедневным итогом дня,
-админ-панелью, поиском времени прохождения игр через HowLongToBeat.
-Некоммерческий проект на 20–30 человек.
+<p align="left">
+  <img src="assets/logo.svg" alt="Achievement Bot logo" width="760">
+</p>
 
-Полное техническое задание — в [SPEC.md](SPEC.md), правила разработки и
-структура кода — в [CLAUDE.md](CLAUDE.md), дерево файлов с пояснениями —
-в [STRUCTURE.md](STRUCTURE.md), текущие открытые задачи — в [TODO.md](TODO.md).
+Achievement Bot is a small-group Telegram bot that publishes game achievements and
+trophies from chat members across Xbox, Steam, and PlayStation Network, with rarity
+filters, personal stats, group summaries, admin controls, and HowLongToBeat lookup.
 
-## Стек
+The project is built for a private, non-commercial gaming chat of roughly 20-30 people.
+It favors predictable behavior, local caching, and explicit admin controls over broad
+multi-tenant SaaS features.
 
-Python 3.12+, aiogram 3, xbox-webapi-python, httpx, aiohttp, aiosqlite,
-APScheduler, pydantic v2, cryptography (Fernet), howlongtobeatpy.
+## Features
 
-## Что нужно до старта
+- Publishes new achievements and trophies to subscribed Telegram chats.
+- Supports Xbox, Xbox 360, Steam, and PSN data sources.
+- Filters publication by per-chat rarity threshold, per-user-per-chat visibility mode,
+  minimum gamerscore, and muted games.
+- Sends digest messages when many achievements arrive at once.
+- Keeps `/stats`, `/recent`, `/online`, `/summary`, `/panel`, and `/admin` backed by the
+  local SQLite cache instead of live platform API calls.
+- Provides daily group summaries, live-refreshing `/online`, and self-refreshing
+  `/admin`.
+- Offers `/hltb` search with cached HowLongToBeat completion times.
+- Encrypts Xbox refresh tokens and shared PSN NPSSO secrets with Fernet.
 
-Без этих трёх вещей бот не запустится или не сможет пускать людей через
-Xbox-логин — готовятся один раз, до первого запуска:
+## Architecture
 
-1. **Токен Telegram-бота** — создать у [@BotFather](https://t.me/BotFather),
-   получить `BOT_TOKEN`.
-2. **Регистрация приложения на [portal.azure.com](https://portal.azure.com)
-   — обязательна**, без неё Xbox-логин не работает вообще. Нужны:
-   scope `XboxLive.signin XboxLive.offline_access`, redirect URI — тот же
-   адрес, что в `OAUTH_REDIRECT_URL` (см. пункт 3), из регистрации берутся
-   `AZURE_CLIENT_ID` и `AZURE_CLIENT_SECRET`.
-3. **Домен с HTTPS**, куда указывает `OAUTH_REDIRECT_URL` (например
-   `https://ваш-домен/auth/callback`). Microsoft принимает в качестве
-   redirect URI только `https://`-адрес — ни `localhost`, ни голый `http://`
-   не подходят. Для локальной разработки — свой домен на туннеле вроде
-   Cloudflare Tunnel (даёт `https://` сразу); в проде — обычный домен с
-   сертификатом (nginx + Let's Encrypt/certbot, как на боевом сервере этого
-   проекта).
+The bot is an async Python application:
 
-## Локальная разработка
+- **Telegram UI:** aiogram 3 handlers in `bot/handlers/`.
+- **Business logic:** platform clients, stats, formatting, and publishing in
+  `bot/services/` and `bot/poller/`.
+- **Storage:** SQLite through `bot/db/repo.py`; SQL should not be written outside this
+  layer.
+- **OAuth callback:** aiohttp endpoint in `bot/web/oauth.py` for Microsoft login.
+- **Scheduler:** APScheduler ticks for presence polling, achievement fetching, service
+  health checks, cleanup jobs, and daily summaries.
 
-```bash
-git clone <репозиторий>
-cd xbox_achievement_bot
-python -m venv .venv
-.venv\Scripts\pip install -e .[dev]
+Platform notes:
 
-copy .env.example .env
-# заполнить BOT_TOKEN, AZURE_CLIENT_ID/SECRET, OAUTH_REDIRECT_URL, FERNET_KEY
+- Xbox login uses Microsoft OAuth and stores only an encrypted refresh token.
+- Xbox rarity comes from Xbox Live achievement contract version 4 and requires polling a
+  concrete title.
+- Steam uses the official Steam Web API and a shared API key; users connect by profile
+  link or SteamID64.
+- PSN uses a shared NPSSO token through `psnawp`; this is reverse-engineered and may
+  break if Sony changes private endpoints.
+
+## Repository layout
+
+```text
+bot/
+  main.py              application assembly and startup
+  config.py            environment-based settings
+  db/                  schema, migrations, and repository layer
+  handlers/            aiogram UI layer
+  services/            platform clients and business logic
+  poller/              scheduled background jobs
+  web/                 Microsoft OAuth callback
+tests/                 pytest test suite with mocked platform responses
+scripts/               one-off operational helpers
+data/                  local SQLite database, ignored by git
+logs/                  runtime logs, ignored by git
+manage.ps1             local Windows process manager
 ```
 
-`FERNET_KEY` — сгенерировать:
+See `STRUCTURE.md` for the full tracked tree and `SPEC.md` for the detailed design.
 
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+## Requirements
 
-Дальше процессом на своей машине управляет `manage.ps1` (бот сам себя
-запустить не может):
+- Python 3.12+
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+- A Microsoft Azure app registration for Xbox login:
+  - scopes: `XboxLive.signin XboxLive.offline_access`
+  - redirect URI: the same HTTPS URL used as `OAUTH_REDIRECT_URL`
+- A public HTTPS callback URL for Microsoft OAuth
+- Optional: Steam Web API key from `steamcommunity.com/dev/apikey`
+- Optional: PSN NPSSO token configured from the admin panel
+
+Microsoft does not accept plain `http://` or `localhost` redirect URLs for this flow.
+Use a real HTTPS domain in production or an HTTPS tunnel for local development.
+
+## Local development
 
 ```powershell
-.\manage.ps1 start | stop | restart | status | logs [-Lines N]
-.\manage.ps1 dashboard   # живой статус с автообновлением и горячими клавишами
+git clone https://github.com/MadOmsk/xbox_achievement_bot.git
+cd xbox_achievement_bot
+python -m venv .venv
+.\.venv\Scripts\pip install -e .[dev]
+copy .env.example .env
 ```
 
-Двойной клик по `manage.bat` открывает тот же dashboard. Подробности —
-в разделе «Запуск» [CLAUDE.md](CLAUDE.md).
+Generate a Fernet key:
 
-Тесты и линт:
-
-```bash
-pytest
-ruff check . && ruff format --check .
+```powershell
+.\.venv\Scripts\python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-## Продакшен
+Fill `.env` with at least:
 
-Бот развёрнут на VPS под systemd (юнит `xbox-bot.service`, отдельный
-непривилегированный пользователь), за nginx с Let's Encrypt. На боевом
-сервере `manage.ps1` не используется — им управляет systemd:
+```text
+BOT_TOKEN=
+ADMIN_TG_IDS=
+AZURE_CLIENT_ID=
+AZURE_CLIENT_SECRET=
+OAUTH_REDIRECT_URL=
+FERNET_KEY=
+```
+
+Optional platform keys:
+
+```text
+STEAM_API_KEY=
+```
+
+Run the bot locally with the Windows process manager:
+
+```powershell
+.\manage.ps1 start
+.\manage.ps1 status
+.\manage.ps1 logs -Lines 100
+.\manage.ps1 stop
+```
+
+For an interactive local status screen:
+
+```powershell
+.\manage.ps1 dashboard
+```
+
+Do not run the local bot and the production bot with the same Telegram token at the same
+time. Telegram long polling will make both processes fight for updates.
+
+## Checks
+
+```powershell
+.\.venv\Scripts\pytest
+.\.venv\Scripts\ruff check .
+.\.venv\Scripts\ruff format --check .
+```
+
+Tests must not call real Xbox, Steam, PSN, or Telegram APIs.
+
+## Production deployment
+
+The current production shape is a single VPS running:
+
+- Ubuntu 24.04
+- a dedicated unprivileged service user
+- systemd service `xbox-bot.service`
+- nginx with Let's Encrypt TLS
+- the bot listening only on `127.0.0.1:8080` for the OAuth callback
+
+Manual deployment is currently:
 
 ```bash
-systemctl {start|stop|restart|status} xbox-bot
+cd /opt/xbox_achievement_bot
+git pull --ff-only
+python -m pip install -e .
+systemctl restart xbox-bot
 journalctl -u xbox-bot -f
 ```
 
-Деплой — `git pull` в `/opt/xbox_achievement_bot` от имени сервисного
-пользователя, затем `systemctl restart xbox-bot`. Детали инфраструктуры —
-в разделе «Запуск» [CLAUDE.md](CLAUDE.md).
+### Planned: GitHub Actions auto-deploy
 
-**`manage.ps1` на домашнем ПК и боевой сервер не запускаются одновременно**
-— два процесса с одним `BOT_TOKEN` конфликтуют за обновления Telegram.
-`manage.ps1` — инструмент для локальной разработки, а не пережиток: он
-никуда не делся и нужен ровно для того же, для чего был нужен раньше.
+Auto-deploy is intentionally not implemented yet. The next deployment step should be a
+GitHub Actions workflow that:
+
+1. runs tests and Ruff checks on every pull request and push;
+2. deploys only from the protected production branch after checks pass;
+3. connects to the VPS through SSH using a GitHub Actions secret deploy key;
+4. runs `git pull --ff-only`, installs updated dependencies, applies migrations through
+   normal application startup, and restarts `xbox-bot.service`;
+5. never stores `.env`, `FERNET_KEY`, Telegram tokens, Azure secrets, Steam keys, or PSN
+   NPSSO in the repository.
+
+## Documentation
+
+- `SPEC.md` - full product and architecture specification.
+- `CLAUDE.md` - development rules and operational notes.
+- `STRUCTURE.md` - current tracked file tree.
+
+## Security notes
+
+- `.env`, `data/`, logs, and database files are ignored by git.
+- Xbox refresh tokens and the PSN NPSSO are encrypted before storage.
+- Tokens and API keys must never be logged or included in exception text.
+- `FERNET_KEY` must be backed up securely; losing it means connected users must reconnect.
+- The Xbox and PSN integrations rely on undocumented or reverse-engineered platform
+  behavior and may require maintenance if upstream services change.

@@ -1,4 +1,4 @@
-"""`/connect_steam`, `/disconnect_steam` (M-Steam-1, TODO.md; backfill —
+"""`/connect_steam`, `/disconnect_steam` (M-Steam-1; backfill —
 SPEC 9, M-Steam-2d).
 
 Private chat only, like /connect_xbox and /panel — this is personal, not a group

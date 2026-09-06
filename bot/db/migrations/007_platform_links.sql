@@ -1,4 +1,4 @@
--- One person, several platform accounts (M-Steam-1, TODO.md) — Xbox stays in
+-- One person, several platform accounts (M-Steam-1, SPEC 9) — Xbox stays in
 -- users.xuid unchanged, this is only for accounts beyond it. No tokens here
 -- on purpose: unlike Xbox, Steam's public data needs no per-user OAuth, just
 -- one API key for the whole bot plus the person's own profile set to public.

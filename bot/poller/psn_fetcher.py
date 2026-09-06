@@ -1,12 +1,8 @@
-"""Fetching PSN trophies and backfill (SPEC 9, M-PSN-2) — the PSN
-counterpart of poller/steam_fetcher.py. No presence poller alongside it,
-unlike Xbox/Steam: PSN trophy sync has no signal to key off (M-PSN-2's own
-"ключевое отличие" paragraph) — `tick()` just scans every linked account
-directly, debounced the same way Xbox/Steam debounce their own achievement
-polls (`achievement_poll_interval`, poller/cadence.py), reused rather than
-a PSN-specific setting: this is a "don't ask too often" politeness, not a
-budget constraint, the same reasoning that already applies on both other
-platforms (SPEC 5.2).
+"""Fetching PSN trophies and backfill.
+
+Unlike Xbox and Steam, PSN trophy sync has no reliable presence signal to key off.
+The tick scans every linked account directly, debounced with the shared achievement
+poll interval.
 """
 
 from __future__ import annotations
@@ -47,9 +43,8 @@ class PsnFetcher:
                     target.tg_id, target.account_id, target.online_id or target.account_id
                 )
             except Exception:
-                # Isolation per account (CLAUDE.md: "Поллер не должен падать
-                # из-за одного проблемного юзера") — poll_account already
-                # catches PsnApiError itself, this is only for a genuine bug.
+                # Isolation per account: poll_account already catches PsnApiError,
+                # this is only for a genuine bug.
                 log.exception("unexpected failure polling psn account_id=%s", target.account_id)
             await self._repo.touch_psn_poll_state(target.account_id)
 
@@ -72,11 +67,8 @@ class PsnFetcher:
             return 0
 
         log.info("tg_id=%s unlocked %s new psn trophies", tg_id, len(new_rows))
-        # No game_name here (unlike Xbox/Steam's own poll_title): a single
-        # poll can cover several different games at once (M-PSN-2's own
-        # "мультиачивки" paragraph) — format_digest/_group_by_title
-        # (services/achievements.py) already handle that by grouping on
-        # each row's own title_name, same as a Xbox/Steam catch-up burst.
+        # A single PSN poll can cover several games. The publisher already groups
+        # by each row's own title name, same as an Xbox/Steam catch-up burst.
         await self._publisher.publish(tg_id, account_id, online_id, new_rows, None)
         return len(new_rows)
 

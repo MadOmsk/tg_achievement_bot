@@ -161,7 +161,7 @@ function Show-Dashboard {
     try {
         while ($true) {
             Clear-Host
-            Write-Host '=== Xbox Achievement Bot ===' -ForegroundColor Cyan
+            Write-Host '=== Achievement Bot ===' -ForegroundColor Cyan
             Write-Host (Get-Date -Format 'HH:mm:ss') -ForegroundColor DarkGray
             Write-Host ''
             Write-StatusBlock

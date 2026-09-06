@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 
 -- Deduplication: what we have already seen. Keyed by tg_id, not by
--- xuid/external_id (M-Steam-2, TODO.md and SPEC 9): a person will soon have
+-- xuid/external_id (M-Steam-2, SPEC 9): a person will soon have
 -- achievements from more than one platform, each with its own external_id
 -- (Xbox xuid, Steam SteamID64) — summing "how many across every platform"
 -- for one person needs one stable per-person key, and tg_id is the only one
@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS online_auto_refresh (
     last_updated_at TEXT NOT NULL
 );
 
--- One person, several platform accounts (M-Steam-1, TODO.md) — Xbox stays in
+-- One person, several platform accounts (M-Steam-1, SPEC 9) — Xbox stays in
 -- users.xuid unchanged (nothing about it needs to change to add a second
 -- platform), this is only for accounts beyond it. No tokens here on purpose:
 -- unlike Xbox, Steam's public data needs no per-user OAuth, just one API key
