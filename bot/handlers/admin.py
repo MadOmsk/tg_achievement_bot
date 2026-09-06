@@ -58,6 +58,7 @@ from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
     PsnApiError,
+    PsnClientSetupError,
     PsnPrivateProfileError,
     PsnTokenDeadError,
     recent_earned_trophies,
@@ -224,12 +225,24 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
     raw = message.text.strip()
 
     if key == PSN_NPSSO_KEY:
-        del _awaiting_input[message.from_user.id]
         try:
             await psn_auth.set_npsso(raw, message.from_user.id)
         except PsnTokenDeadError:
+            # Stays armed on purpose — a typo is worth just retrying,
+            # not a trip back through /admin.
             await message.answer(
-                "NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз через /admin."
+                "NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз."
+            )
+            return
+        except PsnClientSetupError as exc:
+            # Found live 2026-09-06: psnawp couldn't even construct its own
+            # client (a sandboxed temp dir) and the admin got no reply at
+            # all — this is deliberately a different message from the one
+            # above, so a real bug doesn't get blamed on the NPSSO itself.
+            log.exception("psn_admin_input: could not set up the PSN client")
+            await message.answer(
+                f"Не получилось создать клиент PSN — техническая ошибка на сервере "
+                f"({exc}). NPSSO тут, скорее всего, ни при чём — посмотри логи бота."
             )
             return
         _awaiting_input[message.from_user.id] = (PSN_LOOKUP_KEY, None)

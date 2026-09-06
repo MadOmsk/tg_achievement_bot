@@ -135,14 +135,6 @@ async def test_psn_check_is_skipped_before_the_interval_elapses(
     async def _build(npsso: str) -> object:
         return object()
 
-    monkeypatch.setattr("bot.services.psn.auth.build_client", _build)
-    await psn_auth.set_npsso("fake-npsso", admin_id=1)
-    # set_npsso itself just checked (and stamped checked_at) — backdate it so
-    # the first tick below is the one that's actually due, same as a real
-    # bot that set this up half an hour ago.
-    stale = (utcnow() - timedelta(minutes=40)).isoformat(timespec="seconds")
-    await repo.set_app_setting(PSN_CHECKED_AT_KEY, stale)
-
     calls = 0
 
     async def _counting_check_alive(client: object) -> bool:
@@ -150,7 +142,15 @@ async def test_psn_check_is_skipped_before_the_interval_elapses(
         calls += 1
         return True
 
+    monkeypatch.setattr("bot.services.psn.auth.build_client", _build)
     monkeypatch.setattr("bot.services.psn.auth.check_alive", _counting_check_alive)
+    await psn_auth.set_npsso("fake-npsso", admin_id=1)
+    calls = 0  # set_npsso's own verification call doesn't count toward the assertion below
+    # set_npsso itself just checked (and stamped checked_at) — backdate it so
+    # the first tick below is the one that's actually due, same as a real
+    # bot that set this up half an hour ago.
+    stale = (utcnow() - timedelta(minutes=40)).isoformat(timespec="seconds")
+    await repo.set_app_setting(PSN_CHECKED_AT_KEY, stale)
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     health = ServiceHealth(unconfigured, repo, psn_auth, notifier)
 

@@ -60,7 +60,11 @@ async def _configured_auth(
     async def _build(npsso: str) -> object:
         return object()
 
+    async def _alive(client: object) -> bool:
+        return True
+
     monkeypatch.setattr("bot.services.psn.auth.build_client", _build)
+    monkeypatch.setattr("bot.services.psn.auth.check_alive", _alive)
     auth = PsnAuth(repo, cipher)
     await auth.set_npsso(NPSSO, admin_id=1)
     return auth

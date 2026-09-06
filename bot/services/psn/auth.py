@@ -18,7 +18,7 @@ from psnawp_api import PSNAWP
 
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
-from bot.services.psn.client import PsnTokenDeadError, build_client, check_alive
+from bot.services.psn.client import PsnApiError, PsnTokenDeadError, build_client, check_alive
 from bot.util import utcnow
 
 log = logging.getLogger(__name__)
@@ -66,9 +66,17 @@ class PsnAuth:
         return await self._repo.get_app_setting(CHECKED_AT_KEY)
 
     async def set_npsso(self, npsso: str, admin_id: int) -> None:
-        """Validates by actually building a client before saving anything —
-        a typo'd NPSSO must not silently overwrite a working one."""
-        client = await build_client(npsso)  # raises PsnTokenDeadError if bad
+        """Validates with a real verification call before saving anything —
+        a typo'd NPSSO must not silently overwrite a working one.
+        build_client() alone does NOT prove the NPSSO works (found live
+        2026-09-06: psnawp_api's constructor "succeeds" instantly even for
+        complete garbage — no network call happens until the first real
+        request), so this makes that first real request itself
+        (check_alive) rather than trusting construction to mean anything.
+        """
+        client = await build_client(npsso)
+        if not await check_alive(client):
+            raise PsnTokenDeadError("NPSSO rejected on verification call")
         encrypted = self._cipher.encrypt(npsso).decode("ascii")
         await self._repo.set_app_setting(NPSSO_KEY, encrypted, admin_id)
         await self._repo.set_app_setting(STATUS_KEY, STATUS_ACTIVE, admin_id)
@@ -100,7 +108,10 @@ class PsnAuth:
         try:
             client = await self.get_client()
             alive = await check_alive(client)
-        except PsnTokenDeadError:
+        except PsnApiError:
+            # PsnTokenDeadError (bad NPSSO) or PsnClientSetupError (couldn't
+            # even construct the client, e.g. the sandboxed-temp-dir bug
+            # found live 2026-09-06) — either way, not alive right now.
             alive = False
 
         await self._repo.set_app_setting(STATUS_KEY, STATUS_ACTIVE if alive else STATUS_INVALID)

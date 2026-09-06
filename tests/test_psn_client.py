@@ -118,6 +118,21 @@ async def test_build_client_wraps_bad_npsso_as_token_dead(monkeypatch: pytest.Mo
         await build_client("whatever")
 
 
+async def test_build_client_wraps_unexpected_errors_as_setup_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Found live 2026-09-06: a sandboxed systemd unit denied psnawp's own
+    rate-limiter its temp dir, raising a bare FileNotFoundError that wasn't
+    about the NPSSO at all — must not be mistaken for PsnTokenDeadError."""
+
+    def _boom(npsso: str) -> object:
+        raise FileNotFoundError("no usable temp dir")
+
+    monkeypatch.setattr(psn_client, "PSNAWP", _boom)
+    with pytest.raises(psn_client.PsnClientSetupError):
+        await build_client("whatever")
+
+
 async def test_check_alive_true_and_false() -> None:
     assert await check_alive(_FakeClient({})) is True
     assert await check_alive(_FakeClient({}, dead=True)) is False

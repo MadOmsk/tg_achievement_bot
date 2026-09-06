@@ -68,6 +68,16 @@ class PsnPrivateProfileError(PsnApiError):
     (get_profile's is_public)."""
 
 
+class PsnClientSetupError(PsnApiError):
+    """Something failed while constructing the PSNAWP client object itself
+    — before we even got to whether the NPSSO is any good. Almost always
+    the environment, not the admin's input (found live 2026-09-06: psnawp
+    needs a writable temp dir for its own rate-limiter bucket, which a
+    hardened systemd unit — ProtectSystem=strict with no PrivateTmp — was
+    silently denying it). Kept distinct from PsnTokenDeadError so an admin
+    isn't sent chasing a "bad NPSSO" that was never the actual problem."""
+
+
 @dataclass(slots=True)
 class PsnProfile:
     account_id: str
@@ -101,11 +111,25 @@ async def _call[T](fn: Callable[..., T], *args: object, **kwargs: object) -> T:
 
 
 async def build_client(npsso: str) -> PSNAWP:
-    """One instantiation = one NPSSO -> access/refresh token exchange."""
+    """Constructs the client object — this does NOT exchange the NPSSO for
+    a real token (verified live 2026-09-06: psnawp_api's constructor
+    "succeeds" instantly even for complete garbage input, no network call
+    at all — the actual exchange only happens on the first real API call).
+    services/psn/auth.py's set_npsso() makes a real verification call
+    right after this for exactly that reason — never trust this function
+    alone to mean "the NPSSO works"."""
     try:
         return await _call(PSNAWP, npsso)
     except PSNAWPAuthenticationError as exc:
         raise PsnTokenDeadError(str(exc)) from None
+    except PsnApiError:
+        raise
+    except Exception as exc:
+        # Anything else (found live: a sandboxed temp dir psnawp's own
+        # rate-limiter couldn't write to) is almost certainly not about
+        # this particular NPSSO at all — kept as its own class so the
+        # admin isn't told to blame a token that was never the problem.
+        raise PsnClientSetupError(str(exc)) from exc
 
 
 async def check_alive(client: PSNAWP) -> bool:

@@ -5,6 +5,7 @@ M-PSN-1). build_client is monkeypatched at the module boundary throughout
 from __future__ import annotations
 
 import pytest
+from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
@@ -22,8 +23,18 @@ NPSSO = "fake-npsso-value"
 
 
 class _FakeClient:
+    """A real `.me()` (psnawp's cheapest authenticated call) means the real
+    check_alive() can drive set_npsso()'s own verification call without
+    needing to be mocked separately in most of these tests — flip
+    `.alive` to make a later check_health() see it go dark."""
+
     def __init__(self, *, alive: bool = True) -> None:
         self.alive = alive
+
+    def me(self) -> object:
+        if not self.alive:
+            raise PSNAWPAuthenticationError("dead")
+        return object()
 
 
 async def test_status_defaults_to_not_configured(repo: Repo, cipher: TokenCipher) -> None:
@@ -50,6 +61,26 @@ async def test_set_npsso_validates_before_storing_anything(
         raise PsnTokenDeadError("bad")
 
     monkeypatch.setattr(psn_auth_module, "build_client", _dead)
+    auth = PsnAuth(repo, cipher)
+
+    with pytest.raises(PsnTokenDeadError):
+        await auth.set_npsso(NPSSO, admin_id=1)
+
+    assert await auth.status() == STATUS_NOT_CONFIGURED
+
+
+async def test_set_npsso_rejects_a_client_that_fails_verification(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """build_client() alone does NOT prove the NPSSO works (found live
+    2026-09-06: psnawp_api's constructor "succeeds" for complete garbage,
+    no network call at all) — set_npsso() must make a real verification
+    call (check_alive) before considering it good."""
+
+    async def _build(npsso: str) -> _FakeClient:
+        return _FakeClient(alive=False)
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
     auth = PsnAuth(repo, cipher)
 
     with pytest.raises(PsnTokenDeadError):
@@ -119,17 +150,16 @@ async def test_check_health_before_setup_is_a_noop(
 async def test_check_health_notifies_once_on_active_to_invalid_transition(
     repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    fake_client = _FakeClient()
+
     async def _build(npsso: str) -> _FakeClient:
-        return _FakeClient()
+        return fake_client
 
     monkeypatch.setattr(psn_auth_module, "build_client", _build)
     auth = PsnAuth(repo, cipher)
     await auth.set_npsso(NPSSO, admin_id=1)
 
-    async def _check_alive(client: object) -> bool:
-        return False
-
-    monkeypatch.setattr(psn_auth_module, "check_alive", _check_alive)
+    fake_client.alive = False  # the same cached client instance goes dark
 
     fired = 0
 
@@ -156,8 +186,10 @@ async def test_check_health_recovers_silently(
     """Coming back to life just flips the status back — no notify for
     recovery, only for death (scope explicitly kept narrow)."""
 
+    fake_client = _FakeClient()
+
     async def _build(npsso: str) -> _FakeClient:
-        return _FakeClient()
+        return fake_client
 
     monkeypatch.setattr(psn_auth_module, "build_client", _build)
     auth = PsnAuth(repo, cipher)
@@ -170,11 +202,7 @@ async def test_check_health_recovers_silently(
         nonlocal calls
         calls += 1
 
-    async def _alive_again(client: object) -> bool:
-        return True
-
     auth.on_dead = _on_dead
-    monkeypatch.setattr(psn_auth_module, "check_alive", _alive_again)
 
     assert await auth.check_health() is True
     assert await auth.status() == STATUS_ACTIVE
