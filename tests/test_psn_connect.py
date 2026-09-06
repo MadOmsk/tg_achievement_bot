@@ -1,7 +1,9 @@
-"""PSN login flow (SPEC 9, M-PSN-1) — the shared prompt_for_link() step and
-the AwaitingPsnLink filter, plus the actual resolve+visibility+link body
-(_connect), which unlike Steam's own version is small enough to unit-test
-directly here (no backfill, no URL parsing)."""
+"""PSN login flow (SPEC 9, M-PSN-1/M-PSN-2) — the shared prompt_for_link()
+step, the AwaitingPsnLink filter, and the resolve+visibility+link body
+(_connect) — small enough to unit-test directly here, unlike Steam's own
+version (no URL parsing). The backfill it kicks off in the background uses
+a trivial FakeFetcher; poller/psn_fetcher.py's own backfill() has its
+real coverage in tests/test_psn_fetcher.py."""
 
 from __future__ import annotations
 
@@ -31,6 +33,20 @@ class FakeBot:
 
     async def send_message(self, chat_id: int, text: str, **kwargs: object) -> None:
         self.sent.append((chat_id, text))
+
+
+class FakeFetcher:
+    """A trivial PsnFetcher stand-in — these tests are about the resolve+
+    visibility+link body, not backfill (that has its own coverage,
+    tests/test_psn_fetcher.py), so this only needs to satisfy the call
+    _connect makes when it kicks the background backfill off."""
+
+    def __init__(self) -> None:
+        self.backfilled: list[tuple[int, str]] = []
+
+    async def backfill(self, tg_id: int, account_id: str) -> int:
+        self.backfilled.append((tg_id, account_id))
+        return 0
 
 
 def _event(tg_id: int | None) -> SimpleNamespace:
@@ -128,13 +144,15 @@ async def test_connect_links_a_visible_profile(
     monkeypatch.setattr(psn_handlers, "resolve_profile", _resolve)
     monkeypatch.setattr(psn_handlers, "is_trophy_visible", _visible)
 
-    await _connect(bot, repo, auth, TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
+    await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
 
     link = await repo.get_platform_link(TG_ID, "psn")
     assert link is not None
     assert link.external_id == "acc-1"
     assert link.display_name == "Gamer"
-    assert bot.sent[-1] == (TG_ID, "Подключил PSN: Gamer.")
+    # The backfill kicked off in the background may or may not have
+    # completed by now — only the link confirmation itself is asserted.
+    assert (TG_ID, "Подключил PSN: Gamer.") in bot.sent
 
 
 async def test_connect_refuses_a_closed_profile_without_linking(
@@ -154,7 +172,7 @@ async def test_connect_refuses_a_closed_profile_without_linking(
     monkeypatch.setattr(psn_handlers, "resolve_profile", _resolve)
     monkeypatch.setattr(psn_handlers, "is_trophy_visible", _closed)
 
-    await _connect(bot, repo, auth, TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
+    await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
 
     assert await repo.get_platform_link(TG_ID, "psn") is None
     assert "скрыты" in bot.sent[-1][1]
@@ -171,7 +189,7 @@ async def test_connect_reports_unresolvable_online_id(
 
     monkeypatch.setattr(psn_handlers, "resolve_profile", _not_found)
 
-    await _connect(bot, repo, auth, TG_ID, "igor", "nobody")  # type: ignore[arg-type]
+    await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "nobody")  # type: ignore[arg-type]
 
     assert await repo.get_platform_link(TG_ID, "psn") is None
     assert "Не нашёл" in bot.sent[-1][1]
@@ -188,7 +206,7 @@ async def test_connect_reports_a_dead_service_token(
 
     monkeypatch.setattr(psn_handlers, "resolve_profile", _dead)
 
-    await _connect(bot, repo, auth, TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
+    await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
 
     assert await repo.get_platform_link(TG_ID, "psn") is None
     assert "недоступен" in bot.sent[-1][1]

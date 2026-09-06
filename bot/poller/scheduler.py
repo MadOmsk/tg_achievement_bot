@@ -19,6 +19,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
+from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.reminders import ReminderJob
 from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_presence import SteamPresencePoller
@@ -41,6 +42,7 @@ class PollerScheduler:
         online_refresh: OnlineAutoRefresh,
         service_health: ServiceHealth,
         admin_refresh: AdminPanelRefresh,
+        psn_fetcher: PsnFetcher,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -52,6 +54,7 @@ class PollerScheduler:
         self._online_refresh = online_refresh
         self._service_health = service_health
         self._admin_refresh = admin_refresh
+        self._psn_fetcher = psn_fetcher
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -127,6 +130,17 @@ class PollerScheduler:
             self._admin_refresh.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="admin_refresh",
+            coalesce=True,
+            max_instances=1,
+        )
+        # No presence poller alongside this one (SPEC 9, M-PSN-2) — trophy
+        # sync has no signal to key off, so this tick scans every linked
+        # PSN account directly, debounced internally the same way Xbox/
+        # Steam's own achievement polls are.
+        self._scheduler.add_job(
+            self._psn_fetcher.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="psn_fetcher",
             coalesce=True,
             max_instances=1,
         )

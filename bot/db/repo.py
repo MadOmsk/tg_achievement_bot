@@ -101,6 +101,19 @@ class SteamPollTarget:
 
 
 @dataclass(slots=True)
+class PsnPollTarget:
+    """A linked PSN account the trophy poller may look at (SPEC 9, M-PSN-2)
+    — no presence fields at all, unlike PollTarget/SteamPollTarget: trophy
+    sync has no signal to key off, so there is nothing here but who to poll
+    and when they were last checked."""
+
+    tg_id: int
+    account_id: str
+    online_id: str | None
+    last_polled_at: str | None
+
+
+@dataclass(slots=True)
 class AchievementRow:
     title_id: str
     achievement_id: str
@@ -113,6 +126,7 @@ class AchievementRow:
     platform: str
     title_name: str | None = None
     is_secret: bool = False
+    trophy_type: str | None = None  # PSN's tier — bronze/silver/gold/platinum, NULL elsewhere
 
 
 @dataclass(slots=True)
@@ -808,6 +822,45 @@ class Repo:
         )
         await self._conn.commit()
 
+    # ---------------------------------------------------------- PSN polling
+
+    async def psn_pollable_users(self) -> list[PsnPollTarget]:
+        """Who the PSN trophy poller may look at (SPEC 9, M-PSN-2) — no
+        `tokens` JOIN, same reasoning as steam_pollable_users above: one
+        shared service credential for the whole bot (M-PSN-1), not
+        per-user OAuth."""
+        cursor = await self._conn.execute(
+            "SELECT u.tg_id, pl.external_id AS account_id, pl.display_name AS online_id,"
+            "       ps.last_polled_at "
+            "FROM platform_links pl "
+            "JOIN users u ON u.tg_id = pl.tg_id "
+            "LEFT JOIN psn_poll_state ps ON ps.account_id = pl.external_id "
+            "WHERE pl.platform = 'psn' AND u.is_excluded = 0"
+        )
+        return [
+            PsnPollTarget(
+                tg_id=row["tg_id"],
+                account_id=row["account_id"],
+                online_id=row["online_id"],
+                last_polled_at=row["last_polled_at"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def touch_psn_poll_state(self, account_id: str) -> None:
+        await self._conn.execute(
+            "INSERT INTO psn_poll_state (account_id, last_polled_at) VALUES (?, ?) "
+            "ON CONFLICT(account_id) DO UPDATE SET last_polled_at = excluded.last_polled_at",
+            (account_id, utcnow_iso()),
+        )
+        await self._conn.commit()
+
+    async def delete_psn_poll_state(self, account_id: str) -> None:
+        await self._conn.execute(
+            "DELETE FROM psn_poll_state WHERE account_id = ?", (account_id,)
+        )
+        await self._conn.commit()
+
     # -------------------------------------------------------- achievements
 
     async def insert_new_achievements(
@@ -926,6 +979,89 @@ class Repo:
         await self._conn.commit()
         return new_rows
 
+    async def insert_new_achievements_psn(
+        self,
+        tg_id: int,
+        account_id: str,
+        achievements: Sequence[AchievementRow],
+        *,
+        is_backfill: bool,
+    ) -> list[AchievementRow]:
+        """PSN's counterpart of insert_new_achievements_steam (SPEC 9,
+        M-PSN-2) — same reasoning, `tg_id` already on hand from
+        `platform_links`, no xuid-lookup stopgap needed. The `xuid` column
+        holds `account_id` here (the generic per-platform external_id,
+        unchanged since M-Steam-2a), `title_id` holds `np_communication_id`,
+        `achievement_id` holds the PSN trophy_id, and `trophy_type` (NULL
+        for every other platform) carries the tier this method's Xbox/Steam
+        siblings never set."""
+        if not achievements:
+            return []
+
+        cached_titles: dict[str, str] = {}
+        for item in achievements:
+            if item.title_name and item.title_id not in cached_titles:
+                cached_titles[item.title_id] = item.title_name
+        for title_id, name in cached_titles.items():
+            await self.upsert_title(title_id, name, "psn")
+
+        new_rows: list[AchievementRow] = []
+        now = utcnow_iso()
+        for item in achievements:
+            cursor = await self._conn.execute(
+                "INSERT OR IGNORE INTO seen_achievements "
+                "(tg_id, xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
+                " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
+                " created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    tg_id,
+                    account_id,
+                    item.title_id,
+                    item.achievement_id,
+                    item.name,
+                    item.description,
+                    item.icon_url,
+                    item.unlocked_at,
+                    item.gamerscore,
+                    item.rarity_percent,
+                    item.platform,
+                    1 if is_backfill else 0,
+                    1 if item.is_secret else 0,
+                    item.trophy_type,
+                    now,
+                ),
+            )
+            if cursor.rowcount:
+                new_rows.append(item)
+        await self._conn.commit()
+        return new_rows
+
+    async def get_psn_title_progress(self, account_id: str, np_communication_id: str) -> int | None:
+        """The last-seen `progress` for one (account, game) — poller/
+        psn_fetcher.py skips the expensive full-trophy-detail call unless
+        this grew (M-PSN-2, trophy sync has no presence signal to key off)."""
+        cursor = await self._conn.execute(
+            "SELECT progress FROM psn_title_progress "
+            "WHERE account_id = ? AND np_communication_id = ?",
+            (account_id, np_communication_id),
+        )
+        row = await cursor.fetchone()
+        return row["progress"] if row else None
+
+    async def set_psn_title_progress(
+        self, account_id: str, np_communication_id: str, progress: int
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO psn_title_progress"
+            " (account_id, np_communication_id, progress, updated_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(account_id, np_communication_id) DO UPDATE SET"
+            " progress = excluded.progress, updated_at = excluded.updated_at",
+            (account_id, np_communication_id, progress, utcnow_iso()),
+        )
+        await self._conn.commit()
+
     async def recent_achievements(self, xuid: str, limit: int = 5) -> list[AchievementRow]:
         """The last N unlocks, newest first — for the panel (SPEC 6.2).
         Undated rows never win: an unknown unlock time is not "recent"."""
@@ -949,6 +1085,7 @@ class Repo:
                 platform=row["platform"],
                 title_name=row["game"],
                 is_secret=bool(row["is_secret"]),
+                trophy_type=row["trophy_type"],
             )
             for row in await cursor.fetchall()
         ]

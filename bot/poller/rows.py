@@ -26,4 +26,5 @@ def to_achievement_row(item: ParsedAchievement) -> AchievementRow:
         platform=item.platform,
         title_name=item.title_name,
         is_secret=item.is_secret,
+        trophy_type=item.trophy_type,
     )

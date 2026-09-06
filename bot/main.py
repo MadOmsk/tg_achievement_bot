@@ -33,6 +33,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
+from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.publisher import Publisher
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
@@ -115,6 +116,11 @@ async def run(settings: Settings) -> None:
     steam_fetcher = SteamFetcher(repo, steam_api_key, publisher, settings.backfill_concurrency)
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher)
 
+    # No presence poller of its own (SPEC 9, M-PSN-2) — trophy sync has no
+    # signal to key off, psn_fetcher.tick() scans every linked account
+    # directly on its own schedule instead.
+    psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher)
+
     scheduler = PollerScheduler(
         poller,
         fetcher,
@@ -126,6 +132,7 @@ async def run(settings: Settings) -> None:
         OnlineAutoRefresh(bot, repo),
         ServiceHealth(settings, repo, psn_auth, notifier),
         AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth),
+        psn_fetcher,
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -210,6 +217,7 @@ async def run(settings: Settings) -> None:
     dispatcher["settings"] = settings
     dispatcher["notifier"] = notifier
     dispatcher["psn_auth"] = psn_auth
+    dispatcher["psn_fetcher"] = psn_fetcher
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
     dispatcher.include_router(admin_handlers.router)
     dispatcher.include_router(connect_handlers.router)

@@ -30,6 +30,7 @@ from psnawp_api.core.psnawp_exceptions import (
     PSNAWPForbiddenError,
     PSNAWPNotFoundError,
 )
+from psnawp_api.models.trophies import TrophyTitle
 from psnawp_api.models.trophies.trophy_constants import PlatformType, TrophyRarity, TrophyType
 
 from bot.services.rate_limiter import RateLimiter
@@ -75,11 +76,13 @@ class PsnProfile:
 
 @dataclass(slots=True)
 class EarnedTrophy:
-    """One trophy this account has actually earned, with everything needed
-    to test rendering it (SPEC 9, M-PSN-2's badge/rarity/hidden design) —
-    used only by the admin panel's live "Трофеи PSN" test screen for now,
-    nothing here is cached or persisted."""
+    """One trophy this account has actually earned — used by the admin
+    panel's live "Трофеи PSN" test screen (display only) and by
+    services/psn/achievements.py's fetch_unlocked (SPEC 9, M-PSN-2), which
+    needs `trophy_id` specifically: it's the real per-title identifier
+    (`trophy_name` is not guaranteed unique and is shown, never keyed on)."""
 
+    trophy_id: int
     title_name: str
     title_icon_url: str | None
     trophy_name: str
@@ -151,16 +154,15 @@ async def is_trophy_visible(client: PSNAWP, account_id: str) -> bool:
 _RECENT_TITLES_TO_SCAN = 5
 
 
-async def recent_earned_trophies(
-    client: PSNAWP, account_id: str, limit: int
-) -> list[EarnedTrophy]:
-    """Live, uncached (SPEC 1.5's cache-only rule carve-out — same one the
-    admin panel's "Обновить данные" button already gets) — only the admin
-    panel's "🏆 Трофеи PSN (тест)" screen calls this, nothing here is stored.
-    """
+async def trophy_titles_for_account(
+    client: PSNAWP, account_id: str, limit: int | None = None
+) -> list[TrophyTitle]:
+    """Resolves the account and returns its recent trophy_titles() — shared
+    by the admin test screen (recent_earned_trophies below) and the trophy
+    poller (services/psn/achievements.py, SPEC 9, M-PSN-2)."""
     try:
         user = await _call(client.user, account_id=account_id)
-        titles = await _call(lambda: list(user.trophy_titles(limit=_RECENT_TITLES_TO_SCAN)))
+        return await _call(lambda: list(user.trophy_titles(limit=limit)))
     except PSNAWPNotFoundError:
         raise PsnApiError(f"PSN profile {account_id!r} not found") from None
     except PSNAWPForbiddenError:
@@ -168,42 +170,75 @@ async def recent_earned_trophies(
     except PSNAWPAuthenticationError as exc:
         raise PsnTokenDeadError(str(exc)) from None
 
+
+async def trophies_for_title(
+    client: PSNAWP, account_id: str, title: TrophyTitle
+) -> list[EarnedTrophy]:
+    """Full detail (name/tier/rarity/hidden/icon) for every *earned* trophy
+    in one game — the per-title body recent_earned_trophies below and the
+    trophy poller (SPEC 9, M-PSN-2) both need. Raises PsnPrivateProfileError
+    if this one game's detail is hidden — the caller decides what that
+    means (recent_earned_trophies skips just this game, not the whole
+    screen; the poller does the same, SPEC 9, M-PSN-2)."""
+    try:
+        user = await _call(client.user, account_id=account_id)
+    except PSNAWPNotFoundError:
+        raise PsnApiError(f"PSN profile {account_id!r} not found") from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+
+    platform = next(iter(title.title_platform), PlatformType.PS4)
+    try:
+        trophies = await _call(
+            lambda: list(
+                user.trophies(
+                    np_communication_id=title.np_communication_id,
+                    platform=platform,
+                    include_progress=True,
+                )
+            )
+        )
+    except PSNAWPForbiddenError:
+        raise PsnPrivateProfileError(account_id) from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+
+    return [
+        EarnedTrophy(
+            trophy_id=trophy.trophy_id,
+            title_name=title.title_name or "?",
+            title_icon_url=title.title_icon_url,
+            trophy_name=trophy.trophy_name or "?",
+            trophy_detail=trophy.trophy_detail,
+            trophy_icon_url=trophy.trophy_icon_url,
+            trophy_type=trophy.trophy_type,
+            trophy_hidden=bool(trophy.trophy_hidden),
+            trophy_rarity=trophy.trophy_rarity,
+            trophy_earn_rate=trophy.trophy_earn_rate,
+            earned_date_time=(
+                trophy.earned_date_time.isoformat() if trophy.earned_date_time else None
+            ),
+        )
+        for trophy in trophies
+        if trophy.earned
+    ]
+
+
+async def recent_earned_trophies(
+    client: PSNAWP, account_id: str, limit: int
+) -> list[EarnedTrophy]:
+    """Live, uncached (SPEC 1.5's cache-only rule carve-out — same one the
+    admin panel's "Обновить данные" button already gets) — only the admin
+    panel's "🏆 Трофеи PSN (тест)" screen calls this, nothing here is stored.
+    """
+    titles = await trophy_titles_for_account(client, account_id, limit=_RECENT_TITLES_TO_SCAN)
+
     earned: list[EarnedTrophy] = []
     for title in titles:
-        platform = next(iter(title.title_platform), PlatformType.PS4)
         try:
-            trophies = await _call(
-                lambda t=title, p=platform: list(
-                    user.trophies(
-                        np_communication_id=t.np_communication_id,
-                        platform=p,
-                        include_progress=True,
-                    )
-                )
-            )
-        except PSNAWPForbiddenError:
+            earned.extend(await trophies_for_title(client, account_id, title))
+        except PsnPrivateProfileError:
             continue  # this one game's detail is hidden — skip it, not the whole screen
-        except PSNAWPAuthenticationError as exc:
-            raise PsnTokenDeadError(str(exc)) from None
-        for trophy in trophies:
-            if not trophy.earned:
-                continue
-            earned.append(
-                EarnedTrophy(
-                    title_name=title.title_name or "?",
-                    title_icon_url=title.title_icon_url,
-                    trophy_name=trophy.trophy_name or "?",
-                    trophy_detail=trophy.trophy_detail,
-                    trophy_icon_url=trophy.trophy_icon_url,
-                    trophy_type=trophy.trophy_type,
-                    trophy_hidden=bool(trophy.trophy_hidden),
-                    trophy_rarity=trophy.trophy_rarity,
-                    trophy_earn_rate=trophy.trophy_earn_rate,
-                    earned_date_time=(
-                        trophy.earned_date_time.isoformat() if trophy.earned_date_time else None
-                    ),
-                )
-            )
 
     earned.sort(key=lambda t: t.earned_date_time or "", reverse=True)
     return earned[:limit]

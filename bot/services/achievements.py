@@ -25,6 +25,20 @@ def rarity_badge(rarity_percent: float | None) -> str:
     return "🏆"
 
 
+# PSN's trophy tier — a dimension with no analogue on Xbox/Steam (M-PSN-1's
+# design notes, SPEC 9 M-PSN-2), shown *alongside* rarity_badge() above, not
+# instead of it: rarity says how many players got it, tier says how much
+# Sony itself weighted it — two different questions about the same trophy.
+TROPHY_TIER_BADGE = {"platinum": "🏆", "gold": "🥇", "silver": "🥈", "bronze": "🥉"}
+
+
+def trophy_tier_badge(trophy_type: str | None) -> str:
+    """Empty for every non-PSN row (trophy_type is always None there) —
+    appended, never leaving a stray space for platforms that don't have
+    one."""
+    return TROPHY_TIER_BADGE.get(trophy_type or "", "")
+
+
 # The one canonical platform palette (2026-09-05 refactor — chat.py and
 # online_view.py used to keep their own, smaller copies with no "x360" key
 # at all, so an Xbox 360 game silently got no icon in /stats' games list and
@@ -146,7 +160,8 @@ def _rarity_line(achievement: AchievementRow) -> str:
     all (SPEC 9, future platforms fall under this for free).
     """
     name = _spoiler(html_escape(achievement.name), secret=achievement.is_secret)
-    name_part = f"{rarity_badge(achievement.rarity_percent)} «{name}»"
+    badge = rarity_badge(achievement.rarity_percent) + trophy_tier_badge(achievement.trophy_type)
+    name_part = f"{badge} «{name}»"
 
     tail = []
     if achievement.gamerscore:

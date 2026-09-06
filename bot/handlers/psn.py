@@ -26,6 +26,7 @@ from aiogram.types import (
 
 from bot.db.repo import Repo
 from bot.handlers.keyboards import deep_link_keyboard, safe_edit
+from bot.poller.psn_fetcher import PsnFetcher
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
@@ -109,24 +110,29 @@ async def psn_connect_button(
 
 @router.message(Command("connect_psn"), F.chat.type == ChatType.PRIVATE)
 async def connect_psn(
-    message: Message, repo: Repo, psn_auth: PsnAuth, command: CommandObject, bot: Bot
+    message: Message,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
+    command: CommandObject,
+    bot: Bot,
 ) -> None:
     raw = (command.args or "").strip()
     if not raw:
         await prompt_for_link(bot, repo, psn_auth, message.chat.id)
         return
     username = message.from_user.username if message.from_user else None
-    await _connect(bot, repo, psn_auth, message.chat.id, username, raw)
+    await _connect(bot, repo, psn_auth, psn_fetcher, message.chat.id, username, raw)
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingPsnLink())
 async def psn_link_provided(
-    message: Message, repo: Repo, psn_auth: PsnAuth, bot: Bot
+    message: Message, repo: Repo, psn_auth: PsnAuth, psn_fetcher: PsnFetcher, bot: Bot
 ) -> None:
     _awaiting_link.discard(message.from_user.id)
     username = message.from_user.username if message.from_user else None
     await _connect(
-        bot, repo, psn_auth, message.chat.id, username, (message.text or "").strip()
+        bot, repo, psn_auth, psn_fetcher, message.chat.id, username, (message.text or "").strip()
     )
 
 
@@ -134,6 +140,7 @@ async def _connect(
     bot: Bot,
     repo: Repo,
     psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
     tg_id: int,
     username: str | None,
     raw: str,
@@ -180,6 +187,34 @@ async def _connect(
     await repo.link_platform_account(tg_id, "psn", profile.account_id, profile.online_id)
     log.info("connect_psn: tg_id=%s linked account_id=%s", tg_id, profile.account_id)
     await bot.send_message(tg_id, f"Подключил PSN: {profile.online_id}.")
+
+    # Backgrounded (SPEC 9, M-Steam-2d's own reasoning applies here too) —
+    # the reply above must not wait for it. Run on every link, not just the
+    # first (link_platform_account already replaces an existing one) —
+    # idempotent (INSERT OR IGNORE) and safe, same as Xbox/Steam's own
+    # reconnect handling.
+    await bot.send_message(tg_id, "Читаю твою историю трофеев PSN, это может занять пару минут…")
+    asyncio.create_task(  # noqa: RUF006
+        _backfill_and_notify(bot, psn_fetcher, tg_id, profile.account_id)
+    )
+
+
+async def _backfill_and_notify(
+    bot: Bot, fetcher: PsnFetcher, tg_id: int, account_id: str
+) -> None:
+    try:
+        count = await fetcher.backfill(tg_id, account_id)
+    except Exception:
+        log.exception("psn backfill for tg_id=%s failed", tg_id)
+        await bot.send_message(
+            tg_id,
+            "Не смог перечитать твою историю трофеев PSN. Публикация пока "
+            "выключена — привяжи аккаунт заново чуть позже: /connect_psn.",
+        )
+        return
+    await bot.send_message(
+        tg_id, f"Готово: перечитал {count} уже выбитых трофеев PSN — в чат они не полетят."
+    )
 
 
 def _disconnect_prompt_keyboard(*, from_panel: bool) -> InlineKeyboardMarkup:
@@ -228,6 +263,13 @@ async def disconnect_psn_cancel(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "psn:disconnect:yes")
 async def disconnect_psn_confirm(callback: CallbackQuery, repo: Repo) -> None:
+    link = await repo.get_platform_link(callback.from_user.id, "psn")
     await repo.unlink_platform_account(callback.from_user.id, "psn")
+    if link is not None:
+        # Symmetric with Steam's own disconnect (steam.py's
+        # delete_steam_presence_state) — a stale poll-state row would
+        # otherwise sit there forever for an account no longer linked to
+        # anyone (SPEC 9, M-PSN-2).
+        await repo.delete_psn_poll_state(link.external_id)
     await safe_edit(callback, "Отключил PSN. Вернуться можно в любой момент.")
     await callback.answer()

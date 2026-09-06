@@ -31,6 +31,8 @@ from bot.services.psn.client import (
     resolve_profile,
 )
 
+_next_trophy_id = iter(range(1, 100_000))
+
 
 @dataclass
 class _FakeTrophy:
@@ -42,6 +44,7 @@ class _FakeTrophy:
     trophy_hidden: bool = False
     trophy_rarity: object | None = None
     trophy_earn_rate: float | None = None
+    trophy_id: int = field(default_factory=lambda: next(_next_trophy_id))
     earned_date_time: datetime | None = None
 
 

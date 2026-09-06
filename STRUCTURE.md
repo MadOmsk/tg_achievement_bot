@@ -59,7 +59,8 @@
 │   │   │   └── achievements.py    — fetch_unlocked() + кэш схемы/редкости (M-Steam-2b)
 │   │   └── psn/                  — psnawp_api, один сервисный NPSSO на весь бот (M-PSN-1)
 │   │       ├── client.py          — асинхронная обёртка (asyncio.to_thread), резолв, трофеи
-│   │       └── auth.py            — хранение/обновление NPSSO, health-check, PsnAuth
+│   │       ├── auth.py            — хранение/обновление NPSSO, health-check, PsnAuth
+│   │       └── achievements.py    — fetch_unlocked() + кэш прогресса по играм (M-PSN-2)
 │   │
 │   ├── poller/                  — фоновые задачи (APScheduler)
 │   │   ├── scheduler.py           — тики, сборка джобов
@@ -69,6 +70,7 @@
 │   │   ├── steam_presence.py      — Steam-презенс, тот же шаг 1, свой batch-запрос (M-Steam-2c)
 │   │   ├── fetcher.py             — шаг 2: ачивки Xbox по игре, история игр, бэкфил
 │   │   ├── steam_fetcher.py       — шаг 2: ачивки Steam по игре, бэкфил при привязке (M-Steam-2d)
+│   │   ├── psn_fetcher.py         — трофеи PSN: без presence, свой дебаунс, бэкфил (M-PSN-2)
 │   │   ├── publisher.py           — шаг 3: публикация, дайджест, очередь Telegram
 │   │   ├── daily.py               — ежедневный итог + /summary по требованию
 │   │   ├── reminders.py           — напоминания о протухшем входе (SPEC 5.1.1)
@@ -105,7 +107,8 @@
 │           ├── 019_digest_threshold_per_chat.sql — digest_threshold: subscriptions, не user_settings
 │           ├── 020_bot_messages_is_system.sql    — bot_messages.is_system (автоудаление, Follow-up 2026-09-05)
 │           ├── 021_online_auto_refresh.sql       — online_auto_refresh (автообновление /online, Follow-up 2026-09-05)
-│           └── 022_message_dedup.sql             — tracked_messages, admin_panel_refresh (Follow-up 2026-09-06)
+│           ├── 022_message_dedup.sql             — tracked_messages, admin_panel_refresh (Follow-up 2026-09-06)
+│           └── 023_psn_trophies.sql              — seen_achievements: 'psn' + trophy_type, psn_title_progress, psn_poll_state (M-PSN-2)
 │
 ├── scripts/                    — вспомогательные скрипты вне приложения, разовые/ручные
 │   ├── db_status.py              — сводка по базе для `manage.ps1 status` (без зависимостей)
@@ -156,6 +159,8 @@
 │   ├── test_admin_refresh.py      — автообновление /admin, интервал/TTL, one-row-per-admin
 │   ├── test_admin_home_dedup.py   — _replace_admin_home: удаление предыдущего, arm/disarm рефреша
 │   ├── test_single_message.py     — send_replacing(): удаление предыдущего того же (chat, kind, subject)
+│   ├── test_psn_achievements.py   — fetch_unlocked(): кэш прогресса, приватные игры (M-PSN-2)
+│   ├── test_psn_fetcher.py        — опрос трофеев PSN, дебаунс тика, бэкфил, insert-дедуп (M-PSN-2)
 │   ├── test_rate_limiter.py       — снимок использования лимитера без учёта самого себя
 │   └── test_util.py               — маскирование секретов, форматирование чисел
 │

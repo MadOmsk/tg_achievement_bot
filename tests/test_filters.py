@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 
 from bot.db.repo import AchievementRow, ChatTarget
-from bot.services.achievements import format_digest, format_single, passes_filters, rarity_badge
+from bot.services.achievements import (
+    format_digest,
+    format_single,
+    passes_filters,
+    rarity_badge,
+    trophy_tier_badge,
+)
 
 
 def test_rarity_badge_is_always_one_of_two_icons() -> None:
@@ -18,11 +24,22 @@ def test_rarity_badge_is_always_one_of_two_icons() -> None:
     assert rarity_badge(None) == "🏆"
 
 
+def test_trophy_tier_badge_covers_all_four_tiers_and_nothing_else() -> None:
+    """New dimension, PSN-only (SPEC 9, M-PSN-1/2) — empty for every other
+    platform (trophy_type is always None there), never a stray space."""
+    assert trophy_tier_badge("bronze") == "🥉"
+    assert trophy_tier_badge("silver") == "🥈"
+    assert trophy_tier_badge("gold") == "🥇"
+    assert trophy_tier_badge("platinum") == "🏆"
+    assert trophy_tier_badge(None) == ""
+
+
 def achievement(
     rarity: float | None = 50.0,
     platform: str = "modern",
     gamerscore: int = 20,
     is_secret: bool = False,
+    trophy_type: str | None = None,
 ) -> AchievementRow:
     return AchievementRow(
         title_id="1",
@@ -36,6 +53,7 @@ def achievement(
         platform=platform,
         title_name="Halo Infinite",
         is_secret=is_secret,
+        trophy_type=trophy_type,
     )
 
 
@@ -150,6 +168,23 @@ def test_single_message_tags_the_platform() -> None:
     mention at all was easy to miss among Xbox ones."""
     text = format_single("Igor", achievement(rarity=92.2, platform="steam"), "Deadlock")
     assert "⚫ Steam" in text
+
+
+def test_single_message_shows_the_trophy_tier_alongside_rarity() -> None:
+    """SPEC 9, M-PSN-2 — the tier badge sits next to rarity_badge(), not
+    instead of it: two different questions about the same trophy."""
+    text = format_single(
+        "Igor",
+        achievement(rarity=2.4, platform="psn", trophy_type="platinum"),
+        "Bloodborne",
+    )
+    assert "💎🏆" in text  # rare diamond, then the platinum tier badge
+
+
+def test_single_message_has_no_tier_badge_on_other_platforms() -> None:
+    text = format_single("Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite")
+    assert "💎🏆" not in text  # would only appear if a tier badge leaked in
+    assert "💎" in text
 
 
 def test_digest_header_has_no_gamerscore_total() -> None:

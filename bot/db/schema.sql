@@ -137,10 +137,13 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     gamerscore      INTEGER,
     rarity_percent  REAL,               -- NULL on Xbox 360 and Steam
     platform        TEXT NOT NULL DEFAULT 'modern'
-                    CHECK (platform IN ('modern', 'x360', 'steam')),
+                    CHECK (platform IN ('modern', 'x360', 'steam', 'psn')),
     is_backfill     INTEGER NOT NULL DEFAULT 0,  -- arrived via backfill, never published
     is_secret       INTEGER NOT NULL DEFAULT 0,  -- Xbox's own isSecret; name/description are
                                                   -- real either way, we're the ones who spoiler it
+    trophy_type     TEXT,                -- PSN's tier (bronze/silver/gold/platinum), NULL
+                                          -- elsewhere — new dimension, no analogue on any other
+                                          -- platform (M-PSN-1's design notes), M-PSN-2
     created_at      TEXT NOT NULL,
     PRIMARY KEY (tg_id, platform, title_id, achievement_id)
 );
@@ -357,4 +360,31 @@ CREATE TABLE IF NOT EXISTS admin_panel_refresh (
     message_id      INTEGER NOT NULL,
     created_at      TEXT NOT NULL,
     last_updated_at TEXT NOT NULL
+);
+
+-- One game's trophy progress, last time we looked (M-PSN-2) — the only
+-- cheap way to know "did anything change here since the last poll" without
+-- spending a full trophies() call on every recently-touched game every
+-- tick (poller/psn_fetcher.py is not presence-driven at all, unlike Xbox/
+-- Steam — see M-PSN-2's own "ключевое отличие" paragraph for why). Updated
+-- on every poll, not only when progress actually grew, so a game that
+-- stays flat between polls doesn't get expensively re-checked forever.
+CREATE TABLE IF NOT EXISTS psn_title_progress (
+    account_id           TEXT NOT NULL,
+    np_communication_id  TEXT NOT NULL,
+    progress             INTEGER NOT NULL,
+    updated_at           TEXT NOT NULL,
+    PRIMARY KEY (account_id, np_communication_id)
+);
+
+-- One row per linked PSN account, when it was last polled (M-PSN-2) — the
+-- debounce clock poller/psn_fetcher.py's tick() reads via cadence.py's own
+-- debounce_passed(), reusing achievement_poll_interval (Settings) same as
+-- Xbox/Steam's own achievement debounce. Separate from psn_title_progress:
+-- that one is keyed per (account, game) and only ever touched for games
+-- trophy_titles() actually returned, so it can't answer "was this account
+-- polled at all" for someone with no trophy activity yet.
+CREATE TABLE IF NOT EXISTS psn_poll_state (
+    account_id     TEXT PRIMARY KEY,
+    last_polled_at TEXT NOT NULL
 );
