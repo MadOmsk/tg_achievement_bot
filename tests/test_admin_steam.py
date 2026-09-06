@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from bot.db.repo import AchievementRow, AdminUserRow, Repo
 from bot.handlers.admin import _home, _icon
+from bot.services.crypto import TokenCipher
+from bot.services.psn.auth import PsnAuth
 from bot.util import utcnow
 
 XUID = "xuid-a"
@@ -137,7 +139,7 @@ class _FakeUsageFetcher:
 
 
 async def test_home_does_not_count_a_steam_only_person_as_a_broken_xbox_login(
-    repo: Repo,
+    repo: Repo, cipher: TokenCipher
 ) -> None:
     """Found while adding Steam to the admin panel (2026-09-05): a
     Steam-only person has token_status=None (no Xbox token row at all),
@@ -146,7 +148,9 @@ async def test_home_does_not_count_a_steam_only_person_as_a_broken_xbox_login(
     await repo.ensure_user(1, "steamonly")
     await repo.link_platform_account(1, "steam", STEAM_ID, "SteamOnly")
 
-    text, _markup = await _home(repo, _FakeUsageFetcher(), _FakeUsageFetcher())  # type: ignore[arg-type]
+    text, _markup = await _home(
+        repo, _FakeUsageFetcher(), _FakeUsageFetcher(), PsnAuth(repo, cipher)
+    )  # type: ignore[arg-type]
 
     assert "XBOX:  0" in text
     assert "Steam: 1" in text

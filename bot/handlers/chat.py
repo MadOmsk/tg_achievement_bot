@@ -561,9 +561,10 @@ HELP_TEXT = (
 def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
     """A short walkthrough, not a control panel: SPEC 6.3 walks through
     connect → publish in that order, so the keyboard should not offer more
-    choices than that story needs. Steam's connect button (SPEC 9,
-    M-Steam-2e) sits next to Xbox's rather than adding a whole extra row —
-    it is still the same "connect" step, just a second platform for it.
+    choices than that story needs. Steam's and PSN's connect buttons
+    (SPEC 9, M-Steam-2e, M-PSN-1) sit next to Xbox's rather than adding a
+    whole extra row each — it is still the same "connect" step, just
+    another platform for it.
 
     Buttons act on whoever presses them — that is why "Публиковать мои
     достижения" is allowed here at all: SPEC 6.3 forbids rendering *someone
@@ -588,6 +589,12 @@ def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
                     # so this just opens the DM at the right prompt (SPEC 9,
                     # handlers/steam.py, connect.py's ?start=connectsteam).
                     url=f"https://t.me/{bot_username}?start=connectsteam",
+                ),
+                InlineKeyboardButton(
+                    text="🎮 Подключить PSN",
+                    # Same reasoning as Steam's own button above (SPEC 9,
+                    # M-PSN-1, handlers/psn.py, connect.py's ?start=connectpsn).
+                    url=f"https://t.me/{bot_username}?start=connectpsn",
                 ),
             ],
             [

@@ -14,6 +14,14 @@ dependencies = [
     "pydantic-settings>=2.3",
     "cryptography>=42",
     "howlongtobeatpy>=1.0.23",
+    # PSN has no documented public API at all — psnawp_api is a reverse-
+    # engineered wrapper over the same private endpoints the PlayStation App
+    # uses (SPEC 9, M-PSN-1). Same class of dependency as xbox-webapi-python
+    # above, not a "тащить лишнее": reimplementing PSN's auth exchange and
+    # GraphQL search ourselves buys nothing. It is synchronous (requests-
+    # based) — every call goes through asyncio.to_thread, see
+    # services/psn/client.py.
+    "psnawp>=3.0",
 ]
 
 [project.optional-dependencies]

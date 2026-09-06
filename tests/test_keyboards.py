@@ -30,18 +30,19 @@ def test_unknown_rarity_mode_starts_the_cycle_over() -> None:
     assert next_rarity_mode("whatever") == "rare"
 
 
-def test_not_connected_keyboard_offers_both_platforms() -> None:
-    """Xbox and Steam are independent (M-Steam-1) — someone with neither
-    connected should be offered both, not just Xbox (2026-09-05 follow-up)."""
+def test_not_connected_keyboard_offers_all_platforms() -> None:
+    """Xbox, Steam and PSN are independent (M-Steam-1, M-PSN-1) — someone
+    with none connected should be offered all three, not just Xbox
+    (2026-09-05 follow-up, extended for PSN)."""
     markup = panel_keyboard(None, connected=False)
-    assert _callback_data(markup) == ["relogin", "steam:connect"]
+    assert _callback_data(markup) == ["relogin", "steam:connect", "psn:connect"]
 
 
 def test_not_connected_keyboard_offers_steam_disconnect_once_connected() -> None:
     """Steam-only, no XBOX at all — still gets a real disconnect option for
     the platform it does have, not nothing (2026-09-05 follow-up)."""
     markup = panel_keyboard(None, connected=False, steam_connected=True)
-    assert _callback_data(markup) == ["relogin", "steam:disconnectprompt"]
+    assert _callback_data(markup) == ["relogin", "steam:disconnectprompt", "psn:connect"]
 
 
 def test_connected_keyboard_offers_steam_connect_or_disconnect_not_both() -> None:
@@ -52,6 +53,17 @@ def test_connected_keyboard_offers_steam_connect_or_disconnect_not_both() -> Non
     disconnect_only = panel_keyboard(180, connected=True, steam_connected=True)
     assert "steam:disconnectprompt" in _callback_data(disconnect_only)
     assert "steam:connect" not in _callback_data(disconnect_only)
+
+
+def test_connected_keyboard_offers_psn_connect_or_disconnect_not_both() -> None:
+    """PSN's own counterpart of the Steam test above (SPEC 9, M-PSN-1)."""
+    connect_only = panel_keyboard(180, connected=True)
+    assert "psn:connect" in _callback_data(connect_only)
+    assert "psn:disconnectprompt" not in _callback_data(connect_only)
+
+    disconnect_only = panel_keyboard(180, connected=True, psn_connected=True)
+    assert "psn:disconnectprompt" in _callback_data(disconnect_only)
+    assert "psn:connect" not in _callback_data(disconnect_only)
 
 
 def test_needs_reconnect_adds_a_button_without_hiding_settings() -> None:

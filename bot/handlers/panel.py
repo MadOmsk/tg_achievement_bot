@@ -165,6 +165,15 @@ async def panel_steam_disconnect_cancel(callback: CallbackQuery, repo: Repo) -> 
     await callback.answer()
 
 
+@router.callback_query(F.data == "panel:psndisconnect:no")
+async def panel_psn_disconnect_cancel(callback: CallbackQuery, repo: Repo) -> None:
+    """Same treatment as panel_steam_disconnect_cancel above, for PSN's own
+    disconnect button (SPEC 9, M-PSN-1)."""
+    text, markup = await render_panel(repo, callback.from_user.id)
+    await safe_edit(callback, text, markup)
+    await callback.answer()
+
+
 @router.callback_query(F.data == "panel:tz")
 async def panel_timezone(callback: CallbackQuery) -> None:
     # Found while refactoring (2026-09-05): the one edit in this file that
@@ -396,6 +405,7 @@ async def render_panel(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarku
     settings_row = await repo.get_user_settings(tg_id)
     connected = user is not None and bool(user.xuid)
     steam_link = await repo.get_platform_link(tg_id, "steam")
+    psn_link = await repo.get_platform_link(tg_id, "psn")
 
     token = await repo.get_token(tg_id) if connected else None
     needs_reconnect = token is not None and token.status == "invalid"
@@ -405,6 +415,7 @@ async def render_panel(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarku
         connected=connected,
         needs_reconnect=needs_reconnect,
         steam_connected=steam_link is not None,
+        psn_connected=psn_link is not None,
         gamertag=user.gamertag if user else None,
         steam_id=steam_link.external_id if steam_link else None,
     )
@@ -413,6 +424,8 @@ async def render_panel(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarku
         text = "👤 Панель\n\nВход XBOX: — не подключён"
         if steam_link is not None:
             text += f"\nВход Steam: {steam_link.display_name}"
+        if psn_link is not None:
+            text += f"\nВход PSN: {psn_link.display_name}"
         return text, keyboard
 
     login = LOGIN_STATUS.get(token.status, "— не подключён") if token else "— не подключён"
@@ -430,6 +443,8 @@ async def render_panel(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarku
     # of its own next to it, same as /stats' per-platform lines.
     if steam_link is not None:
         lines.append(f"Вход Steam:  {steam_link.display_name}")
+    if psn_link is not None:
+        lines.append(f"Вход PSN:    {psn_link.display_name}")
     lines += [
         f"Публикация:  {await _publication_status(repo, user.tg_id, user.is_excluded)}",
         f"Сейчас:      {playing}",

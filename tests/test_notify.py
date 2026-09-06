@@ -52,3 +52,20 @@ async def test_one_blocked_admin_does_not_stop_the_rest(repo: Repo) -> None:
 
     assert [chat_id for chat_id, _ in bot.sent] == [2]
     assert "слетел вход" in bot.sent[0][1]
+
+
+async def test_service_key_dead_names_the_platform_and_the_fix(repo: Repo) -> None:
+    """SPEC 9, M-PSN-1's "мониторинг живости" paragraph — unlike token_dead
+    above, this is not about one person: the wording must make that clear
+    for both shared-credential platforms."""
+    bot = FakeBot()
+    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+
+    await notifier.service_key_dead("psn")
+    assert "PSN" in bot.sent[0][1]
+    assert "NPSSO" in bot.sent[0][1]
+
+    bot.sent.clear()
+    await notifier.service_key_dead("steam")
+    assert "Steam" in bot.sent[0][1]
+    assert ".env" in bot.sent[0][1]

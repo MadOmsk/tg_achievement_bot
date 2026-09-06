@@ -62,6 +62,15 @@ class SteamApiError(Exception):
     XboxApiError (SPEC 1.5)."""
 
 
+class SteamKeyDeadError(SteamApiError):
+    """Specifically a 401/403 — the shared service key itself is bad/
+    revoked, not just this one request (poller/service_health.py, SPEC 9,
+    M-PSN-1's "мониторинг живости" paragraph applied to Steam too). A
+    distinct subclass rather than string-matching SteamApiError's message,
+    so the health-check can tell a dead key apart from an ordinary
+    unresolvable-profile failure without guessing at wording."""
+
+
 class SteamProfile:
     __slots__ = ("is_public", "persona_name", "steam_id")
 
@@ -96,6 +105,23 @@ class RawSchemaAchievement:
     apiname: str
     icon: str | None  # unlocked icon, not `icongray` — only unlocked ever gets published
     hidden: bool  # Steam's own secrecy flag, Steam's isSecret equivalent (7.1)
+
+
+# Valve's own founder — a vanity name essentially guaranteed to keep
+# existing, used only as a cheap "does this key still work at all" probe
+# (poller/service_health.py). A 200 with "not found" still proves the key
+# is fine; only a 401/403 (SteamKeyDeadError) means it is not.
+_HEALTH_CHECK_VANITY = "gabelogannewell"
+
+
+async def check_alive(api_key: str) -> bool:
+    try:
+        await _resolve_vanity(api_key, _HEALTH_CHECK_VANITY)
+    except SteamKeyDeadError:
+        return False
+    except SteamApiError:
+        pass  # any other failure (including "not found") still means the key itself works
+    return True
 
 
 async def resolve_steam_id(api_key: str, raw: str) -> str:
@@ -295,7 +321,7 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
                 return result if isinstance(result, dict) else {}
 
             if response.status_code in (401, 403):
-                raise SteamApiError("Steam rejected the API key")
+                raise SteamKeyDeadError("Steam rejected the API key")
             if attempt == MAX_ATTEMPTS:
                 raise SteamApiError(f"Steam returned {response.status_code}")
 

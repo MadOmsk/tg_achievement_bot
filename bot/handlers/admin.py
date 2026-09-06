@@ -7,6 +7,7 @@ handler can forget it.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
@@ -18,10 +19,12 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InputMediaPhoto,
     Message,
     TelegramObject,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from psnawp_api.models.trophies.trophy_constants import TrophyType
 
 from bot.config import Settings
 from bot.db.repo import AdminUserRow, ChatTarget, Repo
@@ -45,7 +48,20 @@ from bot.poller.online_refresh import DEFAULT_REFRESH_INTERVAL_MIN as DEFAULT_ON
 from bot.poller.online_refresh import DEFAULT_TTL_HOURS as DEFAULT_ONLINE_REFRESH_TTL_HOURS
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
 from bot.poller.online_refresh import TTL_HOURS_KEY as ONLINE_REFRESH_TTL_KEY
+from bot.poller.service_health import STATUS_ACTIVE as STEAM_KEY_ACTIVE
+from bot.poller.service_health import STEAM_CHECKED_AT_KEY, STEAM_STATUS_KEY
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.psn.auth import STATUS_ACTIVE as PSN_KEY_ACTIVE
+from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
+from bot.services.psn.auth import PsnAuth
+from bot.services.psn.client import (
+    PsnApiError,
+    PsnPrivateProfileError,
+    PsnTokenDeadError,
+    recent_earned_trophies,
+    request_count_today,
+    resolve_profile,
+)
 from bot.services.stats import counters_for, month_cutoff_utc, today_cutoff_utc
 from bot.services.tables import truncate_name
 from bot.util import humanize_ago, parse_utc_offset, utcnow
@@ -71,19 +87,163 @@ router.callback_query.filter(IsAdmin())
 
 @router.message(Command("admin"), F.chat.type == ChatType.PRIVATE)
 async def admin_command(
-    message: Message, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher
+    message: Message, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher, psn_auth: PsnAuth
 ) -> None:
     _awaiting_input.pop(message.from_user.id, None)  # a fresh /admin cancels any pending flow
-    text, markup = await _home(repo, fetcher, steam_fetcher)
+    text, markup = await _home(repo, fetcher, steam_fetcher, psn_auth)
     await message.answer(text, reply_markup=markup)
 
 
 @router.callback_query(F.data == "a:home")
 async def admin_home(
-    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher
+    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher,
+    psn_auth: PsnAuth,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await _home(repo, fetcher, steam_fetcher))
+    await _redraw(callback, *await _home(repo, fetcher, steam_fetcher, psn_auth))
+
+
+# ------------------------------------------------------------- PSN (test)
+
+# A live, uncached lookup screen (SPEC 1.5's cache-only rule carve-out, same
+# one the "Обновить данные" sync buttons already use) — for obtaining/testing
+# the service NPSSO and eyeballing what a real trophy list looks like
+# (name/tier/rarity/hidden/icon) before any of it is wired into /stats
+# (SPEC 9, M-PSN-1). Registered before the free-text numeric/timezone
+# handlers below on purpose: aiogram tries message handlers in registration
+# order and stops at the first whose filter matches, so an admin's answer
+# here (which can be almost any text, including a bare number if someone's
+# PSN Online ID happens to be all digits) must be claimed by this filter
+# before the generic ones get a chance at it.
+PSN_NPSSO_KEY = "psn_npsso"
+PSN_LOOKUP_KEY = "psn_trophy_lookup"
+
+_TIER_BADGE = {
+    TrophyType.PLATINUM: "🏆",
+    TrophyType.GOLD: "🥇",
+    TrophyType.SILVER: "🥈",
+    TrophyType.BRONZE: "🥉",
+}
+
+
+class AwaitingPsnAdminInput(BaseFilter):
+    async def __call__(self, event: TelegramObject) -> bool:
+        user = getattr(event, "from_user", None)
+        if user is None:
+            return False
+        pending = _awaiting_input.get(user.id)
+        return pending is not None and pending[0] in (PSN_NPSSO_KEY, PSN_LOOKUP_KEY)
+
+
+@router.callback_query(F.data == "a:psntest")
+async def psn_test_menu(callback: CallbackQuery, psn_auth: PsnAuth) -> None:
+    await _redraw(callback, *await _psn_test_screen(callback.from_user.id, psn_auth))
+
+
+@router.callback_query(F.data == "a:psnnpsso")
+async def psn_test_change_npsso(callback: CallbackQuery) -> None:
+    """Re-enter the NPSSO even when PSN is already configured — for when it
+    dies (SPEC 9, M-PSN-1's мониторинг живости paragraph) and the admin
+    needs to paste a fresh one."""
+    _awaiting_input[callback.from_user.id] = (PSN_NPSSO_KEY, None)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:psntest"))
+    await _redraw(
+        callback,
+        "Пришли новый NPSSO одним сообщением — получить его: войди на "
+        "my.playstation.com, затем открой "
+        "https://ca.account.sony.com/api/v1/ssocookie и скопируй значение "
+        '"npsso" из JSON на экране.',
+        builder.as_markup(),
+    )
+
+
+async def _psn_test_screen(admin_id: int, psn_auth: PsnAuth) -> tuple[str, InlineKeyboardMarkup]:
+    builder = InlineKeyboardBuilder()
+    if await psn_auth.status() == PSN_NOT_CONFIGURED:
+        _awaiting_input[admin_id] = (PSN_NPSSO_KEY, None)
+        builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:home"))
+        return (
+            "🏆 Трофеи PSN (тест)\n\n"
+            "PSN ещё не настроен. Пришли NPSSO одним сообщением — получить его: "
+            "войди на my.playstation.com, затем открой "
+            "https://ca.account.sony.com/api/v1/ssocookie и скопируй значение "
+            '"npsso" из JSON на экране.',
+            builder.as_markup(),
+        )
+    _awaiting_input[admin_id] = (PSN_LOOKUP_KEY, None)
+    builder.row(InlineKeyboardButton(text="Сменить NPSSO", callback_data="a:psnnpsso"))
+    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:home"))
+    return (
+        "🏆 Трофеи PSN (тест)\n\n"
+        "Пришли PSN Online ID — покажу последние выбитые трофеи вживую, без кэша "
+        "(имя, тир, редкость, скрытость и иконки одной медиа-группой).",
+        builder.as_markup(),
+    )
+
+
+@router.message(F.chat.type == ChatType.PRIVATE, AwaitingPsnAdminInput())
+async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None:
+    assert message.from_user is not None and message.text is not None
+    pending = _awaiting_input.get(message.from_user.id)
+    assert pending is not None
+    key = pending[0]
+    raw = message.text.strip()
+
+    if key == PSN_NPSSO_KEY:
+        del _awaiting_input[message.from_user.id]
+        try:
+            await psn_auth.set_npsso(raw, message.from_user.id)
+        except PsnTokenDeadError:
+            await message.answer(
+                "NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз через /admin."
+            )
+            return
+        _awaiting_input[message.from_user.id] = (PSN_LOOKUP_KEY, None)
+        await message.answer("PSN настроен. Пришли PSN Online ID, чтобы проверить трофеи.")
+        return
+
+    del _awaiting_input[message.from_user.id]
+    try:
+        client = await psn_auth.get_client()
+        profile = await resolve_profile(client, raw)
+        trophies = await recent_earned_trophies(client, profile.account_id, limit=10)
+    except PsnTokenDeadError:
+        await message.answer("PSN сейчас недоступен — токен протух, обнови NPSSO через /admin.")
+        return
+    except PsnPrivateProfileError:
+        await message.answer("Профиль есть, но трофеи закрыты для сервисного аккаунта.")
+        return
+    except PsnApiError as exc:
+        await message.answer(f"Не нашёл: {exc}")
+        return
+
+    if not trophies:
+        await message.answer(f"{profile.online_id}: трофеев не нашёл (или все скрыты).")
+        return
+
+    lines = [f"🏆 {profile.online_id} — последние {len(trophies)} трофеев:"]
+    for trophy in trophies:
+        badge = _TIER_BADGE.get(trophy.trophy_type, "🏆")
+        rarity = (
+            f", {trophy.trophy_earn_rate:.1f}% игроков"
+            if trophy.trophy_earn_rate is not None
+            else ""
+        )
+        secret = " (скрытый)" if trophy.trophy_hidden else ""
+        lines.append(f"{badge} {trophy.trophy_name}{secret} — {trophy.title_name}{rarity}")
+        if trophy.trophy_detail:
+            lines.append(f"    {trophy.trophy_detail}")
+    await message.answer("\n".join(lines))
+
+    photos = [
+        InputMediaPhoto(media=trophy.trophy_icon_url, caption=trophy.trophy_name[:200])
+        for trophy in trophies
+        if trophy.trophy_icon_url
+    ][:10]
+    if photos:
+        with contextlib.suppress(Exception):
+            await bot.send_media_group(message.chat.id, photos)
 
 
 @router.callback_query(F.data == "a:newusers")
@@ -233,13 +393,22 @@ async def limit_menu(callback: CallbackQuery, repo: Repo) -> None:
 
 @router.message(F.chat.type == ChatType.PRIVATE, F.text.regexp(r"^\d+([.,]\d+)?$"))
 async def numeric_setting_input(
-    message: Message, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher
+    message: Message,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_auth: PsnAuth,
 ) -> None:
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
     if pending is None:
         return  # a plain number from an admin who isn't in this flow — ignore
     key, chat_id = pending
+    if key not in NUMERIC_SETTINGS and key != "rare_threshold_percent":
+        # An all-digit PSN Online ID landing here while _awaiting_psn_lookup
+        # is pending, say (SPEC 9, M-PSN-1) — not this flow's business, its
+        # own handler (below) owns whatever key it registered.
+        return
 
     if key == "rare_threshold_percent":
         assert chat_id is not None  # only ever chat-scoped now (SPEC 5.5)
@@ -270,7 +439,7 @@ async def numeric_setting_input(
 
     del _awaiting_input[message.from_user.id]
     await repo.set_app_setting(key, stored, message.from_user.id)
-    reply_text, markup = await _home(repo, fetcher, steam_fetcher)
+    reply_text, markup = await _home(repo, fetcher, steam_fetcher, psn_auth)
     await message.answer(f"{confirm}\n\n{reply_text}", reply_markup=markup)
 
 
@@ -707,8 +876,18 @@ async def chat_system_wipe_all_confirm(callback: CallbackQuery, repo: Repo, bot:
 # ------------------------------------------------------------------- screens
 
 
+async def _key_status_line(status: str, checked_at: str | None, *, active_value: str) -> str:
+    """Common rendering for the two shared-credential status lines below
+    (SPEC 9, M-PSN-1's "мониторинг живости" paragraph, applied to Steam
+    too) — a bare word would hide a stale check, so this always says when
+    it last actually ran."""
+    if status == active_value:
+        return f"✅ жив, проверен {humanize_ago(checked_at)}" if checked_at else "✅ жив"
+    return f"⚠️ протух, проверен {humanize_ago(checked_at)}" if checked_at else "⚠️ протух"
+
+
 async def _home(
-    repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher
+    repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher, psn_auth: PsnAuth
 ) -> tuple[str, InlineKeyboardMarkup]:
     users = await repo.admin_users()
     chats = await repo.admin_chats()
@@ -719,18 +898,42 @@ async def _home(
     # made them look like a broken Xbox login instead of "no Xbox at all".
     xbox_linked = [u for u in users if u.xuid]
     steam_linked = [u for u in users if u.steam_id]
+    psn_linked = [u for u in users if u.psn_account_id]
     xbox_active = sum(1 for u in xbox_linked if u.token_status == "active" and not u.is_excluded)
     xbox_broken = sum(1 for u in xbox_linked if u.token_status != "active")
     excluded = sum(1 for u in users if u.is_excluded)
+
+    # Steam's own key is a permanent .env secret (config.py) — no "not
+    # configured" state worth showing separately here, every Steam feature
+    # already answers that on its own when it's unset.
+    steam_key_status = await repo.get_app_setting(STEAM_STATUS_KEY, STEAM_KEY_ACTIVE)
+    steam_key_checked = await repo.get_app_setting(STEAM_CHECKED_AT_KEY)
+    psn_status = await psn_auth.status()
+    psn_checked = await psn_auth.checked_at()
+    psn_key_line = (
+        "не настроен — «🏆 Трофеи PSN» ниже примет NPSSO"
+        if psn_status == PSN_NOT_CONFIGURED
+        else await _key_status_line(psn_status, psn_checked, active_value=PSN_KEY_ACTIVE)
+    )
+    steam_key_line = await _key_status_line(
+        steam_key_status, steam_key_checked, active_value=STEAM_KEY_ACTIVE
+    )
 
     text = (
         "⚙️ Администрирование\n\n"
         f"Пользователей: {len(users)} (исключено: {excluded})\n"
         f"  XBOX:  {len(xbox_linked)} (вход активен: {xbox_active}, без входа: {xbox_broken})\n"
         f"  Steam: {len(steam_linked)}\n"
+        f"  PSN:   {len(psn_linked)}\n"
         f"Чатов:          {sum(1 for c in chats if c.is_active)}\n"
         f"API XBOX (достижения):  {_format_api_usage(fetcher.api_usage())}\n"
-        f"API Steam (достижения): {_format_api_usage(steam_fetcher.api_usage())}"
+        f"API Steam (достижения): {_format_api_usage(steam_fetcher.api_usage())}\n"
+        f"Ключ Steam: {steam_key_line}\n"
+        f"Ключ PSN:   {psn_key_line}\n"
+        # No known daily cap to compare against (SPEC 9, M-PSN-1 checklist
+        # item 4 — nowhere documented) — a bare count, not a "used/limit"
+        # ratio that would imply a number we don't actually have.
+        f"Запросов к PSN за сутки: {request_count_today()}"
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -738,6 +941,7 @@ async def _home(
             [InlineKeyboardButton(text="⚙️ Глобальные настройки ▸", callback_data="a:limits")],
             [InlineKeyboardButton(text="Пользователи ▸", callback_data="a:users:0")],
             [InlineKeyboardButton(text="Чаты ▸", callback_data="a:chats")],
+            [InlineKeyboardButton(text="🏆 Трофеи PSN (тест) ▸", callback_data="a:psntest")],
         ]
     )
     return text, keyboard
@@ -792,7 +996,7 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
     lines = [f"👥 Пользователи  ({page + 1}/{pages})", ""]
     builder = InlineKeyboardBuilder()
     for user in chunk:
-        name = user.gamertag or user.steam_name or f"id{user.tg_id}"
+        name = user.gamertag or user.steam_name or user.psn_online_id or f"id{user.tg_id}"
         lines.append(
             f"{_icon(user)} {truncate_name(name, 14):<14} "
             f"{humanize_ago(user.last_online_at):<16} "
@@ -819,10 +1023,11 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
 async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     user = await repo.get_user(tg_id)
     steam_link = await repo.get_platform_link(tg_id, "steam")
+    psn_link = await repo.get_platform_link(tg_id, "psn")
     # Used to bail out on `not user.xuid` alone (2026-09-05 follow-up) — a
     # Steam-only person got "Пользователь не найден" in the admin panel,
     # same class of gap /stats had before it learned to work without Xbox.
-    if user is None or (not user.xuid and steam_link is None):
+    if user is None or (not user.xuid and steam_link is None and psn_link is None):
         return "Пользователь не найден.", _back_home()
 
     counters = await counters_for(repo, tg_id)
@@ -881,6 +1086,15 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
             f"⚫ Steam  ·  id {steam_link.external_id}",
             f"  {steam_link.display_name}",
             f"  В сети (Steam):      {steam_online}",
+        ]
+
+    if psn_link is not None:
+        # No presence/sync yet — M-PSN-1 is link-only, polling is a later
+        # step (SPEC 9, M-PSN-2+), so there's nothing to show beyond the
+        # link itself.
+        lines += [
+            f"🔵 PSN  ·  account_id {psn_link.external_id}",
+            f"  {psn_link.display_name}",
         ]
 
     lines += [
@@ -1025,9 +1239,10 @@ def _format_api_usage(windows: list[tuple[int, int, float]]) -> str:
 
 
 def _icon(user: AdminUserRow) -> str:
-    """Platform dots (2026-09-05 follow-up) plus Xbox's own login-status
-    icon — Steam has no token to expire, so there's nothing analogous to
-    add for it beyond the dot itself."""
+    """Platform dots (2026-09-05 follow-up, extended for M-PSN-1) plus
+    Xbox's own login-status icon — Steam and PSN have no per-person token
+    to expire (one shared service credential each), so there's nothing
+    analogous to add for either beyond the dot itself."""
     if user.is_excluded:
         return "🚫"
     parts = []
@@ -1035,6 +1250,8 @@ def _icon(user: AdminUserRow) -> str:
         parts.append("🟢" + STATUS_ICON.get(user.token_status or "", "—"))
     if user.steam_id:
         parts.append("⚫")
+    if user.psn_account_id:
+        parts.append("🔵")
     return "".join(parts)
 
 

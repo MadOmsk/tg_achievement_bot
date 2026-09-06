@@ -33,6 +33,7 @@
 │   │   │                          /online, /who, /recent, /summary, /delete_last, хаб группы
 │   │   ├── hltb.py              — /hltb, поиск времени прохождения (SPEC 6.6)
 │   │   ├── steam.py             — /connect_steam, /disconnect_steam (M-Steam-1)
+│   │   ├── psn.py               — /connect_psn, /disconnect_psn (M-PSN-1)
 │   │   └── keyboards.py         — инлайн-клавиатуры + мелкие общие хелперы (format_*, safe_edit)
 │   │
 │   ├── services/                — бизнес-логика, не знает про Telegram/aiogram
@@ -51,9 +52,12 @@
 │   │   │   ├── auth.py            — обёртка над xbox-webapi-python: токены, обновление
 │   │   │   ├── client.py          — запросы к Xbox Live, лимитер, retry, backoff
 │   │   │   └── models.py          — pydantic-модели ответов (в т.ч. контракт 4 с редкостью)
-│   │   └── steam/                — официальный Steam Web API, без OAuth (M-Steam-1, верифицирован вживую)
-│   │       ├── client.py          — резолв профиля, видимость, презенс, ачивки, редкость
-│   │       └── achievements.py    — fetch_unlocked() + кэш схемы/редкости (M-Steam-2b)
+│   │   ├── steam/                — официальный Steam Web API, без OAuth (M-Steam-1, верифицирован вживую)
+│   │   │   ├── client.py          — резолв профиля, видимость, презенс, ачивки, редкость
+│   │   │   └── achievements.py    — fetch_unlocked() + кэш схемы/редкости (M-Steam-2b)
+│   │   └── psn/                  — psnawp_api, один сервисный NPSSO на весь бот (M-PSN-1)
+│   │       ├── client.py          — асинхронная обёртка (asyncio.to_thread), резолв, трофеи
+│   │       └── auth.py            — хранение/обновление NPSSO, health-check, PsnAuth
 │   │
 │   ├── poller/                  — фоновые задачи (APScheduler)
 │   │   ├── scheduler.py           — тики, сборка джобов
@@ -67,7 +71,8 @@
 │   │   ├── daily.py               — ежедневный итог + /summary по требованию
 │   │   ├── reminders.py           — напоминания о протухшем входе (SPEC 5.1.1)
 │   │   ├── message_cleanup.py     — автоудаление системных сообщений в группах (Follow-up 2026-09-05)
-│   │   └── online_refresh.py      — автообновление таблицы /online (Follow-up 2026-09-05)
+│   │   ├── online_refresh.py      — автообновление таблицы /online (Follow-up 2026-09-05)
+│   │   └── service_health.py      — живость общих ключей Steam/PSN, уведомление админу (M-PSN-1)
 │   │
 │   ├── web/
 │   │   └── oauth.py               — aiohttp-колбэк Microsoft
@@ -140,6 +145,10 @@
 │   ├── test_steam_achievements.py — fetch_unlocked(), кэш схемы/редкости Steam (M-Steam-2b)
 │   ├── test_steam_fetcher.py      — опрос ачивок Steam по игре, бэкфил (M-Steam-2d)
 │   ├── test_steam_presence.py     — Steam-презенс, финальный опрос, grace-период
+│   ├── test_psn_client.py         — обёртка над psnawp_api: резолв, редкость, трофеи (M-PSN-1)
+│   ├── test_psn_auth.py           — хранение NPSSO, health-check, уведомление раз на переход
+│   ├── test_psn_connect.py        — флоу входа в PSN: prompt_for_link, AwaitingPsnLink, _connect
+│   ├── test_service_health.py     — живость общих ключей Steam/PSN, уведомление раз на переход
 │   ├── test_rate_limiter.py       — снимок использования лимитера без учёта самого себя
 │   └── test_util.py               — маскирование секретов, форматирование чисел
 │

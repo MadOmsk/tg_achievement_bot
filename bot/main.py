@@ -22,6 +22,7 @@ from bot.handlers import chat as chat_handlers
 from bot.handlers import connect as connect_handlers
 from bot.handlers import hltb as hltb_handlers
 from bot.handlers import panel as panel_handlers
+from bot.handlers import psn as psn_handlers
 from bot.handlers import steam as steam_handlers
 from bot.handlers.chat import UsernameMiddleware
 from bot.handlers.keyboards import timezone_keyboard
@@ -34,12 +35,14 @@ from bot.poller.presence import PresencePoller
 from bot.poller.publisher import Publisher
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
+from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notify import AdminNotifier
+from bot.services.psn.auth import PsnAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.util import parse_iso
@@ -93,6 +96,12 @@ async def run(settings: Settings) -> None:
     notifier = AdminNotifier(bot, repo, settings.admin_tg_ids)
     auth.on_token_dead = notifier.token_dead
 
+    # One service-wide PSN client, not per-user OAuth (SPEC 9, M-PSN-1) —
+    # on_dead mirrors XboxAuthService.on_token_dead above, just for the one
+    # shared credential rather than one person's own.
+    psn_auth = PsnAuth(repo, cipher)
+    psn_auth.on_dead = lambda: notifier.service_key_dead("psn")
+
     client = XboxClient(auth)
     publisher = Publisher(bot, repo)
     fetcher = Fetcher(repo, client, publisher, settings.backfill_concurrency)
@@ -114,6 +123,7 @@ async def run(settings: Settings) -> None:
         steam_poller,
         MessageCleanup(bot, repo),
         OnlineAutoRefresh(bot, repo),
+        ServiceHealth(settings, repo, psn_auth, notifier),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -197,6 +207,7 @@ async def run(settings: Settings) -> None:
     dispatcher["steam_fetcher"] = steam_fetcher
     dispatcher["settings"] = settings
     dispatcher["notifier"] = notifier
+    dispatcher["psn_auth"] = psn_auth
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
     dispatcher.include_router(admin_handlers.router)
     dispatcher.include_router(connect_handlers.router)
@@ -204,6 +215,7 @@ async def run(settings: Settings) -> None:
     dispatcher.include_router(chat_handlers.router)
     dispatcher.include_router(hltb_handlers.router)
     dispatcher.include_router(steam_handlers.router)
+    dispatcher.include_router(psn_handlers.router)
 
     async def startup_catch_up() -> None:
         """Pick up what happened while the bot was down (SPEC 5.8).
@@ -259,6 +271,8 @@ async def _publish_command_menu(bot: Bot) -> None:
         BotCommand(command="disconnect_xbox", description="Отключить XBOX"),
         BotCommand(command="connect_steam", description="Подключить Steam"),
         BotCommand(command="disconnect_steam", description="Отключить Steam"),
+        BotCommand(command="connect_psn", description="Подключить PSN"),
+        BotCommand(command="disconnect_psn", description="Отключить PSN"),
         BotCommand(command="hltb", description="Сколько идти игру (HowLongToBeat)"),
         BotCommand(command="help", description="Что я умею"),
     ]

@@ -19,6 +19,7 @@ from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.reminders import ReminderJob
+from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_presence import SteamPresencePoller
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class PollerScheduler:
         steam_poller: SteamPresencePoller,
         message_cleanup: MessageCleanup,
         online_refresh: OnlineAutoRefresh,
+        service_health: ServiceHealth,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -46,6 +48,7 @@ class PollerScheduler:
         self._steam_poller = steam_poller
         self._message_cleanup = message_cleanup
         self._online_refresh = online_refresh
+        self._service_health = service_health
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -102,6 +105,16 @@ class PollerScheduler:
             self._online_refresh.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="online_refresh",
+            coalesce=True,
+            max_instances=1,
+        )
+        # Every 30 minutes, not every tick (SPEC 9, M-PSN-1) — this only ever
+        # answers "is the shared key still good", not something that needs
+        # minute-level freshness, and each PSN check is a real network call.
+        self._scheduler.add_job(
+            self._service_health.tick,
+            IntervalTrigger(minutes=30),
+            id="service_health",
             coalesce=True,
             max_instances=1,
         )

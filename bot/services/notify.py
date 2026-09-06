@@ -38,6 +38,22 @@ class AdminNotifier:
             "Ачивки не публикуются, пока он не войдёт заново. Напоминание ему уже ушло."
         )
 
+    async def service_key_dead(self, platform: str) -> None:
+        """A shared service credential died — Steam's API key or PSN's NPSSO
+        (poller/service_health.py). Unlike token_dead above, this is not
+        about one person: every account on that platform stops being
+        polled/resolvable at once until the admin fixes it (SPEC 9,
+        M-PSN-1's "мониторинг живости" paragraph)."""
+        label = {"steam": "Steam", "psn": "PSN"}.get(platform, platform)
+        fix = (
+            "проверь ключ в .env и перезапусти бота"
+            if platform == "steam"
+            else "пришли новый NPSSO через админ-панель"
+        )
+        await self._send(
+            f"⚠️ Умер общий ключ {label} — все аккаунты {label} разом перестали опрашиваться, {fix}."
+        )
+
     async def _who(self, tg_id: int) -> str:
         user = await self._repo.get_user(tg_id)
         username = f"@{user.username}" if user and user.username else "без username"

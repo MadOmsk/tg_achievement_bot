@@ -186,6 +186,8 @@ class AdminUserRow:
     last_refresh_at: str | None
     steam_id: str | None = None
     steam_name: str | None = None
+    psn_account_id: str | None = None
+    psn_online_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -1724,17 +1726,20 @@ class Repo:
     # ----------------------------------------------------------------- admin
 
     async def admin_users(self) -> list[AdminUserRow]:
-        """Every connected person, Xbox or Steam or both (2026-09-05
-        follow-up) — used to be `WHERE u.xuid IS NOT NULL`, which hid every
-        Steam-only person from the admin panel entirely."""
+        """Every connected person, Xbox or Steam or PSN or any mix
+        (2026-09-05 follow-up, extended for M-PSN-1) — used to be
+        `WHERE u.xuid IS NOT NULL`, which hid every Steam-only person from
+        the admin panel entirely."""
         cursor = await self._conn.execute(
             "SELECT u.tg_id, u.gamertag, u.username, u.xuid, u.gamerscore, u.is_excluded,"
             "       u.last_online_at, t.status, t.last_refresh_at,"
-            "       pl.external_id AS steam_id, pl.display_name AS steam_name "
+            "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
+            "       pp.external_id AS psn_account_id, pp.display_name AS psn_online_id "
             "FROM users u "
             "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
-            "LEFT JOIN platform_links pl ON pl.tg_id = u.tg_id AND pl.platform = 'steam' "
-            "WHERE u.xuid IS NOT NULL OR pl.external_id IS NOT NULL "
+            "LEFT JOIN platform_links ps ON ps.tg_id = u.tg_id AND ps.platform = 'steam' "
+            "LEFT JOIN platform_links pp ON pp.tg_id = u.tg_id AND pp.platform = 'psn' "
+            "WHERE u.xuid IS NOT NULL OR ps.external_id IS NOT NULL OR pp.external_id IS NOT NULL "
             "ORDER BY u.is_excluded, u.last_online_at DESC"
         )
         return [
@@ -1750,6 +1755,8 @@ class Repo:
                 last_refresh_at=row["last_refresh_at"],
                 steam_id=row["steam_id"],
                 steam_name=row["steam_name"],
+                psn_account_id=row["psn_account_id"],
+                psn_online_id=row["psn_online_id"],
             )
             for row in await cursor.fetchall()
         ]

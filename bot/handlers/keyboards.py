@@ -152,24 +152,36 @@ def _steam_button(*, steam_connected: bool) -> InlineKeyboardButton:
     return STEAM_DISCONNECT_BUTTON if steam_connected else STEAM_CONNECT_BUTTON
 
 
+PSN_CONNECT_BUTTON = InlineKeyboardButton(text="🎮 Подключить PSN", callback_data="psn:connect")
+PSN_DISCONNECT_BUTTON = InlineKeyboardButton(
+    text="🔕 Отключить PSN", callback_data="psn:disconnectprompt"
+)
+
+
+def _psn_button(*, psn_connected: bool) -> InlineKeyboardButton:
+    return PSN_DISCONNECT_BUTTON if psn_connected else PSN_CONNECT_BUTTON
+
+
 def panel_keyboard(
     tz_offset_min: int | None,
     *,
     connected: bool = True,
     needs_reconnect: bool = False,
     steam_connected: bool = False,
+    psn_connected: bool = False,
     gamertag: str | None = None,
     steam_id: str | None = None,
 ) -> InlineKeyboardMarkup:
     if not connected:
-        # Xbox and Steam are independent (M-Steam-1) — someone with neither
-        # connected yet should be offered both, not just Xbox first, and
-        # someone with only Steam still gets a real disconnect option for
-        # it rather than nothing at all.
+        # Xbox, Steam and PSN are independent (M-Steam-1, M-PSN-1) — someone
+        # with none connected yet should be offered all three, not just
+        # Xbox first, and someone with only Steam/PSN still gets a real
+        # disconnect option for it rather than nothing at all.
         return InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="🔗 Подключить XBOX", callback_data="relogin")],
                 [_steam_button(steam_connected=steam_connected)],
+                [_psn_button(psn_connected=psn_connected)],
             ]
         )
 
@@ -178,6 +190,8 @@ def panel_keyboard(
         rows.append([InlineKeyboardButton(text="🔄 Подключить заново", callback_data="relogin")])
     if not steam_connected:
         rows.append([STEAM_CONNECT_BUTTON])
+    if not psn_connected:
+        rows.append([PSN_CONNECT_BUTTON])
     rows += [
         [
             InlineKeyboardButton(
@@ -211,6 +225,11 @@ def panel_keyboard(
             if steam_id
             else [STEAM_DISCONNECT_BUTTON]
         )
+    # No profile-link row here (unlike XBOX/Steam above) — PSN has no public
+    # web profile page a person could open while logged out, only the PS
+    # App itself, so there is no URL worth offering.
+    if psn_connected:
+        rows.append([PSN_DISCONNECT_BUTTON])
     rows.append([InlineKeyboardButton(text="Обновить", callback_data="panel:refresh")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

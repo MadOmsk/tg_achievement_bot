@@ -23,9 +23,11 @@ from bot.handlers.keyboards import (
     timezone_keyboard,
 )
 from bot.handlers.panel import render_panel
+from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
 from bot.services.notify import AdminNotifier
+from bot.services.psn.auth import PsnAuth
 from bot.util import parse_utc_offset
 
 log = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ async def start_with_payload(
     repo: Repo,
     connect: ConnectService,
     settings: Settings,
+    psn_auth: PsnAuth,
     bot: Bot,
 ) -> None:
     """Deep link from a group chat: its buttons send people here (SPEC 6.3)."""
@@ -67,6 +70,10 @@ async def start_with_payload(
         # can't carry the profile URL itself, but landing here now arms the
         # wait too, so there's nothing left to type but the link itself.
         await prompt_for_link(bot, repo, settings, message.chat.id)
+        return
+    if command.args == "connectpsn":
+        # Same treatment as connectsteam above, for PSN (SPEC 9, M-PSN-1).
+        await prompt_for_psn_link(bot, repo, psn_auth, message.chat.id)
         return
     is_connect, origin_chat_id = _parse_connect_payload(command.args or "")
     if is_connect:
