@@ -278,3 +278,100 @@ async def test_request_count_today_reflects_calls_made() -> None:
     # exact count depends on test execution order within this module, so
     # only non-negativity is asserted.
     assert psn_client.request_count_today() >= 0
+
+
+# ------------------------------------------------- account_trophy_overview
+
+
+@dataclass
+class _TrophySet:
+    bronze: int = 0
+    silver: int = 0
+    gold: int = 0
+    platinum: int = 0
+
+
+@dataclass
+class _Summary:
+    trophy_level: int
+    progress: int
+    earned_trophies: _TrophySet
+
+
+@dataclass
+class _OverviewTitle:
+    title_name: str
+    progress: int
+    earned_trophies: _TrophySet
+    defined_trophies: _TrophySet
+    last_updated_datetime: datetime | None = None
+
+
+class _OverviewUser:
+    def __init__(
+        self,
+        online_id: str,
+        summary: _Summary,
+        titles: list[_OverviewTitle],
+        *,
+        forbidden: bool = False,
+    ) -> None:
+        self.online_id = online_id
+        self._summary = summary
+        self._titles = titles
+        self._forbidden = forbidden
+
+    def trophy_summary(self) -> _Summary:
+        return self._summary
+
+    def trophy_titles(self, limit: int | None = None) -> list[_OverviewTitle]:
+        if self._forbidden:
+            raise PSNAWPForbiddenError("closed")
+        return list(self._titles)
+
+
+class _OverviewClient:
+    def __init__(self, user: _OverviewUser) -> None:
+        self._user = user
+
+    def user(self, account_id: str | None = None, online_id: str | None = None) -> _OverviewUser:
+        return self._user
+
+
+async def test_account_trophy_overview_matches_the_account_wide_total() -> None:
+    """The exact real-world check from 2026-09-06 (superomsk, 17 trophies
+    total, one game) — the per-game sum must equal trophy_summary()'s own
+    total, not just report whatever games happened to come back."""
+    played = _OverviewTitle(
+        "Ratchet & Clank",
+        progress=25,
+        earned_trophies=_TrophySet(bronze=16, silver=1),
+        defined_trophies=_TrophySet(bronze=30, silver=14, gold=2, platinum=1),
+        last_updated_datetime=datetime(2026, 8, 15),
+    )
+    untouched = _OverviewTitle(
+        "Stray", progress=0, earned_trophies=_TrophySet(), defined_trophies=_TrophySet(bronze=8)
+    )
+    summary = _Summary(trophy_level=5, progress=50, earned_trophies=_TrophySet(bronze=16, silver=1))
+    user = _OverviewUser("superomsk", summary, [played, untouched])
+    client = _OverviewClient(user)
+
+    overview = await psn_client.account_trophy_overview(client, "acc-1")  # type: ignore[arg-type]
+
+    assert overview.online_id == "superomsk"
+    assert overview.trophy_level == 5
+    # Untouched games (0% progress) are dropped as noise, same spirit as
+    # /stats' own games list.
+    assert [g.title_name for g in overview.games] == ["Ratchet & Clank"]
+    game_total = overview.games[0].earned_bronze + overview.games[0].earned_silver
+    account_total = overview.earned_bronze + overview.earned_silver
+    assert game_total == account_total == 17
+
+
+async def test_account_trophy_overview_private_profile() -> None:
+    summary = _Summary(trophy_level=1, progress=0, earned_trophies=_TrophySet())
+    user = _OverviewUser("gamer", summary, [], forbidden=True)
+    client = _OverviewClient(user)
+
+    with pytest.raises(PsnPrivateProfileError):
+        await psn_client.account_trophy_overview(client, "acc-1")  # type: ignore[arg-type]

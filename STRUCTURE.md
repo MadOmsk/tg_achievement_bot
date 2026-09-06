@@ -60,7 +60,8 @@
 │   │   └── psn/                  — psnawp_api, один сервисный NPSSO на весь бот (M-PSN-1)
 │   │       ├── client.py          — асинхронная обёртка (asyncio.to_thread), резолв, трофеи
 │   │       ├── auth.py            — хранение/обновление NPSSO, health-check, PsnAuth
-│   │       └── achievements.py    — fetch_unlocked() + кэш прогресса по играм (M-PSN-2)
+│   │       ├── achievements.py    — fetch_unlocked() + кэш прогресса по играм (M-PSN-2)
+│   │       └── view.py            — отдельная табличка трофеев PSN, до слияния со /stats (Follow-up 2026-09-06)
 │   │
 │   ├── poller/                  — фоновые задачи (APScheduler)
 │   │   ├── scheduler.py           — тики, сборка джобов
@@ -161,6 +162,7 @@
 │   ├── test_single_message.py     — send_replacing(): удаление предыдущего того же (chat, kind, subject)
 │   ├── test_psn_achievements.py   — fetch_unlocked(): кэш прогресса, приватные игры (M-PSN-2)
 │   ├── test_psn_fetcher.py        — опрос трофеев PSN, дебаунс тика, бэкфил, insert-дедуп (M-PSN-2)
+│   ├── test_psn_view.py           — рендер отдельной таблички трофеев PSN (Follow-up 2026-09-06)
 │   ├── test_rate_limiter.py       — снимок использования лимитера без учёта самого себя
 │   └── test_util.py               — маскирование секретов, форматирование чисел
 │

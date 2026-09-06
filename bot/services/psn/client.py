@@ -108,6 +108,41 @@ class EarnedTrophy:
     earned_date_time: str | None
 
 
+@dataclass(slots=True)
+class GameTrophyProgress:
+    """One game's trophy tally for account_trophy_overview() below — plain
+    ints, not psnawp's own TrophySet, since this shape exists purely to be
+    rendered (Follow-up 2026-09-06, services/psn/view.py)."""
+
+    title_name: str
+    progress: int
+    earned_total: int
+    defined_total: int
+    earned_bronze: int
+    earned_silver: int
+    earned_gold: int
+    earned_platinum: int
+    last_updated: str | None
+
+
+@dataclass(slots=True)
+class AccountTrophyOverview:
+    """A full, unlimited per-game breakdown for one account — deliberately
+    the expensive, complete picture (unlike services/psn/achievements.py's
+    poller, which stays windowed to a handful of recent games). Built for
+    the admin test screen's own separate trophy table (Follow-up
+    2026-09-06), ahead of deciding whether/how to merge it into /stats."""
+
+    online_id: str
+    trophy_level: int
+    progress: int
+    earned_bronze: int
+    earned_silver: int
+    earned_gold: int
+    earned_platinum: int
+    games: list[GameTrophyProgress]
+
+
 async def _call[T](fn: Callable[..., T], *args: object, **kwargs: object) -> T:
     await _limiter.acquire()
     return await asyncio.to_thread(fn, *args, **kwargs)
@@ -286,3 +321,66 @@ async def recent_earned_trophies(
 
     earned.sort(key=lambda t: t.earned_date_time or "", reverse=True)
     return earned[:limit]
+
+
+async def account_trophy_overview(client: PSNAWP, account_id: str) -> AccountTrophyOverview:
+    """Every game this account has ever earned a trophy in, plus the
+    account-wide level/progress — live, uncached, no limit (2026-09-06:
+    verified against a real account that its cross-game sum matches this
+    same account's own trophy_summary() total exactly, 17 == 17 — this
+    isn't an approximation). Used by the admin test screen's separate
+    trophy table (services/psn/view.py), not by the regular poller."""
+    try:
+        user = await _call(client.user, account_id=account_id)
+    except PSNAWPNotFoundError:
+        raise PsnApiError(f"PSN profile {account_id!r} not found") from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+
+    try:
+        summary = await _call(user.trophy_summary)
+        titles = await _call(lambda: list(user.trophy_titles(limit=None)))
+    except PSNAWPForbiddenError:
+        raise PsnPrivateProfileError(account_id) from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+
+    games = [
+        GameTrophyProgress(
+            title_name=title.title_name or "?",
+            progress=title.progress or 0,
+            earned_total=(
+                title.earned_trophies.bronze
+                + title.earned_trophies.silver
+                + title.earned_trophies.gold
+                + title.earned_trophies.platinum
+            ),
+            defined_total=(
+                title.defined_trophies.bronze
+                + title.defined_trophies.silver
+                + title.defined_trophies.gold
+                + title.defined_trophies.platinum
+            ),
+            earned_bronze=title.earned_trophies.bronze,
+            earned_silver=title.earned_trophies.silver,
+            earned_gold=title.earned_trophies.gold,
+            earned_platinum=title.earned_trophies.platinum,
+            last_updated=(
+                title.last_updated_datetime.isoformat() if title.last_updated_datetime else None
+            ),
+        )
+        for title in titles
+        if (title.progress or 0) > 0  # untouched games are noise, same spirit as /stats
+    ]
+    games.sort(key=lambda g: g.last_updated or "", reverse=True)
+
+    return AccountTrophyOverview(
+        online_id=user.online_id,
+        trophy_level=summary.trophy_level,
+        progress=summary.progress,
+        earned_bronze=summary.earned_trophies.bronze,
+        earned_silver=summary.earned_trophies.silver,
+        earned_gold=summary.earned_trophies.gold,
+        earned_platinum=summary.earned_trophies.platinum,
+        games=games,
+    )

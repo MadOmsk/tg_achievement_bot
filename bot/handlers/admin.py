@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import BaseFilter, Command
 from aiogram.types import (
     CallbackQuery,
@@ -61,9 +61,11 @@ from bot.services.psn.client import (
     PsnClientSetupError,
     PsnPrivateProfileError,
     PsnTokenDeadError,
+    account_trophy_overview,
     recent_earned_trophies,
     resolve_profile,
 )
+from bot.services.psn.view import render_psn_trophy_table
 from bot.services.stats import counters_for, month_cutoff_utc, today_cutoff_utc
 from bot.services.tables import truncate_name
 from bot.util import humanize_ago, parse_utc_offset, utcnow
@@ -276,6 +278,7 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
     try:
         client = await psn_auth.get_client()
         profile = await resolve_profile(client, raw)
+        overview = await account_trophy_overview(client, profile.account_id)
         trophies = await recent_earned_trophies(client, profile.account_id, limit=10)
     except PsnTokenDeadError:
         await message.answer("PSN сейчас недоступен — токен протух, обнови NPSSO через /admin.")
@@ -286,6 +289,11 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
     except PsnApiError as exc:
         await message.answer(f"Не нашёл: {exc}")
         return
+
+    # Отдельная табличка (Follow-up 2026-09-06) — намеренно не то же самое,
+    # что игровой список /stats: сначала смотрим, как это выглядит само по
+    # себе, потом решаем, сливать ли со стандартным.
+    await message.answer(render_psn_trophy_table(overview), parse_mode=ParseMode.HTML)
 
     if not trophies:
         await message.answer(f"{profile.online_id}: трофеев не нашёл (или все скрыты).")
