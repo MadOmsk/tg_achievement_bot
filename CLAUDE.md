@@ -8,10 +8,26 @@ connected Xbox, Steam, and PlayStation Network accounts, with per-chat rarity
 filters, personal stats, an admin panel, daily summaries, and HowLongToBeat lookup.
 
 This file is the single source of truth for current behavior, invariants, and open
-work — read it in full before making product or architecture changes. Open work lives
-in the repository's [Issues](../../issues), not in a separate TODO file; a closed
-issue tagged as a design log or archive is history, not something to act on. Keep the
-project working after every change — no step should leave it broken.
+work — read it in full before making product or architecture changes, and **keep it
+current**: when a change alters something this file states (a rule, an invariant, the
+file tree, a data model detail), update the relevant section in the same change, not
+as a follow-up. A stale source of truth is worse than none — it gets trusted anyway.
+
+Open work lives in the repository's [Issues](../../issues), not in a separate TODO
+file. This is also where change history goes now, not just open proposals: once a
+non-trivial change ships, if its own reasoning isn't already obvious from the diff,
+commit messages, and this file's updated rules, archive it as a closed issue (see
+#6-#13 for the shape — one per logical unit of work, closed immediately, `state_reason:
+completed`). A closed issue tagged as a design log or archive is history, not
+something to act on, but it's where "why did we do it this way" should be findable
+five features from now. Keep the project working after every change — no step should
+leave it broken.
+
+Every rule below carries a short *why* next to the *what*, inline, not in a separate
+section — the same "comment why, not what" habit this file asks of code (see Style)
+applies to itself. The rejected-ideas appendix at the end is a different, narrower
+thing: alternatives that were tried or considered and specifically rejected, not a
+general home for design rationale.
 
 The product is intentionally optimized for one trusted operator, a single SQLite
 database, explicit admin controls, and predictable behavior, not public SaaS scale.
@@ -210,8 +226,11 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
 - Xbox 360 uses contract 1 instead, has no rarity percentage at all, and its
   achievement icon is replaced with the cached title's own cover art (contract 1
   carries only a bare `imageId` int, with no documented way to turn it into a URL).
-- Identify a person by **XUID**, never by gamertag — a gamertag can change, XUID
-  can't. `users.gamertag` is a display cache only, never a lookup key.
+- Resolve/match an **Xbox account** by its **XUID**, never by gamertag — a
+  gamertag can change, XUID can't. `users.gamertag` is a display cache only, never
+  a lookup key. (This is Xbox-internal, the same role SteamID64 and PSN's
+  account_id play for their own platforms below — it doesn't change `tg_id` being
+  the one cross-platform, top-level key a *person* is identified by.)
 
 ### Steam
 
