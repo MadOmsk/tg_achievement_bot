@@ -222,6 +222,58 @@ async def test_games_list_includes_steam_games(repo: Repo) -> None:
     assert "Left 4 Dead 2" in text
 
 
+async def test_nicknames_are_plain_text_by_default(repo: Repo) -> None:
+    """show_profile_links defaults to 0 (Follow-up 2026-09-06) — no <a href>
+    anywhere until the person opts in."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    assert "<a href" not in text
+
+
+async def test_nicknames_link_out_once_the_person_opts_in(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.update_user_settings(1, show_profile_links=1)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
+    steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
+    assert '<a href="https://account.xbox.com/en-us/profile?gamertag=Someone">Someone</a>' in (
+        xbox_line
+    )
+    assert (
+        '<a href="https://steamcommunity.com/profiles/76561197960287930">SteamPerson</a>'
+        in steam_line
+    )
+
+
+async def test_opted_in_but_no_gamertag_yet_stays_plain(repo: Repo) -> None:
+    """Pre-first-sync edge case (same reasoning as panel_keyboard's own
+    profile-button guard) — an empty gamertag has no page to link to."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "", 0)
+    await repo.update_user_settings(1, show_profile_links=1)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    assert "<a href" not in text
+
+
 async def test_zero_limit_shows_every_game_uncapped(repo: Repo) -> None:
     """0 means "no cap" (SPEC 6.4) — the whole point of dropping the old
     fixed-height table for a collapsible quote."""

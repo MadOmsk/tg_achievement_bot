@@ -47,6 +47,7 @@
 │   │   ├── online_view.py        — рендер таблицы /online, общий для команды и автообновления
 │   │   ├── admin_view.py         — рендер /admin, общий для команды и автообновления (Follow-up 2026-09-06)
 │   │   ├── single_message.py     — delete-then-send для /panel, /summary, /recent, /stats (Follow-up 2026-09-06)
+│   │   ├── profile_links.py      — URL профиля по платформе, гейтится show_profile_links (Follow-up 2026-09-06)
 │   │   ├── notify.py             — уведомления администратору
 │   │   ├── crypto.py             — шифрование refresh-токенов (Fernet)
 │   │   ├── rate_limiter.py       — общий sliding-window лимитер (Xbox и Steam клиенты)
@@ -109,7 +110,8 @@
 │           ├── 020_bot_messages_is_system.sql    — bot_messages.is_system (автоудаление, Follow-up 2026-09-05)
 │           ├── 021_online_auto_refresh.sql       — online_auto_refresh (автообновление /online, Follow-up 2026-09-05)
 │           ├── 022_message_dedup.sql             — tracked_messages, admin_panel_refresh (Follow-up 2026-09-06)
-│           └── 023_psn_trophies.sql              — seen_achievements: 'psn' + trophy_type, psn_title_progress, psn_poll_state (M-PSN-2)
+│           ├── 023_psn_trophies.sql              — seen_achievements: 'psn' + trophy_type, psn_title_progress, psn_poll_state (M-PSN-2)
+│           └── 024_show_profile_links.sql        — user_settings.show_profile_links (Follow-up 2026-09-06)
 │
 ├── scripts/                    — вспомогательные скрипты вне приложения, разовые/ручные
 │   ├── db_status.py              — сводка по базе для `manage.ps1 status` (без зависимостей)
@@ -130,7 +132,8 @@
 │   ├── test_rows.py               — ParsedAchievement → AchievementRow (poller/rows.py)
 │   ├── test_presence_title.py     — резолв названия игры из presence (Xbox)
 │   ├── test_stats.py              — счётчики, окна «сегодня»/«за месяц»
-│   ├── test_stats_display.py      — гeймерскор из профиля, лимит игр и кнопка «показать все»
+│   ├── test_stats_display.py      — гeймерскор из профиля, лимит игр, ссылки на профиль в никнейме
+│   ├── test_profile_links.py      — URL профиля по платформе, link_html (Follow-up 2026-09-06)
 │   ├── test_tables.py             — рендерер таблиц, обрезка длинных имён
 │   ├── test_daily.py              — ежедневный итог, лимит строк и «показать всех»
 │   ├── test_recent.py             — /recent как таблица

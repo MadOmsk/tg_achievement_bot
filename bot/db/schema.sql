@@ -83,7 +83,13 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- 360) is exempt from the rarity check under 'rare' rather than
     -- getting a switch of its own.
     muted_title_ids  TEXT    NOT NULL DEFAULT '[]',
-    tz_offset_min    INTEGER                       -- minutes from UTC, NULL = global timezone
+    tz_offset_min    INTEGER,                      -- minutes from UTC, NULL = global timezone
+    -- Whether other people's /stats and /who cards get a clickable link in
+    -- this person's nickname (Follow-up 2026-09-06). Default off; the admin
+    -- picks what new users start with via app_settings, same pattern as
+    -- default_rarity_mode (repo.py's ensure_user). /panel is exempt — it's
+    -- only ever shown to its own owner, always shows links there.
+    show_profile_links INTEGER NOT NULL DEFAULT 0
 );
 
 -- Rare-achievement threshold, daily-summary time and its timezone are always

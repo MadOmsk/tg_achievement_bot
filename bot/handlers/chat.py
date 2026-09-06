@@ -43,6 +43,7 @@ from bot.services.achievements import (
 )
 from bot.services.message_log import stats_category
 from bot.services.online_view import render_online_table
+from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for, local_now
 from bot.services.tables import blockquote, truncate_name
@@ -219,11 +220,24 @@ async def _build_stats_text(repo: Repo, target: User) -> str | None:
     if not target.xuid and not platform_links:
         return None
 
+    # Gates whether any nickname below becomes a clickable link at all — the
+    # target's own choice (Follow-up 2026-09-06), off by default, and not
+    # relaxed for the target viewing their own card: this card is one and
+    # the same message regardless of who asked for it (no per-viewer
+    # rendering), so "only hide it from others" isn't a distinction that
+    # exists here. Own links live in /panel instead, which really is
+    # per-viewer (never rendered in a group at all).
+    settings_row = await repo.get_user_settings(target.tg_id)
+    show_links = bool(settings_row and settings_row.show_profile_links)
+
     counters = await counters_for(repo, target.tg_id)
     lines = [f"📊 <b>{html_escape(_display_name(target, platform_links))}</b>"]
     if target.xuid:
+        gamertag_html = html_escape(target.gamertag or "без геймертега")
+        if show_links and target.gamertag:
+            gamertag_html = link_html(xbox_profile_url(target.gamertag), gamertag_html)
         lines.append(
-            f"{PLATFORM_ICON['modern']} XBOX: {html_escape(target.gamertag or 'без геймертега')}"
+            f"{PLATFORM_ICON['modern']} XBOX: {gamertag_html}"
             f"  ·  gamerscore {thousands(target.gamerscore or 0)}"
         )
     for link in platform_links:
@@ -235,10 +249,13 @@ async def _build_stats_text(repo: Repo, target: User) -> str | None:
         # undercount) — a Steam backfill has no such cap, GetOwnedGames
         # sees the whole library, so this number is trustworthy as-is.
         count = await repo.platform_achievement_count(target.tg_id, link.platform)
-        lines.append(
-            f"{icon} {label}: {html_escape(link.display_name or link.external_id)}"
-            f"  ·  {plural_achievements(count)}"
-        )
+        name_html = html_escape(link.display_name or link.external_id)
+        if show_links:
+            url = platform_profile_url(
+                link.platform, external_id=link.external_id, display_name=link.display_name
+            )
+            name_html = link_html(url, name_html)
+        lines.append(f"{icon} {label}: {name_html}  ·  {plural_achievements(count)}")
 
     today_breakdown = platform_breakdown_suffix(counters.today_xbox, counters.today_steam)
     month_breakdown = platform_breakdown_suffix(counters.month_xbox, counters.month_steam)

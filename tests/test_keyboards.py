@@ -5,6 +5,7 @@ from __future__ import annotations
 from bot.handlers.keyboards import (
     next_rarity_mode,
     panel_keyboard,
+    psn_profile_url,
     steam_profile_url,
     xbox_profile_url,
 )
@@ -112,6 +113,37 @@ def test_steam_disconnect_row_gains_a_profile_link_when_steam_id_is_known() -> N
     assert len(row) == 2
     assert row[0].url == steam_profile_url("76561197960287930")
     assert row[1].callback_data == "steam:disconnectprompt"
+
+
+def test_psn_disconnect_row_gains_a_profile_link_when_psn_id_is_known() -> None:
+    """Same treatment as XBOX/Steam above (2026-09-06 follow-up, reversing
+    the earlier "PSN has no linkable page" call)."""
+    without = panel_keyboard(180, connected=True, psn_connected=True)
+    row = _disconnect_row(without, "psn:disconnectprompt")
+    assert len(row) == 1
+
+    with_id = panel_keyboard(180, connected=True, psn_connected=True, psn_id="superomsk")
+    row = _disconnect_row(with_id, "psn:disconnectprompt")
+    assert len(row) == 2
+    assert row[0].url == psn_profile_url("superomsk")
+    assert row[1].callback_data == "psn:disconnectprompt"
+
+
+def _toggle_button_text(markup):
+    return next(
+        b.text
+        for row in markup.inline_keyboard
+        for b in row
+        if b.callback_data == "panel:linkstoggle"
+    )
+
+
+def test_show_profile_links_toggle_reflects_state_and_is_reachable() -> None:
+    off = panel_keyboard(180, connected=True, show_profile_links=False)
+    on = panel_keyboard(180, connected=True, show_profile_links=True)
+    assert "panel:linkstoggle" in _callback_data(off)
+    assert "нет" in _toggle_button_text(off)
+    assert "да" in _toggle_button_text(on)
 
 
 def test_xbox_profile_url_encodes_the_gamertag() -> None:

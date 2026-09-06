@@ -9,24 +9,15 @@ cycle — this file already sits underneath all of them.
 from __future__ import annotations
 
 import contextlib
-from urllib.parse import quote
 
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-
-def xbox_profile_url(gamertag: str) -> str:
-    """The classic public gamer-profile page — works with no login, unlike
-    the newer xbox.com/play/user/ page which redirects through a sign-in
-    wall for a visitor who isn't signed in themselves (2026-09-05
-    follow-up, panel's own "👤 Профиль" button)."""
-    return f"https://account.xbox.com/en-us/profile?gamertag={quote(gamertag)}"
-
-
-def steam_profile_url(steam_id: str) -> str:
-    """The SteamID64 form always works, unlike a vanity URL — not every
-    account has customized one (2026-09-05 follow-up)."""
-    return f"https://steamcommunity.com/profiles/{steam_id}"
+# Re-exported (not redefined) — services/profile_links.py is the one place
+# that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
+# need the exact same builders), this module just re-uses them for panel.py's
+# own profile buttons below.
+from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
 
 
 async def safe_edit(
@@ -169,6 +160,8 @@ def panel_keyboard(
     psn_connected: bool = False,
     gamertag: str | None = None,
     steam_id: str | None = None,
+    psn_id: str | None = None,
+    show_profile_links: bool = False,
 ) -> InlineKeyboardMarkup:
     if not connected:
         # Xbox, Steam and PSN are independent (M-Steam-1, M-PSN-1) — someone
@@ -199,6 +192,19 @@ def panel_keyboard(
         ],
         [InlineKeyboardButton(text="💬 Мои чаты ▸", callback_data="panel:chatlist")],
         [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="panel:sync")],
+        # Off by default (Follow-up 2026-09-06) — gates the clickable link
+        # /stats and /who put in this person's nickname for everyone who
+        # looks (not just strangers: the card is one shared message, not
+        # rendered differently for the person it's about — panel_keyboard's
+        # own "👤 Профиль" buttons above/below are the one place this
+        # person's own links stay visible regardless, since this screen is
+        # never shown to anyone but its owner).
+        [
+            InlineKeyboardButton(
+                text=f"Профиль виден другим: {'да' if show_profile_links else 'нет'} ▸",
+                callback_data="panel:linkstoggle",
+            )
+        ],
     ]
     # Profile link next to disconnect, one row each (2026-09-05 follow-up)
     # — gamertag/steam_id can in principle be missing (pre-first-sync edge
@@ -223,11 +229,21 @@ def panel_keyboard(
             if steam_id
             else [STEAM_DISCONNECT_BUTTON]
         )
-    # No profile-link row here (unlike XBOX/Steam above) — PSN has no public
-    # web profile page a person could open while logged out, only the PS
-    # App itself, so there is no URL worth offering.
+    # Same treatment as XBOX/Steam above (2026-09-06 follow-up, reversing the
+    # earlier call here) — my.playstation.com/profile/<onlineId> is the
+    # official page, though unlike Xbox's/Steam's own it can itself ask a
+    # logged-out visitor to sign in depending on PSN's own mood; offering it
+    # anyway costs nothing when it does, one tap does nothing worse than a
+    # login wall.
     if psn_connected:
-        rows.append([PSN_DISCONNECT_BUTTON])
+        rows.append(
+            [
+                InlineKeyboardButton(text="👤 Профиль", url=psn_profile_url(psn_id)),
+                PSN_DISCONNECT_BUTTON,
+            ]
+            if psn_id
+            else [PSN_DISCONNECT_BUTTON]
+        )
     rows.append([InlineKeyboardButton(text="Обновить", callback_data="panel:refresh")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

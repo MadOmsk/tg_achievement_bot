@@ -337,6 +337,15 @@ async def default_rarity_cycle(callback: CallbackQuery, repo: Repo) -> None:
     await _redraw(callback, *await _new_user_defaults(repo))
 
 
+@router.callback_query(F.data == "a:defaultlinks")
+async def default_show_links_toggle(callback: CallbackQuery, repo: Repo) -> None:
+    current = await repo.get_int_setting(DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT))
+    await repo.set_app_setting(
+        DEFAULT_SHOW_LINKS_KEY, "0" if current else "1", callback.from_user.id
+    )
+    await _redraw(callback, *await _new_user_defaults(repo))
+
+
 # ------------------------------------------------------ free-text numeric settings
 
 # Row-cap settings (always global — no per-chat meaning) and the per-chat
@@ -359,6 +368,13 @@ LIMIT_MAX = 50
 # the free-text numeric flow above — 'all'/'rare'/'hidden' isn't a number.
 DEFAULT_RARITY_MODE_KEY = "default_rarity_mode"
 DEFAULT_RARITY_MODE_DEFAULT = "all"
+
+# What a brand-new person's user_settings row starts with (Repo.ensure_user,
+# Follow-up 2026-09-06) — same admin-configurable-default shape as
+# DEFAULT_RARITY_MODE_KEY above, just a plain on/off instead of a cycle
+# through three modes.
+DEFAULT_SHOW_LINKS_KEY = "default_show_profile_links"
+DEFAULT_SHOW_LINKS_DEFAULT = "0"
 
 UNLIMITED_LABEL = "без ограничения"
 
@@ -980,6 +996,9 @@ async def _new_user_defaults(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
         DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT
     )
     assert default_rarity_mode is not None  # a default was given above
+    default_show_links = await repo.get_int_setting(
+        DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT)
+    )
 
     text = (
         "👤 Новые пользователи — настройки по умолчанию\n\n"
@@ -992,6 +1011,12 @@ async def _new_user_defaults(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
                 InlineKeyboardButton(
                     text=f"Ачивки по умолчанию: {format_rarity(default_rarity_mode)} ▸",
                     callback_data="a:defaultrarity",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"Профиль виден другим: {'да' if default_show_links else 'нет'} ▸",
+                    callback_data="a:defaultlinks",
                 )
             ],
             [InlineKeyboardButton(text="‹ Назад", callback_data="a:home")],

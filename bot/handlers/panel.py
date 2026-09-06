@@ -184,6 +184,21 @@ async def panel_psn_disconnect_cancel(callback: CallbackQuery, repo: Repo) -> No
     await callback.answer()
 
 
+@router.callback_query(F.data == "panel:linkstoggle")
+async def panel_toggle_profile_links(callback: CallbackQuery, repo: Repo) -> None:
+    """Flips user_settings.show_profile_links (Follow-up 2026-09-06) —
+    one tap, no confirm, same weight as re-subscribing to a chat: showing
+    a link costs the person nothing they can't undo with another tap."""
+    settings_row = await repo.get_user_settings(callback.from_user.id)
+    currently_on = bool(settings_row and settings_row.show_profile_links)
+    await repo.update_user_settings(
+        callback.from_user.id, show_profile_links=0 if currently_on else 1
+    )
+    await callback.answer("Скрыл" if currently_on else "Показываю")
+    text, markup = await render_panel(repo, callback.from_user.id)
+    await safe_edit(callback, text, markup)
+
+
 @router.callback_query(F.data == "panel:tz")
 async def panel_timezone(callback: CallbackQuery) -> None:
     # Found while refactoring (2026-09-05): the one edit in this file that
@@ -428,6 +443,8 @@ async def render_panel(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarku
         psn_connected=psn_link is not None,
         gamertag=user.gamertag if user else None,
         steam_id=steam_link.external_id if steam_link else None,
+        psn_id=psn_link.display_name if psn_link else None,
+        show_profile_links=bool(settings_row and settings_row.show_profile_links),
     )
 
     if user is None or not user.xuid:

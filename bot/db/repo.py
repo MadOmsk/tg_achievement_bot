@@ -63,6 +63,7 @@ class TokenRecord:
 class UserSettings:
     tg_id: int
     tz_offset_min: int | None
+    show_profile_links: bool
 
 
 @dataclass(slots=True)
@@ -438,7 +439,18 @@ class Repo:
             "  updated_at = excluded.updated_at",
             (tg_id, username, now, now),
         )
-        await self._conn.execute("INSERT OR IGNORE INTO user_settings (tg_id) VALUES (?)", (tg_id,))
+        # show_profile_links is explicit here, not left to the column's own
+        # DEFAULT 0 — same move as subscribe()'s default_rarity_mode: an
+        # admin-configurable starting point (app_settings
+        # ['default_show_profile_links'], handlers/admin.py) decides it for
+        # a brand-new person instead of a value baked into the schema. The
+        # column default stays 0 regardless, as a safety net for any insert
+        # that (today or in the future) doesn't go through this method.
+        default_show_links = await self.get_int_setting("default_show_profile_links", 0)
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO user_settings (tg_id, show_profile_links) VALUES (?, ?)",
+            (tg_id, default_show_links),
+        )
         await self._conn.commit()
 
     async def update_username(self, tg_id: int, username: str) -> None:
@@ -560,7 +572,7 @@ class Repo:
         return _as_user_settings(row) if row else None
 
     async def update_user_settings(self, tg_id: int, **fields: Any) -> None:
-        allowed = {"tz_offset_min"}
+        allowed = {"tz_offset_min", "show_profile_links"}
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"unknown user_settings fields: {sorted(unknown)}")
@@ -2349,6 +2361,7 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
     return UserSettings(
         tg_id=row["tg_id"],
         tz_offset_min=row["tz_offset_min"],
+        show_profile_links=bool(row["show_profile_links"]),
     )
 
 
