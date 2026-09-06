@@ -216,6 +216,24 @@ async def _psn_test_screen(admin_id: int, psn_auth: PsnAuth) -> tuple[str, Inlin
     )
 
 
+def _cancel_input_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Отмена", callback_data="a:psncancel")]]
+    )
+
+
+@router.callback_query(F.data == "a:psncancel")
+async def psn_admin_input_cancel(
+    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher,
+    psn_auth: PsnAuth,
+) -> None:
+    """The way out of a still-armed NPSSO retry (Follow-up 2026-09-06,
+    found live: a stray later message got misread as the next answer once
+    nobody explicitly cancelled) — drops back to the admin home screen."""
+    _awaiting_input.pop(callback.from_user.id, None)
+    await _redraw(callback, *await render_admin_home(repo, fetcher, steam_fetcher, psn_auth))
+
+
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingPsnAdminInput())
 async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None:
     assert message.from_user is not None and message.text is not None
@@ -229,9 +247,13 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
             await psn_auth.set_npsso(raw, message.from_user.id)
         except PsnTokenDeadError:
             # Stays armed on purpose — a typo is worth just retrying,
-            # not a trip back through /admin.
+            # not a trip back through /admin — but a stray later message
+            # (found live 2026-09-06: a repeated paste while debugging got
+            # misread as a PSN Online ID once the state moved on) needs an
+            # explicit way out too, not just "send something else".
             await message.answer(
-                "NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз."
+                "NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз.",
+                reply_markup=_cancel_input_keyboard(),
             )
             return
         except PsnClientSetupError as exc:
@@ -242,7 +264,8 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
             log.exception("psn_admin_input: could not set up the PSN client")
             await message.answer(
                 f"Не получилось создать клиент PSN — техническая ошибка на сервере "
-                f"({exc}). NPSSO тут, скорее всего, ни при чём — посмотри логи бота."
+                f"({exc}). NPSSO тут, скорее всего, ни при чём — посмотри логи бота.",
+                reply_markup=_cancel_input_keyboard(),
             )
             return
         _awaiting_input[message.from_user.id] = (PSN_LOOKUP_KEY, None)
