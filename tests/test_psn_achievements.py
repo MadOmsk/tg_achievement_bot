@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from bot.db.repo import Repo
 from bot.services.psn import achievements as psn_achievements_module
 from bot.services.psn.achievements import fetch_unlocked
-from bot.services.psn.client import EarnedTrophy, PsnPrivateProfileError
+from bot.services.psn.client import EarnedTrophy, PsnPrivateProfileError, PsnTitleUnavailableError
 
 ACCOUNT_ID = "acc-1"
 
@@ -96,6 +96,27 @@ async def test_a_private_title_is_skipped_not_fatal(repo: Repo, monkeypatch) -> 
         [hidden, visible],
         {
             "NPWR00001_00": PsnPrivateProfileError(ACCOUNT_ID),
+            "NPWR00002_00": [_trophy(9)],
+        },
+    )
+
+    result = await fetch_unlocked(repo, object(), ACCOUNT_ID)  # type: ignore[arg-type]
+
+    assert [item.achievement_id for item in result] == ["9"]
+
+
+async def test_a_title_sony_404s_is_skipped_not_fatal(repo: Repo, monkeypatch) -> None:
+    """The actual production bug (found live 2026-09-06): one game 404ing
+    on Sony's own side used to take down the entire backfill — every retry
+    hit the same game and failed identically. Same isolation as a private
+    title above, just a different upstream error."""
+    visible = _FakeTitle("NPWR00002_00", "Visible", progress=10)
+    broken = _FakeTitle("NPWR00001_00", "Broken", progress=10)
+    _install_fakes(
+        monkeypatch,
+        [broken, visible],
+        {
+            "NPWR00001_00": PsnTitleUnavailableError(ACCOUNT_ID),
             "NPWR00002_00": [_trophy(9)],
         },
     )

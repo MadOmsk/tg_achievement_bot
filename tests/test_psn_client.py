@@ -23,6 +23,7 @@ from bot.services.psn import client as psn_client
 from bot.services.psn.client import (
     PsnApiError,
     PsnPrivateProfileError,
+    PsnTitleUnavailableError,
     PsnTokenDeadError,
     _as_float,
     build_client,
@@ -30,6 +31,7 @@ from bot.services.psn.client import (
     is_trophy_visible,
     recent_earned_trophies,
     resolve_profile,
+    trophies_for_title,
 )
 
 _next_trophy_id = iter(range(1, 100_000))
@@ -84,6 +86,8 @@ class _FakeUser:
         title = next(t for t in self._titles if t.np_communication_id == np_communication_id)
         if title.trophies_by_id.get("__forbidden__"):
             raise PSNAWPForbiddenError("closed")
+        if title.trophies_by_id.get("__notfound__"):
+            raise PSNAWPNotFoundError("Resource not found (trophyGroupId='default')")
         return list(title.trophies_by_id.get(np_communication_id, []))
 
 
@@ -294,6 +298,39 @@ async def test_recent_earned_trophies_skips_one_forbidden_game_not_the_whole_scr
         "NPWR00001_00", "Hidden Game", trophies_by_id={"NPWR00001_00": [], "__forbidden__": [1]}
     )
     client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer", titles=[hidden, visible])})
+
+    result = await recent_earned_trophies(client, "acc-1", limit=10)
+
+    assert [t.trophy_name for t in result] == ["Visible"]
+
+
+async def test_trophies_for_title_maps_not_found_to_title_unavailable() -> None:
+    """Found live 2026-09-06: Sony 404s trophyGroupId='default' for a
+    specific title — not a privacy setting, PSNAWPForbiddenError's own
+    case. Confirmed the two must be distinguishable (PsnPrivateProfileError
+    is documented as deliberately "distinct from not found")."""
+    broken = _FakeTitle(
+        "NPWR00001_00", "Broken Game", trophies_by_id={"NPWR00001_00": [], "__notfound__": [1]}
+    )
+    client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer", titles=[broken])})
+
+    with pytest.raises(PsnTitleUnavailableError):
+        await trophies_for_title(client, "acc-1", broken)
+
+
+async def test_recent_earned_trophies_skips_one_notfound_game_not_the_whole_screen() -> None:
+    """The actual production bug: uncaught, this took down the *entire*
+    backfill for an account with one 404ing game — every retry hit the
+    same game and failed identically, so the account could never finish
+    linking. Same isolation as the forbidden-game case above."""
+    visible_trophy = _FakeTrophy("Visible", earned=True, earned_date_time=datetime(2024, 1, 1))
+    visible = _FakeTitle(
+        "NPWR00002_00", "Visible Game", trophies_by_id={"NPWR00002_00": [visible_trophy]}
+    )
+    broken = _FakeTitle(
+        "NPWR00001_00", "Broken Game", trophies_by_id={"NPWR00001_00": [], "__notfound__": [1]}
+    )
+    client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer", titles=[broken, visible])})
 
     result = await recent_earned_trophies(client, "acc-1", limit=10)
 

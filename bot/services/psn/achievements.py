@@ -22,6 +22,7 @@ from bot.services.models import ParsedAchievement
 from bot.services.psn.client import (
     EarnedTrophy,
     PsnPrivateProfileError,
+    PsnTitleUnavailableError,
     trophies_for_title,
     trophy_titles_for_account,
 )
@@ -68,6 +69,8 @@ async def fetch_unlocked(
             earned = await trophies_for_title(client, account_id, title)
         except PsnPrivateProfileError:
             continue  # this one game's detail is hidden — skip it, not the whole account
+        except PsnTitleUnavailableError:
+            continue  # Sony 404s this one game's own data — same isolation, not our bug
 
         result.extend(_to_parsed(title.np_communication_id, item) for item in earned)
     return result

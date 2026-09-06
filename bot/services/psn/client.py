@@ -71,6 +71,17 @@ class PsnPrivateProfileError(PsnApiError):
     (get_profile's is_public)."""
 
 
+class PsnTitleUnavailableError(PsnApiError):
+    """This one game's trophy detail 404s on Sony's own side — not a
+    privacy setting. Found live 2026-09-06: a real account's backfill hit
+    `PSNAWPNotFoundError: Resource not found (trophyGroupId='default')` for
+    one specific title and, uncaught, took down the *entire* backfill —
+    every retry hit the same game and failed identically, so the account
+    could never finish linking. Callers skip just this one game, the same
+    "isolate the one bad title, not the whole account" treatment
+    PsnPrivateProfileError already gets."""
+
+
 class PsnClientSetupError(PsnApiError):
     """Something failed while constructing the PSNAWP client object itself
     — before we even got to whether the NPSSO is any good. Almost always
@@ -275,9 +286,10 @@ async def trophies_for_title(
     """Full detail (name/tier/rarity/hidden/icon) for every *earned* trophy
     in one game — the per-title body recent_earned_trophies below and the
     trophy poller (SPEC 9, M-PSN-2) both need. Raises PsnPrivateProfileError
-    if this one game's detail is hidden — the caller decides what that
-    means (recent_earned_trophies skips just this game, not the whole
-    screen; the poller does the same, SPEC 9, M-PSN-2)."""
+    if this one game's detail is hidden, or PsnTitleUnavailableError if
+    Sony's own API 404s on it — the caller decides what that means
+    (recent_earned_trophies skips just this game, not the whole screen; the
+    poller does the same, SPEC 9, M-PSN-2)."""
     try:
         user = await _call(client.user, account_id=account_id)
     except PSNAWPNotFoundError:
@@ -298,6 +310,12 @@ async def trophies_for_title(
         )
     except PSNAWPForbiddenError:
         raise PsnPrivateProfileError(account_id) from None
+    except PSNAWPNotFoundError as exc:
+        # Found live 2026-09-06: Sony 404s "trophyGroupId='default'" for a
+        # specific title (not the account, not private — just this one
+        # game's data on Sony's own side). Uncaught, this took down an
+        # entire backfill every single retry — the same game every time.
+        raise PsnTitleUnavailableError(str(exc)) from None
     except PSNAWPAuthenticationError as exc:
         raise PsnTokenDeadError(str(exc)) from None
 
@@ -337,6 +355,8 @@ async def recent_earned_trophies(
             earned.extend(await trophies_for_title(client, account_id, title))
         except PsnPrivateProfileError:
             continue  # this one game's detail is hidden — skip it, not the whole screen
+        except PsnTitleUnavailableError:
+            continue  # Sony 404s this one game's own data — same isolation
 
     earned.sort(key=lambda t: t.earned_date_time or "", reverse=True)
     return earned[:limit]
