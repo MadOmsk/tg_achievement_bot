@@ -210,6 +210,8 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
 - Xbox 360 uses contract 1 instead, has no rarity percentage at all, and its
   achievement icon is replaced with the cached title's own cover art (contract 1
   carries only a bare `imageId` int, with no documented way to turn it into a URL).
+- Identify a person by **XUID**, never by gamertag — a gamertag can change, XUID
+  can't. `users.gamertag` is a display cache only, never a lookup key.
 
 ### Steam
 
@@ -311,6 +313,11 @@ known rarity is at or below that chat's threshold (a platform reporting no rarit
 data at all — currently only Xbox 360 — is exempt from this check, not silently
 hidden by it); the achievement's gamerscore meets the chat's minimum; the title
 isn't muted there; the exact item wasn't already published to that chat.
+
+The rarity threshold itself is always `chat_settings.rare_threshold_percent` — an
+admin sets it per chat through the bot. Never hardcode a percentage (10% or
+otherwise) as the threshold; the person only ever picks a *mode* (`all`/`rare`/
+`hidden`), never a number.
 
 `subscriptions.digest_threshold` decides when a batch becomes one grouped message
 instead of several — grouped by platform and title. Every achievement in a digest is
@@ -438,15 +445,12 @@ itself): `start` / `stop` / `restart` / `status` / `logs [-Lines N]`. `status` s
 uptime, whether port 8080 is taken, any stray bot process (two bots sharing one
 `BOT_TOKEN` fight over Telegram's updates), and a database summary.
 
-`.\manage.ps1 dashboard` (or just double-clicking `manage.bat`) opens a live
-console view — the same block as `status`, plus a `bot.log` tail, redrawing every 5
-seconds (`-RefreshSeconds N` to change it; not made faster by default on purpose —
-port/process polling goes through CIM/WMI, tens of milliseconds per call, and
-nothing is gained hammering it more than a couple of times a second). Non-blocking
-key handling (`Console.KeyAvailable`) keeps `[2] Start [3] Stop [4] Restart [Q] Quit`
-live right there without leaving the dashboard. The separate `start`/`stop`/
-`restart`/`status`/`logs` commands are still there too, for a one-line terminal
-call when the dashboard isn't needed.
+`.\manage.ps1 dashboard` (or double-clicking `manage.bat`) opens a live console
+view — the same block as `status`, plus a `bot.log` tail, redrawing every 5 seconds
+(`-RefreshSeconds N` to change it), with `[2] Start [3] Stop [4] Restart [Q] Quit`
+hotkeys live the whole time. The separate `start`/`stop`/`restart`/`status`/`logs`
+commands still work too, for a one-line terminal call when the dashboard isn't
+needed.
 
 Never run the local bot and the production bot with the same `BOT_TOKEN` at the same
 time — the home PC is for development only, its `.env` should point at `localhost`
