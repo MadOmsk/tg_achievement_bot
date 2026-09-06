@@ -14,12 +14,12 @@ def test_hub_keyboard_has_exactly_five_buttons_and_carries_the_chat_id() -> None
     markup = hub_keyboard("mybot", CHAT_ID)
     buttons = [b for row in markup.inline_keyboard for b in row]
     assert len(buttons) == 5
-    connect_button = next(b for b in buttons if b.text == "🔗 Подключить XBOX")
+    connect_button = next(b for b in buttons if b.text == "🔗 XBOX")
     assert connect_button.url is not None
     assert f"start=connect{CHAT_ID}" in connect_button.url
-    steam_button = next(b for b in buttons if b.text == "🎮 Подключить Steam")
+    steam_button = next(b for b in buttons if b.text == "🎮 Steam")
     assert steam_button.url == "https://t.me/mybot?start=connectsteam"
-    psn_button = next(b for b in buttons if b.text == "🎮 Подключить PSN")
+    psn_button = next(b for b in buttons if b.text == "🎮 PSN")
     assert psn_button.url == "https://t.me/mybot?start=connectpsn"
 
 

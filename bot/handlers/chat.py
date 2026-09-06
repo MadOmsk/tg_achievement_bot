@@ -625,14 +625,14 @@ def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="✅ Публиковать мои достижения", callback_data="sub:on")],
             [
                 InlineKeyboardButton(
-                    text="🔗 Подключить XBOX",
+                    text="🔗 XBOX",
                     # The chat id rides along in the deep-link payload so a
                     # successful login can auto-subscribe him right back here
                     # (SPEC 6.3) — see _parse_connect_payload in connect.py.
                     url=f"https://t.me/{bot_username}?start=connect{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="🎮 Подключить Steam",
+                    text="🎮 Steam",
                     # No chat id here (unlike Xbox above) — /connect_steam
                     # needs a profile link a button tap can't supply anyway,
                     # so this just opens the DM at the right prompt (SPEC 9,
@@ -640,7 +640,7 @@ def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
                     url=f"https://t.me/{bot_username}?start=connectsteam",
                 ),
                 InlineKeyboardButton(
-                    text="🎮 Подключить PSN",
+                    text="🎮 PSN",
                     # Same reasoning as Steam's own button above (SPEC 9,
                     # M-PSN-1, handlers/psn.py, connect.py's ?start=connectpsn).
                     url=f"https://t.me/{bot_username}?start=connectpsn",

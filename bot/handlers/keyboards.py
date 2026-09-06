@@ -140,9 +140,7 @@ def disconnect_prompt_keyboard(*, from_panel: bool = False) -> InlineKeyboardMar
     )
 
 
-STEAM_CONNECT_BUTTON = InlineKeyboardButton(
-    text="🎮 Подключить Steam", callback_data="steam:connect"
-)
+STEAM_CONNECT_BUTTON = InlineKeyboardButton(text="🎮 Steam", callback_data="steam:connect")
 STEAM_DISCONNECT_BUTTON = InlineKeyboardButton(
     text="🔕 Отключить Steam", callback_data="steam:disconnectprompt"
 )
@@ -152,7 +150,7 @@ def _steam_button(*, steam_connected: bool) -> InlineKeyboardButton:
     return STEAM_DISCONNECT_BUTTON if steam_connected else STEAM_CONNECT_BUTTON
 
 
-PSN_CONNECT_BUTTON = InlineKeyboardButton(text="🎮 Подключить PSN", callback_data="psn:connect")
+PSN_CONNECT_BUTTON = InlineKeyboardButton(text="🎮 PSN", callback_data="psn:connect")
 PSN_DISCONNECT_BUTTON = InlineKeyboardButton(
     text="🔕 Отключить PSN", callback_data="psn:disconnectprompt"
 )
@@ -179,7 +177,7 @@ def panel_keyboard(
         # disconnect option for it rather than nothing at all.
         return InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🔗 Подключить XBOX", callback_data="relogin")],
+                [InlineKeyboardButton(text="🔗 XBOX", callback_data="relogin")],
                 [_steam_button(steam_connected=steam_connected)],
                 [_psn_button(psn_connected=psn_connected)],
             ]
