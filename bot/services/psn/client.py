@@ -133,10 +133,14 @@ async def build_client(npsso: str) -> PSNAWP:
 
 
 async def check_alive(client: PSNAWP) -> bool:
-    """Cheapest authenticated call available — the service account's own
-    profile (poller/service_health.py)."""
+    """The service account's own profile — the cheapest authenticated call
+    available. `client.me()` alone proves nothing (found live 2026-09-06:
+    it never touches the network by itself, same lazy pattern as PSNAWP's
+    own constructor — it "succeeds" instantly regardless of whether the
+    NPSSO is any good). The actual authenticated request only fires on the
+    first *property* access afterward — `.online_id` is the cheapest one."""
     try:
-        await _call(client.me)
+        await _call(lambda: client.me().online_id)
     except PSNAWPAuthenticationError:
         return False
     return True

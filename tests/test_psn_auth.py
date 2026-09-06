@@ -31,10 +31,12 @@ class _FakeClient:
     def __init__(self, *, alive: bool = True) -> None:
         self.alive = alive
 
-    def me(self) -> object:
+    def me(self) -> _FakeClient:
         if not self.alive:
             raise PSNAWPAuthenticationError("dead")
-        return object()
+        return self
+
+    online_id = "service-account"
 
 
 async def test_status_defaults_to_not_configured(repo: Repo, cipher: TokenCipher) -> None:

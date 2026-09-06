@@ -91,10 +91,12 @@ class _FakeClient:
         self._by_online_id = users or {}
         self._dead = dead
 
-    def me(self) -> object:
+    def me(self) -> _FakeClient:
         if self._dead:
             raise PSNAWPAuthenticationError("dead")
-        return object()
+        return self
+
+    online_id = "service-account"
 
     def user(self, online_id: str | None = None, account_id: str | None = None) -> _FakeUser:
         if self._dead:
@@ -136,6 +138,24 @@ async def test_build_client_wraps_unexpected_errors_as_setup_error(
 async def test_check_alive_true_and_false() -> None:
     assert await check_alive(_FakeClient({})) is True
     assert await check_alive(_FakeClient({}, dead=True)) is False
+
+
+async def test_check_alive_catches_a_client_that_only_fails_on_property_access() -> None:
+    """The actual bug found live 2026-09-06: PSNAWP.me() never touches the
+    network by itself — it "succeeds" instantly for garbage input, same
+    lazy pattern as the PSNAWP constructor. The real authenticated request
+    only fires on a *property* access afterward (.online_id), so
+    check_alive() must trigger that, not just call .me()."""
+
+    class _LazyClient:
+        def me(self) -> _LazyClient:
+            return self  # "succeeds" trivially, exactly like the real bug
+
+        @property
+        def online_id(self) -> str:
+            raise PSNAWPAuthenticationError("npsso rejected")
+
+    assert await check_alive(_LazyClient()) is False  # type: ignore[arg-type]
 
 
 async def test_resolve_profile_returns_account_id_and_online_id() -> None:
