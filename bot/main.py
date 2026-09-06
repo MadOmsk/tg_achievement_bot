@@ -27,6 +27,7 @@ from bot.handlers import steam as steam_handlers
 from bot.handlers.chat import UsernameMiddleware
 from bot.handlers.keyboards import timezone_keyboard
 from bot.lock import AlreadyRunningError, single_instance
+from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.fetcher import Fetcher
 from bot.poller.message_cleanup import MessageCleanup
@@ -124,6 +125,7 @@ async def run(settings: Settings) -> None:
         MessageCleanup(bot, repo),
         OnlineAutoRefresh(bot, repo),
         ServiceHealth(settings, repo, psn_auth, notifier),
+        AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

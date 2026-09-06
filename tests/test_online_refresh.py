@@ -60,6 +60,20 @@ async def test_start_supersedes_a_previous_auto_refresh(repo: Repo) -> None:
     assert rows[0].message_id == 2
 
 
+async def test_get_online_auto_refresh_round_trips(repo: Repo) -> None:
+    """Follow-up 2026-09-06: a fresh /online needs the old message_id
+    before start_online_auto_refresh overwrites the row, to delete it
+    rather than leave a duplicate sitting in the chat."""
+    await repo.upsert_chat(CHAT_ID, "Test chat", 1)
+    assert await repo.get_online_auto_refresh(CHAT_ID) is None
+
+    await repo.start_online_auto_refresh(CHAT_ID, 42)
+    row = await repo.get_online_auto_refresh(CHAT_ID)
+
+    assert row is not None
+    assert row.message_id == 42
+
+
 async def test_tick_refreshes_a_message_past_its_interval(repo: Repo) -> None:
     await _member(repo)
     await repo.start_online_auto_refresh(CHAT_ID, 42)

@@ -48,10 +48,12 @@ from bot.poller.online_refresh import DEFAULT_REFRESH_INTERVAL_MIN as DEFAULT_ON
 from bot.poller.online_refresh import DEFAULT_TTL_HOURS as DEFAULT_ONLINE_REFRESH_TTL_HOURS
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
 from bot.poller.online_refresh import TTL_HOURS_KEY as ONLINE_REFRESH_TTL_KEY
-from bot.poller.service_health import STATUS_ACTIVE as STEAM_KEY_ACTIVE
-from bot.poller.service_health import STEAM_CHECKED_AT_KEY, STEAM_STATUS_KEY
+from bot.poller.service_health import (
+    DEFAULT_KEY_CHECK_INTERVAL_MIN,
+    KEY_CHECK_INTERVAL_KEY,
+)
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services.psn.auth import STATUS_ACTIVE as PSN_KEY_ACTIVE
+from bot.services.admin_view import render_admin_home
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
@@ -59,7 +61,6 @@ from bot.services.psn.client import (
     PsnPrivateProfileError,
     PsnTokenDeadError,
     recent_earned_trophies,
-    request_count_today,
     resolve_profile,
 )
 from bot.services.stats import counters_for, month_cutoff_utc, today_cutoff_utc
@@ -85,13 +86,45 @@ router.message.filter(IsAdmin())
 router.callback_query.filter(IsAdmin())
 
 
+async def _replace_admin_home(
+    bot: Bot,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_auth: PsnAuth,
+    admin_id: int,
+    prefix: str = "",
+) -> None:
+    """Sends a fresh /admin home screen as a brand-new message, replacing
+    whatever this admin had open before, and (re)arms the auto-refresh job
+    for it (Follow-up 2026-09-06) — shared by the bare /admin command and
+    every flow that confirms a change and redraws home as a new message
+    rather than editing the current one in place (a:home's own callback
+    does the latter, so it never needs this)."""
+    text, markup = await render_admin_home(repo, fetcher, steam_fetcher, psn_auth)
+    if prefix:
+        text = f"{prefix}\n\n{text}"
+    previous = await repo.get_admin_panel_refresh(admin_id)
+    if previous is not None:
+        with contextlib.suppress(Exception):
+            await bot.delete_message(admin_id, previous.message_id)
+    sent = await bot.send_message(admin_id, text, reply_markup=markup)
+    interval = await repo.get_int_setting(KEY_CHECK_INTERVAL_KEY, DEFAULT_KEY_CHECK_INTERVAL_MIN)
+    if interval > 0:
+        await repo.start_admin_panel_refresh(admin_id, sent.message_id)
+
+
 @router.message(Command("admin"), F.chat.type == ChatType.PRIVATE)
 async def admin_command(
-    message: Message, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher, psn_auth: PsnAuth
+    message: Message,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_auth: PsnAuth,
+    bot: Bot,
 ) -> None:
     _awaiting_input.pop(message.from_user.id, None)  # a fresh /admin cancels any pending flow
-    text, markup = await _home(repo, fetcher, steam_fetcher, psn_auth)
-    await message.answer(text, reply_markup=markup)
+    await _replace_admin_home(bot, repo, fetcher, steam_fetcher, psn_auth, message.chat.id)
 
 
 @router.callback_query(F.data == "a:home")
@@ -100,7 +133,7 @@ async def admin_home(
     psn_auth: PsnAuth,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await _home(repo, fetcher, steam_fetcher, psn_auth))
+    await _redraw(callback, *await render_admin_home(repo, fetcher, steam_fetcher, psn_auth))
 
 
 # ------------------------------------------------------------- PSN (test)
@@ -344,6 +377,20 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     ONLINE_REFRESH_TTL_KEY: NumericSetting(
         "Автообновление /online, часов", DEFAULT_ONLINE_REFRESH_TTL_HOURS, max=24
     ),
+    # One shared cadence for two things (Follow-up 2026-09-06): how often
+    # poller/service_health.py rechecks the Steam/PSN keys, AND how often
+    # the /admin home screen refreshes itself in place — deliberately the
+    # same knob, not two settings that merely start out equal, since the
+    # panel's own numbers (key status, request counts) are only ever as
+    # fresh as the last health check anyway. No off switch (unlike the
+    # online-refresh interval above): silently killing the key-dead alert
+    # by tweaking a "refresh interval" setting would be a real footgun.
+    KEY_CHECK_INTERVAL_KEY: NumericSetting(
+        "Проверка ключей / автообновление /admin (мин)",
+        DEFAULT_KEY_CHECK_INTERVAL_MIN,
+        min=1,
+        max=60,
+    ),
 }
 
 
@@ -398,6 +445,7 @@ async def numeric_setting_input(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
+    bot: Bot,
 ) -> None:
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
@@ -439,8 +487,9 @@ async def numeric_setting_input(
 
     del _awaiting_input[message.from_user.id]
     await repo.set_app_setting(key, stored, message.from_user.id)
-    reply_text, markup = await _home(repo, fetcher, steam_fetcher, psn_auth)
-    await message.answer(f"{confirm}\n\n{reply_text}", reply_markup=markup)
+    await _replace_admin_home(
+        bot, repo, fetcher, steam_fetcher, psn_auth, message.from_user.id, prefix=confirm
+    )
 
 
 # ------------------------------------------------------- per-chat settings
@@ -876,77 +925,6 @@ async def chat_system_wipe_all_confirm(callback: CallbackQuery, repo: Repo, bot:
 # ------------------------------------------------------------------- screens
 
 
-async def _key_status_line(status: str, checked_at: str | None, *, active_value: str) -> str:
-    """Common rendering for the two shared-credential status lines below
-    (SPEC 9, M-PSN-1's "мониторинг живости" paragraph, applied to Steam
-    too) — a bare word would hide a stale check, so this always says when
-    it last actually ran."""
-    if status == active_value:
-        return f"✅ жив, проверен {humanize_ago(checked_at)}" if checked_at else "✅ жив"
-    return f"⚠️ протух, проверен {humanize_ago(checked_at)}" if checked_at else "⚠️ протух"
-
-
-async def _home(
-    repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher, psn_auth: PsnAuth
-) -> tuple[str, InlineKeyboardMarkup]:
-    users = await repo.admin_users()
-    chats = await repo.admin_chats()
-
-    # Split by platform (2026-09-05 follow-up): "вход активен"/"без входа"
-    # only ever meant Xbox's own token — lumping Steam-only people (no
-    # token row at all, token_status is None for them) into "без входа"
-    # made them look like a broken Xbox login instead of "no Xbox at all".
-    xbox_linked = [u for u in users if u.xuid]
-    steam_linked = [u for u in users if u.steam_id]
-    psn_linked = [u for u in users if u.psn_account_id]
-    xbox_active = sum(1 for u in xbox_linked if u.token_status == "active" and not u.is_excluded)
-    xbox_broken = sum(1 for u in xbox_linked if u.token_status != "active")
-    excluded = sum(1 for u in users if u.is_excluded)
-
-    # Steam's own key is a permanent .env secret (config.py) — no "not
-    # configured" state worth showing separately here, every Steam feature
-    # already answers that on its own when it's unset.
-    steam_key_status = await repo.get_app_setting(STEAM_STATUS_KEY, STEAM_KEY_ACTIVE)
-    steam_key_checked = await repo.get_app_setting(STEAM_CHECKED_AT_KEY)
-    psn_status = await psn_auth.status()
-    psn_checked = await psn_auth.checked_at()
-    psn_key_line = (
-        "не настроен — «🏆 Трофеи PSN» ниже примет NPSSO"
-        if psn_status == PSN_NOT_CONFIGURED
-        else await _key_status_line(psn_status, psn_checked, active_value=PSN_KEY_ACTIVE)
-    )
-    steam_key_line = await _key_status_line(
-        steam_key_status, steam_key_checked, active_value=STEAM_KEY_ACTIVE
-    )
-
-    text = (
-        "⚙️ Администрирование\n\n"
-        f"Пользователей: {len(users)} (исключено: {excluded})\n"
-        f"  XBOX:  {len(xbox_linked)} (вход активен: {xbox_active}, без входа: {xbox_broken})\n"
-        f"  Steam: {len(steam_linked)}\n"
-        f"  PSN:   {len(psn_linked)}\n"
-        f"Чатов:          {sum(1 for c in chats if c.is_active)}\n"
-        f"API XBOX (достижения):  {_format_api_usage(fetcher.api_usage())}\n"
-        f"API Steam (достижения): {_format_api_usage(steam_fetcher.api_usage())}\n"
-        f"Ключ Steam: {steam_key_line}\n"
-        f"Ключ PSN:   {psn_key_line}\n"
-        # No known daily cap to compare against (SPEC 9, M-PSN-1 checklist
-        # item 4 — nowhere documented) — a bare count, not a "used/limit"
-        # ratio that would imply a number we don't actually have.
-        f"Запросов к PSN за сутки: {request_count_today()}"
-    )
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👤 Новые пользователи ▸", callback_data="a:newusers")],
-            [InlineKeyboardButton(text="⚙️ Глобальные настройки ▸", callback_data="a:limits")],
-            [InlineKeyboardButton(text="Пользователи ▸", callback_data="a:users:0")],
-            [InlineKeyboardButton(text="Чаты ▸", callback_data="a:chats")],
-            [InlineKeyboardButton(text="🏆 Трофеи PSN (тест) ▸", callback_data="a:psntest")],
-        ]
-    )
-    return text, keyboard
-
-
 async def _new_user_defaults(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
     """Settings that only ever apply at the moment someone new subscribes —
     grouped on their own screen (2026-09-05 follow-up) rather than sitting
@@ -1223,19 +1201,6 @@ def _back_home() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="‹ Назад", callback_data="a:home")]]
     )
-
-
-def _format_api_usage(windows: list[tuple[int, int, float]]) -> str:
-    """ "3/100 за 15с · 12/300 за 5 мин" — how close the shared achievements
-    rate limiter is to Microsoft's own windows (SPEC 4), a diagnostic against
-    a bug in the poller, not a persisted budget (removed once already, see
-    приложение А — this reads the limiter's live in-memory counters, no
-    database table, nothing to re-add)."""
-    parts = []
-    for used, limit, span in windows:
-        label = f"{span / 60:g} мин" if span >= 60 else f"{span:g}с"
-        parts.append(f"{used}/{limit} за {label}")
-    return " · ".join(parts) if parts else "нет данных"
 
 
 def _icon(user: AdminUserRow) -> str:

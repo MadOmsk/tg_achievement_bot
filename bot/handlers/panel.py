@@ -30,6 +30,7 @@ from bot.handlers.keyboards import (
 )
 from bot.poller.fetcher import Fetcher
 from bot.services.achievements import plural_achievements
+from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for
 from bot.util import cooldown_minutes_left, humanize_ago, parse_iso, thousands
 
@@ -51,11 +52,20 @@ LOGIN_STATUS = {
 }
 
 
+async def send_panel(bot: Bot, repo: Repo, tg_id: int) -> None:
+    """The one place that actually delivers the panel as a new message
+    (not an edit) — the bare /panel command and the ?start=panel deep link
+    (handlers/connect.py) both go through this, so a person re-opening
+    their panel replaces the previous copy instead of piling up a new one
+    every time (Follow-up 2026-09-06)."""
+    text, markup = await render_panel(repo, tg_id)
+    await send_replacing(bot, repo, tg_id, "panel", text, reply_markup=markup)
+
+
 @router.message(Command("panel"), F.chat.type == ChatType.PRIVATE)
-async def panel_command(message: Message, repo: Repo) -> None:
+async def panel_command(message: Message, repo: Repo, bot: Bot) -> None:
     await repo.ensure_user(message.chat.id, _username(message))
-    text, markup = await render_panel(repo, message.chat.id)
-    await message.answer(text, reply_markup=markup)
+    await send_panel(bot, repo, message.chat.id)
 
 
 @router.message(Command("panel"))

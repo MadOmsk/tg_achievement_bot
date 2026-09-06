@@ -248,6 +248,18 @@ class OnlineAutoRefreshRow:
 
 
 @dataclass(slots=True)
+class AdminPanelRefreshRow:
+    """One admin's live-updating /admin screen (Follow-up 2026-09-06,
+    poller/admin_refresh.py) — same shape as OnlineAutoRefreshRow above,
+    just keyed by admin tg_id instead of chat_id."""
+
+    admin_id: int
+    message_id: int
+    created_at: str
+    last_updated_at: str
+
+
+@dataclass(slots=True)
 class ChatMemberStat:
     tg_id: int
     gamertag: str | None
@@ -1484,6 +1496,117 @@ class Repo:
             )
             for row in await cursor.fetchall()
         ]
+
+    async def get_online_auto_refresh(self, chat_id: int) -> OnlineAutoRefreshRow | None:
+        """Follow-up 2026-09-06: /online now deletes its own previous copy
+        before posting a new one (same "don't spam the chat" rule as
+        tracked_messages below) — needs the old message_id before
+        start_online_auto_refresh overwrites the row with the new one."""
+        cursor = await self._conn.execute(
+            "SELECT chat_id, message_id, created_at, last_updated_at "
+            "FROM online_auto_refresh WHERE chat_id = ?",
+            (chat_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return OnlineAutoRefreshRow(
+            chat_id=row["chat_id"],
+            message_id=row["message_id"],
+            created_at=row["created_at"],
+            last_updated_at=row["last_updated_at"],
+        )
+
+    # ----------------------------------------------- admin panel auto-refresh
+
+    async def get_admin_panel_refresh(self, admin_id: int) -> AdminPanelRefreshRow | None:
+        cursor = await self._conn.execute(
+            "SELECT admin_id, message_id, created_at, last_updated_at "
+            "FROM admin_panel_refresh WHERE admin_id = ?",
+            (admin_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return AdminPanelRefreshRow(
+            admin_id=row["admin_id"],
+            message_id=row["message_id"],
+            created_at=row["created_at"],
+            last_updated_at=row["last_updated_at"],
+        )
+
+    async def start_admin_panel_refresh(self, admin_id: int, message_id: int) -> None:
+        """A fresh /admin supersedes whatever was auto-refreshing for this
+        admin before (Follow-up 2026-09-06, poller/admin_refresh.py) — the
+        caller deletes the old *message* itself (get_admin_panel_refresh
+        above gives it the id to delete); this just points the one row at
+        the new one, same reset-both-timestamps shape as
+        start_online_auto_refresh."""
+        now = utcnow_iso()
+        await self._conn.execute(
+            "INSERT INTO admin_panel_refresh (admin_id, message_id, created_at, last_updated_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(admin_id) DO UPDATE SET"
+            " message_id = excluded.message_id, created_at = excluded.created_at,"
+            " last_updated_at = excluded.last_updated_at",
+            (admin_id, message_id, now, now),
+        )
+        await self._conn.commit()
+
+    async def touch_admin_panel_refresh(self, admin_id: int) -> None:
+        await self._conn.execute(
+            "UPDATE admin_panel_refresh SET last_updated_at = ? WHERE admin_id = ?",
+            (utcnow_iso(), admin_id),
+        )
+        await self._conn.commit()
+
+    async def delete_admin_panel_refresh(self, admin_id: int) -> None:
+        await self._conn.execute(
+            "DELETE FROM admin_panel_refresh WHERE admin_id = ?", (admin_id,)
+        )
+        await self._conn.commit()
+
+    async def all_admin_panel_refreshes(self) -> list[AdminPanelRefreshRow]:
+        cursor = await self._conn.execute(
+            "SELECT admin_id, message_id, created_at, last_updated_at FROM admin_panel_refresh"
+        )
+        return [
+            AdminPanelRefreshRow(
+                admin_id=row["admin_id"],
+                message_id=row["message_id"],
+                created_at=row["created_at"],
+                last_updated_at=row["last_updated_at"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    # --------------------------------------------------- self-dedup messages
+
+    async def tracked_message(self, chat_id: int, kind: str, subject_id: int = 0) -> int | None:
+        """The message_id this (chat, kind, subject) last sent, if any
+        (Follow-up 2026-09-06) — /panel, /summary, /recent and a specific
+        person's /stats card each replace their own previous copy instead
+        of accumulating (see tracked_messages in schema.sql for the exact
+        scope of `kind`/`subject_id`)."""
+        cursor = await self._conn.execute(
+            "SELECT message_id FROM tracked_messages "
+            "WHERE chat_id = ? AND kind = ? AND subject_id = ?",
+            (chat_id, kind, subject_id),
+        )
+        row = await cursor.fetchone()
+        return row["message_id"] if row else None
+
+    async def set_tracked_message(
+        self, chat_id: int, kind: str, subject_id: int, message_id: int
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO tracked_messages (chat_id, kind, subject_id, message_id, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(chat_id, kind, subject_id) DO UPDATE SET"
+            " message_id = excluded.message_id, updated_at = excluded.updated_at",
+            (chat_id, kind, subject_id, message_id, utcnow_iso()),
+        )
+        await self._conn.commit()
 
     async def record_chat_seen(self, chat_id: int, tg_id: int) -> None:
         """A message from a *known* tg_id in this group — feeds /online's

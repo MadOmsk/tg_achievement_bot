@@ -22,7 +22,7 @@ from bot.handlers.keyboards import (
     safe_edit,
     timezone_keyboard,
 )
-from bot.handlers.panel import render_panel
+from bot.handlers.panel import send_panel
 from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
@@ -61,8 +61,7 @@ async def start_with_payload(
     """Deep link from a group chat: its buttons send people here (SPEC 6.3)."""
     await repo.ensure_user(message.chat.id, _username(message))
     if command.args == "panel":
-        text, markup = await render_panel(repo, message.chat.id)
-        await message.answer(text, reply_markup=markup)
+        await send_panel(bot, repo, message.chat.id)
         return
     if command.args == "connectsteam":
         # Same prompt-and-wait as every other door into this flow
@@ -87,13 +86,13 @@ async def start_with_payload(
             return
         await _send_login_link(message, connect, origin_chat_id=origin_chat_id)
         return
-    await _greet(message, repo, connect)
+    await _greet(message, repo, connect, bot)
 
 
 @router.message(CommandStart())
-async def start(message: Message, repo: Repo, connect: ConnectService) -> None:
+async def start(message: Message, repo: Repo, connect: ConnectService, bot: Bot) -> None:
     await repo.ensure_user(message.chat.id, _username(message))
-    await _greet(message, repo, connect)
+    await _greet(message, repo, connect, bot)
 
 
 @router.message(Command("connect_xbox"))
@@ -258,11 +257,10 @@ async def timezone_manual_input(message: Message, repo: Repo) -> None:
     await message.answer(f"Часовой пояс: {format_offset(minutes)}. Поменять можно в /panel.")
 
 
-async def _greet(message: Message, repo: Repo, connect: ConnectService) -> None:
+async def _greet(message: Message, repo: Repo, connect: ConnectService, bot: Bot) -> None:
     user = await repo.get_user(message.chat.id)
     if user is not None and user.xuid:
-        text, markup = await render_panel(repo, message.chat.id)
-        await message.answer(text, reply_markup=markup)
+        await send_panel(bot, repo, message.chat.id)
         return
     await message.answer(GREETING)
     await _send_login_link(message, connect)

@@ -28,7 +28,7 @@
 │   ├── handlers/               — роутеры aiogram, только UI-слой
 │   │   ├── connect.py           — /start, /connect_xbox, /disconnect_xbox
 │   │   ├── panel.py             — личная панель пользователя, «Мои чаты»
-│   │   ├── admin.py             — админ-панель (/admin), стереть сообщения бота за 24ч
+│   │   ├── admin.py             — админ-панель (/admin, самообновляется), стереть сообщения бота за 24ч
 │   │   ├── chat.py              — команды группового чата: /subscribe, /stats,
 │   │   │                          /online, /who, /recent, /summary, /delete_last, хаб группы
 │   │   ├── hltb.py              — /hltb, поиск времени прохождения (SPEC 6.6)
@@ -45,6 +45,8 @@
 │   │   ├── hltb.py               — обёртка над howlongtobeatpy, кэш в hltb_cache
 │   │   ├── message_log.py        — request-мидлварь: лог исходящих сообщений в группы
 │   │   ├── online_view.py        — рендер таблицы /online, общий для команды и автообновления
+│   │   ├── admin_view.py         — рендер /admin, общий для команды и автообновления (Follow-up 2026-09-06)
+│   │   ├── single_message.py     — delete-then-send для /panel, /summary, /recent, /stats (Follow-up 2026-09-06)
 │   │   ├── notify.py             — уведомления администратору
 │   │   ├── crypto.py             — шифрование refresh-токенов (Fernet)
 │   │   ├── rate_limiter.py       — общий sliding-window лимитер (Xbox и Steam клиенты)
@@ -72,7 +74,8 @@
 │   │   ├── reminders.py           — напоминания о протухшем входе (SPEC 5.1.1)
 │   │   ├── message_cleanup.py     — автоудаление системных сообщений в группах (Follow-up 2026-09-05)
 │   │   ├── online_refresh.py      — автообновление таблицы /online (Follow-up 2026-09-05)
-│   │   └── service_health.py      — живость общих ключей Steam/PSN, уведомление админу (M-PSN-1)
+│   │   ├── service_health.py      — живость общих ключей Steam/PSN, уведомление админу (M-PSN-1)
+│   │   └── admin_refresh.py       — автообновление /admin, та же частота, что и service_health (Follow-up 2026-09-06)
 │   │
 │   ├── web/
 │   │   └── oauth.py               — aiohttp-колбэк Microsoft
@@ -101,7 +104,8 @@
 │           ├── 018_titles_icon_url.sql          — обложка игры как иконка для ачивок Xbox 360
 │           ├── 019_digest_threshold_per_chat.sql — digest_threshold: subscriptions, не user_settings
 │           ├── 020_bot_messages_is_system.sql    — bot_messages.is_system (автоудаление, Follow-up 2026-09-05)
-│           └── 021_online_auto_refresh.sql       — online_auto_refresh (автообновление /online, Follow-up 2026-09-05)
+│           ├── 021_online_auto_refresh.sql       — online_auto_refresh (автообновление /online, Follow-up 2026-09-05)
+│           └── 022_message_dedup.sql             — tracked_messages, admin_panel_refresh (Follow-up 2026-09-06)
 │
 ├── scripts/                    — вспомогательные скрипты вне приложения, разовые/ручные
 │   ├── db_status.py              — сводка по базе для `manage.ps1 status` (без зависимостей)
@@ -149,6 +153,9 @@
 │   ├── test_psn_auth.py           — хранение NPSSO, health-check, уведомление раз на переход
 │   ├── test_psn_connect.py        — флоу входа в PSN: prompt_for_link, AwaitingPsnLink, _connect
 │   ├── test_service_health.py     — живость общих ключей Steam/PSN, уведомление раз на переход
+│   ├── test_admin_refresh.py      — автообновление /admin, интервал/TTL, one-row-per-admin
+│   ├── test_admin_home_dedup.py   — _replace_admin_home: удаление предыдущего, arm/disarm рефреша
+│   ├── test_single_message.py     — send_replacing(): удаление предыдущего того же (chat, kind, subject)
 │   ├── test_rate_limiter.py       — снимок использования лимитера без учёта самого себя
 │   └── test_util.py               — маскирование секретов, форматирование чисел
 │

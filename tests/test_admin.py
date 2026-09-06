@@ -11,9 +11,9 @@ from bot.handlers.admin import (
     RARE_THRESHOLD_MIN,
     SYSTEM_MESSAGE_TTL_KEY,
     UNLIMITED_LABEL,
-    _format_api_usage,
     _format_limit,
 )
+from bot.services.admin_view import _format_api_usage
 
 
 def test_api_usage_formats_seconds_and_minutes() -> None:

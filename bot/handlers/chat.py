@@ -43,6 +43,7 @@ from bot.services.achievements import (
 )
 from bot.services.message_log import stats_category
 from bot.services.online_view import render_online_table
+from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for, local_now
 from bot.services.tables import blockquote, truncate_name
 from bot.util import cooldown_minutes_left, humanize_ago, thousands, utcnow
@@ -287,24 +288,37 @@ async def _stats_games_limit(repo: Repo) -> int:
 
 
 @router.message(Command("stats"))
-async def stats(message: Message, repo: Repo, command: CommandObject) -> None:
+async def stats(message: Message, repo: Repo, bot: Bot, command: CommandObject) -> None:
     target = await _resolve(message, repo, command.args)
-    with stats_category():
-        if target is None:
+    if target is None:
+        with stats_category():
             await message.answer(_UNKNOWN)
-            return
-        text = await _build_stats_text(repo, target)
-        if text is None:
+        return
+    text = await _build_stats_text(repo, target)
+    if text is None:
+        with stats_category():
             await message.answer("Этот человек ещё ничего не подключил.")
-            return
-        await message.answer(text, parse_mode=ParseMode.HTML)
+        return
+    # Keyed by the person the card is *about*, not who asked (Follow-up
+    # 2026-09-06) — same person's stats posted twice in this chat replaces
+    # the old copy, whether both came from /stats or one came from /who.
+    with stats_category():
+        await send_replacing(
+            bot,
+            repo,
+            message.chat.id,
+            "stats",
+            text,
+            subject_id=target.tg_id,
+            parse_mode=ParseMode.HTML,
+        )
 
 
 # --------------------------------------------------------------------- online
 
 
 @router.message(Command("online"))
-async def online(message: Message, repo: Repo) -> None:
+async def online(message: Message, repo: Repo, bot: Bot) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer("Список игроков — по чату, набери команду в группе.")
         return
@@ -314,6 +328,16 @@ async def online(message: Message, repo: Repo) -> None:
         with stats_category():
             await message.answer("Никого из подключённых в этом чате пока не видел.")
         return
+
+    # A fresh /online replaces whatever was posted/auto-refreshing before
+    # (Follow-up 2026-09-06) — the old snapshot has already scrolled away
+    # and nobody scrolls back for it. Best-effort: an already-gone message
+    # (age, a manual delete, the chat's own bot-message wipe) is exactly as
+    # fine to fail on as one that was never there.
+    previous = await repo.get_online_auto_refresh(message.chat.id)
+    if previous is not None:
+        with contextlib.suppress(Exception):
+            await bot.delete_message(message.chat.id, previous.message_id)
 
     # Plain text, no per-name buttons: a keyboard row per player stops being a
     # list and starts being a second keyboard once a chat has more than a
@@ -327,9 +351,13 @@ async def online(message: Message, repo: Repo) -> None:
     # Follow-up 2026-09-05: /online now keeps itself fresh for a while
     # instead of being a one-off snapshot — skipped entirely when the admin
     # has turned the interval down to 0 (services/online_view.py's own
-    # render is still exactly what a manual re-run would produce).
+    # render is still exactly what a manual re-run would produce). The old
+    # row is dropped either way (not just left stale) so a later interval
+    # change doesn't suddenly revive a pointer to a message this deleted.
     if await refresh_interval_minutes(repo) > 0:
         await repo.start_online_auto_refresh(message.chat.id, sent.message_id)
+    elif previous is not None:
+        await repo.delete_online_auto_refresh(message.chat.id)
 
 
 @router.message(Command("who"))
@@ -366,7 +394,7 @@ async def who_cancel(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("who:stats:"))
-async def who_stats_button(callback: CallbackQuery, repo: Repo) -> None:
+async def who_stats_button(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
     assert callback.data is not None
     tg_id = int(callback.data.rsplit(":", 1)[1])
     target = await repo.get_user(tg_id)
@@ -377,8 +405,19 @@ async def who_stats_button(callback: CallbackQuery, repo: Repo) -> None:
     await callback.answer()
     if isinstance(callback.message, Message):
         if text is not None:
+            # Same (chat, subject) dedup key as /stats itself (Follow-up
+            # 2026-09-06) — /who picking someone replaces that person's
+            # existing stats card exactly like /stats <name> would.
             with stats_category():
-                await callback.message.answer(text, parse_mode=ParseMode.HTML)
+                await send_replacing(
+                    bot,
+                    repo,
+                    callback.message.chat.id,
+                    "stats",
+                    text,
+                    subject_id=target.tg_id,
+                    parse_mode=ParseMode.HTML,
+                )
         # The picker's own job is done either way — drop it instead of
         # leaving a stale "Чья статистика интересует?" behind.
         with contextlib.suppress(Exception):
@@ -421,7 +460,7 @@ async def _summary_or_cooldown(
 
 
 @router.message(Command("summary"))
-async def summary_command(message: Message, repo: Repo) -> None:
+async def summary_command(message: Message, repo: Repo, bot: Bot) -> None:
     """The same report the scheduled job sends, on demand."""
     if message.chat.type not in GROUP_TYPES:
         await message.answer("Сводка считается по чату — набери команду в группе.")
@@ -432,11 +471,19 @@ async def summary_command(message: Message, repo: Repo) -> None:
         # A rate-limit notice, not a report — system, not stats.
         await message.answer(f"Сводку уже присылали недавно. Ещё раз — через {minutes_left} мин.")
         return
-    with stats_category():
-        if text is None:
+    if text is None:
+        with stats_category():
             await message.answer("За последние сутки в чате пока никто ничего не выбил.")
-            return
-        await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        return
+    # Replaces the chat's previous /summary outright (Follow-up 2026-09-06)
+    # — an "nothing new" reply just above is left untouched on purpose:
+    # it isn't itself worth keeping around, but it also shouldn't erase a
+    # real summary from earlier that still has something to show.
+    with stats_category():
+        await send_replacing(
+            bot, repo, message.chat.id, "summary", text, parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
 
 
 @router.callback_query(F.data.startswith("summary:all:"))
@@ -458,7 +505,7 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo) -> None:
 
 
 @router.message(Command("recent"))
-async def recent(message: Message, repo: Repo, command: CommandObject) -> None:
+async def recent(message: Message, repo: Repo, bot: Bot, command: CommandObject) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer("Лента считается по чату — набери команду в группе.")
         return
@@ -468,12 +515,14 @@ async def recent(message: Message, repo: Repo, command: CommandObject) -> None:
         limit = max(1, min(int(command.args.strip()), RECENT_MAX))
 
     rows = await repo.chat_recent(message.chat.id, limit)
-    with stats_category():
-        if not rows:
+    if not rows:
+        with stats_category():
             await message.answer("Пока пусто.")
-            return
-        text = "🕘 <b>Последние достижения</b>\n" + _recent_list(rows)
-        await message.answer(text, parse_mode=ParseMode.HTML)
+        return
+    text = "🕘 <b>Последние достижения</b>\n" + _recent_list(rows)
+    # Replaces the chat's previous /recent outright (Follow-up 2026-09-06).
+    with stats_category():
+        await send_replacing(bot, repo, message.chat.id, "recent", text, parse_mode=ParseMode.HTML)
 
 
 def _recent_list(rows: list[RecentAchievement]) -> str:

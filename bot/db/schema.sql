@@ -324,3 +324,37 @@ CREATE TABLE IF NOT EXISTS steam_rarity_cache (
     percentages     TEXT NOT NULL,   -- JSON: {apiname: percent}
     cached_at       TEXT NOT NULL
 );
+
+-- The single live copy of a self-deduplicating message kind (Follow-up
+-- 2026-09-06) — /panel, /summary, /recent and a specific person's /stats
+-- card each replace their own previous copy in the same scope instead of
+-- piling up: an old one has already scrolled away and nobody scrolls back
+-- for it, so keeping only the latest is strictly better than letting
+-- repeated commands spam the chat with duplicates. `/online` and `/admin`
+-- are NOT here — each already has (or gets, admin_panel_refresh below) its
+-- own dedicated one-row-per-scope table because they also auto-refresh in
+-- place, which this plain dedup table has no concept of.
+-- subject_id is 0 for chat-scoped kinds (summary/recent) or a person's own
+-- tg_id for scopes that need one (panel: the owner; stats: the person the
+-- card is about, not the requester — SPEC 9's own "по 1 шт на юзера").
+CREATE TABLE IF NOT EXISTS tracked_messages (
+    chat_id    INTEGER NOT NULL,
+    kind       TEXT    NOT NULL CHECK (kind IN ('panel', 'summary', 'recent', 'stats')),
+    subject_id INTEGER NOT NULL DEFAULT 0,
+    message_id INTEGER NOT NULL,
+    updated_at TEXT    NOT NULL,
+    PRIMARY KEY (chat_id, kind, subject_id)
+);
+
+-- /admin's own live-updating screen (Follow-up 2026-09-06), same shape and
+-- reasoning as online_auto_refresh above — one row per admin, not per
+-- message: a fresh /admin supersedes whatever was auto-refreshing before
+-- (the old message is deleted outright, not just left to go stale, unlike
+-- /online's version — an admin only ever has the one panel open at a time,
+-- there is no reason to keep a second copy around even briefly).
+CREATE TABLE IF NOT EXISTS admin_panel_refresh (
+    admin_id        INTEGER PRIMARY KEY,
+    message_id      INTEGER NOT NULL,
+    created_at      TEXT NOT NULL,
+    last_updated_at TEXT NOT NULL
+);

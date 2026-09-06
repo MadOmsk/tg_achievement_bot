@@ -13,6 +13,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from bot.db.repo import Repo
+from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.fetcher import Fetcher
 from bot.poller.message_cleanup import MessageCleanup
@@ -39,6 +40,7 @@ class PollerScheduler:
         message_cleanup: MessageCleanup,
         online_refresh: OnlineAutoRefresh,
         service_health: ServiceHealth,
+        admin_refresh: AdminPanelRefresh,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -49,6 +51,7 @@ class PollerScheduler:
         self._message_cleanup = message_cleanup
         self._online_refresh = online_refresh
         self._service_health = service_health
+        self._admin_refresh = admin_refresh
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -108,13 +111,22 @@ class PollerScheduler:
             coalesce=True,
             max_instances=1,
         )
-        # Every 30 minutes, not every tick (SPEC 9, M-PSN-1) — this only ever
-        # answers "is the shared key still good", not something that needs
-        # minute-level freshness, and each PSN check is a real network call.
+        # On the standard 60s tick, not a dedicated 30-minute trigger
+        # (Follow-up 2026-09-06) — the real check only fires every
+        # KEY_CHECK_INTERVAL_KEY minutes (admin-configurable), gated inside
+        # ServiceHealth.tick() itself, same "cheap to poll, gate the real
+        # work" shape as online_refresh below.
         self._scheduler.add_job(
             self._service_health.tick,
-            IntervalTrigger(minutes=30),
+            IntervalTrigger(seconds=TICK_SECONDS),
             id="service_health",
+            coalesce=True,
+            max_instances=1,
+        )
+        self._scheduler.add_job(
+            self._admin_refresh.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="admin_refresh",
             coalesce=True,
             max_instances=1,
         )
