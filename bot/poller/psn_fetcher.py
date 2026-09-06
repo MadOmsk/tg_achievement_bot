@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import logging
 
+from psnawp_api import PSNAWP
+
 from bot.config import Settings
 from bot.db.repo import Repo
 from bot.poller.cadence import debounce_passed
@@ -20,7 +22,7 @@ from bot.poller.publisher import Publisher
 from bot.poller.rows import to_achievement_row
 from bot.services.psn.achievements import fetch_unlocked
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
-from bot.services.psn.client import PsnApiError
+from bot.services.psn.client import PsnApiError, account_trophy_level
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +80,10 @@ class PsnFetcher:
         # (services/achievements.py) already handle that by grouping on
         # each row's own title_name, same as a Xbox/Steam catch-up burst.
         await self._publisher.publish(tg_id, account_id, online_id, new_rows, None)
+        # Level only ever changes when a trophy is earned (Follow-up
+        # 2026-09-06, /stats' own PSN line) — refreshed here, not on every
+        # tick.
+        await self._refresh_level(client, tg_id, account_id)
         return len(new_rows)
 
     async def backfill(self, tg_id: int, account_id: str) -> int:
@@ -98,4 +104,21 @@ class PsnFetcher:
         rows = [to_achievement_row(item) for item in parsed]
         await self._repo.insert_new_achievements_psn(tg_id, account_id, rows, is_backfill=True)
         log.info("psn backfill for tg_id=%s stored %s trophies", tg_id, len(rows))
+        # So /stats has a real level to show from the moment someone links,
+        # not just after their first live trophy (Follow-up 2026-09-06).
+        await self._refresh_level(client, tg_id, account_id)
         return len(rows)
+
+    async def _refresh_level(self, client: PSNAWP, tg_id: int, account_id: str) -> None:
+        """Never blocks its caller on failure — a stale cached level is a
+        much smaller problem than losing an achievement, or a whole tick,
+        over this one extra call (Follow-up 2026-09-06). Catches broadly,
+        not just PsnApiError: found live this same session that trusting a
+        third-party library's own type promises is exactly how a real
+        trophy silently stopped publishing (trophy_earn_rate, client.py's
+        _as_float) — this is deliberately the more paranoid default."""
+        try:
+            level = await account_trophy_level(client, account_id)
+            await self._repo.set_psn_trophy_level(tg_id, level)
+        except Exception:
+            log.warning("could not refresh psn trophy level for tg_id=%s", tg_id, exc_info=True)

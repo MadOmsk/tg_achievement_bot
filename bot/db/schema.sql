@@ -308,6 +308,11 @@ CREATE TABLE IF NOT EXISTS platform_links (
     external_id  TEXT    NOT NULL,  -- SteamID64 / PSN account id
     display_name TEXT,              -- persona name / online ID, display cache
     linked_at    TEXT    NOT NULL,
+    -- Account-wide PSN trophy level, shown in /stats next to the
+    -- achievement count (Follow-up 2026-09-06) — NULL for Steam rows and
+    -- for a PSN row the poller hasn't cached yet. Set by
+    -- poller/psn_fetcher.py, never read live (SPEC 1.5's cache-only rule).
+    psn_trophy_level INTEGER,
     PRIMARY KEY (tg_id, platform)
 );
 

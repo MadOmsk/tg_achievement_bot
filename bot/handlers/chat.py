@@ -255,7 +255,16 @@ async def _build_stats_text(repo: Repo, target: User) -> str | None:
                 link.platform, external_id=link.external_id, display_name=link.display_name
             )
             name_html = link_html(url, name_html)
-        lines.append(f"{icon} {label}: {name_html}  ·  {plural_achievements(count)}")
+        # PSN's own account-wide level, next to its achievement count (user
+        # request, Follow-up 2026-09-06) — cached by poller/psn_fetcher.py,
+        # never fetched here (SPEC 1.5's cache-only rule); absent until the
+        # poller has had a chance to set it (right after backfill).
+        level_suffix = (
+            f"  ·  уровень {link.psn_trophy_level}"
+            if link.platform == "psn" and link.psn_trophy_level is not None
+            else ""
+        )
+        lines.append(f"{icon} {label}: {name_html}  ·  {plural_achievements(count)}{level_suffix}")
 
     today_breakdown = platform_breakdown_suffix(counters.today_xbox, counters.today_steam)
     month_breakdown = platform_breakdown_suffix(counters.month_xbox, counters.month_steam)

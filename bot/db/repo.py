@@ -341,6 +341,9 @@ class PlatformLink:
     external_id: str
     display_name: str | None
     linked_at: str
+    # Account-wide PSN level (Follow-up 2026-09-06) — always None for a
+    # Steam row, or a PSN row the poller hasn't cached one for yet.
+    psn_trophy_level: int | None = None
 
 
 @dataclass(slots=True)
@@ -2272,7 +2275,7 @@ class Repo:
 
     async def get_platform_link(self, tg_id: int, platform: str) -> PlatformLink | None:
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at "
+            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level "
             "FROM platform_links WHERE tg_id = ? AND platform = ?",
             (tg_id, platform),
         )
@@ -2285,11 +2288,12 @@ class Repo:
             external_id=row["external_id"],
             display_name=row["display_name"],
             linked_at=row["linked_at"],
+            psn_trophy_level=row["psn_trophy_level"],
         )
 
     async def platform_links_of(self, tg_id: int) -> list[PlatformLink]:
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at "
+            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level "
             "FROM platform_links WHERE tg_id = ?",
             (tg_id,),
         )
@@ -2300,9 +2304,21 @@ class Repo:
                 external_id=row["external_id"],
                 display_name=row["display_name"],
                 linked_at=row["linked_at"],
+                psn_trophy_level=row["psn_trophy_level"],
             )
             for row in await cursor.fetchall()
         ]
+
+    async def set_psn_trophy_level(self, tg_id: int, level: int) -> None:
+        """Called by poller/psn_fetcher.py after backfill and after each poll
+        that finds new trophies (Follow-up 2026-09-06) — level can only
+        change when a trophy is earned, so there is no reason to touch this
+        on a tick that found nothing."""
+        await self._conn.execute(
+            "UPDATE platform_links SET psn_trophy_level = ? WHERE tg_id = ? AND platform = 'psn'",
+            (level, tg_id),
+        )
+        await self._conn.commit()
 
     async def platform_links_all(self, platform: str) -> list[PlatformLink]:
         """Every linked account on one platform, across every user —

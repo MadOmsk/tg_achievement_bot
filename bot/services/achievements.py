@@ -151,6 +151,23 @@ def _spoiler(text: str, *, secret: bool) -> str:
     return f'<span class="tg-spoiler">{text}</span>' if secret else text
 
 
+def _badge(achievement: AchievementRow) -> str:
+    """PSN trophies show only their own tier icon, not rarity_badge()'s
+    diamond/cup as well (Follow-up 2026-09-06, user request, reversing the
+    "shown alongside, two different questions" call from M-PSN-2) — the
+    tier already answers the same question rarity_badge() does for every
+    other platform (how uncommon is this one), just with Sony's own scale
+    instead of a raw percentage, and showing both could literally repeat
+    itself: a platinum trophy and an "ordinary" rarity cup are the same 🏆.
+    Falls back to 🏆 in the (practically unreachable) case of a PSN row
+    with no trophy_type at all, same "unproven is not rare" default
+    rarity_badge() itself uses. Every other platform is unaffected —
+    rarity_badge() alone, exactly as before."""
+    if achievement.platform == "psn":
+        return TROPHY_TIER_BADGE.get(achievement.trophy_type or "", "🏆")
+    return rarity_badge(achievement.rarity_percent)
+
+
 def _rarity_line(achievement: AchievementRow) -> str:
     """"(лого редкости)«название» · G · редкость %" — badge leads the name
     rather than trailing the percentage (standardized form, 2026-09-05
@@ -160,8 +177,7 @@ def _rarity_line(achievement: AchievementRow) -> str:
     all (SPEC 9, future platforms fall under this for free).
     """
     name = _spoiler(html_escape(achievement.name), secret=achievement.is_secret)
-    badge = rarity_badge(achievement.rarity_percent) + trophy_tier_badge(achievement.trophy_type)
-    name_part = f"{badge} «{name}»"
+    name_part = f"{_badge(achievement)} «{name}»"
 
     tail = []
     if achievement.gamerscore:
@@ -175,15 +191,23 @@ def _game_line(title: str, platform: str) -> str:
     return f"{html_escape(title)} (<i>{platform_tag(platform)}</i>)"
 
 
+def _achievement_word(platform: str) -> str:
+    """PSN calls them trophies, everyone else achievements (Follow-up
+    2026-09-06, user request — this is the "трофей" wording M-Steam-2e's
+    original standardization explicitly left for later, once PSN trophies
+    were real data and not just a reserved word)."""
+    return "трофей" if platform == "psn" else "достижение"
+
+
 def format_single(gamertag: str, achievement: AchievementRow, title_name: str | None) -> str:
-    """Standardized form (2026-09-05 follow-up to SPEC 9, M-Steam-2e): one
-    fixed wording regardless of platform — PSN can reopen the "трофей"
-    wording once trophies are real data, not just a reserved word. Platform
-    moved off the header (found there for one round, then judged noisier
-    than useful) onto the game-title line, in italics, next to the game.
+    """Standardized form (2026-09-05 follow-up to SPEC 9, M-Steam-2e), one
+    wording per platform (Follow-up 2026-09-06: PSN's own "трофей" word).
+    Platform moved off the header (found there for one round, then judged
+    noisier than useful) onto the game-title line, in italics, next to the
+    game.
     """
     title = title_name or achievement.title_name or "неизвестная игра"
-    header = f"<b>{html_escape(gamertag)}</b> получает достижение"
+    header = f"<b>{html_escape(gamertag)}</b> получает {_achievement_word(achievement.platform)}"
     game_line = _game_line(title, achievement.platform)
     text = f"{header}\n\n{game_line}\n{_rarity_line(achievement)}"
     if achievement.description:
@@ -223,7 +247,17 @@ def format_digest(gamertag: str, title_name: str | None, achievements: list[Achi
     dropped on request — a digest exists to say what happened, trimming it
     defeats that).
     """
-    header = f"<b>{html_escape(gamertag)}</b> получает {plural_achievements(len(achievements))}"
+    # Every achievement in one publish() call shares a platform (Xbox/Steam
+    # pollers each poll one title at a time; PSN's own multi-game burst is
+    # still all-PSN — SPEC 9, M-PSN-2's "мультиачивки" paragraph) — safe to
+    # decide the header's wording from just the first item.
+    platform = achievements[0].platform if achievements else "modern"
+    count_phrase = (
+        _plural_trophies(len(achievements))
+        if platform == "psn"
+        else plural_achievements(len(achievements))
+    )
+    header = f"<b>{html_escape(gamertag)}</b> получает {count_phrase}"
     lines = [header, ""]
     for index, group in enumerate(_group_by_title(achievements).values()):
         if index > 0:
@@ -247,3 +281,19 @@ def plural_achievements(count: int) -> str:
     if tail in (2, 3, 4) and hundreds not in (12, 13, 14):
         return f"{number} достижения"
     return f"{number} достижений"
+
+
+def _plural_trophies(count: int) -> str:
+    """PSN's own word, used only by format_digest's header (Follow-up
+    2026-09-06, user request) — plural_achievements() above stays
+    untouched everywhere else: it also serves combined cross-platform
+    totals (e.g. /stats' "Сегодня"), which are correctly "достижений"
+    regardless of how many of them came from PSN specifically."""
+    tail = count % 10
+    hundreds = count % 100
+    number = thousands(count)
+    if tail == 1 and hundreds != 11:
+        return f"{number} трофей"
+    if tail in (2, 3, 4) and hundreds not in (12, 13, 14):
+        return f"{number} трофея"
+    return f"{number} трофеев"

@@ -61,11 +61,23 @@ async def _configured_auth(repo: Repo, cipher: TokenCipher, monkeypatch) -> PsnA
     return auth
 
 
+def _fake_level(monkeypatch, level: int = 7) -> None:
+    """account_trophy_level() is faked at the module boundary same as
+    fetch_unlocked() above (Follow-up 2026-09-06) — the client here is a
+    bare `object()` sentinel, fetch_unlocked never touches it either."""
+
+    async def _account_trophy_level(client: object, account_id: str) -> int:
+        return level
+
+    monkeypatch.setattr(psn_fetcher_module, "account_trophy_level", _account_trophy_level)
+
+
 async def test_poll_account_publishes_only_new_trophies(
     repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
 ) -> None:
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
+    _fake_level(monkeypatch)
     pool = [parsed("1"), parsed("2")]
 
     async def fake_fetch_unlocked(repo_, client, account_id, limit=None):
@@ -76,6 +88,10 @@ async def test_poll_account_publishes_only_new_trophies(
     fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
 
     assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 2
+    # Found new trophies — level gets refreshed (Follow-up 2026-09-06).
+    link = await repo.get_platform_link(TG_ID, "psn")
+    assert link is not None
+    assert link.psn_trophy_level == 7
     # Same answer a tick later: nothing new, nothing published.
     assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 0
     assert len(publisher.published) == 1
@@ -92,6 +108,7 @@ async def test_backfill_publishes_nothing(
     silent."""
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
+    _fake_level(monkeypatch, level=3)
     seen_limit = []
 
     async def fake_fetch_unlocked(repo_, client, account_id, limit=None):
@@ -107,6 +124,11 @@ async def test_backfill_publishes_nothing(
     assert stored == 2
     assert publisher.published == []
     assert seen_limit == [None]  # whole history, not just the recent window
+    # /stats has a real level from the moment someone links, not just after
+    # their first live trophy (Follow-up 2026-09-06).
+    link = await repo.get_platform_link(TG_ID, "psn")
+    assert link is not None
+    assert link.psn_trophy_level == 3
 
 
 async def test_tick_skips_an_account_polled_too_recently(

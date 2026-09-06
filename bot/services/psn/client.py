@@ -342,6 +342,31 @@ async def recent_earned_trophies(
     return earned[:limit]
 
 
+async def account_trophy_level(client: PSNAWP, account_id: str) -> int:
+    """Just the account-wide level (Follow-up 2026-09-06, /stats' own PSN
+    line, shown next to the achievement count per user request) — one
+    `trophy_summary()` call, cheap compared to account_trophy_overview()
+    below, which also does a full per-game scan. poller/psn_fetcher.py
+    calls this after finding new trophies (level can only change when a
+    trophy is earned) and once after backfill, then caches the result on
+    `platform_links.psn_trophy_level` — /stats itself never calls this
+    directly (CLAUDE.md: "Кэш" — handlers only read from the database)."""
+    try:
+        user = await _call(client.user, account_id=account_id)
+    except PSNAWPNotFoundError:
+        raise PsnApiError(f"PSN profile {account_id!r} not found") from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+
+    try:
+        summary = await _call(user.trophy_summary)
+    except PSNAWPForbiddenError:
+        raise PsnPrivateProfileError(account_id) from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+    return summary.trophy_level
+
+
 async def account_trophy_overview(client: PSNAWP, account_id: str) -> AccountTrophyOverview:
     """Every game this account has ever earned a trophy in, plus the
     account-wide level/progress — live, uncached, no limit (2026-09-06:

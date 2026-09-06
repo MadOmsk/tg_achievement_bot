@@ -170,21 +170,59 @@ def test_single_message_tags_the_platform() -> None:
     assert "⚫ Steam" in text
 
 
-def test_single_message_shows_the_trophy_tier_alongside_rarity() -> None:
-    """SPEC 9, M-PSN-2 — the tier badge sits next to rarity_badge(), not
-    instead of it: two different questions about the same trophy."""
+def test_single_message_shows_only_the_trophy_tier_on_psn_not_rarity_too() -> None:
+    """Follow-up 2026-09-06 (user request), reversing M-PSN-2's original
+    "shown alongside rarity_badge(), two different questions" call — the
+    tier already answers the same question for PSN, and showing both could
+    literally repeat itself (a platinum trophy and an "ordinary" rarity cup
+    are the same 🏆). Only the tier icon appears now, not a diamond/cup
+    plus it."""
     text = format_single(
         "Igor",
         achievement(rarity=2.4, platform="psn", trophy_type="platinum"),
         "Bloodborne",
     )
-    assert "💎🏆" in text  # rare diamond, then the platinum tier badge
+    badge_line = text.split("\n")[3]  # header, blank, game line, then this one
+    assert badge_line.startswith("🏆 «")
+    assert "💎" not in text
+
+
+def test_single_message_gold_tier_replaces_rarity_badge_too() -> None:
+    text = format_single(
+        "Igor", achievement(rarity=2.4, platform="psn", trophy_type="gold"), "Bloodborne"
+    )
+    badge_line = text.split("\n")[3]
+    assert badge_line.startswith("🥇 «")
+    assert "💎" not in badge_line
 
 
 def test_single_message_has_no_tier_badge_on_other_platforms() -> None:
     text = format_single("Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite")
-    assert "💎🏆" not in text  # would only appear if a tier badge leaked in
+    assert "🥇" not in text  # would only appear if a tier badge leaked in
     assert "💎" in text
+
+
+def test_single_message_calls_it_a_trophy_on_psn() -> None:
+    """Follow-up 2026-09-06, user request — the "трофей" wording SPEC 9,
+    M-Steam-2e's original standardization explicitly left for later, once
+    PSN trophies were real data."""
+    text = format_single(
+        "Igor", achievement(rarity=2.4, platform="psn", trophy_type="gold"), "Bloodborne"
+    )
+    assert text.startswith("<b>Igor</b> получает трофей")
+
+
+def test_single_message_still_calls_it_an_achievement_elsewhere() -> None:
+    text = format_single("Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite")
+    assert text.startswith("<b>Igor</b> получает достижение")
+
+
+def test_digest_header_pluralizes_trophies_for_an_all_psn_digest() -> None:
+    items = [
+        achievement(rarity=r, platform="psn", trophy_type="bronze") for r in (2.4, 11.0, 34.0)
+    ]
+    text = format_digest("Igor", "Bloodborne", items)
+    assert "<b>Igor</b> получает 3 трофея" in text
 
 
 def test_digest_header_has_no_gamerscore_total() -> None:
