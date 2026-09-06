@@ -1,91 +1,93 @@
-# Xbox Achievement Bot
+🇬🇧 English (this file) · 🇷🇺 [Русский](README.ru.md)
 
-Telegram-бот, который публикует ачивки участников чата — Xbox и Steam —
-с фильтром по редкости, личной статистикой, ежедневным итогом дня,
-админ-панелью, поиском времени прохождения игр через HowLongToBeat.
-Некоммерческий проект на 20–30 человек.
+# Achievement Bot
 
-Полное техническое задание — в [SPEC.md](SPEC.md), правила разработки и
-структура кода — в [CLAUDE.md](CLAUDE.md), дерево файлов с пояснениями —
-в [STRUCTURE.md](STRUCTURE.md), текущие открытые задачи — в [TODO.md](TODO.md).
+A Telegram bot that publishes chat members' achievements — Xbox, Steam, and
+PlayStation Network — with rarity filters, personal stats, a daily summary, an
+admin panel, and HowLongToBeat completion-time lookup. A non-commercial project
+for a group of 20-30 people.
 
-## Стек
+Engineering rules, architecture, current behavior, and the full file tree are all
+in [CLAUDE.md](CLAUDE.md) — read it before making product or architecture changes.
+Open work and proposals live in this repository's
+[Issues](https://github.com/MadOmsk/xbox_achievement_bot/issues).
+
+## Stack
 
 Python 3.12+, aiogram 3, xbox-webapi-python, httpx, aiohttp, aiosqlite,
-APScheduler, pydantic v2, cryptography (Fernet), howlongtobeatpy.
+APScheduler, pydantic v2, cryptography (Fernet), howlongtobeatpy, psnawp.
 
-## Что нужно до старта
+## Before you start
 
-Без этих трёх вещей бот не запустится или не сможет пускать людей через
-Xbox-логин — готовятся один раз, до первого запуска:
+The bot won't start, or won't be able to sign people in through Xbox, without
+these three things — set up once, before the first run:
 
-1. **Токен Telegram-бота** — создать у [@BotFather](https://t.me/BotFather),
-   получить `BOT_TOKEN`.
-2. **Регистрация приложения на [portal.azure.com](https://portal.azure.com)
-   — обязательна**, без неё Xbox-логин не работает вообще. Нужны:
-   scope `XboxLive.signin XboxLive.offline_access`, redirect URI — тот же
-   адрес, что в `OAUTH_REDIRECT_URL` (см. пункт 3), из регистрации берутся
-   `AZURE_CLIENT_ID` и `AZURE_CLIENT_SECRET`.
-3. **Домен с HTTPS**, куда указывает `OAUTH_REDIRECT_URL` (например
-   `https://ваш-домен/auth/callback`). Microsoft принимает в качестве
-   redirect URI только `https://`-адрес — ни `localhost`, ни голый `http://`
-   не подходят. Для локальной разработки — свой домен на туннеле вроде
-   Cloudflare Tunnel (даёт `https://` сразу); в проде — обычный домен с
-   сертификатом (nginx + Let's Encrypt/certbot, как на боевом сервере этого
-   проекта).
+1. **A Telegram bot token** — create one with [@BotFather](https://t.me/BotFather)
+   to get `BOT_TOKEN`.
+2. **An app registration at [portal.azure.com](https://portal.azure.com) —
+   mandatory**, Xbox login doesn't work at all without it. You need the
+   `XboxLive.signin XboxLive.offline_access` scopes and a redirect URI matching
+   `OAUTH_REDIRECT_URL` (see below); the registration gives you
+   `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET`.
+3. **A domain with HTTPS** for `OAUTH_REDIRECT_URL` (e.g.
+   `https://your-domain/auth/callback`). Microsoft only accepts an `https://`
+   redirect URI — neither `localhost` nor plain `http://` work. For local
+   development, a tunnel domain (Cloudflare Tunnel gives you `https://`
+   immediately) works well; in production, a regular domain with a certificate
+   (nginx + Let's Encrypt/certbot, as on this project's own server).
 
-## Локальная разработка
+## Local development
 
 ```bash
-git clone <репозиторий>
+git clone <repository>
 cd xbox_achievement_bot
 python -m venv .venv
 .venv\Scripts\pip install -e .[dev]
 
 copy .env.example .env
-# заполнить BOT_TOKEN, AZURE_CLIENT_ID/SECRET, OAUTH_REDIRECT_URL, FERNET_KEY
+# fill in BOT_TOKEN, AZURE_CLIENT_ID/SECRET, OAUTH_REDIRECT_URL, FERNET_KEY
 ```
 
-`FERNET_KEY` — сгенерировать:
+Generate `FERNET_KEY`:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Дальше процессом на своей машине управляет `manage.ps1` (бот сам себя
-запустить не может):
+`manage.ps1` manages the process on your own machine (the bot can't start
+itself):
 
 ```powershell
 .\manage.ps1 start | stop | restart | status | logs [-Lines N]
-.\manage.ps1 dashboard   # живой статус с автообновлением и горячими клавишами
+.\manage.ps1 dashboard   # a live-refreshing status view with hotkeys
 ```
 
-Двойной клик по `manage.bat` открывает тот же dashboard. Подробности —
-в разделе «Запуск» [CLAUDE.md](CLAUDE.md).
+Double-clicking `manage.bat` opens the same dashboard. Details in
+[CLAUDE.md](CLAUDE.md)'s "Operations" section.
 
-Тесты и линт:
+Tests and lint:
 
 ```bash
 pytest
 ruff check . && ruff format --check .
 ```
 
-## Продакшен
+## Production
 
-Бот развёрнут на VPS под systemd (юнит `xbox-bot.service`, отдельный
-непривилегированный пользователь), за nginx с Let's Encrypt. На боевом
-сервере `manage.ps1` не используется — им управляет systemd:
+The bot runs on a VPS under systemd (`xbox-bot.service`, a dedicated
+unprivileged user), behind nginx with Let's Encrypt. `manage.ps1` isn't used
+there — systemd owns that role:
 
 ```bash
 systemctl {start|stop|restart|status} xbox-bot
 journalctl -u xbox-bot -f
 ```
 
-Деплой — `git pull` в `/opt/xbox_achievement_bot` от имени сервисного
-пользователя, затем `systemctl restart xbox-bot`. Детали инфраструктуры —
-в разделе «Запуск» [CLAUDE.md](CLAUDE.md).
+Deploy is `git pull` in `/opt/xbox_achievement_bot` as the service user, then
+`systemctl restart xbox-bot`. Infrastructure details are in
+[CLAUDE.md](CLAUDE.md)'s "Operations" section.
 
-**`manage.ps1` на домашнем ПК и боевой сервер не запускаются одновременно**
-— два процесса с одним `BOT_TOKEN` конфликтуют за обновления Telegram.
-`manage.ps1` — инструмент для локальной разработки, а не пережиток: он
-никуда не делся и нужен ровно для того же, для чего был нужен раньше.
+**Never run `manage.ps1` on a home PC at the same time as the production
+server** — two processes sharing one `BOT_TOKEN` fight over Telegram's updates.
+`manage.ps1` is a local-development tool, not a leftover — it's still exactly
+as needed as it always was.

@@ -1,10 +1,10 @@
-"""services/psn/client.py — the async wrapper over psnawp_api (SPEC 9,
-M-PSN-1). No real network calls: psnawp_api's own classes are faked here,
-the same "mock the third-party boundary" treatment Xbox/Steam fixtures get
+"""services/psn/client.py — the async wrapper over psnawp_api (M-PSN-1).
+No real network calls: psnawp_api's own classes are faked here, the same
+"mock the third-party boundary" treatment Xbox/Steam fixtures get
 elsewhere in this suite. The live-verified claims (one token reads another
 account's public trophies) are covered by the 2026-09-05/06 manual
-verification referenced in SPEC.md, not re-proven here — this file is only
-about our own exception mapping and shaping."""
+verification referenced in CLAUDE.md's PSN section, not re-proven here —
+this file is only about our own exception mapping and shaping."""
 
 from __future__ import annotations
 
