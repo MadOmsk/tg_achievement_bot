@@ -21,6 +21,7 @@ profile's trophies with no PSNAWPForbiddenError.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -34,6 +35,8 @@ from psnawp_api.models.trophies import TrophyTitle
 from psnawp_api.models.trophies.trophy_constants import PlatformType, TrophyRarity, TrophyType
 
 from bot.services.rate_limiter import RateLimiter
+
+log = logging.getLogger(__name__)
 
 # Real limits are undocumented anywhere (SPEC 9, M-PSN-1 checklist item 4) —
 # this window only guards against a runaway bug, same reasoning as Steam's
@@ -138,10 +141,23 @@ async def check_alive(client: PSNAWP) -> bool:
     it never touches the network by itself, same lazy pattern as PSNAWP's
     own constructor — it "succeeds" instantly regardless of whether the
     NPSSO is any good). The actual authenticated request only fires on the
-    first *property* access afterward — `.online_id` is the cheapest one."""
+    first *property* access afterward — `.online_id` is the cheapest one.
+
+    Catches more than PSNAWPAuthenticationError on purpose (found live
+    2026-09-06: an admin pasted non-Latin1 text as an NPSSO, which made the
+    request layer itself raise a bare UnicodeEncodeError trying to encode
+    it into a header — not an auth error, but just as clearly not a real
+    NPSSO). This function's whole job is "is this client good", so any
+    failure to answer that question honestly means "no" — the caller
+    (set_npsso) then reports it the same simple way either way: this
+    input didn't work, try again.
+    """
     try:
         await _call(lambda: client.me().online_id)
     except PSNAWPAuthenticationError:
+        return False
+    except Exception:
+        log.info("check_alive: unexpected failure verifying the client", exc_info=True)
         return False
     return True
 

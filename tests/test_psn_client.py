@@ -158,6 +158,24 @@ async def test_check_alive_catches_a_client_that_only_fails_on_property_access()
     assert await check_alive(_LazyClient()) is False  # type: ignore[arg-type]
 
 
+async def test_check_alive_false_for_any_unexpected_failure_not_just_auth() -> None:
+    """Found live 2026-09-06: an admin pasted non-Latin1 text as an NPSSO,
+    and the request layer raised a bare UnicodeEncodeError trying to encode
+    it into a header — not PSNAWPAuthenticationError, but just as clearly
+    not a working client. check_alive()'s job is answering "is this good",
+    so any failure to tell means no, not a crash for the caller."""
+
+    class _BrokenClient:
+        def me(self) -> _BrokenClient:
+            return self
+
+        @property
+        def online_id(self) -> str:
+            raise UnicodeEncodeError("latin-1", "тест", 0, 1, "boom")
+
+    assert await check_alive(_BrokenClient()) is False  # type: ignore[arg-type]
+
+
 async def test_resolve_profile_returns_account_id_and_online_id() -> None:
     client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer")})
     profile = await resolve_profile(client, "gamer")
