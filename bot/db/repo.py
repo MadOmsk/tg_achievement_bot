@@ -45,6 +45,10 @@ class User:
     gamerscore: int | None
     is_excluded: bool
     last_online_at: str | None
+    # /stats' header identity (Follow-up 2026-09-06) — see users.first_name
+    # in schema.sql for how these get refreshed.
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -432,15 +436,29 @@ class Repo:
 
     # ---------------------------------------------------------------- users
 
-    async def ensure_user(self, tg_id: int, username: str | None = None) -> None:
-        """Create the user and his settings row on first contact."""
+    async def ensure_user(
+        self,
+        tg_id: int,
+        username: str | None = None,
+        first_name: str | None = None,
+        last_name: str | None = None,
+    ) -> None:
+        """Create the user and his settings row on first contact.
+        first_name/last_name (Follow-up 2026-09-06, /stats' header) are
+        optional here on purpose — most call sites only ever had a username
+        to pass before this existed, and the message middleware
+        (handlers/chat.py) backfills both from this person's very next
+        message regardless."""
         now = utcnow_iso()
         await self._conn.execute(
-            "INSERT INTO users (tg_id, username, created_at, updated_at) VALUES (?, ?, ?, ?) "
+            "INSERT INTO users (tg_id, username, first_name, last_name, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(tg_id) DO UPDATE SET "
             "  username = COALESCE(excluded.username, users.username),"
+            "  first_name = COALESCE(excluded.first_name, users.first_name),"
+            "  last_name = COALESCE(excluded.last_name, users.last_name),"
             "  updated_at = excluded.updated_at",
-            (tg_id, username, now, now),
+            (tg_id, username, first_name, last_name, now, now),
         )
         # show_profile_links is explicit here, not left to the column's own
         # DEFAULT 0 — same move as subscribe()'s default_rarity_mode: an
@@ -460,6 +478,19 @@ class Repo:
         await self._conn.execute(
             "UPDATE users SET username = ? WHERE tg_id = ? AND IFNULL(username, '') <> ?",
             (username, tg_id, username),
+        )
+        await self._conn.commit()
+
+    async def update_names(self, tg_id: int, first_name: str | None, last_name: str | None) -> None:
+        """first_name/last_name's own refresh (Follow-up 2026-09-06,
+        /stats' header) — separate from update_username above because
+        Telegram always sends first_name (called unconditionally from the
+        message middleware), unlike username which can be absent."""
+        await self._conn.execute(
+            "UPDATE users SET "
+            "  first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name) "
+            "WHERE tg_id = ?",
+            (first_name, last_name, tg_id),
         )
         await self._conn.commit()
 
@@ -2357,6 +2388,8 @@ def _as_user(row: aiosqlite.Row) -> User:
         gamerscore=row["gamerscore"],
         is_excluded=bool(row["is_excluded"]),
         last_online_at=row["last_online_at"],
+        first_name=row["first_name"],
+        last_name=row["last_name"],
     )
 
 

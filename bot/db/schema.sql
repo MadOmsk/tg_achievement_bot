@@ -5,6 +5,12 @@
 CREATE TABLE IF NOT EXISTS users (
     tg_id           INTEGER PRIMARY KEY,
     username        TEXT,                 -- for /compare @user, refreshed on every message
+    -- /stats' header identity (Follow-up 2026-09-06) — refreshed the same
+    -- way username is, on every message (handlers/chat.py's message
+    -- middleware). first_name always exists for a real Telegram account;
+    -- last_name doesn't.
+    first_name      TEXT,
+    last_name       TEXT,
     xuid            TEXT UNIQUE,          -- identity key, NOT the gamertag
     gamertag        TEXT,                 -- display cache, can change
     gamerscore      INTEGER,              -- cache, refreshed together with titleHistory

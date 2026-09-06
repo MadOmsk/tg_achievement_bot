@@ -112,7 +112,8 @@
 │           ├── 022_message_dedup.sql             — tracked_messages, admin_panel_refresh (Follow-up 2026-09-06)
 │           ├── 023_psn_trophies.sql              — seen_achievements: 'psn' + trophy_type, psn_title_progress, psn_poll_state (M-PSN-2)
 │           ├── 024_show_profile_links.sql        — user_settings.show_profile_links (Follow-up 2026-09-06)
-│           └── 025_psn_trophy_level.sql          — platform_links.psn_trophy_level (Follow-up 2026-09-06)
+│           ├── 025_psn_trophy_level.sql          — platform_links.psn_trophy_level (Follow-up 2026-09-06)
+│           └── 026_user_names.sql                — users.first_name/last_name, /stats' header identity (Follow-up 2026-09-06)
 │
 ├── scripts/                    — вспомогательные скрипты вне приложения, разовые/ручные
 │   ├── db_status.py              — сводка по базе для `manage.ps1 status` (без зависимостей)

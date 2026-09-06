@@ -61,6 +61,77 @@ async def test_header_gamerscore_is_the_profile_value_not_a_sum(repo: Repo) -> N
     assert "10 G" not in xbox_line
 
 
+async def test_header_shows_the_telegram_username_not_the_gamertag(repo: Repo) -> None:
+    """Follow-up 2026-09-06, user request — the header identifies the
+    person via Telegram, not whichever platform happened to be Xbox; the
+    card already lists XBOX's own name on its own line below."""
+    await repo.ensure_user(1, "realusername")
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    header = text.split("\n")[0]
+    assert "@realusername" in header
+    assert "GamerTag" not in header
+
+
+async def test_header_falls_back_to_full_name_with_no_username(repo: Repo) -> None:
+    await repo.ensure_user(1, None, "Igor", "Petrov")
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    header = text.split("\n")[0]
+    assert "Igor Petrov" in header
+
+
+async def test_header_falls_back_to_first_name_alone_with_no_last_name(repo: Repo) -> None:
+    await repo.ensure_user(1, None, "Igor", None)
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    header = text.split("\n")[0]
+    assert "Igor" in header
+    assert "GamerTag" not in header
+
+
+async def test_header_falls_back_to_gamertag_with_nothing_from_telegram_yet(repo: Repo) -> None:
+    """A brand-new /start before this person's own message middleware has
+    ever run — same defensive last resort this function already had."""
+    await repo.ensure_user(1, None, None, None)
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    assert "GamerTag" in text.split("\n")[0]
+
+
+async def test_update_names_does_not_clobber_a_known_name_with_none(repo: Repo) -> None:
+    """Same COALESCE shape update_username already relies on — a message
+    where Telegram's own last_name happens to be absent must not erase a
+    last_name this person already had on file."""
+    await repo.ensure_user(1, None, "Igor", "Petrov")
+    await repo.update_names(1, "Igor", None)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    assert user.first_name == "Igor"
+    assert user.last_name == "Petrov"
+
+
 async def test_steam_line_shows_its_own_lifetime_achievement_count(repo: Repo) -> None:
     """SPEC 9, M-Steam-2e: unlike Xbox's line (profile gamerscore, never a
     seen_achievements sum), Steam's line shows a lifetime count from

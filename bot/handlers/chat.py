@@ -98,6 +98,12 @@ class UsernameMiddleware(BaseMiddleware):
         if isinstance(event, Message) and event.from_user:
             if event.from_user.username:
                 await self._repo.update_username(event.from_user.id, event.from_user.username)
+            # first_name always exists for a real Telegram account, unlike
+            # username above — unconditional (Follow-up 2026-09-06, /stats'
+            # header identity).
+            await self._repo.update_names(
+                event.from_user.id, event.from_user.first_name, event.from_user.last_name
+            )
             if event.chat.type in GROUP_TYPES:
                 await self._repo.record_chat_seen(event.chat.id, event.from_user.id)
         return await handler(event, data)
@@ -202,11 +208,25 @@ def _games_list(games: list[TopGame]) -> str:
 
 
 def _display_name(target: User, links: list[PlatformLink]) -> str:
+    """The Telegram identity, not a platform gamertag (Follow-up
+    2026-09-06, user request) — the card already lists every connected
+    platform's own name on its own line below (XBOX/Steam/PSN), so the
+    header identifying *the person* rather than defaulting to whichever
+    platform happened to be Xbox reads better once someone has more than
+    one. first_name/last_name only exist once UsernameMiddleware (below)
+    has seen at least one message from them — a brand-new /start with
+    nothing yet falls through to a platform name as a last resort, same
+    defensive shape this function already had before this change."""
+    if target.username:
+        return f"@{target.username}"
+    full_name = " ".join(part for part in (target.first_name, target.last_name) if part)
+    if full_name:
+        return full_name
     if target.gamertag:
         return target.gamertag
     if links:
         return links[0].display_name or links[0].external_id
-    return "без геймертега"
+    return "без имени"
 
 
 async def _build_stats_text(repo: Repo, target: User) -> str | None:
