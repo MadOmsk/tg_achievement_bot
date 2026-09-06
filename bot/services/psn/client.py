@@ -148,6 +148,25 @@ async def _call[T](fn: Callable[..., T], *args: object, **kwargs: object) -> T:
     return await asyncio.to_thread(fn, *args, **kwargs)
 
 
+def _as_float(value: object) -> float | None:
+    """psnawp_api types `Trophy.trophy_earn_rate` as `float | None` but its
+    own TrophyBuilder just does `trophy_dict.get("trophyEarnedRate")` with no
+    cast (verified in the installed library, 2026-09-06) — Sony's API hands
+    that field back as a numeric *string* (e.g. "34.5"), so the annotation
+    lies. Found live sending a real test notification: `rarity_badge()`'s
+    `<=` comparison crashed on a `str` the moment a trophy with a real earn
+    rate went through `format_single`, meaning any live PSN trophy carrying
+    rarity data would have silently vanished (poll_account's own broad
+    except catches it and only logs — SPEC 9, M-PSN-2). Cast defensively
+    rather than trust either the annotation or the runtime type."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def build_client(npsso: str) -> PSNAWP:
     """Constructs the client object — this does NOT exchange the NPSSO for
     a real token (verified live 2026-09-06: psnawp_api's constructor
@@ -293,7 +312,7 @@ async def trophies_for_title(
             trophy_type=trophy.trophy_type,
             trophy_hidden=bool(trophy.trophy_hidden),
             trophy_rarity=trophy.trophy_rarity,
-            trophy_earn_rate=trophy.trophy_earn_rate,
+            trophy_earn_rate=_as_float(trophy.trophy_earn_rate),
             earned_date_time=(
                 trophy.earned_date_time.isoformat() if trophy.earned_date_time else None
             ),

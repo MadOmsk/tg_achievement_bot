@@ -24,6 +24,7 @@ from bot.services.psn.client import (
     PsnApiError,
     PsnPrivateProfileError,
     PsnTokenDeadError,
+    _as_float,
     build_client,
     check_alive,
     is_trophy_visible,
@@ -227,6 +228,32 @@ async def test_recent_earned_trophies_skips_unearned_and_sorts_by_recency() -> N
 
     assert [t.trophy_name for t in result] == ["New One", "Old One"]
     assert result[0].title_name == "Some Game"
+
+
+async def test_as_float_handles_none_and_garbage() -> None:
+    assert _as_float(None) is None
+    assert _as_float("garbage") is None
+    assert _as_float("34.5") == 34.5
+
+
+async def test_recent_earned_trophies_coerces_a_string_earn_rate_to_float() -> None:
+    """Found live 2026-09-06 sending a real test notification: psnawp_api
+    types `Trophy.trophy_earn_rate` as `float | None` but its own
+    TrophyBuilder never casts Sony's raw JSON value, which comes back as a
+    numeric *string* — `rarity_badge()`'s `<=` comparison crashed on it the
+    moment a real trophy went through `format_single`. `_FakeTrophy` here
+    plays the same trick psnawp_api does (a string where the annotation
+    promises a float) to prove our own conversion, not the library's, is
+    what makes this safe."""
+    trophy = _FakeTrophy(
+        "Real Rate", earned=True, earned_date_time=datetime(2026, 1, 1), trophy_earn_rate="34.5"
+    )
+    title = _FakeTitle("NPWR00001_00", "Some Game", trophies_by_id={"NPWR00001_00": [trophy]})
+    client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer", titles=[title])})
+
+    result = await recent_earned_trophies(client, "acc-1", limit=10)
+
+    assert result[0].trophy_earn_rate == 34.5
 
 
 async def test_recent_earned_trophies_respects_the_limit() -> None:
