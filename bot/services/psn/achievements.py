@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from psnawp_api import PSNAWP
 
+from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.services.models import ParsedAchievement
 from bot.services.psn.client import (
@@ -87,7 +88,7 @@ def _to_parsed(np_communication_id: str, item: EarnedTrophy) -> ParsedAchievemen
         unlocked_at=parse_iso(item.earned_date_time) if item.earned_date_time else None,
         gamerscore=0,  # PSN has no gamerscore — a trophy has no per-item score at all
         rarity_percent=item.trophy_earn_rate,
-        platform="psn",
+        platform=Platform.PSN,
         is_secret=item.trophy_hidden,
         trophy_type=item.trophy_type.value if item.trophy_type else None,
     )

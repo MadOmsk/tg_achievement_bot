@@ -12,6 +12,7 @@ import asyncio
 import logging
 
 from bot.db.repo import AchievementRow, Repo
+from bot.i18n import gettext
 from bot.poller.publisher import Publisher
 from bot.poller.rows import to_achievement_row
 from bot.services.steam.achievements import fetch_unlocked
@@ -24,6 +25,8 @@ from bot.services.steam.client import (
 )
 
 log = logging.getLogger(__name__)
+
+_ = lambda key, **kwargs: gettext("steamfetcher", key, **kwargs)  # noqa: E731
 
 # A backfill's per-game concurrency — Xbox never needed this second level
 # (one call covers its whole library), Steam genuinely does since
@@ -77,10 +80,10 @@ class SteamFetcher:
         try:
             snapshots = await get_presence_batch(self._api_key, [steam_id])
         except SteamApiError as exc:
-            return f"Не удалось обновить: {exc}"
+            return _("steamfetcher-refresh-failed", error=exc)
         snapshot = snapshots.get(steam_id)
         if snapshot is None:
-            return "Steam не вернул профиль (скрыт или удалён)."
+            return _("steamfetcher-no-profile")
 
         await self._repo.save_steam_presence_state(
             steam_id, snapshot.persona_state, snapshot.gameid, snapshot.game_name, changed=False
@@ -95,9 +98,13 @@ class SteamFetcher:
                 snapshot.game_name,
             )
 
-        where = snapshot.game_name or snapshot.gameid or "без игры"
-        state = f"в сети, {where}" if snapshot.persona_state != 0 else "не в сети"
-        return f"Обновлено: {state}; новых достижений {published}."
+        where = snapshot.game_name or snapshot.gameid or _("steamfetcher-no-game")
+        state = (
+            _("steamfetcher-online", where=where)
+            if snapshot.persona_state != 0
+            else _("steamfetcher-offline")
+        )
+        return _("steamfetcher-refreshed", state=state, published=published)
 
     async def backfill(self, tg_id: int, steam_id: str) -> int:
         """Mark everything already unlocked as seen, publishing nothing —
@@ -120,8 +127,6 @@ class SteamFetcher:
                     rows.extend(to_achievement_row(item) for item in parsed)
 
             await asyncio.gather(*(one(game) for game in games))
-            await self._repo.insert_new_achievements_steam(
-                tg_id, steam_id, rows, is_backfill=True
-            )
+            await self._repo.insert_new_achievements_steam(tg_id, steam_id, rows, is_backfill=True)
             log.info("steam backfill for tg_id=%s stored %s achievements", tg_id, len(rows))
             return len(rows)

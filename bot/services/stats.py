@@ -7,9 +7,9 @@ Both "today" (24h) and "month" (30d) are rolling windows, not calendar-bound
 — the same reasoning as the chat summary's windows (SPEC 5.7): a calendar
 boundary cuts at an arbitrary moment, and people are in different timezones
 with no shared midnight anyway. Month used to be calendar-based per person's
-timezone; that made it silently disagree with /stats' equally-30-day "Игры
-за 30 дней" table (found live: a chat member's games table showed a month's
-worth of games while "За месяц" showed three days' worth, because 30
+timezone; that made it silently disagree with /stats' equally long recent-games
+table (found live: a chat member's games table showed a month's worth of games
+while the monthly total showed three days' worth, because 30
 calendar-rolling days and "since the 1st" are not the same window) — fixed
 by making both counters and the games table use the same rolling window.
 """
@@ -55,8 +55,8 @@ def today_cutoff_utc(now: datetime | None = None) -> datetime:
 
 def month_cutoff_utc(now: datetime | None = None) -> datetime:
     """Start of the rolling 30-day "month" window — same reasoning as
-    `today_cutoff_utc`, and deliberately the same window as /stats' "Игры
-    за 30 дней" table (SPEC 5.9): a mismatched window there is what made
+    `today_cutoff_utc`, and deliberately the same window as /stats' recent-games
+    table (SPEC 5.9): a mismatched window there is what made
     this look like a counting bug rather than two different definitions of
     "month"."""
     return (now or utcnow()) - timedelta(days=30)

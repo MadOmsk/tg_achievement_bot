@@ -34,9 +34,7 @@ def test_parse_unlocktime_converts_a_real_unix_timestamp() -> None:
     assert _parse_unlocktime(1260104110) == datetime.fromtimestamp(1260104110, tz=UTC)
 
 
-async def test_fetch_unlocked_skips_locked_achievements(
-    repo: Repo, monkeypatch
-) -> None:
+async def test_fetch_unlocked_skips_locked_achievements(repo: Repo, monkeypatch) -> None:
     async def fake_player(api_key: str, steam_id: str, appid: str) -> list[RawAchievement]:
         return [_raw("ACH_LOCKED", achieved=False), _raw("ACH_A", achieved=True)]
 

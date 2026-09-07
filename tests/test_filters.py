@@ -218,9 +218,7 @@ def test_single_message_still_calls_it_an_achievement_elsewhere() -> None:
 
 
 def test_digest_header_pluralizes_trophies_for_an_all_psn_digest() -> None:
-    items = [
-        achievement(rarity=r, platform="psn", trophy_type="bronze") for r in (2.4, 11.0, 34.0)
-    ]
+    items = [achievement(rarity=r, platform="psn", trophy_type="bronze") for r in (2.4, 11.0, 34.0)]
     text = format_digest("Igor", "Bloodborne", items)
     assert "<b>Igor</b> получает 3 трофея" in text
 

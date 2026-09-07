@@ -36,9 +36,7 @@ _GENRE_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     )
 }
-_NEXT_DATA_RE = re.compile(
-    r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL
-)
+_NEXT_DATA_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
 
 # Xbox's own title names carry trademark clutter and separator punctuation
 # HLTB's search doesn't expect — e.g. a chat-recent-games shortcut hands over
@@ -54,14 +52,42 @@ _SEARCH_NOISE = re.compile(r"[™©®℠:,]")
 # word found is kept and everything after it is simply dropped.
 _STOPWORDS = {
     # articles
-    "a", "an", "the",
+    "a",
+    "an",
+    "the",
     # prepositions
-    "of", "on", "in", "at", "to", "for", "with", "from", "by",
+    "of",
+    "on",
+    "in",
+    "at",
+    "to",
+    "for",
+    "with",
+    "from",
+    "by",
     # pronouns
-    "this", "that", "these", "those", "it", "its", "his", "her", "their",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "his",
+    "her",
+    "their",
     # platform names — noise in a title search, not part of the title
-    "pc", "xbox", "playstation", "ps", "ps1", "ps2", "ps3", "ps4", "ps5",
-    "switch", "steam", "windows",
+    "pc",
+    "xbox",
+    "playstation",
+    "ps",
+    "ps1",
+    "ps2",
+    "ps3",
+    "ps4",
+    "ps5",
+    "switch",
+    "steam",
+    "windows",
 }
 
 
@@ -113,9 +139,7 @@ async def _search_raw(cleaned_query: str, limit: int) -> list[HltbResult]:
         # names are often ALL CAPS ("HELLDIVERS 2"), and the library's
         # default case-sensitive similarity check threw out the correct
         # match entirely (0 results) rather than just ranking it lower.
-        entries = await HowLongToBeat().async_search(
-            cleaned_query, similarity_case_sensitive=False
-        )
+        entries = await HowLongToBeat().async_search(cleaned_query, similarity_case_sensitive=False)
     except Exception as exc:  # the library exposes no narrower exception type
         raise HltbError(f"HLTB search failed for {cleaned_query!r}: {exc}") from None
     entries = sorted(entries or [], key=lambda e: e.similarity, reverse=True)

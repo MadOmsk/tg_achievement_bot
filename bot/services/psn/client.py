@@ -340,9 +340,7 @@ async def trophies_for_title(
     ]
 
 
-async def recent_earned_trophies(
-    client: PSNAWP, account_id: str, limit: int
-) -> list[EarnedTrophy]:
+async def recent_earned_trophies(client: PSNAWP, account_id: str, limit: int) -> list[EarnedTrophy]:
     """Live, uncached (SPEC 1.5's cache-only rule carve-out — same one the
     admin panel's "Обновить данные" button already gets) — only the admin
     panel's "🏆 Трофеи PSN (тест)" screen calls this, nothing here is stored.

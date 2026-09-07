@@ -124,7 +124,10 @@ async def test_tick_does_not_touch_last_online_while_offline(
     async def fake_batch(api_key, steam_ids):
         return {
             STEAM_ID: SteamPresence(
-                steam_id=STEAM_ID, persona_name="Mad Omsk", persona_state=0, gameid=None,
+                steam_id=STEAM_ID,
+                persona_name="Mad Omsk",
+                persona_state=0,
+                gameid=None,
                 game_name=None,
             )
         }
@@ -160,8 +163,11 @@ async def test_tick_does_a_final_poll_of_the_old_game_when_it_changes(
         # Quit the game, still online.
         return {
             STEAM_ID: SteamPresence(
-                steam_id=STEAM_ID, persona_name="Mad Omsk", persona_state=1,
-                gameid=None, game_name=None,
+                steam_id=STEAM_ID,
+                persona_name="Mad Omsk",
+                persona_state=1,
+                gameid=None,
+                game_name=None,
             )
         }
 
@@ -202,8 +208,11 @@ async def test_grace_period_keeps_polling_a_game_that_briefly_vanished(
         # this is a steady-state tick, not a fresh change.
         return {
             STEAM_ID: SteamPresence(
-                steam_id=STEAM_ID, persona_name="Mad Omsk", persona_state=1,
-                gameid=None, game_name=None,
+                steam_id=STEAM_ID,
+                persona_name="Mad Omsk",
+                persona_state=1,
+                gameid=None,
+                game_name=None,
             )
         }
 
@@ -235,8 +244,11 @@ async def test_grace_period_does_not_apply_once_reported_fully_offline(
     async def fake_batch(api_key, steam_ids):
         return {
             STEAM_ID: SteamPresence(
-                steam_id=STEAM_ID, persona_name="Mad Omsk", persona_state=0,
-                gameid=None, game_name=None,
+                steam_id=STEAM_ID,
+                persona_name="Mad Omsk",
+                persona_state=0,
+                gameid=None,
+                game_name=None,
             )
         }
 
@@ -264,8 +276,11 @@ async def test_grace_period_expires(repo: Repo, settings: Settings, monkeypatch)
     async def fake_batch(api_key, steam_ids):
         return {
             STEAM_ID: SteamPresence(
-                steam_id=STEAM_ID, persona_name="Mad Omsk", persona_state=1,
-                gameid=None, game_name=None,
+                steam_id=STEAM_ID,
+                persona_name="Mad Omsk",
+                persona_state=1,
+                gameid=None,
+                game_name=None,
             )
         }
 

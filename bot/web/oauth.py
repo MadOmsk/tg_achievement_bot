@@ -13,10 +13,13 @@ from urllib.parse import urlsplit
 from aiohttp import web
 
 from bot.config import Settings
+from bot.i18n import gettext
 from bot.services.connect import ConnectError, ConnectService
 from bot.services.xbox.auth import TokenRefreshError, XboxIdentity
 
 log = logging.getLogger(__name__)
+
+_ = lambda key, **kwargs: gettext("oauth", key, **kwargs)  # noqa: E731
 
 OnLinked = Callable[[int, XboxIdentity, "int | None"], Awaitable[None]]
 
@@ -84,20 +87,24 @@ class OAuthServer:
                 error,
                 request.query.get("error_description"),
             )
-            return _page("Вход отменён", "Можно закрыть вкладку и попробовать снова в боте.")
+            return _page(_("oauth-cancelled-title"), _("oauth-cancelled-text"))
 
         code = request.query.get("code")
         state = request.query.get("state")
         if not code or not state:
-            return _page("Чего-то не хватает", "Открой ссылку из бота заново.", status=400)
+            return _page(_("oauth-missing-title"), _("oauth-missing-text"), status=400)
 
         try:
             tg_id, identity, origin_chat_id = await self._connect.complete_login(state, code)
         except ConnectError as exc:
-            return _page("Не получилось", str(exc), status=400)
+            return _page(_("oauth-failed-title"), str(exc), status=400)
         except TokenRefreshError:
             log.exception("token exchange failed")
-            return _page("Microsoft не отдал токен", "Попробуй ещё раз: /connect_xbox", status=502)
+            return _page(
+                _("oauth-token-exchange-failed-title"),
+                _("oauth-token-exchange-failed-text"),
+                status=502,
+            )
 
         try:
             await self._on_linked(tg_id, identity, origin_chat_id)
@@ -105,4 +112,4 @@ class OAuthServer:
             # The account is already linked; only the Telegram message failed.
             log.exception("could not notify tg_id=%s about a successful login", tg_id)
 
-        return _page(f"Готово, {identity.gamertag}", "Возвращайся в Telegram — там всё остальное.")
+        return _page(_("oauth-success-title", gamertag=identity.gamertag), _("oauth-success-text"))

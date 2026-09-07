@@ -16,7 +16,9 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from bot.constants import AchievementBadge
 from bot.db.repo import ChatMemberStat, Repo
+from bot.i18n import gettext
 from bot.services.achievements import platform_breakdown_suffix, plural_achievements
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
@@ -25,6 +27,8 @@ from bot.util import thousands, utcnow
 
 log = logging.getLogger(__name__)
 
+_ = lambda key, **kwargs: gettext("daily", key, **kwargs)  # noqa: E731
+
 DAY_WINDOW_HOURS = 24
 # Rolling, like the day window — not the calendar month. Same reasoning: a
 # calendar boundary would cut the window at an arbitrary moment and give every
@@ -32,19 +36,19 @@ DAY_WINDOW_HOURS = 24
 MONTH_WINDOW_DAYS = 30
 TOP_LIMIT_KEY = "summary_top_limit"
 DEFAULT_TABLE_TOP = 15
-MONTHS = (
-    "января",
-    "февраля",
-    "марта",
-    "апреля",
-    "мая",
-    "июня",
-    "июля",
-    "августа",
-    "сентября",
-    "октября",
-    "ноября",
-    "декабря",
+_MONTH_KEYS = (
+    "daily-month-01",
+    "daily-month-02",
+    "daily-month-03",
+    "daily-month-04",
+    "daily-month-05",
+    "daily-month-06",
+    "daily-month-07",
+    "daily-month-08",
+    "daily-month-09",
+    "daily-month-10",
+    "daily-month-11",
+    "daily-month-12",
 )
 
 
@@ -122,22 +126,26 @@ async def build_summary(
     )
 
     top_limit = await current_top_limit(repo)
-    day_lines, day_full = _section("24 часа", day_rows, top_limit)
-    lines = [f"📊 <b>Итог дня</b>, {today.day} {MONTHS[today.month - 1]}", "", *day_lines]
+    day_lines, day_full = _section(_("daily-window-day"), day_rows, top_limit)
+    lines = [
+        _("daily-header", day=today.day, month=_(_MONTH_KEYS[today.month - 1])),
+        "",
+        *day_lines,
+    ]
 
     month_full = False
     if month_rows:
-        month_lines, month_full = _section("30 дней", month_rows, top_limit)
+        month_lines, month_full = _section(_("daily-window-month"), month_rows, top_limit)
         lines += ["", *month_lines]
 
     buttons = []
     if day_full:
         buttons.append(
-            InlineKeyboardButton(text="Показать всех (24ч)", callback_data="summary:all:day")
+            InlineKeyboardButton(text=_("daily-show-all-day"), callback_data="summary:all:day")
         )
     if month_full:
         buttons.append(
-            InlineKeyboardButton(text="Показать всех (30д)", callback_data="summary:all:month")
+            InlineKeyboardButton(text=_("daily-show-all-month"), callback_data="summary:all:month")
         )
     markup = InlineKeyboardMarkup(inline_keyboard=[[b] for b in buttons]) if buttons else None
     return "\n".join(lines), markup
@@ -154,9 +162,11 @@ async def full_leaderboard(repo: Repo, chat_id: int, threshold: float, window: s
         return None
     # limit=len(rows): never truncate here — this is the "show everything"
     # view; expandable=False for the same reason (SPEC 6.3).
-    lines, _ = _section("Всего", rows, limit=len(rows), expandable=False)
-    label = "24 часа" if window == "day" else "30 дней"
-    return "\n".join([f"📊 <b>{label}, полностью</b>", "", *lines])
+    section_lines, _full = _section(
+        _("daily-leaderboard-total-label"), rows, limit=len(rows), expandable=False
+    )
+    label = _("daily-window-day") if window == "day" else _("daily-window-month")
+    return "\n".join([_("daily-leaderboard-full-header", label=label), "", *section_lines])
 
 
 def _section(
@@ -182,7 +192,7 @@ def _section(
 
 def _leader_row(place: int, row: ChatMemberStat) -> str:
     name = html_escape(truncate_name(row.gamertag or f"id{row.tg_id}"))
-    tail = f" 💎{row.rare}" if row.rare else ""
+    tail = f" {AchievementBadge.DIAMOND}{row.rare}" if row.rare else ""
     breakdown = platform_breakdown_suffix(row.xbox_count, row.steam_count, always=True)
     return (
         f"{place}. {name} — {plural_achievements(row.count)}{tail}{breakdown}"

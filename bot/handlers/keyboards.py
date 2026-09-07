@@ -4,6 +4,11 @@ natural home. safe_edit (2026-09-05 refactor) is one of those: imported by
 panel.py, connect.py, steam.py and hltb.py alike, none of which import each
 other back through this module, so it can live wherever without risking a
 cycle — this file already sits underneath all of them.
+
+Every function that renders user-facing text takes an I18nContext (SPEC
+i18n migration, 2026-09-07) — strings live in
+bot/locales/ru/LC_MESSAGES/keyboards.ftl, one file per shared-module the
+same way hltb.py got its own.
 """
 
 from __future__ import annotations
@@ -12,6 +17,10 @@ import contextlib
 
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram_i18n import I18nContext
+
+from bot.constants import RarityMode
+from bot.i18n import StaticI18nContext, gettext, static_i18n
 
 # Re-exported (not redefined) — services/profile_links.py is the one place
 # that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
@@ -44,40 +53,48 @@ TZ_SKIP = "tz:skip"
 TZ_MANUAL = "tz:manual"
 
 
-def format_offset(minutes: int | None) -> str:
+def _text(i18n: I18nContext | None, key: str, **kwargs: object) -> str:
+    return i18n.get(key, **kwargs) if i18n is not None else gettext("keyboards", key, **kwargs)
+
+
+def format_offset(minutes: int | None, i18n: I18nContext | None = None) -> str:
     if minutes is None:
-        return "по умолчанию"
+        return _text(i18n, "kb-default")
     hours, rest = divmod(abs(minutes), 60)
     sign = "+" if minutes >= 0 else "−"
     return f"UTC{sign}{hours}" if rest == 0 else f"UTC{sign}{hours}:{rest:02d}"
 
 
-def _offset_button(hours: int) -> InlineKeyboardButton:
+def _offset_button(hours: int, i18n: I18nContext) -> InlineKeyboardButton:
     minutes = hours * 60
-    return InlineKeyboardButton(text=format_offset(minutes), callback_data=f"{TZ_SET}:{minutes}")
+    return InlineKeyboardButton(
+        text=format_offset(minutes, i18n), callback_data=f"{TZ_SET}:{minutes}"
+    )
 
 
-def timezone_keyboard(*, full: bool = False, skippable: bool = True) -> InlineKeyboardMarkup:
+def timezone_keyboard(
+    i18n: I18nContext, *, full: bool = False, skippable: bool = True
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     offsets = ALL_OFFSETS_HOURS if full else COMMON_OFFSETS_HOURS
     for hours in offsets:
-        builder.add(_offset_button(hours))
+        builder.add(_offset_button(hours, i18n))
     builder.adjust(4)
 
     if not full:
-        builder.row(InlineKeyboardButton(text="Другой ▸", callback_data=TZ_MORE))
+        builder.row(InlineKeyboardButton(text=i18n.get("kb-tz-other"), callback_data=TZ_MORE))
     # Faster than scrolling the full −12..+14 grid, and the only way to enter
     # a half-hour offset like +5:30 at all — the button grid only has whole
     # hours (SPEC 6.1.1).
-    builder.row(InlineKeyboardButton(text="✏️ Ввести вручную", callback_data=TZ_MANUAL))
+    builder.row(InlineKeyboardButton(text=i18n.get("kb-tz-manual"), callback_data=TZ_MANUAL))
     if skippable:
-        builder.row(InlineKeyboardButton(text="Пропустить", callback_data=TZ_SKIP))
+        builder.row(InlineKeyboardButton(text=i18n.get("kb-tz-skip"), callback_data=TZ_SKIP))
     return builder.as_markup()
 
 
-def connect_keyboard(url: str) -> InlineKeyboardMarkup:
+def connect_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Подключить XBOX", url=url)]]
+        inline_keyboard=[[InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)]]
     )
 
 
@@ -87,8 +104,10 @@ DIGEST_NEVER = 99
 DIGEST_CHOICES = (2, 3, 4, 5, 6, 8, 10, DIGEST_NEVER)
 
 
-def format_digest(threshold: int) -> str:
-    return "никогда" if threshold >= DIGEST_NEVER else f"от {threshold} достижений"
+def format_digest(threshold: int, i18n: I18nContext) -> str:
+    if threshold >= DIGEST_NEVER:
+        return i18n.get("kb-digest-never")
+    return i18n.get("kb-digest-from-n", threshold=threshold)
 
 
 # One mode governs every connected platform at once within a given chat
@@ -99,18 +118,18 @@ def format_digest(threshold: int) -> str:
 # three-way toggle. Used to have a separate Xbox 360 show/hide switch next
 # to this one; folded in here instead of growing a second platform-specific
 # toggle when Steam arrived (services/achievements.py::passes_filters).
-RARITY_CHOICES = ("all", "rare", "hidden")
+RARITY_CHOICES = (RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN)
 
 
-def format_rarity(mode: str) -> str:
-    if mode == "hidden":
-        return "не показывать"
-    if mode == "rare":
+def format_rarity(mode: str, i18n: I18nContext | None = None) -> str:
+    if mode == RarityMode.HIDDEN:
+        return _text(i18n, "kb-rarity-hidden")
+    if mode == RarityMode.RARE:
         # No percentage here on purpose: the threshold is per-chat now (SPEC
         # 5.5), and this panel is not chat-scoped — a single number here
         # would only ever be right for one of possibly several chats.
-        return "только редкие"
-    return "любые"
+        return _text(i18n, "kb-rarity-rare")
+    return _text(i18n, "kb-rarity-all")
 
 
 def next_rarity_mode(current: str) -> str:
@@ -118,41 +137,56 @@ def next_rarity_mode(current: str) -> str:
     return RARITY_CHOICES[(index + 1) % len(RARITY_CHOICES)]
 
 
-def disconnect_prompt_keyboard(*, from_panel: bool = False) -> InlineKeyboardMarkup:
+def disconnect_prompt_keyboard(
+    i18n: I18nContext, *, from_panel: bool = False
+) -> InlineKeyboardMarkup:
     # Cancelling from the panel must restore the panel in place, not just
     # vanish — it needs its own callback so the handler knows to re-render
     # rather than delete the (only) message.
     cancel_data = "panel:disconnect:no" if from_panel else "disconnect:no"
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Да, отключить", callback_data="disconnect:yes")],
-            [InlineKeyboardButton(text="Отмена", callback_data=cancel_data)],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("kb-disconnect-confirm"), callback_data="disconnect:yes"
+                )
+            ],
+            [InlineKeyboardButton(text=i18n.get("kb-cancel"), callback_data=cancel_data)],
         ]
     )
 
 
-STEAM_CONNECT_BUTTON = InlineKeyboardButton(text="🎮 Steam", callback_data="steam:connect")
-STEAM_DISCONNECT_BUTTON = InlineKeyboardButton(
-    text="🔕 Отключить Steam", callback_data="steam:disconnectprompt"
-)
+def steam_connect_button(i18n: I18nContext) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=i18n.get("kb-steam-connect"), callback_data="steam:connect")
 
 
-def _steam_button(*, steam_connected: bool) -> InlineKeyboardButton:
-    return STEAM_DISCONNECT_BUTTON if steam_connected else STEAM_CONNECT_BUTTON
+def steam_disconnect_button(i18n: I18nContext) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        text=i18n.get("kb-steam-disconnect"), callback_data="steam:disconnectprompt"
+    )
 
 
-PSN_CONNECT_BUTTON = InlineKeyboardButton(text="🎮 PSN", callback_data="psn:connect")
-PSN_DISCONNECT_BUTTON = InlineKeyboardButton(
-    text="🔕 Отключить PSN", callback_data="psn:disconnectprompt"
-)
+def _steam_button(i18n: I18nContext, *, steam_connected: bool) -> InlineKeyboardButton:
+    return steam_disconnect_button(i18n) if steam_connected else steam_connect_button(i18n)
 
 
-def _psn_button(*, psn_connected: bool) -> InlineKeyboardButton:
-    return PSN_DISCONNECT_BUTTON if psn_connected else PSN_CONNECT_BUTTON
+def psn_connect_button(i18n: I18nContext) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=i18n.get("kb-psn-connect"), callback_data="psn:connect")
+
+
+def psn_disconnect_button(i18n: I18nContext) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        text=i18n.get("kb-psn-disconnect"), callback_data="psn:disconnectprompt"
+    )
+
+
+def _psn_button(i18n: I18nContext, *, psn_connected: bool) -> InlineKeyboardButton:
+    return psn_disconnect_button(i18n) if psn_connected else psn_connect_button(i18n)
 
 
 def panel_keyboard(
     tz_offset_min: int | None,
+    i18n: I18nContext | StaticI18nContext | None = None,
     *,
     connected: bool = True,
     needs_reconnect: bool = False,
@@ -163,6 +197,7 @@ def panel_keyboard(
     psn_id: str | None = None,
     show_profile_links: bool = False,
 ) -> InlineKeyboardMarkup:
+    i18n = i18n or static_i18n("keyboards")
     if not connected:
         # Xbox, Steam and PSN are independent (M-Steam-1, M-PSN-1) — someone
         # with none connected yet should be offered all three, not just
@@ -170,28 +205,30 @@ def panel_keyboard(
         # disconnect option for it rather than nothing at all.
         return InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🔗 XBOX", callback_data="relogin")],
-                [_steam_button(steam_connected=steam_connected)],
-                [_psn_button(psn_connected=psn_connected)],
+                [InlineKeyboardButton(text=i18n.get("kb-xbox-relogin"), callback_data="relogin")],
+                [_steam_button(i18n, steam_connected=steam_connected)],
+                [_psn_button(i18n, psn_connected=psn_connected)],
             ]
         )
 
     rows: list[list[InlineKeyboardButton]] = []
     if needs_reconnect:
-        rows.append([InlineKeyboardButton(text="🔄 Подключить заново", callback_data="relogin")])
+        rows.append(
+            [InlineKeyboardButton(text=i18n.get("kb-xbox-reconnect"), callback_data="relogin")]
+        )
     if not steam_connected:
-        rows.append([STEAM_CONNECT_BUTTON])
+        rows.append([steam_connect_button(i18n)])
     if not psn_connected:
-        rows.append([PSN_CONNECT_BUTTON])
+        rows.append([psn_connect_button(i18n)])
     rows += [
         [
             InlineKeyboardButton(
-                text=f"Часовой пояс: {format_offset(tz_offset_min)} ▸",
+                text=i18n.get("kb-timezone-row", offset=format_offset(tz_offset_min, i18n)),
                 callback_data="panel:tz",
             )
         ],
-        [InlineKeyboardButton(text="💬 Мои чаты ▸", callback_data="panel:chatlist")],
-        [InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="panel:sync")],
+        [InlineKeyboardButton(text=i18n.get("kb-my-chats"), callback_data="panel:chatlist")],
+        [InlineKeyboardButton(text=i18n.get("kb-sync"), callback_data="panel:sync")],
         # Off by default (Follow-up 2026-09-06) — gates the clickable link
         # /stats and /who put in this person's nickname for everyone who
         # looks (not just strangers: the card is one shared message, not
@@ -201,7 +238,12 @@ def panel_keyboard(
         # never shown to anyone but its owner).
         [
             InlineKeyboardButton(
-                text=f"Профиль виден другим: {'да' if show_profile_links else 'нет'} ▸",
+                text=i18n.get(
+                    "kb-profile-visible",
+                    visible=i18n.get(
+                        "kb-profile-visible-yes" if show_profile_links else "kb-profile-visible-no"
+                    ),
+                ),
                 callback_data="panel:linkstoggle",
             )
         ],
@@ -210,10 +252,13 @@ def panel_keyboard(
     # — gamertag/steam_id can in principle be missing (pre-first-sync edge
     # case), so the link only appears once there's something to link to.
     xbox_disconnect = InlineKeyboardButton(
-        text="🔕 Отключить XBOX", callback_data="panel:disconnect"
+        text=i18n.get("kb-xbox-disconnect"), callback_data="panel:disconnect"
     )
     rows.append(
-        [InlineKeyboardButton(text="👤 Профиль", url=xbox_profile_url(gamertag)), xbox_disconnect]
+        [
+            InlineKeyboardButton(text=i18n.get("kb-profile"), url=xbox_profile_url(gamertag)),
+            xbox_disconnect,
+        ]
         if gamertag
         else [xbox_disconnect]
     )
@@ -223,11 +268,11 @@ def panel_keyboard(
     if steam_connected:
         rows.append(
             [
-                InlineKeyboardButton(text="👤 Профиль", url=steam_profile_url(steam_id)),
-                STEAM_DISCONNECT_BUTTON,
+                InlineKeyboardButton(text=i18n.get("kb-profile"), url=steam_profile_url(steam_id)),
+                steam_disconnect_button(i18n),
             ]
             if steam_id
-            else [STEAM_DISCONNECT_BUTTON]
+            else [steam_disconnect_button(i18n)]
         )
     # Same treatment as XBOX/Steam above (2026-09-06 follow-up, reversing the
     # earlier call here) — my.playstation.com/profile/<onlineId> is the
@@ -238,33 +283,37 @@ def panel_keyboard(
     if psn_connected:
         rows.append(
             [
-                InlineKeyboardButton(text="👤 Профиль", url=psn_profile_url(psn_id)),
-                PSN_DISCONNECT_BUTTON,
+                InlineKeyboardButton(text=i18n.get("kb-profile"), url=psn_profile_url(psn_id)),
+                psn_disconnect_button(i18n),
             ]
             if psn_id
-            else [PSN_DISCONNECT_BUTTON]
+            else [psn_disconnect_button(i18n)]
         )
-    rows.append([InlineKeyboardButton(text="Обновить", callback_data="panel:refresh")])
+    rows.append([InlineKeyboardButton(text=i18n.get("kb-refresh"), callback_data="panel:refresh")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def digest_keyboard(current: int, chat_id: int) -> InlineKeyboardMarkup:
+def digest_keyboard(current: int, chat_id: int, i18n: I18nContext) -> InlineKeyboardMarkup:
     """Per chat now, not the main panel screen (Follow-up, 2026-09-05, same
     move as rarity_mode before it) — "Назад" goes back to that chat's own
     card, not the panel root."""
     builder = InlineKeyboardBuilder()
     for value in DIGEST_CHOICES:
         mark = "• " if value == current else ""
-        label = "никогда" if value >= DIGEST_NEVER else str(value)
+        label = i18n.get("kb-digest-never") if value >= DIGEST_NEVER else str(value)
         builder.add(
             InlineKeyboardButton(
                 text=f"{mark}{label}", callback_data=f"panel:cdigestset:{chat_id}:{value}"
             )
         )
     builder.adjust(4)
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data=f"panel:chat:{chat_id}"))
+    builder.row(
+        InlineKeyboardButton(text=i18n.get("kb-back"), callback_data=f"panel:chat:{chat_id}")
+    )
     return builder.as_markup()
 
 
-def deep_link_keyboard(url: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть", url=url)]])
+def deep_link_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=i18n.get("kb-open"), url=url)]]
+    )

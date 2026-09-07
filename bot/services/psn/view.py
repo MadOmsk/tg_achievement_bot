@@ -10,8 +10,13 @@ from __future__ import annotations
 
 from html import escape as html_escape
 
+from bot.constants import PsnTrophyTier
+from bot.i18n import gettext
+from bot.services.achievements import TROPHY_TIER_BADGE
 from bot.services.psn.client import AccountTrophyOverview
 from bot.services.tables import blockquote, total_line, truncate_name
+
+_ = lambda key, **kwargs: gettext("psnview", key, **kwargs)  # noqa: E731
 
 
 def render_psn_trophy_table(overview: AccountTrophyOverview) -> str:
@@ -19,14 +24,22 @@ def render_psn_trophy_table(overview: AccountTrophyOverview) -> str:
     caller sends this with ParseMode.HTML, same as /stats' own games list."""
     online_id = html_escape(overview.online_id)
     header = total_line(
-        "PSN", f"{online_id} · уровень {overview.trophy_level} ({overview.progress}%)"
+        _("psnview-platform"),
+        _(
+            "psnview-level",
+            online_id=online_id,
+            level=overview.trophy_level,
+            progress=overview.progress,
+        ),
     )
     tier_line = (
-        f"🏆 {overview.earned_platinum} · 🥇 {overview.earned_gold} · "
-        f"🥈 {overview.earned_silver} · 🥉 {overview.earned_bronze}"
+        f"{TROPHY_TIER_BADGE[PsnTrophyTier.PLATINUM]} {overview.earned_platinum} · "
+        f"{TROPHY_TIER_BADGE[PsnTrophyTier.GOLD]} {overview.earned_gold} · "
+        f"{TROPHY_TIER_BADGE[PsnTrophyTier.SILVER]} {overview.earned_silver} · "
+        f"{TROPHY_TIER_BADGE[PsnTrophyTier.BRONZE]} {overview.earned_bronze}"
     )
     if not overview.games:
-        return f"{header}\n{tier_line}\n\nИгр с трофеями не найдено."
+        return f"{header}\n{tier_line}\n\n{_('psnview-no-games')}"
 
     rows = [
         f"{html_escape(truncate_name(game.title_name))} — {game.progress}% "

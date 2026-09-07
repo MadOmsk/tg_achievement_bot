@@ -8,25 +8,23 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from bot.constants import TokenStatus
 from bot.db.repo import Repo
+from bot.i18n import gettext
 
 log = logging.getLogger(__name__)
 
+_ = lambda key, **kwargs: gettext("reminders", key, **kwargs)  # noqa: E731
+
 MAX_REMINDERS = 3
 REMINDER_INTERVAL_HOURS = 72
-
-TEXT = (
-    "⚠️ Доступ к Xbox истёк\n\n"
-    "Твои достижения больше не публикуются. Обычно это значит, что доступ "
-    "отозвали в настройках аккаунта Microsoft."
-)
 
 
 def keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Подключить заново", callback_data="relogin")],
-            [InlineKeyboardButton(text="🔕 Отписаться от бота", callback_data="optout")],
+            [InlineKeyboardButton(text=_("reminders-relogin"), callback_data="relogin")],
+            [InlineKeyboardButton(text=_("reminders-optout"), callback_data="optout")],
         ]
     )
 
@@ -42,11 +40,11 @@ class ReminderJob:
         )
         for tg_id in candidates:
             try:
-                await self._bot.send_message(tg_id, TEXT, reply_markup=keyboard())
+                await self._bot.send_message(tg_id, _("reminders-text"), reply_markup=keyboard())
             except TelegramForbiddenError:
                 # Blocked the bot: stop counting attempts against him forever.
                 log.info("tg_id=%s blocked the bot, no more reminders", tg_id)
-                await self._repo.set_token_status(tg_id, "revoked")
+                await self._repo.set_token_status(tg_id, TokenStatus.REVOKED)
                 continue
             except Exception:
                 log.exception("could not remind tg_id=%s", tg_id)

@@ -141,7 +141,7 @@ def test_label_includes_year_when_known() -> None:
     assert _label(result(year=None)) == "Halo Infinite"
 
 
-def test_card_shows_a_dash_for_missing_completion_times() -> None:
+def test_card_shows_a_dash_for_missing_completion_times(i18n) -> None:
     incomplete = HltbResult(
         hltb_id=1,
         name="Coop Only",
@@ -154,7 +154,7 @@ def test_card_shows_a_dash_for_missing_completion_times() -> None:
         image_url=None,
         genre=None,
     )
-    text = _card(incomplete)
+    text = _card(incomplete, i18n)
     assert "Coop Only" in text
     assert "—" in text
     assert "None" not in text
@@ -162,33 +162,33 @@ def test_card_shows_a_dash_for_missing_completion_times() -> None:
     assert "howlongtobeat.com" not in text  # no link without a URL either
 
 
-def test_card_lists_platforms_when_known() -> None:
-    text = _card(result())
+def test_card_lists_platforms_when_known(i18n) -> None:
+    text = _card(result(), i18n)
     assert "Платформы: PC, Xbox Series X/S" in text
 
 
-def test_card_links_to_the_hltb_page_when_known() -> None:
-    text = _card(result())
+def test_card_links_to_the_hltb_page_when_known(i18n) -> None:
+    text = _card(result(), i18n)
     assert '<a href="https://howlongtobeat.com/game/1">' in text
 
 
-def test_card_shows_genre_when_known() -> None:
-    text = _card(result())
+def test_card_shows_genre_when_known(i18n) -> None:
+    text = _card(result(), i18n)
     assert "Жанры: First-Person, Shooter" in text
 
 
-def test_card_separates_genre_from_platforms_with_a_blank_line() -> None:
-    text = _card(result())
+def test_card_separates_genre_from_platforms_with_a_blank_line(i18n) -> None:
+    text = _card(result(), i18n)
     assert "Платформы: PC, Xbox Series X/S\n\nЖанры: First-Person, Shooter" in text
 
 
-def test_card_uses_a_dot_separator_not_padding_spaces() -> None:
-    text = _card(result())
+def test_card_uses_a_dot_separator_not_padding_spaces(i18n) -> None:
+    text = _card(result(), i18n)
     assert "Основной сюжет · 11.3 ч" in text
     assert "     " not in text  # the old manual-alignment padding is gone
 
 
-def test_card_escapes_html_in_external_hltb_text() -> None:
+def test_card_escapes_html_in_external_hltb_text(i18n) -> None:
     tricky = HltbResult(
         hltb_id=1,
         name="<b>Evil</b> & Co",
@@ -201,73 +201,76 @@ def test_card_escapes_html_in_external_hltb_text() -> None:
         image_url=None,
         genre="Action & <Weird>",
     )
-    text = _card(tricky)
+    text = _card(tricky, i18n)
     assert "<b>Evil</b> & Co" not in text
     assert "&lt;b&gt;Evil&lt;/b&gt; &amp; Co" in text
     assert "A &amp; B" in text
     assert "Action &amp; &lt;Weird&gt;" in text
 
 
-def test_results_keyboard_paginates_five_per_page_with_nav() -> None:
+def test_results_keyboard_paginates_five_per_page_with_nav(i18n) -> None:
     results = [result(hltb_id=i) for i in range(1, 13)]  # 12 -> 3 pages
 
-    page0 = _results_keyboard(results, 0, 5)
+    page0 = _results_keyboard(results, 0, 5, i18n)
     assert len(page0.inline_keyboard) == 7  # 5 picks + one nav row + cancel
     assert page0.inline_keyboard[-1][0].callback_data == "hltb:cancel"
     nav0 = page0.inline_keyboard[-2]
     assert [b.callback_data for b in nav0] == ["hltb:noop", "hltb:page:1"]  # no "back" on page 0
     assert nav0[0].text == "1/3"  # the page counter's label, not its (inert) callback_data
 
-    page1 = _results_keyboard(results, 1, 5)
+    page1 = _results_keyboard(results, 1, 5, i18n)
     nav1 = page1.inline_keyboard[-2]
     assert [b.callback_data for b in nav1] == ["hltb:page:0", "hltb:noop", "hltb:page:2"]
     assert nav1[1].text == "2/3"
 
-    page2 = _results_keyboard(results, 2, 5)
+    page2 = _results_keyboard(results, 2, 5, i18n)
     assert len(page2.inline_keyboard) == 4  # 2 leftover picks + nav + cancel
     nav2 = page2.inline_keyboard[-2]
     # no "forward" button on the last page
     assert [b.callback_data for b in nav2] == ["hltb:page:1", "hltb:noop"]
 
 
-def test_results_keyboard_has_no_nav_row_for_a_single_page() -> None:
+def test_results_keyboard_has_no_nav_row_for_a_single_page(i18n) -> None:
     results = [result(hltb_id=i) for i in range(1, 4)]
-    markup = _results_keyboard(results, 0, 5)
+    markup = _results_keyboard(results, 0, 5, i18n)
     assert len(markup.inline_keyboard) == 4  # 3 picks + cancel, no nav
     picks, cancel = markup.inline_keyboard[:3], markup.inline_keyboard[3]
     assert all(row[0].callback_data.startswith("hltb:pick:") for row in picks)
     assert cancel[0].callback_data == "hltb:cancel"
 
 
-def test_every_keyboard_offers_a_cancel_button() -> None:
-    assert _results_keyboard([result()], 0, 5).inline_keyboard[-1][0].callback_data == "hltb:cancel"
-    assert _recent_keyboard(["A"], 0, 5).inline_keyboard[-1][0].callback_data == "hltb:cancel"
-    assert _recent_keyboard([], 0, 5).inline_keyboard[-1][0].callback_data == "hltb:cancel"
+def test_every_keyboard_offers_a_cancel_button(i18n) -> None:
+    assert (
+        _results_keyboard([result()], 0, 5, i18n).inline_keyboard[-1][0].callback_data
+        == "hltb:cancel"
+    )
+    assert _recent_keyboard(["A"], 0, 5, i18n).inline_keyboard[-1][0].callback_data == "hltb:cancel"
+    assert _recent_keyboard([], 0, 5, i18n).inline_keyboard[-1][0].callback_data == "hltb:cancel"
 
 
-def test_results_keyboard_respects_a_custom_page_size() -> None:
+def test_results_keyboard_respects_a_custom_page_size(i18n) -> None:
     """The admin-configurable hltb_page_size (SPEC 6.4, 6.6) changes how many
     results/hints show per page, for both keyboards."""
     results = [result(hltb_id=i) for i in range(1, 5)]  # 4 results, page_size=2 -> 2 pages
-    page0 = _results_keyboard(results, 0, 2)
+    page0 = _results_keyboard(results, 0, 2, i18n)
     assert len(page0.inline_keyboard) == 4  # 2 picks + nav + cancel
     nav0 = page0.inline_keyboard[-2]
     assert nav0[0].text == "1/2"
 
 
-def test_recent_keyboard_paginates_with_absolute_indices() -> None:
+def test_recent_keyboard_paginates_with_absolute_indices(i18n) -> None:
     """Button indices must stay absolute across pages — hltb_recent_pick
     looks games up by index into the *full* list, not the current page."""
     names = [f"Game {i}" for i in range(12)]  # 3 pages of 5
 
-    page0 = _recent_keyboard(names, 0, 5)
+    page0 = _recent_keyboard(names, 0, 5, i18n)
     assert [row[0].callback_data for row in page0.inline_keyboard[:5]] == [
         f"hltb:qr:{i}" for i in range(5)
     ]
     nav0 = page0.inline_keyboard[-2]
     assert [b.callback_data for b in nav0] == ["hltb:noop", "hltb:rpage:1"]
 
-    page2 = _recent_keyboard(names, 2, 5)
+    page2 = _recent_keyboard(names, 2, 5, i18n)
     assert [row[0].callback_data for row in page2.inline_keyboard[:2]] == [
         "hltb:qr:10",
         "hltb:qr:11",
@@ -276,8 +279,8 @@ def test_recent_keyboard_paginates_with_absolute_indices() -> None:
     assert [b.callback_data for b in nav2] == ["hltb:rpage:1", "hltb:noop"]
 
 
-def test_recent_keyboard_has_no_nav_row_for_a_single_page() -> None:
-    markup = _recent_keyboard(["A", "B"], 0, 5)
+def test_recent_keyboard_has_no_nav_row_for_a_single_page(i18n) -> None:
+    markup = _recent_keyboard(["A", "B"], 0, 5, i18n)
     assert len(markup.inline_keyboard) == 3  # 2 games + cancel, no nav
 
 

@@ -16,6 +16,8 @@ from typing import Any, Self
 
 import aiosqlite
 
+from bot.constants import Platform, RarityMode, SettingKey, TokenStatus
+from bot.i18n import gettext
 from bot.util import utcnow, utcnow_iso
 
 log = logging.getLogger(__name__)
@@ -27,12 +29,12 @@ DEFAULT_APP_SETTINGS: dict[str, str] = {
     # Row caps for the game/player tables (SPEC 6.3, 6.6, 7.2) — separate
     # settings because they cap different things: players in /summary's
     # leaderboard, games in /stats' "Игры за 30 дней".
-    "summary_top_limit": "15",
-    "stats_games_limit": "15",
+    SettingKey.SUMMARY_TOP_LIMIT: "15",
+    SettingKey.STATS_GAMES_LIMIT: "15",
     # /hltb's own two: how many candidates search() and the recent-games
     # shortcuts pool from, and how many of them show per page (6.4, 6.6).
-    "hltb_results_limit": "20",
-    "hltb_page_size": "5",
+    SettingKey.HLTB_RESULTS_LIMIT: "20",
+    SettingKey.HLTB_PAGE_SIZE: "5",
 }
 
 
@@ -149,7 +151,7 @@ class ChatTarget:
     # follow-up — moved off user_settings, one value for every chat, onto
     # subscriptions, one value per chat). Defaults to 'all' only for call
     # sites (admin_chats) that have no one specific subscriber in mind.
-    rarity_mode: str = "all"
+    rarity_mode: str = RarityMode.ALL
     # N+ achievements in one game at once collapse into a summary message
     # instead of separate ones — per (person, chat), same follow-up as
     # rarity_mode above and for the same reason (2026-09-05). Default only
@@ -552,7 +554,7 @@ class Repo:
         return _as_token(row) if row else None
 
     async def set_token_status(self, tg_id: int, status: str) -> None:
-        invalid_at = utcnow_iso() if status == "invalid" else None
+        invalid_at = utcnow_iso() if status == TokenStatus.INVALID else None
         await self._conn.execute(
             "UPDATE tokens SET status = ?, invalid_at = ? WHERE tg_id = ?",
             (status, invalid_at, tg_id),
@@ -667,7 +669,9 @@ class Repo:
             "WHERE s.tg_id = ? AND c.is_active = 1",
             (tg_id,),
         )
-        return [row["title"] or "без названия" for row in await cursor.fetchall()]
+        return [
+            row["title"] or gettext("util", "util-untitled-chat") for row in await cursor.fetchall()
+        ]
 
     # ------------------------------------------------------------- polling
 
@@ -863,9 +867,7 @@ class Repo:
         await self._conn.commit()
 
     async def delete_steam_presence_state(self, steam_id: str) -> None:
-        await self._conn.execute(
-            "DELETE FROM steam_presence_state WHERE steam_id = ?", (steam_id,)
-        )
+        await self._conn.execute("DELETE FROM steam_presence_state WHERE steam_id = ?", (steam_id,))
         await self._conn.commit()
 
     # ---------------------------------------------------------- PSN polling
@@ -902,9 +904,7 @@ class Repo:
         await self._conn.commit()
 
     async def delete_psn_poll_state(self, account_id: str) -> None:
-        await self._conn.execute(
-            "DELETE FROM psn_poll_state WHERE account_id = ?", (account_id,)
-        )
+        await self._conn.execute("DELETE FROM psn_poll_state WHERE account_id = ?", (account_id,))
         await self._conn.commit()
 
     # -------------------------------------------------------- achievements
@@ -993,7 +993,7 @@ class Repo:
             if item.title_name and item.title_id not in cached_titles:
                 cached_titles[item.title_id] = item.title_name
         for title_id, name in cached_titles.items():
-            await self.upsert_title(title_id, name, "steam")
+            await self.upsert_title(title_id, name, Platform.STEAM)
 
         new_rows: list[AchievementRow] = []
         now = utcnow_iso()
@@ -1049,7 +1049,7 @@ class Repo:
             if item.title_name and item.title_id not in cached_titles:
                 cached_titles[item.title_id] = item.title_name
         for title_id, name in cached_titles.items():
-            await self.upsert_title(title_id, name, "psn")
+            await self.upsert_title(title_id, name, Platform.PSN)
 
         new_rows: list[AchievementRow] = []
         now = utcnow_iso()
@@ -1188,7 +1188,7 @@ class Repo:
         # decides it instead of a value baked into the schema. The column
         # default stays 'all' regardless, as a safety net for any insert
         # that (today or in the future) doesn't go through this method.
-        default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
+        default_rarity_mode = await self.get_app_setting("default_rarity_mode", RarityMode.ALL)
         await self._conn.execute(
             "INSERT OR IGNORE INTO subscriptions (chat_id, tg_id, created_at, rarity_mode) "
             "VALUES (?, ?, ?, ?)",
@@ -1744,9 +1744,7 @@ class Repo:
         await self._conn.commit()
 
     async def delete_admin_panel_refresh(self, admin_id: int) -> None:
-        await self._conn.execute(
-            "DELETE FROM admin_panel_refresh WHERE admin_id = ?", (admin_id,)
-        )
+        await self._conn.execute("DELETE FROM admin_panel_refresh WHERE admin_id = ?", (admin_id,))
         await self._conn.commit()
 
     async def all_admin_panel_refreshes(self) -> list[AdminPanelRefreshRow]:

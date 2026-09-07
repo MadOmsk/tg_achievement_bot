@@ -17,6 +17,7 @@ import logging
 from collections.abc import Iterator
 
 from bot.config import Settings
+from bot.constants import Platform
 from bot.db.repo import Repo, SteamPollTarget
 from bot.poller.cadence import debounce_passed, is_due, presence_interval
 from bot.poller.steam_fetcher import SteamFetcher
@@ -68,9 +69,7 @@ class SteamPresencePoller:
                     log.exception("unexpected failure polling steam_id=%s", target.steam_id)
 
     async def _handle(self, target: SteamPollTarget, snapshot: SteamPresence) -> None:
-        changed = (
-            snapshot.persona_state != target.persona_state or snapshot.gameid != target.gameid
-        )
+        changed = snapshot.persona_state != target.persona_state or snapshot.gameid != target.gameid
         await self._repo.save_steam_presence_state(
             target.steam_id,
             snapshot.persona_state,
@@ -80,7 +79,9 @@ class SteamPresencePoller:
         )
         # Already have a fresh persona name from this same batch call — keep
         # the panel/connect card from drifting stale, at zero extra cost.
-        await self._repo.update_platform_display_name(target.tg_id, "steam", snapshot.persona_name)
+        await self._repo.update_platform_display_name(
+            target.tg_id, Platform.STEAM, snapshot.persona_name
+        )
         # Found while adding Steam to the admin panel (2026-09-05): only
         # presence.py ever touched this, so a Steam-only person's "last
         # online" in the admin list stayed permanently blank.

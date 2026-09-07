@@ -16,6 +16,7 @@ from aiogram.types import (
 )
 
 from bot.config import Settings, get_settings
+from bot.constants import Platform
 from bot.db.repo import Database, Repo
 from bot.handlers import admin as admin_handlers
 from bot.handlers import chat as chat_handlers
@@ -26,6 +27,7 @@ from bot.handlers import psn as psn_handlers
 from bot.handlers import steam as steam_handlers
 from bot.handlers.chat import UsernameMiddleware
 from bot.handlers.keyboards import timezone_keyboard
+from bot.i18n import build_i18n_context, build_i18n_middleware, gettext
 from bot.lock import AlreadyRunningError, single_instance
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.daily import DailySummary
@@ -102,7 +104,7 @@ async def run(settings: Settings) -> None:
     # on_dead mirrors XboxAuthService.on_token_dead above, just for the one
     # shared credential rather than one person's own.
     psn_auth = PsnAuth(repo, cipher)
-    psn_auth.on_dead = lambda: notifier.service_key_dead("psn")
+    psn_auth.on_dead = lambda: notifier.service_key_dead(Platform.PSN)
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo)
@@ -142,17 +144,9 @@ async def run(settings: Settings) -> None:
             count = await fetcher.backfill(tg_id, xuid)
         except Exception:
             log.exception("backfill for tg_id=%s failed", tg_id)
-            await bot.send_message(
-                tg_id,
-                "Не смог перечитать твою историю достижений. Публикация пока выключена, "
-                "чтобы не завалить чат — напиши /connect_xbox ещё раз чуть позже.",
-            )
+            await bot.send_message(tg_id, gettext("main", "main-backfill-failed"))
             return
-        await bot.send_message(
-            tg_id,
-            f"Готово: перечитал {count} уже выбитых достижений — в чат они не полетят. "
-            "Дальше публикую только новые.",
-        )
+        await bot.send_message(tg_id, gettext("main", "main-backfill-done", count=count))
 
     async def refresh_after_reconnect(tg_id: int, xuid: str) -> None:
         """store_identity sets gamerscore = NULL on every connect (it does
@@ -179,7 +173,7 @@ async def run(settings: Settings) -> None:
         # No achievements yet means this account is new to the bot, not someone
         # signing in again after his token expired.
         is_new = not await repo.has_any_achievements(identity.xuid)
-        await bot.send_message(tg_id, f"✅ Подключил XBOX: {identity.gamertag}")
+        await bot.send_message(tg_id, gettext("main", "main-linked", gamertag=identity.gamertag))
         await notifier.user_connected(tg_id, identity.gamertag, is_new=is_new)
 
         # Pressed «Подключить XBOX» from inside a specific group: finish the
@@ -188,22 +182,23 @@ async def run(settings: Settings) -> None:
         if origin_chat_id is not None and await repo.chat_exists(origin_chat_id):
             await repo.subscribe(origin_chat_id, tg_id)
             with contextlib.suppress(Exception):
-                await bot.send_message(
-                    tg_id, "Заодно подписал на публикацию в чате, откуда ты пришёл."
-                )
+                await bot.send_message(tg_id, gettext("main", "main-linked-subscribed-origin-chat"))
 
         settings_row = await repo.get_user_settings(tg_id)
         if settings_row is None or settings_row.tz_offset_min is None:
+            link_i18n = await build_i18n_context()
             await bot.send_message(
-                tg_id, connect_handlers.TIMEZONE_PROMPT, reply_markup=timezone_keyboard()
+                tg_id,
+                link_i18n.get("connect-timezone-prompt"),
+                reply_markup=timezone_keyboard(link_i18n),
             )
         if is_new:
-            await bot.send_message(tg_id, "Читаю твою историю достижений, это займёт минуту…")
+            await bot.send_message(tg_id, gettext("main", "main-linked-backfill-starting"))
             asyncio.create_task(backfill(tg_id, identity.xuid))  # noqa: RUF006
         else:
             # A silent background refresh would leave the panel showing a
             # stale 0 for a few seconds with nothing telling the user why.
-            await bot.send_message(tg_id, "Обновляю статистику…")
+            await bot.send_message(tg_id, gettext("main", "main-linked-refreshing"))
             asyncio.create_task(refresh_after_reconnect(tg_id, identity.xuid))  # noqa: RUF006
 
     web_server = OAuthServer(settings, connect_service, on_linked)
@@ -219,6 +214,7 @@ async def run(settings: Settings) -> None:
     dispatcher["psn_auth"] = psn_auth
     dispatcher["psn_fetcher"] = psn_fetcher
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
+    build_i18n_middleware().setup(dispatcher=dispatcher)
     dispatcher.include_router(admin_handlers.router)
     dispatcher.include_router(connect_handlers.router)
     dispatcher.include_router(panel_handlers.router)
@@ -239,7 +235,8 @@ async def run(settings: Settings) -> None:
                 await fetcher.catch_up(
                     target.tg_id,
                     target.xuid,
-                    (user.gamertag if user else None) or "Игрок",
+                    (user.gamertag if user else None)
+                    or gettext("main", "main-default-player-name"),
                     parse_iso(target.updated_at),
                     settings.catchup_publish_window_hours,
                     settings.catchup_max_titles,
@@ -275,27 +272,33 @@ async def _publish_command_menu(bot: Bot) -> None:
     (SPEC 6.3).
     """
     private = [
-        BotCommand(command="panel", description="Моя панель и настройки"),
-        BotCommand(command="stats", description="Моя статистика"),
-        BotCommand(command="connect_xbox", description="Подключить XBOX"),
-        BotCommand(command="disconnect_xbox", description="Отключить XBOX"),
-        BotCommand(command="connect_steam", description="Подключить Steam"),
-        BotCommand(command="disconnect_steam", description="Отключить Steam"),
-        BotCommand(command="connect_psn", description="Подключить PSN"),
-        BotCommand(command="disconnect_psn", description="Отключить PSN"),
-        BotCommand(command="hltb", description="Сколько идти игру (HowLongToBeat)"),
-        BotCommand(command="help", description="Что я умею"),
+        BotCommand(command="panel", description=gettext("main", "main-cmd-panel")),
+        BotCommand(command="stats", description=gettext("main", "main-cmd-stats-private")),
+        BotCommand(command="connect_xbox", description=gettext("main", "main-cmd-connect-xbox")),
+        BotCommand(
+            command="disconnect_xbox", description=gettext("main", "main-cmd-disconnect-xbox")
+        ),
+        BotCommand(command="connect_steam", description=gettext("main", "main-cmd-connect-steam")),
+        BotCommand(
+            command="disconnect_steam", description=gettext("main", "main-cmd-disconnect-steam")
+        ),
+        BotCommand(command="connect_psn", description=gettext("main", "main-cmd-connect-psn")),
+        BotCommand(
+            command="disconnect_psn", description=gettext("main", "main-cmd-disconnect-psn")
+        ),
+        BotCommand(command="hltb", description=gettext("main", "main-cmd-hltb")),
+        BotCommand(command="help", description=gettext("main", "main-cmd-help")),
     ]
     group = [
-        BotCommand(command="stats", description="Статистика игрока"),
-        BotCommand(command="online", description="Онлайн-статус игроков"),
-        BotCommand(command="who", description="Узнать стату юзера"),
-        BotCommand(command="recent", description="Последние достижения чата"),
-        BotCommand(command="summary", description="Сводка за сутки и за месяц"),
-        BotCommand(command="hltb", description="Сколько идти игру (HowLongToBeat)"),
-        BotCommand(command="subscribe", description="Публиковать мои достижения здесь"),
-        BotCommand(command="unsubscribe", description="Перестать публиковать"),
-        BotCommand(command="help", description="Что я умею"),
+        BotCommand(command="stats", description=gettext("main", "main-cmd-stats-group")),
+        BotCommand(command="online", description=gettext("main", "main-cmd-online")),
+        BotCommand(command="who", description=gettext("main", "main-cmd-who")),
+        BotCommand(command="recent", description=gettext("main", "main-cmd-recent")),
+        BotCommand(command="summary", description=gettext("main", "main-cmd-summary")),
+        BotCommand(command="hltb", description=gettext("main", "main-cmd-hltb")),
+        BotCommand(command="subscribe", description=gettext("main", "main-cmd-subscribe")),
+        BotCommand(command="unsubscribe", description=gettext("main", "main-cmd-unsubscribe")),
+        BotCommand(command="help", description=gettext("main", "main-cmd-help")),
     ]
     try:
         await bot.set_my_commands(private, scope=BotCommandScopeAllPrivateChats())
@@ -318,12 +321,7 @@ def main() -> None:
                 log.info("stopped")
     except AlreadyRunningError:
         # Not a traceback: this is a normal thing to do by mistake.
-        print(
-            "Бот уже запущен — вторая копия не нужна.\n"
-            "Два бота с одним токеном отбирают друг у друга сообщения Telegram.\n"
-            "Состояние: manage.bat status",
-            file=sys.stderr,
-        )
+        print(gettext("main", "main-already-running"), file=sys.stderr)
         raise SystemExit(1) from None
 
 

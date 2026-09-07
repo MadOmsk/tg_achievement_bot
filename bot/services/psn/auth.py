@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 
 from psnawp_api import PSNAWP
 
+from bot.constants import TokenStatus
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
 from bot.services.psn.client import PsnApiError, PsnTokenDeadError, build_client, check_alive
@@ -28,8 +29,9 @@ STATUS_KEY = "psn_key_status"
 CHECKED_AT_KEY = "psn_key_checked_at"
 
 STATUS_NOT_CONFIGURED = "not_configured"
-STATUS_ACTIVE = "active"
-STATUS_INVALID = "invalid"
+# Compatibility aliases for callers that import the PSN service statuses.
+STATUS_ACTIVE = TokenStatus.ACTIVE
+STATUS_INVALID = TokenStatus.INVALID
 
 
 class PsnNotConfiguredError(Exception):
@@ -79,7 +81,7 @@ class PsnAuth:
             raise PsnTokenDeadError("NPSSO rejected on verification call")
         encrypted = self._cipher.encrypt(npsso).decode("ascii")
         await self._repo.set_app_setting(NPSSO_KEY, encrypted, admin_id)
-        await self._repo.set_app_setting(STATUS_KEY, STATUS_ACTIVE, admin_id)
+        await self._repo.set_app_setting(STATUS_KEY, TokenStatus.ACTIVE, admin_id)
         await self._repo.set_app_setting(
             CHECKED_AT_KEY, utcnow().isoformat(timespec="seconds"), admin_id
         )
@@ -104,7 +106,7 @@ class PsnAuth:
         if await self.status() == STATUS_NOT_CONFIGURED:
             return False  # nothing set up yet — not a failure, nothing to notify about
 
-        was_active = await self.status() == STATUS_ACTIVE
+        was_active = await self.status() == TokenStatus.ACTIVE
         try:
             client = await self.get_client()
             alive = await check_alive(client)
@@ -114,7 +116,9 @@ class PsnAuth:
             # found live 2026-09-06) — either way, not alive right now.
             alive = False
 
-        await self._repo.set_app_setting(STATUS_KEY, STATUS_ACTIVE if alive else STATUS_INVALID)
+        await self._repo.set_app_setting(
+            STATUS_KEY, TokenStatus.ACTIVE if alive else TokenStatus.INVALID
+        )
         await self._repo.set_app_setting(CHECKED_AT_KEY, utcnow().isoformat(timespec="seconds"))
         if not alive:
             self._client = None  # force a fresh exchange once a new NPSSO is set

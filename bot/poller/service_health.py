@@ -29,6 +29,7 @@ import logging
 from datetime import timedelta
 
 from bot.config import Settings
+from bot.constants import Platform, TokenStatus
 from bot.db.repo import Repo
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
@@ -40,14 +41,15 @@ log = logging.getLogger(__name__)
 STEAM_STATUS_KEY = "steam_key_status"
 STEAM_CHECKED_AT_KEY = "steam_key_checked_at"
 
-STATUS_ACTIVE = "active"
-STATUS_INVALID = "invalid"
-
 # Shared with the /admin panel's own auto-refresh cadence (handlers/admin.py's
 # NUMERIC_SETTINGS, poller/admin_refresh.py) — deliberately one knob, not two
 # coincidentally-equal settings (see admin.py's own comment on the entry).
 KEY_CHECK_INTERVAL_KEY = "service_health_interval_min"
 DEFAULT_KEY_CHECK_INTERVAL_MIN = 30
+
+# Compatibility exports for tests and older callers.
+STATUS_ACTIVE = TokenStatus.ACTIVE
+STATUS_INVALID = TokenStatus.INVALID
 
 
 class ServiceHealth:
@@ -77,16 +79,16 @@ class ServiceHealth:
         checked_at = await self._repo.get_app_setting(STEAM_CHECKED_AT_KEY)
         if not await self._due(checked_at, interval):
             return
-        previous = await self._repo.get_app_setting(STEAM_STATUS_KEY, STATUS_ACTIVE)
+        previous = await self._repo.get_app_setting(STEAM_STATUS_KEY, TokenStatus.ACTIVE)
         alive = await steam_check_alive(self._settings.steam_api_key.get_secret_value())
         await self._repo.set_app_setting(
-            STEAM_STATUS_KEY, STATUS_ACTIVE if alive else STATUS_INVALID
+            STEAM_STATUS_KEY, TokenStatus.ACTIVE if alive else TokenStatus.INVALID
         )
         await self._repo.set_app_setting(
             STEAM_CHECKED_AT_KEY, utcnow().isoformat(timespec="seconds")
         )
-        if previous == STATUS_ACTIVE and not alive:
-            await self._notifier.service_key_dead("steam")
+        if previous == TokenStatus.ACTIVE and not alive:
+            await self._notifier.service_key_dead(Platform.STEAM)
 
     async def _check_psn(self, interval: int) -> None:
         checked_at = await self._psn_auth.checked_at()

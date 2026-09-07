@@ -24,6 +24,7 @@ from xbox.webapi.authentication.models import OAuth2TokenResponse
 from xbox.webapi.common.signed_session import SignedSession
 
 from bot.config import Settings
+from bot.constants import TokenStatus, XboxApiValue
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
 from bot.util import utcnow
@@ -150,7 +151,7 @@ class XboxAuthService:
         record = await self._repo.get_token(tg_id)
         if record is None:
             raise NotConnectedError(f"user {tg_id} has no token")
-        if record.status != "active":
+        if record.status != TokenStatus.ACTIVE:
             raise TokenDeadError(f"token of user {tg_id} is {record.status}")
 
         manager = self._manager()
@@ -196,7 +197,7 @@ class XboxAuthService:
         return TokenRefreshError(detail)
 
     async def _kill(self, tg_id: int) -> None:
-        await self._repo.set_token_status(tg_id, "invalid")
+        await self._repo.set_token_status(tg_id, TokenStatus.INVALID)
         self._managers.pop(tg_id, None)
         if self.on_token_dead is not None:
             try:
@@ -233,7 +234,7 @@ class XboxAuthService:
 
 
 def _is_invalid_grant(exc: httpx.HTTPStatusError) -> bool:
-    return _error_body(exc).get("error") == "invalid_grant"
+    return _error_body(exc).get("error") == XboxApiValue.INVALID_GRANT
 
 
 def _describe(exc: httpx.HTTPStatusError) -> str:

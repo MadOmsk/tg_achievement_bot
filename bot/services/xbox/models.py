@@ -19,7 +19,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from bot.services.models import ParsedAchievement, Platform
+from bot.constants import (
+    Platform,
+    XboxApiValue,
+)
+from bot.services.models import ParsedAchievement
 
 __all__ = [
     "ModernAchievement",
@@ -95,7 +99,7 @@ class ModernAchievement(BaseModel):
         Writing an InProgress row into seen_achievements would hide the
         achievement from publication forever.
         """
-        return self.progress_state == "Achieved"
+        return self.progress_state == XboxApiValue.ACHIEVED
 
     def to_parsed(self, fallback_title_id: str | None = None) -> ParsedAchievement:
         association = self.title_associations[0] if self.title_associations else None
@@ -112,19 +116,19 @@ class ModernAchievement(BaseModel):
             ),
             gamerscore=self._gamerscore(),
             rarity_percent=self.rarity.current_percentage if self.rarity else None,
-            platform="modern",
+            platform=Platform.MODERN,
             is_secret=self.is_secret,
         )
 
     def _icon_url(self) -> str | None:
         for asset in self.media_assets:
-            if asset.type == "Icon" and asset.url:
+            if asset.type == XboxApiValue.ICON and asset.url:
                 return asset.url
         return None
 
     def _gamerscore(self) -> int:
         for reward in self.rewards:
-            if reward.type == "Gamerscore" and reward.value is not None:
+            if reward.type == XboxApiValue.GAMERSCORE and reward.value is not None:
                 try:
                     return int(reward.value)
                 except (TypeError, ValueError):
@@ -165,7 +169,7 @@ class X360Achievement(BaseModel):
             unlocked_at=parse_timestamp(self.time_unlocked),
             gamerscore=self.gamerscore,
             rarity_percent=None,
-            platform="x360",
+            platform=Platform.X360,
         )
 
 
@@ -190,7 +194,7 @@ def parse_achievements(
     Anything that fails to parse is skipped rather than raising: one malformed
     record must not cost a user his whole session.
     """
-    model = X360Achievement if platform == "x360" else ModernAchievement
+    model = X360Achievement if platform == Platform.X360 else ModernAchievement
     result: list[ParsedAchievement] = []
     for item in payload.get("achievements") or []:
         try:

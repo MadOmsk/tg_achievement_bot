@@ -8,18 +8,22 @@ can build the same text.
 
 from __future__ import annotations
 
+from bot.constants import PresenceState
 from bot.db.repo import ChatPresenceRow
-from bot.services.achievements import PLATFORM_ICON
+from bot.i18n import gettext
+from bot.services.achievements import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
+
+_ = lambda key, **kwargs: gettext("onlineview", key, **kwargs)  # noqa: E731
 
 
 def presence_text(row: ChatPresenceRow) -> str:
-    if row.state == "Online" and row.title_id:
-        return f"играет — {row.title_name or row.title_id}"
-    if row.state == "Online":
-        return "в сети, не играет"
+    if row.state == PresenceState.ONLINE and row.title_id:
+        return _("onlineview-playing", where=row.title_name or row.title_id)
+    if row.state == PresenceState.ONLINE:
+        return _("onlineview-online-idle")
     if row.state is not None:
-        return "не в сети"
-    return "нет данных"
+        return _("onlineview-offline")
+    return _("onlineview-no-data")
 
 
 def presence_icon(row: ChatPresenceRow) -> str:
@@ -27,9 +31,9 @@ def presence_icon(row: ChatPresenceRow) -> str:
     # offline/no data regardless of platform. Found live: a pure platform
     # colour made every offline row look the same as an online one at a
     # glance, losing the one signal a colour is actually good for.
-    if row.state != "Online":
-        return "⚪"
-    return PLATFORM_ICON.get(row.platform, "⚪")
+    if row.state != PresenceState.ONLINE:
+        return PLATFORM_ICON_UNKNOWN
+    return PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
 
 
 def render_online_table(rows: list[ChatPresenceRow], updated_label: str) -> str:
@@ -38,8 +42,10 @@ def render_online_table(rows: list[ChatPresenceRow], updated_label: str) -> str:
     idea what timezone a chat is in, that's services/stats.py's
     local_now()'s job, done by the caller (handlers/chat.py,
     poller/online_refresh.py alike)."""
-    lines = ["🎮 <b>Онлайн-статус игроков</b>", f"<i>Обновлено: {updated_label}</i>", ""]
+    lines = [_("onlineview-header"), _("onlineview-updated", updated=updated_label), ""]
     for row in rows:
         name = row.gamertag or f"id{row.tg_id}"
-        lines.append(f"{presence_icon(row)} {name} — {presence_text(row)}")
+        lines.append(
+            _("onlineview-row", icon=presence_icon(row), name=name, status=presence_text(row))
+        )
     return "\n".join(lines)

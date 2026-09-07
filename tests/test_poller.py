@@ -214,9 +214,7 @@ async def test_title_name_is_resolved_once_when_presence_has_none(repo: Repo, ci
     assert client.resolved == ["85494077"]
 
 
-async def test_x360_achievements_get_the_games_box_art_as_their_icon(
-    repo: Repo, cipher
-) -> None:
+async def test_x360_achievements_get_the_games_box_art_as_their_icon(repo: Repo, cipher) -> None:
     """Contract 1 never gives a per-achievement icon at all (verified live —
     a bare imageId int, no documented way to turn it into a URL) — the
     game's own box art (titlehub's display_image) stands in instead."""
@@ -293,9 +291,7 @@ async def test_catch_up_also_fills_x360_box_art(repo: Repo, cipher) -> None:
     item.unlocked_at = now
     client = FakeClient(
         by_title={"360": [item]},
-        history=[
-            FakeHistoryEntry("360", "Gears of War 3", "x360", last_played_at=now.isoformat())
-        ],
+        history=[FakeHistoryEntry("360", "Gears of War 3", "x360", last_played_at=now.isoformat())],
     )
     client.resolvable["360"] = FakeHistoryEntry(
         "360", "Gears of War 3", "x360", icon_url="https://example/boxart.jpg"

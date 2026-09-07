@@ -134,9 +134,7 @@ async def test_get_client_rebuilds_from_storage_across_instances(
     assert isinstance(client, _FakeClient)
 
 
-async def test_check_health_before_setup_is_a_noop(
-    repo: Repo, cipher: TokenCipher
-) -> None:
+async def test_check_health_before_setup_is_a_noop(repo: Repo, cipher: TokenCipher) -> None:
     auth = PsnAuth(repo, cipher)
     fired = False
 
