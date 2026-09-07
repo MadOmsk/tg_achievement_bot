@@ -27,7 +27,7 @@ def test_picks_the_active_full_placement_title() -> None:
 
 
 def test_skips_the_dashboard() -> None:
-    """"Home" — the existing, already-shipped exclusion."""
+    """ "Home" — the existing, already-shipped exclusion."""
     item = _item([_device([_title(1, "Home"), _title(111, "Halo Infinite")])])
     assert _current_title(item) == ("111", "Halo Infinite", "WindowsOneCore")
 

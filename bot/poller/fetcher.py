@@ -6,14 +6,18 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
+from bot.constants import Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleHistoryRow
+from bot.i18n import gettext
 from bot.poller.publisher import Publisher
 from bot.poller.rows import to_achievement_row
 from bot.services.xbox.client import TitleHistoryEntry, XboxApiError, XboxClient
-from bot.services.xbox.models import ParsedAchievement, Platform
+from bot.services.xbox.models import ParsedAchievement
 from bot.util import parse_iso, utcnow
 
 log = logging.getLogger(__name__)
+
+_ = lambda key, **kwargs: gettext("fetcher", key, **kwargs)  # noqa: E731
 
 
 class Fetcher:
@@ -103,7 +107,7 @@ class Fetcher:
         """Shared by poll_title() and catch_up() — both publish live x360
         unlocks and must agree on the icon, not just the one that happens
         to run more often."""
-        if platform != "x360":
+        if platform != Platform.X360:
             return
         icon_url = await self.ensure_title_icon(tg_id, title_id)
         if icon_url:
@@ -125,10 +129,12 @@ class Fetcher:
             # session in such a game would look like 33 fresh unlocks.
             history = await self._client.title_history(tg_id)
             for entry in history:
-                if entry.platform != "x360":
+                if entry.platform != Platform.X360:
                     continue
                 try:
-                    parsed = await self._client.title_achievements(tg_id, entry.title_id, "x360")
+                    parsed = await self._client.title_achievements(
+                        tg_id, entry.title_id, Platform.X360
+                    )
                 except XboxApiError as exc:
                     log.info("x360 backfill of %s skipped: %s", entry.title_id, exc)
                     continue
@@ -209,9 +215,13 @@ class Fetcher:
             )
         await self.refresh_title_history(tg_id, xuid)
 
-        where = snapshot.title_name or snapshot.title_id or "без игры"
-        state = f"в сети, {where}" if snapshot.state == "Online" else "не в сети"
-        return f"Обновлено: {state}; новых достижений {published}."
+        where = snapshot.title_name or snapshot.title_id or _("fetcher-no-game")
+        state = (
+            _("fetcher-online", where=where)
+            if snapshot.state == PresenceState.ONLINE
+            else _("fetcher-offline")
+        )
+        return _("fetcher-refreshed", state=state, published=published)
 
     async def refresh_title_history(self, tg_id: int, xuid: str) -> None:
         """Source of /stats, /top and of the gamerscore in the panel (SPEC 5.4)."""

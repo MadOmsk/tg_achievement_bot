@@ -45,9 +45,7 @@ async def test_new_user_defaults_shows_links_off_until_set(repo: Repo) -> None:
     """Follow-up 2026-09-06 — same admin-configurable-default shape as
     default_rarity_mode, just a plain on/off (Repo.ensure_user)."""
     text, markup = await _new_user_defaults(repo)
-    assert "нет" in text or any(
-        "нет" in b.text for row in markup.inline_keyboard for b in row
-    )
+    assert "нет" in text or any("нет" in b.text for row in markup.inline_keyboard for b in row)
 
     await repo.set_app_setting(DEFAULT_SHOW_LINKS_KEY, "1")
     _text, markup = await _new_user_defaults(repo)

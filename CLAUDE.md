@@ -69,6 +69,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── config.py                 settings loaded from the environment (pydantic-settings)
 │   ├── lock.py                   "one process per .env" guard (single instance)
 │   ├── util.py                   small shared helpers (UTC time, secret masking)
+│   ├── i18n.py                   Fluent/aiogram_i18n wiring; Russian locale is the default
+│   ├── locales/                  user-facing translations, currently ru/*.ftl only
 │   │
 │   ├── handlers/                 aiogram routers — UI layer only, no SQL, no platform API calls
 │   │   ├── connect.py             /start, /connect_xbox, /disconnect_xbox
@@ -154,6 +156,20 @@ are already descriptive (`test_psn_fetcher.py`, `017_steam_presence_grace.sql`, 
 keeping a parallel manual list here would just be one more place to forget to update.
 Update the sections above whenever a file's *purpose* isn't obvious from its name, or
 when this tree itself goes stale — a map nobody trusts is worse than no map.
+
+## Localization
+
+All user-facing text is stored in `bot/locales/<locale>/LC_MESSAGES/*.ftl` and
+resolved through `aiogram_i18n` in handlers or `bot.i18n.gettext` in pollers,
+services, and other code without handler dependency injection. Only `ru` ships
+today, and `ConstManager("ru")` deliberately preserves the bot's Russian-only
+behavior while keeping the second-language seam explicit.
+
+**New user-facing strings go only into `.ftl` files** — never hardcoded Russian (or
+any other language) in Python. Handlers/services/pollers reference keys via
+`i18n.get(...)` or `gettext(module, ...)`; buttons, alerts, cards, and published
+messages are the same rule. Code comments and log lines stay English and stay in
+the source.
 
 ## Configuration
 

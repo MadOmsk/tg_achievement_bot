@@ -26,6 +26,7 @@ from aiogram import Bot, F, Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram_i18n import I18nContext
 
 from bot.db.repo import Repo
 from bot.services.hltb import HltbError, HltbResult, resolve, search
@@ -42,13 +43,6 @@ DEFAULT_PAGE_SIZE = 5
 # Generous — the reply-to-message check is the real guard against a stray
 # match, this is just a backstop against sessions piling up forever.
 SESSION_TTL_SECONDS = 1800
-
-UNAVAILABLE = "HowLongToBeat сейчас недоступен, попробуй позже."
-SESSION_STALE = "Сессия устарела, начни заново — /hltb"
-# Long enough to wrap onto two lines — a one-line message keeps Telegram's
-# bubble (and the inline keyboard under it) narrow, so the buttons never
-# stretch to the full chat width the way they should for a list this wide.
-RESULTS_PROMPT = "Что из этого совпадает с твоей игрой? Жми на нужный вариант."
 
 
 @dataclass
@@ -72,7 +66,7 @@ def _alive(session: _Session) -> bool:
 
 
 @router.message(Command("hltb"))
-async def hltb_command(message: Message, repo: Repo) -> None:
+async def hltb_command(message: Message, repo: Repo, i18n: I18nContext) -> None:
     if message.from_user is None:
         return
     # Only meaningful in a group: a DM's chat_id is the asker's own tg_id,
@@ -81,13 +75,12 @@ async def hltb_command(message: Message, repo: Repo) -> None:
     page_size = await repo.get_int_setting(PAGE_SIZE_KEY, DEFAULT_PAGE_SIZE)
     recent = await repo.chat_recent_games(message.chat.id, limit)
 
-    text = "Название игры? Точное не нужно — покажу варианты."
-    if recent:
-        text += "\nОтветь на это сообщение (реплаем) или выбери из недавних:"
-    else:
-        text += "\nОтветь на это сообщение (реплаем)."
+    text = i18n.get("hltb-prompt-title")
+    text += "\n" + (
+        i18n.get("hltb-prompt-with-recent") if recent else i18n.get("hltb-prompt-reply-only")
+    )
 
-    prompt = await message.answer(text, reply_markup=_recent_keyboard(recent, 0, page_size))
+    prompt = await message.answer(text, reply_markup=_recent_keyboard(recent, 0, page_size, i18n))
     _sessions[(message.chat.id, prompt.message_id)] = _Session(
         asker_tg_id=message.from_user.id,
         started_at=time.monotonic(),
@@ -108,13 +101,15 @@ def _nav_row(page: int, pages: int, page_prefix: str) -> list[InlineKeyboardButt
     return nav
 
 
-def _cancel_row() -> list[InlineKeyboardButton]:
+def _cancel_row(i18n: I18nContext) -> list[InlineKeyboardButton]:
     # Every stage of the flow gets this — a person who changed his mind
     # should not have to just leave the prompt hanging (SPEC 6.6).
-    return [InlineKeyboardButton(text="❌ Отмена", callback_data="hltb:cancel")]
+    return [InlineKeyboardButton(text=i18n.get("hltb-cancel-button"), callback_data="hltb:cancel")]
 
 
-def _recent_keyboard(names: list[str], page: int, page_size: int) -> InlineKeyboardMarkup:
+def _recent_keyboard(
+    names: list[str], page: int, page_size: int, i18n: I18nContext
+) -> InlineKeyboardMarkup:
     start = page * page_size
     chunk = names[start : start + page_size]
     rows = [
@@ -124,23 +119,23 @@ def _recent_keyboard(names: list[str], page: int, page_size: int) -> InlineKeybo
     pages = -(-len(names) // page_size)
     if pages > 1:
         rows.append(_nav_row(page, pages, "hltb:rpage:"))
-    rows.append(_cancel_row())
+    rows.append(_cancel_row(i18n))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @router.callback_query(F.data.startswith("hltb:rpage:"))
-async def hltb_recent_page(callback: CallbackQuery, bot: Bot) -> None:
+async def hltb_recent_page(callback: CallbackQuery, bot: Bot, i18n: I18nContext) -> None:
     if not isinstance(callback.message, Message):
         return
     key = (callback.message.chat.id, callback.message.message_id)
     session = _sessions.get(key)
     if session is None or not _alive(session):
-        await callback.answer(SESSION_STALE, show_alert=True)
+        await callback.answer(i18n.get("hltb-session-stale"), show_alert=True)
         return
     assert callback.data is not None
     session.recent_page = int(callback.data.rsplit(":", 1)[1])
     await callback.answer()
-    markup = _recent_keyboard(session.recent_games, session.recent_page, session.page_size)
+    markup = _recent_keyboard(session.recent_games, session.recent_page, session.page_size, i18n)
     await _edit(bot, key[0], key[1], session.prompt_text, markup)
 
 
@@ -159,23 +154,25 @@ async def _is_awaited_reply(message: Message) -> bool:
 
 
 @router.message(_is_awaited_reply)
-async def hltb_query(message: Message, repo: Repo, bot: Bot) -> None:
+async def hltb_query(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     assert message.text is not None and message.reply_to_message is not None
     prompt_id = message.reply_to_message.message_id
     session = _sessions.get((message.chat.id, prompt_id))
     if session is None:  # pragma: no cover — filter already checked this
         return
-    await _run_search(bot, repo, message.chat.id, prompt_id, session, message.text)
+    await _run_search(bot, repo, message.chat.id, prompt_id, session, message.text, i18n)
 
 
 @router.callback_query(F.data.startswith("hltb:qr:"))
-async def hltb_recent_pick(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
+async def hltb_recent_pick(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
     if not isinstance(callback.message, Message):
         return
     key = (callback.message.chat.id, callback.message.message_id)
     session = _sessions.get(key)
     if session is None or not _alive(session):
-        await callback.answer(SESSION_STALE, show_alert=True)
+        await callback.answer(i18n.get("hltb-session-stale"), show_alert=True)
         return
     assert callback.data is not None
     idx = int(callback.data.rsplit(":", 1)[1])
@@ -183,40 +180,48 @@ async def hltb_recent_pick(callback: CallbackQuery, repo: Repo, bot: Bot) -> Non
         await callback.answer()
         return
     await callback.answer()
-    await _run_search(bot, repo, key[0], key[1], session, session.recent_games[idx])
+    await _run_search(bot, repo, key[0], key[1], session, session.recent_games[idx], i18n)
 
 
 async def _run_search(
-    bot: Bot, repo: Repo, chat_id: int, message_id: int, session: _Session, query: str
+    bot: Bot,
+    repo: Repo,
+    chat_id: int,
+    message_id: int,
+    session: _Session,
+    query: str,
+    i18n: I18nContext,
 ) -> None:
     try:
         results = await search(query, limit=session.results_limit)
     except HltbError:
         log.info("HLTB search failed for %r", query)
-        await _edit(bot, chat_id, message_id, UNAVAILABLE, None)
+        await _edit(bot, chat_id, message_id, i18n.get("hltb-unavailable"), None)
         _sessions.pop((chat_id, message_id), None)
         return
 
     if not results:
-        text = f"По «{query}» ничего не нашёл, попробуй иначе."
+        text = i18n.get("hltb-no-results", query=query)
         await _edit(bot, chat_id, message_id, text, None)
         return  # keep the session alive — the same reply target still works
 
     if len(results) == 1:
         # One match — asking "which of these?" over a single button is a
         # pointless extra tap, just show the card straight away.
-        if not await _show_card(bot, repo, chat_id, message_id, results[0].hltb_id):
-            await _edit(bot, chat_id, message_id, UNAVAILABLE, None)
+        if not await _show_card(bot, repo, chat_id, message_id, results[0].hltb_id, i18n):
+            await _edit(bot, chat_id, message_id, i18n.get("hltb-unavailable"), None)
         _sessions.pop((chat_id, message_id), None)
         return
 
     session.results = results
     session.page = 0
-    markup = _results_keyboard(results, 0, session.page_size)
-    await _edit(bot, chat_id, message_id, RESULTS_PROMPT, markup)
+    markup = _results_keyboard(results, 0, session.page_size, i18n)
+    await _edit(bot, chat_id, message_id, i18n.get("hltb-results-prompt"), markup)
 
 
-def _results_keyboard(results: list[HltbResult], page: int, page_size: int) -> InlineKeyboardMarkup:
+def _results_keyboard(
+    results: list[HltbResult], page: int, page_size: int, i18n: I18nContext
+) -> InlineKeyboardMarkup:
     start = page * page_size
     chunk = results[start : start + page_size]
     rows = [
@@ -227,7 +232,7 @@ def _results_keyboard(results: list[HltbResult], page: int, page_size: int) -> I
     pages = -(-len(results) // page_size)
     if pages > 1:
         rows.append(_nav_row(page, pages, "hltb:page:"))
-    rows.append(_cancel_row())
+    rows.append(_cancel_row(i18n))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -257,52 +262,56 @@ async def hltb_cancel(callback: CallbackQuery, bot: Bot) -> None:
 
 
 @router.callback_query(F.data.startswith("hltb:page:"))
-async def hltb_page(callback: CallbackQuery, bot: Bot) -> None:
+async def hltb_page(callback: CallbackQuery, bot: Bot, i18n: I18nContext) -> None:
     if not isinstance(callback.message, Message):
         return
     key = (callback.message.chat.id, callback.message.message_id)
     session = _sessions.get(key)
     if session is None or not _alive(session):
-        await callback.answer(SESSION_STALE, show_alert=True)
+        await callback.answer(i18n.get("hltb-session-stale"), show_alert=True)
         return
     assert callback.data is not None
     session.page = int(callback.data.rsplit(":", 1)[1])
     await callback.answer()
-    markup = _results_keyboard(session.results, session.page, session.page_size)
-    await _edit(bot, key[0], key[1], RESULTS_PROMPT, markup)
+    markup = _results_keyboard(session.results, session.page, session.page_size, i18n)
+    await _edit(bot, key[0], key[1], i18n.get("hltb-results-prompt"), markup)
 
 
 @router.callback_query(F.data.startswith("hltb:pick:"))
-async def hltb_pick(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
+async def hltb_pick(callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     if not isinstance(callback.message, Message):
         return
     assert callback.data is not None
     hltb_id = int(callback.data.rsplit(":", 1)[1])
     chat_id, message_id = callback.message.chat.id, callback.message.message_id
-    if not await _show_card(bot, repo, chat_id, message_id, hltb_id):
-        await callback.answer(UNAVAILABLE, show_alert=True)
+    if not await _show_card(bot, repo, chat_id, message_id, hltb_id, i18n):
+        await callback.answer(i18n.get("hltb-unavailable"), show_alert=True)
         return
     await callback.answer()
     _sessions.pop((chat_id, message_id), None)
 
 
-async def _show_card(bot: Bot, repo: Repo, chat_id: int, message_id: int, hltb_id: int) -> bool:
+async def _show_card(
+    bot: Bot, repo: Repo, chat_id: int, message_id: int, hltb_id: int, i18n: I18nContext
+) -> bool:
     try:
         result = await resolve(repo, hltb_id)
     except HltbError:
         return False
-    await _send_card(bot, chat_id, message_id, result)
+    await _send_card(bot, chat_id, message_id, result, i18n)
     return True
 
 
-async def _send_card(bot: Bot, chat_id: int, message_id: int, result: HltbResult) -> None:
+async def _send_card(
+    bot: Bot, chat_id: int, message_id: int, result: HltbResult, i18n: I18nContext
+) -> None:
     """A cover image can't land on a message that started as plain text —
     Telegram's editMessageMedia only swaps media for media, never text for
     media. So the card becomes a fresh photo message and the old prompt is
     deleted (same "delete rather than leave stale text" call as cancel,
     SPEC 6.6), falling back to the old in-place text edit if there is no
     image or Telegram refuses to fetch it."""
-    caption = _card(result)
+    caption = _card(result, i18n)
     if result.image_url:
         try:
             with stats_category():
@@ -319,26 +328,27 @@ async def _send_card(bot: Bot, chat_id: int, message_id: int, result: HltbResult
         await _edit(bot, chat_id, message_id, caption, None, html=True)
 
 
-def _card(result: HltbResult) -> str:
+def _card(result: HltbResult, i18n: I18nContext) -> str:
     def fmt(hours: float | None) -> str:
-        return f"{hours:.1f} ч" if hours else "—"
+        return i18n.get("hltb-hours", hours=f"{hours:.1f}") if hours else i18n.get("hltb-no-data")
 
     title = f"⏱ <b>{html.escape(result.name)}</b>"
     if result.release_year:
         title += f" ({result.release_year})"
     lines = [
         f"{title}\n",
-        f"Основной сюжет · {fmt(result.main_hours)}",
-        f"Основной + доп. · {fmt(result.extra_hours)}",
-        f"Полное прохождение · {fmt(result.completionist_hours)}",
+        i18n.get("hltb-card-main", hours=fmt(result.main_hours)),
+        i18n.get("hltb-card-extra", hours=fmt(result.extra_hours)),
+        i18n.get("hltb-card-completionist", hours=fmt(result.completionist_hours)),
     ]
     if result.platforms:
-        lines += ["", f"Платформы: {html.escape(', '.join(result.platforms))}"]
+        platforms = html.escape(", ".join(result.platforms))
+        lines += ["", i18n.get("hltb-card-platforms", platforms=platforms)]
     if result.genre:
-        lines += ["", f"Жанры: {html.escape(result.genre)}"]
+        lines += ["", i18n.get("hltb-card-genres", genre=html.escape(result.genre))]
     if result.game_url:
         url = html.escape(result.game_url, quote=True)
-        lines += ["", f'<a href="{url}">Страница на HowLongToBeat ↗</a>']
+        lines += ["", i18n.get("hltb-card-link", url=url)]
     return "\n".join(lines)
 
 

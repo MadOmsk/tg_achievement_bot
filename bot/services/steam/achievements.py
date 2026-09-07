@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from bot.constants import Platform
 from bot.db.repo import Repo, SteamSchemaAchievement
 from bot.services.models import ParsedAchievement
 from bot.services.steam.client import get_global_percentages, get_player_achievements, get_schema
@@ -59,7 +60,7 @@ async def fetch_unlocked(
                 unlocked_at=_parse_unlocktime(item.unlocktime),
                 gamerscore=0,  # Steam has no gamerscore — SPEC 9, M-Steam-2e keeps it Xbox-only
                 rarity_percent=percentages.get(item.apiname),
-                platform="steam",
+                platform=Platform.STEAM,
                 is_secret=schema_item.hidden if schema_item else False,
             )
         )

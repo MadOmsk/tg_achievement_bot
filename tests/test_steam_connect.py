@@ -89,9 +89,7 @@ def test_unresolved_hint_skips_the_nickname_explanation_for_a_real_link() -> Non
     assert "не по имени в клиенте" not in hint
 
 
-async def test_prompt_replies_not_configured_without_arming(
-    repo: Repo, settings: Settings
-) -> None:
+async def test_prompt_replies_not_configured_without_arming(repo: Repo, settings: Settings) -> None:
     bot = FakeBot()
     _awaiting_link.discard(TG_ID)
     unconfigured = _steam_settings(settings, configured=False)

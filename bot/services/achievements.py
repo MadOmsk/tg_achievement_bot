@@ -7,11 +7,16 @@ from __future__ import annotations
 
 from html import escape as html_escape
 
+from bot.constants import AchievementBadge, Platform, PsnTrophyTier, RarityMode
 from bot.db.repo import AchievementRow, ChatTarget
+from bot.i18n import gettext
 from bot.util import thousands
 
+_ = lambda key, **kwargs: gettext("achievements", key, **kwargs)  # noqa: E731
+
 #  Two badges (2026-09-05 style pass) — a diamond for "редкая" (rare), a
-#  cup for "обычная" (common). Every achievement gets one or the other,
+#  cup for "обычная" (common).
+#  Every achievement gets one or the other,
 #  including when there's no rarity_percent to judge by at all (Xbox 360,
 #  backfilled rows) — unproven is not "rare", so it defaults to the cup
 #  rather than going unbadged (found live: a whole game's worth of
@@ -21,15 +26,20 @@ RARE_BADGE_MAX_PERCENT = 15.0
 
 def rarity_badge(rarity_percent: float | None) -> str:
     if rarity_percent is not None and rarity_percent <= RARE_BADGE_MAX_PERCENT:
-        return "💎"
-    return "🏆"
+        return AchievementBadge.DIAMOND
+    return AchievementBadge.CUP
 
 
 # PSN's trophy tier — a dimension with no analogue on Xbox/Steam (M-PSN-1's
 # design notes, SPEC 9 M-PSN-2), shown *alongside* rarity_badge() above, not
 # instead of it: rarity says how many players got it, tier says how much
 # Sony itself weighted it — two different questions about the same trophy.
-TROPHY_TIER_BADGE = {"platinum": "🏆", "gold": "🥇", "silver": "🥈", "bronze": "🥉"}
+TROPHY_TIER_BADGE = {
+    PsnTrophyTier.PLATINUM: AchievementBadge.CUP,
+    PsnTrophyTier.GOLD: AchievementBadge.GOLD,
+    PsnTrophyTier.SILVER: AchievementBadge.SILVER,
+    PsnTrophyTier.BRONZE: AchievementBadge.BRONZE,
+}
 
 
 def trophy_tier_badge(trophy_type: str | None) -> str:
@@ -45,8 +55,23 @@ def trophy_tier_badge(trophy_type: str | None) -> str:
 # no colour in presence rows; both now import this one instead). Public
 # names, not underscore-prefixed: this module is the home for them, other
 # services are allowed to depend on it (only handlers->services is one-way).
-PLATFORM_ICON = {"modern": "🟢", "x360": "🟢", "steam": "⚫", "psn": "🔵"}
-PLATFORM_LABEL = {"modern": "XBOX", "x360": "XBOX 360", "steam": "Steam", "psn": "PlayStation"}
+PLATFORM_ICON = {
+    Platform.MODERN: "🟢",
+    Platform.X360: "🟢",
+    Platform.STEAM: "⚫",
+    Platform.PSN: "🔵",
+}
+PLATFORM_LABEL_KEYS = {
+    Platform.MODERN: "achievement-platform-xbox",
+    Platform.X360: "achievement-platform-xbox360",
+    Platform.STEAM: "achievement-platform-steam",
+    Platform.PSN: "achievement-platform-psn",
+}
+PLATFORM_LABEL = {platform: _(key) for platform, key in PLATFORM_LABEL_KEYS.items()}
+# Fallback used wherever a platform is unknown or the presence itself is
+# offline/no-data (platform_tag() below, /online's own offline rows in
+# services/online_view.py) — grey rather than any platform's own colour.
+PLATFORM_ICON_UNKNOWN = "⚪"
 
 
 def platform_breakdown_suffix(xbox_count: int, steam_count: int, *, always: bool = False) -> str:
@@ -68,9 +93,9 @@ def platform_breakdown_suffix(xbox_count: int, steam_count: int, *, always: bool
     zero-achievement row)."""
     parts = []
     if xbox_count:
-        parts.append(f"{PLATFORM_ICON['modern']} {xbox_count}")
+        parts.append(f"{PLATFORM_ICON[Platform.MODERN]} {xbox_count}")
     if steam_count:
-        parts.append(f"{PLATFORM_ICON['steam']} {steam_count}")
+        parts.append(f"{PLATFORM_ICON[Platform.STEAM]} {steam_count}")
     if not parts or (len(parts) < 2 and not always):
         return ""
     return " (" + " · ".join(parts) + ")"
@@ -81,8 +106,11 @@ def platform_tag(platform: str) -> str:
     in the message itself, not just inferred from context. Found live: a
     Steam achievement arriving with no platform mention at all reads the
     same as any other message, easy to miss."""
-    icon = PLATFORM_ICON.get(platform, "⚪")
-    label = PLATFORM_LABEL.get(platform, platform)
+    icon = PLATFORM_ICON.get(platform, PLATFORM_ICON_UNKNOWN)
+    label = _(
+        PLATFORM_LABEL_KEYS.get(platform, "achievement-platform-unknown"),
+        platform=platform,
+    )
     return f"{icon} {label}"
 
 
@@ -92,7 +120,7 @@ def platform_tag(platform: str) -> str:
 #  (contract 1 never carries a rarity block); Steam is NOT here — it has a
 #  real rarity_percent (GetGlobalAchievementPercentagesForApp, M-Steam-2b),
 #  so it goes through the ordinary rarity check like modern Xbox.
-_NO_RARITY_DATA_PLATFORMS = {"x360"}
+_NO_RARITY_DATA_PLATFORMS = {Platform.X360}
 
 
 def passes_filters(
@@ -117,7 +145,7 @@ def passes_filters(
     check when Steam arrived rather than growing a second platform-specific
     toggle to match it.
     """
-    if chat.rarity_mode == "hidden":
+    if chat.rarity_mode == RarityMode.HIDDEN:
         # Every platform's feed off entirely, for this chat.
         return False
 
@@ -133,7 +161,7 @@ def passes_filters(
 
 
 def _passes_rarity(achievement: AchievementRow, mode: str, threshold: float) -> bool:
-    if mode != "rare":
+    if mode != RarityMode.RARE:
         return True
     if achievement.rarity_percent is None:
         return False
@@ -163,13 +191,13 @@ def _badge(achievement: AchievementRow) -> str:
     with no trophy_type at all, same "unproven is not rare" default
     rarity_badge() itself uses. Every other platform is unaffected —
     rarity_badge() alone, exactly as before."""
-    if achievement.platform == "psn":
-        return TROPHY_TIER_BADGE.get(achievement.trophy_type or "", "🏆")
+    if achievement.platform == Platform.PSN:
+        return TROPHY_TIER_BADGE.get(achievement.trophy_type or "", AchievementBadge.CUP)
     return rarity_badge(achievement.rarity_percent)
 
 
 def _rarity_line(achievement: AchievementRow) -> str:
-    """"(лого редкости)«название» · G · редкость %" — badge leads the name
+    """ "(rarity badge)«name» · G · rarity %" — badge leads the name
     rather than trailing the percentage (standardized form, 2026-09-05
     follow-up); gamerscore appears only when it isn't 0, replacing the
     older platform-keyed rules (Steam/PSN got a hardcoded "no G" each) —
@@ -177,18 +205,22 @@ def _rarity_line(achievement: AchievementRow) -> str:
     all (SPEC 9, future platforms fall under this for free).
     """
     name = _spoiler(html_escape(achievement.name), secret=achievement.is_secret)
-    name_part = f"{_badge(achievement)} «{name}»"
+    name_part = _("achievement-name", badge=_badge(achievement), name=name)
 
     tail = []
     if achievement.gamerscore:
-        tail.append(f"{achievement.gamerscore} G")
+        tail.append(_("achievement-gamerscore", score=achievement.gamerscore))
     if achievement.rarity_percent is not None:
-        tail.append(f"редкость {achievement.rarity_percent:g}%")
+        tail.append(_("achievement-rarity", percent=f"{achievement.rarity_percent:g}"))
     return name_part if not tail else f"{name_part} · {' · '.join(tail)}"
 
 
 def _game_line(title: str, platform: str) -> str:
-    return f"{html_escape(title)} (<i>{platform_tag(platform)}</i>)"
+    return _(
+        "achievement-game-line",
+        title=html_escape(title),
+        platform=platform_tag(platform),
+    )
 
 
 def _achievement_word(platform: str) -> str:
@@ -196,7 +228,7 @@ def _achievement_word(platform: str) -> str:
     2026-09-06, user request — this is the "трофей" wording M-Steam-2e's
     original standardization explicitly left for later, once PSN trophies
     were real data and not just a reserved word)."""
-    return "трофей" if platform == "psn" else "достижение"
+    return _("achievement-word-trophy") if platform == Platform.PSN else _("achievement-word")
 
 
 def format_single(gamertag: str, achievement: AchievementRow, title_name: str | None) -> str:
@@ -206,8 +238,12 @@ def format_single(gamertag: str, achievement: AchievementRow, title_name: str | 
     noisier than useful) onto the game-title line, in italics, next to the
     game.
     """
-    title = title_name or achievement.title_name or "неизвестная игра"
-    header = f"<b>{html_escape(gamertag)}</b> получает {_achievement_word(achievement.platform)}"
+    title = title_name or achievement.title_name or _("achievement-unknown-game")
+    header = _(
+        "achievement-single-header",
+        gamertag=html_escape(gamertag),
+        word=_achievement_word(achievement.platform),
+    )
     game_line = _game_line(title, achievement.platform)
     text = f"{header}\n\n{game_line}\n{_rarity_line(achievement)}"
     if achievement.description:
@@ -249,38 +285,40 @@ def format_digest(gamertag: str, title_name: str | None, achievements: list[Achi
     """
     # Every achievement in one publish() call shares a platform (Xbox/Steam
     # pollers each poll one title at a time; PSN's own multi-game burst is
-    # still all-PSN — SPEC 9, M-PSN-2's "мультиачивки" paragraph) — safe to
+    # still all-PSN — SPEC 9, M-PSN-2's multi-achievement paragraph) — safe to
     # decide the header's wording from just the first item.
-    platform = achievements[0].platform if achievements else "modern"
+    platform = achievements[0].platform if achievements else Platform.MODERN
     count_phrase = (
         _plural_trophies(len(achievements))
-        if platform == "psn"
+        if platform == Platform.PSN
         else plural_achievements(len(achievements))
     )
-    header = f"<b>{html_escape(gamertag)}</b> получает {count_phrase}"
+    header = _("achievement-digest-header", gamertag=html_escape(gamertag), phrase=count_phrase)
     lines = [header, ""]
     for index, group in enumerate(_group_by_title(achievements).values()):
         if index > 0:
             lines.append("")  # a blank line between one game's block and the next
-        title = group[0].title_name or title_name or "неизвестная игра"
+        title = group[0].title_name or title_name or _("achievement-unknown-game")
         lines.append(_game_line(title, group[0].platform))
         lines.extend(_rarity_line(item) for item in group)
     return "\n".join(lines)
 
 
 def plural_achievements(count: int) -> str:
-    """"Достижение" everywhere, not "ачивка" — the two used to appear
+    """ "Достижение" everywhere, not "ачивка" — the two used to appear
     side by side across different messages (2026-09-05 terminology pass);
     "ач." stays fine as a space-saving abbreviation where one is needed,
     just not the full colloquial word."""
     tail = count % 10
     hundreds = count % 100
     number = thousands(count)
-    if tail == 1 and hundreds != 11:
-        return f"{number} достижение"
-    if tail in (2, 3, 4) and hundreds not in (12, 13, 14):
-        return f"{number} достижения"
-    return f"{number} достижений"
+    return _(
+        "achievement-plural",
+        count=number,
+        form="one"
+        if tail == 1 and hundreds != 11
+        else ("few" if tail in (2, 3, 4) and hundreds not in (12, 13, 14) else "many"),
+    )
 
 
 def _plural_trophies(count: int) -> str:
@@ -292,8 +330,10 @@ def _plural_trophies(count: int) -> str:
     tail = count % 10
     hundreds = count % 100
     number = thousands(count)
-    if tail == 1 and hundreds != 11:
-        return f"{number} трофей"
-    if tail in (2, 3, 4) and hundreds not in (12, 13, 14):
-        return f"{number} трофея"
-    return f"{number} трофеев"
+    return _(
+        "achievement-trophy-plural",
+        count=number,
+        form="one"
+        if tail == 1 and hundreds != 11
+        else ("few" if tail in (2, 3, 4) and hundreds not in (12, 13, 14) else "many"),
+    )

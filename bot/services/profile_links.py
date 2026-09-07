@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
+from bot.constants import Platform
+
 
 def xbox_profile_url(gamertag: str) -> str:
     return f"https://account.xbox.com/en-us/profile?gamertag={quote(gamertag)}"
@@ -43,9 +45,9 @@ def platform_profile_url(
     present, unlike a vanity name); PSN wants `display_name` instead
     (`link_platform_account` stores the onlineId there, `external_id` is
     PSN's internal account_id, meaningless in a my.playstation.com URL)."""
-    if platform == "steam":
+    if platform == Platform.STEAM:
         return steam_profile_url(external_id)
-    if platform == "psn":
+    if platform == Platform.PSN:
         return psn_profile_url(display_name) if display_name else None
     return None
 

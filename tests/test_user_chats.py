@@ -72,7 +72,7 @@ async def test_unsubscribe_keeps_the_chat_listed(repo: Repo) -> None:
 
 
 async def test_forget_chat_membership_removes_it_from_the_list(repo: Repo) -> None:
-    """"Delete" (SPEC 6.2) clears both subscriptions and chat_seen — the
+    """ "Delete" (SPEC 6.2) clears both subscriptions and chat_seen — the
     chat vanishes from the list entirely, as if never touched."""
     await repo.ensure_user(TG_ID, "igor")
     await _chat(repo, CHAT_A, "Гейминг-чат")

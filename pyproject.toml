@@ -14,6 +14,19 @@ dependencies = [
     "pydantic-settings>=2.3",
     "cryptography>=42",
     "howlongtobeatpy>=1.0.23",
+    # Localization infrastructure (2026-09-07, see issue tracking i18n
+    # migration): aiogram_i18n is the native i18n middleware for aiogram 3 —
+    # it injects an I18nContext into every handler and picks up the active
+    # locale per-user/per-chat, instead of a bespoke dict-based lookup we'd
+    # have to maintain ourselves. Fluent (not gettext) because its plural/
+    # selector syntax handles Russian's three-way plural rules (1/2-4/5+)
+    # natively in the .ftl source, where gettext's ngettext would need a
+    # hand-written plural-index expression per string. Only one locale
+    # ("ru") ships today — see bot/locales/ — the bot's user-facing text is
+    # still Russian-only by design (CLAUDE.md), this only moves *where* the
+    # strings live, ahead of actually adding a second language.
+    "aiogram_i18n>=1.4",
+    "fluent.runtime>=0.4",
     # PSN has no documented public API at all — psnawp_api is a reverse-
     # engineered wrapper over the same private endpoints the PlayStation App
     # uses (SPEC 9, M-PSN-1). Same class of dependency as xbox-webapi-python

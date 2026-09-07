@@ -53,9 +53,7 @@ def _install_fakes(monkeypatch, titles, trophies_by_title):
     monkeypatch.setattr(psn_achievements_module, "trophies_for_title", fake_trophies)
 
 
-async def test_a_game_seen_for_the_first_time_is_fetched_in_full(
-    repo: Repo, monkeypatch
-) -> None:
+async def test_a_game_seen_for_the_first_time_is_fetched_in_full(repo: Repo, monkeypatch) -> None:
     title = _FakeTitle("NPWR00001_00", "Some Game", progress=10)
     _install_fakes(monkeypatch, [title], {"NPWR00001_00": [_trophy(1), _trophy(2)]})
 
@@ -68,9 +66,7 @@ async def test_a_game_seen_for_the_first_time_is_fetched_in_full(
 async def test_flat_progress_skips_the_full_detail_call(repo: Repo, monkeypatch) -> None:
     title = _FakeTitle("NPWR00001_00", "Some Game", progress=50)
     await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR00001_00", 50)
-    _install_fakes(
-        monkeypatch, [title], {"NPWR00001_00": Exception("must not be called")}
-    )
+    _install_fakes(monkeypatch, [title], {"NPWR00001_00": Exception("must not be called")})
 
     result = await fetch_unlocked(repo, object(), ACCOUNT_ID)  # type: ignore[arg-type]
 
@@ -126,9 +122,7 @@ async def test_a_title_sony_404s_is_skipped_not_fatal(repo: Repo, monkeypatch) -
     assert [item.achievement_id for item in result] == ["9"]
 
 
-async def test_parsed_achievement_carries_the_tier_and_platform(
-    repo: Repo, monkeypatch
-) -> None:
+async def test_parsed_achievement_carries_the_tier_and_platform(repo: Repo, monkeypatch) -> None:
     from psnawp_api.models.trophies.trophy_constants import TrophyType
 
     title = _FakeTitle("NPWR00001_00", "Some Game", progress=10)

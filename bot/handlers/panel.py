@@ -12,8 +12,10 @@ from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram_i18n import I18nContext
 
 from bot.config import Settings
+from bot.constants import Platform, PresenceState, RarityMode, TokenStatus
 from bot.db.repo import Repo, UserChatRow
 from bot.handlers.keyboards import (
     DIGEST_NEVER,
@@ -28,6 +30,7 @@ from bot.handlers.keyboards import (
     safe_edit,
     timezone_keyboard,
 )
+from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.fetcher import Fetcher
 from bot.services.achievements import plural_achievements
 from bot.services.single_message import send_replacing
@@ -45,75 +48,75 @@ GROUP_HINT_TTL = 30
 SYNC_COOLDOWN_SECONDS = 600
 _last_sync: dict[int, float] = {}
 
-LOGIN_STATUS = {
-    "active": "✅ активен",
-    "invalid": "⚠️ требуется повторный вход",
-    "revoked": "— отключён",
+LOGIN_STATUS_KEYS = {
+    TokenStatus.ACTIVE: "panel-login-active",
+    TokenStatus.INVALID: "panel-login-invalid",
+    TokenStatus.REVOKED: "panel-login-revoked",
 }
 
 
-async def send_panel(bot: Bot, repo: Repo, tg_id: int) -> None:
+async def send_panel(bot: Bot, repo: Repo, tg_id: int, i18n: I18nContext) -> None:
     """The one place that actually delivers the panel as a new message
     (not an edit) — the bare /panel command and the ?start=panel deep link
     (handlers/connect.py) both go through this, so a person re-opening
     their panel replaces the previous copy instead of piling up a new one
     every time (Follow-up 2026-09-06)."""
-    text, markup = await render_panel(repo, tg_id)
+    text, markup = await render_panel(repo, tg_id, i18n)
     await send_replacing(bot, repo, tg_id, "panel", text, reply_markup=markup)
 
 
 @router.message(Command("panel"), F.chat.type == ChatType.PRIVATE)
-async def panel_command(message: Message, repo: Repo, bot: Bot) -> None:
+async def panel_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     await repo.ensure_user(message.chat.id, _username(message))
-    await send_panel(bot, repo, message.chat.id)
+    await send_panel(bot, repo, message.chat.id, i18n)
 
 
 @router.message(Command("panel"))
-async def panel_in_group(message: Message, bot: Bot) -> None:
+async def panel_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
     """Settings never render in a group: an inline keyboard there is clickable
     by everyone in the chat (SPEC 6.3)."""
     me = await bot.me()
     hint = await message.answer(
-        "Настройки — в личке.",
-        reply_markup=deep_link_keyboard(f"https://t.me/{me.username}?start=panel"),
+        i18n.get("panel-group-hint"),
+        reply_markup=deep_link_keyboard(f"https://t.me/{me.username}?start=panel", i18n),
     )
     asyncio.create_task(_delete_later(bot, hint.chat.id, hint.message_id))  # noqa: RUF006
 
 
 @router.callback_query(F.data == "panel:refresh")
-async def panel_refresh(callback: CallbackQuery, repo: Repo) -> None:
-    text, markup = await render_panel(repo, callback.from_user.id)
+async def panel_refresh(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    text, markup = await render_panel(repo, callback.from_user.id, i18n)
     await safe_edit(callback, text, markup)
-    await callback.answer("Обновил")
+    await callback.answer(i18n.get("panel-refreshed"))
 
 
 @router.callback_query(F.data == "panel:sync")
 async def panel_sync(
-    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, settings: Settings
+    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, settings: Settings, i18n: I18nContext
 ) -> None:
     """Catch up on what was unlocked while the bot was down (SPEC 5.8)."""
     tg_id = callback.from_user.id
     user = await repo.get_user(tg_id)
     if user is None or not user.xuid:
-        await callback.answer("Сначала подключи XBOX: /connect_xbox", show_alert=True)
+        await callback.answer(i18n.get("panel-xbox-not-connected"), show_alert=True)
         return
 
     minutes_left = cooldown_minutes_left(
         _last_sync.get(tg_id), time.monotonic(), SYNC_COOLDOWN_SECONDS
     )
     if minutes_left:
-        await callback.answer(f"Уже синхронизировал. Ещё раз — через {minutes_left} мин.")
+        await callback.answer(i18n.get("panel-sync-cooldown", minutes=minutes_left))
         return
 
     _last_sync[tg_id] = time.monotonic()
-    await callback.answer("Синхронизирую…")
+    await callback.answer(i18n.get("panel-syncing"))
 
     target = next((t for t in await repo.pollable_users() if t.tg_id == tg_id), None)
     try:
         titles, published = await fetcher.catch_up(
             tg_id,
             user.xuid,
-            user.gamertag or "Игрок",
+            user.gamertag or i18n.get("panel-default-player-name"),
             parse_iso(target.updated_at) if target else None,
             settings.catchup_publish_window_hours,
             settings.catchup_max_titles,
@@ -121,20 +124,20 @@ async def panel_sync(
     except Exception:
         log.exception("manual catch-up for tg_id=%s failed", tg_id)
         if isinstance(callback.message, Message):
-            await callback.message.answer("Не получилось синхронизироваться, попробуй позже.")
+            await callback.message.answer(i18n.get("panel-sync-failed"))
         return
 
     summary = (
-        f"Проверил игр: {titles}. Новых достижений в чат: {published}."
+        i18n.get("panel-sync-summary-found", titles=titles, published=published)
         if titles
-        else "Ничего нового — с последнего опроса ты никуда не заходил."
+        else i18n.get("panel-sync-summary-none")
     )
     if isinstance(callback.message, Message):
         await callback.message.answer(summary)
 
 
 @router.callback_query(F.data == "panel:disconnect")
-async def panel_disconnect_prompt(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_disconnect_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """Same confirmation as /disconnect_xbox — the actual disconnect handlers
     (disconnect:yes / disconnect:no in connect.py) just edit whatever message
     triggered them, so they work unchanged from the panel too."""
@@ -142,50 +145,52 @@ async def panel_disconnect_prompt(callback: CallbackQuery, repo: Repo) -> None:
 
     user = await repo.get_user(callback.from_user.id)
     if user is None or not user.xuid:
-        await callback.answer("XBOX и так не подключён.", show_alert=True)
+        await callback.answer(i18n.get("panel-xbox-already-disconnected"), show_alert=True)
         return
     await safe_edit(
         callback,
-        "Отключить XBOX?\n\n"
-        "Удалю токен и подписки. Историю достижений оставлю — она нужна статистике "
-        "чата, и при повторном входе старые достижения не хлынут в чат заново.\n\n"
-        f"Само разрешение остаётся в аккаунте Microsoft — убрать его можно "
-        f"только самому: {REVOKE_URL}",
-        disconnect_prompt_keyboard(from_panel=True),
+        i18n.get("panel-disconnect-prompt", revoke_url=REVOKE_URL),
+        disconnect_prompt_keyboard(i18n, from_panel=True),
         disable_web_page_preview=True,
     )
     await callback.answer()
 
 
 @router.callback_query(F.data == "panel:disconnect:no")
-async def panel_disconnect_cancel(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_disconnect_cancel(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     # Cancelling here edits the panel message itself, so restore the panel
     # in place instead of leaving a throwaway "cancelled" message behind.
-    text, markup = await render_panel(repo, callback.from_user.id)
+    text, markup = await render_panel(repo, callback.from_user.id, i18n)
     await safe_edit(callback, text, markup)
     await callback.answer()
 
 
 @router.callback_query(F.data == "panel:steamdisconnect:no")
-async def panel_steam_disconnect_cancel(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_steam_disconnect_cancel(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
     """Same treatment as panel_disconnect_cancel above, for Steam's own
     disconnect button (2026-09-05 follow-up)."""
-    text, markup = await render_panel(repo, callback.from_user.id)
+    text, markup = await render_panel(repo, callback.from_user.id, i18n)
     await safe_edit(callback, text, markup)
     await callback.answer()
 
 
 @router.callback_query(F.data == "panel:psndisconnect:no")
-async def panel_psn_disconnect_cancel(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_psn_disconnect_cancel(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
     """Same treatment as panel_steam_disconnect_cancel above, for PSN's own
     disconnect button (SPEC 9, M-PSN-1)."""
-    text, markup = await render_panel(repo, callback.from_user.id)
+    text, markup = await render_panel(repo, callback.from_user.id, i18n)
     await safe_edit(callback, text, markup)
     await callback.answer()
 
 
 @router.callback_query(F.data == "panel:linkstoggle")
-async def panel_toggle_profile_links(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_toggle_profile_links(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
     """Flips user_settings.show_profile_links (Follow-up 2026-09-06) —
     one tap, no confirm, same weight as re-subscribing to a chat: showing
     a link costs the person nothing they can't undo with another tap."""
@@ -194,19 +199,21 @@ async def panel_toggle_profile_links(callback: CallbackQuery, repo: Repo) -> Non
     await repo.update_user_settings(
         callback.from_user.id, show_profile_links=0 if currently_on else 1
     )
-    await callback.answer("Скрыл" if currently_on else "Показываю")
-    text, markup = await render_panel(repo, callback.from_user.id)
+    await callback.answer(
+        i18n.get("panel-links-hidden-toast" if currently_on else "panel-links-shown-toast")
+    )
+    text, markup = await render_panel(repo, callback.from_user.id, i18n)
     await safe_edit(callback, text, markup)
 
 
 @router.callback_query(F.data == "panel:tz")
-async def panel_timezone(callback: CallbackQuery) -> None:
+async def panel_timezone(callback: CallbackQuery, i18n: I18nContext) -> None:
     # Found while refactoring (2026-09-05): the one edit in this file that
     # didn't tolerate a failed edit, unlike every other one here.
     await safe_edit(
         callback,
-        "🕐 Часовой пояс — по нему считаются «сегодня» и «за месяц».",
-        timezone_keyboard(skippable=False),
+        i18n.get("panel-timezone-prompt"),
+        timezone_keyboard(i18n, skippable=False),
     )
     await callback.answer()
 
@@ -215,15 +222,15 @@ async def panel_timezone(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "panel:chatlist")
-async def panel_chat_list(callback: CallbackQuery, repo: Repo) -> None:
-    await _redraw_chat_list(callback, repo)
+async def panel_chat_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    await _redraw_chat_list(callback, repo, i18n)
 
 
-async def _redraw_chat_list(callback: CallbackQuery, repo: Repo) -> None:
+async def _redraw_chat_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     chats = await repo.user_chats(callback.from_user.id)
-    text = "💬 Мои чаты"
+    text = i18n.get("panel-my-chats-title")
     if not chats:
-        text += "\n\nПока ни в одном чате тебя не видел — ни подписок, ни сообщений."
+        text += i18n.get("panel-my-chats-empty")
     builder = InlineKeyboardBuilder()
     for chat in chats:
         mark = "✅" if chat.is_subscribed else "⚪"
@@ -233,7 +240,7 @@ async def _redraw_chat_list(callback: CallbackQuery, repo: Repo) -> None:
                 callback_data=f"panel:chat:{chat.chat_id}",
             )
         )
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="panel:refresh"))
+    builder.row(InlineKeyboardButton(text=i18n.get("panel-back"), callback_data="panel:refresh"))
     await safe_edit(callback, text, builder.as_markup())
     await callback.answer()
 
@@ -243,7 +250,7 @@ async def _find_user_chat(repo: Repo, tg_id: int, chat_id: int) -> UserChatRow |
 
 
 async def _chat_card(
-    repo: Repo, tg_id: int, chat_id: int
+    repo: Repo, tg_id: int, chat_id: int, i18n: I18nContext
 ) -> tuple[str, InlineKeyboardMarkup] | None:
     chat = await _find_user_chat(repo, tg_id, chat_id)
     if chat is None:
@@ -251,42 +258,68 @@ async def _chat_card(
     title = chat.title or chat.chat_id
     builder = InlineKeyboardBuilder()
     if chat.is_subscribed:
-        text = f"💬 {title}\n\nПубликация: ✅ включена"
+        text = (
+            i18n.get("panel-chat-card-title", title=title)
+            + "\n\n"
+            + i18n.get("panel-publication-enabled")
+        )
         # Per-chat, not one shared value any more (SPEC 9, M-Steam-2e's
         # follow-up) — only shown while actually publishing here, same as
         # min_gamerscore/muted_title_ids having nothing to apply to
         # otherwise.
         builder.row(
             InlineKeyboardButton(
-                text=f"Ачивки: {format_rarity(chat.rarity_mode or 'all')}",
+                text=i18n.get(
+                    "panel-achievements-mode",
+                    mode=format_rarity(chat.rarity_mode or RarityMode.ALL, i18n),
+                ),
                 callback_data=f"panel:chatrarity:{chat_id}",
             )
         )
         builder.row(
             InlineKeyboardButton(
-                text=f"Сводка: {format_digest(chat.digest_threshold or 3)} ▸",
+                text=i18n.get(
+                    "panel-digest-row",
+                    threshold=format_digest(chat.digest_threshold or 3, i18n),
+                ),
                 callback_data=f"panel:chatdigest:{chat_id}",
             )
         )
         builder.row(
-            InlineKeyboardButton(text="Отписаться", callback_data=f"panel:chatunsub:{chat_id}")
+            InlineKeyboardButton(
+                text=i18n.get("panel-unsubscribe"), callback_data=f"panel:chatunsub:{chat_id}"
+            )
         )
     else:
-        text = f"💬 {title}\n\nПубликация: ⏸ выключена"
-        builder.row(
-            InlineKeyboardButton(text="Подписаться", callback_data=f"panel:chatsub:{chat_id}")
+        text = (
+            i18n.get("panel-chat-card-title", title=title)
+            + "\n\n"
+            + i18n.get("panel-publication-disabled")
         )
         builder.row(
-            InlineKeyboardButton(text="Удалить из списка", callback_data=f"panel:chatdel:{chat_id}")
+            InlineKeyboardButton(
+                text=i18n.get("panel-subscribe"), callback_data=f"panel:chatsub:{chat_id}"
+            )
         )
-    builder.row(InlineKeyboardButton(text="‹ К списку чатов", callback_data="panel:chatlist"))
+        builder.row(
+            InlineKeyboardButton(
+                text=i18n.get("panel-remove-from-list"), callback_data=f"panel:chatdel:{chat_id}"
+            )
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-back-to-chat-list"), callback_data="panel:chatlist"
+        )
+    )
     return text, builder.as_markup()
 
 
-async def _redraw_chat_card(callback: CallbackQuery, repo: Repo, chat_id: int) -> None:
-    built = await _chat_card(repo, callback.from_user.id, chat_id)
+async def _redraw_chat_card(
+    callback: CallbackQuery, repo: Repo, chat_id: int, i18n: I18nContext
+) -> None:
+    built = await _chat_card(repo, callback.from_user.id, chat_id, i18n)
     if built is None:
-        await _redraw_chat_list(callback, repo)
+        await _redraw_chat_list(callback, repo, i18n)
         return
     text, markup = built
     await safe_edit(callback, text, markup)
@@ -294,14 +327,14 @@ async def _redraw_chat_card(callback: CallbackQuery, repo: Repo, chat_id: int) -
 
 
 @router.callback_query(F.data.startswith("panel:chat:"))
-async def panel_chat_card(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw_chat_card(callback, repo, chat_id)
+    await _redraw_chat_card(callback, repo, chat_id, i18n)
 
 
 @router.callback_query(F.data.startswith("panel:chatrarity:"))
-async def panel_chat_rarity_cycle(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_rarity_cycle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """One tap advances this chat's mode to the next one (SPEC 9, M-Steam-2e's
     follow-up — moved off the main panel, per chat now)."""
     assert callback.data is not None
@@ -310,13 +343,13 @@ async def panel_chat_rarity_cycle(callback: CallbackQuery, repo: Repo) -> None:
     if chat is None or not chat.is_subscribed:
         await callback.answer()
         return
-    mode = next_rarity_mode(chat.rarity_mode or "all")
+    mode = next_rarity_mode(chat.rarity_mode or RarityMode.ALL)
     await repo.update_subscription_rarity_mode(chat_id, callback.from_user.id, mode)
-    await _redraw_chat_card(callback, repo, chat_id)
+    await _redraw_chat_card(callback, repo, chat_id, i18n)
 
 
 @router.callback_query(F.data.startswith("panel:chatdigest:"))
-async def panel_chat_digest_menu(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_digest_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """Per chat now, not the main panel screen (Follow-up, 2026-09-05, same
     move as the rarity toggle above it)."""
     assert callback.data is not None
@@ -328,115 +361,132 @@ async def panel_chat_digest_menu(callback: CallbackQuery, repo: Repo) -> None:
     current = chat.digest_threshold or 3
     await safe_edit(
         callback,
-        "Сводка вместо отдельных сообщений\n\n"
-        "Если за один раз в одной игре выбито столько достижений или больше — "
-        "в этот чат уйдёт одно сводное сообщение.",
-        digest_keyboard(current, chat_id),
+        i18n.get("panel-digest-menu"),
+        digest_keyboard(current, chat_id, i18n),
     )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("panel:cdigestset:"))
-async def panel_chat_digest_set(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_digest_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     _, _, chat_id_raw, value_raw = callback.data.split(":")
     chat_id, value = int(chat_id_raw), int(value_raw)
     await repo.update_subscription_digest_threshold(chat_id, callback.from_user.id, value)
-    await callback.answer("Никогда" if value >= DIGEST_NEVER else f"От {value}")
-    await _redraw_chat_card(callback, repo, chat_id)
+    await callback.answer(
+        i18n.get("panel-digest-set-never-toast")
+        if value >= DIGEST_NEVER
+        else i18n.get("panel-digest-set-from-toast", value=value)
+    )
+    await _redraw_chat_card(callback, repo, chat_id, i18n)
 
 
 @router.callback_query(F.data.startswith("panel:chatsub:"))
-async def panel_chat_subscribe(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_subscribe(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """No confirm — resubscribing has no downside, unlike unsubscribing or
     deleting (SPEC 6.2)."""
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     user = await repo.get_user(callback.from_user.id)
     if user is None or not user.xuid:
-        await callback.answer("Сначала подключи XBOX: /connect_xbox", show_alert=True)
+        await callback.answer(i18n.get("panel-xbox-not-connected"), show_alert=True)
         return
     await repo.subscribe(chat_id, callback.from_user.id)
-    await callback.answer("Подписал")
-    await _redraw_chat_card(callback, repo, chat_id)
+    await callback.answer(i18n.get("panel-subscribed-toast"))
+    await _redraw_chat_card(callback, repo, chat_id, i18n)
 
 
 @router.callback_query(F.data.startswith("panel:chatunsub:"))
-async def panel_chat_unsub_prompt(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_unsub_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """Same weight as the standalone /unsubscribe — a confirm, not an instant
     action (SPEC 6.3): losing a feed in a chat deserves a second tap."""
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_user_chat(repo, callback.from_user.id, chat_id)
     if chat is None:
-        await _redraw_chat_list(callback, repo)
+        await _redraw_chat_list(callback, repo, i18n)
         return
     title = chat.title or chat.chat_id
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="Да, отписаться", callback_data=f"panel:chatunsuby:{chat_id}")
+        InlineKeyboardButton(
+            text=i18n.get("panel-unsub-yes"), callback_data=f"panel:chatunsuby:{chat_id}"
+        )
     )
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data=f"panel:chat:{chat_id}"))
-    await safe_edit(
-        callback, f"Перестать публиковать твои достижения в «{title}»?", builder.as_markup()
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-unsub-cancel"), callback_data=f"panel:chat:{chat_id}"
+        )
     )
+    await safe_edit(callback, i18n.get("panel-unsub-prompt", title=title), builder.as_markup())
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("panel:chatunsuby:"))
-async def panel_chat_unsub_confirm(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_unsub_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     await repo.unsubscribe(chat_id, callback.from_user.id)
-    await callback.answer("Отписал")
-    await _redraw_chat_card(callback, repo, chat_id)
+    await callback.answer(i18n.get("panel-unsubscribed-toast"))
+    await _redraw_chat_card(callback, repo, chat_id, i18n)
 
 
 @router.callback_query(F.data.startswith("panel:chatdel:"))
-async def panel_chat_delete_prompt(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_delete_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_user_chat(repo, callback.from_user.id, chat_id)
     if chat is None:
-        await _redraw_chat_list(callback, repo)
+        await _redraw_chat_list(callback, repo, i18n)
         return
     title = chat.title or chat.chat_id
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="Да, удалить", callback_data=f"panel:chatdely:{chat_id}"))
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data=f"panel:chat:{chat_id}"))
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-delete-yes"), callback_data=f"panel:chatdely:{chat_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-unsub-cancel"), callback_data=f"panel:chat:{chat_id}"
+        )
+    )
     await safe_edit(
         callback,
-        f"Убрать «{title}» из списка? Как будто ты там никогда не был — "
-        "не бан, снова окажешься в списке, если подпишешься или напишешь туда.",
+        i18n.get("panel-delete-prompt", title=title),
         builder.as_markup(),
     )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("panel:chatdely:"))
-async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo) -> None:
+async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     await repo.forget_chat_membership(chat_id, callback.from_user.id)
-    await callback.answer("Убрал")
-    await _redraw_chat_list(callback, repo)
+    await callback.answer(i18n.get("panel-deleted-toast"))
+    await _redraw_chat_list(callback, repo, i18n)
 
 
 RECENT_IN_PANEL = 5
 
 
-async def render_panel(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
+async def render_panel(
+    repo: Repo, tg_id: int, i18n: I18nContext | StaticI18nContext | None = None
+) -> tuple[str, InlineKeyboardMarkup]:
+    i18n = i18n or static_i18n("panel")
     user = await repo.get_user(tg_id)
     settings_row = await repo.get_user_settings(tg_id)
     connected = user is not None and bool(user.xuid)
-    steam_link = await repo.get_platform_link(tg_id, "steam")
-    psn_link = await repo.get_platform_link(tg_id, "psn")
+    steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
+    psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
 
     token = await repo.get_token(tg_id) if connected else None
-    needs_reconnect = token is not None and token.status == "invalid"
+    needs_reconnect = token is not None and token.status == TokenStatus.INVALID
     tz_offset = settings_row.tz_offset_min if settings_row else None
     keyboard = panel_keyboard(
         tz_offset,
+        i18n,
         connected=connected,
         needs_reconnect=needs_reconnect,
         steam_connected=steam_link is not None,
@@ -448,75 +498,97 @@ async def render_panel(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarku
     )
 
     if user is None or not user.xuid:
-        text = "👤 Панель\n\nВход XBOX: — не подключён"
+        text = i18n.get("panel-header-not-connected")
         if steam_link is not None:
-            text += f"\nВход Steam: {steam_link.display_name}"
+            text += "\n" + i18n.get("panel-login-steam-row", name=steam_link.display_name)
         if psn_link is not None:
-            text += f"\nВход PSN: {psn_link.display_name}"
+            text += "\n" + i18n.get("panel-login-psn-row", name=psn_link.display_name)
         return text, keyboard
 
-    login = LOGIN_STATUS.get(token.status, "— не подключён") if token else "— не подключён"
+    login = (
+        i18n.get(LOGIN_STATUS_KEYS.get(token.status, "panel-login-revoked"))
+        if token
+        else i18n.get("panel-login-revoked")
+    )
     counters = await counters_for(repo, tg_id)
-    playing = await _now_playing(repo, user.xuid)
+    playing = await _now_playing(repo, user.xuid, i18n)
     recent = await repo.recent_achievements(user.xuid, RECENT_IN_PANEL)
 
     lines = [
-        f"👤 {user.gamertag or 'без геймертега'}  ·  gamerscore {thousands(user.gamerscore or 0)}",
+        i18n.get(
+            "panel-header",
+            gamertag=user.gamertag or i18n.get("panel-no-gamertag"),
+            gamerscore=thousands(user.gamerscore or 0),
+        ),
         "",
-        f"Вход XBOX:   {login}",
+        i18n.get("panel-login-xbox-row", status=login),
     ]
-    # "Сегодня"/"За месяц" below already sum Steam achievements in too
+    # "Сегодня"/"За месяц" below already include Steam achievements
     # (SPEC 9, M-Steam-2e) — this line is just the persona name, no counter
     # of its own next to it, same as /stats' per-platform lines.
     if steam_link is not None:
-        lines.append(f"Вход Steam:  {steam_link.display_name}")
+        lines.append(i18n.get("panel-login-steam-row-connected", name=steam_link.display_name))
     if psn_link is not None:
-        lines.append(f"Вход PSN:    {psn_link.display_name}")
+        lines.append(i18n.get("panel-login-psn-row-connected", name=psn_link.display_name))
     lines += [
-        f"Публикация:  {await _publication_status(repo, user.tg_id, user.is_excluded)}",
-        f"Сейчас:      {playing}",
+        i18n.get(
+            "panel-publication-row",
+            status=await _publication_status(repo, user.tg_id, user.is_excluded, i18n),
+        ),
+        i18n.get("panel-now-playing-row", playing=playing),
         "",
-        f"Сегодня:     {plural_achievements(counters.today)} (+{counters.today_score} G)",
-        f"За месяц:    {plural_achievements(counters.month)} "
-        f"(+{thousands(counters.month_score)} G)",
+        i18n.get(
+            "panel-today-row",
+            achievements=plural_achievements(counters.today),
+            score=counters.today_score,
+        ),
+        i18n.get(
+            "panel-month-row",
+            achievements=plural_achievements(counters.month),
+            score=thousands(counters.month_score),
+        ),
         # No lifetime "Всего": seen_achievements is permanently best-effort
         # (SPEC 5.4), unlike the two date-bounded counters above it.
-        f"Часовой пояс: {format_offset(tz_offset)}",
+        i18n.get("panel-timezone-row", offset=format_offset(tz_offset, i18n)),
     ]
     if needs_reconnect:
-        lines += ["", "Доступ к XBOX истёк — жми «Подключить заново» ниже."]
+        lines += ["", i18n.get("panel-reconnect-hint")]
     if recent:
-        lines += ["", "Последние достижения:"]
+        lines += ["", i18n.get("panel-recent-title")]
         lines += [
-            f"🏆 «{item.name}» — {item.title_name or 'неизвестная игра'}, "
-            f"{humanize_ago(item.unlocked_at)}"
+            i18n.get(
+                "panel-recent-item",
+                name=item.name,
+                game=item.title_name or i18n.get("panel-unknown-game"),
+                ago=humanize_ago(item.unlocked_at),
+            )
             for item in recent
         ]
     return "\n".join(lines), keyboard
 
 
-async def _now_playing(repo: Repo, xuid: str) -> str:
+async def _now_playing(repo: Repo, xuid: str, i18n: I18nContext) -> str:
     presence = await repo.presence_of(xuid)
     if presence is None:
-        return "нет данных"
-    if presence.state != "Online":
-        return f"не в сети ({humanize_ago(presence.updated_at)})"
+        return i18n.get("panel-no-presence-data")
+    if presence.state != PresenceState.ONLINE:
+        return i18n.get("panel-offline", ago=humanize_ago(presence.updated_at))
     if not presence.title_id:
-        return "в сети, не играет"
+        return i18n.get("panel-online-idle")
     # Presence gives no name for PC titles — fall back to the cache the
     # poller fills (SPEC 4), same as the admin card.
     game = presence.title_name or await repo.title_name(presence.title_id) or presence.title_id
-    return f"играет — {game}"
+    return i18n.get("panel-playing", game=game)
 
 
-async def _publication_status(repo: Repo, tg_id: int, is_excluded: bool) -> str:
+async def _publication_status(repo: Repo, tg_id: int, is_excluded: bool, i18n: I18nContext) -> str:
     if is_excluded:
         # An exclusion is never silent: the person sees it here (SPEC 6.4).
-        return "🚫 исключён администратором"
+        return i18n.get("panel-excluded")
     chats = await repo.chats_of_user(tg_id)
     if not chats:
-        return "— не подписан ни в одном чате"
-    return "✅ в " + ", ".join(f"«{title}»" for title in chats)
+        return i18n.get("panel-not-subscribed-anywhere")
+    return i18n.get("panel-subscribed-in", chats=", ".join(f"«{title}»" for title in chats))
 
 
 async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:

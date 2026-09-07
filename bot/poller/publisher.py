@@ -194,8 +194,11 @@ class Publisher:
                 url, secret = job.gallery[0]
                 try:
                     message = await self._bot.send_photo(
-                        job.chat_id, photo=url, caption=job.text,
-                        parse_mode=ParseMode.HTML, has_spoiler=secret,
+                        job.chat_id,
+                        photo=url,
+                        caption=job.text,
+                        parse_mode=ParseMode.HTML,
+                        has_spoiler=secret,
                     )
                     return message.message_id
                 except (TelegramForbiddenError, TelegramRetryAfter):
@@ -203,7 +206,5 @@ class Publisher:
                 except Exception:
                     log.info("icon for chat %s did not go through, sending text", job.chat_id)
 
-            message = await self._bot.send_message(
-                job.chat_id, job.text, parse_mode=ParseMode.HTML
-            )
+            message = await self._bot.send_message(job.chat_id, job.text, parse_mode=ParseMode.HTML)
             return message.message_id

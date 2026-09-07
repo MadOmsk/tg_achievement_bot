@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from bot.constants import SteamCommunityVisibility
 from bot.services.rate_limiter import RateLimiter
 
 BASE_URL = "https://api.steampowered.com"
@@ -45,8 +46,6 @@ def rate_limit_usage() -> list[tuple[int, int, float]]:
     to XboxClient.rate_limit_usage()."""
     return _limiter.usage()
 
-# communityvisibilitystate: 1 = private, 2 = friends only, 3 = public.
-_PUBLIC = 3
 
 # A SteamID64 is always 17 digits. A profile URL carries one directly; a
 # vanity URL (or a bare vanity name, typed without the URL around it) needs
@@ -156,7 +155,7 @@ async def get_profile(api_key: str, steam_id: str) -> SteamProfile:
     return SteamProfile(
         steam_id=str(player.get("steamid", steam_id)),
         persona_name=player.get("personaname") or steam_id,
-        is_public=player.get("communityvisibilitystate") == _PUBLIC,
+        is_public=player.get("communityvisibilitystate") == SteamCommunityVisibility.PUBLIC,
     )
 
 
@@ -227,9 +226,7 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
     ]
 
 
-async def get_player_achievements(
-    api_key: str, steam_id: str, appid: str
-) -> list[RawAchievement]:
+async def get_player_achievements(api_key: str, steam_id: str, appid: str) -> list[RawAchievement]:
     """`success: false` in the body is an expected response, not an HTTP
     error (SPEC 9, M-Steam-2b) — a profile that went private after linking,
     or a game with no achievement stats at all. Both just mean "nothing for

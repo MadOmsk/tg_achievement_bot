@@ -17,11 +17,15 @@ from datetime import datetime
 import httpx
 from xbox.webapi.api.client import XboxLiveClient
 
+from bot.constants import (
+    Platform,
+    PresenceState,
+    XboxApiValue,
+)
 from bot.services.rate_limiter import RateLimiter
 from bot.services.xbox.auth import XboxAuthService
 from bot.services.xbox.models import (
     ParsedAchievement,
-    Platform,
     continuation_token,
     parse_achievements,
 )
@@ -57,7 +61,7 @@ class PresenceSnapshot:
 
     @property
     def in_game(self) -> bool:
-        return self.state == "Online" and self.title_id is not None
+        return self.state == PresenceState.ONLINE and self.title_id is not None
 
 
 @dataclass(slots=True)
@@ -112,10 +116,10 @@ class XboxClient:
         if device is None and last_seen is not None:
             device = last_seen.device_type
         return PresenceSnapshot(
-            state=item.state or "Offline",
+            state=item.state or PresenceState.OFFLINE,
             title_id=title_id,
             title_name=title_name,
-            platform="x360" if device in X360_DEVICES else "modern",
+            platform=Platform.X360 if device in X360_DEVICES else Platform.MODERN,
             last_seen_at=getattr(last_seen, "timestamp", None),
         )
 
@@ -135,18 +139,18 @@ class XboxClient:
         back-compat session would be published as nothing at all.
         """
         params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
-        if platform == "x360":
+        if platform == Platform.X360:
             return parse_achievements(
-                await self._get_achievements(tg_id, "1", params), "x360", title_id
+                await self._get_achievements(tg_id, "1", params), Platform.X360, title_id
             )
 
         payload = await self._get_achievements(tg_id, "4", params)
         if payload.get("achievements"):
-            return parse_achievements(payload, "modern", title_id)
+            return parse_achievements(payload, Platform.MODERN, title_id)
 
         log.info("title %s looks like Xbox 360, retrying on contract 1", title_id)
         return parse_achievements(
-            await self._get_achievements(tg_id, "1", params), "x360", title_id
+            await self._get_achievements(tg_id, "1", params), Platform.X360, title_id
         )
 
     async def all_achievements(self, tg_id: int) -> list[ParsedAchievement]:
@@ -159,7 +163,7 @@ class XboxClient:
         params = {"maxItems": str(PAGE_SIZE)}
         for _ in range(100):  # a hard stop; nobody has 100k achievements
             payload = await self._get_achievements(tg_id, "2", params)
-            collected.extend(parse_achievements(payload, "modern"))
+            collected.extend(parse_achievements(payload, Platform.MODERN))
             token = continuation_token(payload)
             if not token:
                 break
@@ -232,7 +236,7 @@ class XboxClient:
 
         for user in getattr(response, "profile_users", None) or []:
             for setting in getattr(user, "settings", None) or []:
-                if getattr(setting, "id", None) == "Gamerscore":
+                if getattr(setting, "id", None) == XboxApiValue.GAMERSCORE:
                     try:
                         return int(setting.value)
                     except (TypeError, ValueError):
@@ -299,7 +303,7 @@ def _as_entry(title: object) -> TitleHistoryEntry:
     return TitleHistoryEntry(
         title_id=str(title.title_id),
         name=title.name or "",
-        platform="x360" if any(d in X360_DEVICES for d in devices) else "modern",
+        platform=Platform.X360 if any(d in X360_DEVICES for d in devices) else Platform.MODERN,
         current_gamerscore=getattr(achievement, "current_gamerscore", None),
         max_gamerscore=getattr(achievement, "total_gamerscore", None),
         achievements_unlocked=getattr(achievement, "current_achievements", None),
@@ -313,7 +317,7 @@ def _as_entry(title: object) -> TitleHistoryEntry:
 # (title_id 704208617) resolves via titlehub to 0 max_gamerscore and 0
 # achievements at all, the Xbox app itself rather than something someone
 # is playing (SPEC 5.2/5.3 — this fed straight into /online showing
-# "играет — XBOX" instead of what the person was actually doing).
+# a generic playing-on-Xbox label instead of what the person was actually doing).
 _SYSTEM_TITLE_NAMES = {"home", "xbox"}
 
 
@@ -321,9 +325,9 @@ def _current_title(item: object) -> tuple[str | None, str | None, str | None]:
     """The game a person is actually playing, not the dashboard/app behind it."""
     for device in getattr(item, "devices", None) or []:
         for title in getattr(device, "titles", None) or []:
-            if getattr(title, "placement", None) != "Full":
+            if getattr(title, "placement", None) != XboxApiValue.FULL:
                 continue
-            if getattr(title, "state", None) != "Active":
+            if getattr(title, "state", None) != XboxApiValue.ACTIVE:
                 continue
             name = getattr(title, "name", None)
             if name and name.strip().lower() in _SYSTEM_TITLE_NAMES:

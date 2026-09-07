@@ -13,7 +13,9 @@ from __future__ import annotations
 import logging
 
 from bot.config import Settings
+from bot.constants import Platform, PresenceState
 from bot.db.repo import PollTarget, Repo
+from bot.i18n import gettext
 from bot.poller.cadence import debounce_passed, is_due, presence_interval
 from bot.poller.fetcher import Fetcher
 from bot.services.xbox.auth import NotConnectedError, TokenDeadError, TokenRefreshError
@@ -65,7 +67,7 @@ class PresencePoller:
             title_name,
             changed=changed,
         )
-        if snapshot.state == "Online":
+        if snapshot.state == PresenceState.ONLINE:
             await self._repo.touch_last_online(target.tg_id)
 
         gamertag = await self._gamertag(target.tg_id)
@@ -100,7 +102,7 @@ class PresencePoller:
     ) -> None:
         if not force and not self._debounce_passed(target):
             return
-        platform = platform_hint.platform if platform_hint else "modern"
+        platform = platform_hint.platform if platform_hint else Platform.MODERN
         await self._fetcher.poll_title(
             target.tg_id, target.xuid, gamertag, title_id, platform, title_name
         )
@@ -113,7 +115,7 @@ class PresencePoller:
 
     def _interval(self, target: PollTarget) -> int:
         return presence_interval(
-            online=target.state == "Online",
+            online=target.state == PresenceState.ONLINE,
             in_game=bool(target.title_id),
             changed_at=target.changed_at,
             interval_in_game=self._settings.presence_interval_in_game,
@@ -124,4 +126,6 @@ class PresencePoller:
 
     async def _gamertag(self, tg_id: int) -> str:
         user = await self._repo.get_user(tg_id)
-        return (user.gamertag if user and user.gamertag else None) or "Игрок"
+        return (user.gamertag if user and user.gamertag else None) or gettext(
+            "presence", "presence-default-player"
+        )

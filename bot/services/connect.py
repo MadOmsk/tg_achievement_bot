@@ -7,6 +7,7 @@ import secrets
 from dataclasses import dataclass
 
 from bot.db.repo import Repo
+from bot.i18n import gettext
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.util import utcnow
 
@@ -39,7 +40,7 @@ class ConnectService:
         self._pending: dict[str, _PendingState] = {}
 
     def start_login(self, tg_id: int, origin_chat_id: int | None = None) -> str:
-        """`origin_chat_id` is the group the person pressed «Подключить XBOX»
+        """`origin_chat_id` is the group where the person pressed «Подключить XBOX»
         from, if any — carried through to `complete_login` so we can
         auto-subscribe him there once the login actually succeeds (SPEC 6.3).
         """
@@ -56,7 +57,7 @@ class ConnectService:
         pending = self._pending.pop(state, None)
         if pending is None:
             # Unknown or expired state — also what a forged callback looks like.
-            raise ConnectError("Ссылка устарела. Начни заново: /connect_xbox")
+            raise ConnectError(gettext("connectservice", "connectservice-state-expired"))
 
         identity = await self._auth.exchange_code(code)
 
@@ -64,7 +65,7 @@ class ConnectService:
         if owner is not None and owner.tg_id != pending.tg_id:
             # One Xbox account per person (SPEC 1): otherwise the same
             # achievements would be published twice under different names.
-            raise ConnectError("Этот XBOX-аккаунт уже подключён другим пользователем бота.")
+            raise ConnectError(gettext("connectservice", "connectservice-account-owned"))
 
         await self._auth.store_identity(pending.tg_id, identity)
         log.info("tg_id=%s linked xuid=%s", pending.tg_id, identity.xuid)

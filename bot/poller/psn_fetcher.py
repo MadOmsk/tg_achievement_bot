@@ -40,17 +40,15 @@ class PsnFetcher:
         if await self._psn_auth.status() == STATUS_NOT_CONFIGURED:
             return  # PSN not set up on this instance — same early-out as service_health
         for target in await self._repo.psn_pollable_users():
-            if not debounce_passed(
-                target.last_polled_at, self._settings.achievement_poll_interval
-            ):
+            if not debounce_passed(target.last_polled_at, self._settings.achievement_poll_interval):
                 continue
             try:
                 await self.poll_account(
                     target.tg_id, target.account_id, target.online_id or target.account_id
                 )
             except Exception:
-                # Isolation per account (CLAUDE.md: "Поллер не должен падать
-                # из-за одного проблемного юзера") — poll_account already
+                # Isolation per account (CLAUDE.md's per-account failure rule) —
+                # poll_account already
                 # catches PsnApiError itself, this is only for a genuine bug.
                 log.exception("unexpected failure polling psn account_id=%s", target.account_id)
             await self._repo.touch_psn_poll_state(target.account_id)
@@ -76,7 +74,7 @@ class PsnFetcher:
         log.info("tg_id=%s unlocked %s new psn trophies", tg_id, len(new_rows))
         # No game_name here (unlike Xbox/Steam's own poll_title): a single
         # poll can cover several different games at once (M-PSN-2's own
-        # "мультиачивки" paragraph) — format_digest/_group_by_title
+        # multi-achievement paragraph) — format_digest/_group_by_title
         # (services/achievements.py) already handle that by grouping on
         # each row's own title_name, same as a Xbox/Steam catch-up burst.
         await self._publisher.publish(tg_id, account_id, online_id, new_rows, None)

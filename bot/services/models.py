@@ -13,9 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
 
-Platform = Literal["modern", "x360", "steam", "psn"]
+from bot.constants import Platform
 
 
 @dataclass(slots=True)

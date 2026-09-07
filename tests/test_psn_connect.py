@@ -96,9 +96,7 @@ async def test_prompt_replies_not_configured_without_arming(
 
     await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
 
-    assert bot.sent == [
-        (TG_ID, "Подключение PSN пока не настроено — обратитесь к администратору.")
-    ]
+    assert bot.sent == [(TG_ID, "Подключение PSN пока не настроено — обратитесь к администратору.")]
     assert TG_ID not in _awaiting_link
 
 

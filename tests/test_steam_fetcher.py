@@ -43,9 +43,7 @@ async def _linked_user(repo: Repo) -> None:
     await repo.link_platform_account(TG_ID, "steam", STEAM_ID, "Mad Omsk")
 
 
-async def test_poll_title_publishes_only_new_achievements(
-    repo: Repo, monkeypatch
-) -> None:
+async def test_poll_title_publishes_only_new_achievements(repo: Repo, monkeypatch) -> None:
     await _linked_user(repo)
     by_appid = {"550": [parsed("a1"), parsed("a2")]}
 
@@ -104,7 +102,10 @@ async def test_refresh_user_reports_offline_with_no_game(repo: Repo, monkeypatch
     async def fake_batch(api_key, steam_ids):
         return {
             STEAM_ID: SteamPresence(
-                steam_id=STEAM_ID, persona_name="Mad Omsk", persona_state=0, gameid=None,
+                steam_id=STEAM_ID,
+                persona_name="Mad Omsk",
+                persona_state=0,
+                gameid=None,
                 game_name=None,
             )
         }

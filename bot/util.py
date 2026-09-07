@@ -3,6 +3,8 @@
 import re
 from datetime import UTC, datetime
 
+from bot.i18n import gettext
+
 # "+3", "-5", "+5:30", "UTC+3" — an optional "UTC" prefix, an optional sign
 # (missing sign means positive), 1-2 digit hours, optional ":MM" minutes.
 _OFFSET_RE = re.compile(r"^(?:utc)?\s*([+-])?(\d{1,2})(?::([0-5]\d))?$", re.IGNORECASE)
@@ -39,18 +41,18 @@ def mask(secret: str | None) -> str:
 
 
 def humanize_ago(timestamp: str | None) -> str:
-    """ "2 часа назад" — shown in both panels, so it lives here."""
+    """Humanized relative time shown in both panels, so it lives here."""
     moment = parse_iso(timestamp)
     if moment is None:
-        return "никогда"
+        return gettext("util", "util-ago-never")
     seconds = int((utcnow() - moment).total_seconds())
     if seconds < 120:
-        return "только что"
+        return gettext("util", "util-ago-just-now")
     if seconds < 3600:
-        return f"{seconds // 60} мин назад"
+        return gettext("util", "util-ago-minutes", count=seconds // 60)
     if seconds < 86400:
-        return f"{seconds // 3600} ч назад"
-    return f"{seconds // 86400} дн назад"
+        return gettext("util", "util-ago-hours", count=seconds // 3600)
+    return gettext("util", "util-ago-days", count=seconds // 86400)
 
 
 def thousands(value: int) -> str:

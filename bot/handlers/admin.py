@@ -24,9 +24,9 @@ from aiogram.types import (
     TelegramObject,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from psnawp_api.models.trophies.trophy_constants import TrophyType
 
 from bot.config import Settings
+from bot.constants import Platform, PresenceState, RarityMode, SettingKey, TokenStatus
 from bot.db.repo import AdminUserRow, ChatTarget, Repo
 from bot.handlers.hltb import (
     DEFAULT_PAGE_SIZE,
@@ -40,6 +40,7 @@ from bot.handlers.keyboards import (
     format_rarity,
     next_rarity_mode,
 )
+from bot.i18n import gettext
 from bot.poller.daily import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.poller.fetcher import Fetcher
 from bot.poller.message_cleanup import DEFAULT_TTL_MINUTES as DEFAULT_SYSTEM_MESSAGE_TTL_MIN
@@ -53,6 +54,7 @@ from bot.poller.service_health import (
     KEY_CHECK_INTERVAL_KEY,
 )
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.achievements import trophy_tier_badge
 from bot.services.admin_view import render_admin_home
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
@@ -74,9 +76,15 @@ log = logging.getLogger(__name__)
 
 router = Router(name="admin")
 
+_ = lambda key, **kwargs: gettext("admin", key, **kwargs)  # noqa: E731
+
 PAGE_SIZE = 8
 
-STATUS_ICON = {"active": "✅", "invalid": "⚠️", "revoked": "🔕"}
+STATUS_ICON = {
+    TokenStatus.ACTIVE: "✅",
+    TokenStatus.INVALID: "⚠️",
+    TokenStatus.REVOKED: "🔕",
+}
 
 
 class IsAdmin(BaseFilter):
@@ -132,7 +140,10 @@ async def admin_command(
 
 @router.callback_query(F.data == "a:home")
 async def admin_home(
-    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher,
+    callback: CallbackQuery,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
@@ -154,13 +165,6 @@ async def admin_home(
 PSN_NPSSO_KEY = "psn_npsso"
 PSN_LOOKUP_KEY = "psn_trophy_lookup"
 
-_TIER_BADGE = {
-    TrophyType.PLATINUM: "🏆",
-    TrophyType.GOLD: "🥇",
-    TrophyType.SILVER: "🥈",
-    TrophyType.BRONZE: "🥉",
-}
-
 
 class AwaitingPsnAdminInput(BaseFilter):
     async def __call__(self, event: TelegramObject) -> bool:
@@ -179,17 +183,14 @@ async def psn_test_menu(callback: CallbackQuery, psn_auth: PsnAuth) -> None:
 @router.callback_query(F.data == "a:psnnpsso")
 async def psn_test_change_npsso(callback: CallbackQuery) -> None:
     """Re-enter the NPSSO even when PSN is already configured — for when it
-    dies (SPEC 9, M-PSN-1's мониторинг живости paragraph) and the admin
+    dies (SPEC 9, M-PSN-1's "мониторинг живости" paragraph) and the admin
     needs to paste a fresh one."""
     _awaiting_input[callback.from_user.id] = (PSN_NPSSO_KEY, None)
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:psntest"))
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:psntest"))
     await _redraw(
         callback,
-        "Пришли новый NPSSO одним сообщением — получить его: войди на "
-        "my.playstation.com, затем открой "
-        "https://ca.account.sony.com/api/v1/ssocookie и скопируй значение "
-        '"npsso" из JSON на экране.',
+        _("admin-psn-npsso-prompt"),
         builder.as_markup(),
     )
 
@@ -198,35 +199,34 @@ async def _psn_test_screen(admin_id: int, psn_auth: PsnAuth) -> tuple[str, Inlin
     builder = InlineKeyboardBuilder()
     if await psn_auth.status() == PSN_NOT_CONFIGURED:
         _awaiting_input[admin_id] = (PSN_NPSSO_KEY, None)
-        builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:home"))
+        builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
         return (
-            "🏆 Трофеи PSN (тест)\n\n"
-            "PSN ещё не настроен. Пришли NPSSO одним сообщением — получить его: "
-            "войди на my.playstation.com, затем открой "
-            "https://ca.account.sony.com/api/v1/ssocookie и скопируй значение "
-            '"npsso" из JSON на экране.',
+            _("admin-psn-test-unconfigured"),
             builder.as_markup(),
         )
     _awaiting_input[admin_id] = (PSN_LOOKUP_KEY, None)
-    builder.row(InlineKeyboardButton(text="Сменить NPSSO", callback_data="a:psnnpsso"))
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:home"))
+    builder.row(InlineKeyboardButton(text=_("admin-psn-change"), callback_data="a:psnnpsso"))
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
     return (
-        "🏆 Трофеи PSN (тест)\n\n"
-        "Пришли PSN Online ID — покажу последние выбитые трофеи вживую, без кэша "
-        "(имя, тир, редкость, скрытость и иконки одной медиа-группой).",
+        _("admin-psn-test-prompt"),
         builder.as_markup(),
     )
 
 
 def _cancel_input_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Отмена", callback_data="a:psncancel")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text=_("admin-cancel"), callback_data="a:psncancel")]
+        ]
     )
 
 
 @router.callback_query(F.data == "a:psncancel")
 async def psn_admin_input_cancel(
-    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher,
+    callback: CallbackQuery,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
 ) -> None:
     """The way out of a still-armed NPSSO retry (Follow-up 2026-09-06,
@@ -254,7 +254,7 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
             # misread as a PSN Online ID once the state moved on) needs an
             # explicit way out too, not just "send something else".
             await message.answer(
-                "NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз.",
+                _("admin-psn-npsso-invalid"),
                 reply_markup=_cancel_input_keyboard(),
             )
             return
@@ -265,13 +265,12 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
             # above, so a real bug doesn't get blamed on the NPSSO itself.
             log.exception("psn_admin_input: could not set up the PSN client")
             await message.answer(
-                f"Не получилось создать клиент PSN — техническая ошибка на сервере "
-                f"({exc}). NPSSO тут, скорее всего, ни при чём — посмотри логи бота.",
+                _("admin-psn-client-error", error=exc),
                 reply_markup=_cancel_input_keyboard(),
             )
             return
         _awaiting_input[message.from_user.id] = (PSN_LOOKUP_KEY, None)
-        await message.answer("PSN настроен. Пришли PSN Online ID, чтобы проверить трофеи.")
+        await message.answer(_("admin-psn-configured-prompt"))
         return
 
     del _awaiting_input[message.from_user.id]
@@ -281,36 +280,45 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
         overview = await account_trophy_overview(client, profile.account_id)
         trophies = await recent_earned_trophies(client, profile.account_id, limit=10)
     except PsnTokenDeadError:
-        await message.answer("PSN сейчас недоступен — токен протух, обнови NPSSO через /admin.")
+        await message.answer(_("admin-psn-token-dead"))
         return
     except PsnPrivateProfileError:
-        await message.answer("Профиль есть, но трофеи закрыты для сервисного аккаунта.")
+        await message.answer(_("admin-psn-private"))
         return
     except PsnApiError as exc:
-        await message.answer(f"Не нашёл: {exc}")
+        await message.answer(_("admin-psn-not-found", error=exc))
         return
 
-    # Отдельная табличка (Follow-up 2026-09-06) — намеренно не то же самое,
-    # что игровой список /stats: сначала смотрим, как это выглядит само по
-    # себе, потом решаем, сливать ли со стандартным.
+    # Separate table (Follow-up 2026-09-06) — deliberately different from
+    # the /stats game list: first validate its standalone presentation,
+    # then decide whether it should be merged with the standard view.
     await message.answer(render_psn_trophy_table(overview), parse_mode=ParseMode.HTML)
 
     if not trophies:
-        await message.answer(f"{profile.online_id}: трофеев не нашёл (или все скрыты).")
+        await message.answer(_("admin-psn-no-trophies", online_id=profile.online_id))
         return
 
-    lines = [f"🏆 {profile.online_id} — последние {len(trophies)} трофеев:"]
+    lines = [_("admin-psn-recent-header", online_id=profile.online_id, count=len(trophies))]
     for trophy in trophies:
-        badge = _TIER_BADGE.get(trophy.trophy_type, "🏆")
+        badge = trophy_tier_badge(trophy.trophy_type.value)
         rarity = (
-            f", {trophy.trophy_earn_rate:.1f}% игроков"
+            _("admin-psn-rarity", percent=f"{trophy.trophy_earn_rate:.1f}")
             if trophy.trophy_earn_rate is not None
             else ""
         )
-        secret = " (скрытый)" if trophy.trophy_hidden else ""
-        lines.append(f"{badge} {trophy.trophy_name}{secret} — {trophy.title_name}{rarity}")
+        secret = _("admin-psn-hidden") if trophy.trophy_hidden else ""
+        lines.append(
+            _(
+                "admin-psn-trophy-row",
+                badge=badge,
+                name=trophy.trophy_name,
+                secret=secret,
+                title=trophy.title_name,
+                rarity=rarity,
+            )
+        )
         if trophy.trophy_detail:
-            lines.append(f"    {trophy.trophy_detail}")
+            lines.append(_("admin-psn-detail", detail=trophy.trophy_detail))
     await message.answer("\n".join(lines))
 
     photos = [
@@ -367,7 +375,7 @@ LIMIT_MAX = 50
 # the personal and per-chat toggles already use (keyboards.py) rather than
 # the free-text numeric flow above — 'all'/'rare'/'hidden' isn't a number.
 DEFAULT_RARITY_MODE_KEY = "default_rarity_mode"
-DEFAULT_RARITY_MODE_DEFAULT = "all"
+DEFAULT_RARITY_MODE_DEFAULT = RarityMode.ALL
 
 # What a brand-new person's user_settings row starts with (Repo.ensure_user,
 # Follow-up 2026-09-06) — same admin-configurable-default shape as
@@ -376,13 +384,12 @@ DEFAULT_RARITY_MODE_DEFAULT = "all"
 DEFAULT_SHOW_LINKS_KEY = "default_show_profile_links"
 DEFAULT_SHOW_LINKS_DEFAULT = "0"
 
-UNLIMITED_LABEL = "без ограничения"
+UNLIMITED_LABEL = _("admin-unlimited")
 
 # stats_games_limit's own (key, default) belong to handlers/chat.py by rights
 # (same as the other five, each imported from wherever it actually lives) —
 # but chat.py already imports IsAdmin from this module, so importing back
 # from chat.py here would be circular. Duplicated on purpose, just this one.
-_STATS_GAMES_LIMIT_KEY = "stats_games_limit"
 _DEFAULT_STATS_GAMES_LIMIT = 15
 
 
@@ -397,7 +404,7 @@ class NumericSetting:
     default: int
     min: int = LIMIT_MIN
     max: int = LIMIT_MAX
-    zero_label: str = UNLIMITED_LABEL
+    zero_label: str = "admin-unlimited"
 
 
 # Every admin-configurable count/limit/interval in the bot, one place —
@@ -405,37 +412,37 @@ class NumericSetting:
 # back to it (imported above), so this registry can't drift from reality
 # the way five hand-typed dicts eventually would have.
 NUMERIC_SETTINGS: dict[str, NumericSetting] = {
-    TOP_LIMIT_KEY: NumericSetting("Строк в /summary", DEFAULT_TABLE_TOP, min=0),
+    TOP_LIMIT_KEY: NumericSetting("admin-setting-summary-rows", DEFAULT_TABLE_TOP, min=0),
     # SPEC 1.6: both render into a <blockquote expandable>, not a fixed-width
     # table — an "unlimited" list fits there just fine, so these two alone
     # allow 0 for "no cap". Everything else below stays at min=1: a page
     # size or a search pool of 0 is just broken, not "show everything".
-    _STATS_GAMES_LIMIT_KEY: NumericSetting(
-        "Игр в /stats", _DEFAULT_STATS_GAMES_LIMIT, min=0
+    SettingKey.STATS_GAMES_LIMIT: NumericSetting(
+        "admin-setting-stats-games", _DEFAULT_STATS_GAMES_LIMIT, min=0
     ),
-    RESULTS_LIMIT_KEY: NumericSetting("Результатов поиска и подсказок HLTB", DEFAULT_RESULTS_LIMIT),
+    RESULTS_LIMIT_KEY: NumericSetting("admin-setting-hltb-results", DEFAULT_RESULTS_LIMIT),
     # Feeds Telegram inline-keyboard rows directly — 50 buttons on one page
     # would be unusable, unlike the two above.
-    PAGE_SIZE_KEY: NumericSetting("Результатов на странице (HLTB)", DEFAULT_PAGE_SIZE, max=10),
+    PAGE_SIZE_KEY: NumericSetting("admin-setting-hltb-page", DEFAULT_PAGE_SIZE, max=10),
     # These two's own 0 means something else again — "off", not "no cap".
     SYSTEM_MESSAGE_TTL_KEY: NumericSetting(
-        "Автоудаление системных сообщений (мин)",
+        "admin-setting-system-ttl",
         DEFAULT_SYSTEM_MESSAGE_TTL_MIN,
         min=0,
         max=60,
-        zero_label="выключено",
+        zero_label="admin-disabled",
     ),
     ONLINE_REFRESH_INTERVAL_KEY: NumericSetting(
-        "Интервал автообновления /online (мин)",
+        "admin-setting-online-interval",
         DEFAULT_ONLINE_REFRESH_MIN,
         min=0,
         max=60,
-        zero_label="выключено",
+        zero_label="admin-disabled",
     ),
     # Stays at the default min (1): a 0-hour window is just "off" spelled a
     # more confusing way than the interval's own off switch already is.
     ONLINE_REFRESH_TTL_KEY: NumericSetting(
-        "Автообновление /online, часов", DEFAULT_ONLINE_REFRESH_TTL_HOURS, max=24
+        "admin-setting-online-ttl", DEFAULT_ONLINE_REFRESH_TTL_HOURS, max=24
     ),
     # One shared cadence for two things (Follow-up 2026-09-06): how often
     # poller/service_health.py rechecks the Steam/PSN keys, AND how often
@@ -446,7 +453,7 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     # online-refresh interval above): silently killing the key-dead alert
     # by tweaking a "refresh interval" setting would be a real footgun.
     KEY_CHECK_INTERVAL_KEY: NumericSetting(
-        "Проверка ключей / автообновление /admin (мин)",
+        "admin-setting-key-check",
         DEFAULT_KEY_CHECK_INTERVAL_MIN,
         min=1,
         max=60,
@@ -456,7 +463,11 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
 
 def _format_limit(key: str, value: str) -> str:
     spec = NUMERIC_SETTINGS[key]
-    return spec.zero_label if value == "0" else value
+    return _(spec.zero_label) if value == "0" else value
+
+
+def _setting_label(spec: NumericSetting) -> str:
+    return _(spec.label)
 
 
 @router.callback_query(F.data == "a:limits")
@@ -466,16 +477,14 @@ async def limits_menu(callback: CallbackQuery, repo: Repo) -> None:
         current = await repo.get_app_setting(key, str(spec.default))
         builder.row(
             InlineKeyboardButton(
-                text=f"{spec.label}: {_format_limit(key, current)} ▸",
+                text=f"{_setting_label(spec)}: {_format_limit(key, current)} ▸",
                 callback_data=f"a:limit:{key}",
             )
         )
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:home"))
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
     await _redraw(
         callback,
-        "⚙️ Глобальные настройки\n\n"
-        "Списки /summary и /stats можно сделать безлимитными (0) — они и так "
-        "лежат в сворачиваемой цитате, урезать нечего.",
+        _("admin-limits-screen"),
         builder.as_markup(),
     )
 
@@ -487,13 +496,19 @@ async def limit_menu(callback: CallbackQuery, repo: Repo) -> None:
     spec = NUMERIC_SETTINGS[key]
     current = await repo.get_app_setting(key, str(spec.default))
     _awaiting_input[callback.from_user.id] = (key, None)
-    zero_hint = f" (0 — {spec.zero_label})" if spec.min == 0 else ""
+    zero_hint = f" (0 — {_format_limit(key, '0')})" if spec.min == 0 else ""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:limits"))
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
     await _redraw(
         callback,
-        f"{spec.label}: {_format_limit(key, current)}\n\n"
-        f"Пришли новое значение целым числом, от {spec.min} до {spec.max}{zero_hint}.",
+        _(
+            "admin-limit-prompt",
+            label=_setting_label(spec),
+            current=_format_limit(key, current),
+            minimum=spec.min,
+            maximum=spec.max,
+            zero_hint=zero_hint,
+        ),
         builder.as_markup(),
     )
 
@@ -523,27 +538,34 @@ async def numeric_setting_input(
         value = float(message.text.replace(",", "."))
         if not (RARE_THRESHOLD_MIN <= value <= RARE_THRESHOLD_MAX):
             await message.answer(
-                f"Число должно быть от {RARE_THRESHOLD_MIN} до {RARE_THRESHOLD_MAX}. Ещё раз?"
+                _(
+                    "admin-number-range-retry",
+                    minimum=RARE_THRESHOLD_MIN,
+                    maximum=RARE_THRESHOLD_MAX,
+                )
             )
             return
         del _awaiting_input[message.from_user.id]
         await repo.update_chat_settings(chat_id, rare_threshold_percent=value)
         reply_text, markup = await _chat(repo, chat_id)
-        await message.answer(f"Порог редкости: {value:g}%\n\n{reply_text}", reply_markup=markup)
+        await message.answer(
+            _("admin-threshold-saved", value=f"{value:g}", text=reply_text),
+            reply_markup=markup,
+        )
         return
 
     # The row-cap settings below are always global — chat_id is always None
     # here, there is no per-chat meaning for them.
     if "." in message.text or "," in message.text:
-        await message.answer("Здесь только целое число. Ещё раз?")
+        await message.answer(_("admin-integer-retry"))
         return
     value_int = int(message.text)
     spec = NUMERIC_SETTINGS[key]
     if not (spec.min <= value_int <= spec.max):
-        await message.answer(f"Число должно быть от {spec.min} до {spec.max}. Ещё раз?")
+        await message.answer(_("admin-number-range-retry", minimum=spec.min, maximum=spec.max))
         return
     stored = str(value_int)
-    confirm = f"{spec.label}: {_format_limit(key, stored)}"
+    confirm = f"{_setting_label(spec)}: {_format_limit(key, stored)}"
 
     del _awaiting_input[message.from_user.id]
     await repo.set_app_setting(key, stored, message.from_user.id)
@@ -570,8 +592,8 @@ def _hour_grid_markup(
             InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"{set_prefix}{hour}")
         )
     builder.adjust(6)
-    builder.row(InlineKeyboardButton(text="Часовой пояс ▸", callback_data=tz_callback))
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data=back_callback))
+    builder.row(InlineKeyboardButton(text=_("admin-timezone-button"), callback_data=tz_callback))
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=back_callback))
     return builder.as_markup()
 
 
@@ -588,8 +610,10 @@ def _tz_grid_markup(
             )
         )
     builder.adjust(4)
-    builder.row(InlineKeyboardButton(text="✏️ Ввести вручную", callback_data=manual_callback))
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data=back_callback))
+    builder.row(
+        InlineKeyboardButton(text=_("admin-timezone-manual"), callback_data=manual_callback)
+    )
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=back_callback))
     return builder.as_markup()
 
 
@@ -599,17 +623,18 @@ async def chat_rare_menu(callback: CallbackQuery, repo: Repo) -> None:
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        await callback.answer("Чат не найден", show_alert=True)
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     _awaiting_input[callback.from_user.id] = ("rare_threshold_percent", chat_id)
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data=f"a:chat:{chat_id}"))
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
     await _redraw(
         callback,
-        f"Порог «редкого» достижения в «{chat.title or chat_id}»: "
-        f"{chat.rare_threshold_percent:g}%\n\n"
-        "Пришли новое значение одним числом, например 12 или 7.5 — от 0 до 100. "
-        "Действует только на этот чат.",
+        _(
+            "admin-chat-threshold-prompt",
+            title=chat.title or chat_id,
+            value=f"{chat.rare_threshold_percent:g}",
+        ),
         builder.as_markup(),
     )
 
@@ -620,11 +645,11 @@ async def chat_time_menu(callback: CallbackQuery, repo: Repo) -> None:
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        await callback.answer("Чат не найден", show_alert=True)
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     await _redraw(
         callback,
-        f"Время итога дня в «{chat.title or chat_id}»: {chat.daily_summary_time}",
+        _("admin-chat-time-prompt", title=chat.title or chat_id, time=chat.daily_summary_time),
         _hour_grid_markup(
             chat.daily_summary_time, f"a:ctimes:{chat_id}:", f"a:ctz:{chat_id}", f"a:chat:{chat_id}"
         ),
@@ -637,7 +662,7 @@ async def chat_time_set(callback: CallbackQuery, repo: Repo) -> None:
     _, _, chat_id_raw, hour_raw = callback.data.split(":")
     chat_id, hour = int(chat_id_raw), int(hour_raw)
     await repo.update_chat_settings(chat_id, daily_summary_time=f"{hour:02d}:00")
-    await callback.answer(f"Итог дня в {hour:02d}:00")
+    await callback.answer(_("admin-chat-time-saved", time=f"{hour:02d}:00"))
     await _redraw(callback, *await _chat(repo, chat_id))
 
 
@@ -647,11 +672,15 @@ async def chat_zone_menu(callback: CallbackQuery, repo: Repo) -> None:
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        await callback.answer("Чат не найден", show_alert=True)
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     await _redraw(
         callback,
-        f"Часовой пояс «{chat.title or chat_id}»: {format_offset(chat.tz_offset_min)}",
+        _(
+            "admin-chat-zone-prompt",
+            title=chat.title or chat_id,
+            offset=format_offset(chat.tz_offset_min),
+        ),
         _tz_grid_markup(
             chat.tz_offset_min, f"a:ctzs:{chat_id}:", f"a:ctzm:{chat_id}", f"a:ctime:{chat_id}"
         ),
@@ -674,15 +703,18 @@ async def chat_zone_manual_prompt(callback: CallbackQuery, repo: Repo) -> None:
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        await callback.answer("Чат не найден", show_alert=True)
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     _awaiting_input[callback.from_user.id] = ("tz_offset_min", chat_id)
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data=f"a:ctz:{chat_id}"))
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:ctz:{chat_id}"))
     await _redraw(
         callback,
-        f"Часовой пояс «{chat.title or chat_id}»: {format_offset(chat.tz_offset_min)}\n\n"
-        "Пришли смещение одним сообщением, со знаком: например +3, -5 или +5:30.",
+        _(
+            "admin-chat-zone-manual-prompt",
+            title=chat.title or chat_id,
+            offset=format_offset(chat.tz_offset_min),
+        ),
         builder.as_markup(),
     )
 
@@ -700,14 +732,15 @@ async def chat_timezone_input(message: Message, repo: Repo) -> None:
 
     minutes = parse_utc_offset(message.text)
     if minutes is None:  # out of −12..+14 range — the regex alone can't catch that
-        await message.answer("Это не похоже на реальный часовой пояс. Например: +3 или -5:30.")
+        await message.answer(_("admin-timezone-invalid"))
         return
 
     del _awaiting_input[message.from_user.id]
     await repo.update_chat_settings(chat_id, tz_offset_min=minutes)
     reply_text, markup = await _chat(repo, chat_id)
     await message.answer(
-        f"Часовой пояс: {format_offset(minutes)}\n\n{reply_text}", reply_markup=markup
+        _("admin-timezone-saved", offset=format_offset(minutes), text=reply_text),
+        reply_markup=markup,
     )
 
 
@@ -734,7 +767,7 @@ async def user_exclude(callback: CallbackQuery, repo: Repo) -> None:
     _, _, raw_id, raw_flag = callback.data.split(":")
     tg_id, excluded = int(raw_id), raw_flag == "1"
     await repo.set_excluded(tg_id, excluded, callback.from_user.id)
-    await callback.answer("Исключён" if excluded else "Возвращён")
+    await callback.answer(_("admin-user-excluded") if excluded else _("admin-user-restored"))
     await _redraw(callback, *await _card(repo, tg_id))
 
 
@@ -746,15 +779,17 @@ async def user_refresh(callback: CallbackQuery, repo: Repo, fetcher: Fetcher) ->
     tg_id = int(callback.data.rsplit(":", 1)[1])
     user = await repo.get_user(tg_id)
     if user is None or not user.xuid:
-        await callback.answer("Не подключён", show_alert=True)
+        await callback.answer(_("admin-user-not-connected"), show_alert=True)
         return
 
-    await callback.answer("Обновляю…")
+    await callback.answer(_("admin-refreshing"))
     try:
-        summary = await fetcher.refresh_user(tg_id, user.xuid, user.gamertag or "Игрок")
+        summary = await fetcher.refresh_user(
+            tg_id, user.xuid, user.gamertag or _("admin-default-player")
+        )
     except Exception:
         log.exception("admin refresh of tg_id=%s failed", tg_id)
-        await callback.answer("Не получилось обновить", show_alert=True)
+        await callback.answer(_("admin-refresh-failed"), show_alert=True)
         return
     text, markup = await _card(repo, tg_id)
     await _redraw(callback, f"{text}\n\n{summary}", markup)
@@ -768,19 +803,19 @@ async def user_refresh_steam(
     the admin panel never had a way to poll one Steam account on demand."""
     assert callback.data is not None
     tg_id = int(callback.data.rsplit(":", 1)[1])
-    link = await repo.get_platform_link(tg_id, "steam")
+    link = await repo.get_platform_link(tg_id, Platform.STEAM)
     if link is None:
-        await callback.answer("Steam не подключён", show_alert=True)
+        await callback.answer(_("admin-steam-not-connected"), show_alert=True)
         return
 
-    await callback.answer("Обновляю…")
+    await callback.answer(_("admin-refreshing"))
     try:
         summary = await steam_fetcher.refresh_user(
             tg_id, link.external_id, link.display_name or link.external_id
         )
     except Exception:
         log.exception("admin steam refresh of tg_id=%s failed", tg_id)
-        await callback.answer("Не получилось обновить", show_alert=True)
+        await callback.answer(_("admin-refresh-failed"), show_alert=True)
         return
     text, markup = await _card(repo, tg_id)
     await _redraw(callback, f"{text}\n\n{summary}", markup)
@@ -807,7 +842,7 @@ async def chat_daily(callback: CallbackQuery, repo: Repo) -> None:
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        await callback.answer("Чат не найден", show_alert=True)
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     await repo.update_chat_settings(chat_id, daily_summary=0 if chat.daily_summary else 1)
     await callback.answer()
@@ -820,10 +855,10 @@ async def chat_toggle_active(callback: CallbackQuery, repo: Repo) -> None:
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        await callback.answer("Чат не найден", show_alert=True)
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     await repo.set_chat_active(chat_id, not chat.is_active)
-    await callback.answer("Отключён" if chat.is_active else "Включён")
+    await callback.answer(_("admin-chat-disabled") if chat.is_active else _("admin-chat-enabled"))
     await _redraw(callback, *await _chat(repo, chat_id))
 
 
@@ -839,19 +874,17 @@ async def chat_delete_last(callback: CallbackQuery, repo: Repo, bot: Bot) -> Non
     chat_id = int(callback.data.rsplit(":", 1)[1])
     message_id = await repo.last_non_system_bot_message(chat_id)
     if message_id is None:
-        await callback.answer("Не нашёл сообщений бота в этом чате.", show_alert=True)
+        await callback.answer(_("admin-no-bot-messages"), show_alert=True)
         return
     try:
         await bot.delete_message(chat_id, message_id)
     except Exception:
         log.info("admin delete_last failed for chat %s message %s", chat_id, message_id)
         await repo.forget_bot_messages(chat_id, [message_id])
-        await callback.answer(
-            "Не смог удалить — возможно, сообщение слишком старое.", show_alert=True
-        )
+        await callback.answer(_("admin-delete-old-failed"), show_alert=True)
         return
     await repo.forget_bot_messages(chat_id, [message_id])
-    await callback.answer("Удалил последнее сообщение.")
+    await callback.answer(_("admin-deleted-last"))
 
 
 WIPE_WINDOW_HOURS = 24
@@ -863,21 +896,25 @@ async def chat_wipe_prompt(callback: CallbackQuery, repo: Repo) -> None:
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        await callback.answer("Чат не найден", show_alert=True)
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     ids = await repo.bot_messages_since(chat_id, utcnow() - timedelta(hours=WIPE_WINDOW_HOURS))
     if not ids:
-        await callback.answer("За последние 24 часа сообщений бота не нашёл.", show_alert=True)
+        await callback.answer(_("admin-no-bot-messages-24h"), show_alert=True)
         return
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="Да, стереть", callback_data=f"a:cwipey:{chat_id}"))
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data=f"a:chat:{chat_id}"))
+    builder.row(
+        InlineKeyboardButton(text=_("admin-confirm-delete"), callback_data=f"a:cwipey:{chat_id}")
+    )
+    builder.row(InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat_id}"))
     await _redraw(
         callback,
-        f"Стереть {len(ids)} сообщений бота в «{chat.title or chat_id}» "
-        f"за последние {WIPE_WINDOW_HOURS} часа?\n\n"
-        "Необратимо. Считаются только сообщения, отправленные с тех пор, как завели "
-        "этот учёт, — более старые бот не помнит.",
+        _(
+            "admin-wipe-prompt",
+            count=len(ids),
+            title=chat.title or chat_id,
+            hours=WIPE_WINDOW_HOURS,
+        ),
         builder.as_markup(),
     )
 
@@ -907,7 +944,7 @@ async def _wipe_confirm(
     retrying those later would not help), report, redraw the chat card."""
     ok = await _bulk_delete_messages(bot, chat_id, ids)
     await repo.forget_bot_messages(chat_id, ids)
-    await callback.answer("Готово." if ok else "Частично — что-то не далось стереть.")
+    await callback.answer(_("admin-wipe-done") if ok else _("admin-wipe-partial"))
     await _redraw(callback, *await _chat(repo, chat_id))
 
 
@@ -931,19 +968,23 @@ async def _system_wipe_prompt(
 ) -> None:
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        await callback.answer("Чат не найден", show_alert=True)
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     if not ids:
-        await callback.answer("Системных сообщений не нашёл.", show_alert=True)
+        await callback.answer(_("admin-no-system-messages"), show_alert=True)
         return
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="Да, стереть", callback_data=confirm_callback))
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data=f"a:chat:{chat_id}"))
+    builder.row(
+        InlineKeyboardButton(text=_("admin-confirm-delete"), callback_data=confirm_callback)
+    )
+    builder.row(InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat_id}"))
     await _redraw(
         callback,
-        f"Стереть {len(ids)} системных сообщений в «{chat.title or chat_id}»?\n\n"
-        "Достижений, /stats, /summary и итога дня это не касается — только "
-        "промежуточные сообщения (подсказки, подтверждения, /help и т.п.).",
+        _(
+            "admin-system-wipe-prompt",
+            count=len(ids),
+            title=chat.title or chat_id,
+        ),
         builder.as_markup(),
     )
 
@@ -1000,26 +1041,28 @@ async def _new_user_defaults(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
         DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT)
     )
 
-    text = (
-        "👤 Новые пользователи — настройки по умолчанию\n\n"
-        "Действует только на подписки, оформленные с этого момента — "
-        "уже существующие не трогает."
-    )
+    text = (_("admin-new-users-screen"),)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"Ачивки по умолчанию: {format_rarity(default_rarity_mode)} ▸",
+                    text=_(
+                        "admin-default-rarity",
+                        rarity=format_rarity(default_rarity_mode),
+                    ),
                     callback_data="a:defaultrarity",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text=f"Профиль виден другим: {'да' if default_show_links else 'нет'} ▸",
+                    text=_(
+                        "admin-default-links",
+                        visible=_("admin-yes") if default_show_links else _("admin-no"),
+                    ),
                     callback_data="a:defaultlinks",
                 )
             ],
-            [InlineKeyboardButton(text="‹ Назад", callback_data="a:home")],
+            [InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")],
         ]
     )
     return text, keyboard
@@ -1028,7 +1071,7 @@ async def _new_user_defaults(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
 async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
     users = await repo.admin_users()
     if not users:
-        return "👥 Пока никто не подключился.", _back_home()
+        return _("admin-users-empty"), _back_home()
 
     # By tg_id, not xuid (2026-09-05 follow-up) — the old xuid-keyed lookup
     # showed 0 for a Steam-only person's achievements, and only the Xbox
@@ -1040,15 +1083,25 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
     page = max(0, min(page, pages - 1))
     chunk = users[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
 
-    lines = [f"👥 Пользователи  ({page + 1}/{pages})", ""]
+    lines = [_("admin-users-header", page=page + 1, pages=pages), ""]
     builder = InlineKeyboardBuilder()
     for user in chunk:
-        name = user.gamertag or user.steam_name or user.psn_online_id or f"id{user.tg_id}"
+        name = (
+            user.gamertag
+            or user.steam_name
+            or user.psn_online_id
+            or _("admin-id", tg_id=user.tg_id)
+        )
         lines.append(
-            f"{_icon(user)} {truncate_name(name, 14):<14} "
-            f"{humanize_ago(user.last_online_at):<16} "
-            f"{today.get(user.tg_id, (0, 0))[0]} / {month.get(user.tg_id, (0, 0))[0]}"
-            f"{_note(user)}"
+            _(
+                "admin-users-row",
+                icon=_icon(user),
+                name=truncate_name(name, 14),
+                ago=humanize_ago(user.last_online_at),
+                today=today.get(user.tg_id, (0, 0))[0],
+                month=month.get(user.tg_id, (0, 0))[0],
+                note=_note(user),
+            )
         )
         builder.row(
             InlineKeyboardButton(text=f"{_icon(user)} {name}", callback_data=f"a:u:{user.tg_id}")
@@ -1061,40 +1114,42 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
         navigation.append(InlineKeyboardButton(text="›", callback_data=f"a:users:{page + 1}"))
     if navigation:
         builder.row(*navigation)
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:home"))
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
 
-    lines += ["", "Колонки: когда был в сети · достижений сегодня / за месяц"]
+    lines += ["", _("admin-users-columns")]
     return "\n".join(lines), builder.as_markup()
 
 
 async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     user = await repo.get_user(tg_id)
-    steam_link = await repo.get_platform_link(tg_id, "steam")
-    psn_link = await repo.get_platform_link(tg_id, "psn")
+    steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
+    psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
     # Used to bail out on `not user.xuid` alone (2026-09-05 follow-up) — a
-    # Steam-only person got "Пользователь не найден" in the admin panel,
+    # A Steam-only person got a "user not found" result in the admin panel,
     # same class of gap /stats had before it learned to work without Xbox.
     if user is None or (not user.xuid and steam_link is None and psn_link is None):
-        return "Пользователь не найден.", _back_home()
+        return _("admin-user-not-found"), _back_home()
 
     counters = await counters_for(repo, tg_id)
     chats = await repo.chats_of_user(tg_id)
     display_name = user.gamertag or (steam_link.display_name if steam_link else None)
 
-    lines = [f"👤 {display_name or 'без имени'}", ""]
+    lines = [_("admin-user-header", name=display_name or _("admin-no-name")), ""]
 
     if user.xuid:
         token = await repo.get_token(tg_id)
         presence = await repo.presence_of(user.xuid)
-        login = "— не подключён"
+        login = _("admin-login-not-connected")
         if token is not None:
             login = {
-                "active": f"✅ активен, обновлён {humanize_ago(token.last_refresh_at)}",
-                "invalid": "⚠️ протух",
-                "revoked": "🔕 отключён самим пользователем",
+                TokenStatus.ACTIVE: _(
+                    "admin-login-active", ago=humanize_ago(token.last_refresh_at)
+                ),
+                TokenStatus.INVALID: _("admin-login-invalid"),
+                TokenStatus.REVOKED: _("admin-login-revoked"),
             }.get(token.status, token.status)
 
-        online = "нет данных"
+        online = _("admin-no-data")
         if presence is not None:
             # Presence gives no name for PC titles, so fall back to the
             # cache the poller fills — an id in the card tells the admin
@@ -1102,37 +1157,35 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
             game = presence.title_name or ""
             if not game and presence.title_id:
                 game = await repo.title_name(presence.title_id) or presence.title_id
-            game = game or "без игры"
+            game = game or _("admin-no-game")
             online = (
-                f"{humanize_ago(presence.updated_at)}, {game}"
-                if presence.state == "Online"
+                _("admin-online-playing", ago=humanize_ago(presence.updated_at), game=game)
+                if presence.state == PresenceState.ONLINE
                 else humanize_ago(presence.updated_at)
             )
         lines += [
-            f"🟢 XBOX  ·  XUID {user.xuid}  ·  gamerscore {user.gamerscore or 0}",
-            f"  Вход активен (XBOX): {login}",
-            f"  В сети (XBOX):       {online}",
+            _("admin-xbox-line", xuid=user.xuid, score=user.gamerscore or 0),
+            _("admin-xbox-login", login=login),
+            _("admin-xbox-online", online=online),
         ]
 
     if steam_link is not None:
         steam_presence = await repo.steam_presence_of(steam_link.external_id)
-        steam_online = "нет данных"
+        steam_online = _("admin-no-data")
         if steam_presence is not None:
-            game = steam_presence.game_name or ("без игры" if steam_presence.gameid else "")
+            game = steam_presence.game_name or (_("admin-no-game") if steam_presence.gameid else "")
             is_online = (steam_presence.persona_state or 0) != 0
             steam_online = (
-                f"{humanize_ago(steam_presence.updated_at)}, {game}"
+                _("admin-online-playing", ago=humanize_ago(steam_presence.updated_at), game=game)
                 if is_online and game
                 else (
-                    "в сети, не играет"
-                    if is_online
-                    else humanize_ago(steam_presence.updated_at)
+                    _("admin-online-idle") if is_online else humanize_ago(steam_presence.updated_at)
                 )
             )
         lines += [
-            f"⚫ Steam  ·  id {steam_link.external_id}",
-            f"  {steam_link.display_name}",
-            f"  В сети (Steam):      {steam_online}",
+            _("admin-steam-line", external_id=steam_link.external_id),
+            _("admin-display-name", name=steam_link.display_name),
+            _("admin-steam-online", online=steam_online),
         ]
 
     if psn_link is not None:
@@ -1140,122 +1193,136 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
         # step (SPEC 9, M-PSN-2+), so there's nothing to show beyond the
         # link itself.
         lines += [
-            f"🔵 PSN  ·  account_id {psn_link.external_id}",
-            f"  {psn_link.display_name}",
+            _("admin-psn-line", external_id=psn_link.external_id),
+            _("admin-display-name", name=psn_link.display_name),
         ]
 
     lines += [
         "",
-        f"Подписан: {', '.join(f'«{c}»' for c in chats) if chats else 'нигде'}",
+        _(
+            "admin-subscribed",
+            chats=", ".join(f"«{c}»" for c in chats) if chats else _("admin-nowhere"),
+        ),
         # No lifetime total here: seen_achievements is permanently
         # best-effort (SPEC 5.4), unlike these two date-bounded counters.
         # Sums both platforms (counters_for, SPEC 9 M-Steam-2e).
-        f"Ачивок:   сегодня {counters.today} · за месяц {counters.month}",
+        _("admin-counters", today=counters.today, month=counters.month),
     ]
     text = "\n".join(lines)
     if user.is_excluded:
-        text += "\n\n🚫 Исключён из системы: не опрашивается и не публикуется."
+        text += "\n\n" + _("admin-excluded")
 
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text="↩️ Вернуть" if user.is_excluded else "🚫 Исключить из системы",
+            text=_("admin-restore") if user.is_excluded else _("admin-exclude"),
             callback_data=f"a:excl:{tg_id}:{0 if user.is_excluded else 1}",
         )
     )
     if user.xuid:
         builder.row(
-            InlineKeyboardButton(text="🔄 Обновить XBOX", callback_data=f"a:sync:{tg_id}")
+            InlineKeyboardButton(text=_("admin-refresh-xbox"), callback_data=f"a:sync:{tg_id}")
         )
     if steam_link is not None:
         builder.row(
-            InlineKeyboardButton(text="🔄 Обновить Steam", callback_data=f"a:syncsteam:{tg_id}")
+            InlineKeyboardButton(
+                text=_("admin-refresh-steam"), callback_data=f"a:syncsteam:{tg_id}"
+            )
         )
-    builder.row(InlineKeyboardButton(text="‹ К списку", callback_data="a:users:0"))
+    builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
 
 
 async def _chats(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
     chats = await repo.admin_chats()
     if not chats:
-        return "Бот пока не добавлен ни в один чат.", _back_home()
+        return _("admin-chats-empty"), _back_home()
 
     builder = InlineKeyboardBuilder()
     for chat in chats:
         mark = "" if chat.is_active else "⏸ "
         builder.row(
             InlineKeyboardButton(
-                text=f"{mark}{chat.title or chat.chat_id} · {chat.subscribers}",
+                text=_(
+                    "admin-chat-list-row",
+                    mark=mark,
+                    title=chat.title or chat.chat_id,
+                    subscribers=chat.subscribers,
+                ),
                 callback_data=f"a:chat:{chat.chat_id}",
             )
         )
-    builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="a:home"))
-    return "💬 Чаты  (название · сколько человек публикуется)", builder.as_markup()
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
+    return _("admin-chats-header"), builder.as_markup()
 
 
 async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        return "Чат не найден.", _back_home()
+        return _("admin-chat-not-found-period"), _back_home()
 
     names = await repo.chat_subscriber_names(chat_id)
     threshold_label = f"{chat.rare_threshold_percent:g}%"
     zone_label = format_offset(chat.tz_offset_min)
-    text = (
-        f"💬 {chat.title or chat_id}\n\n"
-        f"Состояние:    {'активен' if chat.is_active else 'отключён'}\n"
-        f"Публикуется:  {chat.subscribers} чел.\n"
-        f"Порог редк.:  {threshold_label}\n"
-        f"Итог дня:     {'да' if chat.daily_summary else 'нет'}, в {chat.daily_summary_time}\n"
-        f"Часовой пояс: {zone_label}\n"
-        f"Мин. G:       {chat.min_gamerscore}\n\n"
-        + ("Подписаны: " + ", ".join(names) if names else "Подписанных пока нет.")
+    text = _(
+        "admin-chat-card",
+        title=chat.title or chat_id,
+        state=_("admin-active") if chat.is_active else _("admin-inactive"),
+        subscribers=chat.subscribers,
+        threshold=threshold_label,
+        summary=_("admin-yes") if chat.daily_summary else _("admin-no"),
+        time=chat.daily_summary_time,
+        offset=zone_label,
+        min_score=chat.min_gamerscore,
+        names=(
+            _("admin-subscribers-list", names=", ".join(names))
+            if names
+            else _("admin-no-subscribers")
+        ),
     )
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text=f"Порог редкости: {threshold_label} ▸", callback_data=f"a:crt:{chat_id}"
+            text=_("admin-chat-threshold-button", threshold=threshold_label),
+            callback_data=f"a:crt:{chat_id}",
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text=f"Итог дня: {'включён' if chat.daily_summary else 'выключен'}",
+            text=_(
+                "admin-chat-summary-button",
+                state=_("admin-enabled") if chat.daily_summary else _("admin-disabled-state"),
+            ),
             callback_data=f"a:cds:{chat_id}",
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text=f"Время итога: {chat.daily_summary_time} ({zone_label}) ▸",
+            text=_("admin-chat-time-button", time=chat.daily_summary_time, offset=zone_label),
             callback_data=f"a:ctime:{chat_id}",
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text="⏸ Отключить чат" if chat.is_active else "▶️ Включить чат",
+            text=_("admin-disable-chat") if chat.is_active else _("admin-enable-chat"),
             callback_data=f"a:coff:{chat_id}",
         )
     )
     builder.row(
-        InlineKeyboardButton(
-            text="🗑 Удалить последнее сообщение", callback_data=f"a:cdellast:{chat_id}"
-        )
+        InlineKeyboardButton(text=_("admin-delete-last"), callback_data=f"a:cdellast:{chat_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text=_("admin-wipe-bot-24h"), callback_data=f"a:cwipe:{chat_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text=_("admin-wipe-system-24h"), callback_data=f"a:cswipe:{chat_id}")
     )
     builder.row(
         InlineKeyboardButton(
-            text="🧹 Стереть сообщения бота (24ч)", callback_data=f"a:cwipe:{chat_id}"
+            text=_("admin-wipe-system-all"), callback_data=f"a:cswipeall:{chat_id}"
         )
     )
-    builder.row(
-        InlineKeyboardButton(
-            text="🧹 Удалить системные (24ч)", callback_data=f"a:cswipe:{chat_id}"
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text="🧹 Удалить все системные", callback_data=f"a:cswipeall:{chat_id}"
-        )
-    )
-    builder.row(InlineKeyboardButton(text="‹ К списку", callback_data="a:chats"))
+    builder.row(InlineKeyboardButton(text=_("admin-back-to-chats"), callback_data="a:chats"))
     return text, builder.as_markup()
 
 
@@ -1268,7 +1335,7 @@ async def _find_chat(repo: Repo, chat_id: int) -> ChatTarget | None:
 
 def _back_home() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="‹ Назад", callback_data="a:home")]]
+        inline_keyboard=[[InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")]]
     )
 
 
@@ -1291,11 +1358,11 @@ def _icon(user: AdminUserRow) -> str:
 
 def _note(user: AdminUserRow) -> str:
     if user.is_excluded:
-        return "  исключён"
-    if user.token_status == "invalid":
-        return "  вход протух"
-    if user.token_status == "revoked":
-        return "  отписался"
+        return _("admin-note-excluded")
+    if user.token_status == TokenStatus.INVALID:
+        return _("admin-note-invalid")
+    if user.token_status == TokenStatus.REVOKED:
+        return _("admin-note-revoked")
     return ""
 
 

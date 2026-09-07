@@ -12,9 +12,13 @@ from collections.abc import Sequence
 
 from aiogram import Bot
 
+from bot.constants import Platform
 from bot.db.repo import Repo
+from bot.i18n import gettext
 
 log = logging.getLogger(__name__)
+
+_ = lambda key, **kwargs: gettext("notify", key, **kwargs)  # noqa: E731
 
 
 class AdminNotifier:
@@ -24,18 +28,29 @@ class AdminNotifier:
         self._admin_ids = list(admin_ids)
 
     async def user_connected(self, tg_id: int, gamertag: str, *, is_new: bool) -> None:
-        verb = "Добавлен пользователь" if is_new else "Переподключился"
-        await self._send(f"➕ {verb}: {gamertag}\n{await self._who(tg_id)}")
+        verb = _("notify-verb-new") if is_new else _("notify-verb-reconnect")
+        await self._send(
+            f"{_('notify-user-connected', verb=verb, gamertag=gamertag)}\n{await self._who(tg_id)}"
+        )
 
     async def user_disconnected(self, tg_id: int, gamertag: str, reason: str) -> None:
-        await self._send(f"➖ Отключился: {gamertag} ({reason})\n{await self._who(tg_id)}")
+        reason = _(
+            {
+                "disconnect-command": "notify-reason-command",
+                "disconnect-button": "notify-reason-button",
+            }.get(reason, reason)
+        )
+        await self._send(
+            f"{_('notify-user-disconnected', gamertag=gamertag, reason=reason)}\n"
+            f"{await self._who(tg_id)}"
+        )
 
     async def token_dead(self, tg_id: int) -> None:
         user = await self._repo.get_user(tg_id)
-        name = (user.gamertag if user else None) or f"id{tg_id}"
+        name = (user.gamertag if user else None) or _("notify-id", tg_id=tg_id)
         await self._send(
-            f"⚠️ У пользователя слетел вход: {name}\n{await self._who(tg_id)}\n"
-            "Ачивки не публикуются, пока он не войдёт заново. Напоминание ему уже ушло."
+            f"{_('notify-token-dead-line1', name=name)}\n{await self._who(tg_id)}\n"
+            f"{_('notify-token-dead-line2')}"
         )
 
     async def service_key_dead(self, platform: str) -> None:
@@ -44,20 +59,24 @@ class AdminNotifier:
         about one person: every account on that platform stops being
         polled/resolvable at once until the admin fixes it (SPEC 9,
         M-PSN-1's "мониторинг живости" paragraph)."""
-        label = {"steam": "Steam", "psn": "PSN"}.get(platform, platform)
+        label = _(
+            {
+                Platform.STEAM: "notify-platform-steam",
+                Platform.PSN: "notify-platform-psn",
+            }.get(platform, "notify-platform-unknown"),
+            platform=platform,
+        )
         fix = (
-            "проверь ключ в .env и перезапусти бота"
-            if platform == "steam"
-            else "пришли новый NPSSO через админ-панель"
+            _("notify-service-key-dead-fix-steam")
+            if platform == Platform.STEAM
+            else _("notify-service-key-dead-fix-psn")
         )
-        await self._send(
-            f"⚠️ Умер общий ключ {label} — все аккаунты {label} разом перестали опрашиваться, {fix}."
-        )
+        await self._send(_("notify-service-key-dead", label=label, fix=fix))
 
     async def _who(self, tg_id: int) -> str:
         user = await self._repo.get_user(tg_id)
-        username = f"@{user.username}" if user and user.username else "без username"
-        return f"tg_id {tg_id} · {username}"
+        username = f"@{user.username}" if user and user.username else _("notify-who-no-username")
+        return _("notify-who", tg_id=tg_id, username=username)
 
     async def _send(self, text: str) -> None:
         for admin_id in self._admin_ids:

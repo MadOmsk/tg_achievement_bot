@@ -29,13 +29,17 @@ from aiogram.types import (
     TelegramObject,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram_i18n import I18nContext
 
+from bot.constants import Platform, SettingKey
 from bot.db.repo import PlatformLink, RecentAchievement, Repo, TopGame, User
 from bot.handlers.admin import IsAdmin
+from bot.i18n import gettext
 from bot.poller.daily import build_summary, full_leaderboard
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.achievements import (
     PLATFORM_ICON,
+    PLATFORM_ICON_UNKNOWN,
     PLATFORM_LABEL,
     platform_breakdown_suffix,
     plural_achievements,
@@ -52,6 +56,13 @@ from bot.util import cooldown_minutes_left, humanize_ago, thousands, utcnow
 log = logging.getLogger(__name__)
 
 router = Router(name="chat")
+
+
+def _hub_text(i18n: I18nContext | None, key: str, **kwargs: object) -> str:
+    return i18n.get(key, **kwargs) if i18n is not None else gettext("chat", key, **kwargs)
+
+
+HELP_TEXT = gettext("chat", "chat-help-text")
 
 GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
 
@@ -113,9 +124,9 @@ class UsernameMiddleware(BaseMiddleware):
 
 
 @router.message(Command("subscribe"))
-async def subscribe(message: Message, repo: Repo) -> None:
+async def subscribe(message: Message, repo: Repo, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
-        await message.answer("Эта команда для группового чата — там, где нужны публикации.")
+        await message.answer(i18n.get("chat-subscribe-groups-only"))
         return
     if message.from_user is None:
         return
@@ -124,46 +135,46 @@ async def subscribe(message: Message, repo: Repo) -> None:
     if user is None or not user.xuid:
         me = await message.bot.me()  # type: ignore[union-attr]
         await message.answer(
-            f"Сначала подключи XBOX в личке: https://t.me/{me.username}?start=connect"
+            i18n.get("chat-subscribe-connect-xbox-first", bot_username=me.username or "")
         )
         return
 
     await repo.upsert_chat(message.chat.id, message.chat.title, message.from_user.id)
     async with _subscription_lock(message.chat.id, message.from_user.id):
         if await repo.is_subscribed(message.chat.id, message.from_user.id):
-            await message.answer("Ты уже публикуешься здесь.")
+            await message.answer(i18n.get("chat-subscribe-already"))
             return
         await repo.subscribe(message.chat.id, message.from_user.id)
     await message.answer(
-        f"Готово. Ачивки {user.gamertag or 'твои'} будут прилетать сюда.\n"
-        "Настройки редкости и XBOX 360 — в личке, /panel."
+        i18n.get(
+            "chat-subscribe-done",
+            gamertag=user.gamertag or i18n.get("chat-subscribe-your-achievements"),
+        )
     )
 
 
 @router.message(Command("unsubscribe"))
-async def unsubscribe(message: Message, repo: Repo) -> None:
+async def unsubscribe(message: Message, repo: Repo, i18n: I18nContext) -> None:
     """Same weight as /disconnect_xbox: losing your feed in a chat you might not
     remember subscribing in deserves a confirm, not an instant action."""
     if message.chat.type not in GROUP_TYPES or message.from_user is None:
         return
     if not await repo.is_subscribed(message.chat.id, message.from_user.id):
-        await message.answer("Ты здесь и не публиковался.")
+        await message.answer(i18n.get("chat-unsubscribe-not-subscribed"))
         return
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Да, отписаться",
+                    text=i18n.get("chat-unsubscribe-confirm-button"),
                     callback_data=f"unsub:yes:{message.from_user.id}",
                 )
             ],
-            [InlineKeyboardButton(text="Отмена", callback_data="unsub:no")],
+            [InlineKeyboardButton(text=i18n.get("chat-cancel-button"), callback_data="unsub:no")],
         ]
     )
-    await message.answer(
-        "Перестать публиковать твои достижения в этом чате?", reply_markup=keyboard
-    )
+    await message.answer(i18n.get("chat-unsubscribe-prompt"), reply_markup=keyboard)
 
 
 @router.callback_query(F.data == "unsub:no")
@@ -177,33 +188,40 @@ async def unsubscribe_cancel(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("unsub:yes:"))
-async def unsubscribe_confirm(callback: CallbackQuery, repo: Repo) -> None:
+async def unsubscribe_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     tg_id = int(callback.data.rsplit(":", 1)[1])
     # The confirm buttons are visible to the whole group, not just the person
     # who ran /unsubscribe — without this check anyone could confirm or
     # cancel someone else's unsubscribe.
     if callback.from_user.id != tg_id:
-        await callback.answer("Это не твоя кнопка.", show_alert=True)
+        await callback.answer(i18n.get("chat-not-your-button"), show_alert=True)
         return
     if not isinstance(callback.message, Message):
         return
     async with _subscription_lock(callback.message.chat.id, tg_id):
         await repo.unsubscribe(callback.message.chat.id, tg_id)
-    await callback.message.edit_text("Больше не публикую твои достижения в этом чате.")
+    await callback.message.edit_text(i18n.get("chat-unsubscribe-done"))
     await callback.answer()
 
 
 # -------------------------------------------------------------------- stats
 
 
-def _games_list(games: list[TopGame]) -> str:
-    rows = [
-        f"{place}. {PLATFORM_ICON.get(game.platform, '')} "
-        f"{html_escape(truncate_name(game.name or 'без названия'))} — "
-        f"{game.unlocked or 0} ач. (+{thousands(game.gamerscore or 0)} G)"
-        for place, game in enumerate(games, start=1)
-    ]
+def _games_list(games: list[TopGame], i18n: I18nContext | None = None) -> str:
+    rows = []
+    for place, game in enumerate(games, start=1):
+        untitled = _hub_text(i18n, "chat-untitled")
+        tail = _hub_text(
+            i18n,
+            "chat-stats-game-row-tail",
+            count=game.unlocked or 0,
+            score=thousands(game.gamerscore or 0),
+        )
+        rows.append(
+            f"{place}. {PLATFORM_ICON.get(game.platform, '')} "
+            f"{html_escape(truncate_name(game.name or untitled))} — {tail}"
+        )
     return blockquote(rows)
 
 
@@ -226,10 +244,12 @@ def _display_name(target: User, links: list[PlatformLink]) -> str:
         return target.gamertag
     if links:
         return links[0].display_name or links[0].external_id
-    return "без имени"
+    return ""
 
 
-async def _build_stats_text(repo: Repo, target: User) -> str | None:
+async def _build_stats_text(
+    repo: Repo, target: User, i18n: I18nContext | None = None
+) -> str | None:
     """Shared by /stats and /who's buttons (SPEC 6.3) — one implementation,
     so a player's card looks the same no matter how it was opened.
 
@@ -253,15 +273,15 @@ async def _build_stats_text(repo: Repo, target: User) -> str | None:
     counters = await counters_for(repo, target.tg_id)
     lines = [f"📊 <b>{html_escape(_display_name(target, platform_links))}</b>"]
     if target.xuid:
-        gamertag_html = html_escape(target.gamertag or "без геймертега")
+        gamertag_html = html_escape(target.gamertag or _hub_text(i18n, "chat-stats-no-gamertag"))
         if show_links and target.gamertag:
             gamertag_html = link_html(xbox_profile_url(target.gamertag), gamertag_html)
         lines.append(
-            f"{PLATFORM_ICON['modern']} XBOX: {gamertag_html}"
+            f"{PLATFORM_ICON[Platform.MODERN]} XBOX: {gamertag_html}"
             f"  ·  gamerscore {thousands(target.gamerscore or 0)}"
         )
     for link in platform_links:
-        icon = PLATFORM_ICON.get(link.platform, "⚪")
+        icon = PLATFORM_ICON.get(link.platform, PLATFORM_ICON_UNKNOWN)
         label = PLATFORM_LABEL.get(link.platform, link.platform)
         # A lifetime count is fine here, unlike Xbox's own seen_achievements
         # count above (deliberately never shown as a lifetime total, SPEC
@@ -280,8 +300,8 @@ async def _build_stats_text(repo: Repo, target: User) -> str | None:
         # never fetched here (SPEC 1.5's cache-only rule); absent until the
         # poller has had a chance to set it (right after backfill).
         level_suffix = (
-            f"  ·  уровень {link.psn_trophy_level}"
-            if link.platform == "psn" and link.psn_trophy_level is not None
+            _hub_text(i18n, "chat-stats-psn-level", level=link.psn_trophy_level)
+            if link.platform == Platform.PSN and link.psn_trophy_level is not None
             else ""
         )
         lines.append(f"{icon} {label}: {name_html}  ·  {plural_achievements(count)}{level_suffix}")
@@ -290,10 +310,20 @@ async def _build_stats_text(repo: Repo, target: User) -> str | None:
     month_breakdown = platform_breakdown_suffix(counters.month_xbox, counters.month_steam)
     lines += [
         "",
-        f"Сегодня:   {plural_achievements(counters.today)}{today_breakdown}"
-        f" (+{counters.today_score} G)",
-        f"За месяц:  {plural_achievements(counters.month)}{month_breakdown}"
-        f" (+{thousands(counters.month_score)} G)",
+        _hub_text(
+            i18n,
+            "chat-stats-today",
+            achievements=plural_achievements(counters.today),
+            breakdown=today_breakdown,
+            score=counters.today_score,
+        ),
+        _hub_text(
+            i18n,
+            "chat-stats-month",
+            achievements=plural_achievements(counters.month),
+            breakdown=month_breakdown,
+            score=thousands(counters.month_score),
+        ),
         # No lifetime "Всего" here: seen_achievements is permanently
         # best-effort (title_history's cap, achievements with no unlock
         # date), so a lifetime count from it can't be trusted the way a
@@ -321,29 +351,34 @@ async def _build_stats_text(repo: Repo, target: User) -> str | None:
             reverse=True,
         )[: limit or None]
         if games:
-            lines += ["", f"<b>Игры за {RECENT_GAMES_DAYS} дней</b>", _games_list(games)]
+            lines += [
+                "",
+                _hub_text(i18n, "chat-stats-games-header", days=RECENT_GAMES_DAYS),
+                _games_list(games, i18n),
+            ]
     return "\n".join(lines)
 
 
-STATS_GAMES_LIMIT_KEY = "stats_games_limit"
 DEFAULT_STATS_GAMES_LIMIT = 15
 
 
 async def _stats_games_limit(repo: Repo) -> int:
-    return await repo.get_int_setting(STATS_GAMES_LIMIT_KEY, DEFAULT_STATS_GAMES_LIMIT)
+    return await repo.get_int_setting(SettingKey.STATS_GAMES_LIMIT, DEFAULT_STATS_GAMES_LIMIT)
 
 
 @router.message(Command("stats"))
-async def stats(message: Message, repo: Repo, bot: Bot, command: CommandObject) -> None:
+async def stats(
+    message: Message, repo: Repo, bot: Bot, command: CommandObject, i18n: I18nContext
+) -> None:
     target = await _resolve(message, repo, command.args)
     if target is None:
         with stats_category():
-            await message.answer(_UNKNOWN)
+            await message.answer(i18n.get("chat-unknown-user"))
         return
-    text = await _build_stats_text(repo, target)
+    text = await _build_stats_text(repo, target, i18n)
     if text is None:
         with stats_category():
-            await message.answer("Этот человек ещё ничего не подключил.")
+            await message.answer(i18n.get("chat-stats-nothing-connected"))
         return
     # Keyed by the person the card is *about*, not who asked (Follow-up
     # 2026-09-06) — same person's stats posted twice in this chat replaces
@@ -364,15 +399,15 @@ async def stats(message: Message, repo: Repo, bot: Bot, command: CommandObject) 
 
 
 @router.message(Command("online"))
-async def online(message: Message, repo: Repo, bot: Bot) -> None:
+async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
-        await message.answer("Список игроков — по чату, набери команду в группе.")
+        await message.answer(i18n.get("chat-group-command-only"))
         return
 
     rows = await repo.chat_member_presence(message.chat.id)
     if not rows:
         with stats_category():
-            await message.answer("Никого из подключённых в этом чате пока не видел.")
+            await message.answer(i18n.get("chat-online-empty"))
         return
 
     # A fresh /online replaces whatever was posted/auto-refreshing before
@@ -407,28 +442,31 @@ async def online(message: Message, repo: Repo, bot: Bot) -> None:
 
 
 @router.message(Command("who"))
-async def who(message: Message, repo: Repo) -> None:
+async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
     """The picker /online used to double as (SPEC 6.3) — split out so /online
     can stay a plain glance and this can stay a plain button grid."""
     if message.chat.type not in GROUP_TYPES:
-        await message.answer("Список игроков — по чату, набери команду в группе.")
+        await message.answer(i18n.get("chat-group-command-only"))
         return
 
     rows = await repo.chat_member_presence(message.chat.id)
     if not rows:
-        await message.answer("Никого из подключённых в этом чате пока не видел.")
+        await message.answer(i18n.get("chat-online-empty"))
         return
 
     builder = InlineKeyboardBuilder()
     for row in rows:
         builder.button(
-            text=row.gamertag or f"id{row.tg_id}", callback_data=f"who:stats:{row.tg_id}"
+            text=row.gamertag or i18n.get("chat-who-fallback-id", tg_id=row.tg_id),
+            callback_data=f"who:stats:{row.tg_id}",
         )
     builder.adjust(3)
     # Found live: no way out except picking someone, and the prompt itself
     # never went away after a pick — just sat there stale.
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data="who:cancel"))
-    await message.answer("Чья статистика интересует?", reply_markup=builder.as_markup())
+    builder.row(
+        InlineKeyboardButton(text=i18n.get("chat-cancel-button"), callback_data="who:cancel")
+    )
+    await message.answer(i18n.get("chat-who-prompt"), reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data == "who:cancel")
@@ -440,14 +478,16 @@ async def who_cancel(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("who:stats:"))
-async def who_stats_button(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
+async def who_stats_button(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
     assert callback.data is not None
     tg_id = int(callback.data.rsplit(":", 1)[1])
     target = await repo.get_user(tg_id)
     if target is None:
-        await callback.answer("Не нашёл такого пользователя.", show_alert=True)
+        await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
         return
-    text = await _build_stats_text(repo, target)
+    text = await _build_stats_text(repo, target, i18n)
     await callback.answer()
     if isinstance(callback.message, Message):
         if text is not None:
@@ -465,7 +505,7 @@ async def who_stats_button(callback: CallbackQuery, repo: Repo, bot: Bot) -> Non
                     parse_mode=ParseMode.HTML,
                 )
         # The picker's own job is done either way — drop it instead of
-        # leaving a stale "Чья статистика интересует?" behind.
+        # leaving a stale who-is-this prompt behind.
         with contextlib.suppress(Exception):
             await callback.message.delete()
 
@@ -506,20 +546,20 @@ async def _summary_or_cooldown(
 
 
 @router.message(Command("summary"))
-async def summary_command(message: Message, repo: Repo, bot: Bot) -> None:
+async def summary_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     """The same report the scheduled job sends, on demand."""
     if message.chat.type not in GROUP_TYPES:
-        await message.answer("Сводка считается по чату — набери команду в группе.")
+        await message.answer(i18n.get("chat-summary-group-only"))
         return
 
     text, markup, minutes_left = await _summary_or_cooldown(repo, message.chat.id)
     if minutes_left:
         # A rate-limit notice, not a report — system, not stats.
-        await message.answer(f"Сводку уже присылали недавно. Ещё раз — через {minutes_left} мин.")
+        await message.answer(i18n.get("chat-summary-cooldown", minutes=minutes_left))
         return
     if text is None:
         with stats_category():
-            await message.answer("За последние сутки в чате пока никто ничего не выбил.")
+            await message.answer(i18n.get("chat-summary-empty"))
         return
     # Replaces the chat's previous /summary outright (Follow-up 2026-09-06)
     # — an "nothing new" reply just above is left untouched on purpose:
@@ -527,13 +567,18 @@ async def summary_command(message: Message, repo: Repo, bot: Bot) -> None:
     # real summary from earlier that still has something to show.
     with stats_category():
         await send_replacing(
-            bot, repo, message.chat.id, "summary", text, parse_mode=ParseMode.HTML,
+            bot,
+            repo,
+            message.chat.id,
+            "summary",
+            text,
+            parse_mode=ParseMode.HTML,
             reply_markup=markup,
         )
 
 
 @router.callback_query(F.data.startswith("summary:all:"))
-async def summary_show_all(callback: CallbackQuery, repo: Repo) -> None:
+async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """«Показать всех» under a truncated summary table — a fresh, uncapped
     re-fetch as its own message, not the original send re-edited (SPEC 6.3)."""
     if not isinstance(callback.message, Message):
@@ -551,9 +596,11 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo) -> None:
 
 
 @router.message(Command("recent"))
-async def recent(message: Message, repo: Repo, bot: Bot, command: CommandObject) -> None:
+async def recent(
+    message: Message, repo: Repo, bot: Bot, command: CommandObject, i18n: I18nContext
+) -> None:
     if message.chat.type not in GROUP_TYPES:
-        await message.answer("Лента считается по чату — набери команду в группе.")
+        await message.answer(i18n.get("chat-recent-group-only"))
         return
 
     limit = RECENT_DEFAULT
@@ -563,19 +610,19 @@ async def recent(message: Message, repo: Repo, bot: Bot, command: CommandObject)
     rows = await repo.chat_recent(message.chat.id, limit)
     if not rows:
         with stats_category():
-            await message.answer("Пока пусто.")
+            await message.answer(i18n.get("chat-recent-empty"))
         return
-    text = "🕘 <b>Последние достижения</b>\n" + _recent_list(rows)
+    text = i18n.get("chat-recent-header") + "\n" + _recent_list(rows, i18n)
     # Replaces the chat's previous /recent outright (Follow-up 2026-09-06).
     with stats_category():
         await send_replacing(bot, repo, message.chat.id, "recent", text, parse_mode=ParseMode.HTML)
 
 
-def _recent_list(rows: list[RecentAchievement]) -> str:
-    return blockquote([_recent_row(row) for row in rows])
+def _recent_list(rows: list[RecentAchievement], i18n: I18nContext | None = None) -> str:
+    return blockquote([_recent_row(row, i18n) for row in rows])
 
 
-def _recent_row(row: RecentAchievement) -> str:
+def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
     # A real Telegram spoiler works fine inside a blockquote (unlike the old
     # <pre> table it replaced, SPEC 7.1) — the real name stays hidden behind
     # a tap, instead of a placeholder that gave nothing away to look up.
@@ -587,14 +634,14 @@ def _recent_row(row: RecentAchievement) -> str:
     # empty), a separate generic bullet would double up with it on every
     # "common" row: two trophies back to back on the same line.
     badge = rarity_badge(row.rarity_percent)
-    gamertag = html_escape(truncate_name(row.gamertag or "кто-то"))
-    game = html_escape(truncate_name(row.game or "без названия"))
-    icon = PLATFORM_ICON.get(row.platform, "⚪")
+    gamertag = html_escape(truncate_name(row.gamertag or _hub_text(i18n, "chat-recent-someone")))
+    game = html_escape(truncate_name(row.game or _hub_text(i18n, "chat-untitled")))
+    icon = PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
     # Found live: every Steam row showed a flat "+0 G" — Steam achievements
     # have no gamerscore at all (services/steam/achievements.py), same
     # "0 is 0 on any platform, don't name it" rule the achievement message
     # itself already follows (services/achievements.py's _rarity_line).
-    # Rarity here is a bare percentage, no "редкость" label — the badge
+    # Rarity here is a bare percentage, with no label — the badge
     # already says "rare or not", the number is just the detail behind it.
     tail = []
     if row.gamerscore:
@@ -602,17 +649,17 @@ def _recent_row(row: RecentAchievement) -> str:
     if row.rarity_percent is not None:
         tail.append(f"{row.rarity_percent:g}%")
     tail_text = f" ({' · '.join(tail)})" if tail else ""
-    return (
-        f"{badge} {gamertag} — {icon} {game}, {name}{tail_text}"
-        f" · {humanize_ago(row.unlocked_at)}"
+    return _hub_text(
+        i18n,
+        "chat-recent-row",
+        badge=badge,
+        gamertag=gamertag,
+        icon=icon,
+        game=game,
+        name=name,
+        tail=tail_text,
+        ago=humanize_ago(row.unlocked_at),
     )
-
-
-_UNKNOWN = (
-    "Не знаю такого. Bot API не умеет искать людей по @имени — "
-    "я запоминаю тех, кто писал в чат. Можно ответить на сообщение человека "
-    "командой /stats."
-)
 
 
 async def _resolve(message: Message, repo: Repo, argument: str | None) -> User | None:
@@ -638,22 +685,9 @@ async def _resolve(message: Message, repo: Repo, argument: str | None) -> User |
 # intuitively enough on their own that spelling them out here was just
 # noise by comparison to what people actually come back to read: what the
 # bot is, and the commands.
-HELP_TEXT = (
-    "🎮 Слежу за достижениями тех, кто играет на XBOX и в Steam, и "
-    "публикую их сюда — с фильтром по редкости, статистикой каждого и "
-    "итогом дня.\n\n"
-    "Команды чата:\n"
-    "/stats [@кто] — статистика: без аргумента своя, с ником — чужая\n"
-    "/who — узнать стату конкретного игрока\n"
-    "/online — кто сейчас в игре\n"
-    "/recent [N] — последние достижения чата\n"
-    "/summary — сводка за сутки и за месяц\n"
-    "/hltb — показать сводку игры HowLongToBeat\n\n"
-    "Настройки — в личке, /panel."
-)
-
-
-def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
+def hub_keyboard(
+    bot_username: str, chat_id: int, i18n: I18nContext | None = None
+) -> InlineKeyboardMarkup:
     """A short walkthrough, not a control panel: SPEC 6.3 walks through
     connect → publish in that order, so the keyboard should not offer more
     choices than that story needs. Steam's and PSN's connect buttons
@@ -668,17 +702,21 @@ def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Публиковать мои достижения", callback_data="sub:on")],
             [
                 InlineKeyboardButton(
-                    text="🔗 XBOX",
+                    text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-xbox-button"),
                     # The chat id rides along in the deep-link payload so a
                     # successful login can auto-subscribe him right back here
                     # (SPEC 6.3) — see _parse_connect_payload in connect.py.
                     url=f"https://t.me/{bot_username}?start=connect{chat_id}",
                 ),
                 InlineKeyboardButton(
-                    text="🎮 Steam",
+                    text=_hub_text(i18n, "chat-hub-steam-button"),
                     # No chat id here (unlike Xbox above) — /connect_steam
                     # needs a profile link a button tap can't supply anyway,
                     # so this just opens the DM at the right prompt (SPEC 9,
@@ -686,7 +724,7 @@ def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
                     url=f"https://t.me/{bot_username}?start=connectsteam",
                 ),
                 InlineKeyboardButton(
-                    text="🎮 PSN",
+                    text=_hub_text(i18n, "chat-hub-psn-button"),
                     # Same reasoning as Steam's own button above (SPEC 9,
                     # M-PSN-1, handlers/psn.py, connect.py's ?start=connectpsn).
                     url=f"https://t.me/{bot_username}?start=connectpsn",
@@ -694,7 +732,7 @@ def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="⚙️ Настройки",
+                    text=_hub_text(i18n, "chat-hub-settings-button"),
                     url=f"https://t.me/{bot_username}?start=panel",
                 ),
             ],
@@ -702,27 +740,31 @@ def hub_keyboard(bot_username: str, chat_id: int) -> InlineKeyboardMarkup:
     )
 
 
-async def hub_text(repo: Repo, chat_id: int) -> str:
+async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
     names = await repo.chat_subscriber_names(chat_id)
     if not names:
-        return HELP_TEXT + "\n\nПока здесь никто не публикуется."
-    return HELP_TEXT + "\n\nПубликуются: " + ", ".join(names)
+        return i18n.get("chat-help-text") + "\n\n" + i18n.get("chat-hub-nobody")
+    return (
+        i18n.get("chat-help-text")
+        + "\n\n"
+        + i18n.get("chat-hub-publishing", names=", ".join(names))
+    )
 
 
 @router.message(Command("help"))
-async def help_command(message: Message, repo: Repo, bot: Bot) -> None:
+async def help_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
-        await message.answer(HELP_TEXT)
+        await message.answer(i18n.get("chat-help-text"))
         return
     me = await bot.me()
     await message.answer(
-        await hub_text(repo, message.chat.id),
-        reply_markup=hub_keyboard(me.username or "", message.chat.id),
+        await hub_text(repo, message.chat.id, i18n),
+        reply_markup=hub_keyboard(me.username or "", message.chat.id, i18n),
     )
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
-async def greet_new_chat(event: ChatMemberUpdated, repo: Repo, bot: Bot) -> None:
+async def greet_new_chat(event: ChatMemberUpdated, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     """Say what to do the moment the bot lands in a group, not later."""
     if event.chat.type not in GROUP_TYPES:
         return
@@ -730,20 +772,22 @@ async def greet_new_chat(event: ChatMemberUpdated, repo: Repo, bot: Bot) -> None
     me = await bot.me()
     await bot.send_message(
         event.chat.id,
-        await hub_text(repo, event.chat.id),
-        reply_markup=hub_keyboard(me.username or "", event.chat.id),
+        await hub_text(repo, event.chat.id, i18n),
+        reply_markup=hub_keyboard(me.username or "", event.chat.id, i18n),
     )
 
 
 @router.callback_query(F.data == "sub:on")
-async def subscribe_button(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
+async def subscribe_button(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
     message = callback.message
     if not isinstance(message, Message):
         return
     user = await repo.get_user(callback.from_user.id)
     if user is None or not user.xuid:
         # Don't just tell him to go connect somewhere — send him straight into
-        # the same login deep link as the "Подключить XBOX" button. It carries
+        # the same login deep link as the Xbox connect button. It carries
         # this chat's id, so ConnectService auto-subscribes here once he's
         # done (SPEC 6.3); no need to remember to come back and press this
         # button again.
@@ -754,25 +798,25 @@ async def subscribe_button(callback: CallbackQuery, repo: Repo, bot: Bot) -> Non
     await repo.upsert_chat(message.chat.id, message.chat.title, callback.from_user.id)
     async with _subscription_lock(message.chat.id, callback.from_user.id):
         if await repo.is_subscribed(message.chat.id, callback.from_user.id):
-            await callback.answer("Ты уже публикуешься здесь.")
+            await callback.answer(i18n.get("chat-subscribe-already"))
             return
         await repo.subscribe(message.chat.id, callback.from_user.id)
-    await callback.answer("Готово, твои достижения будут прилетать сюда.")
-    await _refresh_hub(message, repo, bot)
+    await callback.answer(i18n.get("chat-subscribe-button-done"))
+    await _refresh_hub(message, repo, bot, i18n)
 
 
-async def _refresh_hub(message: Message, repo: Repo, bot: Bot) -> None:
+async def _refresh_hub(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     me = await bot.me()
     with contextlib.suppress(Exception):
         # Telegram refuses an edit that changes nothing — not an error.
         await message.edit_text(
-            await hub_text(repo, message.chat.id),
-            reply_markup=hub_keyboard(me.username or "", message.chat.id),
+            await hub_text(repo, message.chat.id, i18n),
+            reply_markup=hub_keyboard(me.username or "", message.chat.id, i18n),
         )
 
 
 @router.message(Command("delete_last"), F.chat.type.in_(GROUP_TYPES), IsAdmin())
-async def delete_last(message: Message, repo: Repo, bot: Bot) -> None:
+async def delete_last(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     """Quick undo, right in the chat — the admin panel's own "стереть
     сообщения бота" (admin.py's a:cwipe) is a 24-hour bulk wipe reached
     through a private-chat menu, overkill for "oops, wrong one just now".
@@ -786,7 +830,7 @@ async def delete_last(message: Message, repo: Repo, bot: Bot) -> None:
     """
     message_id = await repo.last_non_system_bot_message(message.chat.id)
     if message_id is None:
-        await message.answer("Не нашёл сообщений бота в этом чате.")
+        await message.answer(i18n.get("chat-delete-last-none"))
         return
 
     try:
@@ -797,7 +841,7 @@ async def delete_last(message: Message, repo: Repo, bot: Bot) -> None:
         # log row for.
         log.info("delete_last failed for chat %s message %s", message.chat.id, message_id)
         await repo.forget_bot_messages(message.chat.id, [message_id])
-        await message.answer("Не смог удалить — возможно, сообщение слишком старое.")
+        await message.answer(i18n.get("chat-delete-last-failed"))
         return
 
     await repo.forget_bot_messages(message.chat.id, [message_id])
