@@ -92,3 +92,38 @@ async def test_show_profile_links_admin_default_applies_to_new_users(repo: Repo)
         b for row in markup.inline_keyboard for b in row if b.callback_data == "panel:linkstoggle"
     )
     assert "да" in toggle.text
+
+
+async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(repo: Repo) -> None:
+    """#18: the header now carries identity + lifetime per-platform counts,
+    and the 24h/30d rows and "последние достижения" list are gone."""
+    await repo.ensure_user(TG_ID, "madomsk")
+    await repo.link_xbox_account(TG_ID, "xuid-1", "MadXbox", 12345)
+
+    text, _markup = await render_panel(repo, TG_ID)
+
+    assert text.splitlines()[0] == "👤 @madomsk"  # identity, not "gamertag · gamerscore"
+    assert "🟢 XBOX: MadXbox" in text
+    assert "gamerscore 12" in text  # thousands() formatting of the profile value
+    assert "Сегодня:" not in text
+    assert "За месяц:" not in text
+    assert "Последние достижения" not in text
+    # Kept (#18 decisions): current presence and the timezone text line.
+    assert "Сейчас:" in text
+    assert "Часовой пояс:" in text
+
+
+async def test_header_lists_every_connected_platform(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, None, "Igor", "Petrov")
+    await repo.link_xbox_account(TG_ID, "xuid-1", "MadXbox", 1000)
+    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "SteamNick")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "PsnNick")
+    await repo.set_psn_trophy_level(TG_ID, 42)
+
+    text, _markup = await render_panel(repo, TG_ID)
+
+    assert text.splitlines()[0] == "👤 Igor Petrov"
+    assert "🟢 XBOX: MadXbox" in text
+    assert "⚫ Steam: SteamNick" in text
+    assert "🔵 PSN: PsnNick" in text
+    assert "уровень 42" in text

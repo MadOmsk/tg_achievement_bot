@@ -16,7 +16,7 @@ from aiogram_i18n import I18nContext
 
 from bot.config import Settings
 from bot.constants import Platform, PresenceState, RarityMode, TokenStatus
-from bot.db.repo import Repo, UserChatRow
+from bot.db.repo import PlatformLink, Repo, User, UserChatRow
 from bot.handlers.keyboards import (
     DIGEST_NEVER,
     deep_link_keyboard,
@@ -32,9 +32,8 @@ from bot.handlers.keyboards import (
 )
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.fetcher import Fetcher
-from bot.services.achievements import plural_achievements
+from bot.services.achievements import plural_achievements, plural_trophies
 from bot.services.single_message import send_replacing
-from bot.services.stats import counters_for
 from bot.util import cooldown_minutes_left, humanize_ago, parse_iso, thousands
 
 log = logging.getLogger(__name__)
@@ -468,7 +467,66 @@ async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I
     await _redraw_chat_list(callback, repo, i18n)
 
 
-RECENT_IN_PANEL = 5
+def _panel_identity(user: User, i18n: I18nContext | StaticI18nContext) -> str:
+    """The person's own name for the /panel header (#18) — same priority as
+    /stats' header (@username > first+last > gamertag). This screen is only
+    ever shown to its owner, so a bare id is the guaranteed last resort."""
+    if user.username:
+        name = f"@{user.username}"
+    elif full := " ".join(part for part in (user.first_name, user.last_name) if part):
+        name = full
+    elif user.gamertag:
+        name = user.gamertag
+    else:
+        name = str(user.tg_id)
+    return i18n.get("panel-header-identity", name=name)
+
+
+async def _panel_header_lines(
+    repo: Repo,
+    user: User,
+    steam_link: PlatformLink | None,
+    psn_link: PlatformLink | None,
+    i18n: I18nContext | StaticI18nContext,
+) -> list[str]:
+    """Identity + one line per connected platform with its lifetime count
+    (#18) — /panel's own plain-text take on /stats' header, deliberately a
+    separate helper from _build_stats_text's HTML one."""
+    lines = [_panel_identity(user, i18n)]
+    if user.xuid:
+        lines.append(
+            i18n.get(
+                "panel-header-xbox",
+                name=user.gamertag or i18n.get("panel-no-gamertag"),
+                achievements=plural_achievements(await repo.xbox_achievement_count(user.tg_id)),
+                score=thousands(user.gamerscore or 0),
+            )
+        )
+    if steam_link is not None:
+        count = await repo.platform_achievement_count(user.tg_id, Platform.STEAM)
+        lines.append(
+            i18n.get(
+                "panel-header-steam",
+                name=steam_link.display_name or steam_link.external_id,
+                achievements=plural_achievements(count),
+            )
+        )
+    if psn_link is not None:
+        count = await repo.platform_achievement_count(user.tg_id, Platform.PSN)
+        level_suffix = (
+            i18n.get("panel-header-psn-level", level=psn_link.psn_trophy_level)
+            if psn_link.psn_trophy_level
+            else ""
+        )
+        lines.append(
+            i18n.get(
+                "panel-header-psn",
+                name=psn_link.display_name or psn_link.external_id,
+                trophies=plural_trophies(count),
+                level_suffix=level_suffix,
+            )
+        )
+    return lines
 
 
 async def render_panel(
@@ -510,22 +568,13 @@ async def render_panel(
         if token
         else i18n.get("panel-login-revoked")
     )
-    counters = await counters_for(repo, tg_id)
     playing = await _now_playing(repo, user.xuid, i18n)
-    recent = await repo.recent_achievements(user.xuid, RECENT_IN_PANEL)
 
-    lines = [
-        i18n.get(
-            "panel-header",
-            gamertag=user.gamertag or i18n.get("panel-no-gamertag"),
-            gamerscore=thousands(user.gamerscore or 0),
-        ),
-        "",
-        i18n.get("panel-login-xbox-row", status=login),
-    ]
-    # "Сегодня"/"За месяц" below already include Steam achievements
-    # (SPEC 9, M-Steam-2e) — this line is just the persona name, no counter
-    # of its own next to it, same as /stats' per-platform lines.
+    # Header: identity + per-platform lifetime counts (#18). The 24h/30d
+    # counters and "последние достижения" list this body used to carry are
+    # gone — the header covers achievements now.
+    lines = await _panel_header_lines(repo, user, steam_link, psn_link, i18n)
+    lines += ["", i18n.get("panel-login-xbox-row", status=login)]
     if steam_link is not None:
         lines.append(i18n.get("panel-login-steam-row-connected", name=steam_link.display_name))
     if psn_link is not None:
@@ -535,35 +584,17 @@ async def render_panel(
             "panel-publication-row",
             status=await _publication_status(repo, user.tg_id, user.is_excluded, i18n),
         ),
+        # Kept in the body on purpose (#18): current presence is neither an
+        # achievement nor a "which chats" fact, and it's genuinely useful
+        # here.
         i18n.get("panel-now-playing-row", playing=playing),
         "",
-        i18n.get(
-            "panel-today-row",
-            achievements=plural_achievements(counters.today),
-            score=counters.today_score,
-        ),
-        i18n.get(
-            "panel-month-row",
-            achievements=plural_achievements(counters.month),
-            score=thousands(counters.month_score),
-        ),
-        # No lifetime "Всего": seen_achievements is permanently best-effort
-        # (SPEC 5.4), unlike the two date-bounded counters above it.
+        # Kept as a text line too (#18): the person should see which
+        # timezone is selected, not just have it on the button label.
         i18n.get("panel-timezone-row", offset=format_offset(tz_offset, i18n)),
     ]
     if needs_reconnect:
         lines += ["", i18n.get("panel-reconnect-hint")]
-    if recent:
-        lines += ["", i18n.get("panel-recent-title")]
-        lines += [
-            i18n.get(
-                "panel-recent-item",
-                name=item.name,
-                game=item.title_name or i18n.get("panel-unknown-game"),
-                ago=humanize_ago(item.unlocked_at),
-            )
-            for item in recent
-        ]
     return "\n".join(lines), keyboard
 
 

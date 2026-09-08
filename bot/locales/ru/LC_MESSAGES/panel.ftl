@@ -61,19 +61,22 @@ panel-header-not-connected = 👤 Панель
 panel-login-steam-row = Вход Steam: { $name }
 panel-login-psn-row = Вход PSN: { $name }
 panel-no-gamertag = без геймертега
-panel-header =
-    👤 { $gamertag }  ·  gamerscore { $gamerscore }
+# Header (#18): the person's own Telegram identity, then one line per
+# connected platform with its lifetime count — the same shape /stats'
+# header has, so the 24h/30d counters and "последние достижения" list that
+# used to sit in the body below are gone (that information is here now).
+panel-header-identity = 👤 { $name }
+panel-header-xbox = 🟢 XBOX: { $name } · { $achievements } · gamerscore { $score }
+panel-header-steam = ⚫ Steam: { $name } · { $achievements }
+panel-header-psn = 🔵 PSN: { $name } · { $trophies }{ $level_suffix }
+panel-header-psn-level =  · уровень { $level }
 panel-login-xbox-row = Вход XBOX:   { $status }
 panel-login-steam-row-connected = Вход Steam:  { $name }
 panel-login-psn-row-connected = Вход PSN:    { $name }
 panel-publication-row = Публикация:  { $status }
 panel-now-playing-row = Сейчас:      { $playing }
-panel-today-row = Сегодня:     { $achievements } (+{ $score } G)
-panel-month-row = За месяц:    { $achievements } (+{ $score } G)
 panel-timezone-row = Часовой пояс: { $offset }
 panel-reconnect-hint = Доступ к XBOX истёк — жми «Подключить заново» ниже.
-panel-recent-title = Последние достижения:
-panel-recent-item = 🏆 «{ $name }» — { $game }, { $ago }
 panel-unknown-game = неизвестная игра
 panel-no-presence-data = нет данных
 panel-offline = не в сети ({ $ago })

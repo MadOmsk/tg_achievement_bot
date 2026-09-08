@@ -403,21 +403,28 @@ documentation are English.
 A private flow started from a group must redirect the person to a DM, never fail
 silently in the group.
 
-**The personal panel** (`/panel`, one self-editing message) shows: every connected
-platform identity, each with a "Profile" link button (Xbox/Steam/PSN all have real
-public profile URLs — `services/profile_links.py`); Xbox token status; publication
-destinations; cached current presence; 24h/30d counters; recent achievements;
-timezone and the `show_profile_links` privacy toggle; per-chat subscription cards
-(rarity mode, digest threshold). Own profile links here are always visible
-regardless of the privacy toggle — this screen is never rendered to anyone but its
-owner, so the toggle (which only governs what *other people* see) doesn't apply.
-The panel must never call a platform API except the one explicit manual-sync button.
+**The personal panel** (`/panel`, one self-editing message): the header is the
+person's own Telegram identity (same priority as `/stats`' header) followed by one
+line per connected platform with its lifetime achievement/trophy count, gamerscore,
+and PSN level — the shape `/stats`' header has, built by `/panel`'s own plain-text
+helper, not the shared one (#18). The body below carries only login status per
+platform, publication destinations, current presence, and the timezone; the 24h/30d
+counters and "recent achievements" list it used to show are gone (the header covers
+achievements). The keyboard is one row per platform (Xbox → Steam → PSN) in a fixed
+position — `[Profile, Disconnect]` when connected, one wide "🎮 Подключить X" when
+not (#33) — plus timezone / My chats / sync / `show_profile_links` toggle, and the
+per-chat subscription cards (rarity mode, digest threshold). Own profile links here
+are always visible regardless of the privacy toggle — this screen is never rendered
+to anyone but its owner. The panel must never call a platform API except the one
+explicit manual-sync button.
 
 **Group commands**: `/subscribe`, `/unsubscribe`, `/stats [@user]` (cached stats +
 recent games; the card's header shows the person's Telegram identity — `@username`,
 else first+last name, else a connected platform's own name as a last resort — not a
 platform gamertag, since every connected platform already gets its own line below),
-`/who` (pick a known member, opens their `/stats`), `/online` (cached presence,
+`/who` (pick a known member, opens their `/stats`; the picker buttons identify the
+person the same way `/stats`' header does — `@username` > name > gamertag > platform
+name, never a bare id — #40), `/online` (cached presence,
 optionally auto-refreshing), `/recent [N]`, `/summary`, `/hltb`, `/delete_last`
 (deletes the chat's own latest non-system bot message). `chat_seen` tracks anyone
 known who has written in the group, even without a publish subscription — `/online`
