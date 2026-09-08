@@ -22,7 +22,7 @@ from bot.i18n import gettext
 from bot.services.achievements import platform_breakdown_suffix, plural_achievements
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
-from bot.services.tables import blockquote, resolve_display_name, total_line, truncate_name
+from bot.services.tables import blockquote, total_line, truncate_name
 from bot.util import thousands, utcnow
 
 log = logging.getLogger(__name__)
@@ -191,16 +191,7 @@ def _section(
 
 
 def _leader_row(place: int, row: ChatMemberStat) -> str:
-    display_name = (
-        resolve_display_name(
-            username=row.username,
-            first_name=row.first_name,
-            last_name=row.last_name,
-            gamertag=row.gamertag,
-        )
-        or f"id{row.tg_id}"
-    )
-    name = html_escape(truncate_name(display_name))
+    name = html_escape(truncate_name(row.gamertag or f"id{row.tg_id}"))
     tail = f" {AchievementBadge.DIAMOND}{row.rare}" if row.rare else ""
     breakdown = platform_breakdown_suffix(
         row.xbox_count, row.steam_count, row.psn_count, always=True
