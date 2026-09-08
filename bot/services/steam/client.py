@@ -70,6 +70,19 @@ class SteamKeyDeadError(SteamApiError):
     unresolvable-profile failure without guessing at wording."""
 
 
+class SteamGameDetailsPrivateError(SteamApiError):
+    """ "My Profile" itself can be public while the separate "Game details"
+    privacy setting stays private/friends-only — found live 2026-09-08,
+    whalerider84: `get_profile().is_public` passed, but backfill silently
+    stored 0 achievements. Verified live against that account's real,
+    still-private GetOwnedGames response: the `games` key (and `game_count`
+    alongside it) is missing from the response entirely, not present as an
+    empty list — Steam's own documented shape for "not visible to you" on
+    this endpoint. get_owned_games() treats a present-but-empty `games` key
+    as a real answer (genuinely owns nothing played), only a missing one as
+    this error."""
+
+
 class SteamProfile:
     __slots__ = ("is_public", "persona_name", "steam_id")
 
@@ -214,6 +227,13 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
         api_key,
         {"steamid": steam_id, "include_appinfo": "1"},
     )
+    if "games" not in payload:
+        # See SteamGameDetailsPrivateError's own docstring — this is a
+        # different signal than "owns games, none played" (`games: []`),
+        # which is a legitimate empty result, not an error.
+        raise SteamGameDetailsPrivateError(
+            "Game details privacy is not public (GetOwnedGames returned no games key)"
+        )
     games = payload.get("games") or []
     return [
         OwnedGame(

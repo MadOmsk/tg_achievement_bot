@@ -11,6 +11,7 @@ from bot.db.repo import Repo
 from bot.services.steam import client as steam_client
 from bot.services.steam.client import (
     SteamApiError,
+    SteamGameDetailsPrivateError,
     get_global_percentages,
     get_owned_games,
     get_player_achievements,
@@ -276,6 +277,39 @@ async def test_get_owned_games_keeps_only_played_ones(monkeypatch: pytest.Monkey
     assert [(g.appid, g.name, g.playtime_forever) for g in games] == [
         ("550", "Left 4 Dead 2", 2265)
     ]
+
+
+async def test_get_owned_games_returns_empty_for_a_genuinely_empty_library(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A public profile that legitimately owns nothing gets a real,
+    present-but-empty `games` list back from Steam — not an error, unlike
+    the missing-key case below."""
+
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {"game_count": 0, "games": []}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    assert await get_owned_games("key", STEAM_ID) == []
+
+
+async def test_get_owned_games_raises_when_game_details_is_private(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Found live (whalerider84, 2026-09-08): "My Profile" itself was
+    public, but the separate "Game details" privacy setting was still
+    private/friends-only — GetOwnedGames comes back with no `games` key at
+    all (not an empty list), and backfill was silently storing 0
+    achievements with no way to tell this apart from "owns nothing"."""
+
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {}  # Steam's own shape for "not visible to you" here
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    with pytest.raises(SteamGameDetailsPrivateError):
+        await get_owned_games("key", STEAM_ID)
 
 
 async def test_platform_link_round_trip(repo: Repo) -> None:
