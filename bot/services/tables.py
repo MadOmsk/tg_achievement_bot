@@ -37,3 +37,32 @@ def total_line(label: str, text: str) -> str:
     way everywhere so it reads as a total, not another row (now placed
     *before* the list it summarizes, not after — SPEC 6.3, 7.3)."""
     return f"<b>{label}:</b> {text}"
+
+
+def resolve_display_name(
+    *,
+    username: str | None,
+    first_name: str | None,
+    last_name: str | None,
+    gamertag: str | None = None,
+) -> str | None:
+    """The Telegram identity, not a platform gamertag (Follow-up 2026-09-06,
+    originally /stats' header only) — @username, else first+last name, else
+    a platform display name as a last resort. Shared by /stats' header,
+    /online's rows, and /summary's leaderboard rows (Follow-up 2026-09-08)
+    so a Steam/PSN-only person — who has no `gamertag` at all — reads as
+    themselves everywhere instead of a bare `idNNNN` in some views and their
+    Telegram name in others.
+
+    Returns None when nothing at all is known yet (a fresh connection with
+    no message ever seen and no gamertag) — callers pick their own last
+    resort, same as before this was pulled out into one place.
+    """
+    if username:
+        return f"@{username}"
+    full_name = " ".join(part for part in (first_name, last_name) if part)
+    if full_name:
+        return full_name
+    if gamertag:
+        return gamertag
+    return None

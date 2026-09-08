@@ -50,7 +50,7 @@ from bot.services.online_view import render_online_table
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for, local_now
-from bot.services.tables import blockquote, truncate_name
+from bot.services.tables import blockquote, resolve_display_name, truncate_name
 from bot.util import cooldown_minutes_left, humanize_ago, thousands, utcnow
 
 log = logging.getLogger(__name__)
@@ -234,14 +234,21 @@ def _display_name(target: User, links: list[PlatformLink]) -> str:
     one. first_name/last_name only exist once UsernameMiddleware (below)
     has seen at least one message from them — a brand-new /start with
     nothing yet falls through to a platform name as a last resort, same
-    defensive shape this function already had before this change."""
-    if target.username:
-        return f"@{target.username}"
-    full_name = " ".join(part for part in (target.first_name, target.last_name) if part)
-    if full_name:
-        return full_name
-    if target.gamertag:
-        return target.gamertag
+    defensive shape this function already had before this change.
+
+    The username/name/gamertag chain itself now lives in
+    services/tables.py::resolve_display_name (Follow-up 2026-09-08), shared
+    with /online's rows and /summary's leaderboard — only the platform-link
+    last resort below is specific to this card.
+    """
+    name = resolve_display_name(
+        username=target.username,
+        first_name=target.first_name,
+        last_name=target.last_name,
+        gamertag=target.gamertag,
+    )
+    if name:
+        return name
     if links:
         return links[0].display_name or links[0].external_id
     return ""

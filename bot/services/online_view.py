@@ -12,6 +12,7 @@ from bot.constants import PresenceState
 from bot.db.repo import ChatPresenceRow
 from bot.i18n import gettext
 from bot.services.achievements import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
+from bot.services.tables import resolve_display_name
 
 _ = lambda key, **kwargs: gettext("onlineview", key, **kwargs)  # noqa: E731
 
@@ -44,7 +45,15 @@ def render_online_table(rows: list[ChatPresenceRow], updated_label: str) -> str:
     poller/online_refresh.py alike)."""
     lines = [_("onlineview-header"), _("onlineview-updated", updated=updated_label), ""]
     for row in rows:
-        name = row.gamertag or f"id{row.tg_id}"
+        name = (
+            resolve_display_name(
+                username=row.username,
+                first_name=row.first_name,
+                last_name=row.last_name,
+                gamertag=row.gamertag,
+            )
+            or f"id{row.tg_id}"
+        )
         lines.append(
             _("onlineview-row", icon=presence_icon(row), name=name, status=presence_text(row))
         )

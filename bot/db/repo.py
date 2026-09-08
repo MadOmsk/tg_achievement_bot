@@ -254,6 +254,11 @@ class ChatPresenceRow:
     title_id: str | None
     title_name: str | None
     platform: str  # whichever platform state/title_id/title_name came from
+    # Telegram identity (Follow-up 2026-09-08) — resolve_display_name() picks
+    # from these first, gamertag only as a fallback; see that function for why.
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -293,6 +298,11 @@ class ChatMemberStat:
     xbox_count: int = 0
     steam_count: int = 0
     psn_count: int = 0
+    # Telegram identity (Follow-up 2026-09-08) — see ChatPresenceRow above
+    # and resolve_display_name() for why gamertag alone isn't enough anymore.
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -1511,6 +1521,11 @@ class Repo:
         the identical fix a second time: `cnt`'s combined total already
         included PSN rows (plain `tg_id` sum), the per-platform split next
         to it silently didn't.
+
+        `username`/`first_name`/`last_name` (Follow-up 2026-09-08) exist so
+        `_leader_row` can resolve a Telegram identity the same way /stats'
+        header does — a Steam/PSN-only person has no `gamertag` at all, and
+        used to render as a bare `idNNNN`.
         """
         date_bound = "AND s.unlocked_at >= ?"
         date_params: list[object] = [_iso(since)]
@@ -1519,7 +1534,8 @@ class Repo:
             date_params.append(_iso(until))
 
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.gamertag, u.xuid, COUNT(s.achievement_id) AS cnt,"
+            "SELECT u.tg_id, u.gamertag, u.username, u.first_name, u.last_name, u.xuid,"
+            "       COUNT(s.achievement_id) AS cnt,"
             "       COALESCE(SUM(s.gamerscore), 0) AS score,"
             "       SUM(CASE WHEN s.rarity_percent IS NOT NULL AND s.rarity_percent <= ?"
             "                THEN 1 ELSE 0 END) AS rare,"
@@ -1550,6 +1566,9 @@ class Repo:
                 xbox_count=int(row["xbox_count"] or 0),
                 steam_count=int(row["steam_count"] or 0),
                 psn_count=int(row["psn_count"] or 0),
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
             )
             for row in await cursor.fetchall()
         ]
@@ -1596,6 +1615,11 @@ class Repo:
         the roster at all, which they didn't before this fix — `psn_level`
         below is a hardcoded 0, wired in now so a real presence table can
         slot in later without reshaping this query again.
+
+        `username`/`first_name`/`last_name` (Follow-up 2026-09-08) exist so
+        the row label can resolve a Telegram identity the same way /stats'
+        header does, instead of falling back to a bare `idNNNN` for anyone
+        with no `gamertag` (every Steam/PSN-only person).
         """
         cursor = await self._conn.execute(
             "WITH member AS ("
@@ -1603,7 +1627,7 @@ class Repo:
             "  UNION "
             "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
             "), presence AS ("
-            "  SELECT u.tg_id, u.gamertag, u.xuid,"
+            "  SELECT u.tg_id, u.gamertag, u.username, u.first_name, u.last_name, u.xuid,"
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
             "         xp.title_name AS xbox_title_name, xp.updated_at AS xbox_updated_at,"
             "         sp.persona_state AS steam_persona_state, sp.gameid AS steam_gameid,"
@@ -1641,7 +1665,7 @@ class Repo:
             "    END AS winner"
             "  FROM presence"
             ") "
-            "SELECT tg_id, gamertag, xuid,"
+            "SELECT tg_id, gamertag, username, first_name, last_name, xuid,"
             "       CASE winner"
             "         WHEN 'steam' THEN"
             "           CASE WHEN steam_persona_state != 0 THEN 'Online' ELSE 'Offline' END"
@@ -1664,6 +1688,9 @@ class Repo:
             ChatPresenceRow(
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
                 xuid=row["xuid"],
                 state=row["state"],
                 title_id=row["title_id"],

@@ -73,7 +73,9 @@ async def test_summary_lists_everyone_and_marks_rare(repo: Repo) -> None:
     text = await summary_text(repo, CHAT_ID, 10.0, now.date())
 
     assert text is not None
-    assert "Igor" in text and "Alex" in text
+    # The row label is the Telegram identity (Follow-up 2026-09-08), not the
+    # gamertag — _chat_with_two_players() gives both a username too.
+    assert "@igor" in text and "@alex" in text
     # One totals line per window, label fused right into it (not a separate
     # "Всего" line any more — the label itself says which window it is).
     assert text.count("<b>24 часа:</b>") == 1
@@ -167,17 +169,13 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     text = await summary_text(repo, CHAT_ID, 10.0, now.date())
 
     assert text is not None
-    both_line = next(
-        line for line in text.split("\n") if "Both" in line and "BothSteam" not in line
-    )
+    # Row labels are the Telegram identity (Follow-up 2026-09-08) — every
+    # user here has a username, so that wins over gamertag/PSN display name.
+    both_line = next(line for line in text.split("\n") if "@both" in line)
     assert "(🟢 1 · ⚫ 1)" in both_line
-    xbox_only_line = next(line for line in text.split("\n") if "XboxOnly" in line)
+    xbox_only_line = next(line for line in text.split("\n") if "@xboxonly" in line)
     assert "(🟢 1)" in xbox_only_line
-    # PsnOnly has no Xbox gamertag, so — same as any Steam-only person
-    # elsewhere in this project — the row falls back to "id<tg_id>", not
-    # their PSN display name; that fallback isn't what #32 is about, only
-    # the platform breakdown next to it is.
-    psn_only_line = next(line for line in text.split("\n") if "id3" in line)
+    psn_only_line = next(line for line in text.split("\n") if "@psnonly" in line)
     assert "(🔵 1)" in psn_only_line  # #32 — used to have no bucket to land in at all
 
 
@@ -190,14 +188,16 @@ async def test_zero_scorers_still_appear(repo: Repo) -> None:
     text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
 
     assert text is not None
-    assert "Alex" in text  # unlocked nothing, still listed
+    assert "@alex" in text  # unlocked nothing, still listed
 
 
 async def test_gamertag_is_escaped_inside_the_html_table(repo: Repo) -> None:
     """The list lives inside a <blockquote>; an unescaped "<" or "&" in a
-    gamertag would break the markup Telegram parses."""
+    displayed name would break the markup Telegram parses. No username set
+    here (Follow-up 2026-09-08 gives that priority) so the dangerous string
+    is the one actually rendered — the gamertag, as a fallback."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
-    await repo.ensure_user(1, "weird")
+    await repo.ensure_user(1)
     await repo.link_xbox_account(1, XUID_A, "A&B<C>", 1000)
     await repo.subscribe(CHAT_ID, 1)
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
@@ -232,7 +232,7 @@ async def test_window_is_a_rolling_day_not_a_calendar_one(repo: Repo) -> None:
         is_backfill=False,
     )
     text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
-    assert text is not None and "Igor" in text
+    assert text is not None and "@igor" in text
 
 
 async def test_month_window_is_thirty_rolling_days(repo: Repo) -> None:
@@ -294,9 +294,11 @@ async def test_summary_offers_show_all_button_only_past_the_configured_limit(
     buttons = [b for row in markup.inline_keyboard for b in row]
     assert any(b.callback_data == "summary:all:day" for b in buttons)
     assert any(b.callback_data == "summary:all:month" for b in buttons)
-    # Only 2 of the 3 players make it into the capped 24h table.
+    # Only 2 of the 3 players make it into the capped 24h table. Row labels
+    # are the Telegram identity (Follow-up 2026-09-08) — @player{i}, since
+    # ensure_user() gave each one a username too.
     day_section = text.split("30 дней")[0]
-    assert sum(day_section.count(f"Player{i}") for i in range(3)) == 2
+    assert sum(day_section.count(f"@player{i}") for i in range(3)) == 2
 
 
 async def test_summary_top_limit_zero_means_no_cap(repo: Repo) -> None:
@@ -318,11 +320,11 @@ async def test_summary_top_limit_zero_means_no_cap(repo: Repo) -> None:
     assert built is not None
     text, markup = built
     assert markup is None  # nothing truncated, nothing to show more of
-    assert all(f"Player{i}" in text for i in range(3))
+    assert all(f"@player{i}" in text for i in range(3))
 
     full = await full_leaderboard(repo, CHAT_ID, 10.0, "day")
     assert full is not None
-    assert all(f"Player{i}" in full for i in range(3))
+    assert all(f"@player{i}" in full for i in range(3))
 
 
 async def test_summary_has_no_show_all_button_under_the_limit(repo: Repo) -> None:
