@@ -77,8 +77,9 @@ class DailySummary:
                 self._repo, chat.chat_id, chat.rare_threshold_percent, now_local.date()
             )
             if built is None:
-                # Nobody unlocked anything: staying silent keeps the summary
-                # meaningful instead of turning it into daily noise (SPEC 5.7).
+                # No subscribed members at all — nothing to roster (#34
+                # made a zero-activity day still send). Mark it done so the
+                # per-minute tick doesn't keep re-checking today.
                 await self._repo.mark_daily_report_sent(chat.chat_id, report_date)
                 continue
             text, markup = built
@@ -113,12 +114,16 @@ async def build_summary(
     "today" depending on when they happen to check (SPEC 5.7) — and both list
     everyone subscribed, zero-scorers included, so the table reads as a
     roster, not just whoever happened to unlock something.
+
+    A day on which nobody unlocked anything still produces a report (#34) —
+    the roster with everyone at 0. Only a chat with no subscribed members at
+    all returns None (there is genuinely no roster to show).
     """
     now = utcnow()
     day_rows = await repo.chat_member_stats(
         chat_id, now - timedelta(hours=DAY_WINDOW_HOURS), threshold
     )
-    if not day_rows or not any(row.count for row in day_rows):
+    if not day_rows:
         return None
 
     month_rows = await repo.chat_member_stats(

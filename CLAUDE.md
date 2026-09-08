@@ -473,7 +473,10 @@ of them came from PSN.
 Lists (`/stats`, `/recent`, `/summary`, the daily summary) render as sentence-lines
 inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table
 (which renders as a code block — wrong register for a leaderboard or game list).
-Summary windows are sliding (last 24 hours, last 30 days), not calendar-aligned.
+Summary windows are sliding (last 24 hours, last 30 days), not calendar-aligned. A
+day on which nobody unlocked anything still sends the summary — the roster with
+everyone at 0 (#34); `build_summary` returns `None`, and the chat gets nothing,
+only when there are no subscribed members at all.
 
 ## Statistics rules
 

@@ -209,9 +209,22 @@ async def test_gamertag_is_escaped_inside_the_html_table(repo: Repo) -> None:
     assert "&amp;" in text and "&lt;" in text
 
 
-async def test_silent_when_nobody_unlocked_anything(repo: Repo) -> None:
-    """Otherwise the summary becomes daily noise (SPEC 5.7)."""
+async def test_a_zero_activity_day_still_sends_the_roster(repo: Repo) -> None:
+    """#34: reversed from the old "stay silent" behaviour — a day nobody
+    unlocked anything still produces the report, everyone at 0."""
     await _chat_with_two_players(repo)
+
+    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date())
+
+    assert built is not None
+    text, _markup = built
+    assert "0 достижений, +0 G" in text
+    assert "Igor" in text and "Alex" in text
+
+
+async def test_no_report_only_when_there_are_no_subscribed_members(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Пустой чат", 1)  # a chat, but nobody subscribed
+
     assert await build_summary(repo, CHAT_ID, 10.0, utcnow().date()) is None
 
 
@@ -222,7 +235,10 @@ async def test_window_is_a_rolling_day_not_a_calendar_one(repo: Repo) -> None:
     await repo.insert_new_achievements(
         XUID_A, [achievement("too-old", utcnow() - timedelta(hours=25))], is_backfill=False
     )
-    assert await build_summary(repo, CHAT_ID, 10.0, utcnow().date()) is None
+    # The 25h-old unlock is outside the rolling day window — the report still
+    # sends (#34), it just counts zero for it.
+    text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
+    assert text is not None and "24 часа:</b> 0 достижений" in text
 
     # 23 hours ago is still inside the window, even though it is another
     # calendar day for someone.
@@ -232,7 +248,7 @@ async def test_window_is_a_rolling_day_not_a_calendar_one(repo: Repo) -> None:
         is_backfill=False,
     )
     text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
-    assert text is not None and "Igor" in text
+    assert text is not None and "24 часа:</b> 1 достижение" in text
 
 
 async def test_month_window_is_thirty_rolling_days(repo: Repo) -> None:
