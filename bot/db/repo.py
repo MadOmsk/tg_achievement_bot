@@ -330,6 +330,21 @@ class TopGame:
 
 
 @dataclass(slots=True)
+class ChatTopGame:
+    """One row of the monthly summary's own games block (#7) — a game
+    someone in the chat played this window, and how many achievements/
+    trophies the chat's subscribed members earned in it combined. Unlike
+    `TopGame` (one person's own recent games, with that person's own
+    gamerscore/platform), this is a chat-wide aggregate across everyone and
+    every platform at once — a single game's count can mix Xbox, Steam and
+    PSN contributions, so no single `platform`/`gamerscore` field applies."""
+
+    title_id: str
+    name: str | None
+    count: int
+
+
+@dataclass(slots=True)
 class TitleHistoryRow:
     title_id: str
     name: str
@@ -365,6 +380,11 @@ class PlatformLink:
     # Account-wide PSN level (Follow-up 2026-09-06) — always None for a
     # Steam row, or a PSN row the poller hasn't cached one for yet.
     psn_trophy_level: int | None = None
+    # Whether the shared service credential could see this account's
+    # achievements/trophies as of the last check (#5) — None until checked
+    # once, then True/False. See schema.sql's own column comment for why
+    # this needs re-checking beyond the coarser connect-time profile check.
+    achievements_visible: bool | None = None
 
 
 @dataclass(slots=True)
@@ -967,6 +987,58 @@ class Repo:
             "DELETE FROM psn_title_progress WHERE account_id = ?", (account_id,)
         )
         await self._conn.commit()
+
+    # --------------------------------------------- admin "reset & resync"
+
+    async def reset_xbox_data(self, tg_id: int, xuid: str) -> int:
+        """Wipe this person's Xbox achievement history and per-game cache —
+        the admin card's "reset & resync" action (user request 2026-09-08):
+        deletes both modern and x360 `seen_achievements` rows (there is no
+        separate UI concept of "Xbox 360" outside the message/icon itself,
+        same reasoning as `achievement_platform_breakdown`) plus their
+        `title_history` cache, so a fresh backfill starts from nothing
+        rather than a stale gamerscore/progress snapshot lingering next to
+        an empty achievement list. The caller re-runs backfill right after.
+        """
+        cursor = await self._conn.execute(
+            "DELETE FROM seen_achievements WHERE tg_id = ? AND platform IN ('modern', 'x360')",
+            (tg_id,),
+        )
+        deleted = cursor.rowcount
+        await self._conn.execute("DELETE FROM title_history WHERE xuid = ?", (xuid,))
+        await self._conn.commit()
+        return deleted
+
+    async def reset_steam_data(self, tg_id: int) -> int:
+        """Steam's counterpart of `reset_xbox_data` — no per-user cache table
+        to clear beyond `seen_achievements` itself (`steam_schema_cache`/
+        `steam_rarity_cache` are per-game, shared across every user, and
+        must not be touched by resetting one person)."""
+        cursor = await self._conn.execute(
+            "DELETE FROM seen_achievements WHERE tg_id = ? AND platform = 'steam'", (tg_id,)
+        )
+        deleted = cursor.rowcount
+        await self._conn.commit()
+        return deleted
+
+    async def reset_psn_data(self, tg_id: int, account_id: str) -> int:
+        """PSN's counterpart of `reset_xbox_data` — also clears the per-game
+        progress cache (same table `clear_psn_title_progress` clears for
+        #27's stuck-account recovery) and flips `backfill_done` back off, so
+        the regular poller (#21's gate) leaves this account alone until the
+        caller's fresh backfill flips it back on."""
+        cursor = await self._conn.execute(
+            "DELETE FROM seen_achievements WHERE tg_id = ? AND platform = 'psn'", (tg_id,)
+        )
+        deleted = cursor.rowcount
+        await self._conn.execute(
+            "DELETE FROM psn_title_progress WHERE account_id = ?", (account_id,)
+        )
+        await self._conn.execute(
+            "UPDATE psn_poll_state SET backfill_done = 0 WHERE account_id = ?", (account_id,)
+        )
+        await self._conn.commit()
+        return deleted
 
     # -------------------------------------------------------- achievements
 
@@ -1682,6 +1754,41 @@ class Repo:
                 steam_count=int(row["steam_count"] or 0),
                 psn_count=int(row["psn_count"] or 0),
             )
+            for row in await cursor.fetchall()
+        ]
+
+    async def chat_top_games(
+        self, chat_id: int, since: datetime, limit: int = 15
+    ) -> list[ChatTopGame]:
+        """Games the chat's subscribed members played this window, ranked by
+        total achievements/trophies earned across all of them combined (#7,
+        monthly summary's own new block) — same "report, not the feed"
+        subscribers-only scope `chat_member_stats` above uses, joined by
+        title instead of by person. `titles` already covers every platform
+        (Xbox, Steam, and PSN all upsert into it on their own achievement
+        inserts), so one COALESCE covers "no cached name yet" for all three
+        the same way /stats' own games list does.
+
+        `limit == 0` means "no cap" (same convention as the admin's own
+        summary_top_limit setting, SPEC 6.4) — SQLite's own `LIMIT 0` would
+        instead mean "zero rows", so that case skips the clause entirely
+        rather than passing 0 through literally."""
+        query = (
+            "SELECT s.title_id, t.name, COUNT(*) AS cnt "
+            "FROM seen_achievements s "
+            "JOIN subscriptions sub ON sub.tg_id = s.tg_id AND sub.chat_id = ? "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            "WHERE s.unlocked_at >= ? "
+            "GROUP BY s.title_id "
+            "ORDER BY cnt DESC"
+        )
+        params: list[object] = [chat_id, _iso(since)]
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+        cursor = await self._conn.execute(query, params)
+        return [
+            ChatTopGame(title_id=row["title_id"], name=row["name"], count=int(row["cnt"]))
             for row in await cursor.fetchall()
         ]
 
@@ -2498,7 +2605,8 @@ class Repo:
 
     async def get_platform_link(self, tg_id: int, platform: str) -> PlatformLink | None:
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level "
+            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
+            "       achievements_visible "
             "FROM platform_links WHERE tg_id = ? AND platform = ?",
             (tg_id, platform),
         )
@@ -2512,11 +2620,17 @@ class Repo:
             display_name=row["display_name"],
             linked_at=row["linked_at"],
             psn_trophy_level=row["psn_trophy_level"],
+            achievements_visible=(
+                bool(row["achievements_visible"])
+                if row["achievements_visible"] is not None
+                else None
+            ),
         )
 
     async def platform_links_of(self, tg_id: int) -> list[PlatformLink]:
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level "
+            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
+            "       achievements_visible "
             "FROM platform_links WHERE tg_id = ?",
             (tg_id,),
         )
@@ -2528,6 +2642,11 @@ class Repo:
                 display_name=row["display_name"],
                 linked_at=row["linked_at"],
                 psn_trophy_level=row["psn_trophy_level"],
+                achievements_visible=(
+                    bool(row["achievements_visible"])
+                    if row["achievements_visible"] is not None
+                    else None
+                ),
             )
             for row in await cursor.fetchall()
         ]
@@ -2543,6 +2662,16 @@ class Repo:
         )
         await self._conn.commit()
 
+    async def set_achievements_visible(self, tg_id: int, platform: str, visible: bool) -> None:
+        """Set at connect time and refreshed by every backfill/resync (#5,
+        SteamFetcher/PsnFetcher) — /panel's login row reads this to show the
+        last actually-checked achievement/trophy visibility, not nothing."""
+        await self._conn.execute(
+            "UPDATE platform_links SET achievements_visible = ? WHERE tg_id = ? AND platform = ?",
+            (int(visible), tg_id, platform),
+        )
+        await self._conn.commit()
+
     async def platform_links_all(self, platform: str) -> list[PlatformLink]:
         """Every linked account on one platform, across every user —
         `platform_links_of` narrowed to one person, this is the admin-wide
@@ -2555,7 +2684,8 @@ class Repo:
         harmless to always select.
         """
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level "
+            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
+            "       achievements_visible "
             "FROM platform_links WHERE platform = ?",
             (platform,),
         )
@@ -2567,6 +2697,11 @@ class Repo:
                 display_name=row["display_name"],
                 linked_at=row["linked_at"],
                 psn_trophy_level=row["psn_trophy_level"],
+                achievements_visible=(
+                    bool(row["achievements_visible"])
+                    if row["achievements_visible"] is not None
+                    else None
+                ),
             )
             for row in await cursor.fetchall()
         ]

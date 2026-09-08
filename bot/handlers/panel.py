@@ -32,9 +32,9 @@ from bot.handlers.keyboards import (
 )
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.fetcher import Fetcher
-from bot.services.achievements import plural_achievements, plural_trophies, telegram_identity
+from bot.services.achievements import platform_header_lines, telegram_identity
 from bot.services.single_message import send_replacing
-from bot.util import cooldown_minutes_left, humanize_ago, parse_iso, thousands
+from bot.util import cooldown_minutes_left, humanize_ago, parse_iso
 
 log = logging.getLogger(__name__)
 
@@ -467,6 +467,22 @@ async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I
     await _redraw_chat_list(callback, repo, i18n)
 
 
+def _visibility_status(link: PlatformLink, i18n: I18nContext | StaticI18nContext) -> str:
+    """Steam/PSN's login row (#5, user request) — Xbox already has a real
+    status (token active/dead/revoked); Steam/PSN never had one at all,
+    just the nickname. This is the achievement/trophy *visibility* found by
+    the last actual check — connect time, or any backfill/resync since
+    (SteamFetcher.backfill/refresh_user, PsnFetcher.backfill/refresh_user)
+    — not a live check made here (SPEC 1.5's cache-only rule)."""
+    if link.achievements_visible is None:
+        return i18n.get("panel-visibility-unknown")
+    return (
+        i18n.get("panel-visibility-visible")
+        if link.achievements_visible
+        else i18n.get("panel-visibility-hidden")
+    )
+
+
 def _panel_identity(user: User, i18n: I18nContext | StaticI18nContext) -> str:
     """The person's own name for the /panel header (#18) — same priority as
     /stats' header (@username > first+last > gamertag, `telegram_identity`,
@@ -490,43 +506,25 @@ async def _panel_header_lines(
     i18n: I18nContext | StaticI18nContext,
 ) -> list[str]:
     """Identity + one line per connected platform with its lifetime count
-    (#18) — /panel's own plain-text take on /stats' header, deliberately a
-    separate helper from _build_stats_text's HTML one."""
-    lines = [_panel_identity(user, i18n)]
-    if user.xuid:
-        lines.append(
-            i18n.get(
-                "panel-header-xbox",
-                name=user.gamertag or i18n.get("panel-no-gamertag"),
-                achievements=plural_achievements(await repo.xbox_achievement_count(user.tg_id)),
-                score=thousands(user.gamerscore or 0),
-            )
-        )
-    if steam_link is not None:
-        count = await repo.platform_achievement_count(user.tg_id, Platform.STEAM)
-        lines.append(
-            i18n.get(
-                "panel-header-steam",
-                name=steam_link.display_name or steam_link.external_id,
-                achievements=plural_achievements(count),
-            )
-        )
-    if psn_link is not None:
-        count = await repo.platform_achievement_count(user.tg_id, Platform.PSN)
-        level_suffix = (
-            i18n.get("panel-header-psn-level", level=psn_link.psn_trophy_level)
-            if psn_link.psn_trophy_level
-            else ""
-        )
-        lines.append(
-            i18n.get(
-                "panel-header-psn",
-                name=psn_link.display_name or psn_link.external_id,
-                trophies=plural_trophies(count),
-                level_suffix=level_suffix,
-            )
-        )
-    return lines
+    (#18) — now built by the exact same function /stats' own header uses
+    (services/achievements.py::platform_header_lines, 2026-09-08 user
+    request: "пусть одни одинаково формируются" — this used to be a
+    hand-duplicated, HTML-identical copy of that same logic).
+
+    `show_links=False`: unlike /stats, this header's names were never
+    inline hyperlinks — /panel's own "Profile" buttons already cover that
+    (CLAUDE.md: "always visible regardless of the privacy toggle" is about
+    those buttons, not a second, redundant link inside the header text)."""
+    platform_links = [link for link in (steam_link, psn_link) if link is not None]
+    return [_panel_identity(user, i18n)] + await platform_header_lines(
+        repo,
+        tg_id=user.tg_id,
+        xuid=user.xuid,
+        gamertag=user.gamertag,
+        gamerscore=user.gamerscore,
+        platform_links=platform_links,
+        show_links=False,
+    )
 
 
 async def render_panel(
@@ -558,9 +556,17 @@ async def render_panel(
     if user is None or not user.xuid:
         text = i18n.get("panel-header-not-connected")
         if steam_link is not None:
-            text += "\n" + i18n.get("panel-login-steam-row", name=steam_link.display_name)
+            text += "\n" + i18n.get(
+                "panel-login-steam-row",
+                name=steam_link.display_name,
+                status=_visibility_status(steam_link, i18n),
+            )
         if psn_link is not None:
-            text += "\n" + i18n.get("panel-login-psn-row", name=psn_link.display_name)
+            text += "\n" + i18n.get(
+                "panel-login-psn-row",
+                name=psn_link.display_name,
+                status=_visibility_status(psn_link, i18n),
+            )
         return text, keyboard
 
     login = (
@@ -576,9 +582,21 @@ async def render_panel(
     lines = await _panel_header_lines(repo, user, steam_link, psn_link, i18n)
     lines += ["", i18n.get("panel-login-xbox-row", status=login)]
     if steam_link is not None:
-        lines.append(i18n.get("panel-login-steam-row-connected", name=steam_link.display_name))
+        lines.append(
+            i18n.get(
+                "panel-login-steam-row-connected",
+                name=steam_link.display_name,
+                status=_visibility_status(steam_link, i18n),
+            )
+        )
     if psn_link is not None:
-        lines.append(i18n.get("panel-login-psn-row-connected", name=psn_link.display_name))
+        lines.append(
+            i18n.get(
+                "panel-login-psn-row-connected",
+                name=psn_link.display_name,
+                status=_visibility_status(psn_link, i18n),
+            )
+        )
     lines += [
         i18n.get(
             "panel-publication-row",

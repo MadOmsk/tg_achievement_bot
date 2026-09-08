@@ -32,4 +32,3 @@ adminview-btn-limits = ⚙️ Глобальные настройки ▸
 adminview-btn-users = Пользователи ▸
 adminview-btn-chats = Чаты ▸
 adminview-btn-keys = 🔑 Ключи платформ ▸
-adminview-btn-psntest = 🏆 Трофеи PSN (тест) ▸

@@ -92,6 +92,18 @@ def _fake_level(monkeypatch, level: int = 7) -> None:
     monkeypatch.setattr(psn_fetcher_module, "account_trophy_level", _account_trophy_level)
 
 
+def _fake_visibility(monkeypatch, visible: bool = True) -> None:
+    """backfill()/refresh_user() both re-check trophy visibility now (#5) —
+    the fake client from _configured_auth is a bare `object()`, so this
+    stands in for the real psnawp call the same way _fake_level does for
+    account_trophy_level."""
+
+    async def _is_trophy_visible(client: object, account_id: str) -> bool:
+        return visible
+
+    monkeypatch.setattr(psn_fetcher_module, "is_trophy_visible", _is_trophy_visible)
+
+
 async def test_poll_account_publishes_what_sync_account_returns(
     repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
 ) -> None:
@@ -127,6 +139,7 @@ async def test_backfill_marks_done_and_returns_the_private_titles(
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
     _fake_level(monkeypatch, level=3)
+    _fake_visibility(monkeypatch)
     calls = _fake_sync(
         monkeypatch,
         PsnSyncOutcome(new_rows=[row("1"), row("2")], private_title_ids=["NPWR00009_00"]),
@@ -160,6 +173,7 @@ async def test_refresh_user_polls_a_backfilled_account(
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
     _fake_level(monkeypatch)
+    _fake_visibility(monkeypatch)
     await repo.mark_psn_backfill_done(ACCOUNT_ID)
     calls = _fake_sync(monkeypatch, PsnSyncOutcome(new_rows=[row("1"), row("2")]))
     publisher = FakePublisher()
@@ -181,6 +195,7 @@ async def test_refresh_user_resyncs_a_stuck_account(
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
     _fake_level(monkeypatch, level=5)
+    _fake_visibility(monkeypatch)
     # A leftover bogus checkpoint from the crashed first attempt.
     await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR00001_00", 50)
     calls = _fake_sync(monkeypatch, PsnSyncOutcome(new_rows=[row("1"), row("2"), row("3")]))

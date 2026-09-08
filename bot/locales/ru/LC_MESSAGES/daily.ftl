@@ -16,7 +16,7 @@ daily-month-10 = октября
 daily-month-11 = ноября
 daily-month-12 = декабря
 daily-window-day = 24 часа
-daily-window-month = этот месяц
+daily-window-month = с 1 { $month }
 
 # Summary
 daily-header = 📊 <b>Итог дня</b>, { $day } { $month }
@@ -28,3 +28,7 @@ daily-show-all-day = Показать всех (24ч)
 daily-show-all-month = Показать всех (за месяц)
 daily-leaderboard-total-label = Всего
 daily-leaderboard-full-header = 📊 <b>{ $label }, полностью</b>
+
+# Monthly summary's own games block (#7, user request)
+daily-games-header = <b>Игры за месяц</b>
+daily-unknown-game = без названия

@@ -29,7 +29,6 @@ admin-keys-screen =
     PSN: { $psn }
 admin-keys-set = ✅ настроен
 admin-keys-unset = ⚠️ не настроен
-admin-keys-goto = 🔑 К ключам платформ
 admin-keys-steam-add = Задать ключ Steam
 admin-keys-steam-change = Сменить ключ Steam
 admin-keys-steam-clear = Убрать ключ Steam
@@ -53,36 +52,9 @@ admin-keys-psn-saved =
 
     { $text }
 
-# PSN prompts
-admin-psn-npsso-prompt =
-    Пришли новый NPSSO одним сообщением — получить его: войди на
-    my.playstation.com, затем открой
-    https://ca.account.sony.com/api/v1/ssocookie и скопируй значение
-    «npsso» из JSON на экране.
-admin-psn-test-unconfigured =
-    🏆 Трофеи PSN (тест)
-
-    PSN ещё не настроен. Задай NPSSO в «🔑 Ключи платформ», потом вернись сюда.
-admin-psn-test-prompt =
-    🏆 Трофеи PSN (тест)
-
-    Пришли PSN Online ID — покажу последние выбитые трофеи вживую, без кэша
-    (имя, тир, редкость, скрытость и иконки одной медиа-группой).
-
 # PSN status and one-line messages
-admin-psn-change = Сменить NPSSO
 admin-psn-npsso-invalid = NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз.
 admin-psn-client-error = Не получилось создать клиент PSN — техническая ошибка на сервере ({ $error }). NPSSO тут, скорее всего, ни при чём — посмотри логи бота.
-admin-psn-configured-prompt = PSN настроен. Пришли PSN Online ID, чтобы проверить трофеи.
-admin-psn-token-dead = PSN сейчас недоступен — токен протух, обнови NPSSO через /admin.
-admin-psn-private = Профиль есть, но трофеи закрыты для сервисного аккаунта.
-admin-psn-not-found = Не нашёл: { $error }
-admin-psn-no-trophies = { $online_id }: трофеев не нашёл (или все скрыты).
-admin-psn-recent-header = 🏆 { $online_id } — последние { $count } трофеев:
-admin-psn-rarity = , { $percent }% игроков
-admin-psn-hidden =  (скрытый)
-admin-psn-trophy-row = { $badge } { $name }{ $secret } — { $title }{ $rarity }
-admin-psn-detail =     { $detail }
 
 # Limits and input prompts
 admin-limits-screen =
@@ -167,8 +139,14 @@ admin-id = id{ $tg_id }
 admin-users-row = { $icon } { $name } · { $ago } · { $today} / { $month }{ $note }
 admin-user-not-found = Пользователь не найден.
 admin-no-name = без имени
-admin-user-header = 👤 { $name }
-admin-login-not-connected = — не подключён
+# The card's own top line — every known bit of Telegram identity at once
+# (2026-09-08 user request), unlike /stats' header which picks one best
+# name. { $identity } is already the fully composed "Имя Фамилия, @username,
+# tg_id N" string (admin.py::_admin_tg_header) — never "@" + a bare id, only
+# a real username earns the "@".
+admin-user-header = 👤 { $identity }
+admin-user-tgid = tg_id { $tg_id }
+admin-login-not-connected = не подключён
 admin-login-active = ✅ активен, обновлён { $ago }
 admin-login-invalid = ⚠️ протух
 admin-login-revoked = 🔕 отключён самим пользователем
@@ -176,22 +154,41 @@ admin-no-data = нет данных
 admin-no-game = без игры
 admin-online-playing = { $ago }, { $game }
 admin-online-idle = в сети, не играет
-admin-xbox-line = 🟢 XBOX  ·  XUID { $xuid }  ·  gamerscore { $score }
-admin-xbox-login =   Вход активен (XBOX): { $login }
-admin-xbox-online =   В сети (XBOX):       { $online }
-admin-steam-line = ⚫ Steam  ·  id { $external_id }
-admin-display-name =   { $name }
-admin-steam-online =   В сети (Steam):      { $online }
-admin-psn-line = 🔵 PSN  ·  account_id { $external_id }
+admin-today-tag = сегодня { $count }
+admin-gamerscore-tag = gamerscore { $score }
+
+# One block per platform (2026-09-08 rework) — header line first (nickname +
+# id + lifetime count + today's count [+ completions/level]), then whatever
+# admin-only diagnostics apply to that platform on their own indented lines.
+admin-xbox-header = 🟢 XBOX: { $gamertag }
+admin-xuid-tag = XUID { $xuid }
+admin-login-row =   Вход: { $login }
+admin-online-row =   В сети: { $online }
+admin-steam-header = ⚫ Steam: { $name }
+admin-steamid-tag = id { $external_id }
+admin-psn-header = 🔵 PSN: { $name }
+admin-psn-id-tag = account_id { $external_id }
+admin-psn-level-tag = уровень { $level }
+
 admin-nowhere = нигде
 admin-subscribed = Подписан: { $chats }
-admin-counters = Ачивок:   сегодня { $today } · за месяц { $month }
+admin-counters = Ачивок (везде):   сегодня { $today } · за месяц { $month }
 admin-excluded = 🚫 Исключён из системы: не опрашивается и не публикуется.
 admin-restore = ↩️ Вернуть
 admin-exclude = 🚫 Исключить из системы
 admin-refresh-xbox = 🔄 Обновить XBOX
 admin-refresh-steam = 🔄 Обновить Steam
 admin-refresh-psn = 🔄 Обновить PSN
+admin-reset-xbox = 🗑 Сброс XBOX
+admin-reset-steam = 🗑 Сброс Steam
+admin-reset-psn = 🗑 Сброс PSN
+admin-reset-confirm-prompt =
+    Стереть базу { $platform } для этого пользователя и синхронизировать заново?
+
+    Это необратимо: вся история достижений/трофеев по этой платформе будет
+    удалена и перечитана с нуля (в чат ничего не публикуется — как при
+    первой привязке).
+admin-reset-confirm-yes = Да, стереть и пересинхронизировать
 admin-back-to-users = ‹ К списку
 
 # Chat cards

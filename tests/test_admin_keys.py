@@ -80,7 +80,7 @@ async def test_admin_text_input_saves_a_valid_steam_key(
     _awaiting_input[ADMIN_ID] = (STEAM_KEY_KEY, None)
     msg = _FakeMessage(KEY)
 
-    await admin_text_input(msg, psn_auth, steam_auth, bot=SimpleNamespace())  # type: ignore[arg-type]
+    await admin_text_input(msg, psn_auth, steam_auth)
 
     assert await steam_auth.get_key() == KEY
     assert ADMIN_ID not in _awaiting_input  # flow finished
@@ -98,7 +98,7 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
     _awaiting_input[ADMIN_ID] = (STEAM_KEY_KEY, None)
     msg = _FakeMessage("bad-key")
 
-    await admin_text_input(msg, PsnAuth(repo, cipher), steam_auth, bot=SimpleNamespace())  # type: ignore[arg-type]
+    await admin_text_input(msg, PsnAuth(repo, cipher), steam_auth)
 
     assert await steam_auth.get_key() is None
     assert _awaiting_input.get(ADMIN_ID) == (STEAM_KEY_KEY, None)  # still armed for a retry

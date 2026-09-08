@@ -125,5 +125,8 @@ async def test_header_lists_every_connected_platform(repo: Repo) -> None:
     assert text.splitlines()[0] == "👤 Igor Petrov"
     assert "🟢 XBOX: MadXbox" in text
     assert "⚫ Steam: SteamNick" in text
-    assert "🔵 PSN: PsnNick" in text
+    # "PlayStation:", not "PSN:" — same label /stats' own shared header uses
+    # (PLATFORM_LABEL, services/achievements.py) now that both are built by
+    # the same function (#5).
+    assert "🔵 PlayStation: PsnNick" in text
     assert "уровень 42" in text

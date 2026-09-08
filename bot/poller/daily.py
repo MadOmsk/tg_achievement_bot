@@ -17,7 +17,7 @@ from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import AchievementBadge
-from bot.db.repo import ChatMemberStat, Repo
+from bot.db.repo import ChatMemberStat, ChatTopGame, Repo
 from bot.i18n import gettext
 from bot.services.achievements import platform_breakdown_suffix, plural_achievements
 from bot.services.message_log import stats_category
@@ -158,15 +158,22 @@ async def build_summary(
         rows = await repo.chat_member_stats(chat_id, day_cutoff, threshold)
         if not rows:
             return None
-        blocks.append(("day", *_section(_("daily-window-day"), rows, top_limit)))
+        blocks.append(("day", *_section(_("daily-window-day"), rows, top_limit, show_rare=False)))
 
     if with_month:
-        rows = await repo.chat_member_stats(chat_id, month_cutoff_utc(tz_offset_min), threshold)
+        month_cutoff = month_cutoff_utc(tz_offset_min)
+        rows = await repo.chat_member_stats(chat_id, month_cutoff, threshold)
         if not rows:
             if not blocks:
                 return None  # month-only report for a chat with no members
         else:
-            blocks.append(("month", *_section(_("daily-window-month"), rows, top_limit)))
+            blocks.append(("month", *_section(_month_window_label(tz_offset_min), rows, top_limit)))
+            # #7: which games the chat actually played this month, not just
+            # who — its own block, only when there's something to show (a
+            # month of zero-scorers has nothing to rank).
+            games = await repo.chat_top_games(chat_id, month_cutoff, top_limit)
+            if games:
+                blocks.append(("games", _games_section(games), False))
 
     if not blocks:
         return None
@@ -210,36 +217,60 @@ async def full_leaderboard(
     # limit=len(rows): never truncate here — this is the "show everything"
     # view; expandable=False for the same reason (SPEC 6.3).
     section_lines, _full = _section(
-        _("daily-leaderboard-total-label"), rows, limit=len(rows), expandable=False
+        _("daily-leaderboard-total-label"),
+        rows,
+        limit=len(rows),
+        expandable=False,
+        show_rare=window != "day",
     )
-    label = _("daily-window-day") if window == "day" else _("daily-window-month")
+    label = _("daily-window-day") if window == "day" else _month_window_label(tz_offset_min)
     return "\n".join([_("daily-leaderboard-full-header", label=label), "", *section_lines])
 
 
+def _month_window_label(tz_offset_min: int | None) -> str:
+    """ "С 1 июня" (#6, user request) instead of a static "этот месяц" —
+    names the actual calendar month the window covers, in the same
+    genitive-case month names "{day} {month}" (daily-header) already uses.
+    The *current* local month is always the one month_cutoff_utc's "since
+    the 1st" points at, so no need to re-derive it from the cutoff itself."""
+    month = local_now(tz_offset_min).month
+    return _("daily-window-month", month=_(_MONTH_KEYS[month - 1]))
+
+
 def _section(
-    label: str, rows: list[ChatMemberStat], limit: int, *, expandable: bool = True
+    label: str,
+    rows: list[ChatMemberStat],
+    limit: int,
+    *,
+    expandable: bool = True,
+    show_rare: bool = True,
 ) -> tuple[list[str], bool]:
     """The totals line comes first, then the list — reversed from the old
     table-then-total order, so the headline number reads before you tap the
     list open (SPEC 6.3, 7.3). `limit == 0` means "no cap" (admin-configured,
     6.4) — a list this long only ever lives inside a collapsible quote, so
     there is nothing left to truncate for.
+
+    `show_rare=False` (day block, #9 user request) drops the 💎N rare-count
+    tail from each row — the month block (where it still shows) is a longer
+    window a rare pull is more worth calling out in; a single day's list
+    reads better without it.
     """
     total = sum(row.count for row in rows)
     score = sum(row.score for row in rows)
     summary = total_line(label, f"{plural_achievements(total)}, +{thousands(score)} G")
     capped = rows if limit == 0 else rows[:limit]
     rows_block = blockquote(
-        [_leader_row(place, row) for place, row in enumerate(capped, start=1)],
+        [_leader_row(place, row, show_rare=show_rare) for place, row in enumerate(capped, start=1)],
         expandable=expandable,
     )
     has_more = limit != 0 and len(rows) > limit
     return [summary, rows_block], has_more
 
 
-def _leader_row(place: int, row: ChatMemberStat) -> str:
+def _leader_row(place: int, row: ChatMemberStat, *, show_rare: bool = True) -> str:
     name = html_escape(truncate_name(row.gamertag or f"id{row.tg_id}"))
-    tail = f" {AchievementBadge.DIAMOND}{row.rare}" if row.rare else ""
+    tail = f" {AchievementBadge.DIAMOND}{row.rare}" if show_rare and row.rare else ""
     breakdown = platform_breakdown_suffix(
         row.xbox_count, row.steam_count, row.psn_count, always=True
     )
@@ -247,3 +278,21 @@ def _leader_row(place: int, row: ChatMemberStat) -> str:
         f"{place}. {name} — {plural_achievements(row.count)}{tail}{breakdown}"
         f" (+{thousands(row.score)} G)"
     )
+
+
+def _games_section(games: list[ChatTopGame]) -> list[str]:
+    """The monthly summary's own new block (#7, user request): which games
+    the chat actually played this month, ranked by achievements/trophies
+    earned in each — not who, `_section` above's own job. No "show all"
+    button of its own (unlike `_section`'s people list) — `chat_top_games`
+    is already capped by the same admin-configured `summary_top_limit`
+    (SPEC 6.4), and a second uncapped view for this one block wasn't asked
+    for. Not truncated (user request, 2026-09-08, same reasoning /stats'
+    own games list uses) — it already lives inside its own collapsible
+    quote, so a long title wrapping onto a second line costs nothing."""
+    rows = [
+        f"{place}. {html_escape(game.name or _('daily-unknown-game'))} — "
+        f"{plural_achievements(game.count)}"
+        for place, game in enumerate(games, start=1)
+    ]
+    return [_("daily-games-header"), blockquote(rows)]

@@ -31,7 +31,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
-from bot.constants import Platform, SettingKey
+from bot.constants import SettingKey
 from bot.db.repo import (
     ChatPresenceRow,
     PlatformLink,
@@ -45,20 +45,17 @@ from bot.i18n import gettext
 from bot.poller.daily import build_summary, full_leaderboard
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.achievements import (
-    COMPLETED_BADGE,
     PLATFORM_ICON,
     PLATFORM_ICON_UNKNOWN,
-    PLATFORM_LABEL,
     platform_breakdown_suffix,
+    platform_header_lines,
     plural_achievements,
-    plural_trophies,
     rarity_badge,
     score_suffix,
     telegram_identity,
 )
 from bot.services.message_log import stats_category
 from bot.services.online_view import render_online_table
-from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for, local_now
 from bot.services.tables import blockquote, truncate_name
@@ -310,68 +307,17 @@ async def _build_stats_text(
 
     counters = await counters_for(repo, target.tg_id)
     lines = [f"📊 <b>{html_escape(_display_name(target, platform_links))}</b>"]
-    if target.xuid:
-        gamertag_html = html_escape(target.gamertag or _hub_text(i18n, "chat-stats-no-gamertag"))
-        if show_links and target.gamertag:
-            gamertag_html = link_html(xbox_profile_url(target.gamertag), gamertag_html)
-        # A lifetime Xbox count (2026-09-08, user request) — see
-        # repo.py::xbox_achievement_count's own docstring for why this is
-        # trustworthy for modern Xbox and CLAUDE.md's Statistics rules for
-        # the one remaining x360-specific gap this doesn't close.
-        xbox_count = await repo.xbox_achievement_count(target.tg_id)
-        xbox_completed = await repo.xbox_completed_games_count(target.xuid)
-        xbox_parts = [plural_achievements(xbox_count)]
-        if xbox_completed:
-            xbox_parts.append(f"{COMPLETED_BADGE} {xbox_completed}")
-        xbox_parts.append(f"gamerscore {thousands(target.gamerscore or 0)}")
-        lines.append(
-            f"{PLATFORM_ICON[Platform.MODERN]} XBOX: {gamertag_html}  ·  "
-            + "  ·  ".join(xbox_parts)
-        )
-    for link in platform_links:
-        icon = PLATFORM_ICON.get(link.platform, PLATFORM_ICON_UNKNOWN)
-        label = PLATFORM_LABEL.get(link.platform, link.platform)
-        # A lifetime Steam/PSN count has always been fine here — a Steam
-        # backfill has no title cap (GetOwnedGames sees the whole owned-games
-        # library) and PSN's own poller scans every trophy title directly;
-        # neither carries the x360-specific gap repo.py::xbox_achievement_count's
-        # own docstring flags for the Xbox count above.
-        count = await repo.platform_achievement_count(target.tg_id, link.platform)
-        name_html = html_escape(link.display_name or link.external_id)
-        if show_links:
-            url = platform_profile_url(
-                link.platform, external_id=link.external_id, display_name=link.display_name
-            )
-            name_html = link_html(url, name_html)
-
-        # PSN calls its own achievements "trophies" everywhere (CLAUDE.md),
-        # /stats' per-link line included (Follow-up 2026-09-08 — this line
-        # used to say "N достижений" for a PSN link, same as every other
-        # platform, which was simply wrong wording, not a design choice).
-        is_psn = link.platform == Platform.PSN
-        link_parts = [plural_trophies(count) if is_psn else plural_achievements(count)]
-        if is_psn:
-            # PSN's own equivalent of a 100%-completed game (#19) — a
-            # platinum is only awarded once every other trophy in that game
-            # is earned, so this count already *is* that.
-            platinum = await repo.psn_platinum_count(target.tg_id)
-            if platinum:
-                link_parts.append(f"{COMPLETED_BADGE} {platinum}")
-            # PSN's own account-wide level (user request, Follow-up
-            # 2026-09-06) — cached by poller/psn_fetcher.py, never fetched
-            # here (SPEC 1.5's cache-only rule); absent until the poller has
-            # had a chance to set it (right after backfill, or a one-off
-            # backfill for an account linked before this feature existed —
-            # scripts/backfill_psn_levels.py, #23).
-            if link.psn_trophy_level is not None:
-                link_parts.append(
-                    _hub_text(i18n, "chat-stats-psn-level", level=link.psn_trophy_level)
-                )
-        elif link.platform == Platform.STEAM:
-            completed = await repo.steam_completed_games_count(target.tg_id)
-            if completed:
-                link_parts.append(f"{COMPLETED_BADGE} {completed}")
-        lines.append(f"{icon} {label}: {name_html}  ·  " + "  ·  ".join(link_parts))
+    # Shared with /panel's own header (2026-09-08, user request: "пусть одни
+    # одинаково формируются") — services/achievements.py::platform_header_lines.
+    lines += await platform_header_lines(
+        repo,
+        tg_id=target.tg_id,
+        xuid=target.xuid,
+        gamertag=target.gamertag,
+        gamerscore=target.gamerscore,
+        platform_links=platform_links,
+        show_links=show_links,
+    )
 
     today_breakdown = platform_breakdown_suffix(
         counters.today_xbox, counters.today_steam, counters.today_psn
@@ -588,7 +534,7 @@ async def who_stats_button(
 
 
 async def _summary_or_cooldown(
-    repo: Repo, chat_id: int
+    repo: Repo, chat_id: int, *, with_day: bool = True, with_month: bool = True
 ) -> tuple[str | None, InlineKeyboardMarkup | None, int]:
     """The report itself, or how many minutes are left before it can be asked
     for again (SPEC 5.7, 6.3) — one cooldown clock and one set of numbers
@@ -596,6 +542,10 @@ async def _summary_or_cooldown(
 
     Rate-limited per chat rather than per person: limiting only the requester
     would still let the whole chat spam it by taking turns.
+
+    `with_day`/`with_month` (2026-09-08, user request) let /summary_day and
+    /summary_month ask for one block only, sharing this same cooldown and
+    the same underlying report /summary's own "both" call builds.
     """
     minutes_left = cooldown_minutes_left(
         _last_summary.get(chat_id), time.monotonic(), SUMMARY_COOLDOWN_SECONDS
@@ -613,8 +563,8 @@ async def _summary_or_cooldown(
         settings_row.rare_threshold_percent,
         local_now(settings_row.tz_offset_min).date(),
         tz_offset_min=settings_row.tz_offset_min,
-        with_day=True,
-        with_month=True,
+        with_day=with_day,
+        with_month=with_month,
     )
     if built is None:
         return None, None, 0
@@ -622,14 +572,16 @@ async def _summary_or_cooldown(
     return text, markup, 0
 
 
-@router.message(Command("summary"))
-async def summary_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    """The same report the scheduled job sends, on demand."""
+async def _run_summary_command(
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, *, with_day: bool, with_month: bool
+) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-summary-group-only"))
         return
 
-    text, markup, minutes_left = await _summary_or_cooldown(repo, message.chat.id)
+    text, markup, minutes_left = await _summary_or_cooldown(
+        repo, message.chat.id, with_day=with_day, with_month=with_month
+    )
     if minutes_left:
         # A rate-limit notice, not a report — system, not stats.
         await message.answer(i18n.get("chat-summary-cooldown", minutes=minutes_left))
@@ -652,6 +604,28 @@ async def summary_command(message: Message, repo: Repo, bot: Bot, i18n: I18nCont
             parse_mode=ParseMode.HTML,
             reply_markup=markup,
         )
+
+
+@router.message(Command("summary"))
+async def summary_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+    """The same report the scheduled job sends, on demand."""
+    await _run_summary_command(message, repo, bot, i18n, with_day=True, with_month=True)
+
+
+@router.message(Command("summary_day"))
+async def summary_day_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+    """The day block only (2026-09-08, user request) — deliberately left out
+    of /help and chat-help-text: a testing/diagnostic entry point for the
+    #14 block split, not a command meant for everyday use alongside /summary
+    itself."""
+    await _run_summary_command(message, repo, bot, i18n, with_day=True, with_month=False)
+
+
+@router.message(Command("summary_month"))
+async def summary_month_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+    """The month block only — see summary_day_command above for why this
+    stays out of the help text."""
+    await _run_summary_command(message, repo, bot, i18n, with_day=False, with_month=True)
 
 
 @router.callback_query(F.data.startswith("summary:all:"))

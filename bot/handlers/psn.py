@@ -195,6 +195,10 @@ async def _connect(
 
     await repo.ensure_user(tg_id, username)
     await repo.link_platform_account(tg_id, Platform.PSN, profile.account_id, profile.online_id)
+    # Already verified True right above (#5) — recorded so /panel's login
+    # row has a real answer from the moment someone links, not just after
+    # the first backfill/resync gets around to setting it.
+    await repo.set_achievements_visible(tg_id, Platform.PSN, True)
     log.info("connect_psn: tg_id=%s linked account_id=%s", tg_id, profile.account_id)
     await bot.send_message(tg_id, i18n.get("psn-connected", name=profile.online_id))
 

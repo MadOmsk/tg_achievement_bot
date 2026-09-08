@@ -141,7 +141,6 @@ async def render_admin_home(
             [InlineKeyboardButton(text=_("adminview-btn-users"), callback_data="a:users:0")],
             [InlineKeyboardButton(text=_("adminview-btn-chats"), callback_data="a:chats")],
             [InlineKeyboardButton(text=_("adminview-btn-keys"), callback_data="a:keys")],
-            [InlineKeyboardButton(text=_("adminview-btn-psntest"), callback_data="a:psntest")],
         ]
     )
     return text, keyboard

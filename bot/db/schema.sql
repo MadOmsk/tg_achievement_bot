@@ -319,6 +319,13 @@ CREATE TABLE IF NOT EXISTS platform_links (
     -- for a PSN row the poller hasn't cached yet. Set by
     -- poller/psn_fetcher.py, never read live (SPEC 1.5's cache-only rule).
     psn_trophy_level INTEGER,
+    -- Whether the shared service credential could actually see this
+    -- account's achievements/trophies as of the last check (#5, /panel
+    -- login-row rework) — NULL until checked once, then 1/0. Set at connect
+    -- time and refreshed by every backfill and resync (SteamFetcher/
+    -- PsnFetcher), since the coarser "My Profile" visibility check at
+    -- connect time doesn't cover Steam's separate "Game details" toggle.
+    achievements_visible INTEGER,
     PRIMARY KEY (tg_id, platform)
 );
 

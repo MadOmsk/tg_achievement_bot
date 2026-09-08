@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
 from bot.i18n import gettext
 from bot.poller.publisher import Publisher
@@ -24,6 +25,7 @@ from bot.services.steam.auth import SteamAuth, SteamNotConfiguredError
 from bot.services.steam.client import (
     OwnedGame,
     SteamApiError,
+    SteamGameDetailsPrivateError,
     get_owned_games,
     get_presence_batch,
     rate_limit_usage,
@@ -87,6 +89,19 @@ class SteamFetcher:
             api_key = await self._steam_auth.require_key()
         except SteamNotConfiguredError:
             return _("steamfetcher-not-configured")
+        # Re-check achievement visibility as part of the resync (#5, user
+        # request: "ресинк перепроверяет же статус доступности ачивок?") —
+        # it did not, before this. A cheap probe, discarding the games list:
+        # backfill() is the one that actually re-stores anything.
+        try:
+            await get_owned_games(api_key, steam_id)
+        except SteamGameDetailsPrivateError:
+            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+        except SteamApiError:
+            pass  # transient failure — don't overwrite the last known-good status on a blip
+        else:
+            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
+
         try:
             snapshots = await get_presence_batch(api_key, [steam_id])
         except SteamApiError as exc:
@@ -123,7 +138,19 @@ class SteamFetcher:
         (SPEC 9, M-Steam-2d: no Steam equivalent of Xbox's contract 2)."""
         api_key = await self._steam_auth.require_key()
         async with self._backfill_slots:
-            games = await get_owned_games(api_key, steam_id)
+            try:
+                games = await get_owned_games(api_key, steam_id)
+            except SteamGameDetailsPrivateError:
+                # "My Profile" passed connect_steam's own is_public check,
+                # but the separate "Game details" toggle is still private —
+                # #39 already surfaces this to the person via
+                # _backfill_and_notify's own catch; recorded here too (#5)
+                # so /panel's login row reflects the same finding instead of
+                # only ever logging it. Re-raised unchanged — #39's message
+                # still needs to see this exact exception.
+                await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+                raise
+            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
             rows: list[AchievementRow] = []
 
             async def one(game: OwnedGame) -> None:

@@ -58,21 +58,23 @@ panel-deleted-toast = Убрал
 panel-header-not-connected = 👤 Панель
 
     Вход XBOX: — не подключён
-panel-login-steam-row = Вход Steam: { $name }
-panel-login-psn-row = Вход PSN: { $name }
-panel-no-gamertag = без геймертега
+panel-login-steam-row = Вход Steam: { $name }  ·  { $status }
+panel-login-psn-row = Вход PSN: { $name }  ·  { $status }
 # Header (#18): the person's own Telegram identity, then one line per
-# connected platform with its lifetime count — the same shape /stats'
-# header has, so the 24h/30d counters and "последние достижения" list that
-# used to sit in the body below are gone (that information is here now).
+# connected platform — built by the same function /stats' own header uses
+# (services/achievements.py::platform_header_lines, #5) rather than a
+# second, hand-duplicated copy of it.
 panel-header-identity = 👤 { $name }
-panel-header-xbox = 🟢 XBOX: { $name } · { $achievements } · gamerscore { $score }
-panel-header-steam = ⚫ Steam: { $name } · { $achievements }
-panel-header-psn = 🔵 PSN: { $name } · { $trophies }{ $level_suffix }
-panel-header-psn-level =  · уровень { $level }
 panel-login-xbox-row = Вход XBOX:   { $status }
-panel-login-steam-row-connected = Вход Steam:  { $name }
-panel-login-psn-row-connected = Вход PSN:    { $name }
+panel-login-steam-row-connected = Вход Steam:  { $name }  ·  { $status }
+panel-login-psn-row-connected = Вход PSN:    { $name }  ·  { $status }
+# Steam/PSN's achievement/trophy visibility, as of the last actual check
+# (#5) — connect time, or any backfill/resync since. Xbox has no
+# equivalent row here: its own token status (panel-login-xbox-row above)
+# already answers a similar "can I actually read this account" question.
+panel-visibility-visible = ✅ ачивки видны
+panel-visibility-hidden = ⚠️ ачивки скрыты
+panel-visibility-unknown = ❓ не проверено
 panel-publication-row = Публикация:  { $status }
 panel-now-playing-row = Сейчас:      { $playing }
 panel-timezone-row = Часовой пояс: { $offset }

@@ -13,13 +13,12 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType, ParseMode
+from aiogram.enums import ChatType
 from aiogram.filters import BaseFilter, Command
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    InputMediaPhoto,
     Message,
     TelegramObject,
 )
@@ -27,7 +26,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.config import Settings
 from bot.constants import Platform, PresenceState, RarityMode, SettingKey, TokenStatus
-from bot.db.repo import AdminUserRow, ChatTarget, Repo
+from bot.db.repo import AdminUserRow, ChatTarget, PlatformLink, Repo, User
 from bot.handlers.hltb import (
     DEFAULT_PAGE_SIZE,
     DEFAULT_RESULTS_LIMIT,
@@ -55,20 +54,18 @@ from bot.poller.service_health import (
     KEY_CHECK_INTERVAL_KEY,
 )
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services.achievements import trophy_tier_badge
+from bot.services.achievements import (
+    COMPLETED_BADGE,
+    plural_achievements,
+    plural_trophies,
+)
 from bot.services.admin_view import render_admin_home
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
-    PsnApiError,
     PsnClientSetupError,
-    PsnPrivateProfileError,
     PsnTokenDeadError,
-    account_trophy_overview,
-    recent_earned_trophies,
-    resolve_profile,
 )
-from bot.services.psn.view import render_psn_trophy_table
 from bot.services.stats import counters_for, month_cutoff_utc, today_cutoff_utc
 from bot.services.steam.auth import (
     STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED,
@@ -165,21 +162,23 @@ async def admin_home(
     )
 
 
-# ------------------------------------------------ Platform keys + PSN test
+# --------------------------------------------------------- Platform keys (#17)
 
-# Two related things live here: the "Ключи платформ" screen (#17), where an
-# admin sets/changes/clears the shared Steam key and PSN NPSSO, and the PSN
-# trophy-lookup test screen (a live, uncached carve-out of SPEC 1.5's
-# cache-only rule — for eyeballing a real trophy list before more of it is
-# wired into /stats). Both take free-text answers, and the message handler
-# for them is registered before the free-text numeric/timezone handlers
-# below on purpose: aiogram tries message handlers in registration order and
-# stops at the first whose filter matches, so an admin's answer here (a key,
-# an NPSSO, or a PSN Online ID that might be all digits) must be claimed by
-# this filter before the generic ones get a chance at it.
+# The "Ключи платформ" screen, where an admin sets/changes/clears the shared
+# Steam key and PSN NPSSO — both take free-text answers, and the message
+# handler for them is registered before the free-text numeric/timezone
+# handlers below on purpose: aiogram tries message handlers in registration
+# order and stops at the first whose filter matches, so an admin's answer
+# here (a key or an NPSSO) must be claimed by this filter before the generic
+# ones get a chance at it.
+#
+# This used to also host a PSN trophy-lookup test screen (a live, uncached
+# carve-out of SPEC 1.5's cache-only rule, from before any of this was wired
+# into /stats) — removed once this Keys screen covered NPSSO management on
+# its own and the test screen had nothing left to justify a live API call
+# outside a background job.
 STEAM_KEY_KEY = "steam_api_key"
 PSN_NPSSO_KEY = "psn_npsso"
-PSN_LOOKUP_KEY = "psn_trophy_lookup"
 
 
 class AwaitingAdminTextInput(BaseFilter):
@@ -188,11 +187,7 @@ class AwaitingAdminTextInput(BaseFilter):
         if user is None:
             return False
         pending = _awaiting_input.get(user.id)
-        return pending is not None and pending[0] in (
-            STEAM_KEY_KEY,
-            PSN_NPSSO_KEY,
-            PSN_LOOKUP_KEY,
-        )
+        return pending is not None and pending[0] in (STEAM_KEY_KEY, PSN_NPSSO_KEY)
 
 
 def _cancel_input_keyboard() -> InlineKeyboardMarkup:
@@ -275,26 +270,6 @@ async def keys_clear_psn(callback: CallbackQuery, steam_auth: SteamAuth, psn_aut
     await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
 
 
-# ---- PSN trophy-lookup test ----
-
-
-@router.callback_query(F.data == "a:psntest")
-async def psn_test_menu(callback: CallbackQuery, psn_auth: PsnAuth) -> None:
-    await _redraw(callback, *await _psn_test_screen(callback.from_user.id, psn_auth))
-
-
-async def _psn_test_screen(admin_id: int, psn_auth: PsnAuth) -> tuple[str, InlineKeyboardMarkup]:
-    builder = InlineKeyboardBuilder()
-    if await psn_auth.status() == PSN_NOT_CONFIGURED:
-        _awaiting_input.pop(admin_id, None)
-        builder.row(InlineKeyboardButton(text=_("admin-keys-goto"), callback_data="a:keys"))
-        builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-        return _("admin-psn-test-unconfigured"), builder.as_markup()
-    _awaiting_input[admin_id] = (PSN_LOOKUP_KEY, None)
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-    return _("admin-psn-test-prompt"), builder.as_markup()
-
-
 @router.callback_query(F.data == "a:psncancel")
 async def admin_text_input_cancel(
     callback: CallbackQuery,
@@ -314,9 +289,7 @@ async def admin_text_input_cancel(
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingAdminTextInput())
-async def admin_text_input(
-    message: Message, psn_auth: PsnAuth, steam_auth: SteamAuth, bot: Bot
-) -> None:
+async def admin_text_input(message: Message, psn_auth: PsnAuth, steam_auth: SteamAuth) -> None:
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
     assert pending is not None
@@ -368,63 +341,6 @@ async def admin_text_input(
         text, markup = await _keys_screen(steam_auth, psn_auth)
         await message.answer(_("admin-keys-psn-saved", text=text), reply_markup=markup)
         return
-
-    del _awaiting_input[message.from_user.id]
-    try:
-        client = await psn_auth.get_client()
-        profile = await resolve_profile(client, raw)
-        overview = await account_trophy_overview(client, profile.account_id)
-        trophies = await recent_earned_trophies(client, profile.account_id, limit=10)
-    except PsnTokenDeadError:
-        await message.answer(_("admin-psn-token-dead"))
-        return
-    except PsnPrivateProfileError:
-        await message.answer(_("admin-psn-private"))
-        return
-    except PsnApiError as exc:
-        await message.answer(_("admin-psn-not-found", error=exc))
-        return
-
-    # Separate table (Follow-up 2026-09-06) — deliberately different from
-    # the /stats game list: first validate its standalone presentation,
-    # then decide whether it should be merged with the standard view.
-    await message.answer(render_psn_trophy_table(overview), parse_mode=ParseMode.HTML)
-
-    if not trophies:
-        await message.answer(_("admin-psn-no-trophies", online_id=profile.online_id))
-        return
-
-    lines = [_("admin-psn-recent-header", online_id=profile.online_id, count=len(trophies))]
-    for trophy in trophies:
-        badge = trophy_tier_badge(trophy.trophy_type.value)
-        rarity = (
-            _("admin-psn-rarity", percent=f"{trophy.trophy_earn_rate:.1f}")
-            if trophy.trophy_earn_rate is not None
-            else ""
-        )
-        secret = _("admin-psn-hidden") if trophy.trophy_hidden else ""
-        lines.append(
-            _(
-                "admin-psn-trophy-row",
-                badge=badge,
-                name=trophy.trophy_name,
-                secret=secret,
-                title=trophy.title_name,
-                rarity=rarity,
-            )
-        )
-        if trophy.trophy_detail:
-            lines.append(_("admin-psn-detail", detail=trophy.trophy_detail))
-    await message.answer("\n".join(lines))
-
-    photos = [
-        InputMediaPhoto(media=trophy.trophy_icon_url, caption=trophy.trophy_name[:200])
-        for trophy in trophies
-        if trophy.trophy_icon_url
-    ][:10]
-    if photos:
-        with contextlib.suppress(Exception):
-            await bot.send_media_group(message.chat.id, photos)
 
 
 @router.callback_query(F.data == "a:newusers")
@@ -1170,7 +1086,7 @@ async def _new_user_defaults(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
         DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT)
     )
 
-    text = (_("admin-new-users-screen"),)
+    text = _("admin-new-users-screen")
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -1253,6 +1169,120 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), builder.as_markup()
 
 
+def _admin_tg_header(user: User) -> str:
+    """Telegram identity, always shown in full (2026-09-08 user request) —
+    unlike /stats' header (one best single name), the admin needs to see
+    everything at once for lookups. The bare tg_id is never "@"-prefixed:
+    it isn't a real, resolvable username, only a genuine `user.username` is
+    (mentioning a nonexistent "@<number>" account risks nothing today, but
+    a real account could later register that exact numeric string as its
+    username and retroactively become a target of every old message that
+    did this)."""
+    bits = []
+    full_name = " ".join(part for part in (user.first_name, user.last_name) if part)
+    if full_name:
+        bits.append(full_name)
+    if user.username:
+        bits.append(f"@{user.username}")
+    bits.append(_("admin-user-tgid", tg_id=user.tg_id))
+    return _("admin-user-header", identity=", ".join(bits))
+
+
+async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[str]:
+    count = await repo.xbox_achievement_count(user.tg_id)
+    completed = await repo.xbox_completed_games_count(user.xuid)
+    parts = [
+        _("admin-xuid-tag", xuid=user.xuid),
+        plural_achievements(count),
+    ]
+    if completed:
+        parts.append(f"{COMPLETED_BADGE} {completed}")
+    parts.append(_("admin-today-tag", count=today_count))
+    parts.append(_("admin-gamerscore-tag", score=user.gamerscore or 0))
+
+    token = await repo.get_token(user.tg_id)
+    presence = await repo.presence_of(user.xuid)
+    login = _("admin-login-not-connected")
+    if token is not None:
+        login = {
+            TokenStatus.ACTIVE: _("admin-login-active", ago=humanize_ago(token.last_refresh_at)),
+            TokenStatus.INVALID: _("admin-login-invalid"),
+            TokenStatus.REVOKED: _("admin-login-revoked"),
+        }.get(token.status, token.status)
+
+    online = _("admin-no-data")
+    if presence is not None:
+        # Presence gives no name for PC titles, so fall back to the cache
+        # the poller fills — an id in the card tells the admin nothing.
+        game = presence.title_name or ""
+        if not game and presence.title_id:
+            game = await repo.title_name(presence.title_id) or presence.title_id
+        game = game or _("admin-no-game")
+        online = (
+            _("admin-online-playing", ago=humanize_ago(presence.updated_at), game=game)
+            if presence.state == PresenceState.ONLINE
+            else humanize_ago(presence.updated_at)
+        )
+    return [
+        _("admin-xbox-header", gamertag=user.gamertag or _("admin-no-name"))
+        + "  ·  "
+        + "  ·  ".join(parts),
+        _("admin-login-row", login=login),
+        _("admin-online-row", online=online),
+    ]
+
+
+async def _steam_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> list[str]:
+    count = await repo.platform_achievement_count(link.tg_id, Platform.STEAM)
+    completed = await repo.steam_completed_games_count(link.tg_id)
+    parts = [
+        _("admin-steamid-tag", external_id=link.external_id),
+        plural_achievements(count),
+    ]
+    if completed:
+        parts.append(f"{COMPLETED_BADGE} {completed}")
+    parts.append(_("admin-today-tag", count=today_count))
+
+    steam_presence = await repo.steam_presence_of(link.external_id)
+    online = _("admin-no-data")
+    if steam_presence is not None:
+        game = steam_presence.game_name or (_("admin-no-game") if steam_presence.gameid else "")
+        is_online = (steam_presence.persona_state or 0) != 0
+        online = (
+            _("admin-online-playing", ago=humanize_ago(steam_presence.updated_at), game=game)
+            if is_online and game
+            else (_("admin-online-idle") if is_online else humanize_ago(steam_presence.updated_at))
+        )
+    return [
+        _("admin-steam-header", name=link.display_name or _("admin-no-name"))
+        + "  ·  "
+        + "  ·  ".join(parts),
+        _("admin-online-row", online=online),
+    ]
+
+
+async def _psn_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> list[str]:
+    count = await repo.platform_achievement_count(link.tg_id, Platform.PSN)
+    platinum = await repo.psn_platinum_count(link.tg_id)
+    parts = [
+        _("admin-psn-id-tag", external_id=link.external_id),
+        plural_trophies(count),
+    ]
+    if platinum:
+        parts.append(f"{COMPLETED_BADGE} {platinum}")
+    parts.append(_("admin-today-tag", count=today_count))
+    if link.psn_trophy_level is not None:
+        parts.append(_("admin-psn-level-tag", level=link.psn_trophy_level))
+    # No cached presence for PSN yet (issue #1) — trophy sync has no
+    # presence hook, so there's nothing to show beyond the counts above;
+    # the 🔄 button below runs an out-of-turn resync (#27).
+    return [
+        _("admin-psn-header", name=link.display_name or _("admin-no-name"))
+        + "  ·  "
+        + "  ·  ".join(parts)
+    ]
+
+
 async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     user = await repo.get_user(tg_id)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
@@ -1264,81 +1294,35 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
         return _("admin-user-not-found"), _back_home()
 
     counters = await counters_for(repo, tg_id)
+    today_xbox, today_steam, today_psn = await repo.achievement_platform_breakdown(
+        tg_id, today_cutoff_utc()
+    )
     chats = await repo.chats_of_user(tg_id)
-    display_name = user.gamertag or (steam_link.display_name if steam_link else None)
 
-    lines = [_("admin-user-header", name=display_name or _("admin-no-name")), ""]
-
+    # Telegram identity first (2026-09-08 user request), then one block per
+    # connected platform in a fixed order (Xbox → Steam → PSN) — each block
+    # groups everything about that platform together (nickname/id, lifetime
+    # count + completions, today's count, login/online where it applies)
+    # instead of interleaving platforms the way the old card's flat line
+    # list did.
+    lines = [_admin_tg_header(user), ""]
     if user.xuid:
-        token = await repo.get_token(tg_id)
-        presence = await repo.presence_of(user.xuid)
-        login = _("admin-login-not-connected")
-        if token is not None:
-            login = {
-                TokenStatus.ACTIVE: _(
-                    "admin-login-active", ago=humanize_ago(token.last_refresh_at)
-                ),
-                TokenStatus.INVALID: _("admin-login-invalid"),
-                TokenStatus.REVOKED: _("admin-login-revoked"),
-            }.get(token.status, token.status)
-
-        online = _("admin-no-data")
-        if presence is not None:
-            # Presence gives no name for PC titles, so fall back to the
-            # cache the poller fills — an id in the card tells the admin
-            # nothing.
-            game = presence.title_name or ""
-            if not game and presence.title_id:
-                game = await repo.title_name(presence.title_id) or presence.title_id
-            game = game or _("admin-no-game")
-            online = (
-                _("admin-online-playing", ago=humanize_ago(presence.updated_at), game=game)
-                if presence.state == PresenceState.ONLINE
-                else humanize_ago(presence.updated_at)
-            )
-        lines += [
-            _("admin-xbox-line", xuid=user.xuid, score=user.gamerscore or 0),
-            _("admin-xbox-login", login=login),
-            _("admin-xbox-online", online=online),
-        ]
-
+        lines += await _xbox_admin_block(repo, user, today_xbox)
+        lines.append("")
     if steam_link is not None:
-        steam_presence = await repo.steam_presence_of(steam_link.external_id)
-        steam_online = _("admin-no-data")
-        if steam_presence is not None:
-            game = steam_presence.game_name or (_("admin-no-game") if steam_presence.gameid else "")
-            is_online = (steam_presence.persona_state or 0) != 0
-            steam_online = (
-                _("admin-online-playing", ago=humanize_ago(steam_presence.updated_at), game=game)
-                if is_online and game
-                else (
-                    _("admin-online-idle") if is_online else humanize_ago(steam_presence.updated_at)
-                )
-            )
-        lines += [
-            _("admin-steam-line", external_id=steam_link.external_id),
-            _("admin-display-name", name=steam_link.display_name),
-            _("admin-steam-online", online=steam_online),
-        ]
-
+        lines += await _steam_admin_block(repo, steam_link, today_steam)
+        lines.append("")
     if psn_link is not None:
-        # No cached presence for PSN yet (issue #1) — trophy sync has no
-        # presence hook, so there's nothing to show here beyond the link
-        # itself; the 🔄 button below runs an out-of-turn resync (#27).
-        lines += [
-            _("admin-psn-line", external_id=psn_link.external_id),
-            _("admin-display-name", name=psn_link.display_name),
-        ]
+        lines += await _psn_admin_block(repo, psn_link, today_psn)
+        lines.append("")
 
     lines += [
-        "",
         _(
             "admin-subscribed",
             chats=", ".join(f"«{c}»" for c in chats) if chats else _("admin-nowhere"),
         ),
-        # No lifetime total here: seen_achievements is permanently
-        # best-effort (SPEC 5.4), unlike these two date-bounded counters.
-        # Sums both platforms (counters_for, SPEC 9 M-Steam-2e).
+        # The combined cross-platform total, unlike the per-platform ones
+        # above — no lifetime figure here either, same SPEC 5.4 reasoning.
         _("admin-counters", today=counters.today, month=counters.month),
     ]
     text = "\n".join(lines)
@@ -1354,20 +1338,89 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     )
     if user.xuid:
         builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-xbox"), callback_data=f"a:sync:{tg_id}")
+            InlineKeyboardButton(text=_("admin-refresh-xbox"), callback_data=f"a:sync:{tg_id}"),
+            InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{tg_id}"),
         )
     if steam_link is not None:
         builder.row(
             InlineKeyboardButton(
                 text=_("admin-refresh-steam"), callback_data=f"a:syncsteam:{tg_id}"
-            )
+            ),
+            InlineKeyboardButton(
+                text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
+            ),
         )
     if psn_link is not None:
         builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:syncpsn:{tg_id}")
+            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:syncpsn:{tg_id}"),
+            InlineKeyboardButton(text=_("admin-reset-psn"), callback_data=f"a:reset:psn:{tg_id}"),
         )
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
+
+
+# Plain platform names for the confirm prompt's own sentence — distinct
+# from the "🔄 Обновить X" / "🗑 Сброс X" button labels, which read wrong
+# spliced into "Стереть базу <label> для...".
+_RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
+
+
+@router.callback_query(F.data.startswith("a:reset:"))
+async def reset_platform_confirm(callback: CallbackQuery) -> None:
+    """ "Сброс базы" is destructive and not undoable (user request 2026-09-08)
+    — same one-tap-confirm shape as /disconnect_steam's own prompt, not an
+    instant action behind a single tap."""
+    assert callback.data is not None
+    _, _prefix, platform, tg_id_s = callback.data.split(":")
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{tg_id_s}"
+        ),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id_s}"),
+    )
+    await _redraw(
+        callback,
+        _("admin-reset-confirm-prompt", platform=_RESET_PLATFORM_NAMES[platform]),
+        builder.as_markup(),
+    )
+
+
+@router.callback_query(F.data.startswith("a:resetok:"))
+async def reset_platform_confirmed(
+    callback: CallbackQuery,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_fetcher: PsnFetcher,
+) -> None:
+    assert callback.data is not None
+    _, platform, tg_id_s = callback.data.split(":")
+    tg_id = int(tg_id_s)
+    await callback.answer(_("admin-refreshing"))
+
+    try:
+        if platform == "xbox":
+            user = await repo.get_user(tg_id)
+            assert user is not None and user.xuid is not None
+            await repo.reset_xbox_data(tg_id, user.xuid)
+            await fetcher.backfill(tg_id, user.xuid)
+        elif platform == "steam":
+            link = await repo.get_platform_link(tg_id, Platform.STEAM)
+            assert link is not None
+            await repo.reset_steam_data(tg_id)
+            await steam_fetcher.backfill(tg_id, link.external_id)
+        else:
+            link = await repo.get_platform_link(tg_id, Platform.PSN)
+            assert link is not None
+            await repo.reset_psn_data(tg_id, link.external_id)
+            await psn_fetcher.backfill(tg_id, link.external_id)
+    except Exception:
+        log.exception("admin reset+resync of tg_id=%s platform=%s failed", tg_id, platform)
+        await callback.answer(_("admin-refresh-failed"), show_alert=True)
+
+    text, markup = await _card(repo, tg_id)
+    await _redraw(callback, text, markup)
 
 
 async def _chats(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:

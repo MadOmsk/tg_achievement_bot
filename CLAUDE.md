@@ -111,8 +111,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   └── psn/                    psnawp, one shared service-wide NPSSO for the whole bot
 │   │       ├── client.py            async wrapper (asyncio.to_thread), resolve, trophies
 │   │       ├── auth.py              NPSSO storage/refresh, health check, PsnAuth
-│   │       ├── achievements.py      sync_account(): scan + persist trophies + progress cache, one game at a time (#26)
-│   │       └── view.py              a standalone PSN trophy table, ahead of merging into /stats
+│   │       └── achievements.py      sync_account(): scan + persist trophies + progress cache, one game at a time (#26)
 │   │
 │   ├── poller/                    scheduled background jobs (APScheduler)
 │   │   ├── scheduler.py            ticks, job assembly
@@ -200,12 +199,16 @@ every column.
 - **Identity.** `users` is keyed by Telegram `tg_id`. Xbox identity stays on
   `users.xuid` (it was the first platform, and Xbox-specific paths still use it
   directly). Steam and PSN accounts live in `platform_links (tg_id, platform,
-  external_id, display_name, ...)`. `tg_id` is the cross-platform owner key — never
-  aggregate cross-platform data by `xuid`.
+  external_id, display_name, psn_trophy_level, achievements_visible, ...)`. `tg_id`
+  is the cross-platform owner key — never aggregate cross-platform data by `xuid`.
+  `achievements_visible` (#5) is the last actually-checked answer to "can the
+  shared credential see this account's achievements/trophies" — `NULL` until
+  checked once, then `1`/`0`; set at connect time and refreshed by every
+  backfill/resync (`SteamFetcher`/`PsnFetcher`), not read live from a UI path.
 - **Secrets and tokens.** `tokens` stores encrypted Xbox refresh tokens only; access
-  and XSTS tokens stay in memory. Shared service credentials (the PSN NPSSO) are
-  encrypted in `app_settings`. Token status distinguishes active, invalid, and
-  intentionally revoked.
+  and XSTS tokens stay in memory. Shared service credentials (the PSN NPSSO, and as
+  of #17 the Steam API key too) are encrypted in `app_settings`. Token status
+  distinguishes active, invalid, and intentionally revoked.
 - **Achievements and publications.** `seen_achievements` is the dedup table, primary
   key `(tg_id, platform, title_id, achievement_id)`; `platform` is `modern`, `x360`,
   `steam`, or `psn`. `xuid` is kept as a generic external-account-id column used by
@@ -406,17 +409,22 @@ silently in the group.
 **The personal panel** (`/panel`, one self-editing message): the header is the
 person's own Telegram identity (same priority as `/stats`' header) followed by one
 line per connected platform with its lifetime achievement/trophy count, gamerscore,
-and PSN level — the shape `/stats`' header has, built by `/panel`'s own plain-text
-helper, not the shared one (#18). The body below carries only login status per
-platform, publication destinations, current presence, and the timezone; the 24h/30d
-counters and "recent achievements" list it used to show are gone (the header covers
-achievements). The keyboard is one row per platform (Xbox → Steam → PSN) in a fixed
-position — `[Profile, Disconnect]` when connected, one wide "🎮 Подключить X" when
-not (#33) — plus timezone / My chats / sync / `show_profile_links` toggle, and the
-per-chat subscription cards (rarity mode, digest threshold). Own profile links here
-are always visible regardless of the privacy toggle — this screen is never rendered
-to anyone but its owner. The panel must never call a platform API except the one
-explicit manual-sync button.
+and PSN level — built by the *same function* `/stats`' own header uses
+(`services/achievements.py::platform_header_lines`, #5), not a second,
+hand-duplicated copy of it (`show_links=False` here: `/panel`'s names were never
+inline hyperlinks, its own "Profile" buttons already cover that). The body below
+carries login status per platform (Xbox: token status; Steam/PSN: achievement/
+trophy *visibility* as of the last actual check — connect time, or any backfill/
+resync since, `platform_links.achievements_visible`), publication destinations,
+current presence, and the timezone; the 24h/30d counters and "recent achievements"
+list it used to show are gone (the header covers achievements). The keyboard is one
+row per platform (Xbox → Steam → PSN) in a fixed position — `[Profile, Disconnect]`
+when connected, one wide "🎮 Подключить X" when not (#33) — plus timezone / My
+chats / sync / `show_profile_links` toggle, and the per-chat subscription cards
+(rarity mode, digest threshold). Own profile links here are always visible
+regardless of the privacy toggle — this screen is never rendered to anyone but its
+owner. The panel must never call a platform API except the one explicit
+manual-sync button.
 
 **Group commands**: `/subscribe`, `/unsubscribe`, `/stats [@user]` (cached stats +
 recent games; the card's header shows the person's Telegram identity — `@username`,
@@ -426,9 +434,13 @@ platform gamertag, since every connected platform already gets its own line belo
 person the same way `/stats`' header does — `@username` > name > gamertag > platform
 name, never a bare id — #40), `/online` (cached presence,
 optionally auto-refreshing), `/recent [N]`, `/summary`, `/hltb`, `/delete_last`
-(deletes the chat's own latest non-system bot message). `chat_seen` tracks anyone
-known who has written in the group, even without a publish subscription — `/online`
-and `/who` use that broader set, not just subscribers.
+(deletes the chat's own latest non-system bot message). `/summary_day` and
+`/summary_month` (2026-09-08) ask `build_summary` for one block only — deliberately
+left out of the help text and `chat-help-text`, a diagnostic pair for the #14 block
+split rather than commands meant for everyday use alongside `/summary` itself.
+`chat_seen` tracks anyone known who has written in the group, even without a
+publish subscription — `/online` and `/who` use that broader set, not just
+subscribers.
 
 A nickname in `/stats`/`/who` becomes a clickable profile link only when the person
 *the card is about* has `show_profile_links` on — there is no exception for viewing
@@ -439,17 +451,33 @@ self-refreshing) provides: Steam/PSN shared-credential health; a "🔑 Ключ�
 платформ" screen to set / change / clear both shared credentials (the Steam key
 and the PSN NPSSO) from inside the bot, no `.env` edit (#17); API usage
 snapshots; global display/cleanup limits; defaults for new users (including
-`default_show_profile_links`); the user list and per-user cards; the chat list and
-per-chat cards; exclusion/restore; a manual per-user refresh per linked platform
-(Xbox/Steam/PSN); per-chat settings (rarity threshold, summary time, timezone,
-mutes, minimum gamerscore, daily-summary switch); bot-message cleanup actions. The
-separate "🏆 Трофеи PSN (тест)" screen is now only the live trophy-lookup test —
-NPSSO management moved to the keys screen.
+`default_show_profile_links`); the user list; the chat list and per-chat cards;
+exclusion/restore; per-chat settings (rarity threshold, summary time, timezone,
+mutes, minimum gamerscore, daily-summary switch); bot-message cleanup actions. (The
+standalone "🏆 Трофеи PSN (тест)" screen — a live, uncached trophy lookup by Online
+ID, predating any of this being wired into /stats — was removed once the Keys
+screen covered NPSSO management on its own and it had nothing left to justify.)
 Admin-triggered manual refresh is the only normal UI path allowed to call a
 platform API outside a background job. The PSN refresh doubles as the recovery
 path for an account stuck "linked but the first backfill never finished" (#27):
 it wipes the partial `psn_title_progress` checkpoints and re-runs backfill,
 instead of that needing a manual DB script on the server.
+
+The **per-user card** (2026-09-08 rework, user request) shows the Telegram
+identity in full (name, `@username`, and a plain `tg_id N` — never `@N`, since a
+bare id isn't a real, resolvable username the way a genuine `user.username` is),
+then one block per connected platform in a fixed order (Xbox → Steam → PSN):
+nickname/id, lifetime achievement/trophy count with the same 🏆-completions/level
+suffixes `/stats`' own line has, today's count for that platform
+(`achievement_platform_breakdown`), and whatever admin-only diagnostics apply
+(Xbox: login/token status; Steam/PSN: current presence where it exists). Next to
+each platform's "🔄 Обновить" button sits a "🗑 Сброс" button (one-tap confirm
+first, same shape as `/disconnect_steam`'s own prompt): deletes that platform's
+`seen_achievements` rows for this person (plus Xbox's own `title_history` and
+PSN's `psn_title_progress`/`backfill_done`), then re-runs that platform's own
+`backfill()` — the same "wipe and resync from nothing" recovery #27 already gave
+PSN's stuck-account case, generalized to every platform and reachable without a
+manual DB script.
 
 ## Message formats
 
@@ -475,21 +503,33 @@ inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table
 (which renders as a code block — wrong register for a leaderboard or game list).
 
 **Windows** (#14, reversing an earlier all-rolling call): "today"/"24 часа" is a
-rolling 24 hours — no timezone, everyone's is the same. "month"/"этот месяц" is the
-**calendar month** — since midnight on the 1st, in the person's / chat's own
-timezone (`util.start_of_month_utc` → `stats.month_cutoff_utc`), so the figure
-resets on the 1st. `/stats`' recent-games table stays a rolling 30 days and is
-labelled as such ("за 30 дней"), so it no longer silently disagrees with an
-unlabelled "month".
+rolling 24 hours — no timezone, everyone's is the same. "month" is the **calendar
+month** — since midnight on the 1st, in the person's / chat's own timezone
+(`util.start_of_month_utc` → `stats.month_cutoff_utc`), so the figure resets on the
+1st. Its label names the actual month ("с 1 июня", #6, user request) rather than a
+static "этот месяц" — the *current* local month is always the one the cutoff
+points at, no need to re-derive it from the cutoff itself
+(`daily.py::_month_window_label`). `/stats`' recent-games table stays a rolling 30
+days and is labelled as such ("за 30 дней"), so it no longer silently disagrees
+with the month window.
 
 **Three summary shapes**, composed by `daily.build_summary` from independent window
 blocks so their style can't drift apart (#14): the scheduled **daily** job sends
 the day block only; the **month-end** job (last calendar day of the month, same
 time, its own `daily_reports` marker `YYYY-MM-monthly`, *additional* to that day's
 daily summary) sends the month block only under an "Итоги за месяц" header;
-`/summary` on demand sends both. A day on which nobody unlocked anything still
-sends — the roster with everyone at 0 (#34); `build_summary` returns `None`, and
-the chat gets nothing, only when there are no subscribed members at all.
+`/summary` on demand sends both. `/summary_day`/`/summary_month` (hidden from the
+help text) ask for one block only, on demand — a diagnostic pair for this block
+split, not commands meant for everyday use. A day on which nobody unlocked
+anything still sends — the roster with everyone at 0 (#34); `build_summary`
+returns `None`, and the chat gets nothing, only when there are no subscribed
+members at all. The month block (only) is followed by its own "Игры за месяц"
+block (#7, user request, `repo.chat_top_games`) — every game the chat's
+subscribed members played that month, ranked by achievements/trophies earned in
+it combined across everyone and every platform, not who earned them
+(`_section`'s own job). The day block's own leaderboard rows no longer call out a
+rare pull separately (#9, user request) — the month block's rows still do, a
+longer window being more worth it in.
 
 ## Statistics rules
 

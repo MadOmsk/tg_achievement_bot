@@ -21,13 +21,14 @@ from dataclasses import dataclass, field
 from psnawp_api import PSNAWP
 
 from bot.config import Settings
+from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.i18n import gettext
 from bot.poller.cadence import debounce_passed
 from bot.poller.publisher import Publisher
 from bot.services.psn.achievements import sync_account
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
-from bot.services.psn.client import PsnApiError, account_trophy_level
+from bot.services.psn.client import PsnApiError, account_trophy_level, is_trophy_visible
 
 log = logging.getLogger(__name__)
 
@@ -126,6 +127,18 @@ class PsnFetcher:
             client = await self._psn_auth.get_client()
         except PsnNotConfiguredError:
             return PsnBackfillResult()
+
+        # Re-check trophy visibility (#5) — connect_psn already required
+        # this to pass once, before linking; re-verifying here (and
+        # recording it, not just gating on it) is what makes /panel's login
+        # row reflect the *last actual check*, matching Steam's own
+        # backfill-time check right above this file's Steam counterpart.
+        if not await is_trophy_visible(client, account_id):
+            await self._repo.set_achievements_visible(tg_id, Platform.PSN, False)
+            log.info("psn backfill for tg_id=%s skipped: trophies not visible", tg_id)
+            return PsnBackfillResult()
+        await self._repo.set_achievements_visible(tg_id, Platform.PSN, True)
+
         # No limit (unlike poll_account) — the whole account's history, not
         # just the recent window regular polling uses, or an older game's
         # trophies would never get a seen_achievements/psn_title_progress
@@ -156,7 +169,27 @@ class PsnFetcher:
         "linked but the first backfill never finished" (#24/#26): if
         backfill_done is still off, wipe any partial progress checkpoints
         and re-run backfill from scratch, instead of the only fix being a
-        manual DB script on the server."""
+        manual DB script on the server.
+
+        Also re-checks trophy visibility (#5, user request: "ресинк
+        перепроверяет же статус доступности ачивок?") — it did not, before
+        this, for an account already past its first backfill (the
+        `poll_account` branch below never touched the flag `backfill`
+        above now sets). A cheap probe here too, same "don't overwrite the
+        last known-good status on a transient failure" shape as Steam's own.
+        """
+        try:
+            client = await self._psn_auth.get_client()
+        except PsnNotConfiguredError:
+            pass
+        else:
+            try:
+                visible = await is_trophy_visible(client, account_id)
+            except PsnApiError:
+                pass
+            else:
+                await self._repo.set_achievements_visible(tg_id, Platform.PSN, visible)
+
         if not await self._repo.psn_backfill_done(account_id):
             await self._repo.clear_psn_title_progress(account_id)
             try:
