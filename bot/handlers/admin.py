@@ -49,6 +49,7 @@ from bot.poller.online_refresh import DEFAULT_REFRESH_INTERVAL_MIN as DEFAULT_ON
 from bot.poller.online_refresh import DEFAULT_TTL_HOURS as DEFAULT_ONLINE_REFRESH_TTL_HOURS
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
 from bot.poller.online_refresh import TTL_HOURS_KEY as ONLINE_REFRESH_TTL_KEY
+from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.service_health import (
     DEFAULT_KEY_CHECK_INTERVAL_MIN,
     KEY_CHECK_INTERVAL_KEY,
@@ -821,6 +822,33 @@ async def user_refresh_steam(
     await _redraw(callback, f"{text}\n\n{summary}", markup)
 
 
+@router.callback_query(F.data.startswith("a:syncpsn:"))
+async def user_refresh_psn(
+    callback: CallbackQuery, repo: Repo, psn_fetcher: PsnFetcher
+) -> None:
+    """PSN's counterpart of user_refresh_steam (#27) — PSN had no
+    admin-triggered resync at all, and an account whose first backfill
+    crashed could only be recovered with a manual DB script on the server."""
+    assert callback.data is not None
+    tg_id = int(callback.data.rsplit(":", 1)[1])
+    link = await repo.get_platform_link(tg_id, Platform.PSN)
+    if link is None:
+        await callback.answer(_("admin-psn-not-connected"), show_alert=True)
+        return
+
+    await callback.answer(_("admin-refreshing"))
+    try:
+        summary = await psn_fetcher.refresh_user(
+            tg_id, link.external_id, link.display_name or link.external_id
+        )
+    except Exception:
+        log.exception("admin psn refresh of tg_id=%s failed", tg_id)
+        await callback.answer(_("admin-refresh-failed"), show_alert=True)
+        return
+    text, markup = await _card(repo, tg_id)
+    await _redraw(callback, f"{text}\n\n{summary}", markup)
+
+
 # --------------------------------------------------------------------- chats
 
 
@@ -1189,9 +1217,9 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
         ]
 
     if psn_link is not None:
-        # No presence/sync yet — M-PSN-1 is link-only, polling is a later
-        # step (SPEC 9, M-PSN-2+), so there's nothing to show beyond the
-        # link itself.
+        # No cached presence for PSN yet (issue #1) — trophy sync has no
+        # presence hook, so there's nothing to show here beyond the link
+        # itself; the 🔄 button below runs an out-of-turn resync (#27).
         lines += [
             _("admin-psn-line", external_id=psn_link.external_id),
             _("admin-display-name", name=psn_link.display_name),
@@ -1228,6 +1256,10 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
             InlineKeyboardButton(
                 text=_("admin-refresh-steam"), callback_data=f"a:syncsteam:{tg_id}"
             )
+        )
+    if psn_link is not None:
+        builder.row(
+            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:syncpsn:{tg_id}")
         )
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()

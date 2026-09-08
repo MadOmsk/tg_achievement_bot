@@ -99,6 +99,7 @@ admin-user-not-connected = Не подключён
 admin-refreshing = Обновляю…
 admin-refresh-failed = Не получилось обновить
 admin-steam-not-connected = Steam не подключён
+admin-psn-not-connected = PSN не подключён
 
 # Chat and cleanup actions
 admin-chat-disabled = Отключён
@@ -161,6 +162,7 @@ admin-restore = ↩️ Вернуть
 admin-exclude = 🚫 Исключить из системы
 admin-refresh-xbox = 🔄 Обновить XBOX
 admin-refresh-steam = 🔄 Обновить Steam
+admin-refresh-psn = 🔄 Обновить PSN
 admin-back-to-users = ‹ К списку
 
 # Chat cards

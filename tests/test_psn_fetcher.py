@@ -152,6 +152,52 @@ async def test_backfill_marks_done_and_returns_the_private_titles(
     assert link is not None and link.psn_trophy_level == 3
 
 
+async def test_refresh_user_polls_a_backfilled_account(
+    repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
+) -> None:
+    """#27: for an account whose backfill is done, the admin resync is just
+    an out-of-turn poll (mirrors SteamFetcher.refresh_user)."""
+    await _linked_user(repo)
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    _fake_level(monkeypatch)
+    await repo.mark_psn_backfill_done(ACCOUNT_ID)
+    calls = _fake_sync(monkeypatch, PsnSyncOutcome(new_rows=[row("1"), row("2")]))
+    publisher = FakePublisher()
+    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
+
+    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer")
+
+    assert calls[0]["is_backfill"] is False
+    assert len(publisher.published) == 1
+    assert "2" in summary
+
+
+async def test_refresh_user_resyncs_a_stuck_account(
+    repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
+) -> None:
+    """#27/#24/#26: an account still gated (first backfill never finished)
+    gets its partial progress checkpoints wiped and backfill re-run from
+    scratch — the recovery that previously needed a manual DB script."""
+    await _linked_user(repo)
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    _fake_level(monkeypatch, level=5)
+    # A leftover bogus checkpoint from the crashed first attempt.
+    await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR00001_00", 50)
+    calls = _fake_sync(monkeypatch, PsnSyncOutcome(new_rows=[row("1"), row("2"), row("3")]))
+    publisher = FakePublisher()
+    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
+
+    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer")
+
+    assert await repo.get_psn_title_progress(ACCOUNT_ID, "NPWR00001_00") is None  # wiped
+    assert calls[0]["is_backfill"] is True
+    assert calls[0]["limit"] is None
+    assert publisher.published == []  # a resync-backfill still publishes nothing
+    [target] = await repo.psn_pollable_users()
+    assert target.backfill_done is True  # no longer stuck
+    assert "3" in summary
+
+
 async def test_tick_skips_an_account_whose_backfill_has_not_finished(
     repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
 ) -> None:

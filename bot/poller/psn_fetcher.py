@@ -22,6 +22,7 @@ from psnawp_api import PSNAWP
 
 from bot.config import Settings
 from bot.db.repo import Repo
+from bot.i18n import gettext
 from bot.poller.cadence import debounce_passed
 from bot.poller.publisher import Publisher
 from bot.services.psn.achievements import sync_account
@@ -29,6 +30,8 @@ from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfigur
 from bot.services.psn.client import PsnApiError, account_trophy_level
 
 log = logging.getLogger(__name__)
+
+_ = lambda key, **kwargs: gettext("psnfetcher", key, **kwargs)  # noqa: E731
 
 
 @dataclass(slots=True)
@@ -145,6 +148,30 @@ class PsnFetcher:
             stored=len(outcome.new_rows),
             private_title_ids=list(outcome.private_title_ids),
         )
+
+    async def refresh_user(self, tg_id: int, account_id: str, online_id: str) -> str:
+        """An out-of-turn look at one PSN account for the admin card (#27) —
+        the PSN counterpart of Fetcher/SteamFetcher.refresh_user, which PSN
+        never had. Doubles as the recovery path for an account stuck in
+        "linked but the first backfill never finished" (#24/#26): if
+        backfill_done is still off, wipe any partial progress checkpoints
+        and re-run backfill from scratch, instead of the only fix being a
+        manual DB script on the server."""
+        if not await self._repo.psn_backfill_done(account_id):
+            await self._repo.clear_psn_title_progress(account_id)
+            try:
+                result = await self.backfill(tg_id, account_id)
+            except Exception:
+                log.exception("admin psn resync (backfill) of tg_id=%s failed", tg_id)
+                return _("psnfetcher-resync-failed")
+            return _("psnfetcher-resynced-backfill", stored=result.stored)
+
+        try:
+            published = await self.poll_account(tg_id, account_id, online_id)
+        except Exception:
+            log.exception("admin psn resync (poll) of tg_id=%s failed", tg_id)
+            return _("psnfetcher-resync-failed")
+        return _("psnfetcher-resynced-poll", published=published)
 
     async def _refresh_level(self, client: PSNAWP, tg_id: int, account_id: str) -> None:
         """Never blocks its caller on failure — a stale cached level is a

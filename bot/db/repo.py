@@ -939,6 +939,28 @@ class Repo:
         await self._conn.execute("DELETE FROM psn_poll_state WHERE account_id = ?", (account_id,))
         await self._conn.commit()
 
+    async def psn_backfill_done(self, account_id: str) -> bool:
+        """Whether this account's first-ever backfill has finished (#21/#27).
+        No psn_poll_state row yet (backfill still running, or crashed before
+        it could finish) reads as not done."""
+        cursor = await self._conn.execute(
+            "SELECT backfill_done FROM psn_poll_state WHERE account_id = ?", (account_id,)
+        )
+        row = await cursor.fetchone()
+        return bool(row["backfill_done"]) if row else False
+
+    async def clear_psn_title_progress(self, account_id: str) -> None:
+        """Drop every per-game progress checkpoint for an account — used by
+        the admin PSN resync (#27) to recover an account whose first backfill
+        crashed partway: a bogus "flat" checkpoint left behind then looks
+        identical to "nothing new here" and hides that game's trophies
+        forever (#26). Safe: backfill re-reads and re-stores, never
+        publishes."""
+        await self._conn.execute(
+            "DELETE FROM psn_title_progress WHERE account_id = ?", (account_id,)
+        )
+        await self._conn.commit()
+
     # -------------------------------------------------------- achievements
 
     async def insert_new_achievements(

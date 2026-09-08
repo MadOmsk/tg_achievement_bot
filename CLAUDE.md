@@ -120,7 +120,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── steam_presence.py       Steam presence, same step 1, its own batch request
 │   │   ├── fetcher.py              step 2: Xbox achievements per game, title history, backfill
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
-│   │   ├── psn_fetcher.py          PSN trophies: no presence hook, its own debounce, backfill
+│   │   ├── psn_fetcher.py          PSN trophies: no presence hook, its own debounce, backfill, admin resync (#27)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue
 │   │   ├── daily.py                the scheduled daily summary + /summary on demand
 │   │   ├── reminders.py            reminders for a dead Xbox login
@@ -417,10 +417,14 @@ your own card: the rendered message is identical regardless of who asked for it.
 self-refreshing) provides: Steam/PSN shared-credential health; API usage snapshots;
 global display/cleanup limits; defaults for new users (including
 `default_show_profile_links`); the user list and per-user cards; the chat list and
-per-chat cards; exclusion/restore; a manual per-user refresh; per-chat settings
-(rarity threshold, summary time, timezone, mutes, minimum gamerscore, daily-summary
-switch); bot-message cleanup actions. Admin-triggered manual refresh is the only
-normal UI path allowed to call a platform API outside a background job.
+per-chat cards; exclusion/restore; a manual per-user refresh per linked platform
+(Xbox/Steam/PSN); per-chat settings (rarity threshold, summary time, timezone,
+mutes, minimum gamerscore, daily-summary switch); bot-message cleanup actions.
+Admin-triggered manual refresh is the only normal UI path allowed to call a
+platform API outside a background job. The PSN refresh doubles as the recovery
+path for an account stuck "linked but the first backfill never finished" (#27):
+it wipes the partial `psn_title_progress` checkpoints and re-runs backfill,
+instead of that needing a manual DB script on the server.
 
 ## Message formats
 
