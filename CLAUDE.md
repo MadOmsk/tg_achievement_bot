@@ -143,6 +143,10 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── backfill_hltb_platforms.py one-off: fill in `platforms` on already-cached games
 │   └── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
 │
+├── docs/                        written specs, kept current alongside the code they describe
+│   └── ui_screens.md              every major screen's current shape (#41): real rendered
+│                                   examples + the formatting rule behind each line
+│
 ├── tests/                       pytest + pytest-asyncio; real platform/Telegram calls forbidden
 │   └── ...                        one file per module/behavior area; see the test files
 │                                   themselves for what each one covers
