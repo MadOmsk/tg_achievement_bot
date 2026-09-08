@@ -36,6 +36,30 @@ def presence_icon(row: ChatPresenceRow) -> str:
     return PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
 
 
+def _row_name(row: ChatPresenceRow) -> str:
+    """The nickname of whichever platform `row.platform` points at — the one
+    being played, or (while offline) the last-active one that actually has
+    tracked presence; see chat_member_presence()'s docstring. `platform ==
+    "none"` means no tracked presence exists anywhere (PSN-only, or never
+    polled yet) — falls back to the Telegram name, deliberately *not*
+    "@username" (Follow-up 2026-09-08, reverting an earlier attempt): this
+    table auto-refreshes every few minutes, and a live "@mention" would ping
+    that person's Telegram client on every single refresh.
+    """
+    if row.platform == "modern" and row.gamertag:
+        return row.gamertag
+    if row.platform == "steam" and row.steam_display_name:
+        return row.steam_display_name
+    if row.platform == "psn" and row.psn_display_name:
+        return row.psn_display_name
+    full_name = " ".join(part for part in (row.first_name, row.last_name) if part)
+    if full_name:
+        return full_name
+    if row.username:
+        return row.username  # no "@" on purpose — see the docstring above
+    return f"id{row.tg_id}"
+
+
 def render_online_table(rows: list[ChatPresenceRow], updated_label: str) -> str:
     """`updated_label` is a ready-made "HH:MM" in the chat's own timezone
     (Follow-up 2026-09-05, the "Обновлено: …" line) — this module has no
@@ -44,8 +68,12 @@ def render_online_table(rows: list[ChatPresenceRow], updated_label: str) -> str:
     poller/online_refresh.py alike)."""
     lines = [_("onlineview-header"), _("onlineview-updated", updated=updated_label), ""]
     for row in rows:
-        name = row.gamertag or f"id{row.tg_id}"
         lines.append(
-            _("onlineview-row", icon=presence_icon(row), name=name, status=presence_text(row))
+            _(
+                "onlineview-row",
+                icon=presence_icon(row),
+                name=_row_name(row),
+                status=presence_text(row),
+            )
         )
     return "\n".join(lines)

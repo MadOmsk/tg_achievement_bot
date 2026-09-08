@@ -254,6 +254,15 @@ class ChatPresenceRow:
     title_id: str | None
     title_name: str | None
     platform: str  # whichever platform state/title_id/title_name came from
+    # Follow-up 2026-09-08 — services/online_view.py's row label: the
+    # platform-specific nickname of `platform` above, or (platform == "none")
+    # the Telegram name/username fallback. See chat_member_presence()'s
+    # docstring for why gamertag alone stopped being enough.
+    steam_display_name: str | None = None
+    psn_display_name: str | None = None
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -1596,6 +1605,21 @@ class Repo:
         the roster at all, which they didn't before this fix — `psn_level`
         below is a hardcoded 0, wired in now so a real presence table can
         slot in later without reshaping this query again.
+
+        The row's *label* (Follow-up 2026-09-08, reverting an earlier
+        Telegram-identity attempt that pinged people every auto-refresh —
+        see #38's revert) is the platform-specific nickname of whichever
+        platform `winner` points at: the one currently being played, or —
+        while offline — whichever of Xbox/Steam has *real tracked presence*
+        and was polled more recently ("last active platform"). Using
+        freshness here is safe even though the docstring above warns
+        against it for *deciding who's online*: this branch only runs once
+        both are already known-offline, so there is no "wrongly looks
+        active" failure mode left to worry about, only which idle nickname
+        to show. `winner = 'none'` means no tracked presence exists at all
+        (PSN-only, or an account never polled yet) — `online_view.py` falls
+        back to the Telegram name there, plain (no "@"), so a PSN-only
+        person doesn't get pinged by the auto-refreshing table.
         """
         cursor = await self._conn.execute(
             "WITH member AS ("
@@ -1603,13 +1627,14 @@ class Repo:
             "  UNION "
             "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
             "), presence AS ("
-            "  SELECT u.tg_id, u.gamertag, u.xuid,"
+            "  SELECT u.tg_id, u.gamertag, u.username, u.first_name, u.last_name, u.xuid,"
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
             "         xp.title_name AS xbox_title_name, xp.updated_at AS xbox_updated_at,"
             "         sp.persona_state AS steam_persona_state, sp.gameid AS steam_gameid,"
             "         sp.game_name AS steam_game_name, sp.updated_at AS steam_updated_at,"
             "         steam.external_id AS steam_external_id,"
-            "         psn.external_id AS psn_external_id,"
+            "         steam.display_name AS steam_display_name,"
+            "         psn.external_id AS psn_external_id, psn.display_name AS psn_display_name,"
             "         CASE WHEN xp.state = 'Online' AND xp.title_id IS NOT NULL THEN 2"
             "              WHEN xp.state = 'Online' THEN 1"
             "              ELSE 0 END AS xbox_level,"
@@ -1630,28 +1655,35 @@ class Repo:
             "  SELECT *, CASE"
             "    WHEN steam_level > xbox_level AND steam_level >= psn_level THEN 'steam'"
             "    WHEN xbox_level > steam_level AND xbox_level >= psn_level THEN 'modern'"
+            "    WHEN psn_level > xbox_level AND psn_level > steam_level THEN 'psn'"
             "    WHEN xbox_level > 0 THEN"  # tied at the top, both active — freshness breaks it
             "      CASE WHEN steam_updated_at IS NOT NULL"
             "                AND (xbox_updated_at IS NULL OR steam_updated_at > xbox_updated_at)"
             "           THEN 'steam' ELSE 'modern' END"
-            "    ELSE"  # tied at zero — nobody's doing anything, fall back to what's connected
-            "      CASE WHEN xuid IS NOT NULL THEN 'modern'"
-            "           WHEN steam_external_id IS NOT NULL THEN 'steam'"
-            "           ELSE 'psn' END"
+            "    WHEN xbox_state IS NOT NULL OR steam_persona_state IS NOT NULL THEN"
+            # Nobody's actively playing/online, but Xbox and/or Steam has
+            # real tracked presence (has been polled at least once) — show
+            # whichever was polled more recently as the "last active"
+            # platform for the nickname (see docstring above for why
+            # freshness is safe to use here specifically).
+            "      CASE WHEN steam_updated_at IS NOT NULL"
+            "                AND (xbox_updated_at IS NULL OR steam_updated_at >= xbox_updated_at)"
+            "           THEN 'steam' ELSE 'modern' END"
+            "    ELSE 'none'"  # no tracked presence anywhere — Telegram identity fallback
             "    END AS winner"
             "  FROM presence"
             ") "
-            "SELECT tg_id, gamertag, xuid,"
+            "SELECT tg_id, gamertag, username, first_name, last_name, xuid,"
             "       CASE winner"
             "         WHEN 'steam' THEN"
             "           CASE WHEN steam_persona_state != 0 THEN 'Online' ELSE 'Offline' END"
-            "         WHEN 'psn' THEN NULL"
-            "         ELSE xbox_state END AS state,"
+            "         WHEN 'modern' THEN xbox_state"
+            "         ELSE NULL END AS state,"
             "       CASE winner WHEN 'steam' THEN steam_gameid"
-            "                   WHEN 'psn' THEN NULL ELSE xbox_title_id END AS title_id,"
+            "                   WHEN 'modern' THEN xbox_title_id ELSE NULL END AS title_id,"
             "       CASE winner WHEN 'steam' THEN steam_game_name"
-            "                   WHEN 'psn' THEN NULL ELSE xbox_title_name END AS title_name,"
-            "       winner AS platform "
+            "                   WHEN 'modern' THEN xbox_title_name ELSE NULL END AS title_name,"
+            "       winner AS platform, steam_display_name, psn_display_name "
             "FROM decided "
             "ORDER BY "
             "  CASE WHEN state = 'Online' AND title_id IS NOT NULL THEN 0 "
@@ -1669,6 +1701,11 @@ class Repo:
                 title_id=row["title_id"],
                 title_name=row["title_name"],
                 platform=row["platform"],
+                steam_display_name=row["steam_display_name"],
+                psn_display_name=row["psn_display_name"],
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
             )
             for row in await cursor.fetchall()
         ]

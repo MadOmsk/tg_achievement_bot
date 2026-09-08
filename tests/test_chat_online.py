@@ -42,9 +42,10 @@ async def test_chat_member_presence_reports_platform_for_steam_only_and_mixed(
     repo: Repo,
 ) -> None:
     """SPEC 9, M-Steam-2e: platform is exposed so /online can colour the
-    icon — a Steam-only person defaults to 'steam' with no presence data
-    at all, and whichever platform actually updated more recently wins for
-    someone with both connected."""
+    icon — a Steam-only person with no presence data at all yet gets
+    'none' (Follow-up 2026-09-08: nothing has ever been tracked, so there
+    is no platform nickname to vouch for), and whichever platform actually
+    updated more recently wins for someone with both connected and tracked."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
 
     await repo.ensure_user(1, "steamonly")
@@ -68,7 +69,7 @@ async def test_chat_member_presence_reports_platform_for_steam_only_and_mixed(
 
     rows = {row.tg_id: row for row in await repo.chat_member_presence(CHAT_ID)}
 
-    assert rows[1].platform == "steam"  # no presence data at all, only a Steam link
+    assert rows[1].platform == "none"  # no presence data at all, only a Steam link
     assert rows[2].platform == "steam"  # both playing (tied activity level), Steam fresher
 
 
@@ -78,7 +79,11 @@ async def test_chat_member_presence_includes_a_psn_only_person(repo: Repo) -> No
     presence — `chat_member_presence()`'s WHERE clause never accounted for
     a `platform_links` row on 'psn'. PSN has no presence source yet (its
     own still-undesigned piece of #1), so the best this can do today is
-    make sure the person isn't invisible — 'no data', not 'nobody home'."""
+    make sure the person isn't invisible — 'no data', not 'nobody home'.
+
+    `platform` reads 'none', not 'psn' (Follow-up 2026-09-08) — nothing has
+    ever been tracked for this person, so there's no platform nickname to
+    vouch for; online_view.py falls back to their Telegram name there."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "psnonly")
     await repo.link_platform_account(1, "psn", "internal-account-id", "PsnOnly")
@@ -88,7 +93,7 @@ async def test_chat_member_presence_includes_a_psn_only_person(repo: Repo) -> No
 
     assert len(rows) == 1
     assert rows[0].tg_id == 1
-    assert rows[0].platform == "psn"
+    assert rows[0].platform == "none"
     assert rows[0].state is None  # no presence source for PSN yet
 
 
@@ -140,6 +145,55 @@ async def test_playing_on_one_platform_beats_merely_online_on_the_other(repo: Re
     assert row.platform == "steam"
     assert row.title_id == "550"
     assert row.title_name == "Left 4 Dead 2"
+
+
+async def test_chat_member_presence_offline_shows_the_last_active_platform(repo: Repo) -> None:
+    """Follow-up 2026-09-08: with both Xbox and Steam known-offline (not
+    merely untracked), the more recently polled one wins the nickname —
+    freshness is safe here specifically because nobody is "online" in
+    either case, unlike the playing/online tie-break above where it would
+    misreport who is actually active."""
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.ensure_user(1, "bothoffline")
+    await repo.link_xbox_account(1, XUID_A, "BothOffline", 0)
+    await repo.link_platform_account(1, "steam", "76561197981065056", "BothOfflineSteam")
+    await repo.subscribe(CHAT_ID, 1)
+
+    await repo.save_presence_state(XUID_A, "Offline", None, None, changed=True)
+    await repo.save_steam_presence_state("76561197981065056", 0, None, None, changed=True)
+    await repo._conn.execute(
+        "UPDATE presence_state SET updated_at = '2020-01-01T00:00:00+00:00' WHERE xuid = ?",
+        (XUID_A,),
+    )
+    await repo._conn.commit()
+
+    rows = await repo.chat_member_presence(CHAT_ID)
+
+    assert len(rows) == 1
+    assert rows[0].platform == "steam"  # polled more recently than Xbox
+
+
+async def test_chat_member_presence_carries_platform_names_and_telegram_identity(
+    repo: Repo,
+) -> None:
+    """Follow-up 2026-09-08: online_view.py's row label needs the Steam/PSN
+    display names and the Telegram identity alongside the winning platform —
+    this is where they get joined in."""
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.ensure_user(1, "someone", "Igor", "Petrov")
+    await repo.link_platform_account(1, "steam", "76561197981065056", "SteamNick")
+    await repo.link_platform_account(1, "psn", "internal-account-id", "PsnNick")
+    await repo.subscribe(CHAT_ID, 1)
+
+    rows = await repo.chat_member_presence(CHAT_ID)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.steam_display_name == "SteamNick"
+    assert row.psn_display_name == "PsnNick"
+    assert row.username == "someone"
+    assert row.first_name == "Igor"
+    assert row.last_name == "Petrov"
 
 
 async def test_chat_exists(repo: Repo) -> None:

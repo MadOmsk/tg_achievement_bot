@@ -85,7 +85,10 @@ async def test_tick_refreshes_a_message_past_its_interval(repo: Repo) -> None:
     assert len(bot.edits) == 1
     chat_id, message_id, text = bot.edits[0]
     assert (chat_id, message_id) == (CHAT_ID, 42)
-    assert "Igor" in text
+    # _member() never records any presence for this account, so the row has
+    # nothing tracked to vouch for a gamertag — falls back to the Telegram
+    # username, plain (Follow-up 2026-09-08).
+    assert "igor" in text
     rows = await repo.all_online_auto_refreshes()
     assert rows[0].last_updated_at != rows[0].created_at
 
