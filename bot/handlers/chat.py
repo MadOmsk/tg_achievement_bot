@@ -609,6 +609,9 @@ async def _summary_or_cooldown(
         chat_id,
         settings_row.rare_threshold_percent,
         local_now(settings_row.tz_offset_min).date(),
+        tz_offset_min=settings_row.tz_offset_min,
+        with_day=True,
+        with_month=True,
     )
     if built is None:
         return None, None, 0
@@ -658,7 +661,11 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
     window = callback.data.rsplit(":", 1)[1]
     settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
     text = await full_leaderboard(
-        repo, callback.message.chat.id, settings_row.rare_threshold_percent, window
+        repo,
+        callback.message.chat.id,
+        settings_row.rare_threshold_percent,
+        window,
+        settings_row.tz_offset_min,
     )
     await callback.answer()
     if text is not None:

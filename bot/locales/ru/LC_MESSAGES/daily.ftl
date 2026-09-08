@@ -16,11 +16,15 @@ daily-month-10 = октября
 daily-month-11 = ноября
 daily-month-12 = декабря
 daily-window-day = 24 часа
-daily-window-month = 30 дней
+daily-window-month = этот месяц
 
 # Summary
 daily-header = 📊 <b>Итог дня</b>, { $day } { $month }
+# The month-end wrap-up (#14) — same leaderboard as the daily, month block
+# only, no day stats. Sent on the last calendar day of the month at the
+# chat's summary time, alongside that day's own daily summary.
+daily-monthly-header = 📊 <b>Итоги за месяц</b>
 daily-show-all-day = Показать всех (24ч)
-daily-show-all-month = Показать всех (30д)
+daily-show-all-month = Показать всех (за месяц)
 daily-leaderboard-total-label = Всего
 daily-leaderboard-full-header = 📊 <b>{ $label }, полностью</b>

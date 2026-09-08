@@ -1206,7 +1206,11 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
     # showed 0 for a Steam-only person's achievements, and only the Xbox
     # half of the count for someone with both platforms.
     today = await repo.achievement_counts_by_tg_id(today_cutoff_utc())
-    month = await repo.achievement_counts_by_tg_id(month_cutoff_utc())
+    # This aggregate spans every user, with no single person's timezone to
+    # key the calendar-month boundary off (#14) — the project default
+    # (Europe/Moscow, +180) is the reference, same as admin_view.py's own
+    # "updated HH:MM".
+    month = await repo.achievement_counts_by_tg_id(month_cutoff_utc(180))
 
     pages = max(1, -(-len(users) // PAGE_SIZE))
     page = max(0, min(page, pages - 1))

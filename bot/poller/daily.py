@@ -21,7 +21,7 @@ from bot.db.repo import ChatMemberStat, Repo
 from bot.i18n import gettext
 from bot.services.achievements import platform_breakdown_suffix, plural_achievements
 from bot.services.message_log import stats_category
-from bot.services.stats import local_now
+from bot.services.stats import local_now, month_cutoff_utc
 from bot.services.tables import blockquote, total_line, truncate_name
 from bot.util import thousands, utcnow
 
@@ -29,11 +29,10 @@ log = logging.getLogger(__name__)
 
 _ = lambda key, **kwargs: gettext("daily", key, **kwargs)  # noqa: E731
 
-DAY_WINDOW_HOURS = 24
-# Rolling, like the day window — not the calendar month. Same reasoning: a
-# calendar boundary would cut the window at an arbitrary moment and give every
-# member a different "this month" depending on when they check.
-MONTH_WINDOW_DAYS = 30
+DAY_WINDOW_HOURS = 24  # rolling — everyone's "today" is the same 24 hours
+# The "month" block is the calendar month (#14): since midnight on the 1st,
+# in the chat's own timezone (services/stats.py::month_cutoff_utc). The
+# figure resets on the 1st instead of sliding.
 TOP_LIMIT_KEY = "summary_top_limit"
 DEFAULT_TABLE_TOP = 15
 _MONTH_KEYS = (
@@ -70,33 +69,58 @@ class DailySummary:
                 continue
 
             report_date = now_local.date().isoformat()
-            if await self._repo.daily_report_sent(chat.chat_id, report_date):
-                continue
+            if not await self._repo.daily_report_sent(chat.chat_id, report_date):
+                await self._send_scheduled(chat, report_date, with_day=True, with_month=False)
 
-            built = await build_summary(
-                self._repo, chat.chat_id, chat.rare_threshold_percent, now_local.date()
-            )
-            if built is None:
-                # No subscribed members at all — nothing to roster (#34
-                # made a zero-activity day still send). Mark it done so the
-                # per-minute tick doesn't keep re-checking today.
-                await self._repo.mark_daily_report_sent(chat.chat_id, report_date)
-                continue
-            text, markup = built
+            # On the last calendar day of the month, the month-end wrap-up
+            # goes out too (#14) — same time, its own dedup marker, and
+            # additional to that day's daily summary, not instead of it.
+            if _is_last_day_of_month(now_local):
+                month_key = _monthly_key(now_local)
+                if not await self._repo.daily_report_sent(chat.chat_id, month_key):
+                    await self._send_scheduled(chat, month_key, with_day=False, with_month=True)
 
-            try:
-                with stats_category():
-                    await self._bot.send_message(
-                        chat.chat_id, text, parse_mode=ParseMode.HTML, reply_markup=markup
-                    )
-            except TelegramForbiddenError:
-                log.info("chat %s refused the summary, deactivating", chat.chat_id)
-                await self._repo.deactivate_chat(chat.chat_id)
-                continue
-            except Exception:
-                log.exception("could not send the daily summary to %s", chat.chat_id)
-                continue
-            await self._repo.mark_daily_report_sent(chat.chat_id, report_date)
+    async def _send_scheduled(self, chat, marker: str, *, with_day: bool, with_month: bool) -> None:
+        now_local = local_now(chat.tz_offset_min)
+        built = await build_summary(
+            self._repo,
+            chat.chat_id,
+            chat.rare_threshold_percent,
+            now_local.date(),
+            tz_offset_min=chat.tz_offset_min,
+            with_day=with_day,
+            with_month=with_month,
+        )
+        if built is None:
+            # No subscribed members at all — nothing to roster (#34 made a
+            # zero-activity day still send). Mark it done so the per-minute
+            # tick doesn't keep re-checking.
+            await self._repo.mark_daily_report_sent(chat.chat_id, marker)
+            return
+        text, markup = built
+        try:
+            with stats_category():
+                await self._bot.send_message(
+                    chat.chat_id, text, parse_mode=ParseMode.HTML, reply_markup=markup
+                )
+        except TelegramForbiddenError:
+            log.info("chat %s refused the summary, deactivating", chat.chat_id)
+            await self._repo.deactivate_chat(chat.chat_id)
+            return
+        except Exception:
+            log.exception("could not send the summary to %s", chat.chat_id)
+            return
+        await self._repo.mark_daily_report_sent(chat.chat_id, marker)
+
+
+def _is_last_day_of_month(dt: date) -> bool:
+    return (dt + timedelta(days=1)).month != dt.month
+
+
+def _monthly_key(dt: date) -> str:
+    """The daily_reports marker for a month-end wrap-up — deliberately not a
+    valid ISO date, so it can't collide with a real daily marker."""
+    return f"{dt.year:04d}-{dt.month:02d}-monthly"
 
 
 async def current_top_limit(repo: Repo) -> int:
@@ -104,65 +128,83 @@ async def current_top_limit(repo: Repo) -> int:
 
 
 async def build_summary(
-    repo: Repo, chat_id: int, threshold: float, today: date
+    repo: Repo,
+    chat_id: int,
+    threshold: float,
+    today: date,
+    *,
+    tz_offset_min: int | None = None,
+    with_day: bool = True,
+    with_month: bool = True,
 ) -> tuple[str, InlineKeyboardMarkup | None] | None:
-    """The same two-window report used by the scheduled job and by /summary
-    on demand — one implementation, one set of numbers (SPEC 5.7, 6.3).
+    """The leaderboard report, composed from independent window blocks so
+    the three triggers stay in one style (#14):
 
-    Both windows are rolling, not calendar-bound — a calendar day or month
-    would cut off at an arbitrary moment and give every member a different
-    "today" depending on when they happen to check (SPEC 5.7) — and both list
-    everyone subscribed, zero-scorers included, so the table reads as a
-    roster, not just whoever happened to unlock something.
+    - the scheduled daily job asks for the day block only;
+    - the month-end job (last calendar day of the month) asks for the month
+      block only, under a "Итоги за месяц" header;
+    - `/summary` on demand asks for both.
 
-    A day on which nobody unlocked anything still produces a report (#34) —
-    the roster with everyone at 0. Only a chat with no subscribed members at
-    all returns None (there is genuinely no roster to show).
+    Every block lists everyone subscribed, zero-scorers included, so it reads
+    as a roster; a day nobody unlocked anything still sends (#34). Returns
+    None only when the chat has no subscribed members at all.
     """
-    now = utcnow()
-    day_rows = await repo.chat_member_stats(
-        chat_id, now - timedelta(hours=DAY_WINDOW_HOURS), threshold
-    )
-    if not day_rows:
+    top_limit = await current_top_limit(repo)
+    # (kind, section_lines, has_more) — kind drives the «показать всех» button.
+    blocks: list[tuple[str, list[str], bool]] = []
+
+    if with_day:
+        day_cutoff = utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
+        rows = await repo.chat_member_stats(chat_id, day_cutoff, threshold)
+        if not rows:
+            return None
+        blocks.append(("day", *_section(_("daily-window-day"), rows, top_limit)))
+
+    if with_month:
+        rows = await repo.chat_member_stats(chat_id, month_cutoff_utc(tz_offset_min), threshold)
+        if not rows:
+            if not blocks:
+                return None  # month-only report for a chat with no members
+        else:
+            blocks.append(("month", *_section(_("daily-window-month"), rows, top_limit)))
+
+    if not blocks:
         return None
 
-    month_rows = await repo.chat_member_stats(
-        chat_id, now - timedelta(days=MONTH_WINDOW_DAYS), threshold
+    header = (
+        _("daily-header", day=today.day, month=_(_MONTH_KEYS[today.month - 1]))
+        if with_day
+        else _("daily-monthly-header")
     )
+    lines = [header]
+    for _kind, section_lines, _more in blocks:
+        lines += ["", *section_lines]
 
-    top_limit = await current_top_limit(repo)
-    day_lines, day_full = _section(_("daily-window-day"), day_rows, top_limit)
-    lines = [
-        _("daily-header", day=today.day, month=_(_MONTH_KEYS[today.month - 1])),
-        "",
-        *day_lines,
+    button_for = {
+        "day": ("daily-show-all-day", "summary:all:day"),
+        "month": ("daily-show-all-month", "summary:all:month"),
+    }
+    buttons = [
+        InlineKeyboardButton(text=_(button_for[kind][0]), callback_data=button_for[kind][1])
+        for kind, _section_lines, has_more in blocks
+        if has_more
     ]
-
-    month_full = False
-    if month_rows:
-        month_lines, month_full = _section(_("daily-window-month"), month_rows, top_limit)
-        lines += ["", *month_lines]
-
-    buttons = []
-    if day_full:
-        buttons.append(
-            InlineKeyboardButton(text=_("daily-show-all-day"), callback_data="summary:all:day")
-        )
-    if month_full:
-        buttons.append(
-            InlineKeyboardButton(text=_("daily-show-all-month"), callback_data="summary:all:month")
-        )
     markup = InlineKeyboardMarkup(inline_keyboard=[[b] for b in buttons]) if buttons else None
     return "\n".join(lines), markup
 
 
-async def full_leaderboard(repo: Repo, chat_id: int, threshold: float, window: str) -> str | None:
+async def full_leaderboard(
+    repo: Repo, chat_id: int, threshold: float, window: str, tz_offset_min: int | None = None
+) -> str | None:
     """The uncapped list behind a summary's «Показать всех» button (SPEC
     6.3) — re-fetched fresh rather than carried over from the original send,
     same as /hltb's sessions do for their own "current data" reasons."""
-    now = utcnow()
-    hours = DAY_WINDOW_HOURS if window == "day" else MONTH_WINDOW_DAYS * 24
-    rows = await repo.chat_member_stats(chat_id, now - timedelta(hours=hours), threshold)
+    cutoff = (
+        utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
+        if window == "day"
+        else month_cutoff_utc(tz_offset_min)
+    )
+    rows = await repo.chat_member_stats(chat_id, cutoff, threshold)
     if not rows:
         return None
     # limit=len(rows): never truncate here — this is the "show everything"

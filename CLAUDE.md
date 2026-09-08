@@ -123,7 +123,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
 │   │   ├── psn_fetcher.py          PSN trophies: no presence hook, its own debounce, backfill, admin resync (#27)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue
-│   │   ├── daily.py                the scheduled daily summary + /summary on demand
+│   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
 │   │   ├── reminders.py            reminders for a dead Xbox login
 │   │   ├── message_cleanup.py      auto-deletes system messages in groups
 │   │   ├── online_refresh.py       auto-refreshes the /online table
@@ -473,10 +473,23 @@ of them came from PSN.
 Lists (`/stats`, `/recent`, `/summary`, the daily summary) render as sentence-lines
 inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table
 (which renders as a code block — wrong register for a leaderboard or game list).
-Summary windows are sliding (last 24 hours, last 30 days), not calendar-aligned. A
-day on which nobody unlocked anything still sends the summary — the roster with
-everyone at 0 (#34); `build_summary` returns `None`, and the chat gets nothing,
-only when there are no subscribed members at all.
+
+**Windows** (#14, reversing an earlier all-rolling call): "today"/"24 часа" is a
+rolling 24 hours — no timezone, everyone's is the same. "month"/"этот месяц" is the
+**calendar month** — since midnight on the 1st, in the person's / chat's own
+timezone (`util.start_of_month_utc` → `stats.month_cutoff_utc`), so the figure
+resets on the 1st. `/stats`' recent-games table stays a rolling 30 days and is
+labelled as such ("за 30 дней"), so it no longer silently disagrees with an
+unlabelled "month".
+
+**Three summary shapes**, composed by `daily.build_summary` from independent window
+blocks so their style can't drift apart (#14): the scheduled **daily** job sends
+the day block only; the **month-end** job (last calendar day of the month, same
+time, its own `daily_reports` marker `YYYY-MM-monthly`, *additional* to that day's
+daily summary) sends the month block only under an "Итоги за месяц" header;
+`/summary` on demand sends both. A day on which nobody unlocked anything still
+sends — the roster with everyone at 0 (#34); `build_summary` returns `None`, and
+the chat gets nothing, only when there are no subscribed members at all.
 
 ## Statistics rules
 
@@ -492,7 +505,8 @@ comes from the Xbox profile cache, never from summing title history. A 100%-comp
 game (Xbox/Steam) and a PSN platinum trophy answer the same question — Sony only
 awards a platinum once every other trophy in that game is earned — so both render as
 the same 🏆 symbol + count next to the platform's achievement/trophy count, never a
-word, and only when nonzero. Cross-platform 24h/30d counters aggregate by `tg_id`.
+word, and only when nonzero. Cross-platform "today" (24h rolling) and "month"
+(calendar month, #14) counters aggregate by `tg_id`.
 Platform breakdowns (e.g. "(🟢 3 · ⚫ 5)") show only where they clarify genuinely
 mixed-platform activity. Excluded users are never polled, published, or
 included in any summary.

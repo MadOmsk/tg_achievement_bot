@@ -6,9 +6,15 @@ from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 
 from bot.db.repo import AchievementRow, Repo
-from bot.poller.daily import DailySummary, build_summary, full_leaderboard
+from bot.poller.daily import (
+    DailySummary,
+    _is_last_day_of_month,
+    _monthly_key,
+    build_summary,
+    full_leaderboard,
+)
 from bot.services.achievements import platform_breakdown_suffix
-from bot.util import utcnow
+from bot.util import start_of_month_utc, utcnow
 
 CHAT_ID = -100500
 XUID_A = "xuid-a"
@@ -77,7 +83,7 @@ async def test_summary_lists_everyone_and_marks_rare(repo: Repo) -> None:
     # One totals line per window, label fused right into it (not a separate
     # "Всего" line any more — the label itself says which window it is).
     assert text.count("<b>24 часа:</b>") == 1
-    assert text.count("<b>30 дней:</b>") == 1
+    assert text.count("<b>этот месяц:</b>") == 1
     assert "<blockquote expandable>" in text and "</blockquote>" in text
 
 
@@ -251,22 +257,23 @@ async def test_window_is_a_rolling_day_not_a_calendar_one(repo: Repo) -> None:
     assert text is not None and "24 часа:</b> 1 достижение" in text
 
 
-async def test_month_window_is_thirty_rolling_days(repo: Repo) -> None:
-    """ "30 дней" means exactly that, not the calendar month-to-date."""
+async def test_month_window_is_the_calendar_month(repo: Repo) -> None:
+    """#14: the month block counts since midnight on the 1st, not a rolling
+    30 days — an unlock from the last day of *last* month is out of window
+    even though it's only a day or two old."""
     await _chat_with_two_players(repo)
     await repo.insert_new_achievements(XUID_A, [achievement("today", utcnow())], is_backfill=False)
+    last_month = start_of_month_utc(None) - timedelta(minutes=1)
     await repo.insert_new_achievements(
-        XUID_A,
-        [achievement("old", utcnow() - timedelta(days=40))],
-        is_backfill=False,
+        XUID_A, [achievement("last-month", last_month)], is_backfill=False
     )
 
     text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
 
     assert text is not None
-    # Two total achievements (today + old) must not both land in the 30-day
-    # section; only the recent one should count there.
-    assert "2 достижения" not in text
+    # Only "today" lands in the month block — "last-month" is a different
+    # calendar month, however recent.
+    assert "этот месяц:</b> 1 достижение" in text
 
 
 async def test_summary_is_sent_once_per_day(repo: Repo) -> None:
@@ -311,7 +318,7 @@ async def test_summary_offers_show_all_button_only_past_the_configured_limit(
     assert any(b.callback_data == "summary:all:day" for b in buttons)
     assert any(b.callback_data == "summary:all:month" for b in buttons)
     # Only 2 of the 3 players make it into the capped 24h table.
-    day_section = text.split("30 дней")[0]
+    day_section = text.split("этот месяц")[0]
     assert sum(day_section.count(f"Player{i}") for i in range(3)) == 2
 
 
@@ -408,3 +415,48 @@ async def test_disabled_chat_gets_nothing(repo: Repo) -> None:
     await DailySummary(bot, repo).tick()
 
     assert bot.sent == []
+
+
+def test_is_last_day_of_month() -> None:
+    assert _is_last_day_of_month(date_type(2026, 9, 30)) is True
+    assert _is_last_day_of_month(date_type(2026, 9, 29)) is False
+    assert _is_last_day_of_month(date_type(2026, 2, 28)) is True  # 2026 is not a leap year
+    assert _is_last_day_of_month(date_type(2026, 12, 31)) is True
+
+
+def test_monthly_key_cannot_collide_with_a_daily_marker() -> None:
+    key = _monthly_key(date_type(2026, 9, 30))
+    assert key == "2026-09-monthly"
+    # A real daily marker is report_date.isoformat() — never has this suffix.
+    assert "monthly" in key and key != date_type(2026, 9, 30).isoformat()
+
+
+async def test_scheduled_daily_report_has_no_month_block(repo: Repo) -> None:
+    await _chat_with_two_players(repo)
+    await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
+
+    built = await build_summary(
+        repo, CHAT_ID, 10.0, utcnow().date(), with_day=True, with_month=False
+    )
+
+    assert built is not None
+    text, _markup = built
+    assert "<b>Итог дня</b>" in text
+    assert "24 часа:</b>" in text
+    assert "этот месяц:</b>" not in text
+
+
+async def test_month_end_wrapup_is_month_block_only(repo: Repo) -> None:
+    await _chat_with_two_players(repo)
+    await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
+
+    built = await build_summary(
+        repo, CHAT_ID, 10.0, utcnow().date(), with_day=False, with_month=True
+    )
+
+    assert built is not None
+    text, _markup = built
+    assert "<b>Итоги за месяц</b>" in text
+    assert "этот месяц:</b>" in text
+    assert "24 часа:</b>" not in text
+    assert "Igor" in text and "Alex" in text  # still the full roster

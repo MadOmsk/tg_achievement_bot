@@ -39,13 +39,13 @@ def test_today_is_a_rolling_24_hours_not_a_calendar_day() -> None:
     assert today_cutoff_utc(now) == datetime(2026, 9, 1, 22, 0, tzinfo=UTC)
 
 
-def test_month_is_a_rolling_30_days_not_a_calendar_month() -> None:
-    """No timezone parameter, same as today_cutoff_utc — a mismatched window
-    against /stats' equally-30-day games table is what made this look like a
-    counting bug rather than two different definitions of "month" (SPEC 5.9)."""
+def test_month_cutoff_is_the_first_of_the_month_in_the_given_timezone() -> None:
+    """#14: the "month" window is calendar-bound now — midnight on the 1st,
+    in the person's own timezone (unlike the still-rolling today window)."""
     now = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
-    assert month_cutoff_utc(now) == now - timedelta(days=30)
-    assert month_cutoff_utc(now) == datetime(2026, 8, 3, 12, 0, tzinfo=UTC)
+    assert month_cutoff_utc(None, now) == datetime(2026, 9, 1, 0, 0, tzinfo=UTC)
+    # +180 (Europe/Moscow): the local 1st starts three hours earlier in UTC.
+    assert month_cutoff_utc(180, now) == datetime(2026, 8, 31, 21, 0, tzinfo=UTC)
 
 
 async def test_counters_include_backfilled_rows(repo: Repo) -> None:
@@ -54,8 +54,9 @@ async def test_counters_include_backfilled_rows(repo: Repo) -> None:
     now = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
     await repo.insert_new_achievements(
         XUID,
-        # 18 days before `now` — inside the 30-day rolling "month" window.
-        [row("old", "2026-08-15T10:00:00+00:00", 20)],
+        # Just inside the current calendar month (#14) — still a backfilled
+        # row, which must count all the same.
+        [row("old", "2026-09-01T00:00:01+00:00", 20)],
         is_backfill=True,
     )
     await repo.insert_new_achievements(
