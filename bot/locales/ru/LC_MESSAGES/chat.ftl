@@ -1,6 +1,6 @@
 # Subscription
 chat-subscribe-groups-only = Эта команда для группового чата — там, где нужны публикации.
-chat-subscribe-connect-xbox-first = Сначала подключи XBOX в личке: https://t.me/{ $bot_username }?start=connect
+chat-subscribe-connect-first = Сначала подключи хотя бы одну платформу — кнопки ниже.
 chat-subscribe-already = Ты уже публикуешься здесь.
 chat-subscribe-your-achievements = твои
 chat-subscribe-done = Готово. Ачивки { $gamertag } будут прилетать сюда.

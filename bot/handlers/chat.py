@@ -140,10 +140,17 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext) -> None:
         return
 
     user = await repo.get_user(message.from_user.id)
-    if user is None or not user.xuid:
+    # Found live (2026-09-08, keimaks/kmaks90 — PSN-only, confirmed bug):
+    # this used to require Xbox specifically (`not user.xuid` alone), so a
+    # Steam/PSN-only person could never subscribe anywhere at all — not a
+    # design choice, just this handler never learning about the other two
+    # platforms the rest of the bot has long since supported.
+    platform_links = await repo.platform_links_of(message.from_user.id) if user else []
+    if user is None or (not user.xuid and not platform_links):
         me = await message.bot.me()  # type: ignore[union-attr]
         await message.answer(
-            i18n.get("chat-subscribe-connect-xbox-first", bot_username=me.username or "")
+            i18n.get("chat-subscribe-connect-first"),
+            reply_markup=hub_keyboard(me.username or "", message.chat.id, i18n),
         )
         return
 
@@ -840,14 +847,21 @@ async def subscribe_button(
     if not isinstance(message, Message):
         return
     user = await repo.get_user(callback.from_user.id)
-    if user is None or not user.xuid:
-        # Don't just tell him to go connect somewhere — send him straight into
-        # the same login deep link as the Xbox connect button. It carries
-        # this chat's id, so ConnectService auto-subscribes here once he's
-        # done (SPEC 6.3); no need to remember to come back and press this
-        # button again.
+    # Same fix as /subscribe above (2026-09-08, confirmed live bug) — only
+    # redirect to connect when *nothing* is linked; a Steam/PSN-only person
+    # should just subscribe outright, not get bounced to Xbox forever.
+    platform_links = await repo.platform_links_of(callback.from_user.id) if user else []
+    if user is None or (not user.xuid and not platform_links):
+        # A callback answer can only carry one URL, unlike /subscribe's own
+        # reply keyboard above — Xbox's own deep link stays the default
+        # here (it auto-subscribes back to this chat once connected, SPEC
+        # 6.3), but Steam/PSN are one tap away too via a real message.
         me = await bot.me()
         await callback.answer(url=f"https://t.me/{me.username}?start=connect{message.chat.id}")
+        await message.answer(
+            i18n.get("chat-subscribe-connect-first"),
+            reply_markup=hub_keyboard(me.username or "", message.chat.id, i18n),
+        )
         return
 
     await repo.upsert_chat(message.chat.id, message.chat.title, callback.from_user.id)

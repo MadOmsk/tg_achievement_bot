@@ -11,7 +11,7 @@ from bot.constants import AchievementBadge, Platform, PsnTrophyTier, RarityMode
 from bot.db.repo import AchievementRow, ChatTarget, PlatformLink, Repo
 from bot.i18n import gettext
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
-from bot.util import thousands
+from bot.util import humanize_ago, thousands
 
 _ = lambda key, **kwargs: gettext("achievements", key, **kwargs)  # noqa: E731
 
@@ -398,6 +398,28 @@ def plural_trophies(count: int) -> str:
 #  tier badge already uses for a platinum (services/achievements.py's own
 #  TROPHY_TIER_BADGE above).
 COMPLETED_BADGE = AchievementBadge.CUP
+
+
+def visibility_status_text(link: PlatformLink) -> str:
+    """Steam/PSN's achievement/trophy visibility as found by the last actual
+    check (#5) — shared by /panel's own login row and the admin card
+    (2026-09-08, user request: the admin card's status line should read
+    "как в панели юзера"), so the two never drift into different wording.
+    Sourced from panel.ftl (that screen is where this text was written
+    first) the same way this module already borrows chat.ftl's
+    `chat-stats-no-gamertag` below, rather than duplicating it per module.
+
+    Appends when the check last ran, when known — "unknown" has no
+    timestamp to show at all."""
+    if link.achievements_visible is None:
+        return gettext("panel", "panel-visibility-unknown")
+    label = gettext(
+        "panel",
+        "panel-visibility-visible" if link.achievements_visible else "panel-visibility-hidden",
+    )
+    if link.achievements_visible_checked_at:
+        return f"{label} · {humanize_ago(link.achievements_visible_checked_at)}"
+    return label
 
 
 async def platform_header_lines(

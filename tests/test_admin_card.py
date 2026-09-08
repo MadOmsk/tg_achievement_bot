@@ -16,6 +16,16 @@ def _callback_datas(markup) -> list[str]:
     return [btn.callback_data for row in markup.inline_keyboard for btn in row if btn.callback_data]
 
 
+def _block(text: str, header_marker: str) -> list[str]:
+    """The lines of one platform block (2026-09-08 restructure: nickname,
+    id, status, achievements, [online] — five fixed lines, four for PSN)
+    — from its header line up to the next blank line."""
+    lines = text.split("\n")
+    start = next(i for i, line in enumerate(lines) if header_marker in line)
+    end = lines.index("", start)
+    return lines[start:end]
+
+
 def _achievement(title_id: str, platform: str, **overrides: object) -> AchievementRow:
     base = dict(
         title_id=title_id,
@@ -66,12 +76,13 @@ async def test_xbox_block_shows_id_count_today_and_gamerscore(repo: Repo) -> Non
 
     text, _markup = await _card(repo, 1)
 
-    xbox_line = next(line for line in text.split("\n") if "XBOX:" in line)
-    assert "GamerTag" in xbox_line
-    assert f"XUID {XUID}" in xbox_line
-    assert "1 достижение" in xbox_line
-    assert "сегодня 1" in xbox_line
-    assert "gamerscore 500" in xbox_line
+    block = _block(text, "XBOX:")
+    assert "GamerTag" in block[0]
+    assert block[1] == f"XUID {XUID}"
+    achievements_line = block[3]
+    assert "1 достижение" in achievements_line
+    assert "сегодня 1" in achievements_line
+    assert "gamerscore 500" in achievements_line
 
 
 async def test_steam_block_shows_id_and_count(repo: Repo) -> None:
@@ -83,11 +94,27 @@ async def test_steam_block_shows_id_and_count(repo: Repo) -> None:
 
     text, _markup = await _card(repo, 1)
 
-    steam_line = next(line for line in text.split("\n") if "Steam:" in line)
-    assert "SteamPerson" in steam_line
-    assert "id 76561197960287930" in steam_line
-    assert "1 достижение" in steam_line
-    assert "сегодня 1" in steam_line
+    block = _block(text, "Steam:")
+    assert "SteamPerson" in block[0]
+    assert block[1] == "id 76561197960287930"
+    achievements_line = block[3]
+    assert "1 достижение" in achievements_line
+    assert "сегодня 1" in achievements_line
+
+
+async def test_steam_status_line_shows_visibility_not_nickname(repo: Repo) -> None:
+    """#5/#novel restructure: the status line is achievement visibility,
+    worded like /panel — and does not repeat the nickname already on the
+    header line above it (2026-09-08 user request)."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.set_achievements_visible(1, "steam", True)
+
+    text, _markup = await _card(repo, 1)
+
+    status_line = _block(text, "Steam:")[2]
+    assert "ачивки видны" in status_line
+    assert "SteamPerson" not in status_line
 
 
 async def test_psn_block_shows_trophies_wording_and_level(repo: Repo) -> None:
@@ -103,12 +130,26 @@ async def test_psn_block_shows_trophies_wording_and_level(repo: Repo) -> None:
 
     text, _markup = await _card(repo, 1)
 
-    psn_line = next(line for line in text.split("\n") if "PSN:" in line)
-    assert "PsnPerson" in psn_line
-    assert "account_id acc-1" in psn_line
-    assert "1 трофей" in psn_line
-    assert "сегодня 1" in psn_line
-    assert "уровень 42" in psn_line
+    block = _block(text, "PSN:")
+    assert "PsnPerson" in block[0]
+    assert block[1] == "account_id acc-1"
+    assert len(block) == 4  # no "last online" line for PSN
+    achievements_line = block[3]
+    assert "1 трофей" in achievements_line
+    assert "сегодня 1" in achievements_line
+    assert "уровень 42" in achievements_line
+
+
+async def test_psn_status_line_shows_visibility_not_nickname(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.set_achievements_visible(1, "psn", False)
+
+    text, _markup = await _card(repo, 1)
+
+    status_line = _block(text, "PSN:")[2]
+    assert "ачивки скрыты" in status_line
+    assert "PsnPerson" not in status_line
 
 
 async def test_blocks_appear_in_a_fixed_platform_order(repo: Repo) -> None:

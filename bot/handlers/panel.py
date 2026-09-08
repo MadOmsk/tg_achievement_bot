@@ -32,7 +32,11 @@ from bot.handlers.keyboards import (
 )
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.fetcher import Fetcher
-from bot.services.achievements import platform_header_lines, telegram_identity
+from bot.services.achievements import (
+    platform_header_lines,
+    telegram_identity,
+    visibility_status_text,
+)
 from bot.services.single_message import send_replacing
 from bot.util import cooldown_minutes_left, humanize_ago, parse_iso
 
@@ -467,22 +471,6 @@ async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I
     await _redraw_chat_list(callback, repo, i18n)
 
 
-def _visibility_status(link: PlatformLink, i18n: I18nContext | StaticI18nContext) -> str:
-    """Steam/PSN's login row (#5, user request) — Xbox already has a real
-    status (token active/dead/revoked); Steam/PSN never had one at all,
-    just the nickname. This is the achievement/trophy *visibility* found by
-    the last actual check — connect time, or any backfill/resync since
-    (SteamFetcher.backfill/refresh_user, PsnFetcher.backfill/refresh_user)
-    — not a live check made here (SPEC 1.5's cache-only rule)."""
-    if link.achievements_visible is None:
-        return i18n.get("panel-visibility-unknown")
-    return (
-        i18n.get("panel-visibility-visible")
-        if link.achievements_visible
-        else i18n.get("panel-visibility-hidden")
-    )
-
-
 def _panel_identity(user: User, i18n: I18nContext | StaticI18nContext) -> str:
     """The person's own name for the /panel header (#18) — same priority as
     /stats' header (@username > first+last > gamertag, `telegram_identity`,
@@ -559,13 +547,13 @@ async def render_panel(
             text += "\n" + i18n.get(
                 "panel-login-steam-row",
                 name=steam_link.display_name,
-                status=_visibility_status(steam_link, i18n),
+                status=visibility_status_text(steam_link),
             )
         if psn_link is not None:
             text += "\n" + i18n.get(
                 "panel-login-psn-row",
                 name=psn_link.display_name,
-                status=_visibility_status(psn_link, i18n),
+                status=visibility_status_text(psn_link),
             )
         return text, keyboard
 
@@ -586,7 +574,7 @@ async def render_panel(
             i18n.get(
                 "panel-login-steam-row-connected",
                 name=steam_link.display_name,
-                status=_visibility_status(steam_link, i18n),
+                status=visibility_status_text(steam_link),
             )
         )
     if psn_link is not None:
@@ -594,7 +582,7 @@ async def render_panel(
             i18n.get(
                 "panel-login-psn-row-connected",
                 name=psn_link.display_name,
-                status=_visibility_status(psn_link, i18n),
+                status=visibility_status_text(psn_link),
             )
         )
     lines += [

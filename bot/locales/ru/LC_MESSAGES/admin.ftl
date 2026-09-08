@@ -172,7 +172,6 @@ admin-psn-level-tag = уровень { $level }
 
 admin-nowhere = нигде
 admin-subscribed = Подписан: { $chats }
-admin-counters = Ачивок (везде):   сегодня { $today } · за месяц { $month }
 admin-excluded = 🚫 Исключён из системы: не опрашивается и не публикуется.
 admin-restore = ↩️ Вернуть
 admin-exclude = 🚫 Исключить из системы

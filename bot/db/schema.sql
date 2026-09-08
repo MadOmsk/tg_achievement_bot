@@ -326,6 +326,10 @@ CREATE TABLE IF NOT EXISTS platform_links (
     -- PsnFetcher), since the coarser "My Profile" visibility check at
     -- connect time doesn't cover Steam's separate "Game details" toggle.
     achievements_visible INTEGER,
+    -- When the check above last ran, so /panel and the admin card can show
+    -- "as of ..." next to the status instead of a bare unlabeled flag —
+    -- Xbox's own login row already has this via token.last_refresh_at.
+    achievements_visible_checked_at TEXT,
     PRIMARY KEY (tg_id, platform)
 );
 

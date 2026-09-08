@@ -503,6 +503,77 @@ async def test_monthly_summary_includes_a_games_block(repo: Repo) -> None:
     assert "2 достижения" in games_section
 
 
+async def test_games_block_shows_platform_icon_and_gamerscore(repo: Repo) -> None:
+    """(2026-09-08, user request) — the games block now leads with the same
+    platform icon /stats' own games list uses, and shows gamerscore for a
+    Xbox/Steam game (skipped when it's 0, `score_suffix`'s own rule)."""
+    await _chat_with_two_players(repo)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("a1", utcnow(), score=50)], is_backfill=False
+    )
+    await repo.upsert_title("1", "Halo Infinite", "modern")
+
+    text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
+
+    assert text is not None
+    games_section = text.split("<b>Игры за месяц</b>")[1]
+    assert "🟢 " in games_section and "Halo Infinite" in games_section
+    assert "(+50 G)" in games_section
+
+
+async def test_games_block_shows_psn_tier_breakdown_not_gamerscore(repo: Repo) -> None:
+    """PSN games show a per-tier trophy breakdown instead of gamerscore
+    (2026-09-08, user request) — same tier icons TROPHY_TIER_BADGE uses
+    everywhere else on a PSN row."""
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.subscribe(CHAT_ID, 1)
+    await repo.insert_new_achievements_psn(
+        1,
+        "acc-1",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="gold1",
+                name="gold1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+                title_name="Astro Bot",
+                trophy_type="gold",
+            ),
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="bronze1",
+                name="bronze1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+                title_name="Astro Bot",
+                trophy_type="bronze",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
+
+    assert text is not None
+    games_section = text.split("<b>Игры за месяц</b>")[1]
+    assert "🔵 " in games_section and "Astro Bot" in games_section
+    assert "2 трофея" in games_section
+    assert AchievementBadge.GOLD in games_section
+    assert AchievementBadge.BRONZE in games_section
+    assert " G)" not in games_section
+
+
 async def test_games_block_is_absent_from_a_day_only_report(repo: Repo) -> None:
     await _chat_with_two_players(repo)
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)

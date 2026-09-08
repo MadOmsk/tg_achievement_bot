@@ -48,6 +48,21 @@ async def test_both_platforms_linked_show_both_lines(repo: Repo) -> None:
     assert "Вход Steam:  Gabe" in text
 
 
+async def test_steam_status_shows_visibility_and_when_it_was_checked(repo: Repo) -> None:
+    """(2026-09-08) Shared with the admin card (`visibility_status_text`) —
+    "when checked" only shows once a check has actually happened; a fresh
+    link with no check yet stays at the bare "не проверено"."""
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+
+    text, _markup = await render_panel(repo, TG_ID)
+    assert "❓ не проверено" in text
+
+    await repo.set_achievements_visible(TG_ID, "steam", True)
+    text, _markup = await render_panel(repo, TG_ID)
+    assert "✅ ачивки видны · " in text
+
+
 async def test_psn_linked_gets_its_own_profile_button(repo: Repo) -> None:
     """Follow-up 2026-09-06 — the panel's "👤 Профиль" row, same as XBOX and
     Steam already had (2026-09-05)."""

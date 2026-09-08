@@ -58,6 +58,7 @@ from bot.services.achievements import (
     COMPLETED_BADGE,
     plural_achievements,
     plural_trophies,
+    visibility_status_text,
 )
 from bot.services.admin_view import render_admin_home
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
@@ -66,7 +67,7 @@ from bot.services.psn.client import (
     PsnClientSetupError,
     PsnTokenDeadError,
 )
-from bot.services.stats import counters_for, month_cutoff_utc, today_cutoff_utc
+from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.services.steam.auth import (
     STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED,
 )
@@ -1189,12 +1190,13 @@ def _admin_tg_header(user: User) -> str:
 
 
 async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[str]:
+    """One block, five fixed lines (2026-09-08 restructure, user request):
+    nickname, id, status (+ when last checked), achievements, last online —
+    each its own line instead of the old single achievements-and-all header
+    line, so a long line no longer buries the id next to the nickname."""
     count = await repo.xbox_achievement_count(user.tg_id)
     completed = await repo.xbox_completed_games_count(user.xuid)
-    parts = [
-        _("admin-xuid-tag", xuid=user.xuid),
-        plural_achievements(count),
-    ]
+    parts = [plural_achievements(count)]
     if completed:
         parts.append(f"{COMPLETED_BADGE} {completed}")
     parts.append(_("admin-today-tag", count=today_count))
@@ -1224,21 +1226,22 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[st
             else humanize_ago(presence.updated_at)
         )
     return [
-        _("admin-xbox-header", gamertag=user.gamertag or _("admin-no-name"))
-        + "  ·  "
-        + "  ·  ".join(parts),
+        _("admin-xbox-header", gamertag=user.gamertag or _("admin-no-name")),
+        _("admin-xuid-tag", xuid=user.xuid),
         _("admin-login-row", login=login),
+        "  ·  ".join(parts),
         _("admin-online-row", online=online),
     ]
 
 
 async def _steam_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> list[str]:
+    """Steam's counterpart of `_xbox_admin_block` — same five-line shape,
+    its "status" line is achievement *visibility* (there is no login/token
+    to be active or dead), worded exactly like /panel's own status
+    (`visibility_status_text`, shared so the two never drift)."""
     count = await repo.platform_achievement_count(link.tg_id, Platform.STEAM)
     completed = await repo.steam_completed_games_count(link.tg_id)
-    parts = [
-        _("admin-steamid-tag", external_id=link.external_id),
-        plural_achievements(count),
-    ]
+    parts = [plural_achievements(count)]
     if completed:
         parts.append(f"{COMPLETED_BADGE} {completed}")
     parts.append(_("admin-today-tag", count=today_count))
@@ -1254,32 +1257,32 @@ async def _steam_admin_block(repo: Repo, link: PlatformLink, today_count: int) -
             else (_("admin-online-idle") if is_online else humanize_ago(steam_presence.updated_at))
         )
     return [
-        _("admin-steam-header", name=link.display_name or _("admin-no-name"))
-        + "  ·  "
-        + "  ·  ".join(parts),
+        _("admin-steam-header", name=link.display_name or _("admin-no-name")),
+        _("admin-steamid-tag", external_id=link.external_id),
+        _("admin-login-row", login=visibility_status_text(link)),
+        "  ·  ".join(parts),
         _("admin-online-row", online=online),
     ]
 
 
 async def _psn_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> list[str]:
+    """PSN's counterpart — four lines, not five: no cached presence for PSN
+    yet (issue #1), trophy sync has no presence hook at all, so there is no
+    "last online" line to show; the 🔄 button below runs an out-of-turn
+    resync (#27) instead."""
     count = await repo.platform_achievement_count(link.tg_id, Platform.PSN)
     platinum = await repo.psn_platinum_count(link.tg_id)
-    parts = [
-        _("admin-psn-id-tag", external_id=link.external_id),
-        plural_trophies(count),
-    ]
+    parts = [plural_trophies(count)]
     if platinum:
         parts.append(f"{COMPLETED_BADGE} {platinum}")
     parts.append(_("admin-today-tag", count=today_count))
     if link.psn_trophy_level is not None:
         parts.append(_("admin-psn-level-tag", level=link.psn_trophy_level))
-    # No cached presence for PSN yet (issue #1) — trophy sync has no
-    # presence hook, so there's nothing to show beyond the counts above;
-    # the 🔄 button below runs an out-of-turn resync (#27).
     return [
-        _("admin-psn-header", name=link.display_name or _("admin-no-name"))
-        + "  ·  "
-        + "  ·  ".join(parts)
+        _("admin-psn-header", name=link.display_name or _("admin-no-name")),
+        _("admin-psn-id-tag", external_id=link.external_id),
+        _("admin-login-row", login=visibility_status_text(link)),
+        "  ·  ".join(parts),
     ]
 
 
@@ -1293,7 +1296,6 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     if user is None or (not user.xuid and steam_link is None and psn_link is None):
         return _("admin-user-not-found"), _back_home()
 
-    counters = await counters_for(repo, tg_id)
     today_xbox, today_steam, today_psn = await repo.achievement_platform_breakdown(
         tg_id, today_cutoff_utc()
     )
@@ -1301,10 +1303,9 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
 
     # Telegram identity first (2026-09-08 user request), then one block per
     # connected platform in a fixed order (Xbox → Steam → PSN) — each block
-    # groups everything about that platform together (nickname/id, lifetime
-    # count + completions, today's count, login/online where it applies)
-    # instead of interleaving platforms the way the old card's flat line
-    # list did.
+    # groups everything about that platform together (nickname/id, status,
+    # achievements, last online where it applies), five fixed lines each
+    # (2026-09-08 restructure) instead of one crowded header line.
     lines = [_admin_tg_header(user), ""]
     if user.xuid:
         lines += await _xbox_admin_block(repo, user, today_xbox)
@@ -1316,14 +1317,15 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
         lines += await _psn_admin_block(repo, psn_link, today_psn)
         lines.append("")
 
+    # The combined cross-platform counters line that used to follow here
+    # was dropped (2026-09-08, user request) — each platform block above
+    # already has its own achievements line, and a combined total added
+    # nothing beyond that.
     lines += [
         _(
             "admin-subscribed",
             chats=", ".join(f"«{c}»" for c in chats) if chats else _("admin-nowhere"),
         ),
-        # The combined cross-platform total, unlike the per-platform ones
-        # above — no lifetime figure here either, same SPEC 5.4 reasoning.
-        _("admin-counters", today=counters.today, month=counters.month),
     ]
     text = "\n".join(lines)
     if user.is_excluded:

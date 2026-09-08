@@ -16,10 +16,17 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.constants import AchievementBadge
+from bot.constants import AchievementBadge, Platform, PsnTrophyTier
 from bot.db.repo import ChatMemberStat, ChatTopGame, Repo
 from bot.i18n import gettext
-from bot.services.achievements import platform_breakdown_suffix, plural_achievements
+from bot.services.achievements import (
+    PLATFORM_ICON,
+    TROPHY_TIER_BADGE,
+    platform_breakdown_suffix,
+    plural_achievements,
+    plural_trophies,
+    score_suffix,
+)
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now, month_cutoff_utc
 from bot.services.tables import blockquote, total_line, truncate_name
@@ -291,8 +298,26 @@ def _games_section(games: list[ChatTopGame]) -> list[str]:
     own games list uses) — it already lives inside its own collapsible
     quote, so a long title wrapping onto a second line costs nothing."""
     rows = [
-        f"{place}. {html_escape(game.name or _('daily-unknown-game'))} — "
-        f"{plural_achievements(game.count)}"
+        f"{place}. {PLATFORM_ICON.get(game.platform, '')} "
+        f"{html_escape(game.name or _('daily-unknown-game'))} — {_game_row_tail(game)}"
         for place, game in enumerate(games, start=1)
     ]
     return [_("daily-games-header"), blockquote(rows)]
+
+
+def _game_row_tail(game: ChatTopGame) -> str:
+    """PSN games show a trophy-tier breakdown instead of gamerscore (user
+    request, 2026-09-08) — the same per-tier icons
+    `services/achievements.py::TROPHY_TIER_BADGE` uses everywhere else.
+    Xbox/Steam show gamerscore instead, same "(+N G)" tail /stats already
+    uses, skipped entirely for a zero score (a Steam row's is always 0)."""
+    if game.platform == Platform.PSN:
+        tiers = [
+            (game.platinum, TROPHY_TIER_BADGE[PsnTrophyTier.PLATINUM]),
+            (game.gold, TROPHY_TIER_BADGE[PsnTrophyTier.GOLD]),
+            (game.silver, TROPHY_TIER_BADGE[PsnTrophyTier.SILVER]),
+            (game.bronze, TROPHY_TIER_BADGE[PsnTrophyTier.BRONZE]),
+        ]
+        tier_tail = "".join(f" {badge}{count}" for count, badge in tiers if count)
+        return f"{plural_trophies(game.count)}{tier_tail}"
+    return f"{plural_achievements(game.count)}{score_suffix(game.score)}"

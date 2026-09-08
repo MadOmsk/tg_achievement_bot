@@ -333,15 +333,29 @@ class TopGame:
 class ChatTopGame:
     """One row of the monthly summary's own games block (#7) — a game
     someone in the chat played this window, and how many achievements/
-    trophies the chat's subscribed members earned in it combined. Unlike
-    `TopGame` (one person's own recent games, with that person's own
-    gamerscore/platform), this is a chat-wide aggregate across everyone and
-    every platform at once — a single game's count can mix Xbox, Steam and
-    PSN contributions, so no single `platform`/`gamerscore` field applies."""
+    trophies the chat's subscribed members earned in it combined, across
+    everyone who played it. Unlike `TopGame` (one *person's* own recent
+    games), this is a chat-wide aggregate — but still one platform per row:
+    a title_id is always in that platform's own id format (an Xbox numeric
+    id, a Steam appid, or a PSN "NPWR..." string), so it can never actually
+    span two platforms in practice, unlike the union `seen_achievements`
+    itself is queried from.
+
+    `bronze`/`silver`/`gold`/`platinum` are PSN's own trophy tiers (#5, user
+    request) — always 0 for a non-PSN row, no separate NULL handling needed
+    since a tier count of 0 already renders as "nothing to show" the same
+    way `score == 0` does for gamerscore.
+    """
 
     title_id: str
+    platform: str
     name: str | None
     count: int
+    score: int = 0
+    bronze: int = 0
+    silver: int = 0
+    gold: int = 0
+    platinum: int = 0
 
 
 @dataclass(slots=True)
@@ -385,6 +399,8 @@ class PlatformLink:
     # once, then True/False. See schema.sql's own column comment for why
     # this needs re-checking beyond the coarser connect-time profile check.
     achievements_visible: bool | None = None
+    # When the check above last ran (UTC ISO string), or None if never.
+    achievements_visible_checked_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -1772,14 +1788,25 @@ class Repo:
         `limit == 0` means "no cap" (same convention as the admin's own
         summary_top_limit setting, SPEC 6.4) — SQLite's own `LIMIT 0` would
         instead mean "zero rows", so that case skips the clause entirely
-        rather than passing 0 through literally."""
+        rather than passing 0 through literally.
+
+        Grouped by `(title_id, platform)`, not `title_id` alone — two
+        different platforms' own id namespaces are not guaranteed disjoint
+        (a Steam appid and an Xbox title_id are both bare numeric strings),
+        so grouping by title_id only could in principle fold two unrelated
+        games from different platforms into one row."""
         query = (
-            "SELECT s.title_id, t.name, COUNT(*) AS cnt "
+            "SELECT s.title_id, s.platform, t.name,"
+            "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
+            "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze,"
+            "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
+            "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
+            "       SUM(CASE WHEN s.trophy_type = 'platinum' THEN 1 ELSE 0 END) AS platinum "
             "FROM seen_achievements s "
             "JOIN subscriptions sub ON sub.tg_id = s.tg_id AND sub.chat_id = ? "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             "WHERE s.unlocked_at >= ? "
-            "GROUP BY s.title_id "
+            "GROUP BY s.title_id, s.platform "
             "ORDER BY cnt DESC"
         )
         params: list[object] = [chat_id, _iso(since)]
@@ -1788,7 +1815,17 @@ class Repo:
             params.append(limit)
         cursor = await self._conn.execute(query, params)
         return [
-            ChatTopGame(title_id=row["title_id"], name=row["name"], count=int(row["cnt"]))
+            ChatTopGame(
+                title_id=row["title_id"],
+                platform=row["platform"],
+                name=row["name"],
+                count=int(row["cnt"]),
+                score=int(row["score"] or 0),
+                bronze=int(row["bronze"] or 0),
+                silver=int(row["silver"] or 0),
+                gold=int(row["gold"] or 0),
+                platinum=int(row["platinum"] or 0),
+            )
             for row in await cursor.fetchall()
         ]
 
@@ -2606,7 +2643,7 @@ class Repo:
     async def get_platform_link(self, tg_id: int, platform: str) -> PlatformLink | None:
         cursor = await self._conn.execute(
             "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
-            "       achievements_visible "
+            "       achievements_visible, achievements_visible_checked_at "
             "FROM platform_links WHERE tg_id = ? AND platform = ?",
             (tg_id, platform),
         )
@@ -2625,12 +2662,13 @@ class Repo:
                 if row["achievements_visible"] is not None
                 else None
             ),
+            achievements_visible_checked_at=row["achievements_visible_checked_at"],
         )
 
     async def platform_links_of(self, tg_id: int) -> list[PlatformLink]:
         cursor = await self._conn.execute(
             "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
-            "       achievements_visible "
+            "       achievements_visible, achievements_visible_checked_at "
             "FROM platform_links WHERE tg_id = ?",
             (tg_id,),
         )
@@ -2647,6 +2685,7 @@ class Repo:
                     if row["achievements_visible"] is not None
                     else None
                 ),
+                achievements_visible_checked_at=row["achievements_visible_checked_at"],
             )
             for row in await cursor.fetchall()
         ]
@@ -2664,11 +2703,14 @@ class Repo:
 
     async def set_achievements_visible(self, tg_id: int, platform: str, visible: bool) -> None:
         """Set at connect time and refreshed by every backfill/resync (#5,
-        SteamFetcher/PsnFetcher) — /panel's login row reads this to show the
-        last actually-checked achievement/trophy visibility, not nothing."""
+        SteamFetcher/PsnFetcher) — /panel's login row and the admin card read
+        this to show the last actually-checked achievement/trophy
+        visibility, and when it was checked, not nothing."""
         await self._conn.execute(
-            "UPDATE platform_links SET achievements_visible = ? WHERE tg_id = ? AND platform = ?",
-            (int(visible), tg_id, platform),
+            "UPDATE platform_links SET achievements_visible = ?,"
+            "       achievements_visible_checked_at = ? "
+            "WHERE tg_id = ? AND platform = ?",
+            (int(visible), utcnow_iso(), tg_id, platform),
         )
         await self._conn.commit()
 
@@ -2685,7 +2727,7 @@ class Repo:
         """
         cursor = await self._conn.execute(
             "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
-            "       achievements_visible "
+            "       achievements_visible, achievements_visible_checked_at "
             "FROM platform_links WHERE platform = ?",
             (platform,),
         )
@@ -2702,6 +2744,7 @@ class Repo:
                     if row["achievements_visible"] is not None
                     else None
                 ),
+                achievements_visible_checked_at=row["achievements_visible_checked_at"],
             )
             for row in await cursor.fetchall()
         ]
