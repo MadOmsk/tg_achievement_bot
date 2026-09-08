@@ -434,14 +434,20 @@ Summary windows are sliding (last 24 hours, last 30 days), not calendar-aligned.
 ## Statistics rules
 
 Normal stats read only from `seen_achievements`, `title_history`, platform links,
-and cached presence/level tables — never a live platform call. A lifetime Xbox
-achievement count is deliberately not shown anywhere in the UI (`title_history`'s
-coverage can be incomplete, so a lifetime figure derived from it could quietly
-undercount); Steam's own lifetime count is safe to show (backfill sees the whole
-library, no such cap). Xbox gamerscore always comes from the Xbox profile cache,
-never from summing title history. Cross-platform 24h/30d counters aggregate by
-`tg_id`. Platform breakdowns (e.g. "(🟢 3 · ⚫ 5)") show only where they clarify
-genuinely mixed-platform activity. Excluded users are never polled, published, or
+and cached presence/level tables — never a live platform call. `/stats`' lifetime
+achievement count (`repo.xbox_achievement_count`/`platform_achievement_count`)
+always counts `seen_achievements` rows directly, never sums `title_history` —
+modern Xbox's broad history-endpoint backfill and Steam's full-library backfill
+both make that count trustworthy; x360's own title-by-title backfill is the one
+remaining soft spot (driven by `title_history`'s own game list, so a title it
+never learned about is a silent gap there specifically). Xbox gamerscore always
+comes from the Xbox profile cache, never from summing title history. A 100%-completed
+game (Xbox/Steam) and a PSN platinum trophy answer the same question — Sony only
+awards a platinum once every other trophy in that game is earned — so both render as
+the same 🏆 symbol + count next to the platform's achievement/trophy count, never a
+word, and only when nonzero. Cross-platform 24h/30d counters aggregate by `tg_id`.
+Platform breakdowns (e.g. "(🟢 3 · ⚫ 5)") show only where they clarify genuinely
+mixed-platform activity. Excluded users are never polled, published, or
 included in any summary.
 
 ## HowLongToBeat
@@ -528,6 +534,18 @@ repository — issue #4.
 - Do not add a dependency unless it's clearly needed.
 - Do not leave a stub or a TODO placeholder instead of a real implementation. If a
   step is too large to do properly, say so and split it — don't half-do it.
+- Before finalizing a new or changed bot-facing message format (a panel, a card, a
+  notification, any new UI text shape), preview it as a real DM to the admin before
+  treating it as final — a style decision made only from a description, not a real
+  rendered Telegram message, gets redone many times once it's actually visible.
+  Render against real data (production data read-only, or a constructed example when
+  no real case exists yet — e.g. a feature nothing in production has data for) and
+  send **only that rendered message text**, exactly as the real bot would send it —
+  no wrapping explanation, no bullet list of what changed, no meta commentary in the
+  same message. Caveats, open questions, and "confirm before I finalize this" notes
+  go in the chat reply that accompanies the preview, never inside the previewed
+  message itself, since anything inside it reads back as leftover clutter once the
+  format ships for real.
 
 ## Tests
 

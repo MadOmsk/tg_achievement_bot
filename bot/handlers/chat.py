@@ -38,12 +38,15 @@ from bot.i18n import gettext
 from bot.poller.daily import build_summary, full_leaderboard
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.achievements import (
+    COMPLETED_BADGE,
     PLATFORM_ICON,
     PLATFORM_ICON_UNKNOWN,
     PLATFORM_LABEL,
     platform_breakdown_suffix,
     plural_achievements,
+    plural_trophies,
     rarity_badge,
+    score_suffix,
 )
 from bot.services.message_log import stats_category
 from bot.services.online_view import render_online_table
@@ -216,11 +219,15 @@ def _games_list(games: list[TopGame], i18n: I18nContext | None = None) -> str:
             i18n,
             "chat-stats-game-row-tail",
             count=game.unlocked or 0,
-            score=thousands(game.gamerscore or 0),
+            score_suffix=score_suffix(game.gamerscore or 0),
         )
+        # Not truncated (2026-09-08, user request) — unlike /recent's row
+        # below, this list already lives inside its own collapsible quote,
+        # so a long title wrapping onto a second line costs nothing a
+        # scrollable phone screen can't handle.
         rows.append(
             f"{place}. {PLATFORM_ICON.get(game.platform, '')} "
-            f"{html_escape(truncate_name(game.name or untitled))} — {tail}"
+            f"{html_escape(game.name or untitled)} — {tail}"
         )
     return blockquote(rows)
 
@@ -276,18 +283,28 @@ async def _build_stats_text(
         gamertag_html = html_escape(target.gamertag or _hub_text(i18n, "chat-stats-no-gamertag"))
         if show_links and target.gamertag:
             gamertag_html = link_html(xbox_profile_url(target.gamertag), gamertag_html)
+        # A lifetime Xbox count (2026-09-08, user request) — see
+        # repo.py::xbox_achievement_count's own docstring for why this is
+        # trustworthy for modern Xbox and CLAUDE.md's Statistics rules for
+        # the one remaining x360-specific gap this doesn't close.
+        xbox_count = await repo.xbox_achievement_count(target.tg_id)
+        xbox_completed = await repo.xbox_completed_games_count(target.xuid)
+        xbox_parts = [plural_achievements(xbox_count)]
+        if xbox_completed:
+            xbox_parts.append(f"{COMPLETED_BADGE} {xbox_completed}")
+        xbox_parts.append(f"gamerscore {thousands(target.gamerscore or 0)}")
         lines.append(
-            f"{PLATFORM_ICON[Platform.MODERN]} XBOX: {gamertag_html}"
-            f"  ·  gamerscore {thousands(target.gamerscore or 0)}"
+            f"{PLATFORM_ICON[Platform.MODERN]} XBOX: {gamertag_html}  ·  "
+            + "  ·  ".join(xbox_parts)
         )
     for link in platform_links:
         icon = PLATFORM_ICON.get(link.platform, PLATFORM_ICON_UNKNOWN)
         label = PLATFORM_LABEL.get(link.platform, link.platform)
-        # A lifetime count is fine here, unlike Xbox's own seen_achievements
-        # count above (deliberately never shown as a lifetime total, SPEC
-        # 5.4: title_history is capped, so any count derived from it could
-        # undercount) — a Steam backfill has no such cap, GetOwnedGames
-        # sees the whole library, so this number is trustworthy as-is.
+        # A lifetime Steam/PSN count has always been fine here — a Steam
+        # backfill has no title cap (GetOwnedGames sees the whole owned-games
+        # library) and PSN's own poller scans every trophy title directly;
+        # neither carries the x360-specific gap repo.py::xbox_achievement_count's
+        # own docstring flags for the Xbox count above.
         count = await repo.platform_achievement_count(target.tg_id, link.platform)
         name_html = html_escape(link.display_name or link.external_id)
         if show_links:
@@ -295,16 +312,35 @@ async def _build_stats_text(
                 link.platform, external_id=link.external_id, display_name=link.display_name
             )
             name_html = link_html(url, name_html)
-        # PSN's own account-wide level, next to its achievement count (user
-        # request, Follow-up 2026-09-06) — cached by poller/psn_fetcher.py,
-        # never fetched here (SPEC 1.5's cache-only rule); absent until the
-        # poller has had a chance to set it (right after backfill).
-        level_suffix = (
-            _hub_text(i18n, "chat-stats-psn-level", level=link.psn_trophy_level)
-            if link.platform == Platform.PSN and link.psn_trophy_level is not None
-            else ""
-        )
-        lines.append(f"{icon} {label}: {name_html}  ·  {plural_achievements(count)}{level_suffix}")
+
+        # PSN calls its own achievements "trophies" everywhere (CLAUDE.md),
+        # /stats' per-link line included (Follow-up 2026-09-08 — this line
+        # used to say "N достижений" for a PSN link, same as every other
+        # platform, which was simply wrong wording, not a design choice).
+        is_psn = link.platform == Platform.PSN
+        link_parts = [plural_trophies(count) if is_psn else plural_achievements(count)]
+        if is_psn:
+            # PSN's own equivalent of a 100%-completed game (#19) — a
+            # platinum is only awarded once every other trophy in that game
+            # is earned, so this count already *is* that.
+            platinum = await repo.psn_platinum_count(target.tg_id)
+            if platinum:
+                link_parts.append(f"{COMPLETED_BADGE} {platinum}")
+            # PSN's own account-wide level (user request, Follow-up
+            # 2026-09-06) — cached by poller/psn_fetcher.py, never fetched
+            # here (SPEC 1.5's cache-only rule); absent until the poller has
+            # had a chance to set it (right after backfill, or a one-off
+            # backfill for an account linked before this feature existed —
+            # scripts/backfill_psn_levels.py, #23).
+            if link.psn_trophy_level is not None:
+                link_parts.append(
+                    _hub_text(i18n, "chat-stats-psn-level", level=link.psn_trophy_level)
+                )
+        elif link.platform == Platform.STEAM:
+            completed = await repo.steam_completed_games_count(target.tg_id)
+            if completed:
+                link_parts.append(f"{COMPLETED_BADGE} {completed}")
+        lines.append(f"{icon} {label}: {name_html}  ·  " + "  ·  ".join(link_parts))
 
     today_breakdown = platform_breakdown_suffix(
         counters.today_xbox, counters.today_steam, counters.today_psn
@@ -319,14 +355,14 @@ async def _build_stats_text(
             "chat-stats-today",
             achievements=plural_achievements(counters.today),
             breakdown=today_breakdown,
-            score=counters.today_score,
+            score_suffix=score_suffix(counters.today_score),
         ),
         _hub_text(
             i18n,
             "chat-stats-month",
             achievements=plural_achievements(counters.month),
             breakdown=month_breakdown,
-            score=thousands(counters.month_score),
+            score_suffix=score_suffix(counters.month_score),
         ),
         # No lifetime "Всего" here: seen_achievements is permanently
         # best-effort (title_history's cap, achievements with no unlock

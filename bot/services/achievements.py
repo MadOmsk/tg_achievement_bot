@@ -112,6 +112,17 @@ def platform_breakdown_suffix(
     return " (" + " · ".join(parts) + ")"
 
 
+def score_suffix(score: int) -> str:
+    """The "(+N G)" tail, or nothing at all for a zero score (2026-09-08
+    preview round, user request) — a Steam row's gamerscore is always 0
+    (Steam has no such concept), and "(+0 G)" on every single line just
+    reads as noise. Same "if nonzero" shape format_single()'s own tail
+    already uses for one achievement's gamerscore, generalized for /stats'
+    today/month lines and its per-game list, which built this suffix
+    unconditionally until now."""
+    return f" (+{thousands(score)} G)" if score else ""
+
+
 def platform_tag(platform: str) -> str:
     """SPEC 9, M-Steam-2e — which platform an achievement came from, right
     in the message itself, not just inferred from context. Found live: a
@@ -300,7 +311,7 @@ def format_digest(gamertag: str, title_name: str | None, achievements: list[Achi
     # decide the header's wording from just the first item.
     platform = achievements[0].platform if achievements else Platform.MODERN
     count_phrase = (
-        _plural_trophies(len(achievements))
+        plural_trophies(len(achievements))
         if platform == Platform.PSN
         else plural_achievements(len(achievements))
     )
@@ -332,12 +343,14 @@ def plural_achievements(count: int) -> str:
     )
 
 
-def _plural_trophies(count: int) -> str:
-    """PSN's own word, used only by format_digest's header (Follow-up
-    2026-09-06, user request) — plural_achievements() above stays
-    untouched everywhere else: it also serves combined cross-platform
-    totals (e.g. /stats' "Сегодня"), which are correctly "достижений"
-    regardless of how many of them came from PSN specifically."""
+def plural_trophies(count: int) -> str:
+    """PSN's own word — format_digest's header (Follow-up 2026-09-06), and
+    /stats' per-PSN-link line (Follow-up 2026-09-08, was wrongly
+    plural_achievements there too). plural_achievements() below stays
+    untouched everywhere it serves a *combined* cross-platform total (e.g.
+    /stats' "Сегодня"), which is correctly "достижений" regardless of how
+    many of them came from PSN specifically — this is only for a count
+    that is entirely PSN's own."""
     tail = count % 10
     hundreds = count % 100
     number = thousands(count)
@@ -348,3 +361,13 @@ def _plural_trophies(count: int) -> str:
         if tail == 1 and hundreds != 11
         else ("few" if tail in (2, 3, 4) and hundreds not in (12, 13, 14) else "many"),
     )
+
+
+#  Xbox/Steam's "100%-completed game" count and PSN's own platinum count
+#  (#19) both render as this one symbol + a number, not a word (2026-09-08,
+#  user request, reversing an initial "комплитов"/"платин" text attempt) —
+#  a 100%-completed game and a PSN platinum answer the same question, so
+#  one symbol answers it for every platform. The same icon PSN's own trophy
+#  tier badge already uses for a platinum (services/achievements.py's own
+#  TROPHY_TIER_BADGE above).
+COMPLETED_BADGE = AchievementBadge.CUP

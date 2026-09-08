@@ -1469,6 +1469,77 @@ class Repo:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
+    async def xbox_achievement_count(self, tg_id: int) -> int:
+        """A lifetime Xbox count, added to /stats' XBOX line (2026-09-08,
+        user request, confirmed against the previous "never shown, could
+        quietly undercount" call — see CLAUDE.md's Statistics rules for the
+        current wording). Counts `seen_achievements` directly (modern +
+        x360) rather than summing `title_history`: a broad Xbox-wide
+        history endpoint feeds modern's backfill, not a per-title cap, so
+        modern is trustworthy here. x360's own backfill is still a
+        title-by-title pass driven by `title_history`'s own list, so an
+        x360 game `title_history` never learned about remains a silent gap
+        — accepted as the one remaining soft spot, not fixed by this."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE tg_id = ? AND platform IN ('modern', 'x360')",
+            (tg_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def xbox_completed_games_count(self, xuid: str) -> int:
+        """Games where every achievement has been earned (#19) — straight
+        from the already-cached title_history, no new tracking needed."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM title_history "
+            "WHERE xuid = ? AND achievements_total > 0"
+            " AND achievements_unlocked >= achievements_total",
+            (xuid,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def psn_platinum_count(self, tg_id: int) -> int:
+        """PSN's own equivalent of "completed" (#19) — Sony only awards a
+        platinum once every other trophy in that game is earned, so this
+        already *is* a 100%-completed-games count, no extra tracking."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE tg_id = ? AND platform = 'psn' AND trophy_type = 'platinum'",
+            (tg_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def steam_completed_games_count(self, tg_id: int) -> int:
+        """Steam's own equivalent (#19) — harder than Xbox/PSN: there's no
+        per-user, per-game "total achievements" cached directly. Joins a
+        per-app achieved count (`seen_achievements`) against
+        `steam_schema_cache`'s own per-app achievement list length, done in
+        Python rather than a SQL JSON function — keeps this consistent with
+        every other `steam_schema_cache` read in this codebase, all of which
+        already `json.loads()` the blob in Python."""
+        cursor = await self._conn.execute(
+            "SELECT title_id, COUNT(*) FROM seen_achievements "
+            "WHERE tg_id = ? AND platform = 'steam' GROUP BY title_id",
+            (tg_id,),
+        )
+        achieved_by_app = {row[0]: row[1] for row in await cursor.fetchall()}
+        if not achieved_by_app:
+            return 0
+        placeholders = ",".join("?" * len(achieved_by_app))
+        cursor = await self._conn.execute(
+            f"SELECT appid, achievements FROM steam_schema_cache WHERE appid IN ({placeholders})",
+            list(achieved_by_app.keys()),
+        )
+        completed = 0
+        for row in await cursor.fetchall():
+            total = len(json.loads(row["achievements"]))
+            if total > 0 and achieved_by_app[row["appid"]] >= total:
+                completed += 1
+        return completed
+
     async def achievement_counts_by_xuid(
         self, since: datetime | None
     ) -> dict[str, tuple[int, int]]:
@@ -2425,9 +2496,15 @@ class Repo:
         """Every linked account on one platform, across every user —
         `platform_links_of` narrowed to one person, this is the admin-wide
         counterpart (2026-09-05, scripts/backfill_steam_titles.py: needs
-        every Steam link to reconcile, not any one person's)."""
+        every Steam link to reconcile, not any one person's).
+
+        `psn_trophy_level` is selected too (Follow-up 2026-09-08,
+        scripts/backfill_psn_levels.py: needs to tell "already cached" apart
+        from "never cached" per link) — always NULL for a non-PSN platform,
+        harmless to always select.
+        """
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at "
+            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level "
             "FROM platform_links WHERE platform = ?",
             (platform,),
         )
@@ -2438,6 +2515,7 @@ class Repo:
                 external_id=row["external_id"],
                 display_name=row["display_name"],
                 linked_at=row["linked_at"],
+                psn_trophy_level=row["psn_trophy_level"],
             )
             for row in await cursor.fetchall()
         ]

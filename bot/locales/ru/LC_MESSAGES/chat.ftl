@@ -13,11 +13,16 @@ chat-not-your-button = Это не твоя кнопка.
 chat-unsubscribe-done = Больше не публикую твои достижения в этом чате.
 
 # Statistics and presence
-chat-stats-game-row-tail = { $count } ач. (+{ $score } G)
+chat-stats-game-row-tail = { $count } ач.{ $score_suffix }
 chat-stats-no-gamertag = без геймертега
-chat-stats-psn-level =   ·  уровень { $level }
-chat-stats-today = Сегодня:   { $achievements }{ $breakdown } (+{ $score } G)
-chat-stats-month = За месяц:  { $achievements }{ $breakdown } (+{ $score } G)
+# No leading spaces here (2026-09-08 fix) — Fluent's own whitespace handling
+# on a single-line value is not reliable enough to lean on for a "  ·  "
+# separator (found live: it silently collapsed to one side only). The
+# caller builds that separator itself, in Python, like every other segment
+# joined onto this same line.
+chat-stats-psn-level = уровень { $level }
+chat-stats-today = Сегодня:   { $achievements }{ $breakdown }{ $score_suffix }
+chat-stats-month = За месяц:  { $achievements }{ $breakdown }{ $score_suffix }
 chat-stats-games-header = <b>Игры за { $days } дней</b>
 chat-stats-nothing-connected = Этот человек ещё ничего не подключил.
 chat-group-command-only = Список игроков — по чату, набери команду в группе.

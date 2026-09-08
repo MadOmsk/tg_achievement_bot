@@ -324,3 +324,18 @@ async def test_platform_links_all_spans_every_user(repo: Repo) -> None:
     links = await repo.platform_links_all("steam")
 
     assert sorted(link.external_id for link in links) == ["111", "222"]
+
+
+async def test_platform_links_all_carries_the_psn_trophy_level(repo: Repo) -> None:
+    """scripts/backfill_psn_levels.py's own way in (#23) — needs to tell an
+    already-cached level apart from one that was never cached, per link.
+    Found live: the SELECT here never selected the column at all, so every
+    link came back with psn_trophy_level=None regardless of the real value."""
+    await repo.ensure_user(1, "one")
+    await repo.link_platform_account(1, "psn", "acc-1", "One")
+    await repo.set_psn_trophy_level(1, 12)
+
+    links = await repo.platform_links_all("psn")
+
+    assert len(links) == 1
+    assert links[0].psn_trophy_level == 12

@@ -6,8 +6,9 @@ site. Locked down here after chasing the opposite assumption for a while."""
 
 from __future__ import annotations
 
-from bot.db.repo import AchievementRow, Repo, TopGame
+from bot.db.repo import AchievementRow, Repo, SteamSchemaAchievement, TopGame
 from bot.handlers.chat import _build_stats_text, _games_list
+from bot.services.achievements import COMPLETED_BADGE
 from bot.util import utcnow
 
 XUID = "xuid-profile-check"
@@ -415,3 +416,367 @@ async def test_zero_limit_shows_every_game_uncapped(repo: Repo) -> None:
 
     assert text is not None
     assert text.count("без названия") == 5
+
+
+async def test_psn_line_says_trophies_not_achievements(repo: Repo) -> None:
+    """CLAUDE.md: PSN calls its own achievements "trophies" everywhere —
+    /stats' per-link line used to say "N достижений" for PSN too, same
+    wording as every other platform, which was simply wrong (2026-09-08)."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.insert_new_achievements_psn(
+        1,
+        "acc-1",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="p1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+            )
+        ],
+        is_backfill=True,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
+    assert "1 трофей" in psn_line
+    assert "достижени" not in psn_line
+
+
+async def test_psn_level_suffix_has_a_space_on_both_sides_of_the_dot(repo: Repo) -> None:
+    """Found live: the level suffix used to be its own Fluent string with
+    leading spaces, and Fluent's whitespace handling on a single-line value
+    silently dropped the space before the "·" while keeping the one after —
+    "242 достижения· уровень 73" (2026-09-08). The separator is now built in
+    Python, like every other segment on this line."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.set_psn_trophy_level(1, 73)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
+    assert "  ·  уровень 73" in psn_line
+
+
+async def test_today_and_month_lines_omit_a_zero_score(repo: Repo) -> None:
+    """(+0 G) on every single line was pure noise (2026-09-08, user
+    request) — a Steam/PSN-only person's score is always 0."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="a1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
+    month_line = next(line for line in text.split("\n") if line.startswith("За месяц"))
+    assert "G)" not in today_line
+    assert "G)" not in month_line
+
+
+async def test_game_row_tail_omits_a_zero_score_too(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="1",
+                achievement_id="a1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="modern",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    # The games list is one blockquote-wrapped block, no newline between the
+    # opening tag and its first row — "1. " is a substring, not a line start.
+    game_line = next(line for line in text.split("\n") if "1. " in line)
+    assert "G)" not in game_line
+
+
+async def test_xbox_line_shows_the_achievement_count_before_gamerscore(repo: Repo) -> None:
+    """User request (2026-09-08) — see repo.py::xbox_achievement_count's own
+    docstring and CLAUDE.md's Statistics rules for why this is trustworthy."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 500)
+    await repo.insert_new_achievements(XUID, [_achievement("1")], is_backfill=False)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
+    assert xbox_line.index("1 достижение") < xbox_line.index("gamerscore 500")
+
+
+async def test_xbox_line_shows_completed_games_when_there_are_any(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo._conn.execute(
+        "INSERT INTO title_history "
+        "(xuid, title_id, achievements_unlocked, achievements_total, updated_at) "
+        "VALUES (?, '1', 3, 3, '2026-01-01T00:00:00+00:00')",
+        (XUID,),
+    )
+    await repo._conn.commit()
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
+    assert f"{COMPLETED_BADGE} 1" in xbox_line
+
+
+async def test_psn_line_shows_platinum_count_when_there_are_any(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.insert_new_achievements_psn(
+        1,
+        "acc-1",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="p1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+                trophy_type="platinum",
+            )
+        ],
+        is_backfill=True,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
+    assert f"{COMPLETED_BADGE} 1" in psn_line
+
+
+async def test_steam_line_shows_completed_games_when_there_are_any(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.steam_schema_cache_result(
+        "550",
+        "Left 4 Dead 2",
+        [SteamSchemaAchievement(apiname="a1", icon="", hidden=False)],
+    )
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="a1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
+    assert f"{COMPLETED_BADGE} 1" in steam_line
+
+
+async def test_games_list_does_not_truncate_long_names() -> None:
+    """User request (2026-09-08) — this list already lives inside its own
+    collapsible quote, unlike /recent's row, so a long title wrapping costs
+    nothing."""
+    long_name = "Marvel Spider-Man Remastered Definitive Edition Deluxe Collection"
+    line = _games_list([TopGame(name=long_name, gamerscore=0, unlocked=5, platform="psn")])
+    assert long_name in line
+    assert "…" not in line
+
+
+async def test_xbox_achievement_count_counts_modern_and_x360(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.insert_new_achievements(XUID, [_achievement("1")], is_backfill=False)
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="2",
+                achievement_id="x1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="x360",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    assert await repo.xbox_achievement_count(1) == 2
+
+
+async def test_xbox_completed_games_count_needs_a_nonzero_total(repo: Repo) -> None:
+    await repo._conn.execute(
+        "INSERT INTO title_history "
+        "(xuid, title_id, achievements_unlocked, achievements_total, updated_at) "
+        "VALUES (?, '1', 3, 3, '2026-01-01T00:00:00+00:00'),"
+        "       (?, '2', 0, 0, '2026-01-01T00:00:00+00:00'),"
+        "       (?, '3', 2, 5, '2026-01-01T00:00:00+00:00')",
+        (XUID, XUID, XUID),
+    )
+    await repo._conn.commit()
+
+    assert await repo.xbox_completed_games_count(XUID) == 1  # only title "1" is fully unlocked
+
+
+async def test_psn_platinum_count_only_counts_platinum_rows(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.insert_new_achievements_psn(
+        1,
+        "acc-1",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="gold",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+                trophy_type="gold",
+            ),
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="plat",
+                name="B",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+                trophy_type="platinum",
+            ),
+        ],
+        is_backfill=True,
+    )
+
+    assert await repo.psn_platinum_count(1) == 1
+
+
+async def test_steam_completed_games_count_joins_against_the_schema_cache(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.steam_schema_cache_result(
+        "550",
+        "Left 4 Dead 2",
+        [
+            SteamSchemaAchievement(apiname="a1", icon="", hidden=False),
+            SteamSchemaAchievement(apiname="a2", icon="", hidden=False),
+        ],
+    )
+    # Fully unlocked (2/2).
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id=aid,
+                name=aid,
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+            for aid in ("a1", "a2")
+        ],
+        is_backfill=False,
+    )
+    # Another game with no cached schema at all — must not crash or count.
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="999",
+                achievement_id="b1",
+                name="B",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    assert await repo.steam_completed_games_count(1) == 1
