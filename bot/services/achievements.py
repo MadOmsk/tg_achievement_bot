@@ -112,6 +112,32 @@ def platform_breakdown_suffix(
     return " (" + " · ".join(parts) + ")"
 
 
+def telegram_identity(
+    *,
+    username: str | None,
+    first_name: str | None,
+    last_name: str | None,
+    gamertag: str | None = None,
+) -> str | None:
+    """The common prefix of every "identify this person" fallback chain in
+    the bot: `@username`, else first+last name, else a gamertag. Pulled out
+    (2026-09-08 review) after this exact sequence turned up independently
+    duplicated three times — /stats' header (`_display_name`), /who's
+    picker buttons (`_who_label`, #40), and /panel's own header (#18) — each
+    reimplementing it slightly differently rather than sharing it.
+
+    Returns `None`, not a bare id, when nothing here is known — every
+    caller has its own next-best fallback (a platform link's display name,
+    Steam/PSN fields already on hand, or a plain tg_id), which only the
+    caller knows how to name, so this stays agnostic of it."""
+    if username:
+        return f"@{username}"
+    full_name = " ".join(part for part in (first_name, last_name) if part)
+    if full_name:
+        return full_name
+    return gamertag or None
+
+
 def score_suffix(score: int) -> str:
     """The "(+N G)" tail, or nothing at all for a zero score (2026-09-08
     preview round, user request) — a Steam row's gamerscore is always 0

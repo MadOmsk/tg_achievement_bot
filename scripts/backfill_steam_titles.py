@@ -32,6 +32,8 @@ import logging
 
 from bot.config import get_settings
 from bot.db.repo import Database, Repo
+from bot.services.crypto import TokenCipher
+from bot.services.steam.auth import SteamAuth, SteamNotConfiguredError
 from bot.services.steam.client import SteamApiError, get_owned_games
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)-7s %(message)s")
@@ -47,13 +49,23 @@ log = logging.getLogger("backfill_steam_titles")
 
 async def main() -> None:
     settings = get_settings()
-    if settings.steam_api_key is None:
-        log.info("Steam is not configured, nothing to do")
-        return
-    api_key = settings.steam_api_key.get_secret_value()
-
     database = await Database(settings.db_path).connect()
     repo = Repo(database)
+
+    # Follow the same key SteamFetcher/service_health actually use (#17) —
+    # the key can now live only in app_settings, set/changed/cleared from
+    # the admin panel with no .env edit, so reading settings.steam_api_key
+    # directly here (the old shape) could silently use a stale or absent
+    # key once an admin manages it only through the panel.
+    cipher = TokenCipher(settings.fernet_key.get_secret_value())
+    steam_env_key = settings.steam_api_key.get_secret_value() if settings.steam_api_key else None
+    steam_auth = SteamAuth(repo, cipher, env_key=steam_env_key)
+    try:
+        api_key = await steam_auth.require_key()
+    except SteamNotConfiguredError:
+        log.info("Steam is not configured, nothing to do")
+        await database.close()
+        return
 
     links = await repo.platform_links_all("steam")
     log.info("checking titles for %s linked Steam accounts", len(links))

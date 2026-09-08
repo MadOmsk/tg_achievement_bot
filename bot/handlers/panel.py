@@ -32,7 +32,7 @@ from bot.handlers.keyboards import (
 )
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.fetcher import Fetcher
-from bot.services.achievements import plural_achievements, plural_trophies
+from bot.services.achievements import plural_achievements, plural_trophies, telegram_identity
 from bot.services.single_message import send_replacing
 from bot.util import cooldown_minutes_left, humanize_ago, parse_iso, thousands
 
@@ -469,17 +469,17 @@ async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I
 
 def _panel_identity(user: User, i18n: I18nContext | StaticI18nContext) -> str:
     """The person's own name for the /panel header (#18) — same priority as
-    /stats' header (@username > first+last > gamertag). This screen is only
-    ever shown to its owner, so a bare id is the guaranteed last resort."""
-    if user.username:
-        name = f"@{user.username}"
-    elif full := " ".join(part for part in (user.first_name, user.last_name) if part):
-        name = full
-    elif user.gamertag:
-        name = user.gamertag
-    else:
-        name = str(user.tg_id)
-    return i18n.get("panel-header-identity", name=name)
+    /stats' header (@username > first+last > gamertag, `telegram_identity`,
+    2026-09-08 review: this used to reimplement that chain a third time).
+    This screen is only ever shown to its owner, so a bare id is the
+    guaranteed last resort."""
+    name = telegram_identity(
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        gamertag=user.gamertag,
+    )
+    return i18n.get("panel-header-identity", name=name or str(user.tg_id))
 
 
 async def _panel_header_lines(

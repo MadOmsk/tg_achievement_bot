@@ -54,6 +54,7 @@ from bot.services.achievements import (
     plural_trophies,
     rarity_badge,
     score_suffix,
+    telegram_identity,
 )
 from bot.services.message_log import stats_category
 from bot.services.online_view import render_online_table
@@ -249,13 +250,14 @@ def _display_name(target: User, links: list[PlatformLink]) -> str:
     has seen at least one message from them — a brand-new /start with
     nothing yet falls through to a platform name as a last resort, same
     defensive shape this function already had before this change."""
-    if target.username:
-        return f"@{target.username}"
-    full_name = " ".join(part for part in (target.first_name, target.last_name) if part)
-    if full_name:
-        return full_name
-    if target.gamertag:
-        return target.gamertag
+    name = telegram_identity(
+        username=target.username,
+        first_name=target.first_name,
+        last_name=target.last_name,
+        gamertag=target.gamertag,
+    )
+    if name:
+        return name
     if links:
         return links[0].display_name or links[0].external_id
     return ""
@@ -268,18 +270,19 @@ def _who_label(row: ChatPresenceRow, i18n: I18nContext | None) -> str:
     bare "idNNNN" for someone who has any of those. `chat_member_presence`
     already carries these fields (the #38 /online work joined them in), so
     no extra lookup per row is needed."""
-    if row.username:
-        return f"@{row.username}"
-    full_name = " ".join(part for part in (row.first_name, row.last_name) if part)
-    if full_name:
-        return full_name
-    if row.gamertag:
-        return row.gamertag
-    if row.steam_display_name:
-        return row.steam_display_name
-    if row.psn_display_name:
-        return row.psn_display_name
-    return _hub_text(i18n, "chat-who-fallback-id", tg_id=row.tg_id)
+    name = telegram_identity(
+        username=row.username,
+        first_name=row.first_name,
+        last_name=row.last_name,
+        gamertag=row.gamertag,
+    )
+    if name:
+        return name
+    return (
+        row.steam_display_name
+        or row.psn_display_name
+        or _hub_text(i18n, "chat-who-fallback-id", tg_id=row.tg_id)
+    )
 
 
 async def _build_stats_text(
