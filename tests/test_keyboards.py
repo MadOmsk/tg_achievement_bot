@@ -37,6 +37,37 @@ def test_not_connected_keyboard_offers_all_platforms() -> None:
     (2026-09-05 follow-up, extended for PSN)."""
     markup = panel_keyboard(None, connected=False)
     assert _callback_data(markup) == ["relogin", "steam:connect", "psn:connect"]
+    # #33: uniform "🎮 Подключить X" wording, not "🔗 XBOX" / "🎮 Steam".
+    assert _button_texts(markup) == [
+        "🎮 Подключить Xbox",
+        "🎮 Подключить Steam",
+        "🎮 Подключить PSN",
+    ]
+
+
+def test_every_platform_is_exactly_one_row_in_xbox_steam_psn_order() -> None:
+    """#33: one row per platform, always the same position — no split
+    between a connect button at the top and a profile/disconnect row at the
+    bottom for the same platform."""
+    markup = panel_keyboard(
+        180,
+        connected=True,
+        steam_connected=True,
+        psn_connected=False,
+        gamertag="Mad Omsk",
+        steam_id="76561197960287930",
+    )
+    rows = markup.inline_keyboard
+    xbox_i = next(
+        i for i, r in enumerate(rows) if any(b.callback_data == "panel:disconnect" for b in r)
+    )
+    steam_i = next(
+        i for i, r in enumerate(rows) if any(b.callback_data == "steam:disconnectprompt" for b in r)
+    )
+    psn_i = next(i for i, r in enumerate(rows) if any(b.callback_data == "psn:connect" for b in r))
+    assert steam_i == xbox_i + 1
+    assert psn_i == xbox_i + 2
+    assert rows[psn_i + 1][0].callback_data == "panel:refresh"  # platform block, then Обновить
 
 
 def test_not_connected_keyboard_offers_steam_disconnect_once_connected() -> None:

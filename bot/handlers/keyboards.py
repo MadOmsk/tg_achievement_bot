@@ -156,22 +156,10 @@ def disconnect_prompt_keyboard(
     )
 
 
-def steam_connect_button(i18n: I18nContext) -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=i18n.get("kb-steam-connect"), callback_data="steam:connect")
-
-
 def steam_disconnect_button(i18n: I18nContext) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         text=i18n.get("kb-steam-disconnect"), callback_data="steam:disconnectprompt"
     )
-
-
-def _steam_button(i18n: I18nContext, *, steam_connected: bool) -> InlineKeyboardButton:
-    return steam_disconnect_button(i18n) if steam_connected else steam_connect_button(i18n)
-
-
-def psn_connect_button(i18n: I18nContext) -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=i18n.get("kb-psn-connect"), callback_data="psn:connect")
 
 
 def psn_disconnect_button(i18n: I18nContext) -> InlineKeyboardButton:
@@ -180,8 +168,26 @@ def psn_disconnect_button(i18n: I18nContext) -> InlineKeyboardButton:
     )
 
 
-def _psn_button(i18n: I18nContext, *, psn_connected: bool) -> InlineKeyboardButton:
-    return psn_disconnect_button(i18n) if psn_connected else psn_connect_button(i18n)
+def _platform_row(
+    i18n: I18nContext | StaticI18nContext,
+    *,
+    connected: bool,
+    connect_key: str,
+    connect_cb: str,
+    profile_url: str | None,
+    disconnect_btn: InlineKeyboardButton,
+) -> list[InlineKeyboardButton]:
+    """One platform's row in /panel (#33) — always the same shape and
+    position: `[👤 Профиль, 🔕 Отключить]` when connected (Профиль only once
+    there is something to link to — the id can be missing pre-first-sync),
+    or a single wide "🎮 Подключить X" when not."""
+    if not connected:
+        return [InlineKeyboardButton(text=i18n.get(connect_key), callback_data=connect_cb)]
+    row: list[InlineKeyboardButton] = []
+    if profile_url:
+        row.append(InlineKeyboardButton(text=i18n.get("kb-profile"), url=profile_url))
+    row.append(disconnect_btn)
+    return row
 
 
 def panel_keyboard(
@@ -198,28 +204,51 @@ def panel_keyboard(
     show_profile_links: bool = False,
 ) -> InlineKeyboardMarkup:
     i18n = i18n or static_i18n("keyboards")
+
+    # One row per platform, xbox -> steam -> psn, in the same shape and
+    # position whether or not the person has that platform connected (#33) —
+    # no more connect buttons at the top and profile/disconnect rows at the
+    # bottom for the same platform.
+    platform_rows = [
+        _platform_row(
+            i18n,
+            connected=connected,
+            connect_key="kb-panel-connect-xbox",
+            connect_cb="relogin",
+            profile_url=xbox_profile_url(gamertag) if gamertag else None,
+            disconnect_btn=InlineKeyboardButton(
+                text=i18n.get("kb-xbox-disconnect"), callback_data="panel:disconnect"
+            ),
+        ),
+        _platform_row(
+            i18n,
+            connected=steam_connected,
+            connect_key="kb-panel-connect-steam",
+            connect_cb="steam:connect",
+            profile_url=steam_profile_url(steam_id) if steam_id else None,
+            disconnect_btn=steam_disconnect_button(i18n),
+        ),
+        _platform_row(
+            i18n,
+            connected=psn_connected,
+            connect_key="kb-panel-connect-psn",
+            connect_cb="psn:connect",
+            profile_url=psn_profile_url(psn_id) if psn_id else None,
+            disconnect_btn=psn_disconnect_button(i18n),
+        ),
+    ]
+
     if not connected:
-        # Xbox, Steam and PSN are independent (M-Steam-1, M-PSN-1) — someone
-        # with none connected yet should be offered all three, not just
-        # Xbox first, and someone with only Steam/PSN still gets a real
-        # disconnect option for it rather than nothing at all.
-        return InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=i18n.get("kb-xbox-relogin"), callback_data="relogin")],
-                [_steam_button(i18n, steam_connected=steam_connected)],
-                [_psn_button(i18n, psn_connected=psn_connected)],
-            ]
-        )
+        # Nothing to configure until Xbox is linked — just the platform rows.
+        return InlineKeyboardMarkup(inline_keyboard=platform_rows)
 
     rows: list[list[InlineKeyboardButton]] = []
     if needs_reconnect:
+        # A dead-login nudge — the account is still linked, its token just
+        # went stale — distinct from the "🎮 Подключить" button.
         rows.append(
             [InlineKeyboardButton(text=i18n.get("kb-xbox-reconnect"), callback_data="relogin")]
         )
-    if not steam_connected:
-        rows.append([steam_connect_button(i18n)])
-    if not psn_connected:
-        rows.append([psn_connect_button(i18n)])
     rows += [
         [
             InlineKeyboardButton(
@@ -230,12 +259,9 @@ def panel_keyboard(
         [InlineKeyboardButton(text=i18n.get("kb-my-chats"), callback_data="panel:chatlist")],
         [InlineKeyboardButton(text=i18n.get("kb-sync"), callback_data="panel:sync")],
         # Off by default (Follow-up 2026-09-06) — gates the clickable link
-        # /stats and /who put in this person's nickname for everyone who
-        # looks (not just strangers: the card is one shared message, not
-        # rendered differently for the person it's about — panel_keyboard's
-        # own "👤 Профиль" buttons above/below are the one place this
-        # person's own links stay visible regardless, since this screen is
-        # never shown to anyone but its owner).
+        # /stats and /who put in this person's nickname; the panel's own
+        # "👤 Профиль" buttons below stay visible regardless (this screen is
+        # only ever shown to its owner).
         [
             InlineKeyboardButton(
                 text=i18n.get(
@@ -248,47 +274,7 @@ def panel_keyboard(
             )
         ],
     ]
-    # Profile link next to disconnect, one row each (2026-09-05 follow-up)
-    # — gamertag/steam_id can in principle be missing (pre-first-sync edge
-    # case), so the link only appears once there's something to link to.
-    xbox_disconnect = InlineKeyboardButton(
-        text=i18n.get("kb-xbox-disconnect"), callback_data="panel:disconnect"
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(text=i18n.get("kb-profile"), url=xbox_profile_url(gamertag)),
-            xbox_disconnect,
-        ]
-        if gamertag
-        else [xbox_disconnect]
-    )
-    # Symmetric with XBOX's own disconnect row above — the connect button
-    # already moved up top when not connected, so the disconnect one sits
-    # down here to match.
-    if steam_connected:
-        rows.append(
-            [
-                InlineKeyboardButton(text=i18n.get("kb-profile"), url=steam_profile_url(steam_id)),
-                steam_disconnect_button(i18n),
-            ]
-            if steam_id
-            else [steam_disconnect_button(i18n)]
-        )
-    # Same treatment as XBOX/Steam above (2026-09-06 follow-up, reversing the
-    # earlier call here) — my.playstation.com/profile/<onlineId> is the
-    # official page, though unlike Xbox's/Steam's own it can itself ask a
-    # logged-out visitor to sign in depending on PSN's own mood; offering it
-    # anyway costs nothing when it does, one tap does nothing worse than a
-    # login wall.
-    if psn_connected:
-        rows.append(
-            [
-                InlineKeyboardButton(text=i18n.get("kb-profile"), url=psn_profile_url(psn_id)),
-                psn_disconnect_button(i18n),
-            ]
-            if psn_id
-            else [psn_disconnect_button(i18n)]
-        )
+    rows += platform_rows
     rows.append([InlineKeyboardButton(text=i18n.get("kb-refresh"), callback_data="panel:refresh")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

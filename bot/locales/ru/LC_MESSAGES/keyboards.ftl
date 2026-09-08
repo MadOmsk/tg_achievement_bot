@@ -17,11 +17,15 @@ kb-rarity-all = любые
 # Connection controls
 kb-disconnect-confirm = Да, отключить
 kb-cancel = Отмена
-kb-steam-connect = 🎮 Steam
+# /panel's own connect buttons (#33) — "Подключить X" with a 🎮 icon,
+# uniformly for all three; deliberately wordier than the group hub's own
+# short platform-name buttons (chat-hub-*-button), and distinct from
+# connect_keyboard's own deep-link kb-connect-xbox above.
+kb-panel-connect-xbox = 🎮 Подключить Xbox
+kb-panel-connect-steam = 🎮 Подключить Steam
+kb-panel-connect-psn = 🎮 Подключить PSN
 kb-steam-disconnect = 🔕 Отключить Steam
-kb-psn-connect = 🎮 PSN
 kb-psn-disconnect = 🔕 Отключить PSN
-kb-xbox-relogin = 🔗 XBOX
 kb-xbox-reconnect = 🔄 Подключить заново
 
 # Panel controls
