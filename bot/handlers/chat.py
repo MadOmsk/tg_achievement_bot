@@ -406,6 +406,33 @@ async def _stats_games_limit(repo: Repo) -> int:
     return await repo.get_int_setting(SettingKey.STATS_GAMES_LIMIT, DEFAULT_STATS_GAMES_LIMIT)
 
 
+async def _send_stats_card(bot: Bot, repo: Repo, chat_id: int, target: User, text: str) -> None:
+    """Shared by /stats and /who's button (Follow-up 2026-09-08) — one
+    implementation, so a Telegram-level send option (like the line below)
+    only needs to be right in one place. Keyed by the person the card is
+    *about*, not who asked (Follow-up 2026-09-06) — same person's stats
+    posted twice in this chat replaces the old copy, whether both came from
+    /stats or one came from /who.
+
+    disable_web_page_preview (found live, 2026-09-08): a card with
+    show_profile_links on embeds a real <a href> — without this, Telegram
+    attaches a link-preview card under the message for whichever profile
+    URL it finds first, which connect.py's and panel.py's own links already
+    guard against, this one just never had.
+    """
+    with stats_category():
+        await send_replacing(
+            bot,
+            repo,
+            chat_id,
+            "stats",
+            text,
+            subject_id=target.tg_id,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+
+
 @router.message(Command("stats"))
 async def stats(
     message: Message, repo: Repo, bot: Bot, command: CommandObject, i18n: I18nContext
@@ -420,19 +447,7 @@ async def stats(
         with stats_category():
             await message.answer(i18n.get("chat-stats-nothing-connected"))
         return
-    # Keyed by the person the card is *about*, not who asked (Follow-up
-    # 2026-09-06) — same person's stats posted twice in this chat replaces
-    # the old copy, whether both came from /stats or one came from /who.
-    with stats_category():
-        await send_replacing(
-            bot,
-            repo,
-            message.chat.id,
-            "stats",
-            text,
-            subject_id=target.tg_id,
-            parse_mode=ParseMode.HTML,
-        )
+    await _send_stats_card(bot, repo, message.chat.id, target, text)
 
 
 # --------------------------------------------------------------------- online
@@ -531,19 +546,7 @@ async def who_stats_button(
     await callback.answer()
     if isinstance(callback.message, Message):
         if text is not None:
-            # Same (chat, subject) dedup key as /stats itself (Follow-up
-            # 2026-09-06) — /who picking someone replaces that person's
-            # existing stats card exactly like /stats <name> would.
-            with stats_category():
-                await send_replacing(
-                    bot,
-                    repo,
-                    callback.message.chat.id,
-                    "stats",
-                    text,
-                    subject_id=target.tg_id,
-                    parse_mode=ParseMode.HTML,
-                )
+            await _send_stats_card(bot, repo, callback.message.chat.id, target, text)
         # The picker's own job is done either way — drop it instead of
         # leaving a stale who-is-this prompt behind.
         with contextlib.suppress(Exception):

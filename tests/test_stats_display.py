@@ -7,9 +7,34 @@ site. Locked down here after chasing the opposite assumption for a while."""
 from __future__ import annotations
 
 from bot.db.repo import AchievementRow, Repo, SteamSchemaAchievement, TopGame
-from bot.handlers.chat import _build_stats_text, _games_list
+from bot.handlers.chat import _build_stats_text, _games_list, _send_stats_card
 from bot.services.achievements import COMPLETED_BADGE
 from bot.util import utcnow
+
+CHAT_ID = -100500
+
+
+class _FakeMessage:
+    def __init__(self, message_id: int) -> None:
+        self.message_id = message_id
+
+
+class FakeBot:
+    """Same pattern as test_single_message.py's own FakeBot — captures the
+    kwargs a real aiogram Bot.send_message would receive, so a missing
+    Telegram-level send option (like disable_web_page_preview) is a plain
+    assertion, not something only visible once it's actually live."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[int, str, dict[str, object]]] = []
+
+    async def send_message(self, chat_id: int, text: str, **kwargs: object) -> _FakeMessage:
+        self.sent.append((chat_id, text, kwargs))
+        return _FakeMessage(len(self.sent))
+
+    async def delete_message(self, chat_id: int, message_id: int) -> None:
+        pass
+
 
 XUID = "xuid-profile-check"
 
@@ -780,3 +805,24 @@ async def test_steam_completed_games_count_joins_against_the_schema_cache(repo: 
     )
 
     assert await repo.steam_completed_games_count(1) == 1
+
+
+async def test_send_stats_card_disables_the_link_preview(repo: Repo) -> None:
+    """Found live (2026-09-08): a card with show_profile_links on embeds a
+    real <a href> (Mad Omsk's own XBOX profile link) — Telegram attached a
+    link-preview card under the message because nothing here told it not
+    to, unlike connect.py's and panel.py's own links."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.update_user_settings(1, show_profile_links=1)
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+    assert text is not None
+
+    bot = FakeBot()
+    await _send_stats_card(bot, repo, CHAT_ID, user, text)
+
+    assert len(bot.sent) == 1
+    _chat_id, _text, kwargs = bot.sent[0]
+    assert kwargs.get("disable_web_page_preview") is True
