@@ -823,9 +823,7 @@ async def user_refresh_steam(
 
 
 @router.callback_query(F.data.startswith("a:syncpsn:"))
-async def user_refresh_psn(
-    callback: CallbackQuery, repo: Repo, psn_fetcher: PsnFetcher
-) -> None:
+async def user_refresh_psn(callback: CallbackQuery, repo: Repo, psn_fetcher: PsnFetcher) -> None:
     """PSN's counterpart of user_refresh_steam (#27) — PSN had no
     admin-triggered resync at all, and an account whose first backfill
     crashed could only be recovered with a manual DB script on the server."""
