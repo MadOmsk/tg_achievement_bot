@@ -28,6 +28,7 @@ from bot.poller.service_health import DEFAULT_KEY_CHECK_INTERVAL_MIN, KEY_CHECK_
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services.admin_view import render_admin_home
 from bot.services.psn.auth import PsnAuth
+from bot.services.steam.auth import SteamAuth
 from bot.util import parse_iso, utcnow
 
 log = logging.getLogger(__name__)
@@ -41,12 +42,14 @@ class AdminPanelRefresh:
         fetcher: Fetcher,
         steam_fetcher: SteamFetcher,
         psn_auth: PsnAuth,
+        steam_auth: SteamAuth,
     ) -> None:
         self._bot = bot
         self._repo = repo
         self._fetcher = fetcher
         self._steam_fetcher = steam_fetcher
         self._psn_auth = psn_auth
+        self._steam_auth = steam_auth
 
     async def tick(self) -> None:
         interval = await self._repo.get_int_setting(
@@ -63,7 +66,7 @@ class AdminPanelRefresh:
 
     async def _refresh_one(self, row: AdminPanelRefreshRow) -> None:
         text, markup = await render_admin_home(
-            self._repo, self._fetcher, self._steam_fetcher, self._psn_auth
+            self._repo, self._fetcher, self._steam_fetcher, self._psn_auth, self._steam_auth
         )
         try:
             await self._bot.edit_message_text(

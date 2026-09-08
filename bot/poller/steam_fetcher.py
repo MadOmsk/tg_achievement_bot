@@ -4,6 +4,10 @@ Steam counterpart of poller/fetcher.py. Smaller than the Xbox version: no
 game's display name, `gameextrainfo` — SPEC 9, M-Steam-2c), and no title-
 history refresh (no Steam analogue exists yet, scoped out of 2c on
 purpose).
+
+The API key is read lazily from SteamAuth on each call rather than held as
+a constructor copy (#17) — so an admin's set/change/clear in the panel
+takes effect without a restart.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from bot.i18n import gettext
 from bot.poller.publisher import Publisher
 from bot.services.rows import to_achievement_row
 from bot.services.steam.achievements import fetch_unlocked
+from bot.services.steam.auth import SteamAuth, SteamNotConfiguredError
 from bot.services.steam.client import (
     OwnedGame,
     SteamApiError,
@@ -38,10 +43,10 @@ GAME_BACKFILL_CONCURRENCY = 5
 
 class SteamFetcher:
     def __init__(
-        self, repo: Repo, api_key: str, publisher: Publisher, concurrency: int = 2
+        self, repo: Repo, steam_auth: SteamAuth, publisher: Publisher, concurrency: int = 2
     ) -> None:
         self._repo = repo
-        self._api_key = api_key
+        self._steam_auth = steam_auth
         self._publisher = publisher
         self._backfill_slots = asyncio.Semaphore(concurrency)  # people backfilling at once
         self._game_slots = asyncio.Semaphore(GAME_BACKFILL_CONCURRENCY)  # games within one
@@ -60,7 +65,8 @@ class SteamFetcher:
         game_name: str | None,
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
-        parsed = await fetch_unlocked(self._repo, self._api_key, steam_id, appid)
+        api_key = await self._steam_auth.require_key()
+        parsed = await fetch_unlocked(self._repo, api_key, steam_id, appid)
         rows = [to_achievement_row(item) for item in parsed]
         new_rows = await self._repo.insert_new_achievements_steam(
             tg_id, steam_id, rows, is_backfill=False
@@ -78,7 +84,11 @@ class SteamFetcher:
         — Steam's counterpart of Fetcher.refresh_user() (2026-09-05
         follow-up: the admin panel never had a Steam equivalent at all)."""
         try:
-            snapshots = await get_presence_batch(self._api_key, [steam_id])
+            api_key = await self._steam_auth.require_key()
+        except SteamNotConfiguredError:
+            return _("steamfetcher-not-configured")
+        try:
+            snapshots = await get_presence_batch(api_key, [steam_id])
         except SteamApiError as exc:
             return _("steamfetcher-refresh-failed", error=exc)
         snapshot = snapshots.get(steam_id)
@@ -111,16 +121,15 @@ class SteamFetcher:
         same principle as Xbox's backfill (SPEC 5.6), just spread over one
         request per played game instead of one call for the whole library
         (SPEC 9, M-Steam-2d: no Steam equivalent of Xbox's contract 2)."""
+        api_key = await self._steam_auth.require_key()
         async with self._backfill_slots:
-            games = await get_owned_games(self._api_key, steam_id)
+            games = await get_owned_games(api_key, steam_id)
             rows: list[AchievementRow] = []
 
             async def one(game: OwnedGame) -> None:
                 async with self._game_slots:
                     try:
-                        parsed = await fetch_unlocked(
-                            self._repo, self._api_key, steam_id, game.appid
-                        )
+                        parsed = await fetch_unlocked(self._repo, api_key, steam_id, game.appid)
                     except SteamApiError as exc:
                         log.info("steam backfill of appid=%s skipped: %s", game.appid, exc)
                         return

@@ -16,12 +16,13 @@ from bot.constants import TokenStatus
 from bot.db.repo import Repo
 from bot.i18n import gettext
 from bot.poller.fetcher import Fetcher
-from bot.poller.service_health import STEAM_CHECKED_AT_KEY, STEAM_STATUS_KEY
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import request_count_today
 from bot.services.stats import local_now
+from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED
+from bot.services.steam.auth import SteamAuth
 from bot.util import humanize_ago
 
 _ = lambda key, **kwargs: gettext("adminview", key, **kwargs)  # noqa: E731
@@ -67,7 +68,11 @@ def _format_api_usage(windows: list[tuple[int, int, float]]) -> str:
 
 
 async def render_admin_home(
-    repo: Repo, fetcher: Fetcher, steam_fetcher: SteamFetcher, psn_auth: PsnAuth
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_auth: PsnAuth,
+    steam_auth: SteamAuth,
 ) -> tuple[str, InlineKeyboardMarkup]:
     users = await repo.admin_users()
     chats = await repo.admin_chats()
@@ -85,11 +90,10 @@ async def render_admin_home(
     xbox_broken = sum(1 for u in xbox_linked if u.token_status != TokenStatus.ACTIVE)
     excluded = sum(1 for u in users if u.is_excluded)
 
-    # Steam's own key is a permanent .env secret (config.py) — no "not
-    # configured" state worth showing separately here, every Steam feature
-    # already answers that on its own when it's unset.
-    steam_key_status = await repo.get_app_setting(STEAM_STATUS_KEY, TokenStatus.ACTIVE)
-    steam_key_checked = await repo.get_app_setting(STEAM_CHECKED_AT_KEY)
+    # As of #17 the Steam key is admin-settable and can be genuinely "not
+    # configured" (same as PSN's NPSSO), so it gets the same three-way line.
+    steam_status = await steam_auth.status()
+    steam_checked = await steam_auth.checked_at()
     psn_status = await psn_auth.status()
     psn_checked = await psn_auth.checked_at()
     psn_key_line = (
@@ -97,8 +101,10 @@ async def render_admin_home(
         if psn_status == PSN_NOT_CONFIGURED
         else await _key_status_line(psn_status, psn_checked, active_value=TokenStatus.ACTIVE)
     )
-    steam_key_line = await _key_status_line(
-        steam_key_status, steam_key_checked, active_value=TokenStatus.ACTIVE
+    steam_key_line = (
+        _("adminview-steam-not-configured")
+        if steam_status == STEAM_NOT_CONFIGURED
+        else await _key_status_line(steam_status, steam_checked, active_value=TokenStatus.ACTIVE)
     )
 
     # Same "always show when this was last true" treatment /online's table
@@ -134,6 +140,7 @@ async def render_admin_home(
             [InlineKeyboardButton(text=_("adminview-btn-limits"), callback_data="a:limits")],
             [InlineKeyboardButton(text=_("adminview-btn-users"), callback_data="a:users:0")],
             [InlineKeyboardButton(text=_("adminview-btn-chats"), callback_data="a:chats")],
+            [InlineKeyboardButton(text=_("adminview-btn-keys"), callback_data="a:keys")],
             [InlineKeyboardButton(text=_("adminview-btn-psntest"), callback_data="a:psntest")],
         ]
     )

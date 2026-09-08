@@ -70,6 +70,13 @@ from bot.services.psn.client import (
 )
 from bot.services.psn.view import render_psn_trophy_table
 from bot.services.stats import counters_for, month_cutoff_utc, today_cutoff_utc
+from bot.services.steam.auth import (
+    STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED,
+)
+from bot.services.steam.auth import (
+    SteamAuth,
+    SteamKeyInvalidError,
+)
 from bot.services.tables import truncate_name
 from bot.util import humanize_ago, parse_utc_offset, utcnow
 
@@ -104,6 +111,7 @@ async def _replace_admin_home(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
+    steam_auth: SteamAuth,
     admin_id: int,
     prefix: str = "",
 ) -> None:
@@ -113,7 +121,7 @@ async def _replace_admin_home(
     every flow that confirms a change and redraws home as a new message
     rather than editing the current one in place (a:home's own callback
     does the latter, so it never needs this)."""
-    text, markup = await render_admin_home(repo, fetcher, steam_fetcher, psn_auth)
+    text, markup = await render_admin_home(repo, fetcher, steam_fetcher, psn_auth, steam_auth)
     if prefix:
         text = f"{prefix}\n\n{text}"
     previous = await repo.get_admin_panel_refresh(admin_id)
@@ -133,10 +141,13 @@ async def admin_command(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
+    steam_auth: SteamAuth,
     bot: Bot,
 ) -> None:
     _awaiting_input.pop(message.from_user.id, None)  # a fresh /admin cancels any pending flow
-    await _replace_admin_home(bot, repo, fetcher, steam_fetcher, psn_auth, message.chat.id)
+    await _replace_admin_home(
+        bot, repo, fetcher, steam_fetcher, psn_auth, steam_auth, message.chat.id
+    )
 
 
 @router.callback_query(F.data == "a:home")
@@ -146,72 +157,42 @@ async def admin_home(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
+    steam_auth: SteamAuth,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await render_admin_home(repo, fetcher, steam_fetcher, psn_auth))
+    await _redraw(
+        callback, *await render_admin_home(repo, fetcher, steam_fetcher, psn_auth, steam_auth)
+    )
 
 
-# ------------------------------------------------------------- PSN (test)
+# ------------------------------------------------ Platform keys + PSN test
 
-# A live, uncached lookup screen (SPEC 1.5's cache-only rule carve-out, same
-# one the "Обновить данные" sync buttons already use) — for obtaining/testing
-# the service NPSSO and eyeballing what a real trophy list looks like
-# (name/tier/rarity/hidden/icon) before any of it is wired into /stats
-# (SPEC 9, M-PSN-1). Registered before the free-text numeric/timezone
-# handlers below on purpose: aiogram tries message handlers in registration
-# order and stops at the first whose filter matches, so an admin's answer
-# here (which can be almost any text, including a bare number if someone's
-# PSN Online ID happens to be all digits) must be claimed by this filter
-# before the generic ones get a chance at it.
+# Two related things live here: the "Ключи платформ" screen (#17), where an
+# admin sets/changes/clears the shared Steam key and PSN NPSSO, and the PSN
+# trophy-lookup test screen (a live, uncached carve-out of SPEC 1.5's
+# cache-only rule — for eyeballing a real trophy list before more of it is
+# wired into /stats). Both take free-text answers, and the message handler
+# for them is registered before the free-text numeric/timezone handlers
+# below on purpose: aiogram tries message handlers in registration order and
+# stops at the first whose filter matches, so an admin's answer here (a key,
+# an NPSSO, or a PSN Online ID that might be all digits) must be claimed by
+# this filter before the generic ones get a chance at it.
+STEAM_KEY_KEY = "steam_api_key"
 PSN_NPSSO_KEY = "psn_npsso"
 PSN_LOOKUP_KEY = "psn_trophy_lookup"
 
 
-class AwaitingPsnAdminInput(BaseFilter):
+class AwaitingAdminTextInput(BaseFilter):
     async def __call__(self, event: TelegramObject) -> bool:
         user = getattr(event, "from_user", None)
         if user is None:
             return False
         pending = _awaiting_input.get(user.id)
-        return pending is not None and pending[0] in (PSN_NPSSO_KEY, PSN_LOOKUP_KEY)
-
-
-@router.callback_query(F.data == "a:psntest")
-async def psn_test_menu(callback: CallbackQuery, psn_auth: PsnAuth) -> None:
-    await _redraw(callback, *await _psn_test_screen(callback.from_user.id, psn_auth))
-
-
-@router.callback_query(F.data == "a:psnnpsso")
-async def psn_test_change_npsso(callback: CallbackQuery) -> None:
-    """Re-enter the NPSSO even when PSN is already configured — for when it
-    dies (SPEC 9, M-PSN-1's "мониторинг живости" paragraph) and the admin
-    needs to paste a fresh one."""
-    _awaiting_input[callback.from_user.id] = (PSN_NPSSO_KEY, None)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:psntest"))
-    await _redraw(
-        callback,
-        _("admin-psn-npsso-prompt"),
-        builder.as_markup(),
-    )
-
-
-async def _psn_test_screen(admin_id: int, psn_auth: PsnAuth) -> tuple[str, InlineKeyboardMarkup]:
-    builder = InlineKeyboardBuilder()
-    if await psn_auth.status() == PSN_NOT_CONFIGURED:
-        _awaiting_input[admin_id] = (PSN_NPSSO_KEY, None)
-        builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-        return (
-            _("admin-psn-test-unconfigured"),
-            builder.as_markup(),
+        return pending is not None and pending[0] in (
+            STEAM_KEY_KEY,
+            PSN_NPSSO_KEY,
+            PSN_LOOKUP_KEY,
         )
-    _awaiting_input[admin_id] = (PSN_LOOKUP_KEY, None)
-    builder.row(InlineKeyboardButton(text=_("admin-psn-change"), callback_data="a:psnnpsso"))
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-    return (
-        _("admin-psn-test-prompt"),
-        builder.as_markup(),
-    )
 
 
 def _cancel_input_keyboard() -> InlineKeyboardMarkup:
@@ -222,28 +203,141 @@ def _cancel_input_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+# ---- Platform keys (#17) ----
+
+
+async def _keys_screen(
+    steam_auth: SteamAuth, psn_auth: PsnAuth
+) -> tuple[str, InlineKeyboardMarkup]:
+    steam_configured = await steam_auth.status() != STEAM_NOT_CONFIGURED
+    psn_configured = await psn_auth.status() != PSN_NOT_CONFIGURED
+    text = _(
+        "admin-keys-screen",
+        steam=_("admin-keys-set") if steam_configured else _("admin-keys-unset"),
+        psn=_("admin-keys-set") if psn_configured else _("admin-keys-unset"),
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-keys-steam-change") if steam_configured else _("admin-keys-steam-add"),
+            callback_data="a:keyset:steam",
+        )
+    )
+    if steam_configured:
+        builder.row(
+            InlineKeyboardButton(text=_("admin-keys-steam-clear"), callback_data="a:keyclr:steam")
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-keys-psn-change") if psn_configured else _("admin-keys-psn-add"),
+            callback_data="a:keyset:psn",
+        )
+    )
+    if psn_configured:
+        builder.row(
+            InlineKeyboardButton(text=_("admin-keys-psn-clear"), callback_data="a:keyclr:psn")
+        )
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
+    return text, builder.as_markup()
+
+
+@router.callback_query(F.data == "a:keys")
+async def keys_menu(callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth) -> None:
+    _awaiting_input.pop(callback.from_user.id, None)
+    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
+
+
+@router.callback_query(F.data == "a:keyset:steam")
+async def keys_set_steam(callback: CallbackQuery) -> None:
+    _awaiting_input[callback.from_user.id] = (STEAM_KEY_KEY, None)
+    await _redraw(callback, _("admin-keys-steam-prompt"), _cancel_input_keyboard())
+
+
+@router.callback_query(F.data == "a:keyset:psn")
+async def keys_set_psn(callback: CallbackQuery) -> None:
+    _awaiting_input[callback.from_user.id] = (PSN_NPSSO_KEY, None)
+    await _redraw(callback, _("admin-keys-psn-prompt"), _cancel_input_keyboard())
+
+
+@router.callback_query(F.data == "a:keyclr:steam")
+async def keys_clear_steam(
+    callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth
+) -> None:
+    await steam_auth.clear(callback.from_user.id)
+    _awaiting_input.pop(callback.from_user.id, None)
+    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
+
+
+@router.callback_query(F.data == "a:keyclr:psn")
+async def keys_clear_psn(callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth) -> None:
+    await psn_auth.clear(callback.from_user.id)
+    _awaiting_input.pop(callback.from_user.id, None)
+    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
+
+
+# ---- PSN trophy-lookup test ----
+
+
+@router.callback_query(F.data == "a:psntest")
+async def psn_test_menu(callback: CallbackQuery, psn_auth: PsnAuth) -> None:
+    await _redraw(callback, *await _psn_test_screen(callback.from_user.id, psn_auth))
+
+
+async def _psn_test_screen(admin_id: int, psn_auth: PsnAuth) -> tuple[str, InlineKeyboardMarkup]:
+    builder = InlineKeyboardBuilder()
+    if await psn_auth.status() == PSN_NOT_CONFIGURED:
+        _awaiting_input.pop(admin_id, None)
+        builder.row(InlineKeyboardButton(text=_("admin-keys-goto"), callback_data="a:keys"))
+        builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
+        return _("admin-psn-test-unconfigured"), builder.as_markup()
+    _awaiting_input[admin_id] = (PSN_LOOKUP_KEY, None)
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
+    return _("admin-psn-test-prompt"), builder.as_markup()
+
+
 @router.callback_query(F.data == "a:psncancel")
-async def psn_admin_input_cancel(
+async def admin_text_input_cancel(
     callback: CallbackQuery,
     repo: Repo,
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
+    steam_auth: SteamAuth,
 ) -> None:
-    """The way out of a still-armed NPSSO retry (Follow-up 2026-09-06,
+    """The way out of a still-armed key/NPSSO retry (Follow-up 2026-09-06,
     found live: a stray later message got misread as the next answer once
     nobody explicitly cancelled) — drops back to the admin home screen."""
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await render_admin_home(repo, fetcher, steam_fetcher, psn_auth))
+    await _redraw(
+        callback, *await render_admin_home(repo, fetcher, steam_fetcher, psn_auth, steam_auth)
+    )
 
 
-@router.message(F.chat.type == ChatType.PRIVATE, AwaitingPsnAdminInput())
-async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None:
+@router.message(F.chat.type == ChatType.PRIVATE, AwaitingAdminTextInput())
+async def admin_text_input(
+    message: Message, psn_auth: PsnAuth, steam_auth: SteamAuth, bot: Bot
+) -> None:
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
     assert pending is not None
     key = pending[0]
     raw = message.text.strip()
+
+    if key == STEAM_KEY_KEY:
+        try:
+            await steam_auth.set_key(raw, message.from_user.id)
+        except SteamKeyInvalidError:
+            # Stays armed — a typo is worth just retrying — but the explicit
+            # cancel is there for a stray later paste, same as PSN below.
+            await message.answer(
+                _("admin-keys-steam-invalid"),
+                reply_markup=_cancel_input_keyboard(),
+            )
+            return
+        _awaiting_input.pop(message.from_user.id, None)
+        text, markup = await _keys_screen(steam_auth, psn_auth)
+        await message.answer(_("admin-keys-steam-saved", text=text), reply_markup=markup)
+        return
 
     if key == PSN_NPSSO_KEY:
         try:
@@ -264,14 +358,15 @@ async def psn_admin_input(message: Message, psn_auth: PsnAuth, bot: Bot) -> None
             # client (a sandboxed temp dir) and the admin got no reply at
             # all — this is deliberately a different message from the one
             # above, so a real bug doesn't get blamed on the NPSSO itself.
-            log.exception("psn_admin_input: could not set up the PSN client")
+            log.exception("admin_text_input: could not set up the PSN client")
             await message.answer(
                 _("admin-psn-client-error", error=exc),
                 reply_markup=_cancel_input_keyboard(),
             )
             return
-        _awaiting_input[message.from_user.id] = (PSN_LOOKUP_KEY, None)
-        await message.answer(_("admin-psn-configured-prompt"))
+        _awaiting_input.pop(message.from_user.id, None)
+        text, markup = await _keys_screen(steam_auth, psn_auth)
+        await message.answer(_("admin-keys-psn-saved", text=text), reply_markup=markup)
         return
 
     del _awaiting_input[message.from_user.id]
@@ -521,6 +616,7 @@ async def numeric_setting_input(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
+    steam_auth: SteamAuth,
     bot: Bot,
 ) -> None:
     assert message.from_user is not None and message.text is not None
@@ -571,7 +667,14 @@ async def numeric_setting_input(
     del _awaiting_input[message.from_user.id]
     await repo.set_app_setting(key, stored, message.from_user.id)
     await _replace_admin_home(
-        bot, repo, fetcher, steam_fetcher, psn_auth, message.from_user.id, prefix=confirm
+        bot,
+        repo,
+        fetcher,
+        steam_fetcher,
+        psn_auth,
+        steam_auth,
+        message.from_user.id,
+        prefix=confirm,
     )
 
 

@@ -668,6 +668,13 @@ class Repo:
         )
         await self._conn.commit()
 
+    async def delete_app_setting(self, key: str) -> None:
+        """Remove a stored setting entirely, reverting it to its code
+        default / "not configured" — used by the admin panel's Clear action
+        for the Steam key and PSN NPSSO (#17). A no-op if the row is absent."""
+        await self._conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
+        await self._conn.commit()
+
     # -------------------------------------------------------- subscriptions
 
     async def delete_subscriptions_of_user(self, tg_id: int) -> None:

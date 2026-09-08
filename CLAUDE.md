@@ -106,6 +106,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── rows.py                 ParsedAchievement -> AchievementRow, shared by both pollers and psn/achievements.py
 │   │   ├── steam/                  the official Steam Web API, no OAuth (one shared key)
 │   │   │   ├── client.py            profile resolve, visibility, presence, achievements, rarity
+│   │   │   ├── auth.py              SteamAuth: the admin-settable API key (encrypted in app_settings), health check (#17)
 │   │   │   └── achievements.py      fetch_unlocked() + schema/rarity cache
 │   │   └── psn/                    psnawp, one shared service-wide NPSSO for the whole bot
 │   │       ├── client.py            async wrapper (asyncio.to_thread), resolve, trophies
@@ -179,10 +180,17 @@ Required environment variables: `BOT_TOKEN` (BotFather), `ADMIN_TG_IDS`
 URL — Microsoft rejects plain `http://` and `localhost`), `FERNET_KEY` (encrypts
 stored secrets).
 
-Optional: `STEAM_API_KEY` (without it, `/connect_steam` just answers "not
-configured"; nothing else in the bot is affected), `OAUTH_LISTEN_HOST` /
-`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, and the poller interval settings
-(presence, achievement, token, catch-up tuning).
+Optional: `STEAM_API_KEY`, `OAUTH_LISTEN_HOST` / `OAUTH_LISTEN_PORT`, `DB_PATH`,
+`LOG_LEVEL`, and the poller interval settings (presence, achievement, token,
+catch-up tuning).
+
+`STEAM_API_KEY` is only a **first-run seed** (#17): on first access `SteamAuth`
+imports it once into `app_settings` (encrypted), and from then on the admin
+panel's "🔑 Ключи платформ" screen owns it — set / change / clear, no restart,
+no `.env` edit. Without a key anywhere, `/connect_steam` answers "not configured"
+and nothing else is affected. Clearing the key in the panel disables the seed
+(the panel action is the newer, explicit decision), so a stale env var can't
+resurrect it.
 
 ## Data model
 
@@ -252,6 +260,12 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
 
 The official Steam Web API, one shared API key for the whole bot, no per-user OAuth.
 
+- The key lives encrypted in `app_settings` and is read lazily by `SteamAuth`
+  (`services/steam/auth.py`) — admin-settable from the panel without a restart,
+  `STEAM_API_KEY` in `.env` is only the first-run seed (#17, see Configuration).
+  Every consumer (`SteamFetcher`, `SteamPresencePoller`, `/connect_steam`,
+  `service_health`) fetches it through `SteamAuth`, never a constructor copy, so
+  a set/change/clear takes effect on the next call.
 - Users connect by Steam profile URL, vanity URL, or bare SteamID64.
 - Profiles and game stats must be public enough for the API to expose them — not
   fixable on our end, only by the person changing their own Steam privacy settings.
@@ -414,12 +428,16 @@ A nickname in `/stats`/`/who` becomes a clickable profile link only when the per
 your own card: the rendered message is identical regardless of who asked for it.
 
 **The admin panel** (`/admin`, private, restricted to `ADMIN_TG_IDS`, also
-self-refreshing) provides: Steam/PSN shared-credential health; API usage snapshots;
-global display/cleanup limits; defaults for new users (including
+self-refreshing) provides: Steam/PSN shared-credential health; a "🔑 Ключи
+платформ" screen to set / change / clear both shared credentials (the Steam key
+and the PSN NPSSO) from inside the bot, no `.env` edit (#17); API usage
+snapshots; global display/cleanup limits; defaults for new users (including
 `default_show_profile_links`); the user list and per-user cards; the chat list and
 per-chat cards; exclusion/restore; a manual per-user refresh per linked platform
 (Xbox/Steam/PSN); per-chat settings (rarity threshold, summary time, timezone,
-mutes, minimum gamerscore, daily-summary switch); bot-message cleanup actions.
+mutes, minimum gamerscore, daily-summary switch); bot-message cleanup actions. The
+separate "🏆 Трофеи PSN (тест)" screen is now only the live trophy-lookup test —
+NPSSO management moved to the keys screen.
 Admin-triggered manual refresh is the only normal UI path allowed to call a
 platform API outside a background job. The PSN refresh doubles as the recovery
 path for an account stuck "linked but the first backfill never finished" (#27):
@@ -485,7 +503,11 @@ recurring paid LLM usage without explicit rate limits and cost controls.
 ## Security and privacy
 
 - Never commit `.env`, database files, logs, PID files, or runtime data.
-- Encrypt stored Xbox refresh tokens and the shared PSN NPSSO with Fernet.
+- Encrypt every stored credential with Fernet: Xbox refresh tokens, the shared PSN
+  NPSSO, and (as of #17) the shared Steam API key — all live encrypted in
+  `app_settings` / `tokens`, never plaintext.
+- Losing `FERNET_KEY` now also means re-entering the Steam key and PSN NPSSO in the
+  admin panel, on top of every user reconnecting.
 - Never log a raw token, API key, NPSSO value, authorization header, or a URL
   carrying a secret in a query parameter (found live: `httpx` logs full request
   URLs at INFO, and Steam's `GetOwnedGames` carries the API key in one) — mask

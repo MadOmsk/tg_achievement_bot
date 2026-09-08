@@ -134,6 +134,29 @@ async def test_get_client_rebuilds_from_storage_across_instances(
     assert isinstance(client, _FakeClient)
 
 
+async def test_clear_reverts_to_not_configured(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#17: the admin panel's Clear action — set_npsso only ever overwrote,
+    nothing removed the row before."""
+
+    async def _build(npsso: str) -> _FakeClient:
+        return _FakeClient()
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)
+    assert await auth.status() == STATUS_ACTIVE
+
+    await auth.clear(admin_id=1)
+
+    assert await auth.status() == STATUS_NOT_CONFIGURED
+    assert await auth.checked_at() is None
+    assert await repo.get_app_setting(psn_auth_module.NPSSO_KEY) is None
+    with pytest.raises(PsnNotConfiguredError):
+        await auth.get_client()
+
+
 async def test_check_health_before_setup_is_a_noop(repo: Repo, cipher: TokenCipher) -> None:
     auth = PsnAuth(repo, cipher)
     fired = False

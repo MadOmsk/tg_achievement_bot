@@ -43,7 +43,9 @@ async def _linked_user(repo: Repo) -> None:
     await repo.link_platform_account(TG_ID, "steam", STEAM_ID, "Mad Omsk")
 
 
-async def test_poll_title_publishes_only_new_achievements(repo: Repo, monkeypatch) -> None:
+async def test_poll_title_publishes_only_new_achievements(
+    repo: Repo, steam_auth, monkeypatch
+) -> None:
     await _linked_user(repo)
     by_appid = {"550": [parsed("a1"), parsed("a2")]}
 
@@ -52,7 +54,7 @@ async def test_poll_title_publishes_only_new_achievements(repo: Repo, monkeypatc
 
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     publisher = FakePublisher()
-    fetcher = SteamFetcher(repo, "key", publisher)  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, publisher)  # type: ignore[arg-type]
 
     assert await fetcher.poll_title(TG_ID, STEAM_ID, "Mad Omsk", "550", "L4D2") == 2
     # Same answer a tick later: nothing new, nothing published.
@@ -64,7 +66,7 @@ async def test_poll_title_publishes_only_new_achievements(repo: Repo, monkeypatc
     assert [a.achievement_id for a in publisher.published[1]] == ["a3"]
 
 
-async def test_refresh_user_polls_the_current_game(repo: Repo, monkeypatch) -> None:
+async def test_refresh_user_polls_the_current_game(repo: Repo, steam_auth, monkeypatch) -> None:
     """The admin panel's own "🔄 Обновить Steam" (2026-09-05 follow-up) —
     never existed before, unlike Xbox's Fetcher.refresh_user()."""
     await _linked_user(repo)
@@ -86,7 +88,7 @@ async def test_refresh_user_polls_the_current_game(repo: Repo, monkeypatch) -> N
 
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
-    fetcher = SteamFetcher(repo, "key", FakePublisher())  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher())  # type: ignore[arg-type]
 
     summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
 
@@ -96,7 +98,9 @@ async def test_refresh_user_polls_the_current_game(repo: Repo, monkeypatch) -> N
     assert presence is not None and presence.gameid == "550"
 
 
-async def test_refresh_user_reports_offline_with_no_game(repo: Repo, monkeypatch) -> None:
+async def test_refresh_user_reports_offline_with_no_game(
+    repo: Repo, steam_auth, monkeypatch
+) -> None:
     await _linked_user(repo)
 
     async def fake_batch(api_key, steam_ids):
@@ -111,28 +115,28 @@ async def test_refresh_user_reports_offline_with_no_game(repo: Repo, monkeypatch
         }
 
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
-    fetcher = SteamFetcher(repo, "key", FakePublisher())  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher())  # type: ignore[arg-type]
 
     summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
 
     assert "не в сети" in summary
 
 
-async def test_refresh_user_handles_a_missing_profile(repo: Repo, monkeypatch) -> None:
+async def test_refresh_user_handles_a_missing_profile(repo: Repo, steam_auth, monkeypatch) -> None:
     await _linked_user(repo)
 
     async def fake_batch(api_key, steam_ids):
         return {}  # Steam simply omits a deleted/hidden profile
 
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
-    fetcher = SteamFetcher(repo, "key", FakePublisher())  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher())  # type: ignore[arg-type]
 
     summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
 
     assert "не" in summary.lower()
 
 
-async def test_backfill_publishes_nothing(repo: Repo, monkeypatch) -> None:
+async def test_backfill_publishes_nothing(repo: Repo, steam_auth, monkeypatch) -> None:
     """The whole point of SPEC 5.6/9's backfill: the first link must be silent."""
     await _linked_user(repo)
 
@@ -145,7 +149,7 @@ async def test_backfill_publishes_nothing(repo: Repo, monkeypatch) -> None:
     monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     publisher = FakePublisher()
-    fetcher = SteamFetcher(repo, "key", publisher)  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, publisher)  # type: ignore[arg-type]
 
     stored = await fetcher.backfill(TG_ID, STEAM_ID)
 
@@ -153,7 +157,7 @@ async def test_backfill_publishes_nothing(repo: Repo, monkeypatch) -> None:
     assert publisher.published == []
 
 
-async def test_backfill_isolates_a_failing_game(repo: Repo, monkeypatch) -> None:
+async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypatch) -> None:
     """One game's SteamApiError must not sink the whole backfill (SPEC 9,
     M-Steam-2d) — same "one bad game doesn't ruin the rest" isolation
     Xbox's own backfill doesn't need (it has no per-game loop at all)."""
@@ -173,7 +177,7 @@ async def test_backfill_isolates_a_failing_game(repo: Repo, monkeypatch) -> None
     monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     publisher = FakePublisher()
-    fetcher = SteamFetcher(repo, "key", publisher)  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, publisher)  # type: ignore[arg-type]
 
     stored = await fetcher.backfill(TG_ID, STEAM_ID)
 

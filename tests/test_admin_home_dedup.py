@@ -12,6 +12,7 @@ from bot.handlers.admin import _replace_admin_home
 from bot.poller.service_health import KEY_CHECK_INTERVAL_KEY
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
+from bot.services.steam.auth import SteamAuth
 
 ADMIN_ID = 777
 
@@ -46,7 +47,13 @@ async def test_first_call_has_nothing_to_delete_and_arms_refresh(
     bot = FakeBot()
 
     await _replace_admin_home(
-        bot, repo, _FakeUsageFetcher(), _FakeUsageFetcher(), PsnAuth(repo, cipher), ADMIN_ID
+        bot,
+        repo,
+        _FakeUsageFetcher(),
+        _FakeUsageFetcher(),
+        PsnAuth(repo, cipher),
+        SteamAuth(repo, cipher),
+        ADMIN_ID,
     )  # type: ignore[arg-type]
 
     assert bot.deleted == []
@@ -61,10 +68,22 @@ async def test_second_call_replaces_the_first(repo: Repo, cipher: TokenCipher) -
     psn_auth = PsnAuth(repo, cipher)
 
     await _replace_admin_home(
-        bot, repo, _FakeUsageFetcher(), _FakeUsageFetcher(), psn_auth, ADMIN_ID
+        bot,
+        repo,
+        _FakeUsageFetcher(),
+        _FakeUsageFetcher(),
+        psn_auth,
+        SteamAuth(repo, cipher),
+        ADMIN_ID,
     )  # type: ignore[arg-type]
     await _replace_admin_home(
-        bot, repo, _FakeUsageFetcher(), _FakeUsageFetcher(), psn_auth, ADMIN_ID
+        bot,
+        repo,
+        _FakeUsageFetcher(),
+        _FakeUsageFetcher(),
+        psn_auth,
+        SteamAuth(repo, cipher),
+        ADMIN_ID,
     )  # type: ignore[arg-type]
 
     assert bot.deleted == [(ADMIN_ID, 1)]
@@ -82,6 +101,7 @@ async def test_prefix_is_prepended_to_the_home_text(repo: Repo, cipher: TokenCip
         _FakeUsageFetcher(),
         _FakeUsageFetcher(),
         PsnAuth(repo, cipher),
+        SteamAuth(repo, cipher),
         ADMIN_ID,
         prefix="Строк в /summary: 10",
     )  # type: ignore[arg-type]
@@ -96,7 +116,13 @@ async def test_interval_zero_sends_but_does_not_arm_refresh(
     bot = FakeBot()
 
     await _replace_admin_home(
-        bot, repo, _FakeUsageFetcher(), _FakeUsageFetcher(), PsnAuth(repo, cipher), ADMIN_ID
+        bot,
+        repo,
+        _FakeUsageFetcher(),
+        _FakeUsageFetcher(),
+        PsnAuth(repo, cipher),
+        SteamAuth(repo, cipher),
+        ADMIN_ID,
     )  # type: ignore[arg-type]
 
     assert len(bot.sent) == 1

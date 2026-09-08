@@ -8,3 +8,4 @@ steamfetcher-no-game = без игры
 steamfetcher-online = в сети, { $where }
 steamfetcher-offline = не в сети
 steamfetcher-refreshed = Обновлено: { $state }; новых достижений { $published }.
+steamfetcher-not-configured = Ключ Steam не настроен — задай его в «🔑 Ключи платформ».

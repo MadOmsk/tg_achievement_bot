@@ -1,17 +1,14 @@
-"""poller/service_health.py — periodic liveness check for the two shared
-service credentials (SPEC 9, M-PSN-1's "мониторинг живости" paragraph,
-applied to Steam too)."""
+"""poller/service_health.py — decides *when* to run the two shared-
+credential liveness checks; the checks themselves live in
+PsnAuth.check_health / SteamAuth.check_health (SPEC 9, M-PSN-1's
+"мониторинг живости" paragraph, applied to Steam too, #17)."""
 
 from __future__ import annotations
 
 from datetime import timedelta
 
-import pytest
-from pydantic import SecretStr
-
-from bot.config import Settings
+from bot.constants import Platform
 from bot.db.repo import Repo
-from bot.poller import service_health as service_health_module
 from bot.poller.service_health import (
     STATUS_ACTIVE,
     STATUS_INVALID,
@@ -23,6 +20,8 @@ from bot.services.crypto import TokenCipher
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import CHECKED_AT_KEY as PSN_CHECKED_AT_KEY
 from bot.services.psn.auth import PsnAuth
+from bot.services.steam import auth as steam_auth_module
+from bot.services.steam.auth import SteamAuth
 from bot.util import utcnow
 
 
@@ -34,18 +33,18 @@ class FakeBot:
         self.sent.append((chat_id, text))
 
 
-def _steam_settings(settings: Settings, *, configured: bool = True) -> Settings:
-    return settings.model_copy(
-        update={"steam_api_key": SecretStr("fake-key") if configured else None}
-    )
+def _wired_steam_auth(
+    repo: Repo, cipher: TokenCipher, notifier: AdminNotifier, *, configured: bool = True
+) -> SteamAuth:
+    auth = SteamAuth(repo, cipher, env_key="fake-key" if configured else None)
+    auth.on_dead = lambda: notifier.service_key_dead(Platform.STEAM)
+    return auth
 
 
-async def test_steam_never_configured_is_skipped_entirely(
-    repo: Repo, settings: Settings, cipher: TokenCipher
-) -> None:
-    unconfigured = _steam_settings(settings, configured=False)
+async def test_steam_never_configured_is_skipped_entirely(repo: Repo, cipher: TokenCipher) -> None:
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
-    health = ServiceHealth(unconfigured, repo, PsnAuth(repo, cipher), notifier)
+    steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
+    health = ServiceHealth(repo, PsnAuth(repo, cipher), steam_auth)
 
     await health.tick()
 
@@ -53,17 +52,17 @@ async def test_steam_never_configured_is_skipped_entirely(
 
 
 async def test_steam_transition_to_dead_notifies_once(
-    repo: Repo, settings: Settings, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+    repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
-    configured = _steam_settings(settings, configured=True)
     bot = FakeBot()
     notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
-    health = ServiceHealth(configured, repo, PsnAuth(repo, cipher), notifier)
+    steam_auth = _wired_steam_auth(repo, cipher, notifier)
+    health = ServiceHealth(repo, PsnAuth(repo, cipher), steam_auth)
 
     async def _dead(api_key: str) -> bool:
         return False
 
-    monkeypatch.setattr(service_health_module, "steam_check_alive", _dead)
+    monkeypatch.setattr(steam_auth_module, "check_alive", _dead)
 
     await health.tick()
 
@@ -78,19 +77,17 @@ async def test_steam_transition_to_dead_notifies_once(
     assert len(bot.sent) == 1
 
 
-async def test_steam_recovers_silently(
-    repo: Repo, settings: Settings, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    configured = _steam_settings(settings, configured=True)
+async def test_steam_recovers_silently(repo: Repo, cipher: TokenCipher, monkeypatch) -> None:
     bot = FakeBot()
     notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
-    health = ServiceHealth(configured, repo, PsnAuth(repo, cipher), notifier)
+    steam_auth = _wired_steam_auth(repo, cipher, notifier)
+    health = ServiceHealth(repo, PsnAuth(repo, cipher), steam_auth)
     await repo.set_app_setting(STEAM_STATUS_KEY, STATUS_INVALID)
 
     async def _alive(api_key: str) -> bool:
         return True
 
-    monkeypatch.setattr(service_health_module, "steam_check_alive", _alive)
+    monkeypatch.setattr(steam_auth_module, "check_alive", _alive)
 
     await health.tick()
 
@@ -99,14 +96,13 @@ async def test_steam_recovers_silently(
 
 
 async def test_steam_check_is_skipped_before_the_interval_elapses(
-    repo: Repo, settings: Settings, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+    repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
-    """Follow-up 2026-09-06: this now runs on the 60s tick, gated by
-    KEY_CHECK_INTERVAL_KEY internally — a second tick right after the first
-    must not re-check at all, not just avoid a duplicate notify."""
-    configured = _steam_settings(settings, configured=True)
+    """This runs on the 60s tick, gated by KEY_CHECK_INTERVAL_KEY — a second
+    tick right after the first must not re-check at all."""
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
-    health = ServiceHealth(configured, repo, PsnAuth(repo, cipher), notifier)
+    steam_auth = _wired_steam_auth(repo, cipher, notifier)
+    health = ServiceHealth(repo, PsnAuth(repo, cipher), steam_auth)
     calls = 0
 
     async def _counting(api_key: str) -> bool:
@@ -114,7 +110,7 @@ async def test_steam_check_is_skipped_before_the_interval_elapses(
         calls += 1
         return True
 
-    monkeypatch.setattr(service_health_module, "steam_check_alive", _counting)
+    monkeypatch.setattr(steam_auth_module, "check_alive", _counting)
 
     await health.tick()
     await health.tick()
@@ -123,13 +119,10 @@ async def test_steam_check_is_skipped_before_the_interval_elapses(
 
 
 async def test_psn_check_is_skipped_before_the_interval_elapses(
-    repo: Repo, settings: Settings, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+    repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
-    """Unlike the PSN test above, this lets PsnAuth's *real* check_health run
-    (mocking only the network boundary, check_alive) so checked_at actually
-    gets written — otherwise a mocked-out check_health would never update
-    it, and every tick would look equally "never checked" forever."""
-    unconfigured = _steam_settings(settings, configured=False)
+    """Lets PsnAuth's *real* check_health run (mocking only the network
+    boundary, check_alive) so checked_at actually gets written."""
     psn_auth = PsnAuth(repo, cipher)
 
     async def _build(npsso: str) -> object:
@@ -145,14 +138,12 @@ async def test_psn_check_is_skipped_before_the_interval_elapses(
     monkeypatch.setattr("bot.services.psn.auth.build_client", _build)
     monkeypatch.setattr("bot.services.psn.auth.check_alive", _counting_check_alive)
     await psn_auth.set_npsso("fake-npsso", admin_id=1)
-    calls = 0  # set_npsso's own verification call doesn't count toward the assertion below
-    # set_npsso itself just checked (and stamped checked_at) — backdate it so
-    # the first tick below is the one that's actually due, same as a real
-    # bot that set this up half an hour ago.
+    calls = 0  # set_npsso's own verification call doesn't count
     stale = (utcnow() - timedelta(minutes=40)).isoformat(timespec="seconds")
     await repo.set_app_setting(PSN_CHECKED_AT_KEY, stale)
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
-    health = ServiceHealth(unconfigured, repo, psn_auth, notifier)
+    steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
+    health = ServiceHealth(repo, psn_auth, steam_auth)
 
     await health.tick()
     await health.tick()
@@ -161,11 +152,10 @@ async def test_psn_check_is_skipped_before_the_interval_elapses(
 
 
 async def test_tick_also_runs_the_psn_health_check(
-    repo: Repo, settings: Settings, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+    repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
     """PSN's own check lives in PsnAuth — this just confirms the job
     actually calls it every tick, not just Steam's."""
-    unconfigured = _steam_settings(settings, configured=False)
     psn_auth = PsnAuth(repo, cipher)
     calls = 0
 
@@ -176,7 +166,8 @@ async def test_tick_also_runs_the_psn_health_check(
 
     monkeypatch.setattr(psn_auth, "check_health", _check_health)
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
-    health = ServiceHealth(unconfigured, repo, psn_auth, notifier)
+    steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
+    health = ServiceHealth(repo, psn_auth, steam_auth)
 
     await health.tick()
 

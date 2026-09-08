@@ -87,6 +87,15 @@ class PsnAuth:
         )
         self._client = client
 
+    async def clear(self, admin_id: int) -> None:
+        """Remove the stored NPSSO entirely, reverting PSN to "not
+        configured" (#17) — the admin panel's Clear action. `set_npsso`
+        only ever overwrites; nothing deleted the row before this."""
+        await self._repo.delete_app_setting(NPSSO_KEY)
+        await self._repo.set_app_setting(STATUS_KEY, STATUS_NOT_CONFIGURED, admin_id)
+        await self._repo.delete_app_setting(CHECKED_AT_KEY)
+        self._client = None
+
     async def get_client(self) -> PSNAWP:
         if self._client is not None:
             return self._client

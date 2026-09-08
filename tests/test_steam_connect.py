@@ -10,9 +10,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from aiogram import F
-from pydantic import SecretStr
 
-from bot.config import Settings
 from bot.db.repo import Repo
 from bot.handlers.steam import (
     _STEAM_LINK_PATTERN,
@@ -21,6 +19,7 @@ from bot.handlers.steam import (
     _unresolved_profile_hint,
     prompt_for_link,
 )
+from bot.services.steam.auth import SteamAuth
 
 TG_ID = 42
 
@@ -31,11 +30,6 @@ class FakeBot:
 
     async def send_message(self, chat_id: int, text: str, **kwargs) -> None:
         self.sent.append((chat_id, text))
-
-
-def _steam_settings(settings: Settings, *, configured: bool = True) -> Settings:
-    key = SecretStr("fake-key") if configured else None
-    return settings.model_copy(update={"steam_api_key": key})
 
 
 def _event(tg_id: int | None) -> SimpleNamespace:
@@ -89,10 +83,10 @@ def test_unresolved_hint_skips_the_nickname_explanation_for_a_real_link() -> Non
     assert "не по имени в клиенте" not in hint
 
 
-async def test_prompt_replies_not_configured_without_arming(repo: Repo, settings: Settings) -> None:
+async def test_prompt_replies_not_configured_without_arming(repo: Repo, cipher) -> None:
     bot = FakeBot()
     _awaiting_link.discard(TG_ID)
-    unconfigured = _steam_settings(settings, configured=False)
+    unconfigured = SteamAuth(repo, cipher)  # no env seed, nothing stored
 
     await prompt_for_link(bot, repo, unconfigured, TG_ID)  # type: ignore[arg-type]
 
@@ -102,28 +96,24 @@ async def test_prompt_replies_not_configured_without_arming(repo: Repo, settings
     assert TG_ID not in _awaiting_link
 
 
-async def test_prompt_reports_already_connected_without_arming(
-    repo: Repo, settings: Settings
-) -> None:
+async def test_prompt_reports_already_connected_without_arming(repo: Repo, steam_auth) -> None:
     await repo.ensure_user(TG_ID, "igor")
     await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
     bot = FakeBot()
     _awaiting_link.discard(TG_ID)
 
-    await prompt_for_link(bot, repo, _steam_settings(settings), TG_ID)  # type: ignore[arg-type]
+    await prompt_for_link(bot, repo, steam_auth, TG_ID)  # type: ignore[arg-type]
 
     assert bot.sent == [(TG_ID, "Steam уже подключён: Gabe.")]
     assert TG_ID not in _awaiting_link
 
 
-async def test_prompt_arms_the_wait_and_sends_the_link_prompt(
-    repo: Repo, settings: Settings
-) -> None:
+async def test_prompt_arms_the_wait_and_sends_the_link_prompt(repo: Repo, steam_auth) -> None:
     await repo.ensure_user(TG_ID, "igor")
     bot = FakeBot()
     _awaiting_link.discard(TG_ID)
 
-    await prompt_for_link(bot, repo, _steam_settings(settings), TG_ID)  # type: ignore[arg-type]
+    await prompt_for_link(bot, repo, steam_auth, TG_ID)  # type: ignore[arg-type]
 
     assert TG_ID in _awaiting_link
     assert len(bot.sent) == 1

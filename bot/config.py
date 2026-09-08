@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # Steam (optional — /connect_steam answers "not configured" without it;
     # unlike Xbox this needs no per-user OAuth, just one key for the whole
     # bot). Get one at https://steamcommunity.com/dev/apikey.
+    #
+    # As of #17 this is only a first-run *seed*: on first access SteamAuth
+    # imports it once into app_settings (encrypted), and from then on the
+    # admin panel owns it (set / change / clear, no restart). Leaving it set
+    # here is harmless; clearing the key in the panel disables the seed.
     steam_api_key: SecretStr | None = None
 
     # Poller intervals, seconds (SPEC 5.2, 5.3)

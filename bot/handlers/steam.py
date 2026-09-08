@@ -37,12 +37,12 @@ from aiogram.types import (
 )
 from aiogram_i18n import I18nContext
 
-from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.handlers.keyboards import deep_link_keyboard, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import (
     SteamApiError,
     SteamGameDetailsPrivateError,
@@ -123,7 +123,7 @@ async def disconnect_steam_in_group(message: Message, bot: Bot, i18n: I18nContex
 async def prompt_for_link(
     bot: Bot,
     repo: Repo,
-    settings: Settings,
+    steam_auth: SteamAuth,
     tg_id: int,
     i18n: I18nContext | StaticI18nContext | None = None,
 ) -> None:
@@ -132,7 +132,7 @@ async def prompt_for_link(
     "already connected" and "not configured" are answered the same way
     regardless of which door someone came in through."""
     i18n = i18n or static_i18n("steam")
-    if settings.steam_api_key is None:
+    if await steam_auth.get_key() is None:
         await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
         return
     link = await repo.get_platform_link(tg_id, Platform.STEAM)
@@ -145,12 +145,12 @@ async def prompt_for_link(
 
 @router.callback_query(F.data == "steam:connect")
 async def steam_connect_button(
-    callback: CallbackQuery, repo: Repo, settings: Settings, bot: Bot, i18n: I18nContext
+    callback: CallbackQuery, repo: Repo, steam_auth: SteamAuth, bot: Bot, i18n: I18nContext
 ) -> None:
     """The panel's own "🎮 Подключить Steam" button (2026-09-05 follow-up) —
     same prompt-and-wait as everywhere else, panel.py never had a Steam
     button at all before this."""
-    await prompt_for_link(bot, repo, settings, callback.from_user.id, i18n)
+    await prompt_for_link(bot, repo, steam_auth, callback.from_user.id, i18n)
     await callback.answer()
 
 
@@ -158,7 +158,7 @@ async def steam_connect_button(
 async def connect_steam(
     message: Message,
     repo: Repo,
-    settings: Settings,
+    steam_auth: SteamAuth,
     command: CommandObject,
     steam_fetcher: SteamFetcher,
     bot: Bot,
@@ -168,17 +168,17 @@ async def connect_steam(
     if not raw:
         # No argument — wait for the next message instead of making someone
         # retype the whole command with the link tacked on (2026-09-05).
-        await prompt_for_link(bot, repo, settings, message.chat.id, i18n)
+        await prompt_for_link(bot, repo, steam_auth, message.chat.id, i18n)
         return
     username = message.from_user.username if message.from_user else None
-    await _connect(bot, repo, settings, steam_fetcher, message.chat.id, username, raw, i18n)
+    await _connect(bot, repo, steam_auth, steam_fetcher, message.chat.id, username, raw, i18n)
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingSteamLink())
 async def steam_link_provided(
     message: Message,
     repo: Repo,
-    settings: Settings,
+    steam_auth: SteamAuth,
     steam_fetcher: SteamFetcher,
     bot: Bot,
     i18n: I18nContext,
@@ -191,7 +191,7 @@ async def steam_link_provided(
     await _connect(
         bot,
         repo,
-        settings,
+        steam_auth,
         steam_fetcher,
         message.chat.id,
         username,
@@ -237,7 +237,7 @@ async def steam_link_decline(callback: CallbackQuery, i18n: I18nContext) -> None
 async def steam_link_accept(
     callback: CallbackQuery,
     repo: Repo,
-    settings: Settings,
+    steam_auth: SteamAuth,
     steam_fetcher: SteamFetcher,
     bot: Bot,
     i18n: I18nContext,
@@ -250,7 +250,7 @@ async def steam_link_accept(
     if raw is None:
         return
     username = callback.from_user.username
-    await _connect(bot, repo, settings, steam_fetcher, callback.from_user.id, username, raw, i18n)
+    await _connect(bot, repo, steam_auth, steam_fetcher, callback.from_user.id, username, raw, i18n)
 
 
 def _unresolved_profile_hint(raw: str, i18n: I18nContext | StaticI18nContext | None = None) -> str:
@@ -272,7 +272,7 @@ def _unresolved_profile_hint(raw: str, i18n: I18nContext | StaticI18nContext | N
 async def _connect(
     bot: Bot,
     repo: Repo,
-    settings: Settings,
+    steam_auth: SteamAuth,
     steam_fetcher: SteamFetcher,
     tg_id: int,
     username: str | None,
@@ -284,14 +284,14 @@ async def _connect(
     inbound Message's `.answer()` so it works the same whether triggered by
     a command, a plain message, or a callback confirmation."""
     i18n = i18n or static_i18n("steam")
-    if settings.steam_api_key is None:
+    if await steam_auth.get_key() is None:
         await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
         return
     if not raw:
-        await prompt_for_link(bot, repo, settings, tg_id, i18n)
+        await prompt_for_link(bot, repo, steam_auth, tg_id, i18n)
         return
 
-    api_key = settings.steam_api_key.get_secret_value()
+    api_key = await steam_auth.require_key()
     try:
         steam_id = await resolve_steam_id(api_key, raw)
         profile = await get_profile(api_key, steam_id)

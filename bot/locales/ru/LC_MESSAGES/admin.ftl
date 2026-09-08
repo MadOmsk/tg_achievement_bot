@@ -21,6 +21,38 @@ admin-setting-online-interval = Интервал автообновления /o
 admin-setting-online-ttl = Автообновление /online, часов
 admin-setting-key-check = Проверка ключей / автообновление /admin (мин)
 
+# Platform keys (#17)
+admin-keys-screen =
+    🔑 Ключи платформ
+
+    Steam: { $steam }
+    PSN: { $psn }
+admin-keys-set = ✅ настроен
+admin-keys-unset = ⚠️ не настроен
+admin-keys-goto = 🔑 К ключам платформ
+admin-keys-steam-add = Задать ключ Steam
+admin-keys-steam-change = Сменить ключ Steam
+admin-keys-steam-clear = Убрать ключ Steam
+admin-keys-psn-add = Задать NPSSO (PSN)
+admin-keys-psn-change = Сменить NPSSO (PSN)
+admin-keys-psn-clear = Убрать NPSSO (PSN)
+admin-keys-steam-prompt =
+    Пришли Steam Web API key одним сообщением — получить его:
+    https://steamcommunity.com/dev/apikey
+admin-keys-steam-invalid = Ключ Steam не подошёл — проверь и пришли ещё раз.
+admin-keys-steam-saved =
+    Ключ Steam сохранён.
+
+    { $text }
+admin-keys-psn-prompt =
+    Пришли NPSSO одним сообщением — получить его: войди на my.playstation.com,
+    затем открой https://ca.account.sony.com/api/v1/ssocookie и скопируй
+    значение «npsso» из JSON на экране.
+admin-keys-psn-saved =
+    NPSSO сохранён.
+
+    { $text }
+
 # PSN prompts
 admin-psn-npsso-prompt =
     Пришли новый NPSSO одним сообщением — получить его: войди на
@@ -30,10 +62,7 @@ admin-psn-npsso-prompt =
 admin-psn-test-unconfigured =
     🏆 Трофеи PSN (тест)
 
-    PSN ещё не настроен. Пришли NPSSO одним сообщением — получить его: войди на
-    my.playstation.com, затем открой
-    https://ca.account.sony.com/api/v1/ssocookie и скопируй значение
-    «npsso» из JSON на экране.
+    PSN ещё не настроен. Задай NPSSO в «🔑 Ключи платформ», потом вернись сюда.
 admin-psn-test-prompt =
     🏆 Трофеи PSN (тест)
 

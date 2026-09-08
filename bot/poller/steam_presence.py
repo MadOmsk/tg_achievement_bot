@@ -21,6 +21,7 @@ from bot.constants import Platform
 from bot.db.repo import Repo, SteamPollTarget
 from bot.poller.cadence import debounce_passed, is_due, presence_interval
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import SteamApiError, SteamPresence, get_presence_batch
 from bot.util import parse_iso, utcnow
 
@@ -41,16 +42,19 @@ GRACE_PERIOD_SECONDS = 10 * 60
 
 
 class SteamPresencePoller:
-    def __init__(self, settings: Settings, repo: Repo, fetcher: SteamFetcher) -> None:
+    def __init__(
+        self, settings: Settings, repo: Repo, fetcher: SteamFetcher, steam_auth: SteamAuth
+    ) -> None:
         self._settings = settings
         self._repo = repo
         self._fetcher = fetcher
+        self._steam_auth = steam_auth
 
     async def tick(self) -> None:
-        if self._settings.steam_api_key is None:
+        api_key = await self._steam_auth.get_key()
+        if api_key is None:
             return  # Steam not configured on this instance — same silent
             # skip /connect_steam already does (M-Steam-1)
-        api_key = self._settings.steam_api_key.get_secret_value()
 
         due = [t for t in await self._repo.steam_pollable_users() if self._is_due(t)]
         for chunk in _chunks(due, BATCH_SIZE):

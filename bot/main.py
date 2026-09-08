@@ -47,6 +47,7 @@ from bot.services.crypto import TokenCipher
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
+from bot.services.steam.auth import SteamAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.util import parse_iso
@@ -106,17 +107,20 @@ async def run(settings: Settings) -> None:
     psn_auth = PsnAuth(repo, cipher)
     psn_auth.on_dead = lambda: notifier.service_key_dead(Platform.PSN)
 
+    # The Steam key now lives encrypted in app_settings, admin-settable
+    # without a restart (#17); the .env value is only a first-run seed
+    # SteamAuth imports once. on_dead mirrors psn_auth's above.
+    steam_env_key = settings.steam_api_key.get_secret_value() if settings.steam_api_key else None
+    steam_auth = SteamAuth(repo, cipher, env_key=steam_env_key)
+    steam_auth.on_dead = lambda: notifier.service_key_dead(Platform.STEAM)
+
     client = XboxClient(auth)
     publisher = Publisher(bot, repo)
     fetcher = Fetcher(repo, client, publisher, settings.backfill_concurrency)
     poller = PresencePoller(settings, repo, client, fetcher)
 
-    # Never actually read when Steam isn't configured — every caller (the
-    # presence tick, /connect_steam) checks settings.steam_api_key first
-    # and never reaches SteamFetcher at all in that case (SPEC 9, M-Steam-2c).
-    steam_api_key = settings.steam_api_key.get_secret_value() if settings.steam_api_key else ""
-    steam_fetcher = SteamFetcher(repo, steam_api_key, publisher, settings.backfill_concurrency)
-    steam_poller = SteamPresencePoller(settings, repo, steam_fetcher)
+    steam_fetcher = SteamFetcher(repo, steam_auth, publisher, settings.backfill_concurrency)
+    steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
 
     # No presence poller of its own (SPEC 9, M-PSN-2) — trophy sync has no
     # signal to key off, psn_fetcher.tick() scans every linked account
@@ -132,8 +136,8 @@ async def run(settings: Settings) -> None:
         steam_poller,
         MessageCleanup(bot, repo),
         OnlineAutoRefresh(bot, repo),
-        ServiceHealth(settings, repo, psn_auth, notifier),
-        AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth),
+        ServiceHealth(repo, psn_auth, steam_auth),
+        AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth, steam_auth),
         psn_fetcher,
     )
 
@@ -213,6 +217,7 @@ async def run(settings: Settings) -> None:
     dispatcher["notifier"] = notifier
     dispatcher["psn_auth"] = psn_auth
     dispatcher["psn_fetcher"] = psn_fetcher
+    dispatcher["steam_auth"] = steam_auth
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
     build_i18n_middleware().setup(dispatcher=dispatcher)
     dispatcher.include_router(admin_handlers.router)

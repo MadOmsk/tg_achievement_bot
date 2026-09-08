@@ -10,7 +10,8 @@ adminview-usage-min = { $span } мин
 adminview-usage-sec = { $span }с
 adminview-usage-part = { $used }/{ $limit } за { $label }
 adminview-usage-none = нет данных
-adminview-psn-not-configured = не настроен — «🏆 Трофеи PSN» ниже примет NPSSO
+adminview-psn-not-configured = ⚠️ не настроен — задай в «🔑 Ключи платформ»
+adminview-steam-not-configured = ⚠️ не настроен — задай в «🔑 Ключи платформ»
 
 # Admin home
 adminview-home =
@@ -30,4 +31,5 @@ adminview-btn-newusers = 👤 Новые пользователи ▸
 adminview-btn-limits = ⚙️ Глобальные настройки ▸
 adminview-btn-users = Пользователи ▸
 adminview-btn-chats = Чаты ▸
+adminview-btn-keys = 🔑 Ключи платформ ▸
 adminview-btn-psntest = 🏆 Трофеи PSN (тест) ▸

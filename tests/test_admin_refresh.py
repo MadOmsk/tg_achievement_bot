@@ -11,6 +11,7 @@ from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.service_health import KEY_CHECK_INTERVAL_KEY
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
+from bot.services.steam.auth import SteamAuth
 
 ADMIN_ID = 777
 
@@ -44,7 +45,12 @@ async def _backdate(repo: Repo, *, minutes_ago: int) -> None:
 
 def _refresh(bot: FakeBot, repo: Repo, cipher: TokenCipher) -> AdminPanelRefresh:
     return AdminPanelRefresh(
-        bot, repo, _FakeUsageFetcher(), _FakeUsageFetcher(), PsnAuth(repo, cipher)
+        bot,
+        repo,
+        _FakeUsageFetcher(),
+        _FakeUsageFetcher(),
+        PsnAuth(repo, cipher),
+        SteamAuth(repo, cipher),
     )  # type: ignore[arg-type]
 
 

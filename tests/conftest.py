@@ -13,6 +13,7 @@ from bot.config import Settings
 from bot.db.repo import Database, Repo
 from bot.i18n import DEFAULT_LOCALE, LOCALES_DIR
 from bot.services.crypto import TokenCipher
+from bot.services.steam.auth import SteamAuth
 
 FERNET_KEY = Fernet.generate_key().decode()
 
@@ -34,6 +35,13 @@ async def repo(database: Database) -> Repo:
 @pytest.fixture
 def cipher() -> TokenCipher:
     return TokenCipher(FERNET_KEY)
+
+
+@pytest.fixture
+async def steam_auth(repo: Repo, cipher: TokenCipher) -> SteamAuth:
+    """A configured SteamAuth, seeded from a fake env key — get_key()
+    returns it with no network (check_alive is only in set_key/health)."""
+    return SteamAuth(repo, cipher, env_key="fake-steam-key")
 
 
 @pytest.fixture

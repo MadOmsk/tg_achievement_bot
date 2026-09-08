@@ -16,11 +16,11 @@ knob poller/admin_refresh.py reads for the /admin screen's own cadence),
 same "cheap to poll every tick, gate the real work" shape as
 poller/online_refresh.py.
 
-PSN's own liveness (and the transition-based notify) lives in
-services/psn/auth.py's PsnAuth.check_health — this module only decides
-*when* to call it. Steam's key doesn't have an equivalent stateful auth
-wrapper (it is a permanent, .env-configured secret with nothing to rotate),
-so its check lives here directly instead.
+Each credential's own liveness (and the transition-based admin notify) lives
+in its auth wrapper — PsnAuth.check_health / SteamAuth.check_health (#17
+gave Steam the same stateful wrapper PSN already had). This module only
+decides *when* to call them and gates on `_due`; the wrappers fire their
+own `on_dead` callbacks, wired in main.py.
 """
 
 from __future__ import annotations
@@ -28,18 +28,19 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from bot.config import Settings
-from bot.constants import Platform, TokenStatus
+from bot.constants import TokenStatus
 from bot.db.repo import Repo
-from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
-from bot.services.steam.client import check_alive as steam_check_alive
+from bot.services.steam.auth import CHECKED_AT_KEY as STEAM_CHECKED_AT_KEY
+from bot.services.steam.auth import STATUS_KEY as STEAM_STATUS_KEY
+from bot.services.steam.auth import SteamAuth
 from bot.util import parse_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-STEAM_STATUS_KEY = "steam_key_status"
-STEAM_CHECKED_AT_KEY = "steam_key_checked_at"
+# Re-exported from services/steam/auth.py (their owner as of #17) — kept
+# here too so existing importers (services/admin_view.py, tests) don't move.
+__all__ = ["STEAM_CHECKED_AT_KEY", "STEAM_STATUS_KEY"]
 
 # Shared with the /admin panel's own auto-refresh cadence (handlers/admin.py's
 # NUMERIC_SETTINGS, poller/admin_refresh.py) — deliberately one knob, not two
@@ -53,13 +54,15 @@ STATUS_INVALID = TokenStatus.INVALID
 
 
 class ServiceHealth:
-    def __init__(
-        self, settings: Settings, repo: Repo, psn_auth: PsnAuth, notifier: AdminNotifier
-    ) -> None:
-        self._settings = settings
+    """Decides *when* to run the two shared-credential liveness checks; the
+    checks themselves (and the once-per-transition admin notify) live in
+    PsnAuth.check_health / SteamAuth.check_health, wired to their `on_dead`
+    callbacks in main.py."""
+
+    def __init__(self, repo: Repo, psn_auth: PsnAuth, steam_auth: SteamAuth) -> None:
         self._repo = repo
         self._psn_auth = psn_auth
-        self._notifier = notifier
+        self._steam_auth = steam_auth
 
     async def tick(self) -> None:
         interval = await self._repo.get_int_setting(
@@ -74,21 +77,10 @@ class ServiceHealth:
         return utcnow() - parse_iso(checked_at) >= timedelta(minutes=interval)
 
     async def _check_steam(self, interval: int) -> None:
-        if self._settings.steam_api_key is None:
-            return  # never configured — nothing to watch
-        checked_at = await self._repo.get_app_setting(STEAM_CHECKED_AT_KEY)
+        checked_at = await self._steam_auth.checked_at()
         if not await self._due(checked_at, interval):
             return
-        previous = await self._repo.get_app_setting(STEAM_STATUS_KEY, TokenStatus.ACTIVE)
-        alive = await steam_check_alive(self._settings.steam_api_key.get_secret_value())
-        await self._repo.set_app_setting(
-            STEAM_STATUS_KEY, TokenStatus.ACTIVE if alive else TokenStatus.INVALID
-        )
-        await self._repo.set_app_setting(
-            STEAM_CHECKED_AT_KEY, utcnow().isoformat(timespec="seconds")
-        )
-        if previous == TokenStatus.ACTIVE and not alive:
-            await self._notifier.service_key_dead(Platform.STEAM)
+        await self._steam_auth.check_health()  # notifies via its own on_dead, wired in main.py
 
     async def _check_psn(self, interval: int) -> None:
         checked_at = await self._psn_auth.checked_at()
