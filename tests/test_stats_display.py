@@ -243,6 +243,61 @@ async def test_counters_show_platform_breakdown_only_with_two_platforms(repo: Re
     assert "(🟢 1 · ⚫ 1)" in today_line
 
 
+async def test_counters_show_psn_in_the_platform_breakdown(repo: Repo) -> None:
+    """#32: the combined "Сегодня"/"За месяц" number already included PSN
+    (a plain tg_id sum) — only the "(🟢 N · ⚫ N)" breakdown next to it
+    silently had nowhere for a psn row to land."""
+    await repo.ensure_user(1, "triple")
+    await repo.link_xbox_account(1, XUID, "Triple", 0)
+    await repo.link_platform_account(1, "steam", "76561197960287930", "TripleSteam")
+    await repo.link_platform_account(1, "psn", "internal-account-id", "TriplePsn")
+    await repo.insert_new_achievements(XUID, [_achievement("1")], is_backfill=False)
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="s1",
+                name="s1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+    await repo.insert_new_achievements_psn(
+        1,
+        "internal-account-id",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="p1",
+                name="p1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await _build_stats_text(repo, user)
+
+    assert text is not None
+    today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
+    assert "(🟢 1 · ⚫ 1 · 🔵 1)" in today_line
+
+
 async def test_counters_hide_breakdown_for_a_single_platform(repo: Repo) -> None:
     await repo.ensure_user(1, "xboxonly")
     await repo.link_xbox_account(1, XUID, "XboxOnly", 0)

@@ -72,6 +72,46 @@ async def test_chat_member_presence_reports_platform_for_steam_only_and_mixed(
     assert rows[2].platform == "steam"  # both playing (tied activity level), Steam fresher
 
 
+async def test_chat_member_presence_includes_a_psn_only_person(repo: Repo) -> None:
+    """Bug #35, confirmed live (user keimaks): a PSN-only person (no Xbox)
+    was dropped from /online and /who entirely, not just shown with no
+    presence — `chat_member_presence()`'s WHERE clause never accounted for
+    a `platform_links` row on 'psn'. PSN has no presence source yet (its
+    own still-undesigned piece of #1), so the best this can do today is
+    make sure the person isn't invisible — 'no data', not 'nobody home'."""
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.ensure_user(1, "psnonly")
+    await repo.link_platform_account(1, "psn", "internal-account-id", "PsnOnly")
+    await repo.subscribe(CHAT_ID, 1)
+
+    rows = await repo.chat_member_presence(CHAT_ID)
+
+    assert len(rows) == 1
+    assert rows[0].tg_id == 1
+    assert rows[0].platform == "psn"
+    assert rows[0].state is None  # no presence source for PSN yet
+
+
+async def test_chat_member_presence_psn_never_outranks_real_xbox_or_steam_activity(
+    repo: Repo,
+) -> None:
+    """psn_level is hardcoded 0 (no presence source exists) — must never
+    win over genuine Xbox/Steam activity for someone with all three linked,
+    only ever act as the last-resort fallback when nobody's doing anything."""
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.ensure_user(1, "triple")
+    await repo.link_xbox_account(1, XUID_A, "Triple", 0)
+    await repo.link_platform_account(1, "steam", "76561197981065056", "TripleSteam")
+    await repo.link_platform_account(1, "psn", "internal-account-id", "TriplePsn")
+    await repo.subscribe(CHAT_ID, 1)
+    await repo.save_presence_state(XUID_A, "Online", "123", "Halo Infinite", changed=True)
+
+    rows = await repo.chat_member_presence(CHAT_ID)
+
+    assert len(rows) == 1
+    assert rows[0].platform == "modern"
+
+
 async def test_playing_on_one_platform_beats_merely_online_on_the_other(repo: Repo) -> None:
     """Found live: Mad Omsk was playing on Steam and merely online (not
     playing) on Xbox, but /online showed Xbox — because the first version

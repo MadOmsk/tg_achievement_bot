@@ -193,7 +193,9 @@ def _section(
 def _leader_row(place: int, row: ChatMemberStat) -> str:
     name = html_escape(truncate_name(row.gamertag or f"id{row.tg_id}"))
     tail = f" {AchievementBadge.DIAMOND}{row.rare}" if row.rare else ""
-    breakdown = platform_breakdown_suffix(row.xbox_count, row.steam_count, always=True)
+    breakdown = platform_breakdown_suffix(
+        row.xbox_count, row.steam_count, row.psn_count, always=True
+    )
     return (
         f"{place}. {name} — {plural_achievements(row.count)}{tail}{breakdown}"
         f" (+{thousands(row.score)} G)"

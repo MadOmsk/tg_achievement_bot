@@ -292,6 +292,7 @@ class ChatMemberStat:
     # parenthetical next to it, not a second sort key or a second row.
     xbox_count: int = 0
     steam_count: int = 0
+    psn_count: int = 0
 
 
 @dataclass(slots=True)
@@ -1416,17 +1417,25 @@ class Repo:
 
     async def achievement_platform_breakdown(
         self, tg_id: int, since: datetime | None
-    ) -> tuple[int, int]:
-        """The (xbox, steam) counts behind `achievement_counts_for_person`'s
+    ) -> tuple[int, int, int]:
+        """The (xbox, steam, psn) counts behind `achievement_counts_for_person`'s
         single combined total (2026-09-05 follow-up, reversal of "one number
         only" — SPEC 9 M-Steam-2e originally dropped a per-platform split on
         purpose; the parenthetical here doesn't touch that decision, the
         combined number still leads and still sorts). x360 counts as Xbox —
         there's no separate UI concept of "Xbox 360" anywhere outside the
-        achievement message itself and the games table's own icon."""
+        achievement message itself and the games table's own icon.
+
+        PSN's own bucket was missing entirely until #32 (found live: the
+        combined total already included PSN rows via the plain `tg_id`
+        sum in `achievement_counts_for_person`, but this breakdown's two
+        `CASE`s matched neither for a `psn` row, so it silently vanished
+        from the parenthetical while still counting toward the total —
+        the numbers next to each other didn't add up)."""
         query = (
             "SELECT SUM(CASE WHEN platform IN ('modern', 'x360') THEN 1 ELSE 0 END),"
-            "       SUM(CASE WHEN platform = 'steam' THEN 1 ELSE 0 END) "
+            "       SUM(CASE WHEN platform = 'steam' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN platform = 'psn' THEN 1 ELSE 0 END) "
             "FROM seen_achievements WHERE tg_id = ?"
         )
         params: list[object] = [tg_id]
@@ -1435,7 +1444,7 @@ class Repo:
             params.append(_iso(since))
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
-        return (int(row[0] or 0), int(row[1] or 0)) if row else (0, 0)
+        return (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)) if row else (0, 0, 0)
 
     async def platform_achievement_count(self, tg_id: int, platform: str) -> int:
         """Lifetime count for one platform (SPEC 9, M-Steam-2e's /stats line
@@ -1495,6 +1504,13 @@ class Repo:
         the feed (SPEC 7.3). The date filter lives in the JOIN, not WHERE: a
         WHERE on the right-hand table turns a LEFT JOIN back into an INNER
         JOIN, which is exactly the bug that used to hide zero-scorers.
+
+        `psn_count` was missing until #32 — this is a separate query from
+        `achievement_platform_breakdown` (which feeds /stats' own per-person
+        counters) with its own independent xbox/steam `CASE`s, so it needed
+        the identical fix a second time: `cnt`'s combined total already
+        included PSN rows (plain `tg_id` sum), the per-platform split next
+        to it silently didn't.
         """
         date_bound = "AND s.unlocked_at >= ?"
         date_params: list[object] = [_iso(since)]
@@ -1509,7 +1525,8 @@ class Repo:
             "                THEN 1 ELSE 0 END) AS rare,"
             "       SUM(CASE WHEN s.platform IN ('modern', 'x360') THEN 1 ELSE 0 END)"
             "           AS xbox_count,"
-            "       SUM(CASE WHEN s.platform = 'steam' THEN 1 ELSE 0 END) AS steam_count "
+            "       SUM(CASE WHEN s.platform = 'steam' THEN 1 ELSE 0 END) AS steam_count,"
+            "       SUM(CASE WHEN s.platform = 'psn' THEN 1 ELSE 0 END) AS psn_count "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             # tg_id, not xuid (SPEC 9, M-Steam-2e) — sums every platform's
@@ -1532,6 +1549,7 @@ class Repo:
                 rare=int(row["rare"] or 0),
                 xbox_count=int(row["xbox_count"] or 0),
                 steam_count=int(row["steam_count"] or 0),
+                psn_count=int(row["psn_count"] or 0),
             )
             for row in await cursor.fetchall()
         ]
@@ -1569,6 +1587,15 @@ class Repo:
         neither has any presence data at all. A person known only through
         Steam now appears here too — used to require `u.xuid IS NOT NULL`,
         which silently dropped Steam-only members entirely.
+
+        PSN is included in the membership/fallback logic (#35) but has no
+        presence source of its own yet — no poller populates anything
+        like `psn_presence_state`, that's PSN presence's own still-
+        undesigned piece of #1. A PSN-only person therefore always shows
+        "no data" here rather than a real state, but at least appears in
+        the roster at all, which they didn't before this fix — `psn_level`
+        below is a hardcoded 0, wired in now so a real presence table can
+        slot in later without reshaping this query again.
         """
         cursor = await self._conn.execute(
             "WITH member AS ("
@@ -1581,42 +1608,50 @@ class Repo:
             "         xp.title_name AS xbox_title_name, xp.updated_at AS xbox_updated_at,"
             "         sp.persona_state AS steam_persona_state, sp.gameid AS steam_gameid,"
             "         sp.game_name AS steam_game_name, sp.updated_at AS steam_updated_at,"
-            "         pl.external_id AS steam_external_id,"
+            "         steam.external_id AS steam_external_id,"
+            "         psn.external_id AS psn_external_id,"
             "         CASE WHEN xp.state = 'Online' AND xp.title_id IS NOT NULL THEN 2"
             "              WHEN xp.state = 'Online' THEN 1"
             "              ELSE 0 END AS xbox_level,"
             "         CASE WHEN sp.persona_state IS NOT NULL AND sp.persona_state != 0"
             "                   AND sp.gameid IS NOT NULL THEN 2"
             "              WHEN sp.persona_state IS NOT NULL AND sp.persona_state != 0 THEN 1"
-            "              ELSE 0 END AS steam_level"
+            "              ELSE 0 END AS steam_level,"
+            "         0 AS psn_level"  # no presence source yet — see docstring above
             "  FROM member"
             "  JOIN users u ON u.tg_id = member.tg_id"
             "  LEFT JOIN presence_state xp ON xp.xuid = u.xuid"
-            "  LEFT JOIN platform_links pl ON pl.tg_id = u.tg_id AND pl.platform = 'steam'"
-            "  LEFT JOIN steam_presence_state sp ON sp.steam_id = pl.external_id"
-            "  WHERE (u.xuid IS NOT NULL OR pl.external_id IS NOT NULL) AND u.is_excluded = 0"
+            "  LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam'"
+            "  LEFT JOIN steam_presence_state sp ON sp.steam_id = steam.external_id"
+            "  LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn'"
+            "  WHERE (u.xuid IS NOT NULL OR steam.external_id IS NOT NULL"
+            "         OR psn.external_id IS NOT NULL) AND u.is_excluded = 0"
             "), decided AS ("
             "  SELECT *, CASE"
-            "    WHEN steam_level > xbox_level THEN 1"
-            "    WHEN steam_level < xbox_level THEN 0"
-            "    WHEN steam_level > 0 THEN"  # tied, both actually active — freshness breaks it
+            "    WHEN steam_level > xbox_level AND steam_level >= psn_level THEN 'steam'"
+            "    WHEN xbox_level > steam_level AND xbox_level >= psn_level THEN 'modern'"
+            "    WHEN xbox_level > 0 THEN"  # tied at the top, both active — freshness breaks it
             "      CASE WHEN steam_updated_at IS NOT NULL"
             "                AND (xbox_updated_at IS NULL OR steam_updated_at > xbox_updated_at)"
-            "           THEN 1 ELSE 0 END"
+            "           THEN 'steam' ELSE 'modern' END"
             "    ELSE"  # tied at zero — nobody's doing anything, fall back to what's connected
-            "      CASE WHEN xuid IS NULL THEN 1 ELSE 0 END"
-            "    END AS steam_wins"
+            "      CASE WHEN xuid IS NOT NULL THEN 'modern'"
+            "           WHEN steam_external_id IS NOT NULL THEN 'steam'"
+            "           ELSE 'psn' END"
+            "    END AS winner"
             "  FROM presence"
             ") "
             "SELECT tg_id, gamertag, xuid,"
-            "       CASE WHEN steam_wins THEN"
-            "              CASE WHEN steam_persona_state != 0 THEN 'Online' ELSE 'Offline' END"
-            "            ELSE xbox_state END AS state,"
-            "       CASE WHEN steam_wins THEN steam_gameid ELSE xbox_title_id END"
-            "         AS title_id,"
-            "       CASE WHEN steam_wins THEN steam_game_name ELSE xbox_title_name END"
-            "         AS title_name,"
-            "       CASE WHEN steam_wins THEN 'steam' ELSE 'modern' END AS platform "
+            "       CASE winner"
+            "         WHEN 'steam' THEN"
+            "           CASE WHEN steam_persona_state != 0 THEN 'Online' ELSE 'Offline' END"
+            "         WHEN 'psn' THEN NULL"
+            "         ELSE xbox_state END AS state,"
+            "       CASE winner WHEN 'steam' THEN steam_gameid"
+            "                   WHEN 'psn' THEN NULL ELSE xbox_title_id END AS title_id,"
+            "       CASE winner WHEN 'steam' THEN steam_game_name"
+            "                   WHEN 'psn' THEN NULL ELSE xbox_title_name END AS title_name,"
+            "       winner AS platform "
             "FROM decided "
             "ORDER BY "
             "  CASE WHEN state = 'Online' AND title_id IS NOT NULL THEN 0 "

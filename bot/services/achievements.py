@@ -74,11 +74,20 @@ PLATFORM_LABEL = {platform: _(key) for platform, key in PLATFORM_LABEL_KEYS.item
 PLATFORM_ICON_UNKNOWN = "⚪"
 
 
-def platform_breakdown_suffix(xbox_count: int, steam_count: int, *, always: bool = False) -> str:
-    """The small "(🟢 3 · ⚫ 5)" next to a combined achievement total in
+def platform_breakdown_suffix(
+    xbox_count: int, steam_count: int, psn_count: int = 0, *, always: bool = False
+) -> str:
+    """The small "(🟢 3 · ⚫ 5 · 🔵 2)" next to a combined achievement total in
     /stats and /summary (2026-09-05 follow-up) — a parenthetical, not a
     second sort key or a second row: the combined number still leads and
     still sorts, this is purely for reference.
+
+    `psn_count` defaults to 0 rather than being required — added in #32,
+    after the combined total it sits next to had already included PSN for
+    a while (that sum is a plain `tg_id` group-by, no platform filter) but
+    this breakdown's own two `CASE`s had nowhere for a PSN row to land, so
+    it silently vanished from here specifically while still counting
+    toward the total next to it.
 
     `always=False` (the default, used by /stats): empty for anyone with
     achievements on only one platform in the window — /stats already spells
@@ -96,6 +105,8 @@ def platform_breakdown_suffix(xbox_count: int, steam_count: int, *, always: bool
         parts.append(f"{PLATFORM_ICON[Platform.MODERN]} {xbox_count}")
     if steam_count:
         parts.append(f"{PLATFORM_ICON[Platform.STEAM]} {steam_count}")
+    if psn_count:
+        parts.append(f"{PLATFORM_ICON[Platform.PSN]} {psn_count}")
     if not parts or (len(parts) < 2 and not always):
         return ""
     return " (" + " · ".join(parts) + ")"

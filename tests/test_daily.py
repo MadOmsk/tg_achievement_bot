@@ -93,6 +93,16 @@ def test_platform_breakdown_suffix_always_flag() -> None:
     assert platform_breakdown_suffix(0, 0, always=True) == ""
 
 
+def test_platform_breakdown_suffix_includes_psn() -> None:
+    """#32: psn_count used to have nowhere to go — the combined total this
+    sits next to already included PSN (a plain tg_id sum), only this
+    breakdown silently dropped it."""
+    assert platform_breakdown_suffix(3, 0, 2) == " (🟢 3 · 🔵 2)"  # two platforms, shown either way
+    assert platform_breakdown_suffix(3, 5, 2) == " (🟢 3 · ⚫ 5 · 🔵 2)"
+    assert platform_breakdown_suffix(0, 0, 2) == ""  # one platform, always=False hides it
+    assert platform_breakdown_suffix(0, 0, 2, always=True) == " (🔵 2)"
+
+
 async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: Repo) -> None:
     """2026-09-05 follow-up, reversal of "one combined number only": a
     parenthetical next to the total. Unlike /stats (which already spells
@@ -132,6 +142,28 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     )
     await repo.insert_new_achievements(XUID_B, [achievement("b1", now)], is_backfill=False)
 
+    await repo.ensure_user(3, "psnonly")
+    await repo.link_platform_account(3, "psn", "internal-account-id", "PsnOnly")
+    await repo.subscribe(CHAT_ID, 3)
+    await repo.insert_new_achievements_psn(
+        3,
+        "internal-account-id",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="p1",
+                name="p1",
+                description=None,
+                icon_url=None,
+                unlocked_at=now.isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+            )
+        ],
+        is_backfill=False,
+    )
+
     text = await summary_text(repo, CHAT_ID, 10.0, now.date())
 
     assert text is not None
@@ -141,6 +173,12 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     assert "(🟢 1 · ⚫ 1)" in both_line
     xbox_only_line = next(line for line in text.split("\n") if "XboxOnly" in line)
     assert "(🟢 1)" in xbox_only_line
+    # PsnOnly has no Xbox gamertag, so — same as any Steam-only person
+    # elsewhere in this project — the row falls back to "id<tg_id>", not
+    # their PSN display name; that fallback isn't what #32 is about, only
+    # the platform breakdown next to it is.
+    psn_only_line = next(line for line in text.split("\n") if "id3" in line)
+    assert "(🔵 1)" in psn_only_line  # #32 — used to have no bucket to land in at all
 
 
 async def test_zero_scorers_still_appear(repo: Repo) -> None:

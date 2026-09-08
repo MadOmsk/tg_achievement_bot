@@ -306,8 +306,12 @@ async def _build_stats_text(
         )
         lines.append(f"{icon} {label}: {name_html}  ·  {plural_achievements(count)}{level_suffix}")
 
-    today_breakdown = platform_breakdown_suffix(counters.today_xbox, counters.today_steam)
-    month_breakdown = platform_breakdown_suffix(counters.month_xbox, counters.month_steam)
+    today_breakdown = platform_breakdown_suffix(
+        counters.today_xbox, counters.today_steam, counters.today_psn
+    )
+    month_breakdown = platform_breakdown_suffix(
+        counters.month_xbox, counters.month_steam, counters.month_psn
+    )
     lines += [
         "",
         _hub_text(
