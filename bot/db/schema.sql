@@ -217,6 +217,20 @@ CREATE TABLE IF NOT EXISTS steam_presence_state (
     last_active_at        TEXT
 );
 
+-- PSN's own presence (issue #1, 2026-09-08) — separate table, not a reuse
+-- of presence_state/steam_presence_state: its own poller, no achievement-
+-- poll debounce at all (trophy sync has never been driven by presence
+-- here — see this file's own PSN section in CLAUDE.md), keyed by
+-- account_id like the other two are keyed by xuid/steam_id.
+CREATE TABLE IF NOT EXISTS psn_presence_state (
+    account_id TEXT PRIMARY KEY,
+    state      TEXT,     -- Online / Offline, same vocabulary as presence_state
+    title_id   TEXT,     -- npTitleId
+    title_name TEXT,
+    changed_at TEXT,
+    updated_at TEXT
+);
+
 -- Title history cache (for /stats, /compare, /top)
 CREATE TABLE IF NOT EXISTS title_history (
     xuid                  TEXT NOT NULL,

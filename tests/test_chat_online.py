@@ -77,9 +77,9 @@ async def test_chat_member_presence_includes_a_psn_only_person(repo: Repo) -> No
     """Bug #35, confirmed live (user keimaks): a PSN-only person (no Xbox)
     was dropped from /online and /who entirely, not just shown with no
     presence — `chat_member_presence()`'s WHERE clause never accounted for
-    a `platform_links` row on 'psn'. PSN has no presence source yet (its
-    own still-undesigned piece of #1), so the best this can do today is
-    make sure the person isn't invisible — 'no data', not 'nobody home'.
+    a `platform_links` row on 'psn'. PSN presence itself is real now
+    (issue #1), but this person's account has never actually been polled
+    yet (no psn_presence_state row) — same "no data", not "nobody home".
 
     `platform` reads 'none', not 'psn' (Follow-up 2026-09-08) — nothing has
     ever been tracked for this person, so there's no platform nickname to
@@ -97,12 +97,12 @@ async def test_chat_member_presence_includes_a_psn_only_person(repo: Repo) -> No
     assert rows[0].state is None  # no presence source for PSN yet
 
 
-async def test_chat_member_presence_psn_never_outranks_real_xbox_or_steam_activity(
+async def test_chat_member_presence_untracked_psn_never_outranks_real_activity(
     repo: Repo,
 ) -> None:
-    """psn_level is hardcoded 0 (no presence source exists) — must never
-    win over genuine Xbox/Steam activity for someone with all three linked,
-    only ever act as the last-resort fallback when nobody's doing anything."""
+    """A PSN link with no presence ever recorded for it (psn_level 0, same
+    as an untracked Xbox/Steam link) must never win over genuine Xbox
+    activity for someone with all three linked."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "triple")
     await repo.link_xbox_account(1, XUID_A, "Triple", 0)
@@ -115,6 +115,63 @@ async def test_chat_member_presence_psn_never_outranks_real_xbox_or_steam_activi
 
     assert len(rows) == 1
     assert rows[0].platform == "modern"
+
+
+async def test_chat_member_presence_psn_wins_when_actually_playing(repo: Repo) -> None:
+    """(issue #1) With a real psn_presence_state row, PSN presence now
+    plays exactly the same role Xbox/Steam always have — playing beats
+    everything else, same activity-level ordering."""
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.ensure_user(1, "psnplayer")
+    await repo.link_xbox_account(1, XUID_A, "PsnPlayer", 0)
+    await repo.link_platform_account(1, "psn", "internal-account-id", "PsnPlayerPsn")
+    await repo.subscribe(CHAT_ID, 1)
+    await repo.save_presence_state(XUID_A, "Online", None, None, changed=True)  # online, idle
+    await repo.save_psn_presence_state(
+        "internal-account-id", "Online", "CUSA14296_00", "Rust", changed=True
+    )
+
+    rows = await repo.chat_member_presence(CHAT_ID)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.platform == "psn"
+    assert row.state == "Online"
+    assert row.title_id == "CUSA14296_00"
+    assert row.title_name == "Rust"
+
+
+async def test_chat_member_presence_psn_offline_can_still_be_the_last_active_platform(
+    repo: Repo,
+) -> None:
+    """Same "last active platform" tie-break Xbox/Steam already had
+    (Follow-up 2026-09-08), extended to a 3-way candidate set: with all
+    three known-offline, the most recently polled one wins the nickname."""
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.ensure_user(1, "alloffline")
+    await repo.link_xbox_account(1, XUID_A, "AllOffline", 0)
+    await repo.link_platform_account(1, "steam", "76561197981065056", "AllOfflineSteam")
+    await repo.link_platform_account(1, "psn", "internal-account-id", "AllOfflinePsn")
+    await repo.subscribe(CHAT_ID, 1)
+
+    await repo.save_presence_state(XUID_A, "Offline", None, None, changed=True)
+    await repo.save_steam_presence_state("76561197981065056", 0, None, None, changed=True)
+    await repo.save_psn_presence_state("internal-account-id", "Offline", None, None, changed=True)
+    await repo._conn.execute(
+        "UPDATE presence_state SET updated_at = '2020-01-01T00:00:00+00:00' WHERE xuid = ?",
+        (XUID_A,),
+    )
+    await repo._conn.execute(
+        "UPDATE steam_presence_state SET updated_at = '2020-01-02T00:00:00+00:00' "
+        "WHERE steam_id = ?",
+        ("76561197981065056",),
+    )
+    await repo._conn.commit()
+
+    rows = await repo.chat_member_presence(CHAT_ID)
+
+    assert len(rows) == 1
+    assert rows[0].platform == "psn"  # polled most recently of the three
 
 
 async def test_playing_on_one_platform_beats_merely_online_on_the_other(repo: Repo) -> None:

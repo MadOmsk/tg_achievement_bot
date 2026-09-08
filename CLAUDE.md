@@ -109,18 +109,21 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │   ├── auth.py              SteamAuth: the admin-settable API key (encrypted in app_settings), health check (#17)
 │   │   │   └── achievements.py      fetch_unlocked() + schema/rarity cache
 │   │   └── psn/                    psnawp, one shared service-wide NPSSO for the whole bot
-│   │       ├── client.py            async wrapper (asyncio.to_thread), resolve, trophies
+│   │       ├── client.py            async wrapper (asyncio.to_thread), resolve, trophies, presence
 │   │       ├── auth.py              NPSSO storage/refresh, health check, PsnAuth
 │   │       └── achievements.py      sync_account(): scan + persist trophies + progress cache, one game at a time (#26)
 │   │
 │   ├── poller/                    scheduled background jobs (APScheduler)
 │   │   ├── scheduler.py            ticks, job assembly
-│   │   ├── cadence.py              shared interval/debounce math for both presence pollers
+│   │   ├── cadence.py              shared interval/debounce math for every presence poller
 │   │   ├── presence.py             step 1: Xbox presence, interval by state
 │   │   ├── steam_presence.py       Steam presence, same step 1, its own batch request
+│   │   ├── psn_presence.py         PSN presence for /online (#1) — one account per request,
+│   │   │                           unrelated to psn_fetcher.py's own trophy-scan cadence below
 │   │   ├── fetcher.py              step 2: Xbox achievements per game, title history, backfill
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
-│   │   ├── psn_fetcher.py          PSN trophies: no presence hook, its own debounce, backfill, admin resync (#27)
+│   │   ├── psn_fetcher.py          PSN trophies: no presence hook of its own, its own debounce,
+│   │   │                           backfill, admin resync (#27)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue
 │   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
 │   │   ├── reminders.py            reminders for a dead Xbox login
@@ -224,8 +227,10 @@ every column.
   timezone offset, muted games, and `show_profile_links` (off by default; a new
   user's starting value comes from `app_settings['default_show_profile_links']`).
 - **State and caches.** Xbox presence: `presence_state`. Steam presence:
-  `steam_presence_state`. PSN polling progress: `psn_title_progress` /
-  `psn_poll_state`. Xbox title history/gamerscore cache: `title_history`, `titles`.
+  `steam_presence_state`. PSN presence (#1): `psn_presence_state` — its own
+  poller, unrelated to PSN's trophy-scan cadence below. PSN trophy-scan
+  polling progress: `psn_title_progress` / `psn_poll_state`. Xbox title
+  history/gamerscore cache: `title_history`, `titles`.
   Steam achievement schema/rarity cache: `steam_schema_cache`, `steam_rarity_cache`.
   PSN's own cached account level: `platform_links.psn_trophy_level` (refreshed by
   the poller after backfill and after any tick that finds new trophies — the level
@@ -301,10 +306,17 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   shared PSN token or the Steam key stops working — exactly once per "alive → dead"
   transition, not every tick. Unlike Xbox, where one dead token affects only one
   person, a dead PSN token silently stops polling *everyone* linked to PSN.
-- Trophy polling has no presence hook at all, unlike Xbox/Steam. PSN trophies may
-  only sync to Sony's servers when a player opens trophy data on the console, not at
-  the moment of unlock — so the poller scans every linked account's trophy titles on
-  every tick and only fetches full detail for a title whose progress grew.
+- Trophy polling itself has no presence hook at all, unlike Xbox/Steam — a
+  permanent design decision, not a gap: PSN trophies may only sync to Sony's
+  servers when a player opens trophy data on the console, not at the moment
+  of unlock, so the trophy poller scans every linked account's trophy titles
+  on every tick and only fetches full detail for a title whose progress
+  grew. **Presence itself is now tracked separately** (#1,
+  `poller/psn_presence.py`, `psn_presence_state`) for `/online` and the
+  admin card's "В сети" line — one `get_presence()` request per account (no
+  PSN batch-presence endpoint exists), same politeness-driven cadence
+  (`poller/cadence.py`) Xbox/Steam presence already use. This poller never
+  triggers a trophy poll — the two stay deliberately unrelated.
 - The scan (`services/psn/achievements.py::sync_account`) persists **one game at a
   time, trophies before the progress cache** (#26). Advancing `psn_title_progress`
   before a game's trophies are actually written — the old shape — meant any
@@ -334,12 +346,13 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
 
 Open work (see the linked issues, not this file, for scope/status):
 
-- PSN presence, and full integration into `/stats`, `/summary`, `/online`, and the
-  panel the way Steam already has it — issue #1. `/stats` already shows a PSN
-  person's achievement count and cached account level; `/summary`'s combined total
-  already includes PSN rows for free (it has grouped by `tg_id`, not by a
-  platform-specific id, since before PSN existed) — presence for `/online` and full
-  panel parity are what's still missing.
+- Full PSN integration the way Steam already has it — issue #1, mostly done: `/stats`
+  already shows a PSN person's achievement count and cached account level;
+  `/summary`'s combined total already includes PSN rows for free (it has grouped by
+  `tg_id`, not by a platform-specific id, since before PSN existed); `/online` and
+  the admin user card both now show real PSN presence too (`poller/psn_presence.py`,
+  2026-09-09). What's left: `/panel`'s own "Сейчас" row is still Xbox-only — PSN
+  presence data exists now, that row just hasn't been made multi-platform-aware yet.
 - Linking more than one PSN account per person — issue #10. `platform_links`
   currently allows exactly one row per `(tg_id, platform)`.
 

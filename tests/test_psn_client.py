@@ -28,6 +28,7 @@ from bot.services.psn.client import (
     _as_float,
     build_client,
     check_alive,
+    get_presence,
     is_trophy_visible,
     recent_earned_trophies,
     resolve_profile,
@@ -68,11 +69,22 @@ class _FakeUser:
         *,
         forbidden: bool = False,
         titles: list[_FakeTitle] | None = None,
+        presence: dict | Exception | None = None,
     ) -> None:
         self.account_id = account_id
         self.online_id = online_id
         self._forbidden = forbidden
         self._titles = titles or []
+        self._presence = presence
+
+    def get_presence(self) -> dict:
+        if isinstance(self._presence, Exception):
+            raise self._presence
+        if self._presence is not None:
+            return self._presence
+        if self._forbidden:
+            raise PSNAWPForbiddenError("closed")
+        return {}
 
     def trophy_summary(self) -> object:
         if self._forbidden:
@@ -439,3 +451,88 @@ async def test_account_trophy_overview_private_profile() -> None:
 
     with pytest.raises(PsnPrivateProfileError):
         await psn_client.account_trophy_overview(client, "acc-1")  # type: ignore[arg-type]
+
+
+async def test_get_presence_parses_the_offline_shape() -> None:
+    """Real shape, verified live against 3 linked accounts, 2026-09-08 —
+    see PsnPresenceSnapshot's own docstring."""
+    payload = {
+        "basicPresence": {
+            "availability": "unavailable",
+            "lastAvailableDate": "2026-09-07T05:57:39.118Z",
+            "primaryPlatformInfo": {
+                "onlineStatus": "offline",
+                "platform": "MOBILE_APP",
+                "lastOnlineDate": "2026-09-07T05:57:39.118Z",
+            },
+        }
+    }
+    client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer", presence=payload)})
+
+    snapshot = await get_presence(client, "acc-1")  # type: ignore[arg-type]
+
+    assert snapshot.state == "Offline"
+    assert snapshot.title_id is None
+    assert snapshot.title_name is None
+
+
+async def test_get_presence_parses_the_online_and_playing_shape() -> None:
+    """psnawp's own documented example shape (never directly observed live —
+    every sampled account was offline, per PsnPresenceSnapshot's docstring)."""
+    payload = {
+        "basicPresence": {
+            "availability": "availableToPlay",
+            "gameTitleInfoList": [
+                {
+                    "format": "PS4",
+                    "launchPlatform": "PS5",
+                    "npTitleId": "CUSA14296_00",
+                    "titleName": "Rust",
+                }
+            ],
+            "primaryPlatformInfo": {"onlineStatus": "online", "platform": "PS5"},
+        }
+    }
+    client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer", presence=payload)})
+
+    snapshot = await get_presence(client, "acc-1")  # type: ignore[arg-type]
+
+    assert snapshot.state == "Online"
+    assert snapshot.title_id == "CUSA14296_00"
+    assert snapshot.title_name == "Rust"
+
+
+async def test_get_presence_online_with_no_game_has_no_title() -> None:
+    payload = {
+        "basicPresence": {
+            "availability": "availableToCommunicate",
+            "primaryPlatformInfo": {"onlineStatus": "online", "platform": "PS5"},
+        }
+    }
+    client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer", presence=payload)})
+
+    snapshot = await get_presence(client, "acc-1")  # type: ignore[arg-type]
+
+    assert snapshot.state == "Online"
+    assert snapshot.title_id is None
+
+
+async def test_get_presence_wraps_private_profile() -> None:
+    client = _FakeClient({"gamer": _FakeUser("acc-1", "gamer", forbidden=True)})
+
+    with pytest.raises(PsnPrivateProfileError):
+        await get_presence(client, "acc-1")  # type: ignore[arg-type]
+
+
+async def test_get_presence_wraps_not_found() -> None:
+    client = _FakeClient({})
+
+    with pytest.raises(PsnApiError):
+        await get_presence(client, "no-such-account")  # type: ignore[arg-type]
+
+
+async def test_get_presence_wraps_dead_token() -> None:
+    client = _FakeClient({}, dead=True)
+
+    with pytest.raises(PsnTokenDeadError):
+        await get_presence(client, "acc-1")  # type: ignore[arg-type]

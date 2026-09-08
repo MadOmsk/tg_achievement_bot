@@ -36,6 +36,7 @@ from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
+from bot.poller.psn_presence import PsnPresencePoller
 from bot.poller.publisher import Publisher
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
@@ -122,10 +123,12 @@ async def run(settings: Settings) -> None:
     steam_fetcher = SteamFetcher(repo, steam_auth, publisher, settings.backfill_concurrency)
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
 
-    # No presence poller of its own (SPEC 9, M-PSN-2) — trophy sync has no
-    # signal to key off, psn_fetcher.tick() scans every linked account
-    # directly on its own schedule instead.
+    # Trophy sync itself still has no presence poller of its own (SPEC 9,
+    # M-PSN-2) — psn_fetcher.tick() scans every linked account directly on
+    # its own schedule. psn_presence below is a separate, unrelated poller
+    # (issue #1): presence for /online only, never triggers a trophy poll.
     psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher)
+    psn_presence = PsnPresencePoller(settings, repo, psn_auth)
 
     scheduler = PollerScheduler(
         poller,
@@ -139,6 +142,7 @@ async def run(settings: Settings) -> None:
         ServiceHealth(repo, psn_auth, steam_auth),
         AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth, steam_auth),
         psn_fetcher,
+        psn_presence,
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

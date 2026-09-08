@@ -20,6 +20,7 @@ from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
+from bot.poller.psn_presence import PsnPresencePoller
 from bot.poller.reminders import ReminderJob
 from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_presence import SteamPresencePoller
@@ -43,6 +44,7 @@ class PollerScheduler:
         service_health: ServiceHealth,
         admin_refresh: AdminPanelRefresh,
         psn_fetcher: PsnFetcher,
+        psn_presence: PsnPresencePoller,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -55,6 +57,7 @@ class PollerScheduler:
         self._service_health = service_health
         self._admin_refresh = admin_refresh
         self._psn_fetcher = psn_fetcher
+        self._psn_presence = psn_presence
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -133,14 +136,22 @@ class PollerScheduler:
             coalesce=True,
             max_instances=1,
         )
-        # No presence poller alongside this one (SPEC 9, M-PSN-2) — trophy
-        # sync has no signal to key off, so this tick scans every linked
-        # PSN account directly, debounced internally the same way Xbox/
-        # Steam's own achievement polls are.
+        # Trophy sync itself still has no presence hook (SPEC 9, M-PSN-2) —
+        # this tick scans every linked PSN account directly, debounced
+        # internally the same way Xbox/Steam's own achievement polls are.
+        # psn_presence below is a separate, unrelated poller (issue #1):
+        # presence for /online only, never triggers a trophy poll.
         self._scheduler.add_job(
             self._psn_fetcher.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="psn_fetcher",
+            coalesce=True,
+            max_instances=1,
+        )
+        self._scheduler.add_job(
+            self._psn_presence.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="psn_presence",
             coalesce=True,
             max_instances=1,
         )

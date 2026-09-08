@@ -1266,10 +1266,12 @@ async def _steam_admin_block(repo: Repo, link: PlatformLink, today_count: int) -
 
 
 async def _psn_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> list[str]:
-    """PSN's counterpart — four lines, not five: no cached presence for PSN
-    yet (issue #1), trophy sync has no presence hook at all, so there is no
-    "last online" line to show; the 🔄 button below runs an out-of-turn
-    resync (#27) instead."""
+    """PSN's counterpart — five lines now, same shape as Xbox/Steam
+    (issue #1's presence poller, poller/psn_presence.py): trophy sync
+    itself still has no presence hook at all (that's a separate, permanent
+    design decision — see CLAUDE.md's PSN section), but /online's presence
+    tracking is unrelated to it, so this block gets its "last online" line
+    back same as the other two platforms."""
     count = await repo.platform_achievement_count(link.tg_id, Platform.PSN)
     platinum = await repo.psn_platinum_count(link.tg_id)
     parts = [plural_trophies(count)]
@@ -1278,11 +1280,23 @@ async def _psn_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> 
     parts.append(_("admin-today-tag", count=today_count))
     if link.psn_trophy_level is not None:
         parts.append(_("admin-psn-level-tag", level=link.psn_trophy_level))
+
+    psn_presence = await repo.psn_presence_of(link.external_id)
+    online = _("admin-no-data")
+    if psn_presence is not None:
+        game = psn_presence.title_name or (_("admin-no-game") if psn_presence.title_id else "")
+        is_online = psn_presence.state == PresenceState.ONLINE
+        online = (
+            _("admin-online-playing", ago=humanize_ago(psn_presence.updated_at), game=game)
+            if is_online and game
+            else (_("admin-online-idle") if is_online else humanize_ago(psn_presence.updated_at))
+        )
     return [
         _("admin-psn-header", name=link.display_name or _("admin-no-name")),
         _("admin-psn-id-tag", external_id=link.external_id),
         _("admin-login-row", login=visibility_status_text(link)),
         "  ·  ".join(parts),
+        _("admin-online-row", online=online),
     ]
 
 

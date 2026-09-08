@@ -133,11 +133,24 @@ async def test_psn_block_shows_trophies_wording_and_level(repo: Repo) -> None:
     block = _block(text, "PSN:")
     assert "PsnPerson" in block[0]
     assert block[1] == "account_id acc-1"
-    assert len(block) == 4  # no "last online" line for PSN
+    assert len(block) == 5  # PSN now has its own "last online" line too (issue #1)
     achievements_line = block[3]
     assert "1 трофей" in achievements_line
     assert "сегодня 1" in achievements_line
     assert "уровень 42" in achievements_line
+
+
+async def test_psn_block_shows_last_online_from_the_presence_poller(repo: Repo) -> None:
+    """(issue #1) The presence poller (poller/psn_presence.py) now feeds
+    this line the same way it already does for Xbox/Steam."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.save_psn_presence_state("acc-1", "Online", "CUSA14296_00", "Rust", changed=True)
+
+    text, _markup = await _card(repo, 1)
+
+    online_line = _block(text, "PSN:")[4]
+    assert "Rust" in online_line
 
 
 async def test_psn_status_line_shows_visibility_not_nickname(repo: Repo) -> None:

@@ -34,6 +34,7 @@ from psnawp_api.core.psnawp_exceptions import (
 from psnawp_api.models.trophies import TrophyTitle
 from psnawp_api.models.trophies.trophy_constants import PlatformType, TrophyRarity, TrophyType
 
+from bot.constants import PresenceState
 from bot.services.rate_limiter import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -261,6 +262,59 @@ async def is_trophy_visible(client: PSNAWP, account_id: str) -> bool:
 # trophy's own earned_date_time (verified live: last_updated_datetime on
 # TrophyTitle already reflects the latest trophy activity in that game).
 _RECENT_TITLES_TO_SCAN = 5
+
+
+@dataclass(slots=True)
+class PsnPresenceSnapshot:
+    """One `get_presence()` reading, normalized into the same shape
+    presence.py already uses for Xbox (`state`/`title_id`/`title_name`) —
+    issue #1's own "/online" piece. `get_presence()` returns a raw,
+    undocumented dict (no model class in psnawp_api), verified live against
+    real linked accounts (2026-09-08):
+
+        offline: {"basicPresence": {"availability": "unavailable",
+                   "primaryPlatformInfo": {"onlineStatus": "offline", ...}}}
+        online, in a game: {"basicPresence": {"availability": "availableToPlay",
+                   "gameTitleInfoList": [{"npTitleId": ..., "titleName": ...}],
+                   "primaryPlatformInfo": {"onlineStatus": "online", ...}}}
+
+    Only 3 real accounts were online-observable during that check, and all
+    3 were offline at the time — the in-game shape above comes from
+    psnawp's own documented example, not a live capture; `gameTitleInfoList`
+    empty-but-online (no title) has never been directly observed either.
+    Treated as "online, not in a game" if that ever occurs, same as Xbox/
+    Steam's own idle state."""
+
+    state: str  # PresenceState.ONLINE / OFFLINE
+    title_id: str | None
+    title_name: str | None
+
+
+async def get_presence(client: PSNAWP, account_id: str) -> PsnPresenceSnapshot:
+    """A private profile's presence is invisible to the shared service
+    account (`PSNAWPForbiddenError`) — not fatal, same "no data" treatment
+    every other platform gets when nothing is known yet; the caller stores
+    nothing and leaves the account showing "нет данных" in /online rather
+    than crashing the whole poll tick over one person's privacy setting."""
+    try:
+        user = await _call(client.user, account_id=account_id)
+        payload = await _call(user.get_presence)
+    except PSNAWPNotFoundError:
+        raise PsnApiError(f"PSN profile {account_id!r} not found") from None
+    except PSNAWPForbiddenError:
+        raise PsnPrivateProfileError(account_id) from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+
+    basic = payload.get("basicPresence") or {}
+    primary = basic.get("primaryPlatformInfo") or {}
+    state = (
+        PresenceState.ONLINE if primary.get("onlineStatus") == "online" else PresenceState.OFFLINE
+    )
+    titles = basic.get("gameTitleInfoList") or []
+    title_id = titles[0].get("npTitleId") if titles else None
+    title_name = titles[0].get("titleName") if titles else None
+    return PsnPresenceSnapshot(state=state, title_id=title_id, title_name=title_name)
 
 
 async def trophy_titles_for_account(

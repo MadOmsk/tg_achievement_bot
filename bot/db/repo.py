@@ -126,6 +126,23 @@ class PsnPollTarget:
 
 
 @dataclass(slots=True)
+class PsnPresenceTarget:
+    """A linked PSN account the *presence* poller may look at (issue #1) —
+    separate from PsnPollTarget above, which is the trophy poller's own
+    unrelated cadence. No last_ach_poll_at here: presence has never driven
+    trophy polling on PSN (see psn_presence_state's own schema.sql
+    comment), so there is nothing to debounce against."""
+
+    tg_id: int
+    account_id: str
+    state: str | None
+    title_id: str | None
+    title_name: str | None
+    changed_at: str | None
+    updated_at: str | None
+
+
+@dataclass(slots=True)
 class AchievementRow:
     title_id: str
     achievement_id: str
@@ -236,6 +253,21 @@ class SteamPresenceRow:
     persona_state: int | None
     gameid: str | None
     game_name: str | None
+    updated_at: str | None
+
+
+@dataclass(slots=True)
+class PsnPresenceRow:
+    """PSN's counterpart of PresenceRow (issue #1) — already normalized to
+    the same Online/Offline vocabulary (PresenceState), unlike
+    SteamPresenceRow's raw persona_state: PSN's own presence has no
+    numeric enum of its own to preserve, `get_presence()`'s onlineStatus
+    is translated once, in services/psn/client.py::get_presence."""
+
+    account_id: str
+    state: str | None
+    title_id: str | None
+    title_name: str | None
     updated_at: str | None
 
 
@@ -1003,6 +1035,76 @@ class Repo:
             "DELETE FROM psn_title_progress WHERE account_id = ?", (account_id,)
         )
         await self._conn.commit()
+
+    # ------------------------------------------------- PSN presence polling
+    # (issue #1) — its own tiny poller, unrelated to psn_pollable_users/
+    # psn_poll_state above (the trophy scan's own cadence): presence has
+    # never driven trophy polling on PSN, and this doesn't change that.
+
+    async def psn_presence_pollable_accounts(self) -> list[PsnPresenceTarget]:
+        cursor = await self._conn.execute(
+            "SELECT u.tg_id, pl.external_id AS account_id, pp.state, pp.title_id,"
+            "       pp.title_name, pp.changed_at, pp.updated_at "
+            "FROM platform_links pl "
+            "JOIN users u ON u.tg_id = pl.tg_id "
+            "LEFT JOIN psn_presence_state pp ON pp.account_id = pl.external_id "
+            "WHERE pl.platform = 'psn' AND u.is_excluded = 0"
+        )
+        return [
+            PsnPresenceTarget(
+                tg_id=row["tg_id"],
+                account_id=row["account_id"],
+                state=row["state"],
+                title_id=row["title_id"],
+                title_name=row["title_name"],
+                changed_at=row["changed_at"],
+                updated_at=row["updated_at"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def save_psn_presence_state(
+        self,
+        account_id: str,
+        state: str,
+        title_id: str | None,
+        title_name: str | None,
+        *,
+        changed: bool,
+    ) -> None:
+        now = utcnow_iso()
+        await self._conn.execute(
+            "INSERT INTO psn_presence_state "
+            "(account_id, state, title_id, title_name, changed_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(account_id) DO UPDATE SET "
+            "  state = excluded.state, title_id = excluded.title_id,"
+            "  title_name = excluded.title_name, updated_at = excluded.updated_at,"
+            "  changed_at = CASE WHEN ? THEN excluded.changed_at "
+            "                 ELSE psn_presence_state.changed_at END",
+            (account_id, state, title_id, title_name, now, now, 1 if changed else 0),
+        )
+        await self._conn.commit()
+
+    async def psn_presence_of(self, account_id: str) -> PsnPresenceRow | None:
+        """The admin card's own single-account lookup (mirrors
+        `steam_presence_of`) — not the batched `psn_presence_pollable_
+        accounts()` the poller itself uses."""
+        cursor = await self._conn.execute(
+            "SELECT account_id, state, title_id, title_name, updated_at "
+            "FROM psn_presence_state WHERE account_id = ?",
+            (account_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return PsnPresenceRow(
+            account_id=row["account_id"],
+            state=row["state"],
+            title_id=row["title_id"],
+            title_name=row["title_name"],
+            updated_at=row["updated_at"],
+        )
 
     # --------------------------------------------- admin "reset & resync"
 
@@ -1863,29 +1965,30 @@ class Repo:
         Steam now appears here too — used to require `u.xuid IS NOT NULL`,
         which silently dropped Steam-only members entirely.
 
-        PSN is included in the membership/fallback logic (#35) but has no
-        presence source of its own yet — no poller populates anything
-        like `psn_presence_state`, that's PSN presence's own still-
-        undesigned piece of #1. A PSN-only person therefore always shows
-        "no data" here rather than a real state, but at least appears in
-        the roster at all, which they didn't before this fix — `psn_level`
-        below is a hardcoded 0, wired in now so a real presence table can
-        slot in later without reshaping this query again.
+        PSN presence is wired in the same way Steam was (issue #1) —
+        `psn_presence_state`, populated by its own tiny poller
+        (poller/psn_presence.py), no achievement-poll coupling at all
+        (trophy sync has never been presence-driven on PSN, see that
+        table's own schema.sql comment).
 
         The row's *label* (Follow-up 2026-09-08, reverting an earlier
         Telegram-identity attempt that pinged people every auto-refresh —
         see #38's revert) is the platform-specific nickname of whichever
         platform `winner` points at: the one currently being played, or —
-        while offline — whichever of Xbox/Steam has *real tracked presence*
-        and was polled more recently ("last active platform"). Using
-        freshness here is safe even though the docstring above warns
+        while offline — whichever connected platform has *real tracked
+        presence* and was polled more recently ("last active platform").
+        Using freshness here is safe even though the docstring above warns
         against it for *deciding who's online*: this branch only runs once
-        both are already known-offline, so there is no "wrongly looks
-        active" failure mode left to worry about, only which idle nickname
-        to show. `winner = 'none'` means no tracked presence exists at all
-        (PSN-only, or an account never polled yet) — `online_view.py` falls
-        back to the Telegram name there, plain (no "@"), so a PSN-only
-        person doesn't get pinged by the auto-refreshing table.
+        every candidate is already known-offline, so there is no "wrongly
+        looks active" failure mode left to worry about, only which idle
+        nickname to show. Ties (including a genuine 3-way tie at the same
+        activity level) are broken by a single ranked sub-select rather
+        than hand-enumerated pairwise comparisons, so adding PSN as a third
+        candidate didn't need a third copy of the same tie-break logic.
+        `winner = 'none'` means no tracked presence exists at all on any
+        platform (an account never polled yet) — `online_view.py` falls
+        back to the Telegram name there, plain (no "@"), so nobody gets
+        pinged by the auto-refreshing table.
         """
         cursor = await self._conn.execute(
             "WITH member AS ("
@@ -1901,6 +2004,8 @@ class Repo:
             "         steam.external_id AS steam_external_id,"
             "         steam.display_name AS steam_display_name,"
             "         psn.external_id AS psn_external_id, psn.display_name AS psn_display_name,"
+            "         pp.state AS psn_state, pp.title_id AS psn_title_id,"
+            "         pp.title_name AS psn_title_name, pp.updated_at AS psn_updated_at,"
             "         CASE WHEN xp.state = 'Online' AND xp.title_id IS NOT NULL THEN 2"
             "              WHEN xp.state = 'Online' THEN 1"
             "              ELSE 0 END AS xbox_level,"
@@ -1908,49 +2013,59 @@ class Repo:
             "                   AND sp.gameid IS NOT NULL THEN 2"
             "              WHEN sp.persona_state IS NOT NULL AND sp.persona_state != 0 THEN 1"
             "              ELSE 0 END AS steam_level,"
-            "         0 AS psn_level"  # no presence source yet — see docstring above
+            "         CASE WHEN pp.state = 'Online' AND pp.title_id IS NOT NULL THEN 2"
+            "              WHEN pp.state = 'Online' THEN 1"
+            "              ELSE 0 END AS psn_level"
             "  FROM member"
             "  JOIN users u ON u.tg_id = member.tg_id"
             "  LEFT JOIN presence_state xp ON xp.xuid = u.xuid"
             "  LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam'"
             "  LEFT JOIN steam_presence_state sp ON sp.steam_id = steam.external_id"
             "  LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn'"
+            "  LEFT JOIN psn_presence_state pp ON pp.account_id = psn.external_id"
             "  WHERE (u.xuid IS NOT NULL OR steam.external_id IS NOT NULL"
             "         OR psn.external_id IS NOT NULL) AND u.is_excluded = 0"
             "), decided AS ("
-            "  SELECT *, CASE"
-            "    WHEN steam_level > xbox_level AND steam_level >= psn_level THEN 'steam'"
-            "    WHEN xbox_level > steam_level AND xbox_level >= psn_level THEN 'modern'"
-            "    WHEN psn_level > xbox_level AND psn_level > steam_level THEN 'psn'"
-            "    WHEN xbox_level > 0 THEN"  # tied at the top, both active — freshness breaks it
-            "      CASE WHEN steam_updated_at IS NOT NULL"
-            "                AND (xbox_updated_at IS NULL OR steam_updated_at > xbox_updated_at)"
-            "           THEN 'steam' ELSE 'modern' END"
-            "    WHEN xbox_state IS NOT NULL OR steam_persona_state IS NOT NULL THEN"
-            # Nobody's actively playing/online, but Xbox and/or Steam has
-            # real tracked presence (has been polled at least once) — show
-            # whichever was polled more recently as the "last active"
-            # platform for the nickname (see docstring above for why
-            # freshness is safe to use here specifically).
-            "      CASE WHEN steam_updated_at IS NOT NULL"
-            "                AND (xbox_updated_at IS NULL OR steam_updated_at >= xbox_updated_at)"
-            "           THEN 'steam' ELSE 'modern' END"
-            "    ELSE 'none'"  # no tracked presence anywhere — Telegram identity fallback
-            "    END AS winner"
+            "  SELECT *, MAX(xbox_level, steam_level, psn_level) AS top_level"
             "  FROM presence"
+            "), picked AS ("
+            "  SELECT decided.*, ("
+            "    SELECT platform FROM ("
+            "      SELECT 'modern' AS platform, xbox_level AS level, xbox_updated_at AS ts"
+            "      UNION ALL SELECT 'steam', steam_level, steam_updated_at"
+            "      UNION ALL SELECT 'psn', psn_level, psn_updated_at"
+            "    ) candidates"
+            "    WHERE candidates.level = decided.top_level"
+            "    ORDER BY candidates.ts IS NULL, candidates.ts DESC"
+            "    LIMIT 1"
+            "  ) AS ranked_winner"
+            "  FROM decided"
+            "), final AS ("
+            "  SELECT *, CASE"
+            # Nothing tracked anywhere at all (never polled on any
+            # platform) — Telegram identity fallback, not an arbitrary
+            # pick among three equally-empty candidates.
+            "    WHEN top_level = 0 AND xbox_state IS NULL"
+            "         AND steam_persona_state IS NULL AND psn_state IS NULL THEN 'none'"
+            "    ELSE ranked_winner"
+            "    END AS winner"
+            "  FROM picked"
             ") "
             "SELECT tg_id, gamertag, username, first_name, last_name, xuid,"
             "       CASE winner"
             "         WHEN 'steam' THEN"
             "           CASE WHEN steam_persona_state != 0 THEN 'Online' ELSE 'Offline' END"
             "         WHEN 'modern' THEN xbox_state"
+            "         WHEN 'psn' THEN psn_state"
             "         ELSE NULL END AS state,"
             "       CASE winner WHEN 'steam' THEN steam_gameid"
-            "                   WHEN 'modern' THEN xbox_title_id ELSE NULL END AS title_id,"
+            "                   WHEN 'modern' THEN xbox_title_id"
+            "                   WHEN 'psn' THEN psn_title_id ELSE NULL END AS title_id,"
             "       CASE winner WHEN 'steam' THEN steam_game_name"
-            "                   WHEN 'modern' THEN xbox_title_name ELSE NULL END AS title_name,"
+            "                   WHEN 'modern' THEN xbox_title_name"
+            "                   WHEN 'psn' THEN psn_title_name ELSE NULL END AS title_name,"
             "       winner AS platform, steam_display_name, psn_display_name "
-            "FROM decided "
+            "FROM final "
             "ORDER BY "
             "  CASE WHEN state = 'Online' AND title_id IS NOT NULL THEN 0 "
             "       WHEN state = 'Online' THEN 1 "
