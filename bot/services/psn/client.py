@@ -102,7 +102,7 @@ class PsnProfile:
 class EarnedTrophy:
     """One trophy this account has actually earned — used by the admin
     panel's live "Трофеи PSN" test screen (display only) and by
-    services/psn/achievements.py's fetch_unlocked (SPEC 9, M-PSN-2), which
+    services/psn/achievements.py's sync_account (SPEC 9, M-PSN-2), which
     needs `trophy_id` specifically: it's the real per-title identifier
     (`trophy_name` is not guaranteed unique and is shown, never keyed on)."""
 

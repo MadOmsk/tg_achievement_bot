@@ -213,12 +213,19 @@ async def _backfill_and_notify(
     bot: Bot, fetcher: PsnFetcher, tg_id: int, account_id: str, i18n: I18nContext
 ) -> None:
     try:
-        count = await fetcher.backfill(tg_id, account_id)
+        result = await fetcher.backfill(tg_id, account_id)
     except Exception:
         log.exception("psn backfill for tg_id=%s failed", tg_id)
         await bot.send_message(tg_id, i18n.get("psn-backfill-failed"))
         return
-    await bot.send_message(tg_id, i18n.get("psn-backfill-done", count=count))
+    text = i18n.get("psn-backfill-done", count=result.stored)
+    if result.private_title_ids:
+        # #28: the account passed the connect-time visibility check, but some
+        # individual games are still private — say so, with where to fix it,
+        # instead of just silently missing those trophies.
+        note = i18n.get("psn-backfill-private-note", count=len(result.private_title_ids))
+        text += "\n\n" + note
+    await bot.send_message(tg_id, text)
 
 
 def _disconnect_prompt_keyboard(i18n: I18nContext, *, from_panel: bool) -> InlineKeyboardMarkup:

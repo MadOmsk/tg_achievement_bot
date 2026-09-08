@@ -15,6 +15,7 @@ psn-connected = Подключил PSN: { $name }.
 psn-backfill-started = Читаю твою историю трофеев PSN, это может занять пару минут…
 psn-backfill-failed = Не смог перечитать твою историю трофеев PSN. Публикация пока выключена — привяжи аккаунт заново чуть позже: /connect_psn.
 psn-backfill-done = Готово: перечитал { $count } уже выбитых трофеев PSN — в чат они не полетят.
+psn-backfill-private-note = У части игр ({ $count }) закрыты настройки приватности — трофеи из них прочитать не удалось. Чтобы они учитывались, открой приватность для этих игр в PS App.
 psn-disconnect-confirm-button = Да, отключить
 psn-cancel-button = Отмена
 psn-already-disconnected = PSN и так не подключён.

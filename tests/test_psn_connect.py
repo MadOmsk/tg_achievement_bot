@@ -19,6 +19,7 @@ from bot.handlers.psn import (
     _connect,
     prompt_for_link,
 )
+from bot.poller.psn_fetcher import PsnBackfillResult
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import PsnApiError, PsnProfile, PsnTokenDeadError
@@ -44,9 +45,9 @@ class FakeFetcher:
     def __init__(self) -> None:
         self.backfilled: list[tuple[int, str]] = []
 
-    async def backfill(self, tg_id: int, account_id: str) -> int:
+    async def backfill(self, tg_id: int, account_id: str) -> PsnBackfillResult:
         self.backfilled.append((tg_id, account_id))
-        return 0
+        return PsnBackfillResult()
 
 
 def _event(tg_id: int | None) -> SimpleNamespace:

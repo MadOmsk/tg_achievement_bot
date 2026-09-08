@@ -1,7 +1,8 @@
-"""poller/psn_fetcher.py: dedup, publish, backfill isolation and the tick's
-own debounce (SPEC 9, M-PSN-2) — the PSN counterpart of
-test_steam_fetcher.py. fetch_unlocked() is faked at the module boundary,
-same as the rest of this project's poller tests fake their client layer."""
+"""poller/psn_fetcher.py: publish, backfill gating and the tick's own
+debounce + #21 backfill gate (SPEC 9, M-PSN-2). sync_account() is faked at
+the module boundary, same as the rest of this project's poller tests fake
+their client/service layer. The scan/persist/ordering itself is covered by
+test_psn_achievements.py against the real repo."""
 
 from __future__ import annotations
 
@@ -12,18 +13,17 @@ from bot.db.repo import AchievementRow, Repo
 from bot.poller import psn_fetcher as psn_fetcher_module
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.services.crypto import TokenCipher
-from bot.services.models import ParsedAchievement
+from bot.services.psn.achievements import PsnSyncOutcome
 from bot.services.psn.auth import PsnAuth
 
 TG_ID = 42
 ACCOUNT_ID = "acc-1"
 
 
-def parsed(achievement_id: str, title_id: str = "NPWR00001_00") -> ParsedAchievement:
-    return ParsedAchievement(
-        achievement_id=achievement_id,
+def row(achievement_id: str, title_id: str = "NPWR00001_00") -> AchievementRow:
+    return AchievementRow(
         title_id=title_id,
-        title_name="Some Game",
+        achievement_id=achievement_id,
         name=f"Trophy {achievement_id}",
         description=None,
         icon_url=None,
@@ -31,6 +31,7 @@ def parsed(achievement_id: str, title_id: str = "NPWR00001_00") -> ParsedAchieve
         gamerscore=0,
         rarity_percent=42.0,
         platform="psn",
+        title_name="Some Game",
     )
 
 
@@ -40,6 +41,29 @@ class FakePublisher:
 
     async def publish(self, tg_id, xuid, name, achievements, title_name=None) -> None:
         self.published.append(list(achievements))
+
+
+def _fake_sync(monkeypatch, outcomes):
+    """`outcomes` is either a single PsnSyncOutcome (returned every call) or a
+    list consumed one per call. Records the kwargs each call was made with."""
+    calls: list[dict] = []
+    queue = list(outcomes) if isinstance(outcomes, list) else None
+
+    async def fake_sync_account(repo_, client, tg_id, account_id, *, is_backfill, limit=None):
+        calls.append(
+            {
+                "tg_id": tg_id,
+                "account_id": account_id,
+                "is_backfill": is_backfill,
+                "limit": limit,
+            }
+        )
+        if queue is not None:
+            return queue.pop(0)
+        return outcomes
+
+    monkeypatch.setattr(psn_fetcher_module, "sync_account", fake_sync_account)
+    return calls
 
 
 async def _linked_user(repo: Repo) -> None:
@@ -62,73 +86,109 @@ async def _configured_auth(repo: Repo, cipher: TokenCipher, monkeypatch) -> PsnA
 
 
 def _fake_level(monkeypatch, level: int = 7) -> None:
-    """account_trophy_level() is faked at the module boundary same as
-    fetch_unlocked() above (Follow-up 2026-09-06) — the client here is a
-    bare `object()` sentinel, fetch_unlocked never touches it either."""
-
     async def _account_trophy_level(client: object, account_id: str) -> int:
         return level
 
     monkeypatch.setattr(psn_fetcher_module, "account_trophy_level", _account_trophy_level)
 
 
-async def test_poll_account_publishes_only_new_trophies(
+async def test_poll_account_publishes_what_sync_account_returns(
     repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
 ) -> None:
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
     _fake_level(monkeypatch)
-    pool = [parsed("1"), parsed("2")]
-
-    async def fake_fetch_unlocked(repo_, client, account_id, limit=None):
-        return list(pool)
-
-    monkeypatch.setattr(psn_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    _fake_sync(
+        monkeypatch,
+        [
+            PsnSyncOutcome(new_rows=[row("1"), row("2")]),
+            PsnSyncOutcome(),  # nothing new
+            PsnSyncOutcome(new_rows=[row("3")]),
+        ],
+    )
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
 
     assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 2
     # Found new trophies — level gets refreshed (Follow-up 2026-09-06).
     link = await repo.get_platform_link(TG_ID, "psn")
-    assert link is not None
-    assert link.psn_trophy_level == 7
-    # Same answer a tick later: nothing new, nothing published.
+    assert link is not None and link.psn_trophy_level == 7
+
     assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 0
     assert len(publisher.published) == 1
 
-    pool.append(parsed("3"))
     assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 1
     assert [a.achievement_id for a in publisher.published[1]] == ["3"]
 
 
-async def test_backfill_publishes_nothing(
+async def test_backfill_marks_done_and_returns_the_private_titles(
     repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
 ) -> None:
-    """The whole point of SPEC 5.6/9's backfill: the first link must be
-    silent."""
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
     _fake_level(monkeypatch, level=3)
-    seen_limit = []
-
-    async def fake_fetch_unlocked(repo_, client, account_id, limit=None):
-        seen_limit.append(limit)
-        return [parsed("1"), parsed("2")]
-
-    monkeypatch.setattr(psn_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    calls = _fake_sync(
+        monkeypatch,
+        PsnSyncOutcome(new_rows=[row("1"), row("2")], private_title_ids=["NPWR00009_00"]),
+    )
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
 
-    stored = await fetcher.backfill(TG_ID, ACCOUNT_ID)
+    # Before: the gate is closed, tick() would not touch this account.
+    [target] = await repo.psn_pollable_users()
+    assert target.backfill_done is False
 
-    assert stored == 2
-    assert publisher.published == []
-    assert seen_limit == [None]  # whole history, not just the recent window
-    # /stats has a real level from the moment someone links, not just after
-    # their first live trophy (Follow-up 2026-09-06).
+    result = await fetcher.backfill(TG_ID, ACCOUNT_ID)
+
+    assert result.stored == 2
+    assert result.private_title_ids == ["NPWR00009_00"]
+    assert publisher.published == []  # backfill never publishes
+    assert calls[0]["is_backfill"] is True
+    assert calls[0]["limit"] is None  # whole history, not just the recent window
+    # After: the gate is open — the regular poller may now poll it (#21).
+    [target] = await repo.psn_pollable_users()
+    assert target.backfill_done is True
     link = await repo.get_platform_link(TG_ID, "psn")
-    assert link is not None
-    assert link.psn_trophy_level == 3
+    assert link is not None and link.psn_trophy_level == 3
+
+
+async def test_tick_skips_an_account_whose_backfill_has_not_finished(
+    repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
+) -> None:
+    """#21: a freshly-linked account has no psn_poll_state row yet, so its
+    backfill_done reads False and tick() must leave it alone — polling it
+    would race the in-flight backfill and dump the whole history into chat."""
+    await _linked_user(repo)
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    calls = _fake_sync(monkeypatch, PsnSyncOutcome())
+    fetcher = PsnFetcher(settings, repo, auth, FakePublisher())  # type: ignore[arg-type]
+
+    await fetcher.tick()
+
+    assert calls == []
+
+
+async def test_tick_polls_a_due_account_once_backfill_is_done(
+    repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
+) -> None:
+    await _linked_user(repo)
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    _fake_level(monkeypatch)
+    stale = (datetime.now(UTC) - timedelta(hours=1)).isoformat(timespec="seconds")
+    await repo._conn.execute(
+        "INSERT INTO psn_poll_state (account_id, last_polled_at, backfill_done) VALUES (?, ?, 1)",
+        (ACCOUNT_ID, stale),
+    )
+    await repo._conn.commit()
+    _fake_sync(monkeypatch, PsnSyncOutcome(new_rows=[row("1")]))
+    publisher = FakePublisher()
+    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
+
+    await fetcher.tick()
+
+    assert len(publisher.published) == 1
+    [target] = await repo.psn_pollable_users()
+    assert target.last_polled_at is not None
 
 
 async def test_tick_skips_an_account_polled_too_recently(
@@ -136,46 +196,13 @@ async def test_tick_skips_an_account_polled_too_recently(
 ) -> None:
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
-    await repo.touch_psn_poll_state(ACCOUNT_ID)
-    calls = 0
-
-    async def fake_fetch_unlocked(repo_, client, account_id, limit=None):
-        nonlocal calls
-        calls += 1
-        return []
-
-    monkeypatch.setattr(psn_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    await repo.mark_psn_backfill_done(ACCOUNT_ID)  # gate open, and stamps last_polled_at = now
+    calls = _fake_sync(monkeypatch, PsnSyncOutcome())
     fetcher = PsnFetcher(settings, repo, auth, FakePublisher())  # type: ignore[arg-type]
 
     await fetcher.tick()
 
-    assert calls == 0
-
-
-async def test_tick_polls_a_due_account(
-    repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
-) -> None:
-    await _linked_user(repo)
-    auth = await _configured_auth(repo, cipher, monkeypatch)
-    stale = (datetime.now(UTC) - timedelta(hours=1)).isoformat(timespec="seconds")
-    await repo._conn.execute(
-        "INSERT INTO psn_poll_state (account_id, last_polled_at) VALUES (?, ?)",
-        (ACCOUNT_ID, stale),
-    )
-    await repo._conn.commit()
-
-    async def fake_fetch_unlocked(repo_, client, account_id, limit=None):
-        return [parsed("1")]
-
-    monkeypatch.setattr(psn_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
-    publisher = FakePublisher()
-    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
-
-    await fetcher.tick()
-
-    assert len(publisher.published) == 1
-    state = await repo.psn_pollable_users()
-    assert state[0].last_polled_at is not None
+    assert calls == []  # debounce, not the backfill gate, is what stops it here
 
 
 async def test_tick_does_nothing_when_psn_is_not_configured(
@@ -183,19 +210,12 @@ async def test_tick_does_nothing_when_psn_is_not_configured(
 ) -> None:
     await _linked_user(repo)
     auth = PsnAuth(repo, cipher)  # never configured
-    calls = 0
-
-    async def fake_fetch_unlocked(repo_, client, account_id, limit=None):
-        nonlocal calls
-        calls += 1
-        return []
-
-    monkeypatch.setattr(psn_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    calls = _fake_sync(monkeypatch, PsnSyncOutcome())
     fetcher = PsnFetcher(settings, repo, auth, FakePublisher())  # type: ignore[arg-type]
 
     await fetcher.tick()
 
-    assert calls == 0
+    assert calls == []
 
 
 async def test_insert_new_achievements_psn_dedups_and_keeps_the_tier(repo: Repo) -> None:
@@ -204,7 +224,7 @@ async def test_insert_new_achievements_psn_dedups_and_keeps_the_tier(repo: Repo)
     achievement_id) same as the Xbox/Steam siblings, trophy_type round-
     trips where they always leave it NULL."""
     await _linked_user(repo)
-    row = AchievementRow(
+    trophy_row = AchievementRow(
         title_id="NPWR00001_00",
         achievement_id="1",
         name="Platinum",
@@ -217,8 +237,12 @@ async def test_insert_new_achievements_psn_dedups_and_keeps_the_tier(repo: Repo)
         trophy_type="platinum",
     )
 
-    first = await repo.insert_new_achievements_psn(TG_ID, ACCOUNT_ID, [row], is_backfill=False)
-    second = await repo.insert_new_achievements_psn(TG_ID, ACCOUNT_ID, [row], is_backfill=False)
+    first = await repo.insert_new_achievements_psn(
+        TG_ID, ACCOUNT_ID, [trophy_row], is_backfill=False
+    )
+    second = await repo.insert_new_achievements_psn(
+        TG_ID, ACCOUNT_ID, [trophy_row], is_backfill=False
+    )
 
     assert len(first) == 1
     assert second == []  # already seen, same key as the first call
@@ -237,3 +261,4 @@ async def test_psn_pollable_users_falls_back_to_account_id_with_no_online_id(
     assert target.account_id == ACCOUNT_ID
     assert target.online_id is None
     assert target.last_polled_at is None
+    assert target.backfill_done is False  # no psn_poll_state row yet (#21)

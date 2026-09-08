@@ -103,19 +103,19 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │   ├── auth.py              wrapper over xbox-webapi-python: token storage, refresh
 │   │   │   ├── client.py            Xbox Live requests, rate limiting, retry, backoff
 │   │   │   └── models.py            pydantic response models (incl. rarity from contract 4)
+│   │   ├── rows.py                 ParsedAchievement -> AchievementRow, shared by both pollers and psn/achievements.py
 │   │   ├── steam/                  the official Steam Web API, no OAuth (one shared key)
 │   │   │   ├── client.py            profile resolve, visibility, presence, achievements, rarity
 │   │   │   └── achievements.py      fetch_unlocked() + schema/rarity cache
 │   │   └── psn/                    psnawp, one shared service-wide NPSSO for the whole bot
 │   │       ├── client.py            async wrapper (asyncio.to_thread), resolve, trophies
 │   │       ├── auth.py              NPSSO storage/refresh, health check, PsnAuth
-│   │       ├── achievements.py      fetch_unlocked() + per-game progress cache
+│   │       ├── achievements.py      sync_account(): scan + persist trophies + progress cache, one game at a time (#26)
 │   │       └── view.py              a standalone PSN trophy table, ahead of merging into /stats
 │   │
 │   ├── poller/                    scheduled background jobs (APScheduler)
 │   │   ├── scheduler.py            ticks, job assembly
 │   │   ├── cadence.py              shared interval/debounce math for both presence pollers
-│   │   ├── rows.py                 ParsedAchievement -> AchievementRow, shared by every fetcher
 │   │   ├── presence.py             step 1: Xbox presence, interval by state
 │   │   ├── steam_presence.py       Steam presence, same step 1, its own batch request
 │   │   ├── fetcher.py              step 2: Xbox achievements per game, title history, backfill
@@ -288,6 +288,19 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   only sync to Sony's servers when a player opens trophy data on the console, not at
   the moment of unlock — so the poller scans every linked account's trophy titles on
   every tick and only fetches full detail for a title whose progress grew.
+- The scan (`services/psn/achievements.py::sync_account`) persists **one game at a
+  time, trophies before the progress cache** (#26). Advancing `psn_title_progress`
+  before a game's trophies are actually written — the old shape — meant any
+  exception partway through the scan left already-visited games marked "seen,
+  nothing new" while their trophies were never stored, hiding them from every future
+  poll and backfill (found live: a real account silently lost 43 trophies this way).
+  An unmapped error on one game is logged and skipped, never aborts the scan.
+- A freshly-linked PSN account is gated out of the regular poller by
+  `psn_poll_state.backfill_done` until its first backfill finishes (#21): without
+  the gate, a scheduler tick landing while the fire-and-forget backfill is still
+  running fetches trophies backfill hasn't inserted yet and publishes the account's
+  whole history at once. A stuck account (backfill crashed, flag never set) is
+  recovered by an admin resync, not by the poller.
 - `Trophy.trophy_earn_rate` is typed `float | None` by `psnawp_api`, but the library
   hands it back as a numeric *string* with no cast — coerce it explicitly
   (`services/psn/client.py::_as_float`) rather than trusting the type annotation.
@@ -335,7 +348,9 @@ due.
   Xbox modern uses a broad history endpoint, Xbox 360 is a title-by-title pass,
   Steam scans owned games with playtime, PSN scans trophy titles directly (cheaper
   than Steam's: one unlimited paginated call already lists every title with
-  progress). Backfill inserts must be idempotent (`INSERT OR IGNORE`).
+  progress). Backfill inserts must be idempotent (`INSERT OR IGNORE`). PSN backfill
+  additionally flips `psn_poll_state.backfill_done` as its last step — the regular
+  poller ignores the account until then (#21, see the PSN section above).
 - **Catch-up after downtime** may publish missed achievements only inside the
   configured recent window — older rows are stored for stats/dedup but never
   flooded into chat.

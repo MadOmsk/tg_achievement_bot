@@ -14,7 +14,7 @@ import logging
 from bot.db.repo import AchievementRow, Repo
 from bot.i18n import gettext
 from bot.poller.publisher import Publisher
-from bot.poller.rows import to_achievement_row
+from bot.services.rows import to_achievement_row
 from bot.services.steam.achievements import fetch_unlocked
 from bot.services.steam.client import (
     OwnedGame,

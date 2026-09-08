@@ -401,7 +401,15 @@ CREATE TABLE IF NOT EXISTS psn_title_progress (
 -- that one is keyed per (account, game) and only ever touched for games
 -- trophy_titles() actually returned, so it can't answer "was this account
 -- polled at all" for someone with no trophy activity yet.
+--
+-- backfill_done gates the regular poller (#21): a freshly-linked account
+-- starts at 0 and tick() skips it entirely until backfill() has finished
+-- and flipped it to 1. Without the gate, a scheduler tick landing while the
+-- fire-and-forget backfill is still running fetches the same trophies
+-- backfill hasn't inserted yet and publishes the whole history as if it
+-- were just earned.
 CREATE TABLE IF NOT EXISTS psn_poll_state (
     account_id     TEXT PRIMARY KEY,
-    last_polled_at TEXT NOT NULL
+    last_polled_at TEXT NOT NULL,
+    backfill_done  INTEGER NOT NULL DEFAULT 0
 );

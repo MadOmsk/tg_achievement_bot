@@ -118,6 +118,11 @@ class PsnPollTarget:
     account_id: str
     online_id: str | None
     last_polled_at: str | None
+    # #21: False until backfill() has finished this account's first-ever
+    # scan. poller/psn_fetcher.py's tick() skips a target that is still
+    # False — polling it would race the in-flight backfill and publish the
+    # account's whole trophy history at once.
+    backfill_done: bool = True
 
 
 @dataclass(slots=True)
@@ -889,7 +894,7 @@ class Repo:
         per-user OAuth."""
         cursor = await self._conn.execute(
             "SELECT u.tg_id, pl.external_id AS account_id, pl.display_name AS online_id,"
-            "       ps.last_polled_at "
+            "       ps.last_polled_at, COALESCE(ps.backfill_done, 0) AS backfill_done "
             "FROM platform_links pl "
             "JOIN users u ON u.tg_id = pl.tg_id "
             "LEFT JOIN psn_poll_state ps ON ps.account_id = pl.external_id "
@@ -901,6 +906,9 @@ class Repo:
                 account_id=row["account_id"],
                 online_id=row["online_id"],
                 last_polled_at=row["last_polled_at"],
+                # No psn_poll_state row yet (a link whose backfill hasn't
+                # finished, or hasn't started) reads as not-done — #21.
+                backfill_done=bool(row["backfill_done"]),
             )
             for row in await cursor.fetchall()
         ]
@@ -909,6 +917,20 @@ class Repo:
         await self._conn.execute(
             "INSERT INTO psn_poll_state (account_id, last_polled_at) VALUES (?, ?) "
             "ON CONFLICT(account_id) DO UPDATE SET last_polled_at = excluded.last_polled_at",
+            (account_id, utcnow_iso()),
+        )
+        await self._conn.commit()
+
+    async def mark_psn_backfill_done(self, account_id: str) -> None:
+        """Flip the #21 gate: this account's first-ever backfill has
+        finished, so poller/psn_fetcher.py's tick() may now poll it.
+        `last_polled_at` (NOT NULL) is stamped too so the first live poll
+        waits one debounce interval — a courtesy beat after the full-history
+        scan, not a correctness need."""
+        await self._conn.execute(
+            "INSERT INTO psn_poll_state (account_id, last_polled_at, backfill_done) "
+            "VALUES (?, ?, 1) "
+            "ON CONFLICT(account_id) DO UPDATE SET backfill_done = 1",
             (account_id, utcnow_iso()),
         )
         await self._conn.commit()

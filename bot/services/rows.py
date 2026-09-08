@@ -1,10 +1,14 @@
-"""`ParsedAchievement` → `AchievementRow` (2026-09-05 refactor).
+"""`ParsedAchievement` → `AchievementRow` (2026-09-05 refactor; moved here
+from bot/poller/rows.py 2026-09-08).
 
-Was duplicated byte-for-byte in fetcher.py and steam_fetcher.py. Lives here,
-not in services/models.py: that module's own docstring is explicit about
-`ParsedAchievement` never knowing about `bot.db.repo.AchievementRow` — the
-conversion belongs "one layer up, in the poller" (SPEC 1.5's layering), just
-shared between the two pollers that both need it now.
+Was duplicated byte-for-byte in fetcher.py and steam_fetcher.py, then lived
+in the poller layer as the one place that turned a parsed platform response
+into a database row. It now also has a caller *inside* the service layer:
+services/psn/achievements.py persists trophies as it scans them (#26),
+rather than handing a list back to the poller to convert and write. Both
+pollers and that service need the same pure `ParsedAchievement ->
+AchievementRow` map, so it sits in `bot.services` — a layer both the poller
+and other services can import from without an upward dependency.
 """
 
 from __future__ import annotations

@@ -1,12 +1,14 @@
-"""ParsedAchievement -> AchievementRow (2026-09-05 refactor) — was
-duplicated byte-for-byte in fetcher.py and steam_fetcher.py, now shared."""
+"""ParsedAchievement -> AchievementRow (2026-09-05 refactor; moved to
+bot/services/rows.py 2026-09-08) — was duplicated byte-for-byte in
+fetcher.py and steam_fetcher.py, now shared by both pollers and the PSN
+service."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from bot.poller.rows import to_achievement_row
 from bot.services.models import ParsedAchievement
+from bot.services.rows import to_achievement_row
 
 
 def _parsed(**overrides: object) -> ParsedAchievement:

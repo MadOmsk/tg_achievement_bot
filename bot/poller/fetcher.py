@@ -10,7 +10,7 @@ from bot.constants import Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleHistoryRow
 from bot.i18n import gettext
 from bot.poller.publisher import Publisher
-from bot.poller.rows import to_achievement_row
+from bot.services.rows import to_achievement_row
 from bot.services.xbox.client import TitleHistoryEntry, XboxApiError, XboxClient
 from bot.services.xbox.models import ParsedAchievement
 from bot.util import parse_iso, utcnow
