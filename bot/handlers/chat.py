@@ -32,7 +32,14 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.constants import Platform, SettingKey
-from bot.db.repo import PlatformLink, RecentAchievement, Repo, TopGame, User
+from bot.db.repo import (
+    ChatPresenceRow,
+    PlatformLink,
+    RecentAchievement,
+    Repo,
+    TopGame,
+    User,
+)
 from bot.handlers.admin import IsAdmin
 from bot.i18n import gettext
 from bot.poller.daily import build_summary, full_leaderboard
@@ -252,6 +259,27 @@ def _display_name(target: User, links: list[PlatformLink]) -> str:
     if links:
         return links[0].display_name or links[0].external_id
     return ""
+
+
+def _who_label(row: ChatPresenceRow, i18n: I18nContext | None) -> str:
+    """/who's picker button (#40) — identify *the person*, the same
+    priority `_display_name` above uses for /stats' header: @username >
+    first+last name > gamertag > a connected platform's own name, never a
+    bare "idNNNN" for someone who has any of those. `chat_member_presence`
+    already carries these fields (the #38 /online work joined them in), so
+    no extra lookup per row is needed."""
+    if row.username:
+        return f"@{row.username}"
+    full_name = " ".join(part for part in (row.first_name, row.last_name) if part)
+    if full_name:
+        return full_name
+    if row.gamertag:
+        return row.gamertag
+    if row.steam_display_name:
+        return row.steam_display_name
+    if row.psn_display_name:
+        return row.psn_display_name
+    return _hub_text(i18n, "chat-who-fallback-id", tg_id=row.tg_id)
 
 
 async def _build_stats_text(
@@ -512,7 +540,7 @@ async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
     builder = InlineKeyboardBuilder()
     for row in rows:
         builder.button(
-            text=row.gamertag or i18n.get("chat-who-fallback-id", tg_id=row.tg_id),
+            text=_who_label(row, i18n),
             callback_data=f"who:stats:{row.tg_id}",
         )
     builder.adjust(3)

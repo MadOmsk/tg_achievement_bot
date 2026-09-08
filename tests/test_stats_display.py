@@ -6,8 +6,14 @@ site. Locked down here after chasing the opposite assumption for a while."""
 
 from __future__ import annotations
 
-from bot.db.repo import AchievementRow, Repo, SteamSchemaAchievement, TopGame
-from bot.handlers.chat import _build_stats_text, _games_list, _send_stats_card
+from bot.db.repo import (
+    AchievementRow,
+    ChatPresenceRow,
+    Repo,
+    SteamSchemaAchievement,
+    TopGame,
+)
+from bot.handlers.chat import _build_stats_text, _games_list, _send_stats_card, _who_label
 from bot.services.achievements import COMPLETED_BADGE
 from bot.util import utcnow
 
@@ -826,3 +832,34 @@ async def test_send_stats_card_disables_the_link_preview(repo: Repo) -> None:
     assert len(bot.sent) == 1
     _chat_id, _text, kwargs = bot.sent[0]
     assert kwargs.get("disable_web_page_preview") is True
+
+
+def _presence_row(**over) -> ChatPresenceRow:
+    base = dict(
+        tg_id=1,
+        gamertag=None,
+        xuid=None,
+        state=None,
+        title_id=None,
+        title_name=None,
+        platform="none",
+    )
+    base.update(over)
+    return ChatPresenceRow(**base)  # type: ignore[arg-type]
+
+
+def test_who_label_prefers_username_then_name_then_gamertag() -> None:
+    assert _who_label(_presence_row(username="mad", gamertag="MadXbox"), None) == "@mad"
+    assert _who_label(_presence_row(first_name="Igor", last_name="Petrov"), None) == "Igor Petrov"
+    assert _who_label(_presence_row(first_name="Igor"), None) == "Igor"
+    assert _who_label(_presence_row(gamertag="MadXbox"), None) == "MadXbox"
+
+
+def test_who_label_falls_back_to_a_platform_name_not_a_bare_id() -> None:
+    # A Steam/PSN-only member with no Telegram identity — used to render "idNNNN".
+    assert _who_label(_presence_row(steam_display_name="SteamNick"), None) == "SteamNick"
+    assert _who_label(_presence_row(psn_display_name="PsnNick"), None) == "PsnNick"
+
+
+def test_who_label_last_resort_is_the_id_when_nothing_else_exists() -> None:
+    assert "1" in _who_label(_presence_row(tg_id=1), None)
