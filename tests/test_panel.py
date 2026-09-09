@@ -13,7 +13,7 @@ async def test_no_accounts_shows_only_xbox_not_connected(repo: Repo) -> None:
 
     text, _markup = await render_panel(repo, TG_ID)
 
-    assert "Вход XBOX: — не подключён" in text
+    assert "Вход XBOX:   — не подключён" in text
     assert "Вход Steam" not in text
 
 
@@ -23,8 +23,30 @@ async def test_steam_linked_without_xbox_shows_both_lines(repo: Repo) -> None:
 
     text, _markup = await render_panel(repo, TG_ID)
 
-    assert "Вход XBOX: — не подключён" in text
-    assert "Вход Steam: Gabe" in text
+    assert "Вход XBOX:   — не подключён" in text
+    assert "Вход Steam:  Gabe" in text
+
+
+async def test_steam_or_psn_only_person_still_gets_the_full_settings_body(repo: Repo) -> None:
+    """Found live (2026-09-09, screenshot comparison): a Steam/PSN-only
+    person's panel used to be a completely different, stripped-down body —
+    no publication/timezone rows, no "Мои чаты"/"Синхронизировать"/profile-
+    links-toggle buttons at all — because render_panel/panel_keyboard both
+    hard-gated the whole body and keyboard on Xbox specifically, a leftover
+    from before Steam/PSN existed. Every row/button now degrades per-
+    platform instead of the whole screen switching on Xbox alone."""
+    await repo.ensure_user(TG_ID, "psnonly")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "PsnOnly")
+
+    text, markup = await render_panel(repo, TG_ID)
+
+    assert "Публикация:" in text
+    assert "Часовой пояс:" in text
+    callback_datas = {b.callback_data for row in markup.inline_keyboard for b in row}
+    assert "panel:tz" in callback_datas
+    assert "panel:chatlist" in callback_datas
+    assert "panel:sync" in callback_datas
+    assert "panel:linkstoggle" in callback_datas
 
 
 async def test_xbox_connected_without_steam_has_no_steam_line(repo: Repo) -> None:

@@ -430,11 +430,17 @@ carries login status per platform (Xbox: token status; Steam/PSN: achievement/
 trophy *visibility* as of the last actual check — connect time, or any backfill/
 resync since, `platform_links.achievements_visible`), publication destinations,
 current presence, and the timezone; the 24h/30d counters and "recent achievements"
-list it used to show are gone (the header covers achievements). The keyboard is one
-row per platform (Xbox → Steam → PSN) in a fixed position — `[Profile, Disconnect]`
+list it used to show are gone (the header covers achievements). Every row and
+button here is per-platform, not Xbox-gated (found live, 2026-09-09: a
+Steam/PSN-only person used to get an entirely different, stripped-down body
+and keyboard — no timezone/chats/sync/toggle at all — because both the text
+and the keyboard hard-gated the whole screen on Xbox specifically, a
+leftover from before Steam/PSN existed). The keyboard is one row per
+platform (Xbox → Steam → PSN) in a fixed position — `[Profile, Disconnect]`
 when connected, one wide "🎮 Подключить X" when not (#33) — plus timezone / My
 chats / sync / `show_profile_links` toggle, and the per-chat subscription cards
-(rarity mode, digest threshold). Own profile links here are always visible
+(rarity mode, digest threshold), all shown regardless of which platforms are
+connected. Own profile links here are always visible
 regardless of the privacy toggle — this screen is never rendered to anyone but its
 owner. The panel must never call a platform API except the one explicit
 manual-sync button.

@@ -541,28 +541,25 @@ async def render_panel(
         show_profile_links=bool(settings_row and settings_row.show_profile_links),
     )
 
-    if user is None or not user.xuid:
-        text = i18n.get("panel-header-not-connected")
-        if steam_link is not None:
-            text += "\n" + i18n.get(
-                "panel-login-steam-row",
-                name=steam_link.display_name,
-                status=visibility_status_text(steam_link),
-            )
-        if psn_link is not None:
-            text += "\n" + i18n.get(
-                "panel-login-psn-row",
-                name=psn_link.display_name,
-                status=visibility_status_text(psn_link),
-            )
-        return text, keyboard
+    if user is None:
+        # Defensive only — every real call site ensures the user row first
+        # (panel_command's own repo.ensure_user, or a callback that can only
+        # fire from an already-rendered panel in the first place).
+        return i18n.get("panel-header-not-connected"), keyboard
 
+    # The body is the same shape regardless of which platforms are
+    # connected (2026-09-09, confirmed live: a Steam/PSN-only person used to
+    # get an entirely different, stripped-down body here — no header/
+    # achievement counts, no publication/presence/timezone rows at all —
+    # because this whole branch used to hard-gate on Xbox specifically,
+    # a leftover from before Steam/PSN existed. Every row below now
+    # degrades per-platform (shown/omitted on its own) instead of the
+    # whole body switching on whether *Xbox* is connected.
     login = (
         i18n.get(LOGIN_STATUS_KEYS.get(token.status, "panel-login-revoked"))
         if token
-        else i18n.get("panel-login-revoked")
+        else i18n.get("panel-login-not-connected")
     )
-    playing = await _now_playing(repo, user.xuid, i18n)
 
     # Header: identity + per-platform lifetime counts (#18). The 24h/30d
     # counters and "последние достижения" list this body used to carry are
@@ -572,7 +569,7 @@ async def render_panel(
     if steam_link is not None:
         lines.append(
             i18n.get(
-                "panel-login-steam-row-connected",
+                "panel-login-steam-row",
                 name=steam_link.display_name,
                 status=visibility_status_text(steam_link),
             )
@@ -580,20 +577,26 @@ async def render_panel(
     if psn_link is not None:
         lines.append(
             i18n.get(
-                "panel-login-psn-row-connected",
+                "panel-login-psn-row",
                 name=psn_link.display_name,
                 status=visibility_status_text(psn_link),
             )
         )
-    lines += [
+    lines.append(
         i18n.get(
             "panel-publication-row",
             status=await _publication_status(repo, user.tg_id, user.is_excluded, i18n),
-        ),
-        # Kept in the body on purpose (#18): current presence is neither an
-        # achievement nor a "which chats" fact, and it's genuinely useful
-        # here.
-        i18n.get("panel-now-playing-row", playing=playing),
+        )
+    )
+    if user.xuid:
+        # Presence stays Xbox-only for now (issue #1's own follow-up note,
+        # CLAUDE.md) — Steam/PSN both have presence data now too, just not
+        # wired into this one row yet. Omitted rather than shown as "нет
+        # данных" for a Steam/PSN-only person: unlike the login rows above,
+        # there is no per-platform variant of this row to fall back to yet.
+        playing = await _now_playing(repo, user.xuid, i18n)
+        lines.append(i18n.get("panel-now-playing-row", playing=playing))
+    lines += [
         "",
         # Kept as a text line too (#18): the person should see which
         # timezone is selected, not just have it on the button label.

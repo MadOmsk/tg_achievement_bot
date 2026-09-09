@@ -36,13 +36,30 @@ def test_not_connected_keyboard_offers_all_platforms() -> None:
     with none connected should be offered all three, not just Xbox
     (2026-09-05 follow-up, extended for PSN)."""
     markup = panel_keyboard(None, connected=False)
-    assert _callback_data(markup) == ["relogin", "steam:connect", "psn:connect"]
+    data = _callback_data(markup)
+    assert data[-4:-1] == ["relogin", "steam:connect", "psn:connect"]
     # #33: uniform "🎮 Подключить X" wording, not "🔗 XBOX" / "🎮 Steam".
-    assert _button_texts(markup) == [
+    texts = _button_texts(markup)
+    assert texts[-4:-1] == [
         "🎮 Подключить Xbox",
         "🎮 Подключить Steam",
         "🎮 Подключить PSN",
     ]
+
+
+def test_not_connected_keyboard_still_offers_the_rest_of_the_settings() -> None:
+    """Found live (2026-09-09, screenshot comparison): this whole config
+    section used to be gated on `connected` (Xbox specifically) too — a
+    Steam/PSN-only person saw nothing but the platform rows at all, not even
+    a timezone or "Мои чаты" button. Timezone/chats/sync/toggle are
+    person-wide settings, not Xbox-specific ones."""
+    markup = panel_keyboard(None, connected=False)
+    data = _callback_data(markup)
+    assert "panel:tz" in data
+    assert "panel:chatlist" in data
+    assert "panel:sync" in data
+    assert "panel:linkstoggle" in data
+    assert "panel:refresh" in data
 
 
 def test_every_platform_is_exactly_one_row_in_xbox_steam_psn_order() -> None:
@@ -74,7 +91,7 @@ def test_not_connected_keyboard_offers_steam_disconnect_once_connected() -> None
     """Steam-only, no XBOX at all — still gets a real disconnect option for
     the platform it does have, not nothing (2026-09-05 follow-up)."""
     markup = panel_keyboard(None, connected=False, steam_connected=True)
-    assert _callback_data(markup) == ["relogin", "steam:disconnectprompt", "psn:connect"]
+    assert _callback_data(markup)[-4:-1] == ["relogin", "steam:disconnectprompt", "psn:connect"]
 
 
 def test_connected_keyboard_offers_steam_connect_or_disconnect_not_both() -> None:

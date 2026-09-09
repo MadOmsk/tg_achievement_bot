@@ -238,10 +238,16 @@ def panel_keyboard(
         ),
     ]
 
-    if not connected:
-        # Nothing to configure until Xbox is linked — just the platform rows.
-        return InlineKeyboardMarkup(inline_keyboard=platform_rows)
-
+    # Every row below applies regardless of which platforms are connected —
+    # timezone, chat list, sync, and the profile-links toggle are person-wide
+    # settings, not Xbox-specific ones (2026-09-09, confirmed live: this used
+    # to hard-gate the entire config section on `connected` — Xbox
+    # specifically — so a Steam/PSN-only person saw nothing but the platform
+    # rows at all, a leftover from before Steam/PSN existed). "Синхронизировать"
+    # stays visible too: it is genuinely Xbox-only (panel_sync's own
+    # implementation), but it already answers that gracefully with a toast
+    # rather than crashing, the same way clicking "Профиль" for an
+    # unconnected platform would.
     rows: list[list[InlineKeyboardButton]] = []
     if needs_reconnect:
         # A dead-login nudge — the account is still linked, its token just

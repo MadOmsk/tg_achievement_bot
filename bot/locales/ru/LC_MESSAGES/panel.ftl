@@ -3,6 +3,11 @@
 panel-login-active = ✅ активен
 panel-login-invalid = ⚠️ требуется повторный вход
 panel-login-revoked = — отключён
+# Distinct from panel-login-revoked above (2026-09-09): "отключён" implies a
+# token existed and was deliberately disconnected, "не подключён" is for a
+# person who never linked Xbox at all — same distinction Steam/PSN's own
+# login rows already draw via visibility_status_text's "не проверено".
+panel-login-not-connected = — не подключён
 panel-group-hint = Настройки — в личке.
 panel-refreshed = Обновил
 panel-xbox-not-connected = Сначала подключи XBOX: /connect_xbox
@@ -55,19 +60,24 @@ panel-delete-yes = Да, удалить
 panel-deleted-toast = Убрал
 
 # Panel content
+# Truly defensive only (2026-09-09) — every real call site ensures the user
+# row exists before render_panel ever runs, so this bare fallback is not
+# expected to actually render; it used to also hardcode a Xbox-specific
+# "not connected" tail that no longer matches the real (per-platform,
+# generalized) body shape below.
 panel-header-not-connected = 👤 Панель
-
-    Вход XBOX: — не подключён
-panel-login-steam-row = Вход Steam: { $name }  ·  { $status }
-panel-login-psn-row = Вход PSN: { $name }  ·  { $status }
 # Header (#18): the person's own Telegram identity, then one line per
 # connected platform — built by the same function /stats' own header uses
 # (services/achievements.py::platform_header_lines, #5) rather than a
 # second, hand-duplicated copy of it.
 panel-header-identity = 👤 { $name }
 panel-login-xbox-row = Вход XBOX:   { $status }
-panel-login-steam-row-connected = Вход Steam:  { $name }  ·  { $status }
-panel-login-psn-row-connected = Вход PSN:    { $name }  ·  { $status }
+# No "-connected" suffix (2026-09-09) — these render the same regardless of
+# whether Xbox happens to be connected; the old plain (non-suffixed) keys
+# only ever existed for the Xbox-gated early-return branch that used them,
+# now removed, so this name freed up.
+panel-login-steam-row = Вход Steam:  { $name }  ·  { $status }
+panel-login-psn-row = Вход PSN:    { $name }  ·  { $status }
 # Steam/PSN's achievement/trophy visibility, as of the last actual check
 # (#5) — connect time, or any backfill/resync since. Xbox has no
 # equivalent row here: its own token status (panel-login-xbox-row above)
