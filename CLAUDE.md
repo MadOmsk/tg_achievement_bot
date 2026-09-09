@@ -283,14 +283,30 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   `services/xbox/client.py` is the other half of that same fix — a bare
   connection-level httpx error often stringifies to nothing at all.
 - `title_history()` also wraps its request in `asyncio.wait_for`
-  (`TITLE_HISTORY_DEADLINE_SECONDS` = 60s) on top of the session's own read
-  timeout — found live, 2026-09-09, the very next symptom after the timeout
-  fix above shipped: httpx's read timeout resets on every chunk *received*,
-  it is not a ceiling on the whole response, so a large response trickling
-  in slowly enough between chunks never trips it at all. `startup_catch_up`
-  simply stopped advancing mid-account, with no exception and no timeout,
-  until the process was restarted. `wait_for` is the actual hard deadline;
-  the read timeout only ever catches a connection that goes fully silent.
+  (`TITLE_HISTORY_DEADLINE_SECONDS` = 60s) as a defensive second layer on
+  top of the session's own read timeout — httpx's read timeout resets on
+  every chunk *received*, it is not a ceiling on the whole response, so in
+  principle a response trickling in slowly enough between chunks could
+  never trip it. In practice (2026-09-09) this specific call was ruled out
+  as the cause of the next symptom below by testing it standalone: it
+  failed cleanly with `ReadTimeout` right at the session's own read-timeout
+  mark, no hang. Kept anyway — cheap, and still a real gap in httpx's own
+  guarantee even though it was not what happened this time.
+- `startup_catch_up` (bot/main.py) wraps each user's *whole*
+  `fetcher.catch_up()` call in its own `asyncio.wait_for`
+  (`STARTUP_CATCH_UP_DEADLINE_SECONDS` = 120s) — this is what the "still
+  silent for minutes after the timeout fix" symptom actually was
+  (2026-09-09): `catch_up()` fetches achievements for up to
+  `catchup_max_titles` (20) candidate titles after title_history, and each
+  of those already retries up to 3 times with exponential backoff on
+  failure (`MAX_ATTEMPTS` in services/xbox/client.py) — under degraded
+  network conditions a single account can legitimately accumulate several
+  minutes across that many retried calls, and `startup_catch_up`'s loop
+  over every Xbox user is otherwise sequential, so one bad account was
+  delaying every account after it by that same amount. Not an infinite
+  hang, just unbounded — 120s is generous enough for a real large account
+  (RideTheSun's 1011 titles, ~46s for title_history alone, verified live)
+  to still finish rather than being cut off just short of succeeding.
 
 ### Steam
 
