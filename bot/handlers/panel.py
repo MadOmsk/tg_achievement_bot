@@ -387,12 +387,19 @@ async def panel_chat_digest_set(callback: CallbackQuery, repo: Repo, i18n: I18nC
 @router.callback_query(F.data.startswith("panel:chatsub:"))
 async def panel_chat_subscribe(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """No confirm — resubscribing has no downside, unlike unsubscribing or
-    deleting (SPEC 6.2)."""
+    deleting (SPEC 6.2).
+
+    Found live (2026-09-09, keimaks/kmaks90 — same class of bug as
+    /subscribe's own #35-adjacent fix): this used to gate on `not user.xuid`
+    alone, so a Steam/PSN-only person's own "Мои чаты" screen could never
+    re-subscribe to a chat either — publishing has nothing to do with Xbox
+    specifically."""
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     user = await repo.get_user(callback.from_user.id)
-    if user is None or not user.xuid:
-        await callback.answer(i18n.get("panel-xbox-not-connected"), show_alert=True)
+    platform_links = await repo.platform_links_of(callback.from_user.id) if user else []
+    if user is None or (not user.xuid and not platform_links):
+        await callback.answer(i18n.get("panel-connect-any-platform-first"), show_alert=True)
         return
     await repo.subscribe(chat_id, callback.from_user.id)
     await callback.answer(i18n.get("panel-subscribed-toast"))
