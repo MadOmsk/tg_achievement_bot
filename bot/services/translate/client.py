@@ -42,9 +42,18 @@ async def check_alive(api_key: str) -> bool:
     for Steam/PSN.
     """
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=_CONNECT_TIMEOUT_SECONDS, read=_READ_TIMEOUT_SECONDS)
-        ) as client:
+        # httpx.Timeout raises unless either a default or all four of
+        # connect/read/write/pool are given explicitly — found live
+        # (2026-09-09): this call only ever set two, so every single
+        # check_alive() call raised ValueError before making a request at
+        # all, and set_key() never got far enough to save anything.
+        timeout = httpx.Timeout(
+            connect=_CONNECT_TIMEOUT_SECONDS,
+            read=_READ_TIMEOUT_SECONDS,
+            write=_CONNECT_TIMEOUT_SECONDS,
+            pool=_CONNECT_TIMEOUT_SECONDS,
+        )
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(f"{API_BASE}/models", headers=_headers(api_key))
     except httpx.RequestError:
         return True  # can't reach Anthropic right now — not the key's fault
