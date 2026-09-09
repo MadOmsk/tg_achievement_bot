@@ -152,7 +152,17 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── db_status.py               summary for `manage.ps1 status` (no dependencies)
 │   ├── reconcile_achievements.py  one-off full achievement-history backfill
 │   ├── backfill_hltb_platforms.py one-off: fill in `platforms` on already-cached games
-│   └── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
+│   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
+│   └── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
+│                                   account linked before that column meant anything (#5)
+│
+├── docs/                        design references, not code — see Engineering rules' own
+│   │                             "UI design lives in docs/ui/" entry before editing anything here
+│   └── ui/                        every screen's own design: layout, buttons, and which table
+│       ├── ui_screens_users.md      user-facing screens (mockups) — grows as coverage grows
+│       ├── ui_screens_admin.md      admin panel screens (mockups) — same idea, admin-only
+│       └── tables.md                how each named table/list is built + the nickname rules
+│                                   ui_screens_*.md reference by letter (A/B/C/D/E)
 │
 ├── tests/                       pytest + pytest-asyncio; real platform/Telegram calls forbidden
 │   └── ...                        one file per module/behavior area; see the test files
@@ -758,6 +768,21 @@ repository — issue #4.
   go in the chat reply that accompanies the preview, never inside the previewed
   message itself, since anything inside it reads back as leftover clutter once the
   format ships for real.
+- **UI design lives in `docs/ui/`** (2026-09-09 user request) —
+  `ui_screens_users.md`, `ui_screens_admin.md`, `tables.md` today, and the list
+  grows as more of the interface gets documented there; new screens go in
+  whichever existing file they logically belong with (user-facing vs. admin), or
+  a new file alongside them if neither fits. These files are the project owner's
+  own design decisions, written down — not generated from the code, and not
+  regenerated on every build. **Never edit a file under `docs/ui/` on your own
+  initiative** — deciding to change a screen is not itself permission to go
+  rewrite its design file unreviewed; that needs its own explicit go-ahead. The
+  order, once a change is actually agreed: (1) agree
+  the design first — show the proposed result before writing anything down, same
+  preview discipline as the rule above; (2) update the relevant `docs/ui/`
+  file(s) to match what was agreed; (3) refresh only the screen(s) that actually
+  changed (never a blanket re-render of every screen the touched file happens to
+  also describe); (4) then everything else — tests, unrelated code, other docs.
 
 ## Tests
 

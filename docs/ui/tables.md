@@ -60,6 +60,8 @@ Telegram-имя тут не участвует вообще.
 | `admin-user-list` | `repo.admin_users()` | подключён хоть на одной платформе | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE`/страница |
 | `admin-chat-list` | `repo.admin_chats()` | все чаты | `is_active` ↓, название ↑ | — |
 | `admin-chat-subscribers` | `repo.chat_subscriber_names()` | подписчики чата | по нику ↑ | — |
+| `hltb-recent-suggestions` | `repo.chat_recent_games()` | игры, не люди | последняя игра ↓ | `hltb_results_limit` |
+| `hltb-search-results` | HowLongToBeat API (внешний поиск, не БД) | игры, не люди | релевантность (как вернул HLTB) | `hltb_results_limit`, показ по `hltb_page_size` за раз |
 
 Ник каждой таблицы — по правилу из списка выше: `stats-recent-games` без ника (это
 игры, не люди); `online-presence` → **C**; `admin-user-list` → **D**;
@@ -86,6 +88,10 @@ Telegram-имя тут не участвует вообще.
 - **`admin-user-list`** — Steam/PSN-only человек не отфильтрован. Строка также
   показывает счётчик за сегодня/месяц (`achievement_counts_by_tg_id`, суммарно по
   платформам).
+- **`hltb-recent-suggestions`** — та же "known member" область, что у `/online`
+  (подписчики ∪ `chat_seen`), но сам источник (`title_history`) сейчас **только
+  Xbox** — Steam/PSN-игры туда не попадают, ещё один кандидат на тот же класс
+  пробела, что и rule E выше, отдельно не чинился.
 
 Админ-панель (главная) сама по себе — не таблица, а агрегаты
 (`services/admin_view.py`: `repo.admin_users()` + `repo.admin_chats()`), сортировать/
