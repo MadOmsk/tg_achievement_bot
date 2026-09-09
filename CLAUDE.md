@@ -137,7 +137,12 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │
 │   └── db/
 │       ├── schema.sql               full DDL for a brand-new database
-│       ├── repo.py                  every piece of data access; the only place with SQL
+│       ├── repo/                    every piece of data access; the only place with SQL —
+│       │                            one Repo class assembled from mixins (2026-09-09 split,
+│       │                            one file per related group of the old repo.py's own
+│       │                            section markers); `from bot.db.repo import Repo, User,
+│       │                            PlatformLink, ...` still works unchanged, see the
+│       │                            package's own __init__.py for the full file-by-file map
 │       └── migrations/              one file per schema change, applied in order
 │
 ├── scripts/                     operational one-off helpers, outside the running application
@@ -694,7 +699,8 @@ repository — issue #4.
 
 - Keep handlers thin — they call services and repository methods, never raw SQL or
   platform API logic directly.
-- All SQL lives in `bot/db/repo.py`, `schema.sql`, and the migrations. Nowhere else.
+- All SQL lives in `bot/db/repo/` (a package of mixins, not one file — see its
+  own `__init__.py`), `schema.sql`, and the migrations. Nowhere else.
 - Platform clients (`services/xbox`, `services/steam`, `services/psn`) must not know
   about Telegram.
 - Everything is async; never block the event loop. Wrap a synchronous library
