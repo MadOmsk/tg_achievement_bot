@@ -50,6 +50,7 @@ from bot.services.message_log import MessageLogMiddleware
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
+from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.util import parse_iso
@@ -127,6 +128,14 @@ async def run(settings: Settings) -> None:
     steam_auth = SteamAuth(repo, cipher, env_key=steam_env_key)
     steam_auth.on_dead = lambda: notifier.service_key_dead(Platform.STEAM)
 
+    # Anthropic (2026-09-09) — achievement-description translation only,
+    # same admin-panel-managed shared-credential shape as Steam/PSN above.
+    anthropic_env_key = (
+        settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
+    )
+    anthropic_auth = AnthropicAuth(repo, cipher, env_key=anthropic_env_key)
+    anthropic_auth.on_dead = notifier.translation_key_dead
+
     client = XboxClient(auth)
     publisher = Publisher(bot, repo)
     fetcher = Fetcher(repo, client, publisher, settings.backfill_concurrency)
@@ -153,7 +162,7 @@ async def run(settings: Settings) -> None:
         steam_poller,
         MessageCleanup(bot, repo),
         OnlineAutoRefresh(bot, repo),
-        ServiceHealth(repo, psn_auth, steam_auth),
+        ServiceHealth(repo, psn_auth, steam_auth, anthropic_auth),
         AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth, steam_auth),
         psn_fetcher,
         psn_presence,
@@ -237,6 +246,7 @@ async def run(settings: Settings) -> None:
     dispatcher["psn_auth"] = psn_auth
     dispatcher["psn_fetcher"] = psn_fetcher
     dispatcher["steam_auth"] = steam_auth
+    dispatcher["anthropic_auth"] = anthropic_auth
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
     build_i18n_middleware().setup(dispatcher=dispatcher)
     dispatcher.include_router(admin_handlers.router)

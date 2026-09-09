@@ -34,6 +34,7 @@ from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import CHECKED_AT_KEY as STEAM_CHECKED_AT_KEY
 from bot.services.steam.auth import STATUS_KEY as STEAM_STATUS_KEY
 from bot.services.steam.auth import SteamAuth
+from bot.services.translate.auth import AnthropicAuth
 from bot.util import parse_iso, utcnow
 
 log = logging.getLogger(__name__)
@@ -59,10 +60,13 @@ class ServiceHealth:
     PsnAuth.check_health / SteamAuth.check_health, wired to their `on_dead`
     callbacks in main.py."""
 
-    def __init__(self, repo: Repo, psn_auth: PsnAuth, steam_auth: SteamAuth) -> None:
+    def __init__(
+        self, repo: Repo, psn_auth: PsnAuth, steam_auth: SteamAuth, anthropic_auth: AnthropicAuth
+    ) -> None:
         self._repo = repo
         self._psn_auth = psn_auth
         self._steam_auth = steam_auth
+        self._anthropic_auth = anthropic_auth
 
     async def tick(self) -> None:
         interval = await self._repo.get_int_setting(
@@ -70,6 +74,7 @@ class ServiceHealth:
         )
         await self._check_steam(interval)
         await self._check_psn(interval)
+        await self._check_anthropic(interval)
 
     async def _due(self, checked_at: str | None, interval: int) -> bool:
         if checked_at is None or interval <= 0:
@@ -87,3 +92,9 @@ class ServiceHealth:
         if not await self._due(checked_at, interval):
             return
         await self._psn_auth.check_health()  # notifies via its own on_dead, wired in main.py
+
+    async def _check_anthropic(self, interval: int) -> None:
+        checked_at = await self._anthropic_auth.checked_at()
+        if not await self._due(checked_at, interval):
+            return
+        await self._anthropic_auth.check_health()  # notifies via its own on_dead, wired in main.py

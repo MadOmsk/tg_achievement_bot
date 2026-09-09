@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # here is harmless; clearing the key in the panel disables the seed.
     steam_api_key: SecretStr | None = None
 
+    # Anthropic (optional — achievement-description translation only; nothing
+    # else in the bot calls an LLM). Get one at console.anthropic.com. Never
+    # logged, never surfaced in any bot-facing message — same handling as
+    # every other secret here.
+    anthropic_api_key: SecretStr | None = None
+
     # Poller intervals, seconds (SPEC 5.2, 5.3)
     presence_interval_in_game: int = 60
     presence_interval_online: int = 120

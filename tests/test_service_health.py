@@ -22,7 +22,21 @@ from bot.services.psn.auth import CHECKED_AT_KEY as PSN_CHECKED_AT_KEY
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam import auth as steam_auth_module
 from bot.services.steam.auth import SteamAuth
+from bot.services.translate import auth as anthropic_auth_module
+from bot.services.translate.auth import AnthropicAuth
 from bot.util import utcnow
+
+
+def _unconfigured_anthropic_auth(repo: Repo, cipher: TokenCipher) -> AnthropicAuth:
+    return AnthropicAuth(repo, cipher)
+
+
+def _wired_anthropic_auth(
+    repo: Repo, cipher: TokenCipher, notifier: AdminNotifier, *, configured: bool = True
+) -> AnthropicAuth:
+    auth = AnthropicAuth(repo, cipher, env_key="fake-key" if configured else None)
+    auth.on_dead = notifier.translation_key_dead
+    return auth
 
 
 class FakeBot:
@@ -44,7 +58,9 @@ def _wired_steam_auth(
 async def test_steam_never_configured_is_skipped_entirely(repo: Repo, cipher: TokenCipher) -> None:
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
-    health = ServiceHealth(repo, PsnAuth(repo, cipher), steam_auth)
+    health = ServiceHealth(
+        repo, PsnAuth(repo, cipher), steam_auth, _unconfigured_anthropic_auth(repo, cipher)
+    )
 
     await health.tick()
 
@@ -57,7 +73,9 @@ async def test_steam_transition_to_dead_notifies_once(
     bot = FakeBot()
     notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier)
-    health = ServiceHealth(repo, PsnAuth(repo, cipher), steam_auth)
+    health = ServiceHealth(
+        repo, PsnAuth(repo, cipher), steam_auth, _unconfigured_anthropic_auth(repo, cipher)
+    )
 
     async def _dead(api_key: str) -> bool:
         return False
@@ -81,7 +99,9 @@ async def test_steam_recovers_silently(repo: Repo, cipher: TokenCipher, monkeypa
     bot = FakeBot()
     notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier)
-    health = ServiceHealth(repo, PsnAuth(repo, cipher), steam_auth)
+    health = ServiceHealth(
+        repo, PsnAuth(repo, cipher), steam_auth, _unconfigured_anthropic_auth(repo, cipher)
+    )
     await repo.set_app_setting(STEAM_STATUS_KEY, STATUS_INVALID)
 
     async def _alive(api_key: str) -> bool:
@@ -102,7 +122,9 @@ async def test_steam_check_is_skipped_before_the_interval_elapses(
     tick right after the first must not re-check at all."""
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier)
-    health = ServiceHealth(repo, PsnAuth(repo, cipher), steam_auth)
+    health = ServiceHealth(
+        repo, PsnAuth(repo, cipher), steam_auth, _unconfigured_anthropic_auth(repo, cipher)
+    )
     calls = 0
 
     async def _counting(api_key: str) -> bool:
@@ -143,7 +165,7 @@ async def test_psn_check_is_skipped_before_the_interval_elapses(
     await repo.set_app_setting(PSN_CHECKED_AT_KEY, stale)
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
-    health = ServiceHealth(repo, psn_auth, steam_auth)
+    health = ServiceHealth(repo, psn_auth, steam_auth, _unconfigured_anthropic_auth(repo, cipher))
 
     await health.tick()
     await health.tick()
@@ -167,8 +189,77 @@ async def test_tick_also_runs_the_psn_health_check(
     monkeypatch.setattr(psn_auth, "check_health", _check_health)
     notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
-    health = ServiceHealth(repo, psn_auth, steam_auth)
+    health = ServiceHealth(repo, psn_auth, steam_auth, _unconfigured_anthropic_auth(repo, cipher))
 
     await health.tick()
 
     assert calls == 1
+
+
+async def test_anthropic_never_configured_is_skipped_entirely(
+    repo: Repo, cipher: TokenCipher
+) -> None:
+    notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
+    anthropic_auth = _wired_anthropic_auth(repo, cipher, notifier, configured=False)
+    health = ServiceHealth(
+        repo,
+        PsnAuth(repo, cipher),
+        _wired_steam_auth(repo, cipher, notifier, configured=False),
+        anthropic_auth,
+    )
+
+    await health.tick()
+
+    assert await repo.get_app_setting(anthropic_auth_module.STATUS_KEY) is None
+
+
+async def test_anthropic_transition_to_dead_notifies_once(
+    repo: Repo, cipher: TokenCipher, monkeypatch
+) -> None:
+    bot = FakeBot()
+    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    anthropic_auth = _wired_anthropic_auth(repo, cipher, notifier)
+    health = ServiceHealth(
+        repo,
+        PsnAuth(repo, cipher),
+        _wired_steam_auth(repo, cipher, notifier, configured=False),
+        anthropic_auth,
+    )
+
+    async def _dead(api_key: str) -> bool:
+        return False
+
+    monkeypatch.setattr(anthropic_auth_module, "check_alive", _dead)
+
+    await health.tick()
+
+    assert await repo.get_app_setting(anthropic_auth_module.STATUS_KEY) == STATUS_INVALID
+    assert len(bot.sent) == 1
+    assert "Anthropic" in bot.sent[0][1]
+
+    # Same "at most once per transition" rule the other two credentials have.
+    await health.tick()
+    assert len(bot.sent) == 1
+
+
+async def test_anthropic_recovers_silently(repo: Repo, cipher: TokenCipher, monkeypatch) -> None:
+    bot = FakeBot()
+    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    anthropic_auth = _wired_anthropic_auth(repo, cipher, notifier)
+    health = ServiceHealth(
+        repo,
+        PsnAuth(repo, cipher),
+        _wired_steam_auth(repo, cipher, notifier, configured=False),
+        anthropic_auth,
+    )
+    await repo.set_app_setting(anthropic_auth_module.STATUS_KEY, STATUS_INVALID)
+
+    async def _alive(api_key: str) -> bool:
+        return True
+
+    monkeypatch.setattr(anthropic_auth_module, "check_alive", _alive)
+
+    await health.tick()
+
+    assert await repo.get_app_setting(anthropic_auth_module.STATUS_KEY) == STATUS_ACTIVE
+    assert bot.sent == []

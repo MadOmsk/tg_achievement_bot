@@ -17,6 +17,7 @@ from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam import auth as steam_auth_module
 from bot.services.steam.auth import SteamAuth
+from bot.services.translate.auth import AnthropicAuth
 
 KEY = "0123456789ABCDEF0123456789ABCDEF"
 ADMIN_ID = 1
@@ -26,17 +27,21 @@ def _callback_datas(markup) -> list[str]:
     return [b.callback_data for row in markup.inline_keyboard for b in row if b.callback_data]
 
 
-async def test_keys_screen_lists_both_platforms_unconfigured(
+async def test_keys_screen_lists_all_platforms_unconfigured(
     repo: Repo, cipher: TokenCipher
 ) -> None:
-    text, markup = await _keys_screen(SteamAuth(repo, cipher), PsnAuth(repo, cipher))
+    text, markup = await _keys_screen(
+        SteamAuth(repo, cipher), PsnAuth(repo, cipher), AnthropicAuth(repo, cipher)
+    )
 
     datas = _callback_datas(markup)
     assert "a:keyset:steam" in datas
     assert "a:keyset:psn" in datas
+    assert "a:keyset:anthropic" in datas
     # Nothing configured — no Clear buttons.
     assert "a:keyclr:steam" not in datas
     assert "a:keyclr:psn" not in datas
+    assert "a:keyclr:anthropic" not in datas
     assert "не настроен" in text
 
 
@@ -50,11 +55,14 @@ async def test_keys_screen_offers_clear_once_steam_is_configured(
     steam_auth = SteamAuth(repo, cipher)
     await steam_auth.set_key(KEY, admin_id=ADMIN_ID)
 
-    _text, markup = await _keys_screen(steam_auth, PsnAuth(repo, cipher))
+    _text, markup = await _keys_screen(
+        steam_auth, PsnAuth(repo, cipher), AnthropicAuth(repo, cipher)
+    )
 
     datas = _callback_datas(markup)
     assert "a:keyclr:steam" in datas
     assert "a:keyclr:psn" not in datas
+    assert "a:keyclr:anthropic" not in datas
 
 
 class _FakeMessage:
@@ -77,10 +85,11 @@ async def test_admin_text_input_saves_a_valid_steam_key(
     monkeypatch.setattr(steam_auth_module, "check_alive", _alive)
     steam_auth = SteamAuth(repo, cipher)
     psn_auth = PsnAuth(repo, cipher)
+    anthropic_auth = AnthropicAuth(repo, cipher)
     _awaiting_input[ADMIN_ID] = (STEAM_KEY_KEY, None)
     msg = _FakeMessage(KEY)
 
-    await admin_text_input(msg, psn_auth, steam_auth)
+    await admin_text_input(msg, psn_auth, steam_auth, anthropic_auth)
 
     assert await steam_auth.get_key() == KEY
     assert ADMIN_ID not in _awaiting_input  # flow finished
@@ -98,7 +107,7 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
     _awaiting_input[ADMIN_ID] = (STEAM_KEY_KEY, None)
     msg = _FakeMessage("bad-key")
 
-    await admin_text_input(msg, PsnAuth(repo, cipher), steam_auth)
+    await admin_text_input(msg, PsnAuth(repo, cipher), steam_auth, AnthropicAuth(repo, cipher))
 
     assert await steam_auth.get_key() is None
     assert _awaiting_input.get(ADMIN_ID) == (STEAM_KEY_KEY, None)  # still armed for a retry

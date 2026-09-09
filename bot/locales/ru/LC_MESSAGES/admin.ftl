@@ -21,12 +21,14 @@ admin-setting-online-interval = Интервал автообновления /o
 admin-setting-online-ttl = Автообновление /online, часов
 admin-setting-key-check = Проверка ключей / автообновление /admin (мин)
 
-# Platform keys (#17)
+# Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
+# translation only, same admin-settable-shared-credential shape)
 admin-keys-screen =
     🔑 Ключи платформ
 
     Steam: { $steam }
     PSN: { $psn }
+    Anthropic: { $anthropic }
 admin-keys-set = ✅ настроен
 admin-keys-unset = ⚠️ не настроен
 admin-keys-steam-add = Задать ключ Steam
@@ -35,6 +37,9 @@ admin-keys-steam-clear = Убрать ключ Steam
 admin-keys-psn-add = Задать NPSSO (PSN)
 admin-keys-psn-change = Сменить NPSSO (PSN)
 admin-keys-psn-clear = Убрать NPSSO (PSN)
+admin-keys-anthropic-add = Задать ключ Anthropic
+admin-keys-anthropic-change = Сменить ключ Anthropic
+admin-keys-anthropic-clear = Убрать ключ Anthropic
 admin-keys-steam-prompt =
     Пришли Steam Web API key одним сообщением — получить его:
     https://steamcommunity.com/dev/apikey
@@ -49,6 +54,16 @@ admin-keys-psn-prompt =
     значение «npsso» из JSON на экране.
 admin-keys-psn-saved =
     NPSSO сохранён.
+
+    { $text }
+admin-keys-anthropic-prompt =
+    Пришли Anthropic API key одним сообщением — получить его:
+    console.anthropic.com → Settings → API Keys → Create Key
+    (нужен привязанный способ оплаты — ключ платный, но перевод коротких
+    описаний ачивок стоит копейки на Haiku).
+admin-keys-anthropic-invalid = Ключ Anthropic не подошёл — проверь и пришли ещё раз.
+admin-keys-anthropic-saved =
+    Ключ Anthropic сохранён.
 
     { $text }
 

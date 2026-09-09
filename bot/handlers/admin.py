@@ -76,6 +76,13 @@ from bot.services.steam.auth import (
     SteamKeyInvalidError,
 )
 from bot.services.tables import truncate_name
+from bot.services.translate.auth import (
+    STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED,
+)
+from bot.services.translate.auth import (
+    AnthropicAuth,
+    AnthropicKeyInvalidError,
+)
 from bot.util import humanize_ago, parse_utc_offset, utcnow
 
 log = logging.getLogger(__name__)
@@ -180,6 +187,9 @@ async def admin_home(
 # outside a background job.
 STEAM_KEY_KEY = "steam_api_key"
 PSN_NPSSO_KEY = "psn_npsso"
+# Anthropic (2026-09-09 user request) — achievement-description translation
+# only, same admin-settable-shared-credential shape as the two above (#17).
+ANTHROPIC_KEY_KEY = "anthropic_api_key"
 
 
 class AwaitingAdminTextInput(BaseFilter):
@@ -188,7 +198,11 @@ class AwaitingAdminTextInput(BaseFilter):
         if user is None:
             return False
         pending = _awaiting_input.get(user.id)
-        return pending is not None and pending[0] in (STEAM_KEY_KEY, PSN_NPSSO_KEY)
+        return pending is not None and pending[0] in (
+            STEAM_KEY_KEY,
+            PSN_NPSSO_KEY,
+            ANTHROPIC_KEY_KEY,
+        )
 
 
 def _cancel_input_keyboard() -> InlineKeyboardMarkup:
@@ -203,14 +217,16 @@ def _cancel_input_keyboard() -> InlineKeyboardMarkup:
 
 
 async def _keys_screen(
-    steam_auth: SteamAuth, psn_auth: PsnAuth
+    steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth
 ) -> tuple[str, InlineKeyboardMarkup]:
     steam_configured = await steam_auth.status() != STEAM_NOT_CONFIGURED
     psn_configured = await psn_auth.status() != PSN_NOT_CONFIGURED
+    anthropic_configured = await anthropic_auth.status() != ANTHROPIC_NOT_CONFIGURED
     text = _(
         "admin-keys-screen",
         steam=_("admin-keys-set") if steam_configured else _("admin-keys-unset"),
         psn=_("admin-keys-set") if psn_configured else _("admin-keys-unset"),
+        anthropic=_("admin-keys-set") if anthropic_configured else _("admin-keys-unset"),
     )
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -233,22 +249,48 @@ async def _keys_screen(
         builder.row(
             InlineKeyboardButton(text=_("admin-keys-psn-clear"), callback_data="a:keyclr:psn")
         )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-keys-anthropic-change")
+            if anthropic_configured
+            else _("admin-keys-anthropic-add"),
+            callback_data="a:keyset:anthropic",
+        )
+    )
+    if anthropic_configured:
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-keys-anthropic-clear"), callback_data="a:keyclr:anthropic"
+            )
+        )
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
     return text, builder.as_markup()
 
 
 @router.callback_query(F.data == "a:keys")
-async def keys_menu(callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth) -> None:
+async def keys_menu(
+    callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth
+) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
+    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth, anthropic_auth))
 
 
 # One parameterized handler per action instead of a Steam/PSN pair each
 # (2026-09-09 refactor, same shape reset_platform_confirm/_confirmed below
 # already used for all three platforms) — callback_data's own trailing
 # segment says which key, same "()" wiring on either platform's button.
-_KEYSET_APP_SETTING_KEY = {"steam": STEAM_KEY_KEY, "psn": PSN_NPSSO_KEY}
-_KEYSET_PROMPT = {STEAM_KEY_KEY: "admin-keys-steam-prompt", PSN_NPSSO_KEY: "admin-keys-psn-prompt"}
+# Anthropic (2026-09-09) slotted into the same dicts rather than a third
+# handler pair — exactly the duplication this refactor exists to avoid.
+_KEYSET_APP_SETTING_KEY = {
+    "steam": STEAM_KEY_KEY,
+    "psn": PSN_NPSSO_KEY,
+    "anthropic": ANTHROPIC_KEY_KEY,
+}
+_KEYSET_PROMPT = {
+    STEAM_KEY_KEY: "admin-keys-steam-prompt",
+    PSN_NPSSO_KEY: "admin-keys-psn-prompt",
+    ANTHROPIC_KEY_KEY: "admin-keys-anthropic-prompt",
+}
 
 
 @router.callback_query(F.data.startswith("a:keyset:"))
@@ -261,13 +303,19 @@ async def keys_set(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("a:keyclr:"))
-async def keys_clear(callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth) -> None:
+async def keys_clear(
+    callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth
+) -> None:
     assert callback.data is not None
     platform = callback.data.rsplit(":", 1)[1]
-    auth = steam_auth if platform == "steam" else psn_auth
+    auth: SteamAuth | PsnAuth | AnthropicAuth = {
+        "steam": steam_auth,
+        "psn": psn_auth,
+        "anthropic": anthropic_auth,
+    }[platform]
     await auth.clear(callback.from_user.id)
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
+    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth, anthropic_auth))
 
 
 @router.callback_query(F.data == "a:psncancel")
@@ -289,7 +337,9 @@ async def admin_text_input_cancel(
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingAdminTextInput())
-async def admin_text_input(message: Message, psn_auth: PsnAuth, steam_auth: SteamAuth) -> None:
+async def admin_text_input(
+    message: Message, psn_auth: PsnAuth, steam_auth: SteamAuth, anthropic_auth: AnthropicAuth
+) -> None:
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
     assert pending is not None
@@ -308,7 +358,7 @@ async def admin_text_input(message: Message, psn_auth: PsnAuth, steam_auth: Stea
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await _keys_screen(steam_auth, psn_auth)
+        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth)
         await message.answer(_("admin-keys-steam-saved", text=text), reply_markup=markup)
         return
 
@@ -338,8 +388,24 @@ async def admin_text_input(message: Message, psn_auth: PsnAuth, steam_auth: Stea
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await _keys_screen(steam_auth, psn_auth)
+        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth)
         await message.answer(_("admin-keys-psn-saved", text=text), reply_markup=markup)
+        return
+
+    if key == ANTHROPIC_KEY_KEY:
+        try:
+            await anthropic_auth.set_key(raw, message.from_user.id)
+        except AnthropicKeyInvalidError:
+            # Same "stays armed, typo is worth just retrying" shape as
+            # Steam/PSN above.
+            await message.answer(
+                _("admin-keys-anthropic-invalid"),
+                reply_markup=_cancel_input_keyboard(),
+            )
+            return
+        _awaiting_input.pop(message.from_user.id, None)
+        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth)
+        await message.answer(_("admin-keys-anthropic-saved", text=text), reply_markup=markup)
         return
 
 

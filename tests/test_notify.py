@@ -63,9 +63,22 @@ async def test_service_key_dead_names_the_platform_and_the_fix(repo: Repo) -> No
 
     await notifier.service_key_dead("psn")
     assert "PSN" in bot.sent[0][1]
-    assert "NPSSO" in bot.sent[0][1]
+    assert "админ-панель" in bot.sent[0][1]
 
     bot.sent.clear()
     await notifier.service_key_dead("steam")
     assert "Steam" in bot.sent[0][1]
-    assert ".env" in bot.sent[0][1]
+    assert "админ-панель" in bot.sent[0][1]
+
+
+async def test_translation_key_dead_names_the_actual_consequence(repo: Repo) -> None:
+    """Not service_key_dead's "accounts stopped being polled" framing —
+    Anthropic dying just means new descriptions stop picking up a
+    translation, nothing else breaks (2026-09-09)."""
+    bot = FakeBot()
+    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+
+    await notifier.translation_key_dead()
+
+    assert "Anthropic" in bot.sent[0][1]
+    assert "перестали опрашиваться" not in bot.sent[0][1]

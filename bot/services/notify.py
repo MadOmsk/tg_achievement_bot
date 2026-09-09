@@ -66,12 +66,23 @@ class AdminNotifier:
             }.get(platform, "notify-platform-unknown"),
             platform=platform,
         )
-        fix = (
-            _("notify-service-key-dead-fix-steam")
-            if platform == Platform.STEAM
-            else _("notify-service-key-dead-fix-psn")
-        )
+        # Both shared credentials are admin-panel-managed now (#17 moved
+        # Steam's own key off .env alongside PSN's NPSSO) — one fix message
+        # covers both. notify-service-key-dead-fix-steam used to say
+        # ".env + restart" from before #17, left stale until noticed fixing
+        # this alongside the Anthropic key below.
+        fix = _("notify-service-key-dead-fix-panel")
         await self._send(_("notify-service-key-dead", label=label, fix=fix))
+
+    async def translation_key_dead(self) -> None:
+        """The Anthropic key died (2026-09-09) — a much milder event than
+        service_key_dead above: nothing stops working, achievement
+        descriptions just stop picking up a translation for whichever
+        language the platform itself didn't already provide, silently,
+        until the admin sends a new key. Worth its own wording rather than
+        stretching service_key_dead's "accounts stopped being polled"
+        framing over a service that was never polling accounts at all."""
+        await self._send(_("notify-translation-key-dead"))
 
     async def _who(self, tg_id: int) -> str:
         user = await self._repo.get_user(tg_id)

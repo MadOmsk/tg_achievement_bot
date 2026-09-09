@@ -108,10 +108,17 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │   ├── client.py            profile resolve, visibility, presence, achievements, rarity
 │   │   │   ├── auth.py              SteamAuth: the admin-settable API key (encrypted in app_settings), health check (#17)
 │   │   │   └── achievements.py      fetch_unlocked() + schema/rarity cache
-│   │   └── psn/                    psnawp, one shared service-wide NPSSO for the whole bot
-│   │       ├── client.py            async wrapper (asyncio.to_thread), resolve, trophies, presence
-│   │       ├── auth.py              NPSSO storage/refresh, health check, PsnAuth
-│   │       └── achievements.py      sync_account(): scan + persist trophies + progress cache, one game at a time (#26)
+│   │   ├── psn/                    psnawp, one shared service-wide NPSSO for the whole bot
+│   │   │   ├── client.py            async wrapper (asyncio.to_thread), resolve, trophies, presence
+│   │   │   ├── auth.py              NPSSO storage/refresh, health check, PsnAuth
+│   │   │   └── achievements.py      sync_account(): scan + persist trophies + progress cache, one game at a time (#26)
+│   │   └── translate/              Anthropic API, achievement-description translation only
+│   │       │                       (2026-09-09) — raw httpx like Steam's own client, not the
+│   │       │                       `anthropic` SDK. Key management shipped; the actual
+│   │       │                       translate-and-cache pipeline is still open work.
+│   │       ├── client.py            check_alive() (GET /v1/models, free liveness probe)
+│   │       └── auth.py              admin-settable key storage, AnthropicAuth, same #17 shape
+│   │                               as SteamAuth/PsnAuth
 │   │
 │   ├── poller/                    scheduled background jobs (APScheduler)
 │   │   ├── scheduler.py            ticks, job assembly
@@ -200,17 +207,22 @@ Required environment variables: `BOT_TOKEN` (BotFather), `ADMIN_TG_IDS`
 URL — Microsoft rejects plain `http://` and `localhost`), `FERNET_KEY` (encrypts
 stored secrets).
 
-Optional: `STEAM_API_KEY`, `OAUTH_LISTEN_HOST` / `OAUTH_LISTEN_PORT`, `DB_PATH`,
-`LOG_LEVEL`, and the poller interval settings (presence, achievement, token,
-catch-up tuning).
+Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `OAUTH_LISTEN_HOST` /
+`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, and the poller interval settings
+(presence, achievement, token, catch-up tuning).
 
-`STEAM_API_KEY` is only a **first-run seed** (#17): on first access `SteamAuth`
-imports it once into `app_settings` (encrypted), and from then on the admin
+`STEAM_API_KEY` and `ANTHROPIC_API_KEY` (2026-09-09, the latter for
+achievement-description translation — see Security below) are only a
+**first-run seed** each (#17's pattern): on first access their own auth
+wrapper (`SteamAuth` / `AnthropicAuth`) imports
+the env value once into `app_settings` (encrypted), and from then on the admin
 panel's "🔑 Ключи платформ" screen owns it — set / change / clear, no restart,
-no `.env` edit. Without a key anywhere, `/connect_steam` answers "not configured"
-and nothing else is affected. Clearing the key in the panel disables the seed
-(the panel action is the newer, explicit decision), so a stale env var can't
-resurrect it.
+no `.env` edit. Without a Steam key anywhere, `/connect_steam` answers "not
+configured"; without an Anthropic key, translation is simply skipped (an
+achievement description just keeps whatever language it was fetched in) —
+neither is fatal to anything else. Clearing a key in the panel disables its
+seed (the panel action is the newer, explicit decision), so a stale env var
+can't resurrect it.
 
 ## Data model
 
@@ -562,9 +574,10 @@ A nickname in `/stats`/`/who` becomes a clickable profile link only when the per
 your own card: the rendered message is identical regardless of who asked for it.
 
 **The admin panel** (`/admin`, private, restricted to `ADMIN_TG_IDS`, also
-self-refreshing) provides: Steam/PSN shared-credential health; a "🔑 Ключи
-платформ" screen to set / change / clear both shared credentials (the Steam key
-and the PSN NPSSO) from inside the bot, no `.env` edit (#17); API usage
+self-refreshing) provides: Steam/PSN/Anthropic shared-credential health; a "🔑
+Ключи платформ" screen to set / change / clear all three shared credentials
+(the Steam key, the PSN NPSSO, and — 2026-09-09 — the Anthropic key) from
+inside the bot, no `.env` edit (#17); API usage
 snapshots; global display/cleanup limits; defaults for new users (including
 `default_show_profile_links`); the user list; the chat list and per-chat cards;
 exclusion/restore; per-chat settings (rarity threshold, summary time, timezone,
@@ -684,10 +697,10 @@ recurring paid LLM usage without explicit rate limits and cost controls.
 
 - Never commit `.env`, database files, logs, PID files, or runtime data.
 - Encrypt every stored credential with Fernet: Xbox refresh tokens, the shared PSN
-  NPSSO, and (as of #17) the shared Steam API key — all live encrypted in
-  `app_settings` / `tokens`, never plaintext.
-- Losing `FERNET_KEY` now also means re-entering the Steam key and PSN NPSSO in the
-  admin panel, on top of every user reconnecting.
+  NPSSO, the shared Steam API key (#17), and (2026-09-09) the shared Anthropic
+  API key — all live encrypted in `app_settings` / `tokens`, never plaintext.
+- Losing `FERNET_KEY` now also means re-entering the Steam key, PSN NPSSO, and
+  Anthropic key in the admin panel, on top of every user reconnecting.
 - Never log a raw token, API key, NPSSO value, authorization header, or a URL
   carrying a secret in a query parameter (found live: `httpx` logs full request
   URLs at INFO, and Steam's `GetOwnedGames` carries the API key in one) — mask
