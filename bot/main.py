@@ -56,6 +56,17 @@ from bot.web.oauth import OAuthServer
 
 log = logging.getLogger(__name__)
 
+# Outer backstop for startup_catch_up's per-user call (2026-09-09) — see
+# that function's own docstring for why this exists on top of
+# title_history()'s own deadline. Generous on purpose: a real account can
+# legitimately need ~46s for title_history alone (verified live,
+# RideTheSun's 1011-title account) before even starting its own
+# catchup_max_titles (20) achievement fetches, each with its own up-to-3-
+# attempt retry-with-backoff (services/xbox/client.py's own MAX_ATTEMPTS) —
+# a account genuinely on the edge should still get to finish, not be cut
+# off just short of succeeding.
+STARTUP_CATCH_UP_DEADLINE_SECONDS = 120.0
+
 
 def setup_logging(level: str) -> None:
     logging.basicConfig(
@@ -237,18 +248,37 @@ async def run(settings: Settings) -> None:
 
         In the background: a restart must not wait for the network before it
         starts answering people.
+
+        Each user's own call is wrapped in a hard deadline (found live,
+        2026-09-09): under degraded network conditions, catch_up() can
+        legitimately accumulate a lot of time on its own — up to
+        catchup_max_titles (20) achievement fetches after title_history,
+        each with its own up-to-3-attempt retry-with-backoff
+        (services/xbox/client.py's MAX_ATTEMPTS) — and this loop is
+        otherwise sequential, so one account having a bad run must never
+        delay every account after it by that same amount. This is on top
+        of title_history()'s own asyncio.wait_for, not instead of it.
         """
         for target in await repo.pollable_users():
             user = await repo.get_user(target.tg_id)
             try:
-                await fetcher.catch_up(
+                await asyncio.wait_for(
+                    fetcher.catch_up(
+                        target.tg_id,
+                        target.xuid,
+                        (user.gamertag if user else None)
+                        or gettext("main", "main-default-player-name"),
+                        parse_iso(target.updated_at),
+                        settings.catchup_publish_window_hours,
+                        settings.catchup_max_titles,
+                    ),
+                    timeout=STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                )
+            except TimeoutError:
+                log.error(
+                    "catch-up for tg_id=%s exceeded %.0fs overall, moving on",
                     target.tg_id,
-                    target.xuid,
-                    (user.gamertag if user else None)
-                    or gettext("main", "main-default-player-name"),
-                    parse_iso(target.updated_at),
-                    settings.catchup_publish_window_hours,
-                    settings.catchup_max_titles,
+                    STARTUP_CATCH_UP_DEADLINE_SECONDS,
                 )
             except Exception:
                 log.exception("catch-up for tg_id=%s failed", target.tg_id)
