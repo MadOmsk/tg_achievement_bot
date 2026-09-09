@@ -291,10 +291,10 @@ every column.
   fallback — so `services/translate` filled the gap). Orchestrated by
   `services/translate/descriptions.py::bilingual_descriptions`, which only
   ever consults this cache and, when needed, the Anthropic API — it never
-  talks to a platform itself. Steam calls it as of 2026-09-09 (see its own
-  section under Platform integrations); Xbox and PSN don't yet. Nothing
-  renders a description in anything but Russian yet regardless — that needs
-  the still-separate, not-yet-built chat/user locale switch.
+  talks to a platform itself. Steam and Xbox both call it as of 2026-09-09
+  (see their own sections under Platform integrations); PSN doesn't yet.
+  Nothing renders a description in anything but Russian regardless — that
+  needs the still-separate, not-yet-built chat/user locale switch.
 
 ## Platform integrations
 
@@ -365,6 +365,18 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   hang, just unbounded — 120s is generous enough for a real large account
   (RideTheSun's 1011 titles, ~46s for title_history alone, verified live)
   to still finish rather than being cut off just short of succeeding.
+- **Bilingual descriptions** (2026-09-09, second platform wired to
+  `services/translate`, same shape as Steam's own): `title_achievements`
+  always requested `en-US` only; now also requests `ru-RU`
+  (`poller/fetcher.py::Fetcher._bilingual_descriptions`), but only for
+  achievements not already in `achievement_description_cache`. Only
+  `poll_title`/`catch_up` call this — both are the only two paths that
+  actually publish what they fetch; `backfill`'s own x360 pass
+  deliberately skips it, translating history nobody will ever see would
+  be wasted API/LLM cost. `ParsedAchievement.description` still always
+  ends up Russian today (no language switch exists yet) — this only
+  populates the shared cache for future use. PSN doesn't call any of this
+  yet.
 
 ### Steam
 
@@ -397,8 +409,8 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
   the same way as any other platform would. The bot only ever renders
   Russian today (no language switch exists yet), so `ParsedAchievement.description`
   still always gets the Russian side — the English half exists only in the
-  cache for now, unused until that switch is built. Xbox and PSN don't call
-  any of this yet.
+  cache for now, unused until that switch is built. Xbox now does the same
+  (see its own section above); PSN doesn't call any of this yet.
 
 ### PlayStation Network
 
