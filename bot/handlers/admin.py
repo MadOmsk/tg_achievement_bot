@@ -454,6 +454,11 @@ FLOOD_LIMIT_MIN = 0
 FLOOD_LIMIT_MAX = 50
 FLOOD_WINDOW_MIN = 1
 FLOOD_WINDOW_MAX = 1440  # 24h — a longer buffer than that stops being "soon"
+# What the on/off toggle below turns flood_limit *back on* to — matches
+# chat_settings' own schema default (schema.sql), so a chat that never
+# touched this setting and one that was switched off and back on land on
+# the same starting point.
+FLOOD_LIMIT_DEFAULT = 3
 
 # Chat-scoped keys sharing numeric_setting_input()'s "type a number" flow
 # with the always-global NUMERIC_SETTINGS above (rare_threshold_percent's
@@ -757,6 +762,27 @@ async def chat_rare_menu(callback: CallbackQuery, repo: Repo) -> None:
         ),
         builder.as_markup(),
     )
+
+
+@router.callback_query(F.data.startswith("a:cfltoggle:"))
+async def chat_flood_toggle(callback: CallbackQuery, repo: Repo) -> None:
+    """On/off for the whole filter (2026-09-09 user request), next to the
+    limit/window buttons below — same one-tap-toggle shape as the daily
+    summary switch above. Off is flood_limit = 0 (the schema's own "off"
+    convention); back on lands on FLOOD_LIMIT_DEFAULT rather than
+    remembering whatever it was set to before — no column exists to
+    remember that, and re-tuning it with the limit button right next to
+    this one costs one more tap, not a real loss."""
+    assert callback.data is not None
+    chat_id = int(callback.data.rsplit(":", 1)[1])
+    chat = await _find_chat(repo, chat_id)
+    if chat is None:
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
+        return
+    new_limit = 0 if chat.flood_limit > 0 else FLOOD_LIMIT_DEFAULT
+    await repo.update_chat_settings(chat_id, flood_limit=new_limit)
+    await callback.answer()
+    await _redraw(callback, *await _chat(repo, chat_id))
 
 
 @router.callback_query(F.data.startswith("a:cfl:"))
@@ -1650,6 +1676,15 @@ async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
         InlineKeyboardButton(
             text=_("admin-chat-time-button", time=chat.daily_summary_time, offset=zone_label),
             callback_data=f"a:ctime:{chat_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_(
+                "admin-chat-flood-toggle-button",
+                state=_("admin-enabled") if chat.flood_limit > 0 else _("admin-disabled-state"),
+            ),
+            callback_data=f"a:cfltoggle:{chat_id}",
         )
     )
     builder.row(

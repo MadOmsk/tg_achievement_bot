@@ -249,6 +249,7 @@ admin-subscribers-list = Подписаны: { $names }
 admin-chat-threshold-button = Порог редкости: { $threshold } ▸
 admin-chat-summary-button = Итог дня: { $state }
 admin-chat-time-button = Время итога: { $time } ({ $offset }) ▸
+admin-chat-flood-toggle-button = Антиспам-фильтр: { $state }
 admin-chat-flood-button = Антиспам: { $limit } ач. ▸
 admin-chat-flood-window-button = Окно антиспама: { $window } мин ▸
 admin-disable-chat = ⏸ Отключить чат

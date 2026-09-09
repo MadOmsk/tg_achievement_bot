@@ -3,16 +3,35 @@ the chat card's own settings row, alongside rare_threshold_percent's."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from bot.db.repo import Repo
 from bot.handlers.admin import (
+    FLOOD_LIMIT_DEFAULT,
     FLOOD_LIMIT_MAX,
     FLOOD_LIMIT_MIN,
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
     _chat,
+    chat_flood_toggle,
 )
 
 CHAT_ID = -100999
+
+
+class _FakeCallback:
+    """A minimal stand-in for aiogram's CallbackQuery — `.message` is
+    deliberately not a real `aiogram.types.Message`, so `_redraw` takes its
+    "can't edit, just acknowledge" branch instead of needing a full
+    Telegram message object."""
+
+    def __init__(self, data: str) -> None:
+        self.data = data
+        self.message = None
+        self.from_user = SimpleNamespace(id=1)
+
+    async def answer(self, *args: object, **kwargs: object) -> None:
+        pass
 
 
 def _callback_datas(markup) -> list[str]:
@@ -46,3 +65,32 @@ async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo) -> None:
     text, _markup = await _chat(repo, CHAT_ID)
 
     assert "выключен" in text
+
+
+async def test_chat_card_has_the_toggle_button(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+
+    _text, markup = await _chat(repo, CHAT_ID)
+
+    assert f"a:cfltoggle:{CHAT_ID}" in _callback_datas(markup)
+
+
+async def test_toggle_turns_a_configured_filter_off(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.update_chat_settings(CHAT_ID, flood_limit=7)
+
+    await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo)
+
+    text, _markup = await _chat(repo, CHAT_ID)
+    assert "выключен" in text
+
+
+async def test_toggle_turns_an_off_filter_back_on_at_the_default(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.update_chat_settings(CHAT_ID, flood_limit=0)
+
+    await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo)
+
+    text, _markup = await _chat(repo, CHAT_ID)
+    assert f"{FLOOD_LIMIT_DEFAULT} ач." in text
+    assert "выключен" not in text
