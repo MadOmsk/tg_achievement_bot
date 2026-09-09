@@ -141,7 +141,9 @@ async def run(settings: Settings) -> None:
     fetcher = Fetcher(repo, client, publisher, settings.backfill_concurrency)
     poller = PresencePoller(settings, repo, client, fetcher)
 
-    steam_fetcher = SteamFetcher(repo, steam_auth, publisher, settings.backfill_concurrency)
+    steam_fetcher = SteamFetcher(
+        repo, steam_auth, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
+    )
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
 
     # Trophy sync itself still has no presence poller of its own (SPEC 9,

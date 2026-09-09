@@ -30,6 +30,7 @@ from bot.services.steam.client import (
     get_presence_batch,
     rate_limit_usage,
 )
+from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
 
@@ -45,11 +46,18 @@ GAME_BACKFILL_CONCURRENCY = 5
 
 class SteamFetcher:
     def __init__(
-        self, repo: Repo, steam_auth: SteamAuth, publisher: Publisher, concurrency: int = 2
+        self,
+        repo: Repo,
+        steam_auth: SteamAuth,
+        publisher: Publisher,
+        concurrency: int = 2,
+        *,
+        anthropic_auth: AnthropicAuth,
     ) -> None:
         self._repo = repo
         self._steam_auth = steam_auth
         self._publisher = publisher
+        self._anthropic_auth = anthropic_auth
         self._backfill_slots = asyncio.Semaphore(concurrency)  # people backfilling at once
         self._game_slots = asyncio.Semaphore(GAME_BACKFILL_CONCURRENCY)  # games within one
 
@@ -68,7 +76,7 @@ class SteamFetcher:
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
         api_key = await self._steam_auth.require_key()
-        parsed = await fetch_unlocked(self._repo, api_key, steam_id, appid)
+        parsed = await fetch_unlocked(self._repo, self._anthropic_auth, api_key, steam_id, appid)
         rows = [to_achievement_row(item) for item in parsed]
         new_rows = await self._repo.insert_new_achievements_steam(
             tg_id, steam_id, rows, is_backfill=False
@@ -156,7 +164,9 @@ class SteamFetcher:
             async def one(game: OwnedGame) -> None:
                 async with self._game_slots:
                     try:
-                        parsed = await fetch_unlocked(self._repo, api_key, steam_id, game.appid)
+                        parsed = await fetch_unlocked(
+                            self._repo, self._anthropic_auth, api_key, steam_id, game.appid
+                        )
                     except SteamApiError as exc:
                         log.info("steam backfill of appid=%s skipped: %s", game.appid, exc)
                         return

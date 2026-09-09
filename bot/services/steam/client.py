@@ -246,15 +246,27 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
     ]
 
 
-async def get_player_achievements(api_key: str, steam_id: str, appid: str) -> list[RawAchievement]:
+async def get_player_achievements(
+    api_key: str, steam_id: str, appid: str, *, language: str = "russian"
+) -> list[RawAchievement]:
     """`success: false` in the body is an expected response, not an HTTP
     error (SPEC 9, M-Steam-2b) — a profile that went private after linking,
     or a game with no achievement stats at all. Both just mean "nothing for
-    this game right now", same as an empty list."""
+    this game right now", same as an empty list.
+
+    `language` (2026-09-09, bilingual descriptions) — Steam's own `l=`
+    param, same one this call always hardcoded to `"russian"` before.
+    Requesting `"english"` too, once per achievement ever (cached — see
+    services/steam/achievements.py::fetch_unlocked), lets a genuinely
+    different Steam-provided translation be told apart from Steam's own
+    silent fallback to English when a game has no Russian localization at
+    all (both look identical when that happens, which is the actual
+    signal used, not anything Steam admits to directly).
+    """
     payload = await _get(
         "/ISteamUserStats/GetPlayerAchievements/v1/",
         api_key,
-        {"steamid": steam_id, "appid": appid, "l": "russian"},
+        {"steamid": steam_id, "appid": appid, "l": language},
     )
     stats = payload.get("playerstats") or {}
     if not stats.get("success"):

@@ -291,11 +291,10 @@ every column.
   fallback — so `services/translate` filled the gap). Orchestrated by
   `services/translate/descriptions.py::bilingual_descriptions`, which only
   ever consults this cache and, when needed, the Anthropic API — it never
-  talks to a platform itself. As of this entry the cache/LLM plumbing exists
-  and is tested; none of the three platform clients call it yet (each still
-  fetches one locale, same as before this), and nothing renders a
-  description in anything but that one fetched language — both are open
-  follow-up work, not yet started.
+  talks to a platform itself. Steam calls it as of 2026-09-09 (see its own
+  section under Platform integrations); Xbox and PSN don't yet. Nothing
+  renders a description in anything but Russian yet regardless — that needs
+  the still-separate, not-yet-built chat/user locale switch.
 
 ## Platform integrations
 
@@ -387,6 +386,19 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
   as backfill rows — expensive by nature (one call per played game, not one call for
   the whole library like Xbox), so it runs with a two-level concurrency limit
   (people at once, games per person at once).
+- **Bilingual descriptions** (2026-09-09, first platform wired to
+  `services/translate`): `GetPlayerAchievements` always fetched `l=russian`
+  only; now also fetches `l=english` (`language=` param,
+  `services/steam/achievements.py::_bilingual_descriptions`), but **only**
+  when at least one achievement in the batch isn't already in
+  `achievement_description_cache` — once every achievement in a game has
+  been seen once, that extra request never happens again for it. The two
+  results feed `services/translate/descriptions.py::bilingual_descriptions`
+  the same way as any other platform would. The bot only ever renders
+  Russian today (no language switch exists yet), so `ParsedAchievement.description`
+  still always gets the Russian side — the English half exists only in the
+  cache for now, unused until that switch is built. Xbox and PSN don't call
+  any of this yet.
 
 ### PlayStation Network
 

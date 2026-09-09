@@ -49,12 +49,12 @@ async def test_poll_title_publishes_only_new_achievements(
     await _linked_user(repo)
     by_appid = {"550": [parsed("a1"), parsed("a2")]}
 
-    async def fake_fetch_unlocked(repo_, api_key, steam_id, appid):
+    async def fake_fetch_unlocked(repo_, anthropic_auth_, api_key, steam_id, appid):
         return by_appid.get(appid, [])
 
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     publisher = FakePublisher()
-    fetcher = SteamFetcher(repo, steam_auth, publisher)  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     assert await fetcher.poll_title(TG_ID, STEAM_ID, "Mad Omsk", "550", "L4D2") == 2
     # Same answer a tick later: nothing new, nothing published.
@@ -83,12 +83,12 @@ async def test_refresh_user_polls_the_current_game(repo: Repo, steam_auth, monke
             )
         }
 
-    async def fake_fetch_unlocked(repo_, api_key, steam_id, appid):
+    async def fake_fetch_unlocked(repo_, anthropic_auth_, api_key, steam_id, appid):
         return [parsed("a1", appid)]
 
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
-    fetcher = SteamFetcher(repo, steam_auth, FakePublisher())  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
 
@@ -115,7 +115,7 @@ async def test_refresh_user_reports_offline_with_no_game(
         }
 
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
-    fetcher = SteamFetcher(repo, steam_auth, FakePublisher())  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
 
@@ -129,7 +129,7 @@ async def test_refresh_user_handles_a_missing_profile(repo: Repo, steam_auth, mo
         return {}  # Steam simply omits a deleted/hidden profile
 
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
-    fetcher = SteamFetcher(repo, steam_auth, FakePublisher())  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
 
@@ -143,13 +143,13 @@ async def test_backfill_publishes_nothing(repo: Repo, steam_auth, monkeypatch) -
     async def fake_get_owned_games(api_key, steam_id):
         return [OwnedGame(appid="550", name="L4D2", playtime_forever=100)]
 
-    async def fake_fetch_unlocked(repo_, api_key, steam_id, appid):
+    async def fake_fetch_unlocked(repo_, anthropic_auth_, api_key, steam_id, appid):
         return [parsed("a1", appid), parsed("a2", appid)]
 
     monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     publisher = FakePublisher()
-    fetcher = SteamFetcher(repo, steam_auth, publisher)  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     stored = await fetcher.backfill(TG_ID, STEAM_ID)
 
@@ -169,7 +169,7 @@ async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypa
             OwnedGame(appid="2", name="Fine Game", playtime_forever=20),
         ]
 
-    async def fake_fetch_unlocked(repo_, api_key, steam_id, appid):
+    async def fake_fetch_unlocked(repo_, anthropic_auth_, api_key, steam_id, appid):
         if appid == "1":
             raise SteamApiError("boom")
         return [parsed("a1", appid)]
@@ -177,7 +177,7 @@ async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypa
     monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     publisher = FakePublisher()
-    fetcher = SteamFetcher(repo, steam_auth, publisher)  # type: ignore[arg-type]
+    fetcher = SteamFetcher(repo, steam_auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     stored = await fetcher.backfill(TG_ID, STEAM_ID)
 
