@@ -401,6 +401,31 @@ CREATE TABLE IF NOT EXISTS steam_rarity_cache (
     cached_at       TEXT NOT NULL
 );
 
+-- Bilingual achievement/trophy *descriptions* (2026-09-09 user request) —
+-- names are never translated, only descriptions. Shared across every person
+-- who ever unlocks this achievement, keyed by the achievement itself, not by
+-- who unlocked it — seen_achievements is per-person by design (SPEC 9,
+-- M-Steam-2) and would otherwise pay the same translation cost (or even the
+-- same extra platform request) once per person instead of once ever.
+-- `source` records how description_en/description_ru were obtained:
+-- 'native' — the platform itself returned two genuinely different strings
+-- for the two locales requested (no LLM involved, free); 'llm' — the two
+-- came back identical (the platform has no real translation of its own,
+-- only a silent fallback to its default language), so the missing side was
+-- produced by services/translate. Ordinary achievement descriptions exist
+-- on every platform including Xbox 360 (which has no rarity data at all,
+-- CLAUDE.md) — nothing here is rarity-related.
+CREATE TABLE IF NOT EXISTS achievement_description_cache (
+    platform         TEXT NOT NULL,
+    title_id         TEXT NOT NULL,
+    achievement_id   TEXT NOT NULL,
+    description_ru   TEXT,
+    description_en   TEXT,
+    source           TEXT NOT NULL CHECK (source IN ('native', 'llm')),
+    cached_at        TEXT NOT NULL,
+    PRIMARY KEY (platform, title_id, achievement_id)
+);
+
 -- The single live copy of a self-deduplicating message kind (Follow-up
 -- 2026-09-06) — /panel, /summary, /recent and a specific person's /stats
 -- card each replace their own previous copy in the same scope instead of

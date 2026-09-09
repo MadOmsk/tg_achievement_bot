@@ -204,6 +204,16 @@ class FloodState:
 
 
 @dataclass(slots=True)
+class CachedDescription:
+    """One `achievement_description_cache` row (2026-09-09 user request) —
+    see schema.sql's own comment on that table for what `source` means."""
+
+    description_ru: str | None
+    description_en: str | None
+    source: str
+
+
+@dataclass(slots=True)
 class UserChatRow:
     """One chat a person has ever touched — subscribed at some point, or
     just seen writing there (SPEC 6.2's "Мои чаты") — with whether they are

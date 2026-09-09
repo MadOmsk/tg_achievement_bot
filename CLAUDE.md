@@ -114,9 +114,12 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │   └── achievements.py      sync_account(): scan + persist trophies + progress cache, one game at a time (#26)
 │   │   └── translate/              Anthropic API, achievement-description translation only
 │   │       │                       (2026-09-09) — raw httpx like Steam's own client, not the
-│   │       │                       `anthropic` SDK. Key management shipped; the actual
-│   │       │                       translate-and-cache pipeline is still open work.
-│   │       ├── client.py            check_alive() (GET /v1/models, free liveness probe)
+│   │       │                       `anthropic` SDK. Key management + cache/LLM plumbing ship;
+│   │       │                       no platform client calls into it yet (open work).
+│   │       ├── client.py            check_alive() (GET /v1/models, free) + translate_descriptions()
+│   │       │                       (the actual Haiku call, batched — never called for names)
+│   │       ├── descriptions.py      bilingual_descriptions(): cache-or-translate orchestration,
+│   │       │                       the one thing a platform client would call (none do yet)
 │   │       └── auth.py              admin-settable key storage, AnthropicAuth, same #17 shape
 │   │                               as SteamAuth/PsnAuth
 │   │
@@ -276,6 +279,23 @@ every column.
   only changes when a trophy is earned, so there's no reason to touch it every
   tick). HowLongToBeat cache: `hltb_cache`. Telegram message bookkeeping:
   `bot_messages`, `tracked_messages`, `online_auto_refresh`, `admin_panel_refresh`.
+- **Bilingual achievement descriptions** (2026-09-09 user request):
+  `achievement_description_cache (platform, title_id, achievement_id,
+  description_ru, description_en, source, cached_at)` — shared across every
+  person who ever unlocks that achievement, not per `seen_achievements` row
+  (which is per-person by design), so the same achievement's translation is
+  never paid for twice. Names are never translated, only descriptions.
+  `source` is `native` (the platform itself returned two genuinely different
+  strings for the two locales requested) or `llm` (both locale requests came
+  back identical — the platform has no real translation, only a silent
+  fallback — so `services/translate` filled the gap). Orchestrated by
+  `services/translate/descriptions.py::bilingual_descriptions`, which only
+  ever consults this cache and, when needed, the Anthropic API — it never
+  talks to a platform itself. As of this entry the cache/LLM plumbing exists
+  and is tested; none of the three platform clients call it yet (each still
+  fetches one locale, same as before this), and nothing renders a
+  description in anything but that one fetched language — both are open
+  follow-up work, not yet started.
 
 ## Platform integrations
 

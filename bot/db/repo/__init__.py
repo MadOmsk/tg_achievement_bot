@@ -34,6 +34,11 @@ Layout:
     _flood.py       anti-flood throttle state (notification_throttle,
                     2026-09-09) — added after the split, not part of the
                     original repo.py breakup.
+    _descriptions.py  bilingual achievement/trophy description cache
+                    (achievement_description_cache, 2026-09-09) — shared
+                    across every platform, unlike _platform_links.py's own
+                    Steam-specific schema/rarity caches. Also added after
+                    the split.
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -52,12 +57,14 @@ from bot.db.repo._admin import _AdminRepo
 from bot.db.repo._chat_stats import _ChatStatsRepo
 from bot.db.repo._chats import _ChatsRepo
 from bot.db.repo._database import DEFAULT_APP_SETTINGS, MIGRATIONS_DIR, SCHEMA_PATH, Database
+from bot.db.repo._descriptions import _DescriptionsRepo
 from bot.db.repo._flood import _FloodRepo
 from bot.db.repo._messages import _MessagesRepo
 from bot.db.repo._models import (
     AchievementRow,
     AdminPanelRefreshRow,
     AdminUserRow,
+    CachedDescription,
     ChatDailySettings,
     ChatMemberStat,
     ChatPresenceRow,
@@ -97,6 +104,7 @@ __all__ = [
     "AchievementRow",
     "AdminPanelRefreshRow",
     "AdminUserRow",
+    "CachedDescription",
     "ChatDailySettings",
     "ChatMemberStat",
     "ChatPresenceRow",
@@ -137,6 +145,7 @@ class Repo(
     _AdminRepo,
     _PlatformLinksRepo,
     _FloodRepo,
+    _DescriptionsRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 
