@@ -15,7 +15,8 @@ from bot.config import Settings
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
 from bot.services.xbox.auth import (
-    XBOX_HTTP_TIMEOUT_SECONDS,
+    XBOX_CONNECT_TIMEOUT_SECONDS,
+    XBOX_READ_TIMEOUT_SECONDS,
     TokenDeadError,
     TokenRefreshError,
     XboxAuthService,
@@ -93,14 +94,19 @@ async def test_start_gives_the_session_a_generous_timeout(
     timeout kwarg at all, so every call went out on httpx's own 5s default
     — too tight for a cold connection right after a restart plus
     title_history's larger response, which made startup_catch_up fail for
-    every single Xbox user right after a deploy. No real network call here
-    (SignedSession's own __init__ makes none) — just confirms .start()
-    actually overrides the default via httpx.AsyncClient's own setter."""
+    every single Xbox user right after a deploy. A flat 20s wasn't enough
+    either for a real account with 1011 cached titles — read gets its own,
+    more generous budget than connect for exactly that reason. No real
+    network call here (SignedSession's own __init__ makes none) — just
+    confirms .start() actually overrides the default via httpx.AsyncClient's
+    own setter."""
     service = XboxAuthService(settings, repo, cipher)
     await service.start()
     try:
         assert service._session is not None
-        assert service._session.timeout == httpx.Timeout(XBOX_HTTP_TIMEOUT_SECONDS)
+        timeout = service._session.timeout
+        assert timeout.connect == XBOX_CONNECT_TIMEOUT_SECONDS
+        assert timeout.read == XBOX_READ_TIMEOUT_SECONDS
     finally:
         await service.close()
 

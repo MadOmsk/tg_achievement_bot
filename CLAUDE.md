@@ -265,16 +265,22 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   the one cross-platform, top-level key a *person* is identified by.)
 - The shared httpx session (`XboxAuthService`'s own `SignedSession`, one per
   process — every Xbox Live call, auth included, proxies through it) gets an
-  explicit 20s timeout (`XBOX_HTTP_TIMEOUT_SECONDS`), not httpx's own 5s
-  default. Found live (2026-09-09): every restart forces a cold connection
-  for every linked account at once, and `title_history`'s response (up to
-  200 titles) is heavier than a presence ping, so the 5s default reliably
-  timed out `startup_catch_up` for every single user right after a deploy —
-  with an unhelpfully empty httpx exception message on top, since
-  `SignedSession`'s own constructor takes no timeout kwarg at all (the fix
-  sets `.timeout` via `httpx.AsyncClient`'s own setter, right after
-  construction). The `{exc!r}` (not `{exc}`) in every `XboxApiError` message
-  in `services/xbox/client.py` is the other half of that same fix — a bare
+  explicit, split timeout (`XBOX_CONNECT_TIMEOUT_SECONDS` = 10s,
+  `XBOX_READ_TIMEOUT_SECONDS` = 45s), not httpx's own flat 5s default. Found
+  live (2026-09-09): every restart forces a cold connection for every
+  linked account at once, and `title_history`'s response is heavier than a
+  presence ping, so the 5s default reliably timed out `startup_catch_up`
+  for every single user right after a deploy — with an unhelpfully empty
+  httpx exception message on top, since `SignedSession`'s own constructor
+  takes no timeout kwarg at all (the fix sets `.timeout` via
+  `httpx.AsyncClient`'s own setter, right after construction). A flat 20s
+  still wasn't enough for RideTheSun's real 1011-title account (this file's
+  own `services/xbox/client.py::title_history` docstring already flagged a
+  1091-title account as a known extreme) — read gets the generous half of
+  the budget since that's what a large-but-succeeding response needs more
+  of, connect stays tight so a genuinely dead connection still fails fast.
+  The `{exc!r}` (not `{exc}`) in every `XboxApiError` message in
+  `services/xbox/client.py` is the other half of that same fix — a bare
   connection-level httpx error often stringifies to nothing at all.
 
 ### Steam
