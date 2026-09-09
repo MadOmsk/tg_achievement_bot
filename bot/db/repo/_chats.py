@@ -156,6 +156,7 @@ class _ChatsRepo:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, s.min_gamerscore, s.muted_title_ids,"
             "       s.rare_threshold_percent, s.daily_summary_time, s.tz_offset_min,"
+            "       s.flood_limit, s.flood_window_minutes,"
             "       sub.rarity_mode, sub.digest_threshold "
             "FROM subscriptions sub "
             "JOIN chats c ON c.chat_id = sub.chat_id "
@@ -172,6 +173,8 @@ class _ChatsRepo:
                 rare_threshold_percent=row["rare_threshold_percent"],
                 daily_summary_time=row["daily_summary_time"],
                 tz_offset_min=row["tz_offset_min"],
+                flood_limit=row["flood_limit"],
+                flood_window_minutes=row["flood_window_minutes"],
                 rarity_mode=row["rarity_mode"],
                 digest_threshold=row["digest_threshold"],
             )

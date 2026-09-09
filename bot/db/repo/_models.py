@@ -133,6 +133,14 @@ class AchievementRow:
     title_name: str | None = None
     is_secret: bool = False
     trophy_type: str | None = None  # PSN's tier — bronze/silver/gold/platinum, NULL elsewhere
+    # The per-platform external id this row belongs to (SteamID64/xuid/PSN
+    # account_id) — every seen_achievements row always has one, but only
+    # unpublished_achievements() below actually populates it: that's the one
+    # caller (poller/flood_flush.py) that can't assume every row in its list
+    # shares a single xuid the way every other AchievementRow list in the
+    # codebase does (2026-09-09, anti-flood filter spans every platform a
+    # person has, not just one).
+    xuid: str | None = None
 
 
 @dataclass(slots=True)
@@ -146,6 +154,13 @@ class ChatTarget:
     rare_threshold_percent: float
     daily_summary_time: str
     tz_offset_min: int
+    # Anti-flood (2026-09-09 user request), admin-set per chat like the
+    # fields above — 0 disables it for this chat. See poller/flood_flush.py.
+    # Defaults match chat_settings' own schema defaults, same reasoning as
+    # digest_threshold's default below: only call sites with no real row to
+    # read from (tests mostly) ever see the default instead of a real value.
+    flood_limit: int = 3
+    flood_window_minutes: int = 60
     # The person's own choice for *this* chat (SPEC 9, M-Steam-2e's
     # follow-up — moved off user_settings, one value for every chat, onto
     # subscriptions, one value per chat). Defaults to 'all' only for call
@@ -171,6 +186,21 @@ class ChatDailySettings:
     rare_threshold_percent: float
     daily_summary_time: str
     tz_offset_min: int
+
+
+@dataclass(slots=True)
+class FloodState:
+    """One `notification_throttle` row (2026-09-09 user request) — see
+    schema.sql's own comment on that table for the full picture.
+    `count_in_window` and `throttled` are meaningless to callers that only
+    ever read the `throttled = 1` rows (poller/flood_flush.py's own sweep),
+    but cost nothing to carry along either."""
+
+    tg_id: int
+    chat_id: int
+    window_started_at: datetime
+    count_in_window: int
+    throttled: bool
 
 
 @dataclass(slots=True)

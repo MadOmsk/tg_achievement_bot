@@ -31,6 +31,9 @@ Layout:
                     happen to live in this same historical section.
     _platform_links.py  Steam's achievement schema/rarity caches, and the
                     generic platform_links table shared by Steam and PSN.
+    _flood.py       anti-flood throttle state (notification_throttle,
+                    2026-09-09) — added after the split, not part of the
+                    original repo.py breakup.
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -49,6 +52,7 @@ from bot.db.repo._admin import _AdminRepo
 from bot.db.repo._chat_stats import _ChatStatsRepo
 from bot.db.repo._chats import _ChatsRepo
 from bot.db.repo._database import DEFAULT_APP_SETTINGS, MIGRATIONS_DIR, SCHEMA_PATH, Database
+from bot.db.repo._flood import _FloodRepo
 from bot.db.repo._messages import _MessagesRepo
 from bot.db.repo._models import (
     AchievementRow,
@@ -59,6 +63,7 @@ from bot.db.repo._models import (
     ChatPresenceRow,
     ChatTarget,
     ChatTopGame,
+    FloodState,
     HltbCacheRow,
     OnlineAutoRefreshRow,
     PlatformLink,
@@ -98,6 +103,7 @@ __all__ = [
     "ChatTarget",
     "ChatTopGame",
     "Database",
+    "FloodState",
     "HltbCacheRow",
     "OnlineAutoRefreshRow",
     "PlatformLink",
@@ -130,6 +136,7 @@ class Repo(
     _MessagesRepo,
     _AdminRepo,
     _PlatformLinksRepo,
+    _FloodRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

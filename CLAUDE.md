@@ -124,7 +124,10 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
 │   │   ├── psn_fetcher.py          PSN trophies: no presence hook of its own, its own debounce,
 │   │   │                           backfill, admin resync (#27)
-│   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue
+│   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
+│   │   │                           the anti-flood filter's own write side (2026-09-09)
+│   │   ├── flood_flush.py          the anti-flood filter's read/flush side — buffered
+│   │   │                           achievements once a throttled window closes (2026-09-09)
 │   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
 │   │   ├── reminders.py            reminders for a dead Xbox login
 │   │   ├── message_cleanup.py      auto-deletes system messages in groups
@@ -227,10 +230,19 @@ every column.
 - **Chats and settings.** `chats` + `subscriptions` (who publishes where;
   `subscriptions.rarity_mode` and `subscriptions.digest_threshold` are per
   person-per-chat, not per person). `chat_settings` holds each chat's own rarity
-  threshold, summary time, timezone offset, muted games, minimum gamerscore, and
-  daily-summary switch. `user_settings` holds personal, chat-independent settings:
-  timezone offset, muted games, and `show_profile_links` (off by default; a new
-  user's starting value comes from `app_settings['default_show_profile_links']`).
+  threshold, summary time, timezone offset, muted games, minimum gamerscore,
+  daily-summary switch, and (2026-09-09) the anti-flood filter's own
+  `flood_limit`/`flood_window_minutes` (see Publication rules below). `user_settings`
+  holds personal, chat-independent settings: timezone offset, muted games, and
+  `show_profile_links` (off by default; a new user's starting value comes from
+  `app_settings['default_show_profile_links']`).
+- **Anti-flood state.** `notification_throttle (tg_id, chat_id, window_started_at,
+  count_in_window, throttled)` — one row per (person, chat) currently inside a
+  counting or throttled window (2026-09-09). No separate buffer/queue table: an
+  achievement the filter is holding back is, by construction, exactly one that
+  never made it into `publications` for that chat, so `unpublished_achievements()`
+  (joins `seen_achievements` against `publications`) already finds it. See
+  Publication rules below and `poller/flood_flush.py`.
 - **State and caches.** Xbox presence: `presence_state`. Steam presence:
   `steam_presence_state`. PSN presence (#1): `psn_presence_state` — its own
   poller, unrelated to PSN's trophy-scan cadence below. PSN trophy-scan
@@ -458,6 +470,31 @@ Delivery goes through a send queue to stay under Telegram's group rate limit. A
 Telegram 403 means the bot was removed from that chat — deactivate it, don't keep
 trying. Every send records its message id for cleanup/admin-deletion features.
 
+**Anti-flood filter** (2026-09-09 user request), applied per (person, chat) after
+every other check above already passed — it only ever reacts to an achievement that
+would actually have been announced, so a chat-hidden or below-threshold achievement
+never starts or advances it. Up to `chat_settings.flood_limit` individually-notified
+achievements (across every platform that person has linked, not per platform — one
+person flooding a chat with a mix of Xbox/Steam/PSN unlocks is still one person
+spamming it) within a rolling `chat_settings.flood_window_minutes` window post as
+normal; the moment that count is reached, the window restarts immediately (not at
+its own expiry) in "throttled" mode, and every further achievement for the rest of
+that new window is left unpublished (no separate buffer table — see Data model
+above) instead of sent. `flood_limit = 0` disables the filter for that chat, same
+"0 = off" convention as `min_gamerscore`. Both numbers are always admin-set per
+chat (never a global default, same reasoning as the rarity threshold above) from
+the chat's own admin card.
+
+`poller/flood_flush.py` finds and delivers a throttled backlog as one combined
+digest (`Publisher.publish_flood_digest`, which — unlike every other digest in the
+codebase — can genuinely mix platforms, so its header uses the person's Telegram
+identity rather than one platform's own nickname) once its window actually closes.
+Two forced sweeps exist alongside the normal per-minute check so a window can never
+silently swallow achievements forever: right after the bot restarts
+(`flush_all()`, `bot/main.py`), and five minutes before each chat's own scheduled
+daily summary (so the summary reflects achievements that have actually been
+announced by the time it runs).
+
 ## User interface
 
 All user-facing bot text is Russian. Code identifiers, comments, and this
@@ -521,7 +558,8 @@ and the PSN NPSSO) from inside the bot, no `.env` edit (#17); API usage
 snapshots; global display/cleanup limits; defaults for new users (including
 `default_show_profile_links`); the user list; the chat list and per-chat cards;
 exclusion/restore; per-chat settings (rarity threshold, summary time, timezone,
-mutes, minimum gamerscore, daily-summary switch); bot-message cleanup actions. (The
+mutes, minimum gamerscore, daily-summary switch, anti-flood limit/window); bot-message
+cleanup actions. (The
 standalone "🏆 Трофеи PSN (тест)" screen — a live, uncached trophy lookup by Online
 ID, predating any of this being wired into /stats — was removed once the Keys
 screen covered NPSSO management on its own and it had nothing left to justify.)

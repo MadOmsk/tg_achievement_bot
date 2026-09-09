@@ -91,6 +91,27 @@ admin-chat-zone-manual-prompt =
 admin-timezone-invalid = Это не похоже на реальный часовой пояс. Например: +3 или -5:30.
 admin-timezone-saved = Часовой пояс: { $offset }
 
+# Anti-flood filter (2026-09-09): after N individually-notified achievements
+# for one person land in this chat within the window, further ones stop
+# posting on their own and get grouped into one message once the window
+# closes. 0 = выключено для этого чата.
+admin-chat-flood-prompt =
+    Антиспам-фильтр в «{ $title }»: { $value } ач.
+
+    Пришли новое значение целым числом, от { $minimum } до { $maximum } (0 — выключить).
+    Действует только на этот чат.
+admin-chat-flood-window-prompt =
+    Окно антиспам-фильтра в «{ $title }»: { $value } мин
+
+    Пришли новое значение целым числом, от { $minimum } до { $maximum }.
+    Действует только на этот чат.
+admin-flood-saved = Антиспам-фильтр: { $value } ач.
+
+{ $text }
+admin-flood-window-saved = Окно антиспам-фильтра: { $value } мин
+
+{ $text }
+
 { $text }
 
 # User and message actions
@@ -203,13 +224,18 @@ admin-chat-card =
     Итог дня:     { $summary }, в { $time }
     Часовой пояс: { $offset }
     Мин. G:       { $min_score }
+    Антиспам:     { $flood }
 
     { $names }
+admin-chat-flood-value = { $limit } ач. / { $window } мин
+admin-chat-flood-off = выключен
 admin-no-subscribers = Подписанных пока нет.
 admin-subscribers-list = Подписаны: { $names }
 admin-chat-threshold-button = Порог редкости: { $threshold } ▸
 admin-chat-summary-button = Итог дня: { $state }
 admin-chat-time-button = Время итога: { $time } ({ $offset }) ▸
+admin-chat-flood-button = Антиспам: { $limit } ач. ▸
+admin-chat-flood-window-button = Окно антиспама: { $window } мин ▸
 admin-disable-chat = ⏸ Отключить чат
 admin-enable-chat = ▶️ Включить чат
 admin-delete-last = 🗑 Удалить последнее сообщение

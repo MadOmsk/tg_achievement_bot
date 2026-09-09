@@ -32,6 +32,7 @@ from bot.lock import AlreadyRunningError, single_instance
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.fetcher import Fetcher
+from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
@@ -141,6 +142,8 @@ async def run(settings: Settings) -> None:
     psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher)
     psn_presence = PsnPresencePoller(settings, repo, psn_auth)
 
+    flood_flush = FloodFlush(repo, publisher)
+
     scheduler = PollerScheduler(
         poller,
         fetcher,
@@ -154,6 +157,7 @@ async def run(settings: Settings) -> None:
         AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth, steam_auth),
         psn_fetcher,
         psn_presence,
+        flood_flush,
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -284,6 +288,14 @@ async def run(settings: Settings) -> None:
                 log.exception("catch-up for tg_id=%s failed", target.tg_id)
 
     await publisher.start()
+    # Force-exit every anti-flood window still open from before this restart
+    # (2026-09-09 user request) — a window mid-count when the bot last
+    # stopped must not silently swallow its buffered achievements forever;
+    # better to deliver them a little early than never. Awaited directly,
+    # not backgrounded like startup_catch_up below: it only touches the
+    # database and the (already-running) publish queue, no platform API
+    # calls, so it can't meaningfully delay startup.
+    await flood_flush.flush_all()
     scheduler.start()
     asyncio.create_task(startup_catch_up())  # noqa: RUF006
 

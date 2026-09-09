@@ -324,3 +324,50 @@ class _AchievementsRepo:
             (chat_id, xuid, title_id, achievement_id),
         )
         return await cursor.fetchone() is not None
+
+    async def unpublished_achievements(self, tg_id: int, chat_id: int) -> list[AchievementRow]:
+        """Every one of this person's achievements — any platform, `xuid`
+        populated on each row since they don't all share one — that never
+        made it into `publications` for this specific chat (2026-09-09,
+        anti-flood filter, poller/flood_flush.py): an achievement the flood
+        filter buffered instead of sending individually is, by construction,
+        exactly an achievement that is "seen" but not yet "published here" —
+        no separate buffer/queue table needed, this table pair already
+        distinguishes the two. Backfill rows never qualify (never meant to
+        publish at all), same as everywhere else achievements get filtered
+        for publication.
+
+        Also finds an achievement that legitimately never passed this chat's
+        filters (rare-mode threshold, muted game, ...) — harmless: the
+        caller re-runs `passes_filters` before using any of these, so a
+        correctly-excluded achievement is excluded again, forever, exactly
+        as it is today outside the flood filter entirely.
+        """
+        cursor = await self._conn.execute(
+            "SELECT s.*, t.name AS game FROM seen_achievements s "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            "LEFT JOIN publications p ON p.chat_id = ? AND p.xuid = s.xuid"
+            "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "
+            "WHERE s.tg_id = ? AND s.is_backfill = 0 AND s.unlocked_at IS NOT NULL"
+            "   AND p.chat_id IS NULL "
+            "ORDER BY s.unlocked_at ASC",
+            (chat_id, tg_id),
+        )
+        return [
+            AchievementRow(
+                title_id=row["title_id"],
+                achievement_id=row["achievement_id"],
+                name=row["name"],
+                description=row["description"],
+                icon_url=row["icon_url"],
+                unlocked_at=row["unlocked_at"],
+                gamerscore=row["gamerscore"],
+                rarity_percent=row["rarity_percent"],
+                platform=row["platform"],
+                title_name=row["game"],
+                is_secret=bool(row["is_secret"]),
+                trophy_type=row["trophy_type"],
+                xuid=row["xuid"],
+            )
+            for row in await cursor.fetchall()
+        ]

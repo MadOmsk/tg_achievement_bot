@@ -133,7 +133,7 @@ class _AdminRepo:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, c.is_active, s.min_gamerscore,"
             "       s.daily_summary, s.muted_title_ids, s.rare_threshold_percent,"
-            "       s.daily_summary_time, s.tz_offset_min,"
+            "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
             "       (SELECT COUNT(*) FROM subscriptions WHERE chat_id = c.chat_id) AS subs "
             "FROM chats c JOIN chat_settings s ON s.chat_id = c.chat_id "
             "ORDER BY c.is_active DESC, c.title"
@@ -147,6 +147,8 @@ class _AdminRepo:
                 rare_threshold_percent=row["rare_threshold_percent"],
                 daily_summary_time=row["daily_summary_time"],
                 tz_offset_min=row["tz_offset_min"],
+                flood_limit=row["flood_limit"],
+                flood_window_minutes=row["flood_window_minutes"],
                 is_active=bool(row["is_active"]),
                 daily_summary=bool(row["daily_summary"]),
                 subscribers=int(row["subs"]),
@@ -161,6 +163,8 @@ class _AdminRepo:
             "rare_threshold_percent",
             "daily_summary_time",
             "tz_offset_min",
+            "flood_limit",
+            "flood_window_minutes",
         }
         unknown = set(fields) - allowed
         if unknown:

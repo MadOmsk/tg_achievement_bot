@@ -16,6 +16,7 @@ from bot.db.repo import Repo
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.fetcher import Fetcher
+from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
@@ -45,6 +46,7 @@ class PollerScheduler:
         admin_refresh: AdminPanelRefresh,
         psn_fetcher: PsnFetcher,
         psn_presence: PsnPresencePoller,
+        flood_flush: FloodFlush,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -58,6 +60,7 @@ class PollerScheduler:
         self._admin_refresh = admin_refresh
         self._psn_fetcher = psn_fetcher
         self._psn_presence = psn_presence
+        self._flood_flush = flood_flush
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -152,6 +155,16 @@ class PollerScheduler:
             self._psn_presence.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="psn_presence",
+            coalesce=True,
+            max_instances=1,
+        )
+        # Same cadence as the daily summary — "is a window due yet" is a
+        # runtime setting too (per-chat flood_window_minutes), same reasoning
+        # as daily_summary's own comment above.
+        self._scheduler.add_job(
+            self._flood_flush.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="flood_flush",
             coalesce=True,
             max_instances=1,
         )

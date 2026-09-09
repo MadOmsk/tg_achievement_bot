@@ -118,7 +118,16 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     -- Offset, not a zone name — same reasoning as user_settings.tz_offset_min:
     -- unambiguous, and Russia has had no DST since 2014 so a fixed offset
     -- never drifts for this audience.
-    tz_offset_min            INTEGER NOT NULL DEFAULT 180
+    tz_offset_min            INTEGER NOT NULL DEFAULT 180,
+    -- Anti-flood (2026-09-09 user request): once `flood_limit` achievements
+    -- have been individually notified for the same person in this chat
+    -- within `flood_window_minutes`, further ones stop posting on their own
+    -- and accumulate instead, to be flushed as one combined digest once the
+    -- window closes (poller/flood_flush.py, notification_throttle below).
+    -- `flood_limit = 0` disables the filter for this chat entirely — same
+    -- "0 = off" convention as min_gamerscore/summary_top_limit.
+    flood_limit              INTEGER NOT NULL DEFAULT 3,
+    flood_window_minutes     INTEGER NOT NULL DEFAULT 60
 );
 
 -- Global settings the admin turns
@@ -179,6 +188,28 @@ CREATE TABLE IF NOT EXISTS publications (
     message_id     INTEGER,
     posted_at      TEXT NOT NULL,
     PRIMARY KEY (chat_id, xuid, title_id, achievement_id)
+);
+
+-- Anti-flood state (2026-09-09 user request), one row per (person, chat)
+-- currently inside a counting or throttled window — see chat_settings'
+-- flood_limit/flood_window_minutes above and poller/flood_flush.py. Scoped
+-- to the whole person, not per platform: someone flooding a chat with mixed
+-- Xbox/Steam/PSN unlocks is still one person spamming that chat.
+-- `throttled = 0` just means "counting, nothing buffered yet" — the window
+-- naturally lapses and gets replaced the next time an achievement arrives
+-- with no cleanup needed. `throttled = 1` means further achievements this
+-- window are left unpublished (buffered) instead of sent; poller/
+-- flood_flush.py finds them again via publications' own absence, not a
+-- separate queue table — an achievement not yet in `publications` for this
+-- chat already means "not sent there yet", so there is nothing new to store
+-- beyond the window's own start time.
+CREATE TABLE IF NOT EXISTS notification_throttle (
+    tg_id             INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    chat_id           INTEGER NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
+    window_started_at TEXT    NOT NULL,
+    count_in_window   INTEGER NOT NULL DEFAULT 0,
+    throttled         INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (tg_id, chat_id)
 );
 
 -- Presence state — the polling engine

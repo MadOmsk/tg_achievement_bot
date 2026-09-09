@@ -381,6 +381,19 @@ RARE_THRESHOLD_MAX = 100.0
 LIMIT_MIN = 1
 LIMIT_MAX = 50
 
+# Anti-flood filter (2026-09-09 user request) — per-chat, admin-set like the
+# rare threshold above. flood_limit's own 0 means "off for this chat", same
+# convention as min_gamerscore/summary_top_limit.
+FLOOD_LIMIT_MIN = 0
+FLOOD_LIMIT_MAX = 50
+FLOOD_WINDOW_MIN = 1
+FLOOD_WINDOW_MAX = 1440  # 24h — a longer buffer than that stops being "soon"
+
+# Chat-scoped keys sharing numeric_setting_input()'s "type a number" flow
+# with the always-global NUMERIC_SETTINGS above (rare_threshold_percent's
+# own comment there explains the split).
+_CHAT_SCOPED_KEYS = ("rare_threshold_percent", "flood_limit", "flood_window_minutes")
+
 # What a brand-new subscription starts at (Repo.subscribe) — used to be a
 # flat DEFAULT 'all' baked into the subscriptions table (schema.sql), now an
 # admin-configurable app_settings row instead, same cycling button/helpers
@@ -540,7 +553,7 @@ async def numeric_setting_input(
     if pending is None:
         return  # a plain number from an admin who isn't in this flow — ignore
     key, chat_id = pending
-    if key not in NUMERIC_SETTINGS and key != "rare_threshold_percent":
+    if key not in NUMERIC_SETTINGS and key not in _CHAT_SCOPED_KEYS:
         # An all-digit PSN Online ID landing here while _awaiting_psn_lookup
         # is pending, say (SPEC 9, M-PSN-1) — not this flow's business, its
         # own handler (below) owns whatever key it registered.
@@ -565,6 +578,27 @@ async def numeric_setting_input(
             _("admin-threshold-saved", value=f"{value:g}", text=reply_text),
             reply_markup=markup,
         )
+        return
+
+    if key in ("flood_limit", "flood_window_minutes"):
+        assert chat_id is not None  # chat-scoped, same as rare_threshold_percent above
+        if "." in message.text or "," in message.text:
+            await message.answer(_("admin-integer-retry"))
+            return
+        value_int = int(message.text)
+        minimum, maximum = (
+            (FLOOD_LIMIT_MIN, FLOOD_LIMIT_MAX)
+            if key == "flood_limit"
+            else (FLOOD_WINDOW_MIN, FLOOD_WINDOW_MAX)
+        )
+        if not (minimum <= value_int <= maximum):
+            await message.answer(_("admin-number-range-retry", minimum=minimum, maximum=maximum))
+            return
+        del _awaiting_input[message.from_user.id]
+        await repo.update_chat_settings(chat_id, **{key: value_int})
+        reply_text, markup = await _chat(repo, chat_id)
+        saved_key = "admin-flood-saved" if key == "flood_limit" else "admin-flood-window-saved"
+        await message.answer(_(saved_key, value=value_int, text=reply_text), reply_markup=markup)
         return
 
     # The row-cap settings below are always global — chat_id is always None
@@ -654,6 +688,54 @@ async def chat_rare_menu(callback: CallbackQuery, repo: Repo) -> None:
             "admin-chat-threshold-prompt",
             title=chat.title or chat_id,
             value=f"{chat.rare_threshold_percent:g}",
+        ),
+        builder.as_markup(),
+    )
+
+
+@router.callback_query(F.data.startswith("a:cfl:"))
+async def chat_flood_menu(callback: CallbackQuery, repo: Repo) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.rsplit(":", 1)[1])
+    chat = await _find_chat(repo, chat_id)
+    if chat is None:
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
+        return
+    _awaiting_input[callback.from_user.id] = ("flood_limit", chat_id)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
+    await _redraw(
+        callback,
+        _(
+            "admin-chat-flood-prompt",
+            title=chat.title or chat_id,
+            value=chat.flood_limit,
+            minimum=FLOOD_LIMIT_MIN,
+            maximum=FLOOD_LIMIT_MAX,
+        ),
+        builder.as_markup(),
+    )
+
+
+@router.callback_query(F.data.startswith("a:cflw:"))
+async def chat_flood_window_menu(callback: CallbackQuery, repo: Repo) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.rsplit(":", 1)[1])
+    chat = await _find_chat(repo, chat_id)
+    if chat is None:
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
+        return
+    _awaiting_input[callback.from_user.id] = ("flood_window_minutes", chat_id)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
+    await _redraw(
+        callback,
+        _(
+            "admin-chat-flood-window-prompt",
+            title=chat.title or chat_id,
+            value=chat.flood_window_minutes,
+            minimum=FLOOD_WINDOW_MIN,
+            maximum=FLOOD_WINDOW_MAX,
         ),
         builder.as_markup(),
     )
@@ -1460,6 +1542,11 @@ async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
     names = await repo.chat_subscriber_names(chat_id)
     threshold_label = f"{chat.rare_threshold_percent:g}%"
     zone_label = format_offset(chat.tz_offset_min)
+    flood_label = (
+        _("admin-chat-flood-value", limit=chat.flood_limit, window=chat.flood_window_minutes)
+        if chat.flood_limit > 0
+        else _("admin-chat-flood-off")
+    )
     text = _(
         "admin-chat-card",
         title=chat.title or chat_id,
@@ -1470,6 +1557,7 @@ async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
         time=chat.daily_summary_time,
         offset=zone_label,
         min_score=chat.min_gamerscore,
+        flood=flood_label,
         names=(
             _("admin-subscribers-list", names=", ".join(names))
             if names
@@ -1497,6 +1585,16 @@ async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
             text=_("admin-chat-time-button", time=chat.daily_summary_time, offset=zone_label),
             callback_data=f"a:ctime:{chat_id}",
         )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-chat-flood-button", limit=chat.flood_limit),
+            callback_data=f"a:cfl:{chat_id}",
+        ),
+        InlineKeyboardButton(
+            text=_("admin-chat-flood-window-button", window=chat.flood_window_minutes),
+            callback_data=f"a:cflw:{chat_id}",
+        ),
     )
     builder.row(
         InlineKeyboardButton(

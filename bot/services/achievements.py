@@ -332,15 +332,17 @@ def format_digest(gamertag: str, title_name: str | None, achievements: list[Achi
     dropped on request — a digest exists to say what happened, trimming it
     defeats that).
     """
-    # Every achievement in one publish() call shares a platform (Xbox/Steam
-    # pollers each poll one title at a time; PSN's own multi-game burst is
-    # still all-PSN — SPEC 9, M-PSN-2's multi-achievement paragraph) — safe to
-    # decide the header's wording from just the first item.
-    platform = achievements[0].platform if achievements else Platform.MODERN
+    # Every achievement in one publish() call used to always share a
+    # platform (Xbox/Steam pollers each poll one title at a time; PSN's own
+    # multi-game burst is still all-PSN — SPEC 9, M-PSN-2's multi-achievement
+    # paragraph) — no longer guaranteed once the anti-flood filter started
+    # calling this across a person's whole buffered backlog, any mix of
+    # platforms (2026-09-09). "Trophies" only when every item actually is
+    # one — same rule CLAUDE.md already states for combined cross-platform
+    # totals like /stats' "Today: N achievements".
+    all_psn = bool(achievements) and all(item.platform == Platform.PSN for item in achievements)
     count_phrase = (
-        plural_trophies(len(achievements))
-        if platform == Platform.PSN
-        else plural_achievements(len(achievements))
+        plural_trophies(len(achievements)) if all_psn else plural_achievements(len(achievements))
     )
     header = _("achievement-digest-header", gamertag=html_escape(gamertag), phrase=count_phrase)
     lines = [header, ""]

@@ -10,15 +10,22 @@ import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InputMediaPhoto
 
-from bot.db.repo import AchievementRow, Repo
-from bot.services.achievements import format_digest, format_single, passes_filters
+from bot.db.repo import AchievementRow, ChatTarget, Repo
+from bot.services.achievements import (
+    format_digest,
+    format_single,
+    passes_filters,
+    telegram_identity,
+)
 from bot.services.message_log import stats_category
+from bot.util import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +40,6 @@ MEDIA_GROUP_MAX = 10
 @dataclass(slots=True)
 class PublishJob:
     chat_id: int
-    xuid: str
     text: str
     # (icon_url, is_secret) per achievement, in order — a single achievement
     # is just a one-item gallery here, not a separate field any more
@@ -42,7 +48,13 @@ class PublishJob:
     # handling. Rows with no icon at all are dropped before this point, not
     # here — an empty list means "no photo, plain text".
     gallery: list[tuple[str, bool]] = field(default_factory=list)
-    items: list[tuple[str, str]] = field(default_factory=list)  # (title_id, achievement_id)
+    # (xuid, title_id, achievement_id) per achievement — xuid used to live on
+    # the job itself, one value for the whole job, until the anti-flood
+    # filter's flush digest (2026-09-09) started building jobs that can mix
+    # achievements from more than one of a person's platforms at once: each
+    # one must record its *own* xuid in `publications`, not whichever
+    # platform happened to be first.
+    items: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
@@ -103,7 +115,20 @@ class Publisher:
                 if passes_filters(item, chat, chat.rare_threshold_percent)
             ]
             if not allowed:
+                # Nothing here to notify about, so nothing here to count
+                # either — the anti-flood filter below only ever reacts to
+                # achievements that would actually have been announced
+                # (2026-09-09 user request: it "works only on what gets
+                # notified"). rarity_mode=hidden, a muted game, a below-
+                # threshold rare pull — any of these already means no timer
+                # starts and no window advances, for free, just by never
+                # calling _apply_flood_filter at all.
                 continue
+
+            if chat.flood_limit > 0:
+                allowed = await self._apply_flood_filter(tg_id, chat, allowed)
+                if not allowed:
+                    continue  # every item this call was buffered, not sent
 
             # The digest decision is per chat and happens after filtering:
             # what one chat sees as five achievements may be one in another
@@ -114,10 +139,9 @@ class Publisher:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        xuid=xuid,
                         text=format_digest(gamertag, title_name, allowed),
                         gallery=_gallery(allowed),
-                        items=[(a.title_id, a.achievement_id) for a in allowed],
+                        items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
                     )
                 )
                 continue
@@ -130,12 +154,106 @@ class Publisher:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        xuid=xuid,
                         text=format_single(gamertag, item, title_name),
                         gallery=_gallery([item]),
-                        items=[(item.title_id, item.achievement_id)],
+                        items=[(xuid, item.title_id, item.achievement_id)],
                     )
                 )
+
+    async def _apply_flood_filter(
+        self, tg_id: int, chat: ChatTarget, allowed: list[AchievementRow]
+    ) -> list[AchievementRow]:
+        """Anti-flood filter (2026-09-09 user request): up to
+        `chat.flood_limit` individually-notified achievements per rolling
+        `chat.flood_window_minutes` window, scoped to the whole person (not
+        per platform — flooding a chat with a mix of Xbox/Steam/PSN unlocks
+        is still one person spamming it). The (N+1)th achievement to arrive
+        inside a window closes it early right then (not at expiry) and
+        opens a fresh one in "throttled" mode: everything from here until
+        that new window itself closes gets left unpublished instead of
+        sent — poller/flood_flush.py finds and flushes it later, as one
+        combined digest, once the window actually closes (or a forced sweep
+        fires first — see that module).
+
+        Walks `allowed` one item at a time rather than deciding for the
+        whole batch at once: a single publish() call can already carry
+        several achievements (a PSN multi-trophy tick, a Steam session), and
+        the Nth item within *that one call* must still be the one to flip
+        into throttled mode, exactly as if it had arrived on its own.
+        """
+        now = utcnow()
+        state = await self._repo.get_flood_state(tg_id, chat.chat_id)
+        if state is not None and now >= state.window_started_at + timedelta(
+            minutes=chat.flood_window_minutes
+        ):
+            # This window is over. Whatever it left buffered is
+            # flood_flush.py's job to find and send, not this one's —
+            # simplest to just treat this as "no window open" and let a
+            # fresh one start below, same as if nothing had ever run yet.
+            state = None
+
+        window_started_at = state.window_started_at if state is not None else now
+        count = state.count_in_window if state is not None else 0
+        throttled = state.throttled if state is not None else False
+
+        to_send: list[AchievementRow] = []
+        for item in allowed:
+            if throttled:
+                continue  # buffered: left unpublished, picked up by flood_flush.py
+            to_send.append(item)
+            count += 1
+            if count >= chat.flood_limit:
+                throttled = True
+                window_started_at = now  # restart right here, not at expiry
+
+        await self._repo.set_flood_state(
+            tg_id,
+            chat.chat_id,
+            window_started_at=window_started_at,
+            count_in_window=count,
+            throttled=throttled,
+        )
+        return to_send
+
+    async def publish_flood_digest(
+        self, tg_id: int, chat_id: int, achievements: list[AchievementRow]
+    ) -> None:
+        """The flush side of `_apply_flood_filter` above — called by
+        poller/flood_flush.py once a throttled window closes. Unlike every
+        other digest in the codebase, this one can genuinely mix platforms
+        (that's the whole point: the filter counts across all of a person's
+        platforms together), so the header uses the person's own Telegram
+        identity rather than one platform's own nickname — there is no
+        single "gamertag" that's obviously right here the way there is for
+        format_single/format_digest's other callers, each already scoped to
+        one platform by construction.
+        """
+        if not achievements:
+            return
+        user = await self._repo.get_user(tg_id)
+        links = await self._repo.platform_links_of(tg_id)
+        name = (
+            telegram_identity(
+                username=user.username if user else None,
+                first_name=user.first_name if user else None,
+                last_name=user.last_name if user else None,
+                gamertag=user.gamertag if user else None,
+            )
+            or (links[0].display_name or links[0].external_id if links else None)
+            or f"id{tg_id}"
+        )
+        await self._queue.put(
+            PublishJob(
+                chat_id=chat_id,
+                text=format_digest(name, None, achievements),
+                gallery=_gallery(achievements),
+                items=[
+                    (item.xuid, item.title_id, item.achievement_id)
+                    for item in achievements
+                    if item.xuid
+                ],
+            )
+        )
 
     async def _run(self) -> None:
         while True:
@@ -161,9 +279,9 @@ class Publisher:
             await asyncio.sleep(exc.retry_after)
             message_id = await self._deliver(job)
 
-        for title_id, achievement_id in job.items:
+        for xuid, title_id, achievement_id in job.items:
             await self._repo.record_publication(
-                job.chat_id, job.xuid, title_id, achievement_id, message_id
+                job.chat_id, xuid, title_id, achievement_id, message_id
             )
 
     async def _deliver(self, job: PublishJob) -> int | None:
