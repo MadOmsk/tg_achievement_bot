@@ -896,23 +896,33 @@ async def delete_last(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
     message a few seconds old is already about to clean itself up, and
     "oops, wrong one just now" is almost always about an actual result
     (an achievement post, a stats reply), not a prompt or a confirmation.
+
+    The success reply names what it deleted (2026-09-09 user request,
+    `bot_messages.preview`) instead of staying silent — the old silent
+    version made repeated presses hard to trust: nothing confirmed each one
+    actually moved to the *previous* message rather than repeating or
+    getting stuck.
     """
-    message_id = await repo.last_non_system_bot_message(message.chat.id)
-    if message_id is None:
+    target = await repo.last_non_system_bot_message(message.chat.id)
+    if target is None:
         await message.answer(i18n.get("chat-delete-last-none"))
         return
 
     try:
-        await bot.delete_message(message.chat.id, message_id)
+        await bot.delete_message(message.chat.id, target.message_id)
     except Exception:
         # Too old (Telegram caps deletes at 48h) or already gone either way
         # — same reasoning as the bulk wipe, nothing left worth keeping the
         # log row for.
-        log.info("delete_last failed for chat %s message %s", message.chat.id, message_id)
-        await repo.forget_bot_messages(message.chat.id, [message_id])
+        log.info("delete_last failed for chat %s message %s", message.chat.id, target.message_id)
+        await repo.forget_bot_messages(message.chat.id, [target.message_id])
         await message.answer(i18n.get("chat-delete-last-failed"))
         return
 
-    await repo.forget_bot_messages(message.chat.id, [message_id])
+    await repo.forget_bot_messages(message.chat.id, [target.message_id])
+    if target.preview:
+        await message.answer(i18n.get("chat-delete-last-done", preview=target.preview))
+    else:
+        await message.answer(i18n.get("chat-delete-last-done-generic"))
     with contextlib.suppress(Exception):
         await message.delete()  # tidy up the /delete_last command itself too

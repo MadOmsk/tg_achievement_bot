@@ -23,6 +23,12 @@ of call sites that produce a "stats" result wrap their own send in
 send_message`/`.answer()` this middleware sees happens several layers below
 the handler that decided the category, too far to thread a parameter
 through cleanly.
+
+Every logged row also carries `preview` (2026-09-09 user request) — the
+first couple of lines of the message's own text/caption, unconditionally,
+regardless of category. `/delete_last`'s own confirmation is the only
+current reader (`_preview_of` below extracts it, `db/repo/_messages.py`'s
+`last_non_system_bot_message` reads it back).
 """
 
 from __future__ import annotations
@@ -82,7 +88,10 @@ class MessageLogMiddleware(BaseRequestMiddleware):
             if message.chat.type in _GROUP_TYPES:
                 with contextlib.suppress(Exception):
                     await self._repo.log_bot_message(
-                        message.chat.id, message.message_id, is_system=is_system
+                        message.chat.id,
+                        message.message_id,
+                        is_system=is_system,
+                        preview=_preview_of(message),
                     )
         return result
 
@@ -93,3 +102,24 @@ def _sent_messages(result: object) -> list[Message]:
     if isinstance(result, list) and result and isinstance(result[0], Message):
         return result
     return []
+
+
+_PREVIEW_MAX_CHARS = 200
+_PREVIEW_MAX_LINES = 2
+
+
+def _preview_of(message: Message) -> str | None:
+    """First couple of non-blank lines of a message's own text/caption
+    (2026-09-09 user request) — /delete_last's own confirmation shows this
+    back, so the answer is short and readable, not the whole achievement
+    text repeated. `.text`/`.caption` are always the plain string Telegram
+    gives back (HTML formatting rides along as separate `entities`, never
+    embedded in these), so nothing here needs escaping to re-embed as plain
+    text elsewhere."""
+    raw = message.text or message.caption
+    if not raw:
+        return None
+    lines = [line.strip() for line in raw.splitlines() if line.strip()][:_PREVIEW_MAX_LINES]
+    if not lines:
+        return None
+    return "\n".join(lines)[:_PREVIEW_MAX_CHARS]

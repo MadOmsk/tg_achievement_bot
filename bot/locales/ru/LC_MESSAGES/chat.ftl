@@ -65,3 +65,7 @@ chat-hub-settings-button = ⚙️ Настройки
 chat-subscribe-button-done = Готово, твои достижения будут прилетать сюда.
 chat-delete-last-none = Не нашёл сообщений бота в этом чате.
 chat-delete-last-failed = Не смог удалить — возможно, сообщение слишком старое.
+chat-delete-last-done =
+    🗑 Удалено сообщение:
+    «{ $preview }»
+chat-delete-last-done-generic = 🗑 Сообщение удалено.

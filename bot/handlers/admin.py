@@ -1070,6 +1070,22 @@ async def chat_toggle_active(callback: CallbackQuery, repo: Repo) -> None:
     await _redraw(callback, *await _chat(repo, chat_id))
 
 
+# Telegram caps an answerCallbackQuery's own text at 200 characters total
+# (2026-09-09) — `bot_messages.preview` can itself be up to 200 chars, which
+# would leave nothing for the "🗑 Удалено: «…»" wrapper around it and get
+# silently cut off by Telegram mid-word. Trim further, specifically for the
+# toast; the group-chat confirmation (chat.py's own /delete_last, a real
+# message with no such cap) uses the stored preview untouched.
+TOAST_PREVIEW_MAX_CHARS = 100
+
+
+def _toast_preview(preview: str) -> str:
+    collapsed = " ".join(preview.splitlines())
+    if len(collapsed) <= TOAST_PREVIEW_MAX_CHARS:
+        return collapsed
+    return collapsed[: TOAST_PREVIEW_MAX_CHARS - 1] + "…"
+
+
 @router.callback_query(F.data.startswith("a:cdellast:"))
 async def chat_delete_last(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
     """The admin panel's own way in to /delete_last's logic (chat.py) —
@@ -1077,22 +1093,36 @@ async def chat_delete_last(callback: CallbackQuery, repo: Repo, bot: Bot) -> Non
     went looking for it here first, not the group chat itself. Same target
     (the last *non-system* message, 2026-09-05) and same "expected failure,
     forget the row either way" handling, just reached from the chat card
-    instead of typed into the chat."""
+    instead of typed into the chat.
+
+    The toast itself now names what got deleted (2026-09-09 user request,
+    `bot_messages.preview`) instead of a bare "Удалил последнее сообщение."
+    — the card underneath is redrawn unchanged, the preview lives only in
+    the toast (user feedback: baking it into the card body reads as
+    permanent clutter, the toast is the right place for something
+    transient).
+    """
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    message_id = await repo.last_non_system_bot_message(chat_id)
-    if message_id is None:
+    target = await repo.last_non_system_bot_message(chat_id)
+    if target is None:
         await callback.answer(_("admin-no-bot-messages"), show_alert=True)
         return
     try:
-        await bot.delete_message(chat_id, message_id)
+        await bot.delete_message(chat_id, target.message_id)
     except Exception:
-        log.info("admin delete_last failed for chat %s message %s", chat_id, message_id)
-        await repo.forget_bot_messages(chat_id, [message_id])
+        log.info("admin delete_last failed for chat %s message %s", chat_id, target.message_id)
+        await repo.forget_bot_messages(chat_id, [target.message_id])
         await callback.answer(_("admin-delete-old-failed"), show_alert=True)
         return
-    await repo.forget_bot_messages(chat_id, [message_id])
-    await callback.answer(_("admin-deleted-last"))
+    await repo.forget_bot_messages(chat_id, [target.message_id])
+    feedback = (
+        _("admin-deleted-last-preview", preview=_toast_preview(target.preview))
+        if target.preview
+        else _("admin-deleted-last")
+    )
+    await callback.answer(feedback)
+    await _redraw(callback, *await _chat(repo, chat_id))
 
 
 WIPE_WINDOW_HOURS = 24
@@ -1663,6 +1693,9 @@ async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
             callback_data=f"a:crt:{chat_id}",
         )
     )
+    # Daily summary's own on/off + time/tz share one row (2026-09-09
+    # button-layout consolidation, user request — fewer rows, same "type a
+    # number to tune it, tap to toggle it" split every pair here already has).
     builder.row(
         InlineKeyboardButton(
             text=_(
@@ -1670,14 +1703,13 @@ async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
                 state=_("admin-enabled") if chat.daily_summary else _("admin-disabled-state"),
             ),
             callback_data=f"a:cds:{chat_id}",
-        )
-    )
-    builder.row(
+        ),
         InlineKeyboardButton(
             text=_("admin-chat-time-button", time=chat.daily_summary_time, offset=zone_label),
             callback_data=f"a:ctime:{chat_id}",
-        )
+        ),
     )
+    # Same idea for the anti-flood filter: on/off + its two tunables, one row.
     builder.row(
         InlineKeyboardButton(
             text=_(
@@ -1685,9 +1717,7 @@ async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
                 state=_("admin-enabled") if chat.flood_limit > 0 else _("admin-disabled-state"),
             ),
             callback_data=f"a:cfltoggle:{chat_id}",
-        )
-    )
-    builder.row(
+        ),
         InlineKeyboardButton(
             text=_("admin-chat-flood-button", limit=chat.flood_limit),
             callback_data=f"a:cfl:{chat_id}",
@@ -1703,19 +1733,16 @@ async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
             callback_data=f"a:coff:{chat_id}",
         )
     )
+    # The four delete/wipe actions share one row and one icon (2026-09-09,
+    # user request) — used to be four separate rows, and the first alone
+    # had 🗑 while the other three had 🧹, an inconsistency nobody meant.
     builder.row(
-        InlineKeyboardButton(text=_("admin-delete-last"), callback_data=f"a:cdellast:{chat_id}")
-    )
-    builder.row(
-        InlineKeyboardButton(text=_("admin-wipe-bot-24h"), callback_data=f"a:cwipe:{chat_id}")
-    )
-    builder.row(
-        InlineKeyboardButton(text=_("admin-wipe-system-24h"), callback_data=f"a:cswipe:{chat_id}")
-    )
-    builder.row(
+        InlineKeyboardButton(text=_("admin-delete-last"), callback_data=f"a:cdellast:{chat_id}"),
+        InlineKeyboardButton(text=_("admin-wipe-bot-24h"), callback_data=f"a:cwipe:{chat_id}"),
+        InlineKeyboardButton(text=_("admin-wipe-system-24h"), callback_data=f"a:cswipe:{chat_id}"),
         InlineKeyboardButton(
             text=_("admin-wipe-system-all"), callback_data=f"a:cswipeall:{chat_id}"
-        )
+        ),
     )
     builder.row(InlineKeyboardButton(text=_("admin-back-to-chats"), callback_data="a:chats"))
     return text, builder.as_markup()

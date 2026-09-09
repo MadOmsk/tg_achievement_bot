@@ -143,7 +143,10 @@ admin-chat-disabled = Отключён
 admin-chat-enabled = Включён
 admin-no-bot-messages = Не нашёл сообщений бота в этом чате.
 admin-delete-old-failed = Не смог удалить — возможно, сообщение слишком старое.
-admin-deleted-last = Удалил последнее сообщение.
+admin-deleted-last = 🗑 Удалил последнее сообщение.
+# Toast text (2026-09-09) — Telegram caps this at 200 chars total, see
+# handlers/admin.py's own TOAST_PREVIEW_MAX_CHARS/_toast_preview.
+admin-deleted-last-preview = 🗑 Удалил: «{ $preview }»
 admin-no-bot-messages-24h = За последние 24 часа сообщений бота не нашёл.
 admin-confirm-delete = Да, стереть
 admin-wipe-prompt =
@@ -254,10 +257,10 @@ admin-chat-flood-button = Антиспам: { $limit } ач. ▸
 admin-chat-flood-window-button = Окно антиспама: { $window } мин ▸
 admin-disable-chat = ⏸ Отключить чат
 admin-enable-chat = ▶️ Включить чат
-admin-delete-last = 🗑 Удалить последнее сообщение
-admin-wipe-bot-24h = 🧹 Стереть сообщения бота (24ч)
-admin-wipe-system-24h = 🧹 Удалить системные (24ч)
-admin-wipe-system-all = 🧹 Удалить все системные
+admin-delete-last = 🗑 Последнее
+admin-wipe-bot-24h = 🗑 Бота (24ч)
+admin-wipe-system-24h = 🗑 Системные (24ч)
+admin-wipe-system-all = 🗑 Все системные
 admin-back-to-chats = ‹ К списку
 admin-default-player = Игрок
 admin-note-excluded =   исключён

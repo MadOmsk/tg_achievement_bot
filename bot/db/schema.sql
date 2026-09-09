@@ -333,6 +333,14 @@ CREATE TABLE IF NOT EXISTS bot_messages (
     -- (system) so a call site that forgets to mark itself fails safe by
     -- disappearing rather than by lingering forever.
     is_system  INTEGER NOT NULL DEFAULT 1,
+    -- First couple of non-blank lines of the message's own text/caption
+    -- (2026-09-09 user request) — /delete_last's own confirmation shows
+    -- this back ("Удалено: ...") so repeated deletes in a row are each
+    -- individually confirmable instead of a fast-vanishing toast being the
+    -- only signal something happened. NULL for anything logged before this
+    -- column existed, or a message with no text/caption at all — falls
+    -- back to a generic confirmation, never a hard requirement.
+    preview    TEXT,
     PRIMARY KEY (chat_id, message_id)
 );
 
