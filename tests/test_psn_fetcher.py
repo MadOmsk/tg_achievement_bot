@@ -49,7 +49,17 @@ def _fake_sync(monkeypatch, outcomes):
     calls: list[dict] = []
     queue = list(outcomes) if isinstance(outcomes, list) else None
 
-    async def fake_sync_account(repo_, client, tg_id, account_id, *, is_backfill, limit=None):
+    async def fake_sync_account(
+        repo_,
+        client,
+        tg_id,
+        account_id,
+        *,
+        is_backfill,
+        anthropic_auth=None,
+        translation_client=None,
+        limit=None,
+    ):
         calls.append(
             {
                 "tg_id": tg_id,
@@ -72,7 +82,7 @@ async def _linked_user(repo: Repo) -> None:
 
 
 async def _configured_auth(repo: Repo, cipher: TokenCipher, monkeypatch) -> PsnAuth:
-    async def _build(npsso: str) -> object:
+    async def _build(npsso: str, *, headers: dict[str, str] | None = None) -> object:
         return object()
 
     async def _alive(client: object) -> bool:
@@ -119,7 +129,7 @@ async def test_poll_account_publishes_what_sync_account_returns(
         ],
     )
     publisher = FakePublisher()
-    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
+    fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 2
     # Found new trophies — level gets refreshed (Follow-up 2026-09-06).
@@ -145,7 +155,7 @@ async def test_backfill_marks_done_and_returns_the_private_titles(
         PsnSyncOutcome(new_rows=[row("1"), row("2")], private_title_ids=["NPWR00009_00"]),
     )
     publisher = FakePublisher()
-    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
+    fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     # Before: the gate is closed, tick() would not touch this account.
     [target] = await repo.psn_pollable_users()
@@ -177,7 +187,7 @@ async def test_refresh_user_polls_a_backfilled_account(
     await repo.mark_psn_backfill_done(ACCOUNT_ID)
     calls = _fake_sync(monkeypatch, PsnSyncOutcome(new_rows=[row("1"), row("2")]))
     publisher = FakePublisher()
-    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
+    fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer")
 
@@ -200,7 +210,7 @@ async def test_refresh_user_resyncs_a_stuck_account(
     await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR00001_00", 50)
     calls = _fake_sync(monkeypatch, PsnSyncOutcome(new_rows=[row("1"), row("2"), row("3")]))
     publisher = FakePublisher()
-    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
+    fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer")
 
@@ -222,7 +232,7 @@ async def test_tick_skips_an_account_whose_backfill_has_not_finished(
     await _linked_user(repo)
     auth = await _configured_auth(repo, cipher, monkeypatch)
     calls = _fake_sync(monkeypatch, PsnSyncOutcome())
-    fetcher = PsnFetcher(settings, repo, auth, FakePublisher())  # type: ignore[arg-type]
+    fetcher = PsnFetcher(settings, repo, auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.tick()
 
@@ -243,7 +253,7 @@ async def test_tick_polls_a_due_account_once_backfill_is_done(
     await repo._conn.commit()
     _fake_sync(monkeypatch, PsnSyncOutcome(new_rows=[row("1")]))
     publisher = FakePublisher()
-    fetcher = PsnFetcher(settings, repo, auth, publisher)  # type: ignore[arg-type]
+    fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.tick()
 
@@ -259,7 +269,7 @@ async def test_tick_skips_an_account_polled_too_recently(
     auth = await _configured_auth(repo, cipher, monkeypatch)
     await repo.mark_psn_backfill_done(ACCOUNT_ID)  # gate open, and stamps last_polled_at = now
     calls = _fake_sync(monkeypatch, PsnSyncOutcome())
-    fetcher = PsnFetcher(settings, repo, auth, FakePublisher())  # type: ignore[arg-type]
+    fetcher = PsnFetcher(settings, repo, auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.tick()
 
@@ -272,7 +282,7 @@ async def test_tick_does_nothing_when_psn_is_not_configured(
     await _linked_user(repo)
     auth = PsnAuth(repo, cipher)  # never configured
     calls = _fake_sync(monkeypatch, PsnSyncOutcome())
-    fetcher = PsnFetcher(settings, repo, auth, FakePublisher())  # type: ignore[arg-type]
+    fetcher = PsnFetcher(settings, repo, auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.tick()
 

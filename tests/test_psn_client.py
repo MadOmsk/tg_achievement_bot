@@ -152,6 +152,38 @@ async def test_build_client_wraps_unexpected_errors_as_setup_error(
         await build_client("whatever")
 
 
+async def test_build_client_with_no_headers_omits_the_kwarg_entirely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The default call must look exactly like it did before `headers` was
+    added (2026-09-09, #48) — a bare positional call, not `headers=None` —
+    so every pre-existing fake in this suite (and PSNAWP itself) keeps
+    working unchanged."""
+    calls: list[tuple[tuple, dict]] = []
+
+    def _fake(*args: object, **kwargs: object) -> object:
+        calls.append((args, kwargs))
+        return object()
+
+    monkeypatch.setattr(psn_client, "PSNAWP", _fake)
+    await build_client("whatever")
+
+    assert calls == [(("whatever",), {})]
+
+
+async def test_build_client_passes_through_custom_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[tuple, dict]] = []
+
+    def _fake(*args: object, **kwargs: object) -> object:
+        calls.append((args, kwargs))
+        return object()
+
+    monkeypatch.setattr(psn_client, "PSNAWP", _fake)
+    await build_client("whatever", headers=psn_client.TRANSLATION_HEADERS)
+
+    assert calls == [(("whatever",), {"headers": psn_client.TRANSLATION_HEADERS})]
+
+
 async def test_check_alive_true_and_false() -> None:
     assert await check_alive(_FakeClient({})) is True
     assert await check_alive(_FakeClient({}, dead=True)) is False

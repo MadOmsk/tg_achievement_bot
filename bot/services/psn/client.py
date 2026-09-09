@@ -179,16 +179,37 @@ def _as_float(value: object) -> float | None:
         return None
 
 
-async def build_client(npsso: str) -> PSNAWP:
+# A second PSNAWP client, built from the same NPSSO but with these headers
+# instead of the library's own defaults, is the only way to ask Sony for a
+# Russian trophy_name/trophy_detail at all (2026-09-09, PSN's own dual-locale
+# bilingual-description fetch, #48) — verified live that PSNAWP's default
+# headers are a static "Accept-Language: en-US,en;q=0.9, Country: US", not
+# tied to the shared account's own language as first assumed. Unlike Xbox
+# (a per-request `language=` kwarg) or Steam (a per-request `l=` param),
+# psnawp bakes locale into the client object's own constructor headers, so
+# there is no cheaper way to ask for a second language on this platform.
+# services/psn/auth.py::PsnAuth.get_translation_client owns the single
+# lazily-built instance of this second client.
+TRANSLATION_HEADERS: dict[str, str] = {"Accept-Language": "ru-RU,ru;q=0.9", "Country": "RU"}
+
+
+async def build_client(npsso: str, *, headers: dict[str, str] | None = None) -> PSNAWP:
     """Constructs the client object — this does NOT exchange the NPSSO for
     a real token (verified live 2026-09-06: psnawp_api's constructor
     "succeeds" instantly even for complete garbage input, no network call
     at all — the actual exchange only happens on the first real API call).
     services/psn/auth.py's set_npsso() makes a real verification call
     right after this for exactly that reason — never trust this function
-    alone to mean "the NPSSO works"."""
+    alone to mean "the NPSSO works".
+
+    `headers` (2026-09-09) lets a caller override PSNAWP's own defaults —
+    only PsnAuth.get_translation_client() (services/psn/auth.py) passes
+    one; every other caller keeps the library's own en-US/US defaults
+    exactly as before."""
     try:
-        return await _call(PSNAWP, npsso)
+        if headers is None:
+            return await _call(PSNAWP, npsso)
+        return await _call(PSNAWP, npsso, headers=headers)
     except PSNAWPAuthenticationError as exc:
         raise PsnTokenDeadError(str(exc)) from None
     except PsnApiError:

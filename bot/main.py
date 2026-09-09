@@ -152,7 +152,7 @@ async def run(settings: Settings) -> None:
     # M-PSN-2) — psn_fetcher.tick() scans every linked account directly on
     # its own schedule. psn_presence below is a separate, unrelated poller
     # (issue #1): presence for /online only, never triggers a trophy poll.
-    psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher)
+    psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher, anthropic_auth=anthropic_auth)
     psn_presence = PsnPresencePoller(settings, repo, psn_auth)
 
     flood_flush = FloodFlush(repo, publisher)

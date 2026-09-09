@@ -203,6 +203,125 @@ async def test_check_health_notifies_once_on_active_to_invalid_transition(
     assert fired == 1
 
 
+# get_translation_client() — the second, Russian-locale client (2026-09-09,
+# #48).
+
+
+async def test_get_translation_client_before_setup_raises_not_configured(
+    repo: Repo, cipher: TokenCipher
+) -> None:
+    auth = PsnAuth(repo, cipher)
+    with pytest.raises(PsnNotConfiguredError):
+        await auth.get_translation_client()
+
+
+async def test_get_translation_client_passes_the_ru_headers(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, str] | None] = []
+
+    async def _build(npsso: str, *, headers: dict[str, str] | None = None) -> _FakeClient:
+        seen.append(headers)
+        return _FakeClient()
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)  # the primary client — no headers override
+    seen.clear()
+
+    await auth.get_translation_client()
+
+    assert seen == [psn_auth_module.TRANSLATION_HEADERS]
+
+
+async def test_get_translation_client_is_cached_and_distinct_from_the_primary(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    build_calls = 0
+
+    async def _build(npsso: str, *, headers: dict[str, str] | None = None) -> _FakeClient:
+        nonlocal build_calls
+        build_calls += 1
+        return _FakeClient()
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)
+    build_calls = 0  # set_npsso's own primary build already happened
+
+    ru_a = await auth.get_translation_client()
+    ru_b = await auth.get_translation_client()
+    primary = await auth.get_client()
+
+    assert ru_a is ru_b
+    assert ru_a is not primary
+    assert build_calls == 1  # cached after the first build, same as the primary
+
+
+async def test_set_npsso_invalidates_a_previously_built_translation_client(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _build(npsso: str, *, headers: dict[str, str] | None = None) -> _FakeClient:
+        return _FakeClient()
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)
+    first_ru = await auth.get_translation_client()
+
+    await auth.set_npsso(NPSSO, admin_id=1)  # e.g. a fresh NPSSO pasted in
+    second_ru = await auth.get_translation_client()
+
+    assert first_ru is not second_ru
+
+
+async def test_clear_invalidates_the_translation_client_too(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _build(npsso: str, *, headers: dict[str, str] | None = None) -> _FakeClient:
+        return _FakeClient()
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)
+    await auth.get_translation_client()
+
+    await auth.clear(admin_id=1)
+
+    with pytest.raises(PsnNotConfiguredError):
+        await auth.get_translation_client()
+
+
+async def test_check_health_death_invalidates_the_translation_client_too(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_client = _FakeClient()
+
+    async def _build(npsso: str, *, headers: dict[str, str] | None = None) -> _FakeClient:
+        return fake_client
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)
+    first_ru = await auth.get_translation_client()
+
+    fake_client.alive = False
+    await auth.check_health()
+
+    build_calls = 0
+
+    async def _rebuild(npsso: str, *, headers: dict[str, str] | None = None) -> _FakeClient:
+        nonlocal build_calls
+        build_calls += 1
+        return _FakeClient()
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _rebuild)
+    second_ru = await auth.get_translation_client()
+
+    assert second_ru is not first_ru
+    assert build_calls == 1
+
+
 async def test_check_health_recovers_silently(
     repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
 ) -> None:

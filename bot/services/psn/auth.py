@@ -19,7 +19,13 @@ from psnawp_api import PSNAWP
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
-from bot.services.psn.client import PsnApiError, PsnTokenDeadError, build_client, check_alive
+from bot.services.psn.client import (
+    TRANSLATION_HEADERS,
+    PsnApiError,
+    PsnTokenDeadError,
+    build_client,
+    check_alive,
+)
 from bot.util import utcnow
 
 log = logging.getLogger(__name__)
@@ -54,6 +60,11 @@ class PsnAuth:
         self._repo = repo
         self._cipher = cipher
         self._client: PSNAWP | None = None
+        # A second, Russian-locale client (2026-09-09, #48) — see
+        # get_translation_client() below and client.py's own
+        # TRANSLATION_HEADERS for why this needs a whole separate PSNAWP
+        # instance rather than a per-request parameter.
+        self._client_ru: PSNAWP | None = None
         # Set from main.py, same pattern as XboxAuthService.on_token_dead —
         # fired at most once per active->invalid transition
         # (poller/service_health.py owns not spamming this every tick).
@@ -86,6 +97,7 @@ class PsnAuth:
             CHECKED_AT_KEY, utcnow().isoformat(timespec="seconds"), admin_id
         )
         self._client = client
+        self._client_ru = None  # rebuilt lazily from the new NPSSO, next use
 
     async def clear(self, admin_id: int) -> None:
         """Remove the stored NPSSO entirely, reverting PSN to "not
@@ -95,6 +107,7 @@ class PsnAuth:
         await self._repo.set_app_setting(STATUS_KEY, STATUS_NOT_CONFIGURED, admin_id)
         await self._repo.delete_app_setting(CHECKED_AT_KEY)
         self._client = None
+        self._client_ru = None
 
     async def get_client(self) -> PSNAWP:
         if self._client is not None:
@@ -105,6 +118,24 @@ class PsnAuth:
         npsso = self._cipher.decrypt(encrypted.encode("ascii"))
         self._client = await build_client(npsso)
         return self._client
+
+    async def get_translation_client(self) -> PSNAWP:
+        """The second, Russian-locale PSNAWP instance services/psn/
+        achievements.py's own bilingual-description fetch needs (2026-09-09,
+        #48) — same lazy-build-from-storage shape as get_client() above,
+        just with client.py's TRANSLATION_HEADERS instead of the library's
+        own defaults. Deliberately its own cached instance, not a second
+        call to get_client() with different headers: PSNAWP bakes headers
+        into the client object at construction time, so there is no way to
+        ask the *same* client for a different locale per call."""
+        if self._client_ru is not None:
+            return self._client_ru
+        encrypted = await self._repo.get_app_setting(NPSSO_KEY)
+        if encrypted is None:
+            raise PsnNotConfiguredError
+        npsso = self._cipher.decrypt(encrypted.encode("ascii"))
+        self._client_ru = await build_client(npsso, headers=TRANSLATION_HEADERS)
+        return self._client_ru
 
     async def check_health(self) -> bool:
         """Active health-check (SPEC 9, M-PSN-1's "мониторинг живости"
@@ -130,7 +161,11 @@ class PsnAuth:
         )
         await self._repo.set_app_setting(CHECKED_AT_KEY, utcnow().isoformat(timespec="seconds"))
         if not alive:
-            self._client = None  # force a fresh exchange once a new NPSSO is set
+            # Force a fresh exchange for both clients once a new NPSSO is
+            # set — the translation client shares the same NPSSO, so a dead
+            # primary means it's equally dead.
+            self._client = None
+            self._client_ru = None
         if was_active and not alive and self.on_dead is not None:
             await self.on_dead()
         return alive

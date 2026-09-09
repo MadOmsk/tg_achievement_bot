@@ -29,6 +29,7 @@ from bot.poller.publisher import Publisher
 from bot.services.psn.achievements import sync_account
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import PsnApiError, account_trophy_level, is_trophy_visible
+from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
 
@@ -47,12 +48,19 @@ class PsnBackfillResult:
 
 class PsnFetcher:
     def __init__(
-        self, settings: Settings, repo: Repo, psn_auth: PsnAuth, publisher: Publisher
+        self,
+        settings: Settings,
+        repo: Repo,
+        psn_auth: PsnAuth,
+        publisher: Publisher,
+        *,
+        anthropic_auth: AnthropicAuth,
     ) -> None:
         self._settings = settings
         self._repo = repo
         self._psn_auth = psn_auth
         self._publisher = publisher
+        self._anthropic_auth = anthropic_auth
 
     async def tick(self) -> None:
         if await self._psn_auth.status() == STATUS_NOT_CONFIGURED:
@@ -78,11 +86,32 @@ class PsnFetcher:
                 log.exception("unexpected failure polling psn account_id=%s", target.account_id)
             await self._repo.touch_psn_poll_state(target.account_id)
 
+    async def _translation_client(self) -> PSNAWP | None:
+        """Best-effort (2026-09-09, #48) — a dead/unavailable second client
+        just means this pass's newly-seen trophies keep whatever
+        single-locale text the primary client already returned (same
+        "degrade to the language already fetched" shape every other
+        platform's bilingual fetch uses), never a reason to fail the whole
+        account. Never lets a second-client failure be mistaken for the
+        *primary* client (and thus the shared NPSSO) being dead."""
+        try:
+            return await self._psn_auth.get_translation_client()
+        except PsnApiError:
+            return None
+
     async def poll_account(self, tg_id: int, account_id: str, online_id: str) -> int:
         """One account's worth of newly-earned trophies, published if any."""
         try:
             client = await self._psn_auth.get_client()
-            outcome = await sync_account(self._repo, client, tg_id, account_id, is_backfill=False)
+            outcome = await sync_account(
+                self._repo,
+                client,
+                tg_id,
+                account_id,
+                is_backfill=False,
+                anthropic_auth=self._anthropic_auth,
+                translation_client=await self._translation_client(),
+            )
         except PsnNotConfiguredError:
             return 0  # PSN got unconfigured mid-run — next tick will also skip cleanly
         except PsnApiError as exc:
@@ -144,7 +173,14 @@ class PsnFetcher:
         # trophies would never get a seen_achievements/psn_title_progress
         # baseline at all (SPEC 9, M-PSN-2).
         outcome = await sync_account(
-            self._repo, client, tg_id, account_id, is_backfill=True, limit=None
+            self._repo,
+            client,
+            tg_id,
+            account_id,
+            is_backfill=True,
+            limit=None,
+            anthropic_auth=self._anthropic_auth,
+            translation_client=await self._translation_client(),
         )
         await self._repo.mark_psn_backfill_done(account_id)
         log.info(

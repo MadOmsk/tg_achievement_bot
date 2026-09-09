@@ -75,6 +75,8 @@ async def _run(repo: Repo, *, is_backfill: bool = False):
         TG_ID,
         ACCOUNT_ID,
         is_backfill=is_backfill,
+        anthropic_auth=object(),  # type: ignore[arg-type]  # none of these trophies have detail text
+        translation_client=None,  # bilingual fetch is covered separately, see test_psn_bilingual.py
     )
 
 

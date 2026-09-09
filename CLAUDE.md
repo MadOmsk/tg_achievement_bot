@@ -291,8 +291,8 @@ every column.
   fallback — so `services/translate` filled the gap). Orchestrated by
   `services/translate/descriptions.py::bilingual_descriptions`, which only
   ever consults this cache and, when needed, the Anthropic API — it never
-  talks to a platform itself. Steam and Xbox both call it as of 2026-09-09
-  (see their own sections under Platform integrations); PSN doesn't yet.
+  talks to a platform itself. Steam, Xbox, and (2026-09-09) PSN all call it
+  now (see their own sections under Platform integrations).
   Nothing renders a description in anything but Russian regardless — that
   needs the still-separate, not-yet-built chat/user locale switch.
 
@@ -375,8 +375,8 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   deliberately skips it, translating history nobody will ever see would
   be wasted API/LLM cost. `ParsedAchievement.description` still always
   ends up Russian today (no language switch exists yet) — this only
-  populates the shared cache for future use. PSN doesn't call any of this
-  yet.
+  populates the shared cache for future use. PSN now does the same (see
+  its own section below), the last of the three platforms to get it.
 
 ### Steam
 
@@ -409,8 +409,8 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
   the same way as any other platform would. The bot only ever renders
   Russian today (no language switch exists yet), so `ParsedAchievement.description`
   still always gets the Russian side — the English half exists only in the
-  cache for now, unused until that switch is built. Xbox now does the same
-  (see its own section above); PSN doesn't call any of this yet.
+  cache for now, unused until that switch is built. Xbox and (2026-09-09)
+  PSN now do the same (see their own sections).
 
 ### PlayStation Network
 
@@ -470,6 +470,29 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   rarity badge are the same emoji).
 - PS3, PS4, PS5, and PS Vita share the same trophy service and fields — no separate
   parsing branch, unlike Xbox 360.
+- **Bilingual descriptions** (2026-09-09, third and last platform wired to
+  `services/translate`, #48): unlike Xbox (a `language=` kwarg) or Steam (an
+  `l=` param), `psnawp` bakes locale into a client's own constructor headers
+  — PSNAWP's default headers are a static `en-US`/`US`, not tied to the
+  shared account's own language as first assumed, and there is no
+  per-request override. `PsnAuth.get_translation_client()`
+  (`services/psn/auth.py`) lazily builds and caches a **second** PSNAWP
+  instance from the same NPSSO, with `services/psn/client.py`'s own
+  `TRANSLATION_HEADERS` (`ru-RU`/`RU`) instead — invalidated alongside the
+  primary client on a new NPSSO, a clear, or the health check finding the
+  service token dead. `services/psn/achievements.py::_bilingual_descriptions`
+  asks this second client for the same title's trophies again, only for
+  trophies not already in `achievement_description_cache`, and only when a
+  translation client is actually available; a failure on the *second*
+  client (rate-limited, half-dead) is swallowed and never raised as
+  PsnApiError/PsnTokenDeadError — that exception class means "the shared
+  NPSSO is dead," which a second client's own trouble says nothing about.
+  Unlike Xbox's own x360-backfill carve-out, this runs during backfill too
+  (same shape as Steam's own version) since `sync_account` is already the
+  one function both the regular poller and backfill share.
+  `ParsedAchievement.description` still always ends up Russian today (no
+  language switch exists yet) — this only populates the shared cache for
+  future use, completing all three platforms.
 
 Open work (see the linked issues, not this file, for scope/status):
 

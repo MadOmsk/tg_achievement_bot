@@ -25,6 +25,7 @@ import logging
 from dataclasses import dataclass, field
 
 from psnawp_api import PSNAWP
+from psnawp_api.models.trophies import TrophyTitle
 
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
@@ -38,6 +39,8 @@ from bot.services.psn.client import (
     trophy_titles_for_account,
 )
 from bot.services.rows import to_achievement_row
+from bot.services.translate.auth import AnthropicAuth
+from bot.services.translate.descriptions import bilingual_descriptions
 from bot.util import parse_iso
 
 log = logging.getLogger(__name__)
@@ -76,6 +79,8 @@ async def sync_account(
     account_id: str,
     *,
     is_backfill: bool,
+    anthropic_auth: AnthropicAuth,
+    translation_client: PSNAWP | None,
     limit: int | None = TITLES_TO_SCAN,
 ) -> PsnSyncOutcome:
     """Scan `limit` of this account's most recently-touched games, persist
@@ -85,6 +90,17 @@ async def sync_account(
 
     `limit=None` (poller/psn_fetcher.py's backfill) scans the whole account
     instead of just the recent window regular polling uses.
+
+    `translation_client` (2026-09-09, #48) is the second, Russian-locale
+    PSNAWP instance (PsnAuth.get_translation_client()) — `None` just means
+    skip the bilingual fetch for this pass (poller/psn_fetcher.py's own
+    best-effort wrapper), same "keep whatever single-locale text the
+    primary client already returned" degrade every other platform's
+    bilingual fetch uses. Unlike Xbox's own x360-backfill carve-out, this
+    runs during backfill too — same shape as Steam's own version of this,
+    since sync_account (unlike Xbox's separate poll_title/backfill split)
+    is already the one function both paths share, and the cache makes a
+    repeat backfill scan of the same game free the second time anyway.
     """
     titles = await trophy_titles_for_account(client, account_id, limit=limit)
     outcome = PsnSyncOutcome(scanned=len(titles))
@@ -135,6 +151,10 @@ async def sync_account(
             outcome.unmapped_errors += 1
             continue
 
+        if translation_client is not None:
+            await _bilingual_descriptions(
+                repo, anthropic_auth, translation_client, account_id, title, earned
+            )
         rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
         inserted = await repo.insert_new_achievements_psn(
             tg_id, account_id, rows, is_backfill=is_backfill
@@ -165,3 +185,79 @@ def _to_parsed(np_communication_id: str, item: EarnedTrophy) -> ParsedAchievemen
         is_secret=item.trophy_hidden,
         trophy_type=item.trophy_type.value if item.trophy_type else None,
     )
+
+
+async def _bilingual_descriptions(
+    repo: Repo,
+    anthropic_auth: AnthropicAuth,
+    translation_client: PSNAWP,
+    account_id: str,
+    title: TrophyTitle,
+    earned: list[EarnedTrophy],
+) -> None:
+    """Mutates each item's `.trophy_detail` in place — same shape Xbox's own
+    `Fetcher._bilingual_descriptions` uses. A second, Russian-locale request
+    for this one game's trophy detail text (2026-09-09, #48) — see
+    services/psn/auth.py's get_translation_client for why PSN needs a whole
+    second client for this, unlike Xbox/Steam's own single-client,
+    different-parameter version of the same idea.
+
+    Best-effort throughout: any failure fetching with `translation_client`
+    (Sony rate-limiting the second client, a title it can't see, a
+    half-dead second session) just leaves this pass's trophies with
+    whatever English text the *primary* client already fetched — never
+    raised as PsnApiError/PsnTokenDeadError, since a failure here says
+    nothing about the primary client's own health and must not be mistaken
+    for the service NPSSO itself being dead.
+    """
+    candidates = {item.trophy_id: item.trophy_detail for item in earned if item.trophy_detail}
+    if not candidates:
+        return
+
+    to_fetch: dict[int, str] = {}
+    cached: dict[int, str] = {}
+    for trophy_id, english_text in candidates.items():
+        row = await repo.get_cached_description(
+            Platform.PSN, title.np_communication_id, str(trophy_id)
+        )
+        if row is not None:
+            if row.description_ru is not None:
+                cached[trophy_id] = row.description_ru
+        else:
+            to_fetch[trophy_id] = english_text
+    if not to_fetch:
+        _apply(earned, cached)
+        return
+
+    try:
+        russian_earned = await trophies_for_title(translation_client, account_id, title)
+    except Exception:
+        log.info(
+            "psn bilingual fetch for title %s skipped", title.np_communication_id, exc_info=True
+        )
+        _apply(earned, cached)
+        return
+
+    russian_by_id = {item.trophy_id: item.trophy_detail for item in russian_earned}
+    native = {
+        str(trophy_id): (russian_text, english_text)
+        for trophy_id, english_text in to_fetch.items()
+        if (russian_text := russian_by_id.get(trophy_id)) is not None
+    }
+    if native:
+        resolved = await bilingual_descriptions(
+            repo, anthropic_auth, Platform.PSN, title.np_communication_id, native
+        )
+        for trophy_id in to_fetch:
+            pair = resolved.get(str(trophy_id))
+            if pair is not None and pair[0] is not None:
+                cached[trophy_id] = pair[0]
+
+    _apply(earned, cached)
+
+
+def _apply(earned: list[EarnedTrophy], resolved: dict[int, str]) -> None:
+    for item in earned:
+        russian_text = resolved.get(item.trophy_id)
+        if russian_text is not None:
+            item.trophy_detail = russian_text
