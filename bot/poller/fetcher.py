@@ -11,6 +11,8 @@ from bot.db.repo import AchievementRow, Repo, TitleHistoryRow
 from bot.i18n import gettext
 from bot.poller.publisher import Publisher
 from bot.services.rows import to_achievement_row
+from bot.services.translate.auth import AnthropicAuth
+from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.client import TitleHistoryEntry, XboxApiError, XboxClient
 from bot.services.xbox.models import ParsedAchievement
 from bot.util import parse_iso, utcnow
@@ -22,11 +24,18 @@ _ = lambda key, **kwargs: gettext("fetcher", key, **kwargs)  # noqa: E731
 
 class Fetcher:
     def __init__(
-        self, repo: Repo, client: XboxClient, publisher: Publisher, concurrency: int = 2
+        self,
+        repo: Repo,
+        client: XboxClient,
+        publisher: Publisher,
+        concurrency: int = 2,
+        *,
+        anthropic_auth: AnthropicAuth,
     ) -> None:
         self._repo = repo
         self._client = client
         self._publisher = publisher
+        self._anthropic_auth = anthropic_auth
         self._backfill_slots = asyncio.Semaphore(concurrency)
 
     def api_usage(self) -> list[tuple[int, int, float]]:
@@ -46,6 +55,7 @@ class Fetcher:
         """Fetch one game's achievements, keep the new ones, publish them."""
         parsed = await self._client.title_achievements(tg_id, title_id, platform)
         await self._fill_x360_icon(tg_id, title_id, platform, parsed)
+        await self._bilingual_descriptions(tg_id, title_id, platform, parsed)
         rows = [to_achievement_row(item) for item in parsed]
         new_rows = await self._repo.insert_new_achievements(xuid, rows, is_backfill=False)
         await self._repo.mark_achievements_polled(xuid)
@@ -114,6 +124,63 @@ class Fetcher:
             for item in parsed:
                 item.icon_url = icon_url
 
+    async def _bilingual_descriptions(
+        self, tg_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
+    ) -> None:
+        """Mutates each item's `.description` in place — same shape
+        `_fill_x360_icon` above already uses. Only called from poll_title/
+        catch_up (2026-09-09): both are the only two paths that actually
+        publish what they fetch here — backfill's own x360 pass (below)
+        deliberately skips this, translating history nobody will ever see
+        would just be wasted API/LLM cost for nothing.
+
+        A second `ru-RU` request, only for achievements not already in
+        achievement_description_cache — once every achievement in a game
+        has been seen once, from any account, this never runs again for
+        it. Xbox's own English text is left as `.description` for anything
+        the bilingual lookup couldn't resolve (no cache hit and the second
+        request came back empty/failed) — same "degrade to the language
+        already fetched" shape services/steam/achievements.py's own
+        version of this uses.
+        """
+        candidates = {item.achievement_id: item.description for item in parsed if item.description}
+        if not candidates:
+            return
+
+        result: dict[str, tuple[str | None, str | None]] = {}
+        uncached: dict[str, str] = {}
+        for achievement_id, english_text in candidates.items():
+            cached = await self._repo.get_cached_description(platform, title_id, achievement_id)
+            if cached is not None:
+                result[achievement_id] = (cached.description_ru, cached.description_en)
+            else:
+                uncached[achievement_id] = english_text
+
+        if uncached:
+            try:
+                russian_parsed = await self._client.title_achievements(
+                    tg_id, title_id, platform, language="ru-RU"
+                )
+            except XboxApiError as exc:
+                log.info("bilingual fetch for title %s skipped: %s", title_id, exc)
+                russian_parsed = []
+            russian_by_id = {item.achievement_id: item.description for item in russian_parsed}
+            native = {
+                achievement_id: (russian_text, english_text)
+                for achievement_id, english_text in uncached.items()
+                if (russian_text := russian_by_id.get(achievement_id)) is not None
+            }
+            if native:
+                resolved = await bilingual_descriptions(
+                    self._repo, self._anthropic_auth, platform, title_id, native
+                )
+                result.update(resolved)
+
+        for item in parsed:
+            resolved_pair = result.get(item.achievement_id)
+            if resolved_pair is not None and resolved_pair[0] is not None:
+                item.description = resolved_pair[0]
+
     async def backfill(self, tg_id: int, xuid: str) -> int:
         """Mark everything already unlocked as seen, publishing nothing.
 
@@ -180,6 +247,7 @@ class Fetcher:
                     log.info("catch-up skipped title %s: %s", entry.title_id, exc)
                     continue
                 await self._fill_x360_icon(tg_id, entry.title_id, entry.platform, parsed)
+                await self._bilingual_descriptions(tg_id, entry.title_id, entry.platform, parsed)
 
                 new_rows = await self._repo.insert_new_achievements(
                     xuid, [to_achievement_row(item) for item in parsed], is_backfill=False

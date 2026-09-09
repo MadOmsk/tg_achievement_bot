@@ -52,7 +52,7 @@ class FakeClient:
         self.resolved: list[str] = []
         self.resolvable: dict[str, FakeHistoryEntry] = {}
 
-    async def title_achievements(self, tg_id, title_id, platform):
+    async def title_achievements(self, tg_id, title_id, platform, *, language: str = "en-US"):
         self.title_calls.append((title_id, platform))
         return self.by_title.get(title_id, [])
 
@@ -88,7 +88,7 @@ async def test_dedup_publishes_each_achievement_once(repo: Repo, cipher) -> None
     await _connected_user(repo, cipher)
     client = FakeClient(by_title={"1": [parsed("a1"), parsed("a2")]})
     publisher = FakePublisher()
-    fetcher = Fetcher(repo, client, publisher)  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "modern", "Gears") == 2
     # Same answer from Xbox Live a minute later: nothing new, nothing published.
@@ -108,7 +108,7 @@ async def test_backfill_publishes_nothing(repo: Repo, cipher) -> None:
         history=[FakeHistoryEntry("1", "Gears of War", "modern")],
     )
     publisher = FakePublisher()
-    fetcher = Fetcher(repo, client, publisher)  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     stored = await fetcher.backfill(TG_ID, XUID)
 
@@ -129,7 +129,7 @@ async def test_backfill_covers_x360_titles_separately(repo: Repo, cipher) -> Non
             FakeHistoryEntry("360", "Gears of War 3", "x360"),
         ],
     )
-    fetcher = Fetcher(repo, client, FakePublisher())  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.backfill(TG_ID, XUID)
 
@@ -202,7 +202,7 @@ async def test_title_name_is_resolved_once_when_presence_has_none(repo: Repo, ci
         "85494077", "Microsoft Solitaire Collection", "modern"
     )
     publisher = FakePublisher()
-    fetcher = Fetcher(repo, client, publisher)  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "85494077", "modern", None)
     assert client.resolved == ["85494077"]
@@ -224,7 +224,7 @@ async def test_x360_achievements_get_the_games_box_art_as_their_icon(repo: Repo,
         "360", "Gears of War 3", "x360", icon_url="https://example/boxart.jpg"
     )
     publisher = FakePublisher()
-    fetcher = Fetcher(repo, client, publisher)  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "x360", "Gears of War 3")
 
@@ -268,7 +268,7 @@ async def test_catch_up_publishes_only_what_is_fresh(repo: Repo, cipher) -> None
         history=[FakeHistoryEntry("1", "Gears of War", "modern")],
     )
     publisher = FakePublisher()
-    fetcher = Fetcher(repo, client, publisher)  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     titles, published = await fetcher.catch_up(
         TG_ID, XUID, "Mad Omsk", now - timedelta(days=14), 24, 20
@@ -297,7 +297,7 @@ async def test_catch_up_also_fills_x360_box_art(repo: Repo, cipher) -> None:
         "360", "Gears of War 3", "x360", icon_url="https://example/boxart.jpg"
     )
     publisher = FakePublisher()
-    fetcher = Fetcher(repo, client, publisher)  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.catch_up(TG_ID, XUID, "Mad Omsk", now - timedelta(days=1), 24, 20)
 
@@ -315,7 +315,7 @@ async def test_catch_up_skips_games_untouched_since_last_poll(repo: Repo, cipher
             )
         ],
     )
-    fetcher = Fetcher(repo, client, FakePublisher())  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     titles, published = await fetcher.catch_up(
         TG_ID, XUID, "Mad Omsk", now - timedelta(hours=1), 24, 20

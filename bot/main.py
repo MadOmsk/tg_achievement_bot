@@ -138,7 +138,9 @@ async def run(settings: Settings) -> None:
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo)
-    fetcher = Fetcher(repo, client, publisher, settings.backfill_concurrency)
+    fetcher = Fetcher(
+        repo, client, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
+    )
     poller = PresencePoller(settings, repo, client, fetcher)
 
     steam_fetcher = SteamFetcher(

@@ -131,7 +131,7 @@ class XboxClient:
     # -------------------------------------------------------- achievements
 
     async def title_achievements(
-        self, tg_id: int, title_id: str, platform: Platform
+        self, tg_id: int, title_id: str, platform: Platform, *, language: str = "en-US"
     ) -> list[ParsedAchievement]:
         """Achievements of one game — the only request that carries rarity.
 
@@ -142,20 +142,31 @@ class XboxClient:
         NotStarted), so an empty answer means "wrong contract", not "no
         achievements" — and we ask again as Xbox 360. Without this a whole
         back-compat session would be published as nothing at all.
+
+        `language` (2026-09-09, bilingual descriptions) — this call was
+        always hardcoded to `en-US` before; the caller can now ask for
+        `ru-RU` too (poller/fetcher.py's own bilingual helper does, once per
+        achievement ever — see that module) to tell a genuine Xbox
+        Live localization apart from its documented fallback to the title's
+        own default strings when no match exists for the requested locale.
         """
         params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         if platform == Platform.X360:
             return parse_achievements(
-                await self._get_achievements(tg_id, "1", params), Platform.X360, title_id
+                await self._get_achievements(tg_id, "1", params, language=language),
+                Platform.X360,
+                title_id,
             )
 
-        payload = await self._get_achievements(tg_id, "4", params)
+        payload = await self._get_achievements(tg_id, "4", params, language=language)
         if payload.get("achievements"):
             return parse_achievements(payload, Platform.MODERN, title_id)
 
         log.info("title %s looks like Xbox 360, retrying on contract 1", title_id)
         return parse_achievements(
-            await self._get_achievements(tg_id, "1", params), Platform.X360, title_id
+            await self._get_achievements(tg_id, "1", params, language=language),
+            Platform.X360,
+            title_id,
         )
 
     async def all_achievements(self, tg_id: int) -> list[ParsedAchievement]:
@@ -175,7 +186,9 @@ class XboxClient:
             params = {"maxItems": str(PAGE_SIZE), "continuationToken": token}
         return collected
 
-    async def _get_achievements(self, tg_id: int, contract: str, params: dict[str, str]) -> dict:
+    async def _get_achievements(
+        self, tg_id: int, contract: str, params: dict[str, str], *, language: str = "en-US"
+    ) -> dict:
         manager = await self._auth.authenticated_manager(tg_id)
         assert manager.xsts_token is not None
         url = ACHIEVEMENTS_URL.format(xuid=manager.xsts_token.xuid)
@@ -183,7 +196,7 @@ class XboxClient:
             "Authorization": manager.xsts_token.authorization_header_value,
             "x-xbl-contract-version": contract,
             "Accept": "application/json",
-            "Accept-Language": "en-US",
+            "Accept-Language": language,
         }
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
