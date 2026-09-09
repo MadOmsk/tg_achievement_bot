@@ -33,6 +33,17 @@ log = logging.getLogger(__name__)
 
 MAX_CONSECUTIVE_FAILURES = 3
 
+# httpx's own default (5s total) is too tight for this session specifically
+# (found live, 2026-09-09): every restart forces a cold connection for every
+# linked account at once — no keep-alive from a previous request yet — and
+# title_history's own response (up to 200 titles) is heavier than a presence
+# ping, so `startup_catch_up` reliably timed out for every single Xbox user
+# right after a deploy, with an unhelpfully empty httpx exception message.
+# Generous on purpose: this only ever costs time in the slow/cold case, and
+# startup_catch_up already runs as a detached background task (SPEC 5.8) —
+# nothing in the bot's own responsiveness waits on it.
+XBOX_HTTP_TIMEOUT_SECONDS = 20.0
+
 
 class NotConnectedError(Exception):
     """The user has never linked an Xbox account."""
@@ -69,6 +80,14 @@ class XboxAuthService:
 
     async def start(self) -> None:
         self._session = SignedSession()
+        # SignedSession's own constructor takes no timeout kwarg at all (it
+        # calls httpx.AsyncClient's own __init__ with zero arguments) — the
+        # only way in is httpx.AsyncClient's public `.timeout` setter, after
+        # construction. Every call this session ever makes (auth, presence,
+        # title_history, achievements — Session.request in xbox-webapi-python
+        # always proxies through this one shared client) gets the same
+        # generous budget; see XBOX_HTTP_TIMEOUT_SECONDS above for why.
+        self._session.timeout = httpx.Timeout(XBOX_HTTP_TIMEOUT_SECONDS)
 
     async def close(self) -> None:
         if self._session is not None:

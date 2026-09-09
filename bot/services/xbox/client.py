@@ -109,7 +109,7 @@ class XboxClient:
         except httpx.HTTPStatusError as exc:
             raise _translate(exc) from None
         except httpx.RequestError as exc:
-            raise XboxApiError(f"presence request failed: {exc}") from None
+            raise XboxApiError(f"presence request failed: {exc!r}") from None
 
         title_id, title_name, device = _current_title(item)
         last_seen = getattr(item, "last_seen", None)
@@ -187,7 +187,7 @@ class XboxClient:
                 response = await manager.session.get(url, params=params, headers=headers)
             except httpx.RequestError as exc:
                 if attempt == MAX_ATTEMPTS:
-                    raise XboxApiError(f"achievements request failed: {exc}") from None
+                    raise XboxApiError(f"achievements request failed: {exc!r}") from None
                 await asyncio.sleep(2**attempt)
                 continue
 
@@ -232,7 +232,7 @@ class XboxClient:
         except httpx.HTTPStatusError as exc:
             raise _translate(exc) from None
         except httpx.RequestError as exc:
-            raise XboxApiError(f"profile request failed: {exc}") from None
+            raise XboxApiError(f"profile request failed: {exc!r}") from None
 
         for user in getattr(response, "profile_users", None) or []:
             for setting in getattr(user, "settings", None) or []:
@@ -258,7 +258,7 @@ class XboxClient:
         except httpx.HTTPStatusError as exc:
             raise _translate(exc) from None
         except httpx.RequestError as exc:
-            raise XboxApiError(f"title info request failed: {exc}") from None
+            raise XboxApiError(f"title info request failed: {exc!r}") from None
 
         for title in response.titles or []:
             return _as_entry(title)
@@ -291,7 +291,7 @@ class XboxClient:
         except httpx.HTTPStatusError as exc:
             raise _translate(exc) from None
         except httpx.RequestError as exc:
-            raise XboxApiError(f"title history request failed: {exc}") from None
+            raise XboxApiError(f"title history request failed: {exc!r}") from None
 
         return [_as_entry(title) for title in response.titles or []]
 

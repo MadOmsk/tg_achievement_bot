@@ -15,6 +15,7 @@ from bot.config import Settings
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
 from bot.services.xbox.auth import (
+    XBOX_HTTP_TIMEOUT_SECONDS,
     TokenDeadError,
     TokenRefreshError,
     XboxAuthService,
@@ -83,6 +84,25 @@ def _service(
     service = XboxAuthService(settings, repo, cipher)
     service._manager = lambda: manager  # type: ignore[assignment,method-assign]
     return service
+
+
+async def test_start_gives_the_session_a_generous_timeout(
+    settings: Settings, repo: Repo, cipher: TokenCipher
+) -> None:
+    """Found live (2026-09-09): SignedSession's own constructor takes no
+    timeout kwarg at all, so every call went out on httpx's own 5s default
+    — too tight for a cold connection right after a restart plus
+    title_history's larger response, which made startup_catch_up fail for
+    every single Xbox user right after a deploy. No real network call here
+    (SignedSession's own __init__ makes none) — just confirms .start()
+    actually overrides the default via httpx.AsyncClient's own setter."""
+    service = XboxAuthService(settings, repo, cipher)
+    await service.start()
+    try:
+        assert service._session is not None
+        assert service._session.timeout == httpx.Timeout(XBOX_HTTP_TIMEOUT_SECONDS)
+    finally:
+        await service.close()
 
 
 async def test_new_token_is_stored_before_any_further_request(

@@ -263,6 +263,19 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   a lookup key. (This is Xbox-internal, the same role SteamID64 and PSN's
   account_id play for their own platforms below — it doesn't change `tg_id` being
   the one cross-platform, top-level key a *person* is identified by.)
+- The shared httpx session (`XboxAuthService`'s own `SignedSession`, one per
+  process — every Xbox Live call, auth included, proxies through it) gets an
+  explicit 20s timeout (`XBOX_HTTP_TIMEOUT_SECONDS`), not httpx's own 5s
+  default. Found live (2026-09-09): every restart forces a cold connection
+  for every linked account at once, and `title_history`'s response (up to
+  200 titles) is heavier than a presence ping, so the 5s default reliably
+  timed out `startup_catch_up` for every single user right after a deploy —
+  with an unhelpfully empty httpx exception message on top, since
+  `SignedSession`'s own constructor takes no timeout kwarg at all (the fix
+  sets `.timeout` via `httpx.AsyncClient`'s own setter, right after
+  construction). The `{exc!r}` (not `{exc}`) in every `XboxApiError` message
+  in `services/xbox/client.py` is the other half of that same fix — a bare
+  connection-level httpx error often stringifies to nothing at all.
 
 ### Steam
 
