@@ -5,7 +5,7 @@ Layout only, placeholders instead of real data. For editing.
 ## /stats
 
 ```
-📊 <Ник/Имя>
+👤 <Ник/Имя>
 🟢 XBOX: <ник>  ·  N достижений  ·  🏆 K  ·  gamerscore G
 ⚫ Steam: <ник>  ·  N достижений  ·  🏆 K
 🔵 PlayStation: <ник>  ·  N трофеев  ·  уровень L
