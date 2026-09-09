@@ -187,9 +187,9 @@ async def test_reset_button_appears_next_to_each_connected_platforms_refresh_but
     _text, markup = await _card(repo, 1)
 
     datas = _callback_datas(markup)
-    assert "a:sync:1" in datas and "a:reset:xbox:1" in datas
-    assert "a:syncsteam:1" in datas and "a:reset:steam:1" in datas
-    assert "a:syncpsn:1" in datas and "a:reset:psn:1" in datas
+    assert "a:sync:xbox:1" in datas and "a:reset:xbox:1" in datas
+    assert "a:sync:steam:1" in datas and "a:reset:steam:1" in datas
+    assert "a:sync:psn:1" in datas and "a:reset:psn:1" in datas
 
 
 async def test_no_reset_buttons_for_platforms_never_connected(repo: Repo) -> None:

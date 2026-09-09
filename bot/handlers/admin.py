@@ -243,30 +243,29 @@ async def keys_menu(callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: Ps
     await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
 
 
-@router.callback_query(F.data == "a:keyset:steam")
-async def keys_set_steam(callback: CallbackQuery) -> None:
-    _awaiting_input[callback.from_user.id] = (STEAM_KEY_KEY, None)
-    await _redraw(callback, _("admin-keys-steam-prompt"), _cancel_input_keyboard())
+# One parameterized handler per action instead of a Steam/PSN pair each
+# (2026-09-09 refactor, same shape reset_platform_confirm/_confirmed below
+# already used for all three platforms) — callback_data's own trailing
+# segment says which key, same "()" wiring on either platform's button.
+_KEYSET_APP_SETTING_KEY = {"steam": STEAM_KEY_KEY, "psn": PSN_NPSSO_KEY}
+_KEYSET_PROMPT = {STEAM_KEY_KEY: "admin-keys-steam-prompt", PSN_NPSSO_KEY: "admin-keys-psn-prompt"}
 
 
-@router.callback_query(F.data == "a:keyset:psn")
-async def keys_set_psn(callback: CallbackQuery) -> None:
-    _awaiting_input[callback.from_user.id] = (PSN_NPSSO_KEY, None)
-    await _redraw(callback, _("admin-keys-psn-prompt"), _cancel_input_keyboard())
+@router.callback_query(F.data.startswith("a:keyset:"))
+async def keys_set(callback: CallbackQuery) -> None:
+    assert callback.data is not None
+    platform = callback.data.rsplit(":", 1)[1]
+    key = _KEYSET_APP_SETTING_KEY[platform]
+    _awaiting_input[callback.from_user.id] = (key, None)
+    await _redraw(callback, _(_KEYSET_PROMPT[key]), _cancel_input_keyboard())
 
 
-@router.callback_query(F.data == "a:keyclr:steam")
-async def keys_clear_steam(
-    callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth
-) -> None:
-    await steam_auth.clear(callback.from_user.id)
-    _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
-
-
-@router.callback_query(F.data == "a:keyclr:psn")
-async def keys_clear_psn(callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth) -> None:
-    await psn_auth.clear(callback.from_user.id)
+@router.callback_query(F.data.startswith("a:keyclr:"))
+async def keys_clear(callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth) -> None:
+    assert callback.data is not None
+    platform = callback.data.rsplit(":", 1)[1]
+    auth = steam_auth if platform == "steam" else psn_auth
+    await auth.clear(callback.from_user.id)
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(callback, *await _keys_screen(steam_auth, psn_auth))
 
@@ -792,75 +791,64 @@ async def user_exclude(callback: CallbackQuery, repo: Repo) -> None:
     await _redraw(callback, *await _card(repo, tg_id))
 
 
+_SYNC_NOT_CONNECTED_KEY = {
+    "xbox": "admin-user-not-connected",
+    "steam": "admin-steam-not-connected",
+    "psn": "admin-psn-not-connected",
+}
+
+
+async def _sync_target(repo: Repo, platform: str, tg_id: int) -> tuple[str, str] | None:
+    """(external_id, display_name) for user_refresh below, or None if this
+    platform isn't connected for this person — Xbox resolves through
+    `users`, Steam/PSN through `platform_links`, same split every other
+    per-platform lookup in this file already has."""
+    if platform == "xbox":
+        user = await repo.get_user(tg_id)
+        if user is None or not user.xuid:
+            return None
+        return user.xuid, user.gamertag or _("admin-default-player")
+    link = await repo.get_platform_link(
+        tg_id, Platform.STEAM if platform == "steam" else Platform.PSN
+    )
+    if link is None:
+        return None
+    return link.external_id, link.display_name or link.external_id
+
+
 @router.callback_query(F.data.startswith("a:sync:"))
-async def user_refresh(callback: CallbackQuery, repo: Repo, fetcher: Fetcher) -> None:
-    """The only place in the whole interface that may call the API on demand
-    (SPEC 1.5)."""
-    assert callback.data is not None
-    tg_id = int(callback.data.rsplit(":", 1)[1])
-    user = await repo.get_user(tg_id)
-    if user is None or not user.xuid:
-        await callback.answer(_("admin-user-not-connected"), show_alert=True)
-        return
-
-    await callback.answer(_("admin-refreshing"))
-    try:
-        summary = await fetcher.refresh_user(
-            tg_id, user.xuid, user.gamertag or _("admin-default-player")
-        )
-    except Exception:
-        log.exception("admin refresh of tg_id=%s failed", tg_id)
-        await callback.answer(_("admin-refresh-failed"), show_alert=True)
-        return
-    text, markup = await _card(repo, tg_id)
-    await _redraw(callback, f"{text}\n\n{summary}", markup)
-
-
-@router.callback_query(F.data.startswith("a:syncsteam:"))
-async def user_refresh_steam(
-    callback: CallbackQuery, repo: Repo, steam_fetcher: SteamFetcher
+async def user_refresh(
+    callback: CallbackQuery,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_fetcher: PsnFetcher,
 ) -> None:
-    """Steam's counterpart of user_refresh above (2026-09-05 follow-up) —
-    the admin panel never had a way to poll one Steam account on demand."""
+    """The only place in the whole interface that may call the API on demand
+    (SPEC 1.5) — one handler for all three platforms (2026-09-09 refactor,
+    same shape reset_platform_confirm/_confirmed below already used):
+    Fetcher/SteamFetcher/PsnFetcher all expose a compatible
+    refresh_user(tg_id, external_id, name) -> str."""
     assert callback.data is not None
-    tg_id = int(callback.data.rsplit(":", 1)[1])
-    link = await repo.get_platform_link(tg_id, Platform.STEAM)
-    if link is None:
-        await callback.answer(_("admin-steam-not-connected"), show_alert=True)
+    _, _prefix, platform, tg_id_s = callback.data.split(":")
+    tg_id = int(tg_id_s)
+
+    target = await _sync_target(repo, platform, tg_id)
+    if target is None:
+        await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
         return
+    external_id, name = target
 
     await callback.answer(_("admin-refreshing"))
+    fetcher_by_platform: dict[str, Fetcher | SteamFetcher | PsnFetcher] = {
+        "xbox": fetcher,
+        "steam": steam_fetcher,
+        "psn": psn_fetcher,
+    }
     try:
-        summary = await steam_fetcher.refresh_user(
-            tg_id, link.external_id, link.display_name or link.external_id
-        )
+        summary = await fetcher_by_platform[platform].refresh_user(tg_id, external_id, name)
     except Exception:
-        log.exception("admin steam refresh of tg_id=%s failed", tg_id)
-        await callback.answer(_("admin-refresh-failed"), show_alert=True)
-        return
-    text, markup = await _card(repo, tg_id)
-    await _redraw(callback, f"{text}\n\n{summary}", markup)
-
-
-@router.callback_query(F.data.startswith("a:syncpsn:"))
-async def user_refresh_psn(callback: CallbackQuery, repo: Repo, psn_fetcher: PsnFetcher) -> None:
-    """PSN's counterpart of user_refresh_steam (#27) — PSN had no
-    admin-triggered resync at all, and an account whose first backfill
-    crashed could only be recovered with a manual DB script on the server."""
-    assert callback.data is not None
-    tg_id = int(callback.data.rsplit(":", 1)[1])
-    link = await repo.get_platform_link(tg_id, Platform.PSN)
-    if link is None:
-        await callback.answer(_("admin-psn-not-connected"), show_alert=True)
-        return
-
-    await callback.answer(_("admin-refreshing"))
-    try:
-        summary = await psn_fetcher.refresh_user(
-            tg_id, link.external_id, link.display_name or link.external_id
-        )
-    except Exception:
-        log.exception("admin psn refresh of tg_id=%s failed", tg_id)
+        log.exception("admin %s refresh of tg_id=%s failed", platform, tg_id)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
         return
     text, markup = await _card(repo, tg_id)
@@ -1354,13 +1342,15 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     )
     if user.xuid:
         builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-xbox"), callback_data=f"a:sync:{tg_id}"),
+            InlineKeyboardButton(
+                text=_("admin-refresh-xbox"), callback_data=f"a:sync:xbox:{tg_id}"
+            ),
             InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{tg_id}"),
         )
     if steam_link is not None:
         builder.row(
             InlineKeyboardButton(
-                text=_("admin-refresh-steam"), callback_data=f"a:syncsteam:{tg_id}"
+                text=_("admin-refresh-steam"), callback_data=f"a:sync:steam:{tg_id}"
             ),
             InlineKeyboardButton(
                 text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
@@ -1368,7 +1358,7 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
         )
     if psn_link is not None:
         builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:syncpsn:{tg_id}"),
+            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:sync:psn:{tg_id}"),
             InlineKeyboardButton(text=_("admin-reset-psn"), callback_data=f"a:reset:psn:{tg_id}"),
         )
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))

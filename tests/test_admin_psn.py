@@ -19,7 +19,7 @@ async def test_card_shows_a_psn_resync_button_when_psn_is_linked(repo: Repo) -> 
 
     _text, markup = await _card(repo, 1)
 
-    assert "a:syncpsn:1" in _callback_datas(markup)
+    assert "a:sync:psn:1" in _callback_datas(markup)
 
 
 async def test_card_has_no_psn_resync_button_without_a_psn_link(repo: Repo) -> None:
@@ -29,5 +29,5 @@ async def test_card_has_no_psn_resync_button_without_a_psn_link(repo: Repo) -> N
     _text, markup = await _card(repo, 1)
 
     datas = _callback_datas(markup)
-    assert "a:syncsteam:1" in datas
-    assert not any(d.startswith("a:syncpsn:") for d in datas)
+    assert "a:sync:steam:1" in datas
+    assert not any(d.startswith("a:sync:psn:") for d in datas)
