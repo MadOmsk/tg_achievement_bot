@@ -130,3 +130,18 @@ async def test_translate_descriptions_returns_empty_when_reply_is_not_a_list(mon
         translate_client.httpx, "AsyncClient", _FakeAsyncClient(200, post_body=body)
     )
     assert await translate_descriptions("key", {"A": "text"}, target_language="ru") == {}
+
+
+async def test_translate_descriptions_handles_a_markdown_fenced_reply(monkeypatch) -> None:
+    """Found live (2026-09-09): Haiku wrapped its array in a ```json ... ```
+    fence despite being asked for ONLY the array — a real response, not a
+    hypothetical edge case."""
+    fenced = "```json\n" + json.dumps(["Победи в игре"]) + "\n```"
+    body = _messages_response(fenced)
+    monkeypatch.setattr(
+        translate_client.httpx, "AsyncClient", _FakeAsyncClient(200, post_body=body)
+    )
+
+    result = await translate_descriptions("key", {"WIN": "Win the game"}, target_language="ru")
+
+    assert result == {"WIN": "Победи в игре"}

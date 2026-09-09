@@ -130,7 +130,7 @@ async def translate_descriptions(
 
     try:
         content = response.json()["content"][0]["text"]
-        translations = json.loads(content)
+        translations = json.loads(_strip_json_fence(content))
     except (KeyError, IndexError, ValueError) as exc:
         log.warning("anthropic translate: could not parse response: %r", exc)
         return {}
@@ -139,3 +139,17 @@ async def translate_descriptions(
         return {}
 
     return dict(zip(ids, translations, strict=False))
+
+
+def _strip_json_fence(text: str) -> str:
+    """Haiku sometimes wraps its JSON in a markdown code fence
+    (```json ... ```) despite being asked for "ONLY" the array — found live
+    (2026-09-09) parsing a real response. Strips one if present; the text
+    is returned unchanged otherwise, so a genuinely bare array still parses
+    exactly as before this existed."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.removeprefix("```json").removeprefix("```")
+        stripped = stripped.removesuffix("```")
+        stripped = stripped.strip()
+    return stripped
