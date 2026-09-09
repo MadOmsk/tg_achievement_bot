@@ -42,6 +42,11 @@ RATE_WINDOWS: tuple[tuple[int, float], ...] = ((100, 15.0), (300, 300.0))
 
 X360_DEVICES = {"Xbox360", "Xbox 360"}
 
+# A hard wall-clock ceiling on title_history() (2026-09-09) — see that
+# method's own docstring for why httpx's session-level read timeout alone
+# does not actually bound this call.
+TITLE_HISTORY_DEADLINE_SECONDS = 60.0
+
 
 class XboxApiError(Exception):
     """Expected failure — the poller logs it and moves to the next user."""
@@ -279,15 +284,30 @@ class XboxClient:
         briefly ran with max_items=2000 while chasing what looked like a gap
         in "Всего" — that turned out to be the wrong target, since "Всего" is
         a count, not a score; reverted once that was clear.)
+
+        Wrapped in `asyncio.wait_for` on top of the session's own read
+        timeout (found live, 2026-09-09): httpx's read timeout resets on
+        every chunk received, it is not a ceiling on the *whole* response —
+        a large title_history response trickling in slowly enough between
+        chunks never trips it at all, and `startup_catch_up`'s otherwise-
+        sequential loop over every Xbox user just stopped advancing, with
+        no exception and no timeout, until the process was restarted. This
+        is the actual hard deadline; the session's own read timeout only
+        matters for a connection that goes fully silent mid-response.
         """
         manager = await self._auth.authenticated_manager(tg_id)
         assert manager.xsts_token is not None
         client = XboxLiveClient(manager)
         await self._limiter.acquire()
         try:
-            response = await client.titlehub.get_title_history(
-                manager.xsts_token.xuid, max_items=max_items
+            response = await asyncio.wait_for(
+                client.titlehub.get_title_history(manager.xsts_token.xuid, max_items=max_items),
+                timeout=TITLE_HISTORY_DEADLINE_SECONDS,
             )
+        except TimeoutError:
+            raise XboxApiError(
+                f"title history request exceeded {TITLE_HISTORY_DEADLINE_SECONDS:.0f}s overall"
+            ) from None
         except httpx.HTTPStatusError as exc:
             raise _translate(exc) from None
         except httpx.RequestError as exc:

@@ -282,6 +282,15 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   The `{exc!r}` (not `{exc}`) in every `XboxApiError` message in
   `services/xbox/client.py` is the other half of that same fix — a bare
   connection-level httpx error often stringifies to nothing at all.
+- `title_history()` also wraps its request in `asyncio.wait_for`
+  (`TITLE_HISTORY_DEADLINE_SECONDS` = 60s) on top of the session's own read
+  timeout — found live, 2026-09-09, the very next symptom after the timeout
+  fix above shipped: httpx's read timeout resets on every chunk *received*,
+  it is not a ceiling on the whole response, so a large response trickling
+  in slowly enough between chunks never trips it at all. `startup_catch_up`
+  simply stopped advancing mid-account, with no exception and no timeout,
+  until the process was restarted. `wait_for` is the actual hard deadline;
+  the read timeout only ever catches a connection that goes fully silent.
 
 ### Steam
 

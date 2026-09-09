@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from bot.services.xbox.client import XboxClient
+import pytest
+
+from bot.services.xbox import client as xbox_client_module
+from bot.services.xbox.client import XboxApiError, XboxClient
 
 MODERN_PAYLOAD = {
     "achievements": [
@@ -115,3 +119,33 @@ async def test_known_x360_console_skips_contract_4() -> None:
 
     assert session.contracts == ["1"]
     assert parsed[0].platform == "x360"
+
+
+class _HangingTitlehub:
+    async def get_title_history(self, xuid: str, max_items: int = 200) -> Any:
+        await asyncio.sleep(10)  # far longer than the patched deadline below
+        raise AssertionError("should have been cancelled by the deadline first")
+
+
+class _FakeXboxLiveClientForDeadlineTest:
+    def __init__(self, manager: object) -> None:
+        self.titlehub = _HangingTitlehub()
+
+
+async def test_title_history_enforces_a_hard_overall_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Found live (2026-09-09): httpx's own read timeout resets on every
+    chunk received, so a response trickling in slowly enough between chunks
+    never trips it at all — startup_catch_up's otherwise-sequential loop
+    over every Xbox user just stopped advancing, with no exception and no
+    timeout, until the process was restarted. asyncio.wait_for is the
+    actual hard ceiling; the session's own read timeout only ever catches a
+    connection that goes fully silent mid-response."""
+    monkeypatch.setattr(xbox_client_module, "XboxLiveClient", _FakeXboxLiveClientForDeadlineTest)
+    monkeypatch.setattr(xbox_client_module, "TITLE_HISTORY_DEADLINE_SECONDS", 0.05)
+    session = StubSession({})
+    client = _client(session)
+
+    with pytest.raises(XboxApiError):
+        await client.title_history(1)
