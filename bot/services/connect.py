@@ -56,7 +56,8 @@ class ConnectService:
         self._forget_expired()
         pending = self._pending.pop(state, None)
         if pending is None:
-            # Unknown or expired state — also what a forged callback looks like.
+            # Unknown or expired state — also what a forged callback looks
+            # like, so there is no person here whose language to use (#48).
             raise ConnectError(gettext("connectservice", "connectservice-state-expired"))
 
         identity = await self._auth.exchange_code(code)
@@ -65,11 +66,23 @@ class ConnectService:
         if owner is not None and owner.tg_id != pending.tg_id:
             # One Xbox account per person (SPEC 1): otherwise the same
             # achievements would be published twice under different names.
-            raise ConnectError(gettext("connectservice", "connectservice-account-owned"))
+            # Unlike the branch above, this one knows who is being told.
+            raise ConnectError(
+                gettext(
+                    "connectservice",
+                    "connectservice-account-owned",
+                    locale=await self.user_locale(pending.tg_id),
+                )
+            )
 
         await self._auth.store_identity(pending.tg_id, identity)
         log.info("tg_id=%s linked xuid=%s", pending.tg_id, identity.xuid)
         return pending.tg_id, identity, pending.origin_chat_id
+
+    async def user_locale(self, tg_id: int) -> str:
+        """Passed through for web/oauth.py, which renders the post-login page
+        for one known person but holds no Repo of its own (#48)."""
+        return await self._repo.user_locale(tg_id)
 
     def _forget_expired(self) -> None:
         now = utcnow().timestamp()

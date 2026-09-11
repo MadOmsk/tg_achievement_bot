@@ -1002,7 +1002,7 @@ async def user_refresh(
     (SPEC 1.5) — one handler for all three platforms (2026-09-09 refactor,
     same shape reset_platform_confirm/_confirmed below already used):
     Fetcher/SteamFetcher/PsnFetcher all expose a compatible
-    refresh_user(tg_id, external_id, name) -> str."""
+    refresh_user(tg_id, external_id, name, locale) -> str."""
     assert callback.data is not None
     _, _prefix, platform, tg_id_s = callback.data.split(":")
     tg_id = int(tg_id_s)
@@ -1020,7 +1020,9 @@ async def user_refresh(
         "psn": psn_fetcher,
     }
     try:
-        summary = await fetcher_by_platform[platform].refresh_user(tg_id, external_id, name)
+        summary = await fetcher_by_platform[platform].refresh_user(
+            tg_id, external_id, name, DEFAULT_LOCALE
+        )
     except Exception:
         log.exception("admin %s refresh of tg_id=%s failed", platform, tg_id)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)

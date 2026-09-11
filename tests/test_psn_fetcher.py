@@ -189,7 +189,7 @@ async def test_refresh_user_polls_a_backfilled_account(
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer")
+    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer", "ru")
 
     assert calls[0]["is_backfill"] is False
     assert len(publisher.published) == 1
@@ -212,7 +212,7 @@ async def test_refresh_user_resyncs_a_stuck_account(
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer")
+    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer", "ru")
 
     assert await repo.get_psn_title_progress(ACCOUNT_ID, "NPWR00001_00") is None  # wiped
     assert calls[0]["is_backfill"] is True

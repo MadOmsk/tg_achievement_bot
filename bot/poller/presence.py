@@ -15,7 +15,7 @@ import logging
 from bot.config import Settings
 from bot.constants import Platform, PresenceState
 from bot.db.repo import PollTarget, Repo
-from bot.i18n import gettext
+from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.poller.cadence import debounce_passed, is_due, presence_interval
 from bot.poller.fetcher import Fetcher
 from bot.services.xbox.auth import NotConnectedError, TokenDeadError, TokenRefreshError
@@ -125,7 +125,13 @@ class PresencePoller:
         )
 
     async def _gamertag(self, tg_id: int) -> str:
+        """A stand-in *name* for someone with no gamertag cached yet, not a
+        sentence — it ends up where a nickname goes in a published message.
+        Deliberately the default locale (#48): this is resolved long before
+        any particular chat is in view, and the same person can be published
+        to chats in different languages from this one call.
+        """
         user = await self._repo.get_user(tg_id)
         return (user.gamertag if user and user.gamertag else None) or gettext(
-            "presence", "presence-default-player"
+            "presence", "presence-default-player", locale=DEFAULT_LOCALE
         )

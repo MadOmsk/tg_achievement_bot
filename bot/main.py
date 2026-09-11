@@ -27,7 +27,14 @@ from bot.handlers import psn as psn_handlers
 from bot.handlers import steam as steam_handlers
 from bot.handlers.chat import UsernameMiddleware
 from bot.handlers.keyboards import timezone_keyboard
-from bot.i18n import build_i18n_context, build_i18n_middleware, gettext
+from bot.i18n import (
+    AVAILABLE_LOCALES,
+    DEFAULT_LOCALE,
+    build_i18n_context,
+    build_i18n_middleware,
+    gettext,
+    translator,
+)
 from bot.lock import AlreadyRunningError, single_instance
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.daily import DailySummary
@@ -176,13 +183,14 @@ async def run(settings: Settings) -> None:
     async def backfill(tg_id: int, xuid: str) -> None:
         """Runs in the background: five people connecting one evening must not
         block the poller (SPEC 5.6)."""
+        _ = translator("main", await repo.user_locale(tg_id))
         try:
             count = await fetcher.backfill(tg_id, xuid)
         except Exception:
             log.exception("backfill for tg_id=%s failed", tg_id)
-            await bot.send_message(tg_id, gettext("main", "main-backfill-failed"))
+            await bot.send_message(tg_id, _("main-backfill-failed"))
             return
-        await bot.send_message(tg_id, gettext("main", "main-backfill-done", count=count))
+        await bot.send_message(tg_id, _("main-backfill-done", count=count))
 
     async def refresh_after_reconnect(tg_id: int, xuid: str) -> None:
         """store_identity sets gamerscore = NULL on every connect (it does
@@ -209,7 +217,9 @@ async def run(settings: Settings) -> None:
         # No achievements yet means this account is new to the bot, not someone
         # signing in again after his token expired.
         is_new = not await repo.has_any_achievements(identity.xuid)
-        await bot.send_message(tg_id, gettext("main", "main-linked", gamertag=identity.gamertag))
+        locale = await repo.user_locale(tg_id)
+        _ = translator("main", locale)
+        await bot.send_message(tg_id, _("main-linked", gamertag=identity.gamertag))
         await notifier.user_connected(tg_id, identity.gamertag, is_new=is_new)
 
         # Pressed «Подключить XBOX» from inside a specific group: finish the
@@ -218,23 +228,23 @@ async def run(settings: Settings) -> None:
         if origin_chat_id is not None and await repo.chat_exists(origin_chat_id):
             await repo.subscribe(origin_chat_id, tg_id)
             with contextlib.suppress(Exception):
-                await bot.send_message(tg_id, gettext("main", "main-linked-subscribed-origin-chat"))
+                await bot.send_message(tg_id, _("main-linked-subscribed-origin-chat"))
 
         settings_row = await repo.get_user_settings(tg_id)
         if settings_row is None or settings_row.tz_offset_min is None:
-            link_i18n = await build_i18n_context()
+            link_i18n = await build_i18n_context(locale)
             await bot.send_message(
                 tg_id,
                 link_i18n.get("connect-timezone-prompt"),
                 reply_markup=timezone_keyboard(link_i18n),
             )
         if is_new:
-            await bot.send_message(tg_id, gettext("main", "main-linked-backfill-starting"))
+            await bot.send_message(tg_id, _("main-linked-backfill-starting"))
             asyncio.create_task(backfill(tg_id, identity.xuid))  # noqa: RUF006
         else:
             # A silent background refresh would leave the panel showing a
             # stale 0 for a few seconds with nothing telling the user why.
-            await bot.send_message(tg_id, gettext("main", "main-linked-refreshing"))
+            await bot.send_message(tg_id, _("main-linked-refreshing"))
             asyncio.create_task(refresh_after_reconnect(tg_id, identity.xuid))  # noqa: RUF006
 
     web_server = OAuthServer(settings, connect_service, on_linked)
@@ -285,7 +295,7 @@ async def run(settings: Settings) -> None:
                         target.tg_id,
                         target.xuid,
                         (user.gamertag if user else None)
-                        or gettext("main", "main-default-player-name"),
+                        or gettext("main", "main-default-player-name", locale=DEFAULT_LOCALE),
                         parse_iso(target.updated_at),
                         settings.catchup_publish_window_hours,
                         settings.catchup_max_titles,
@@ -335,39 +345,56 @@ async def _publish_command_menu(bot: Bot) -> None:
     /connect_xbox, and in private nobody needs /online. Most-used first in
     both — subscribe/unsubscribe is one-time setup, not read every time
     (SPEC 6.3).
+
+    The menu is published once per shipped locale (#48). This is the one
+    place in the bot that honours Telegram's own `language_code` rather than
+    our `user_settings.locale`, and not by choice: Telegram renders this menu
+    itself, from whatever it was given, so there is no moment at which we
+    could substitute a person's own setting. Everything the bot actually
+    *says* still follows the explicit setting; only this hint list follows
+    the client's language. A locale Telegram has no entry for falls back to
+    the one published with no language_code at all, which stays Russian.
     """
-    private = [
-        BotCommand(command="panel", description=gettext("main", "main-cmd-panel")),
-        BotCommand(command="stats", description=gettext("main", "main-cmd-stats-private")),
-        BotCommand(command="connect_xbox", description=gettext("main", "main-cmd-connect-xbox")),
-        BotCommand(
-            command="disconnect_xbox", description=gettext("main", "main-cmd-disconnect-xbox")
-        ),
-        BotCommand(command="connect_steam", description=gettext("main", "main-cmd-connect-steam")),
-        BotCommand(
-            command="disconnect_steam", description=gettext("main", "main-cmd-disconnect-steam")
-        ),
-        BotCommand(command="connect_psn", description=gettext("main", "main-cmd-connect-psn")),
-        BotCommand(
-            command="disconnect_psn", description=gettext("main", "main-cmd-disconnect-psn")
-        ),
-        BotCommand(command="hltb", description=gettext("main", "main-cmd-hltb")),
-        BotCommand(command="help", description=gettext("main", "main-cmd-help")),
-    ]
-    group = [
-        BotCommand(command="stats", description=gettext("main", "main-cmd-stats-group")),
-        BotCommand(command="online", description=gettext("main", "main-cmd-online")),
-        BotCommand(command="who", description=gettext("main", "main-cmd-who")),
-        BotCommand(command="recent", description=gettext("main", "main-cmd-recent")),
-        BotCommand(command="summary", description=gettext("main", "main-cmd-summary")),
-        BotCommand(command="hltb", description=gettext("main", "main-cmd-hltb")),
-        BotCommand(command="subscribe", description=gettext("main", "main-cmd-subscribe")),
-        BotCommand(command="unsubscribe", description=gettext("main", "main-cmd-unsubscribe")),
-        BotCommand(command="help", description=gettext("main", "main-cmd-help")),
-    ]
+
+    def menus(locale: str) -> tuple[list[BotCommand], list[BotCommand]]:
+        _ = translator("main", locale)
+        private = [
+            BotCommand(command="panel", description=_("main-cmd-panel")),
+            BotCommand(command="stats", description=_("main-cmd-stats-private")),
+            BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
+            BotCommand(command="disconnect_xbox", description=_("main-cmd-disconnect-xbox")),
+            BotCommand(command="connect_steam", description=_("main-cmd-connect-steam")),
+            BotCommand(command="disconnect_steam", description=_("main-cmd-disconnect-steam")),
+            BotCommand(command="connect_psn", description=_("main-cmd-connect-psn")),
+            BotCommand(command="disconnect_psn", description=_("main-cmd-disconnect-psn")),
+            BotCommand(command="hltb", description=_("main-cmd-hltb")),
+            BotCommand(command="help", description=_("main-cmd-help")),
+        ]
+        group = [
+            BotCommand(command="stats", description=_("main-cmd-stats-group")),
+            BotCommand(command="online", description=_("main-cmd-online")),
+            BotCommand(command="who", description=_("main-cmd-who")),
+            BotCommand(command="recent", description=_("main-cmd-recent")),
+            BotCommand(command="summary", description=_("main-cmd-summary")),
+            BotCommand(command="hltb", description=_("main-cmd-hltb")),
+            BotCommand(command="subscribe", description=_("main-cmd-subscribe")),
+            BotCommand(command="unsubscribe", description=_("main-cmd-unsubscribe")),
+            BotCommand(command="help", description=_("main-cmd-help")),
+        ]
+        return private, group
+
     try:
-        await bot.set_my_commands(private, scope=BotCommandScopeAllPrivateChats())
-        await bot.set_my_commands(group, scope=BotCommandScopeAllGroupChats())
+        for locale in AVAILABLE_LOCALES:
+            private, group = menus(locale)
+            # The default locale is published without a language_code as
+            # well, so it is what any unlisted client language falls back to.
+            language_code = None if locale == DEFAULT_LOCALE else locale
+            await bot.set_my_commands(
+                private, scope=BotCommandScopeAllPrivateChats(), language_code=language_code
+            )
+            await bot.set_my_commands(
+                group, scope=BotCommandScopeAllGroupChats(), language_code=language_code
+            )
     except Exception:
         # A cosmetic menu is not worth failing the whole startup for.
         log.warning("could not publish the command menu", exc_info=True)

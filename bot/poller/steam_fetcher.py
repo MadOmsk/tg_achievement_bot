@@ -17,7 +17,7 @@ import logging
 
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
-from bot.i18n import gettext
+from bot.i18n import translator
 from bot.poller.publisher import Publisher
 from bot.services.rows import to_achievement_row
 from bot.services.steam.achievements import fetch_unlocked
@@ -34,7 +34,6 @@ from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
 
-_ = lambda key, **kwargs: gettext("steamfetcher", key, **kwargs)  # noqa: E731
 
 # A backfill's per-game concurrency — Xbox never needed this second level
 # (one call covers its whole library), Steam genuinely does since
@@ -89,10 +88,11 @@ class SteamFetcher:
         await self._publisher.publish(tg_id, steam_id, persona_name, new_rows, game_name)
         return len(new_rows)
 
-    async def refresh_user(self, tg_id: int, steam_id: str, persona_name: str) -> str:
+    async def refresh_user(self, tg_id: int, steam_id: str, persona_name: str, locale: str) -> str:
         """An out-of-turn look at one person, for the admin card (SPEC 6.4)
         — Steam's counterpart of Fetcher.refresh_user() (2026-09-05
         follow-up: the admin panel never had a Steam equivalent at all)."""
+        _ = translator("steamfetcher", locale)
         try:
             api_key = await self._steam_auth.require_key()
         except SteamNotConfiguredError:

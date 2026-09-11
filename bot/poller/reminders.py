@@ -10,17 +10,19 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
-from bot.i18n import gettext
+from bot.i18n import translator
 
 log = logging.getLogger(__name__)
-
-_ = lambda key, **kwargs: gettext("reminders", key, **kwargs)  # noqa: E731
 
 MAX_REMINDERS = 3
 REMINDER_INTERVAL_HOURS = 72
 
 
-def keyboard() -> InlineKeyboardMarkup:
+def keyboard(locale: str) -> InlineKeyboardMarkup:
+    """Rendered in the *recipient's* language (#48) — this job runs on a
+    schedule, so the only person in the picture is whoever the reminder is
+    about."""
+    _ = translator("reminders", locale)
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=_("reminders-relogin"), callback_data="relogin")],
@@ -40,7 +42,9 @@ class ReminderJob:
         )
         for tg_id in candidates:
             try:
-                await self._bot.send_message(tg_id, _("reminders-text"), reply_markup=keyboard())
+                locale = await self._repo.user_locale(tg_id)
+                text = translator("reminders", locale)("reminders-text")
+                await self._bot.send_message(tg_id, text, reply_markup=keyboard(locale))
             except TelegramForbiddenError:
                 # Blocked the bot: stop counting attempts against him forever.
                 log.info("tg_id=%s blocked the bot, no more reminders", tg_id)

@@ -90,7 +90,7 @@ async def test_refresh_user_polls_the_current_game(repo: Repo, steam_auth, monke
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
+    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk", "ru")
 
     assert "Left 4 Dead 2" in summary
     assert "1" in summary
@@ -117,7 +117,7 @@ async def test_refresh_user_reports_offline_with_no_game(
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
     fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
+    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk", "ru")
 
     assert "не в сети" in summary
 
@@ -131,7 +131,7 @@ async def test_refresh_user_handles_a_missing_profile(repo: Repo, steam_auth, mo
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
     fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk")
+    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk", "ru")
 
     assert "не" in summary.lower()
 

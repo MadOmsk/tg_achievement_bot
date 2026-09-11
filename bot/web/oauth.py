@@ -13,13 +13,20 @@ from urllib.parse import urlsplit
 from aiohttp import web
 
 from bot.config import Settings
-from bot.i18n import gettext
+from bot.i18n import DEFAULT_LOCALE, translator
 from bot.services.connect import ConnectError, ConnectService
 from bot.services.xbox.auth import TokenRefreshError, XboxIdentity
 
 log = logging.getLogger(__name__)
 
-_ = lambda key, **kwargs: gettext("oauth", key, **kwargs)  # noqa: E731
+# This page is rendered before anyone is identified, in most branches (#48):
+# the OAuth `state` has not been resolved to a tg_id yet on the cancel/error
+# paths, and a browser's Accept-Language is deliberately not consulted —
+# locale is opt-in in this bot, never sniffed. Only the success page, which
+# happens after complete_login hands back a tg_id, knows whose language to
+# use. `_` here is therefore the default-locale translator, used only by
+# those anonymous branches.
+_ = translator("oauth", DEFAULT_LOCALE)
 
 OnLinked = Callable[[int, XboxIdentity, "int | None"], Awaitable[None]]
 
@@ -112,4 +119,8 @@ class OAuthServer:
             # The account is already linked; only the Telegram message failed.
             log.exception("could not notify tg_id=%s about a successful login", tg_id)
 
-        return _page(_("oauth-success-title", gamertag=identity.gamertag), _("oauth-success-text"))
+        # The one branch with a known person behind it.
+        own = translator("oauth", await self._connect.user_locale(tg_id))
+        return _page(
+            own("oauth-success-title", gamertag=identity.gamertag), own("oauth-success-text")
+        )

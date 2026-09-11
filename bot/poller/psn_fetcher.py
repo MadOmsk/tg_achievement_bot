@@ -23,7 +23,7 @@ from psnawp_api import PSNAWP
 from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import Repo
-from bot.i18n import gettext
+from bot.i18n import translator
 from bot.poller.cadence import debounce_passed
 from bot.poller.publisher import Publisher
 from bot.services.psn.achievements import sync_account
@@ -32,8 +32,6 @@ from bot.services.psn.client import PsnApiError, account_trophy_level, is_trophy
 from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
-
-_ = lambda key, **kwargs: gettext("psnfetcher", key, **kwargs)  # noqa: E731
 
 
 @dataclass(slots=True)
@@ -198,7 +196,7 @@ class PsnFetcher:
             private_title_ids=list(outcome.private_title_ids),
         )
 
-    async def refresh_user(self, tg_id: int, account_id: str, online_id: str) -> str:
+    async def refresh_user(self, tg_id: int, account_id: str, online_id: str, locale: str) -> str:
         """An out-of-turn look at one PSN account for the admin card (#27) —
         the PSN counterpart of Fetcher/SteamFetcher.refresh_user, which PSN
         never had. Doubles as the recovery path for an account stuck in
@@ -214,6 +212,7 @@ class PsnFetcher:
         above now sets). A cheap probe here too, same "don't overwrite the
         last known-good status on a transient failure" shape as Steam's own.
         """
+        _ = translator("psnfetcher", locale)
         try:
             client = await self._psn_auth.get_client()
         except PsnNotConfiguredError:

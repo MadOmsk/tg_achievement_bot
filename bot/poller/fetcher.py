@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from bot.constants import Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleHistoryRow
-from bot.i18n import gettext
+from bot.i18n import translator
 from bot.poller.publisher import Publisher
 from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
@@ -18,8 +18,6 @@ from bot.services.xbox.models import ParsedAchievement
 from bot.util import parse_iso, utcnow
 
 log = logging.getLogger(__name__)
-
-_ = lambda key, **kwargs: gettext("fetcher", key, **kwargs)  # noqa: E731
 
 
 class Fetcher:
@@ -265,12 +263,13 @@ class Fetcher:
             )
             return len(candidates), published
 
-    async def refresh_user(self, tg_id: int, xuid: str, gamertag: str) -> str:
+    async def refresh_user(self, tg_id: int, xuid: str, gamertag: str, locale: str) -> str:
         """An out-of-turn look at one person, for the admin card (SPEC 6.4).
 
         The only on-demand API call in the interface, so it does the whole
         round: presence, the current game's achievements, title history.
         """
+        _ = translator("fetcher", locale)
         snapshot = await self._client.presence(tg_id)
         await self._repo.save_presence_state(
             xuid, snapshot.state, snapshot.title_id, snapshot.title_name, changed=False
