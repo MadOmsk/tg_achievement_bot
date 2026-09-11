@@ -139,7 +139,7 @@ class Publisher:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        text=format_digest(gamertag, title_name, allowed),
+                        text=format_digest(gamertag, title_name, allowed, locale=chat.locale),
                         gallery=_gallery(allowed),
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
                     )
@@ -154,7 +154,7 @@ class Publisher:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        text=format_single(gamertag, item, title_name),
+                        text=format_single(gamertag, item, title_name, locale=chat.locale),
                         gallery=_gallery([item]),
                         items=[(xuid, item.title_id, item.achievement_id)],
                     )
@@ -230,6 +230,10 @@ class Publisher:
         """
         if not achievements:
             return
+        # Read here rather than carried in from flood_flush.py: this path has
+        # no ChatTarget in hand (it is driven by the throttle table, not by a
+        # subscription walk), and one lookup per flushed window is nothing.
+        locale = await self._repo.chat_locale(chat_id)
         user = await self._repo.get_user(tg_id)
         links = await self._repo.platform_links_of(tg_id)
         name = (
@@ -245,7 +249,7 @@ class Publisher:
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,
-                text=format_digest(name, None, achievements),
+                text=format_digest(name, None, achievements, locale=locale),
                 gallery=_gallery(achievements),
                 items=[
                     (item.xuid, item.title_id, item.achievement_id)

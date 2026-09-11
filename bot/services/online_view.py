@@ -10,13 +10,15 @@ from __future__ import annotations
 
 from bot.constants import PresenceState
 from bot.db.repo import ChatPresenceRow
-from bot.i18n import gettext
+from bot.i18n import translator
 from bot.services.achievements import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
 
-_ = lambda key, **kwargs: gettext("onlineview", key, **kwargs)  # noqa: E731
+# The chat's own locale travels in (#48) — the auto-refresh poller renders
+# this table for every chat in one loop, so it cannot live in module state.
 
 
-def presence_text(row: ChatPresenceRow) -> str:
+def presence_text(row: ChatPresenceRow, locale: str) -> str:
+    _ = translator("onlineview", locale)
     if row.state == PresenceState.ONLINE and row.title_id:
         return _("onlineview-playing", where=row.title_name or row.title_id)
     if row.state == PresenceState.ONLINE:
@@ -60,12 +62,13 @@ def _row_name(row: ChatPresenceRow) -> str:
     return f"id{row.tg_id}"
 
 
-def render_online_table(rows: list[ChatPresenceRow], updated_label: str) -> str:
+def render_online_table(rows: list[ChatPresenceRow], updated_label: str, locale: str) -> str:
     """`updated_label` is a ready-made "HH:MM" in the chat's own timezone
     (Follow-up 2026-09-05, the "Обновлено: …" line) — this module has no
     idea what timezone a chat is in, that's services/stats.py's
     local_now()'s job, done by the caller (handlers/chat.py,
     poller/online_refresh.py alike)."""
+    _ = translator("onlineview", locale)
     lines = [_("onlineview-header"), _("onlineview-updated", updated=updated_label), ""]
     for row in rows:
         lines.append(
@@ -73,7 +76,7 @@ def render_online_table(rows: list[ChatPresenceRow], updated_label: str) -> str:
                 "onlineview-row",
                 icon=presence_icon(row),
                 name=_row_name(row),
-                status=presence_text(row),
+                status=presence_text(row, locale),
             )
         )
     return "\n".join(lines)

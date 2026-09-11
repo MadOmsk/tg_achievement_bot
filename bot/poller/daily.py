@@ -18,7 +18,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import AchievementBadge, Platform, PsnTrophyTier
 from bot.db.repo import ChatMemberStat, ChatTopGame, Repo
-from bot.i18n import gettext
+from bot.i18n import translator
 from bot.services.achievements import (
     PLATFORM_ICON,
     TROPHY_TIER_BADGE,
@@ -34,7 +34,11 @@ from bot.util import thousands, utcnow
 
 log = logging.getLogger(__name__)
 
-_ = lambda key, **kwargs: gettext("daily", key, **kwargs)  # noqa: E731
+# No module-level shorthand (#48): this module renders one chat's summary at
+# a time, and the scheduled job loops over every chat — the locale has to
+# travel with the call, not sit in module state. `locale` arrives alongside
+# `threshold` and `tz_offset_min`, which the caller already reads from the
+# same chat_settings row.
 
 DAY_WINDOW_HOURS = 24  # rolling — everyone's "today" is the same 24 hours
 # The "month" block is the calendar month (#14): since midnight on the 1st,
@@ -94,6 +98,7 @@ class DailySummary:
             chat.chat_id,
             chat.rare_threshold_percent,
             now_local.date(),
+            locale=chat.locale,
             tz_offset_min=chat.tz_offset_min,
             with_day=with_day,
             with_month=with_month,
@@ -140,6 +145,7 @@ async def build_summary(
     threshold: float,
     today: date,
     *,
+    locale: str,
     tz_offset_min: int | None = None,
     with_day: bool = True,
     with_month: bool = True,
@@ -156,6 +162,7 @@ async def build_summary(
     as a roster; a day nobody unlocked anything still sends (#34). Returns
     None only when the chat has no subscribed members at all.
     """
+    _ = translator("daily", locale)
     top_limit = await current_top_limit(repo)
     # (kind, section_lines, has_more) — kind drives the «показать всех» button.
     blocks: list[tuple[str, list[str], bool]] = []
@@ -165,7 +172,9 @@ async def build_summary(
         rows = await repo.chat_member_stats(chat_id, day_cutoff, threshold)
         if not rows:
             return None
-        blocks.append(("day", *_section(_("daily-window-day"), rows, top_limit, show_rare=False)))
+        blocks.append(
+            ("day", *_section(_("daily-window-day"), rows, top_limit, locale, show_rare=False))
+        )
 
     if with_month:
         month_cutoff = month_cutoff_utc(tz_offset_min)
@@ -174,13 +183,18 @@ async def build_summary(
             if not blocks:
                 return None  # month-only report for a chat with no members
         else:
-            blocks.append(("month", *_section(_month_window_label(tz_offset_min), rows, top_limit)))
+            blocks.append(
+                (
+                    "month",
+                    *_section(_month_window_label(tz_offset_min, locale), rows, top_limit, locale),
+                )
+            )
             # #7: which games the chat actually played this month, not just
             # who — its own block, only when there's something to show (a
             # month of zero-scorers has nothing to rank).
             games = await repo.chat_top_games(chat_id, month_cutoff, top_limit)
             if games:
-                blocks.append(("games", _games_section(games), False))
+                blocks.append(("games", _games_section(games, locale), False))
 
     if not blocks:
         return None
@@ -208,11 +222,18 @@ async def build_summary(
 
 
 async def full_leaderboard(
-    repo: Repo, chat_id: int, threshold: float, window: str, tz_offset_min: int | None = None
+    repo: Repo,
+    chat_id: int,
+    threshold: float,
+    window: str,
+    tz_offset_min: int | None = None,
+    *,
+    locale: str,
 ) -> str | None:
     """The uncapped list behind a summary's «Показать всех» button (SPEC
     6.3) — re-fetched fresh rather than carried over from the original send,
     same as /hltb's sessions do for their own "current data" reasons."""
+    _ = translator("daily", locale)
     cutoff = (
         utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
         if window == "day"
@@ -226,20 +247,25 @@ async def full_leaderboard(
     section_lines, _full = _section(
         _("daily-leaderboard-total-label"),
         rows,
-        limit=len(rows),
+        len(rows),
+        locale,
         expandable=False,
         show_rare=window != "day",
     )
-    label = _("daily-window-day") if window == "day" else _month_window_label(tz_offset_min)
+    label = _("daily-window-day") if window == "day" else _month_window_label(tz_offset_min, locale)
     return "\n".join([_("daily-leaderboard-full-header", label=label), "", *section_lines])
 
 
-def _month_window_label(tz_offset_min: int | None) -> str:
+def _month_window_label(tz_offset_min: int | None, locale: str) -> str:
     """ "С 1 июня" (#6, user request) instead of a static "этот месяц" —
     names the actual calendar month the window covers, in the same
     genitive-case month names "{day} {month}" (daily-header) already uses.
     The *current* local month is always the one month_cutoff_utc's "since
-    the 1st" points at, so no need to re-derive it from the cutoff itself."""
+    the 1st" points at, so no need to re-derive it from the cutoff itself.
+
+    English puts the day after the month ("since June 1"), Russian before it
+    — that ordering lives in each locale's own daily-window-month, not here."""
+    _ = translator("daily", locale)
     month = local_now(tz_offset_min).month
     return _("daily-window-month", month=_(_MONTH_KEYS[month - 1]))
 
@@ -248,6 +274,7 @@ def _section(
     label: str,
     rows: list[ChatMemberStat],
     limit: int,
+    locale: str,
     *,
     expandable: bool = True,
     show_rare: bool = True,
@@ -265,29 +292,32 @@ def _section(
     """
     total = sum(row.count for row in rows)
     score = sum(row.score for row in rows)
-    summary = total_line(label, f"{plural_achievements(total)}, +{thousands(score)} G")
+    summary = total_line(label, f"{plural_achievements(total, locale)}, +{thousands(score)} G")
     capped = rows if limit == 0 else rows[:limit]
     rows_block = blockquote(
-        [_leader_row(place, row, show_rare=show_rare) for place, row in enumerate(capped, start=1)],
+        [
+            _leader_row(place, row, locale, show_rare=show_rare)
+            for place, row in enumerate(capped, start=1)
+        ],
         expandable=expandable,
     )
     has_more = limit != 0 and len(rows) > limit
     return [summary, rows_block], has_more
 
 
-def _leader_row(place: int, row: ChatMemberStat, *, show_rare: bool = True) -> str:
+def _leader_row(place: int, row: ChatMemberStat, locale: str, *, show_rare: bool = True) -> str:
     name = html_escape(truncate_name(row.gamertag or f"id{row.tg_id}"))
     tail = f" {AchievementBadge.DIAMOND}{row.rare}" if show_rare and row.rare else ""
     breakdown = platform_breakdown_suffix(
         row.xbox_count, row.steam_count, row.psn_count, always=True
     )
     return (
-        f"{place}. {name} — {plural_achievements(row.count)}{tail}{breakdown}"
+        f"{place}. {name} — {plural_achievements(row.count, locale)}{tail}{breakdown}"
         f" (+{thousands(row.score)} G)"
     )
 
 
-def _games_section(games: list[ChatTopGame]) -> list[str]:
+def _games_section(games: list[ChatTopGame], locale: str) -> list[str]:
     """The monthly summary's own new block (#7, user request): which games
     the chat actually played this month, ranked by achievements/trophies
     earned in each — not who, `_section` above's own job. No "show all"
@@ -297,15 +327,16 @@ def _games_section(games: list[ChatTopGame]) -> list[str]:
     for. Not truncated (user request, 2026-09-08, same reasoning /stats'
     own games list uses) — it already lives inside its own collapsible
     quote, so a long title wrapping onto a second line costs nothing."""
+    _ = translator("daily", locale)
     rows = [
         f"{place}. {PLATFORM_ICON.get(game.platform, '')} "
-        f"{html_escape(game.name or _('daily-unknown-game'))} — {_game_row_tail(game)}"
+        f"{html_escape(game.name or _('daily-unknown-game'))} — {_game_row_tail(game, locale)}"
         for place, game in enumerate(games, start=1)
     ]
     return [_("daily-games-header"), blockquote(rows)]
 
 
-def _game_row_tail(game: ChatTopGame) -> str:
+def _game_row_tail(game: ChatTopGame, locale: str) -> str:
     """PSN games show a trophy-tier breakdown instead of gamerscore (user
     request, 2026-09-08) — the same per-tier icons
     `services/achievements.py::TROPHY_TIER_BADGE` uses everywhere else.
@@ -319,5 +350,5 @@ def _game_row_tail(game: ChatTopGame) -> str:
             (game.bronze, TROPHY_TIER_BADGE[PsnTrophyTier.BRONZE]),
         ]
         tier_tail = "".join(f" {badge}{count}" for count, badge in tiers if count)
-        return f"{plural_trophies(game.count)}{tier_tail}"
-    return f"{plural_achievements(game.count)}{score_suffix(game.score)}"
+        return f"{plural_trophies(game.count, locale)}{tier_tail}"
+    return f"{plural_achievements(game.count, locale)}{score_suffix(game.score)}"

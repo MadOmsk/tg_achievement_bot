@@ -156,7 +156,7 @@ class _ChatsRepo:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, s.min_gamerscore, s.muted_title_ids,"
             "       s.rare_threshold_percent, s.daily_summary_time, s.tz_offset_min,"
-            "       s.flood_limit, s.flood_window_minutes,"
+            "       s.flood_limit, s.flood_window_minutes, s.locale,"
             "       sub.rarity_mode, sub.digest_threshold "
             "FROM subscriptions sub "
             "JOIN chats c ON c.chat_id = sub.chat_id "
@@ -175,6 +175,7 @@ class _ChatsRepo:
                 tz_offset_min=row["tz_offset_min"],
                 flood_limit=row["flood_limit"],
                 flood_window_minutes=row["flood_window_minutes"],
+                locale=row["locale"],
                 rarity_mode=row["rarity_mode"],
                 digest_threshold=row["digest_threshold"],
             )
@@ -195,7 +196,7 @@ class _ChatsRepo:
 
     async def get_chat_daily_settings(self, chat_id: int) -> ChatDailySettings:
         cursor = await self._conn.execute(
-            "SELECT rare_threshold_percent, daily_summary_time, tz_offset_min "
+            "SELECT rare_threshold_percent, daily_summary_time, tz_offset_min, locale "
             "FROM chat_settings WHERE chat_id = ?",
             (chat_id,),
         )
@@ -204,9 +205,10 @@ class _ChatsRepo:
             # A chat with no chat_settings row at all — should not happen
             # (every chat gets one via upsert_chat), the hardcoded defaults
             # are the same ones a brand new row would carry.
-            return ChatDailySettings(10.0, "20:00", 180)
+            return ChatDailySettings(10.0, "20:00", 180, DEFAULT_LOCALE)
         return ChatDailySettings(
             rare_threshold_percent=row["rare_threshold_percent"],
             daily_summary_time=row["daily_summary_time"],
             tz_offset_min=row["tz_offset_min"],
+            locale=row["locale"],
         )

@@ -9,11 +9,15 @@ from html import escape as html_escape
 
 from bot.constants import AchievementBadge, Platform, PsnTrophyTier, RarityMode
 from bot.db.repo import AchievementRow, ChatTarget, PlatformLink, Repo
-from bot.i18n import gettext
+from bot.i18n import gettext, translator
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.util import humanize_ago, thousands
 
-_ = lambda key, **kwargs: gettext("achievements", key, **kwargs)  # noqa: E731
+# Every function here that produces visible text takes an explicit `locale`
+# and binds its own translator from it (#48). There is deliberately no
+# module-level shorthand and no default: this module renders for a chat the
+# publisher is looping over, so a locale that could be left out is a locale
+# that eventually renders one chat's message in another chat's language.
 
 #  Two badges (2026-09-05 style pass) — a diamond for "редкая" (rare), a
 #  cup for "обычная" (common).
@@ -68,11 +72,22 @@ PLATFORM_LABEL_KEYS = {
     Platform.STEAM: "achievement-platform-steam",
     Platform.PSN: "achievement-platform-psn",
 }
-PLATFORM_LABEL = {platform: _(key) for platform, key in PLATFORM_LABEL_KEYS.items()}
 # Fallback used wherever a platform is unknown or the presence itself is
 # offline/no-data (platform_tag() below, /online's own offline rows in
 # services/online_view.py) — grey rather than any platform's own colour.
 PLATFORM_ICON_UNKNOWN = "⚪"
+
+
+def platform_label(platform: str, locale: str) -> str:
+    """A platform's own display name. Was a module-level dict built once at
+    import time, which stopped being safe the moment a second locale existed
+    (#48): the dict would have frozen whichever locale happened to be loaded
+    first. These are brand names and read identically in ru and en today, so
+    nothing actually changes on screen — but a lookup that is right by
+    accident is exactly the kind that breaks on the next locale."""
+    _ = translator("achievements", locale)
+    key = PLATFORM_LABEL_KEYS.get(platform)
+    return _(key) if key else platform
 
 
 def platform_breakdown_suffix(
@@ -150,11 +165,12 @@ def score_suffix(score: int) -> str:
     return f" (+{thousands(score)} G)" if score else ""
 
 
-def platform_tag(platform: str) -> str:
+def platform_tag(platform: str, locale: str) -> str:
     """SPEC 9, M-Steam-2e — which platform an achievement came from, right
     in the message itself, not just inferred from context. Found live: a
     Steam achievement arriving with no platform mention at all reads the
     same as any other message, easy to miss."""
+    _ = translator("achievements", locale)
     icon = PLATFORM_ICON.get(platform, PLATFORM_ICON_UNKNOWN)
     label = _(
         PLATFORM_LABEL_KEYS.get(platform, "achievement-platform-unknown"),
@@ -245,7 +261,7 @@ def _badge(achievement: AchievementRow) -> str:
     return rarity_badge(achievement.rarity_percent)
 
 
-def _rarity_line(achievement: AchievementRow) -> str:
+def _rarity_line(achievement: AchievementRow, locale: str) -> str:
     """ "(rarity badge)«name» · G · rarity %" — badge leads the name
     rather than trailing the percentage (standardized form, 2026-09-05
     follow-up); gamerscore appears only when it isn't 0, replacing the
@@ -253,6 +269,7 @@ def _rarity_line(achievement: AchievementRow) -> str:
     zero is zero on any platform, no need to name which ones have none at
     all (SPEC 9, future platforms fall under this for free).
     """
+    _ = translator("achievements", locale)
     name = _spoiler(html_escape(achievement.name), secret=achievement.is_secret)
     name_part = _("achievement-name", badge=_badge(achievement), name=name)
 
@@ -264,37 +281,42 @@ def _rarity_line(achievement: AchievementRow) -> str:
     return name_part if not tail else f"{name_part} · {' · '.join(tail)}"
 
 
-def _game_line(title: str, platform: str) -> str:
+def _game_line(title: str, platform: str, locale: str) -> str:
+    _ = translator("achievements", locale)
     return _(
         "achievement-game-line",
         title=html_escape(title),
-        platform=platform_tag(platform),
+        platform=platform_tag(platform, locale),
     )
 
 
-def _achievement_word(platform: str) -> str:
+def _achievement_word(platform: str, locale: str) -> str:
     """PSN calls them trophies, everyone else achievements (Follow-up
     2026-09-06, user request — this is the "трофей" wording M-Steam-2e's
     original standardization explicitly left for later, once PSN trophies
     were real data and not just a reserved word)."""
+    _ = translator("achievements", locale)
     return _("achievement-word-trophy") if platform == Platform.PSN else _("achievement-word")
 
 
-def format_single(gamertag: str, achievement: AchievementRow, title_name: str | None) -> str:
+def format_single(
+    gamertag: str, achievement: AchievementRow, title_name: str | None, *, locale: str
+) -> str:
     """Standardized form (2026-09-05 follow-up to SPEC 9, M-Steam-2e), one
     wording per platform (Follow-up 2026-09-06: PSN's own "трофей" word).
     Platform moved off the header (found there for one round, then judged
     noisier than useful) onto the game-title line, in italics, next to the
     game.
     """
+    _ = translator("achievements", locale)
     title = title_name or achievement.title_name or _("achievement-unknown-game")
     header = _(
         "achievement-single-header",
         gamertag=html_escape(gamertag),
-        word=_achievement_word(achievement.platform),
+        word=_achievement_word(achievement.platform, locale),
     )
-    game_line = _game_line(title, achievement.platform)
-    text = f"{header}\n\n{game_line}\n{_rarity_line(achievement)}"
+    game_line = _game_line(title, achievement.platform, locale)
+    text = f"{header}\n\n{game_line}\n{_rarity_line(achievement, locale)}"
     if achievement.description:
         description = _spoiler(html_escape(achievement.description), secret=achievement.is_secret)
         text += f"\n\n{description}"
@@ -318,7 +340,9 @@ def _group_by_title(
     return groups
 
 
-def format_digest(gamertag: str, title_name: str | None, achievements: list[AchievementRow]) -> str:
+def format_digest(
+    gamertag: str, title_name: str | None, achievements: list[AchievementRow], *, locale: str
+) -> str:
     """Standardized form (2026-09-05 follow-up): one block per game, each
     shaped like format_single's own game+rarity lines — a digest reader who
     already knows the single-achievement layout should recognise this one.
@@ -340,9 +364,12 @@ def format_digest(gamertag: str, title_name: str | None, achievements: list[Achi
     # platforms (2026-09-09). "Trophies" only when every item actually is
     # one — same rule CLAUDE.md already states for combined cross-platform
     # totals like /stats' "Today: N achievements".
+    _ = translator("achievements", locale)
     all_psn = bool(achievements) and all(item.platform == Platform.PSN for item in achievements)
     count_phrase = (
-        plural_trophies(len(achievements)) if all_psn else plural_achievements(len(achievements))
+        plural_trophies(len(achievements), locale)
+        if all_psn
+        else plural_achievements(len(achievements), locale)
     )
     header = _("achievement-digest-header", gamertag=html_escape(gamertag), phrase=count_phrase)
     lines = [header, ""]
@@ -350,12 +377,12 @@ def format_digest(gamertag: str, title_name: str | None, achievements: list[Achi
         if index > 0:
             lines.append("")  # a blank line between one game's block and the next
         title = group[0].title_name or title_name or _("achievement-unknown-game")
-        lines.append(_game_line(title, group[0].platform))
-        lines.extend(_rarity_line(item) for item in group)
+        lines.append(_game_line(title, group[0].platform, locale))
+        lines.extend(_rarity_line(item, locale) for item in group)
     return "\n".join(lines)
 
 
-def plural_achievements(count: int) -> str:
+def plural_achievements(count: int, locale: str) -> str:
     """ "Достижение" everywhere, not "ачивка" — the two used to appear
     side by side across different messages (2026-09-05 terminology pass);
     "ач." stays fine as a space-saving abbreviation where one is needed,
@@ -366,10 +393,11 @@ def plural_achievements(count: int) -> str:
     second language brings its own rules with it instead of being handed
     Russian's one/few/many. `count` selects, `pretty` displays — selecting
     on the thousands-separated string would never match a category."""
+    _ = translator("achievements", locale)
     return _("achievement-plural", count=count, pretty=thousands(count))
 
 
-def plural_trophies(count: int) -> str:
+def plural_trophies(count: int, locale: str) -> str:
     """PSN's own word — format_digest's header (Follow-up 2026-09-06), and
     /stats' per-PSN-link line (Follow-up 2026-09-08, was wrongly
     plural_achievements there too). plural_achievements() below stays
@@ -378,6 +406,7 @@ def plural_trophies(count: int) -> str:
     many of them came from PSN specifically — this is only for a count
     that is entirely PSN's own. Plural form selection is Fluent's, same as
     plural_achievements above."""
+    _ = translator("achievements", locale)
     return _("achievement-trophy-plural", count=count, pretty=thousands(count))
 
 
@@ -391,7 +420,7 @@ def plural_trophies(count: int) -> str:
 COMPLETED_BADGE = AchievementBadge.CUP
 
 
-def visibility_status_text(link: PlatformLink) -> str:
+def visibility_status_text(link: PlatformLink, locale: str) -> str:
     """Steam/PSN's achievement/trophy visibility as found by the last actual
     check (#5) — shared by /panel's own login row and the admin card
     (2026-09-08, user request: the admin card's status line should read
@@ -403,13 +432,14 @@ def visibility_status_text(link: PlatformLink) -> str:
     Appends when the check last ran, when known — "unknown" has no
     timestamp to show at all."""
     if link.achievements_visible is None:
-        return gettext("panel", "panel-visibility-unknown")
+        return gettext("panel", "panel-visibility-unknown", locale=locale)
     label = gettext(
         "panel",
         "panel-visibility-visible" if link.achievements_visible else "panel-visibility-hidden",
+        locale=locale,
     )
     if link.achievements_visible_checked_at:
-        return f"{label} · {humanize_ago(link.achievements_visible_checked_at)}"
+        return f"{label} · {humanize_ago(link.achievements_visible_checked_at, locale)}"
     return label
 
 
@@ -422,6 +452,7 @@ async def platform_header_lines(
     gamerscore: int | None,
     platform_links: list[PlatformLink],
     show_links: bool,
+    locale: str,
 ) -> list[str]:
     """The per-platform header lines shared by /stats' card and /panel's own
     header (2026-09-08, user request: "пусть одни одинаково формируются" —
@@ -437,7 +468,9 @@ async def platform_header_lines(
     """
     lines = []
     if xuid:
-        gamertag_html = html_escape(gamertag or gettext("chat", "chat-stats-no-gamertag"))
+        gamertag_html = html_escape(
+            gamertag or gettext("chat", "chat-stats-no-gamertag", locale=locale)
+        )
         if show_links and gamertag:
             gamertag_html = link_html(xbox_profile_url(gamertag), gamertag_html)
         # A lifetime Xbox count (2026-09-08, user request) — see
@@ -446,7 +479,7 @@ async def platform_header_lines(
         # the one remaining x360-specific gap this doesn't close.
         xbox_count = await repo.xbox_achievement_count(tg_id)
         xbox_completed = await repo.xbox_completed_games_count(xuid)
-        parts = [plural_achievements(xbox_count)]
+        parts = [plural_achievements(xbox_count, locale)]
         if xbox_completed:
             parts.append(f"{COMPLETED_BADGE} {xbox_completed}")
         parts.append(f"gamerscore {thousands(gamerscore or 0)}")
@@ -456,7 +489,7 @@ async def platform_header_lines(
 
     for link in platform_links:
         icon = PLATFORM_ICON.get(link.platform, PLATFORM_ICON_UNKNOWN)
-        label = PLATFORM_LABEL.get(link.platform, link.platform)
+        label = platform_label(link.platform, locale)
         # A lifetime Steam/PSN count has always been fine here — a Steam
         # backfill has no title cap (GetOwnedGames sees the whole owned-
         # games library) and PSN's own poller scans every trophy title
@@ -472,7 +505,9 @@ async def platform_header_lines(
 
         # PSN calls its own achievements "trophies" everywhere (CLAUDE.md).
         is_psn = link.platform == Platform.PSN
-        link_parts = [plural_trophies(count) if is_psn else plural_achievements(count)]
+        link_parts = [
+            plural_trophies(count, locale) if is_psn else plural_achievements(count, locale)
+        ]
         if is_psn:
             # PSN's own equivalent of a 100%-completed game (#19) — a
             # platinum is only awarded once every other trophy in that game
@@ -488,7 +523,9 @@ async def platform_header_lines(
             # scripts/backfill_psn_levels.py, #23).
             if link.psn_trophy_level is not None:
                 link_parts.append(
-                    gettext("chat", "chat-stats-psn-level", level=link.psn_trophy_level)
+                    gettext(
+                        "chat", "chat-stats-psn-level", locale=locale, level=link.psn_trophy_level
+                    )
                 )
         elif link.platform == Platform.STEAM:
             completed = await repo.steam_completed_games_count(tg_id)

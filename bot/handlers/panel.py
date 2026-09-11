@@ -519,13 +519,18 @@ async def _panel_header_lines(
         gamerscore=user.gamerscore,
         platform_links=platform_links,
         show_links=False,
+        locale=i18n.locale,
     )
 
 
 async def render_panel(
     repo: Repo, tg_id: int, i18n: I18nContext | StaticI18nContext | None = None
 ) -> tuple[str, InlineKeyboardMarkup]:
-    i18n = i18n or static_i18n("panel")
+    # No context passed (an internal caller with no aiogram update behind it,
+    # e.g. main.py's post-login screen) — read the person's own locale rather
+    # than falling back to Russian (#48). This screen is always about exactly
+    # one person, whose tg_id we already have.
+    i18n = i18n or static_i18n("panel", await repo.user_locale(tg_id))
     user = await repo.get_user(tg_id)
     settings_row = await repo.get_user_settings(tg_id)
     connected = user is not None and bool(user.xuid)
@@ -578,7 +583,7 @@ async def render_panel(
             i18n.get(
                 "panel-login-steam-row",
                 name=steam_link.display_name,
-                status=visibility_status_text(steam_link),
+                status=visibility_status_text(steam_link, i18n.locale),
             )
         )
     if psn_link is not None:
@@ -586,7 +591,7 @@ async def render_panel(
             i18n.get(
                 "panel-login-psn-row",
                 name=psn_link.display_name,
-                status=visibility_status_text(psn_link),
+                status=visibility_status_text(psn_link, i18n.locale),
             )
         )
     lines.append(
@@ -619,7 +624,7 @@ async def _now_playing(repo: Repo, xuid: str, i18n: I18nContext) -> str:
     if presence is None:
         return i18n.get("panel-no-presence-data")
     if presence.state != PresenceState.ONLINE:
-        return i18n.get("panel-offline", ago=humanize_ago(presence.updated_at))
+        return i18n.get("panel-offline", ago=humanize_ago(presence.updated_at, i18n.locale))
     if not presence.title_id:
         return i18n.get("panel-online-idle")
     # Presence gives no name for PC titles — fall back to the cache the

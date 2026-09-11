@@ -25,7 +25,7 @@ XUID_B = "xuid-b"
 async def summary_text(repo: Repo, chat_id: int, threshold: float, today: date_type) -> str | None:
     """build_summary now also returns an optional "показать всех" keyboard —
     most of these tests only care about the text."""
-    built = await build_summary(repo, chat_id, threshold, today)
+    built = await build_summary(repo, chat_id, threshold, today, locale="ru")
     return built[0] if built is not None else None
 
 
@@ -223,7 +223,7 @@ async def test_a_zero_activity_day_still_sends_the_roster(repo: Repo) -> None:
     unlocked anything still produces the report, everyone at 0."""
     await _chat_with_two_players(repo)
 
-    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date())
+    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date(), locale="ru")
 
     assert built is not None
     text, _markup = built
@@ -234,7 +234,7 @@ async def test_a_zero_activity_day_still_sends_the_roster(repo: Repo) -> None:
 async def test_no_report_only_when_there_are_no_subscribed_members(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Пустой чат", 1)  # a chat, but nobody subscribed
 
-    assert await build_summary(repo, CHAT_ID, 10.0, utcnow().date()) is None
+    assert await build_summary(repo, CHAT_ID, 10.0, utcnow().date(), locale="ru") is None
 
 
 async def test_window_is_a_rolling_day_not_a_calendar_one(repo: Repo) -> None:
@@ -313,7 +313,7 @@ async def test_summary_offers_show_all_button_only_past_the_configured_limit(
         )
     await repo.set_app_setting("summary_top_limit", "2")
 
-    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date())
+    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date(), locale="ru")
 
     assert built is not None
     text, markup = built
@@ -341,14 +341,14 @@ async def test_summary_top_limit_zero_means_no_cap(repo: Repo) -> None:
         )
     await repo.set_app_setting("summary_top_limit", "0")
 
-    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date())
+    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date(), locale="ru")
 
     assert built is not None
     text, markup = built
     assert markup is None  # nothing truncated, nothing to show more of
     assert all(f"Player{i}" in text for i in range(3))
 
-    full = await full_leaderboard(repo, CHAT_ID, 10.0, "day")
+    full = await full_leaderboard(repo, CHAT_ID, 10.0, "day", locale="ru")
     assert full is not None
     assert all(f"Player{i}" in full for i in range(3))
 
@@ -357,7 +357,7 @@ async def test_summary_has_no_show_all_button_under_the_limit(repo: Repo) -> Non
     await _chat_with_two_players(repo)
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
 
-    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date())
+    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date(), locale="ru")
 
     assert built is not None
     _text, markup = built
@@ -441,7 +441,7 @@ async def test_scheduled_daily_report_has_no_month_block(repo: Repo) -> None:
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
 
     built = await build_summary(
-        repo, CHAT_ID, 10.0, utcnow().date(), with_day=True, with_month=False
+        repo, CHAT_ID, 10.0, utcnow().date(), locale="ru", with_day=True, with_month=False
     )
 
     assert built is not None
@@ -456,7 +456,7 @@ async def test_month_end_wrapup_is_month_block_only(repo: Repo) -> None:
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
 
     built = await build_summary(
-        repo, CHAT_ID, 10.0, utcnow().date(), with_day=False, with_month=True
+        repo, CHAT_ID, 10.0, utcnow().date(), locale="ru", with_day=False, with_month=True
     )
 
     assert built is not None
@@ -579,7 +579,7 @@ async def test_games_block_is_absent_from_a_day_only_report(repo: Repo) -> None:
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
 
     built = await build_summary(
-        repo, CHAT_ID, 10.0, utcnow().date(), with_day=True, with_month=False
+        repo, CHAT_ID, 10.0, utcnow().date(), locale="ru", with_day=True, with_month=False
     )
 
     assert built is not None

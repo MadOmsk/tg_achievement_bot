@@ -165,6 +165,11 @@ class ChatTarget:
     # read from (tests mostly) ever see the default instead of a real value.
     flood_limit: int = 3
     flood_window_minutes: int = 60
+    # The language everything published to this chat renders in (#48).
+    # Carried on the target itself rather than looked up per message: the
+    # publisher already loops over these, and a second query per chat on the
+    # hot publication path would buy nothing.
+    locale: str = "ru"
     # The person's own choice for *this* chat (SPEC 9, M-Steam-2e's
     # follow-up — moved off user_settings, one value for every chat, onto
     # subscriptions, one value per chat). Defaults to 'all' only for call
@@ -183,13 +188,17 @@ class ChatTarget:
 
 @dataclass(slots=True)
 class ChatDailySettings:
-    """The same three per-chat values as on `ChatTarget`, fetched alone for
+    """The same few per-chat values as on `ChatTarget`, fetched alone for
     call sites (chat.py's /summary) that have a chat_id but no reason to pull
     the rest of the chat/subscriber JOIN."""
 
     rare_threshold_percent: float
     daily_summary_time: str
     tz_offset_min: int
+    # Every caller of this already hands all of the above to build_summary,
+    # which needs the chat's language for the same render (#48) — fetching it
+    # here keeps that one query, and keeps the locale impossible to forget.
+    locale: str = "ru"
 
 
 @dataclass(slots=True)

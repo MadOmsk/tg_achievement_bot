@@ -127,7 +127,7 @@ def test_single_message_is_the_standardized_form() -> None:
     """2026-09-05 follow-up: fixed wording on every platform, platform
     moved off the header onto the game-title line, badge leads the name
     rather than trailing the percentage."""
-    text = format_single("Igor", achievement(rarity=2.4), "Halo Infinite")
+    text = format_single("Igor", achievement(rarity=2.4), "Halo Infinite", locale="ru")
     assert "<b>Igor</b> получает достижение" in text
     assert "Halo Infinite (<i>🟢 XBOX</i>)" in text
     assert "💎 «Ashes to Ashes» · 20 G · редкость 2.4%" in text
@@ -138,7 +138,7 @@ def test_single_message_for_x360_has_no_rarity_percent_but_still_a_badge() -> No
     but the badge itself still shows — unproven defaults to the cup, not to
     no badge at all (found live: a whole game with no badge anywhere read
     as broken, not as "no data", 2026-09-05)."""
-    text = format_single("Igor", achievement(rarity=None, platform="x360"), "Halo 3")
+    text = format_single("Igor", achievement(rarity=None, platform="x360"), "Halo 3", locale="ru")
     assert "Halo 3 (<i>🟢 XBOX 360</i>)" in text
     assert "🏆 «Ashes to Ashes» · 20 G" in text
     assert "редкость" not in text
@@ -149,7 +149,7 @@ def test_single_message_omits_gamerscore_when_zero() -> None:
     platform's 0 gamerscore is omitted the same way, since "0 G" always
     reads as a real (if trivial) score rather than "not applicable"."""
     item = achievement(rarity=92.2, platform="steam", gamerscore=0)
-    text = format_single("Igor", item, "Deadlock")
+    text = format_single("Igor", item, "Deadlock", locale="ru")
     lines = text.split("\n")
     assert "G" not in lines[3]  # header, blank, game line, then this one
     assert "редкость 92.2%" in text
@@ -159,14 +159,16 @@ def test_single_message_shows_gamerscore_when_nonzero_on_any_platform() -> None:
     """The omission is about the value, not the platform — a platform that
     usually has none still shows it if this one row genuinely has some."""
     item = achievement(rarity=50.0, platform="steam", gamerscore=15)
-    text = format_single("Igor", item, "Deadlock")
+    text = format_single("Igor", item, "Deadlock", locale="ru")
     assert "15 G" in text
 
 
 def test_single_message_tags_the_platform() -> None:
     """SPEC 9, M-Steam-2e — found live: a Steam achievement with no platform
     mention at all was easy to miss among Xbox ones."""
-    text = format_single("Igor", achievement(rarity=92.2, platform="steam"), "Deadlock")
+    text = format_single(
+        "Igor", achievement(rarity=92.2, platform="steam"), "Deadlock", locale="ru"
+    )
     assert "⚫ Steam" in text
 
 
@@ -181,6 +183,7 @@ def test_single_message_shows_only_the_trophy_tier_on_psn_not_rarity_too() -> No
         "Igor",
         achievement(rarity=2.4, platform="psn", trophy_type="platinum"),
         "Bloodborne",
+        locale="ru",
     )
     badge_line = text.split("\n")[3]  # header, blank, game line, then this one
     assert badge_line.startswith("🏆 «")
@@ -189,7 +192,10 @@ def test_single_message_shows_only_the_trophy_tier_on_psn_not_rarity_too() -> No
 
 def test_single_message_gold_tier_replaces_rarity_badge_too() -> None:
     text = format_single(
-        "Igor", achievement(rarity=2.4, platform="psn", trophy_type="gold"), "Bloodborne"
+        "Igor",
+        achievement(rarity=2.4, platform="psn", trophy_type="gold"),
+        "Bloodborne",
+        locale="ru",
     )
     badge_line = text.split("\n")[3]
     assert badge_line.startswith("🥇 «")
@@ -197,7 +203,9 @@ def test_single_message_gold_tier_replaces_rarity_badge_too() -> None:
 
 
 def test_single_message_has_no_tier_badge_on_other_platforms() -> None:
-    text = format_single("Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite")
+    text = format_single(
+        "Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite", locale="ru"
+    )
     assert "🥇" not in text  # would only appear if a tier badge leaked in
     assert "💎" in text
 
@@ -207,19 +215,24 @@ def test_single_message_calls_it_a_trophy_on_psn() -> None:
     M-Steam-2e's original standardization explicitly left for later, once
     PSN trophies were real data."""
     text = format_single(
-        "Igor", achievement(rarity=2.4, platform="psn", trophy_type="gold"), "Bloodborne"
+        "Igor",
+        achievement(rarity=2.4, platform="psn", trophy_type="gold"),
+        "Bloodborne",
+        locale="ru",
     )
     assert text.startswith("<b>Igor</b> получает трофей")
 
 
 def test_single_message_still_calls_it_an_achievement_elsewhere() -> None:
-    text = format_single("Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite")
+    text = format_single(
+        "Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite", locale="ru"
+    )
     assert text.startswith("<b>Igor</b> получает достижение")
 
 
 def test_digest_header_pluralizes_trophies_for_an_all_psn_digest() -> None:
     items = [achievement(rarity=r, platform="psn", trophy_type="bronze") for r in (2.4, 11.0, 34.0)]
-    text = format_digest("Igor", "Bloodborne", items)
+    text = format_digest("Igor", "Bloodborne", items, locale="ru")
     assert "<b>Igor</b> получает 3 трофея" in text
 
 
@@ -228,7 +241,7 @@ def test_digest_header_has_no_gamerscore_total() -> None:
     for an all-Steam session that came out as a lying "+0 G" (2026-09-05
     follow-up, same reasoning as the single message's gamerscore rule)."""
     items = [achievement(rarity=r) for r in (2.4, 11.0, 34.0, 50.0, 60.0)]
-    text = format_digest("Igor", "Halo Infinite", items)
+    text = format_digest("Igor", "Halo Infinite", items, locale="ru")
     assert "<b>Igor</b> получает 5 достижений" in text
     assert "G" not in text.split("\n")[0]
 
@@ -237,7 +250,7 @@ def test_digest_lists_every_achievement_no_cutoff() -> None:
     """Dropped the old "… и ещё N" trim on request (2026-09-05) — a digest
     exists to say what happened, cutting it short defeats that."""
     items = [achievement(rarity=r) for r in (2.4, 11.0, 34.0, 50.0, 60.0)]
-    text = format_digest("Igor", "Halo Infinite", items)
+    text = format_digest("Igor", "Halo Infinite", items, locale="ru")
     assert "…" not in text
     assert text.count("«Ashes to Ashes»") == 5
 
@@ -253,7 +266,7 @@ def test_digest_groups_achievements_by_game() -> None:
     forza.title_name = "Forza Horizon 5"
     forza.name = "Speed Demon"
 
-    text = format_digest("Igor", None, [halo, forza])
+    text = format_digest("Igor", None, [halo, forza], locale="ru")
 
     assert "<b>Igor</b> получает 2 достижения" in text
     halo_at = text.index("Halo Infinite")
@@ -264,19 +277,19 @@ def test_digest_groups_achievements_by_game() -> None:
 def test_secret_achievement_name_and_description_are_spoilered() -> None:
     """Xbox's own isSecret does not redact name/description (found live) —
     hiding them is the bot's own doing, via a Telegram spoiler (SPEC 5.5, 7.1)."""
-    text = format_single("Igor", achievement(is_secret=True), "Halo Infinite")
+    text = format_single("Igor", achievement(is_secret=True), "Halo Infinite", locale="ru")
     assert '<span class="tg-spoiler">Ashes to Ashes</span>' in text
     assert '<span class="tg-spoiler">Kill 100 enemies</span>' in text
 
 
 def test_non_secret_achievement_has_no_spoiler_markup() -> None:
-    text = format_single("Igor", achievement(is_secret=False), "Halo Infinite")
+    text = format_single("Igor", achievement(is_secret=False), "Halo Infinite", locale="ru")
     assert "tg-spoiler" not in text
 
 
 def test_secret_achievement_name_is_spoilered_in_a_digest_line_too() -> None:
     items = [achievement(is_secret=True), achievement(is_secret=False)]
-    text = format_digest("Igor", "Halo Infinite", items)
+    text = format_digest("Igor", "Halo Infinite", items, locale="ru")
     assert '«<span class="tg-spoiler">Ashes to Ashes</span>»' in text
     assert "«Ashes to Ashes» ·" in text  # the non-secret one, unwrapped
 
@@ -287,6 +300,6 @@ def test_gamertag_and_achievement_text_are_html_escaped() -> None:
     Telegram's parser, same reasoning as the daily summary's table."""
     weird = achievement()
     weird.name = "A&B<C>"
-    text = format_single("We>ird<Name", weird, "Hal&o")
+    text = format_single("We>ird<Name", weird, "Hal&o", locale="ru")
     assert "<C>" not in text
     assert "&amp;" in text and "&lt;" in text

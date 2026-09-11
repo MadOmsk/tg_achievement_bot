@@ -31,22 +31,22 @@ def presence(
 
 def test_playing_shows_the_game() -> None:
     row = presence("Online", "123", "Halo Infinite")
-    assert presence_text(row) == "играет — Halo Infinite"
+    assert presence_text(row, "ru") == "играет — Halo Infinite"
 
 
 def test_online_not_playing() -> None:
     row = presence("Online", None)
-    assert presence_text(row) == "в сети, не играет"
+    assert presence_text(row, "ru") == "в сети, не играет"
 
 
 def test_offline() -> None:
     row = presence("Offline")
-    assert presence_text(row) == "не в сети"
+    assert presence_text(row, "ru") == "не в сети"
 
 
 def test_never_polled() -> None:
     row = presence(None)
-    assert presence_text(row) == "нет данных"
+    assert presence_text(row, "ru") == "нет данных"
 
 
 def test_presence_icon_is_platform_colour_while_online() -> None:
@@ -73,7 +73,7 @@ def test_render_online_table_shows_the_updated_stamp_in_italics() -> None:
     """Follow-up 2026-09-05: /online now says when it was last refreshed,
     so a live-updating table doesn't look identical whether it just ran or
     is about to go stale."""
-    text = render_online_table([presence("Online", "123", "Halo Infinite")], "14:32")
+    text = render_online_table([presence("Online", "123", "Halo Infinite")], "14:32", "ru")
     assert "<i>Обновлено: 14:32</i>" in text
     assert "Igor" in text
 

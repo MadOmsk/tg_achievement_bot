@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bot.db.repo import Repo
-from bot.handlers.chat import HELP_TEXT, hub_keyboard
+from bot.handlers.chat import hub_keyboard
+from bot.i18n import AVAILABLE_LOCALES, gettext
 
 XUID_A = "xuid-a"
 XUID_B = "xuid-b"
@@ -279,17 +282,25 @@ async def test_online_lists_a_connected_non_publisher_who_was_seen_writing(
     assert {row.gamertag for row in rows} == {"Publisher", "Lurker"}
 
 
-def test_help_text_mentions_both_platforms_and_the_main_commands() -> None:
+@pytest.mark.parametrize("locale", AVAILABLE_LOCALES)
+def test_help_text_mentions_both_platforms_and_the_main_commands(locale: str) -> None:
     """Rewritten 2026-09-05: no more connect/subscribe walkthrough in the
     text — the hub's own buttons (hub_keyboard) already cover both,
     intuitively enough on their own — just what the bot is and the
-    commands people actually come back to use."""
-    intro = HELP_TEXT.split("\n\n")[0].lower()
+    commands people actually come back to use.
+
+    Checked per locale (#48): the command list is the same in every
+    language, so a translation that quietly dropped one shows up here. Reads
+    the key directly rather than through a module-level HELP_TEXT constant —
+    that constant froze whichever locale was loaded at import time, and
+    nothing in the bot itself used it."""
+    help_text = gettext("chat", "chat-help-text", locale=locale)
+    intro = help_text.split("\n\n")[0].lower()
     assert "xbox" in intro and "steam" in intro
     for command in ("/stats", "/online", "/who", "/recent", "/summary", "/hltb"):
-        assert command in HELP_TEXT
-    assert "/subscribe" not in HELP_TEXT
-    assert "/unsubscribe" not in HELP_TEXT
+        assert command in help_text
+    assert "/subscribe" not in help_text
+    assert "/unsubscribe" not in help_text
 
 
 async def test_record_chat_seen_ignores_an_unknown_tg_id(repo: Repo) -> None:

@@ -14,7 +14,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
-from bot.i18n import gettext
+from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.poller.fetcher import Fetcher
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
@@ -41,12 +41,12 @@ async def _key_status_line(status: str, checked_at: str | None, *, active_value:
     it last actually ran."""
     if status == active_value:
         return (
-            _("adminview-key-alive-checked", ago=humanize_ago(checked_at))
+            _("adminview-key-alive-checked", ago=humanize_ago(checked_at, DEFAULT_LOCALE))
             if checked_at
             else _("adminview-key-alive")
         )
     return (
-        _("adminview-key-stale-checked", ago=humanize_ago(checked_at))
+        _("adminview-key-stale-checked", ago=humanize_ago(checked_at, DEFAULT_LOCALE))
         if checked_at
         else _("adminview-key-stale")
     )

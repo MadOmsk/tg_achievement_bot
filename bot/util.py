@@ -3,7 +3,7 @@
 import re
 from datetime import UTC, datetime, timedelta
 
-from bot.i18n import gettext
+from bot.i18n import translator
 
 # "+3", "-5", "+5:30", "UTC+3" — an optional "UTC" prefix, an optional sign
 # (missing sign means positive), 1-2 digit hours, optional ":MM" minutes.
@@ -50,19 +50,25 @@ def mask(secret: str | None) -> str:
     return f"<secret, {len(secret)} chars>"
 
 
-def humanize_ago(timestamp: str | None) -> str:
-    """Humanized relative time shown in both panels, so it lives here."""
+def humanize_ago(timestamp: str | None, locale: str) -> str:
+    """Humanized relative time shown in both panels, so it lives here.
+
+    `locale` is required rather than defaulted (#48): this is called from
+    group tables, DM panels and the admin card alike, and a default would
+    quietly render "5 мин назад" inside an otherwise English screen with
+    nothing in the diff to show for it."""
+    _ = translator("util", locale)
     moment = parse_iso(timestamp)
     if moment is None:
-        return gettext("util", "util-ago-never")
+        return _("util-ago-never")
     seconds = int((utcnow() - moment).total_seconds())
     if seconds < 120:
-        return gettext("util", "util-ago-just-now")
+        return _("util-ago-just-now")
     if seconds < 3600:
-        return gettext("util", "util-ago-minutes", count=seconds // 60)
+        return _("util-ago-minutes", count=seconds // 60)
     if seconds < 86400:
-        return gettext("util", "util-ago-hours", count=seconds // 3600)
-    return gettext("util", "util-ago-days", count=seconds // 86400)
+        return _("util-ago-hours", count=seconds // 3600)
+    return _("util-ago-days", count=seconds // 86400)
 
 
 def thousands(value: int) -> str:

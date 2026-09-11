@@ -41,7 +41,7 @@ from bot.db.repo import (
     User,
 )
 from bot.handlers.admin import IsAdmin
-from bot.i18n import gettext
+from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.poller.daily import build_summary, full_leaderboard
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.achievements import (
@@ -67,10 +67,20 @@ router = Router(name="chat")
 
 
 def _hub_text(i18n: I18nContext | None, key: str, **kwargs: object) -> str:
-    return i18n.get(key, **kwargs) if i18n is not None else gettext("chat", key, **kwargs)
+    return (
+        i18n.get(key, **kwargs)
+        if i18n is not None
+        else gettext("chat", key, locale=DEFAULT_LOCALE, **kwargs)
+    )
 
 
-HELP_TEXT = gettext("chat", "chat-help-text")
+def _locale_of(i18n: I18nContext | None) -> str:
+    """The locale this render belongs to (#48). In a group the middleware has
+    already resolved `i18n.locale` to that chat's own setting, which is
+    exactly what everything built here needs; the None case is the handful of
+    internal callers that render without an aiogram context at all."""
+    return i18n.locale if i18n is not None else DEFAULT_LOCALE
+
 
 GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
 
@@ -312,6 +322,7 @@ async def _build_stats_text(
     settings_row = await repo.get_user_settings(target.tg_id)
     show_links = bool(settings_row and settings_row.show_profile_links)
 
+    locale = _locale_of(i18n)
     counters = await counters_for(repo, target.tg_id)
     lines = [f"📊 <b>{html_escape(_display_name(target, platform_links))}</b>"]
     # Shared with /panel's own header (2026-09-08, user request: "пусть одни
@@ -324,6 +335,7 @@ async def _build_stats_text(
         gamerscore=target.gamerscore,
         platform_links=platform_links,
         show_links=show_links,
+        locale=locale,
     )
 
     today_breakdown = platform_breakdown_suffix(
@@ -337,14 +349,14 @@ async def _build_stats_text(
         _hub_text(
             i18n,
             "chat-stats-today",
-            achievements=plural_achievements(counters.today),
+            achievements=plural_achievements(counters.today, locale),
             breakdown=today_breakdown,
             score_suffix=score_suffix(counters.today_score),
         ),
         _hub_text(
             i18n,
             "chat-stats-month",
-            achievements=plural_achievements(counters.month),
+            achievements=plural_achievements(counters.month, locale),
             breakdown=month_breakdown,
             score_suffix=score_suffix(counters.month_score),
         ),
@@ -464,7 +476,7 @@ async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> N
     # few people. Picking someone to look up is /who's job, not this one's.
     settings_row = await repo.get_chat_daily_settings(message.chat.id)
     updated_label = local_now(settings_row.tz_offset_min).strftime("%H:%M")
-    text = render_online_table(rows, updated_label)
+    text = render_online_table(rows, updated_label, settings_row.locale)
     with stats_category():
         sent = await message.answer(text, parse_mode=ParseMode.HTML)
 
@@ -569,6 +581,7 @@ async def _summary_or_cooldown(
         chat_id,
         settings_row.rare_threshold_percent,
         local_now(settings_row.tz_offset_min).date(),
+        locale=settings_row.locale,
         tz_offset_min=settings_row.tz_offset_min,
         with_day=with_day,
         with_month=with_month,
@@ -650,6 +663,7 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
         settings_row.rare_threshold_percent,
         window,
         settings_row.tz_offset_min,
+        locale=settings_row.locale,
     )
     await callback.answer()
     if text is not None:
@@ -720,7 +734,7 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
         game=game,
         name=name,
         tail=tail_text,
-        ago=humanize_ago(row.unlocked_at),
+        ago=humanize_ago(row.unlocked_at, _locale_of(i18n)),
     )
 
 

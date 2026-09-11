@@ -139,7 +139,7 @@ def test_plural_achievements_russian_forms(count: int, word: str) -> None:
     # The number comes through thousands() rather than str() — it separates
     # with a thin space, and composing the expectation the same way keeps
     # this test about the plural form, not about that separator.
-    assert plural_achievements(count) == f"{thousands(count)} {word}"
+    assert plural_achievements(count, "ru") == f"{thousands(count)} {word}"
 
 
 @pytest.mark.parametrize(
@@ -154,7 +154,7 @@ def test_plural_achievements_russian_forms(count: int, word: str) -> None:
     ],
 )
 def test_plural_trophies_russian_forms(count: int, word: str) -> None:
-    assert plural_trophies(count) == f"{thousands(count)} {word}"
+    assert plural_trophies(count, "ru") == f"{thousands(count)} {word}"
 
 
 # ---------------------------------------------------------- repo accessors

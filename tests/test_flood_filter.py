@@ -198,11 +198,11 @@ async def test_flood_flush_all_force_exits_every_window_regardless_of_expiry(
 
 def test_format_digest_says_achievements_not_trophies_for_a_mixed_platform_batch() -> None:
     items = [achievement("m1", platform="modern"), achievement("m2", platform="psn")]
-    text = format_digest("Игрок", None, items)
+    text = format_digest("Игрок", None, items, locale="ru")
     assert "трофе" not in text.lower()
 
 
 def test_format_digest_still_says_trophies_when_everything_is_psn() -> None:
     items = [achievement("m1", platform="psn"), achievement("m2", platform="psn")]
-    text = format_digest("Игрок", None, items)
+    text = format_digest("Игрок", None, items, locale="ru")
     assert "трофе" in text.lower()

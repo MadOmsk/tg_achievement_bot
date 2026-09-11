@@ -39,7 +39,7 @@ from bot.handlers.keyboards import (
     format_rarity,
     next_rarity_mode,
 )
-from bot.i18n import gettext
+from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.poller.daily import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.poller.fetcher import Fetcher
 from bot.poller.message_cleanup import DEFAULT_TTL_MINUTES as DEFAULT_SYSTEM_MESSAGE_TTL_MIN
@@ -1339,7 +1339,7 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
                 "admin-users-row",
                 icon=_icon(user),
                 name=truncate_name(name, 14),
-                ago=humanize_ago(user.last_online_at),
+                ago=humanize_ago(user.last_online_at, DEFAULT_LOCALE),
                 today=today.get(user.tg_id, (0, 0))[0],
                 month=month.get(user.tg_id, (0, 0))[0],
                 note=_note(user),
@@ -1388,7 +1388,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[st
     line, so a long line no longer buries the id next to the nickname."""
     count = await repo.xbox_achievement_count(user.tg_id)
     completed = await repo.xbox_completed_games_count(user.xuid)
-    parts = [plural_achievements(count)]
+    parts = [plural_achievements(count, DEFAULT_LOCALE)]
     if completed:
         parts.append(f"{COMPLETED_BADGE} {completed}")
     parts.append(_("admin-today-tag", count=today_count))
@@ -1399,7 +1399,9 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[st
     login = _("admin-login-not-connected")
     if token is not None:
         login = {
-            TokenStatus.ACTIVE: _("admin-login-active", ago=humanize_ago(token.last_refresh_at)),
+            TokenStatus.ACTIVE: _(
+                "admin-login-active", ago=humanize_ago(token.last_refresh_at, DEFAULT_LOCALE)
+            ),
             TokenStatus.INVALID: _("admin-login-invalid"),
             TokenStatus.REVOKED: _("admin-login-revoked"),
         }.get(token.status, token.status)
@@ -1413,9 +1415,13 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[st
             game = await repo.title_name(presence.title_id) or presence.title_id
         game = game or _("admin-no-game")
         online = (
-            _("admin-online-playing", ago=humanize_ago(presence.updated_at), game=game)
+            _(
+                "admin-online-playing",
+                ago=humanize_ago(presence.updated_at, DEFAULT_LOCALE),
+                game=game,
+            )
             if presence.state == PresenceState.ONLINE
-            else humanize_ago(presence.updated_at)
+            else humanize_ago(presence.updated_at, DEFAULT_LOCALE)
         )
     return [
         _("admin-xbox-header", gamertag=user.gamertag or _("admin-no-name")),
@@ -1433,7 +1439,7 @@ async def _steam_admin_block(repo: Repo, link: PlatformLink, today_count: int) -
     (`visibility_status_text`, shared so the two never drift)."""
     count = await repo.platform_achievement_count(link.tg_id, Platform.STEAM)
     completed = await repo.steam_completed_games_count(link.tg_id)
-    parts = [plural_achievements(count)]
+    parts = [plural_achievements(count, DEFAULT_LOCALE)]
     if completed:
         parts.append(f"{COMPLETED_BADGE} {completed}")
     parts.append(_("admin-today-tag", count=today_count))
@@ -1444,14 +1450,22 @@ async def _steam_admin_block(repo: Repo, link: PlatformLink, today_count: int) -
         game = steam_presence.game_name or (_("admin-no-game") if steam_presence.gameid else "")
         is_online = (steam_presence.persona_state or 0) != 0
         online = (
-            _("admin-online-playing", ago=humanize_ago(steam_presence.updated_at), game=game)
+            _(
+                "admin-online-playing",
+                ago=humanize_ago(steam_presence.updated_at, DEFAULT_LOCALE),
+                game=game,
+            )
             if is_online and game
-            else (_("admin-online-idle") if is_online else humanize_ago(steam_presence.updated_at))
+            else (
+                _("admin-online-idle")
+                if is_online
+                else humanize_ago(steam_presence.updated_at, DEFAULT_LOCALE)
+            )
         )
     return [
         _("admin-steam-header", name=link.display_name or _("admin-no-name")),
         _("admin-steamid-tag", external_id=link.external_id),
-        _("admin-login-row", login=visibility_status_text(link)),
+        _("admin-login-row", login=visibility_status_text(link, DEFAULT_LOCALE)),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
     ]
@@ -1466,7 +1480,7 @@ async def _psn_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> 
     back same as the other two platforms."""
     count = await repo.platform_achievement_count(link.tg_id, Platform.PSN)
     platinum = await repo.psn_platinum_count(link.tg_id)
-    parts = [plural_trophies(count)]
+    parts = [plural_trophies(count, DEFAULT_LOCALE)]
     if platinum:
         parts.append(f"{COMPLETED_BADGE} {platinum}")
     parts.append(_("admin-today-tag", count=today_count))
@@ -1479,14 +1493,22 @@ async def _psn_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> 
         game = psn_presence.title_name or (_("admin-no-game") if psn_presence.title_id else "")
         is_online = psn_presence.state == PresenceState.ONLINE
         online = (
-            _("admin-online-playing", ago=humanize_ago(psn_presence.updated_at), game=game)
+            _(
+                "admin-online-playing",
+                ago=humanize_ago(psn_presence.updated_at, DEFAULT_LOCALE),
+                game=game,
+            )
             if is_online and game
-            else (_("admin-online-idle") if is_online else humanize_ago(psn_presence.updated_at))
+            else (
+                _("admin-online-idle")
+                if is_online
+                else humanize_ago(psn_presence.updated_at, DEFAULT_LOCALE)
+            )
         )
     return [
         _("admin-psn-header", name=link.display_name or _("admin-no-name")),
         _("admin-psn-id-tag", external_id=link.external_id),
-        _("admin-login-row", login=visibility_status_text(link)),
+        _("admin-login-row", login=visibility_status_text(link, DEFAULT_LOCALE)),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
     ]

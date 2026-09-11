@@ -80,7 +80,7 @@ class OnlineAutoRefresh:
             return
         settings_row = await self._repo.get_chat_daily_settings(row.chat_id)
         updated_label = local_now(settings_row.tz_offset_min).strftime("%H:%M")
-        text = render_online_table(rows, updated_label)
+        text = render_online_table(rows, updated_label, settings_row.locale)
         try:
             with stats_category():
                 await self._bot.edit_message_text(
