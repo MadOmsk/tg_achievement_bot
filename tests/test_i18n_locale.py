@@ -19,6 +19,8 @@ from bot.i18n import (
     static_i18n,
     translator,
 )
+from bot.services.achievements import plural_achievements, plural_trophies
+from bot.util import thousands
 
 CHAT_ID = -100500
 TG_ID = 4242
@@ -91,6 +93,57 @@ def test_static_i18n_carries_its_locale() -> None:
 
 def test_static_i18n_bad_locale_is_normalized() -> None:
     assert static_i18n("util", "klingon").locale == DEFAULT_LOCALE
+
+
+# ------------------------------------------------------------------ plurals
+#
+# Form selection moved out of Python and into Fluent's own CLDR rules (#48)
+# so a second language brings its own categories instead of being handed
+# Russian's one/few/many. These pin the Russian output that used to be
+# computed by hand — every boundary the old tail/hundreds arithmetic cared
+# about.
+
+
+@pytest.mark.parametrize(
+    ("count", "word"),
+    [
+        (0, "достижений"),
+        (1, "достижение"),
+        (2, "достижения"),
+        (4, "достижения"),
+        (5, "достижений"),
+        (11, "достижений"),  # tail 1, but the teens are an exception
+        (12, "достижений"),
+        (14, "достижений"),
+        (21, "достижение"),
+        (22, "достижения"),
+        (25, "достижений"),
+        (101, "достижение"),
+        (111, "достижений"),
+        (1001, "достижение"),
+        (1234, "достижения"),
+    ],
+)
+def test_plural_achievements_russian_forms(count: int, word: str) -> None:
+    # The number comes through thousands() rather than str() — it separates
+    # with a thin space, and composing the expectation the same way keeps
+    # this test about the plural form, not about that separator.
+    assert plural_achievements(count) == f"{thousands(count)} {word}"
+
+
+@pytest.mark.parametrize(
+    ("count", "word"),
+    [
+        (1, "трофей"),
+        (2, "трофея"),
+        (5, "трофеев"),
+        (11, "трофеев"),
+        (21, "трофей"),
+        (1234, "трофея"),
+    ],
+)
+def test_plural_trophies_russian_forms(count: int, word: str) -> None:
+    assert plural_trophies(count) == f"{thousands(count)} {word}"
 
 
 # ---------------------------------------------------------- repo accessors

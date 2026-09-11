@@ -17,16 +17,19 @@ achievement-name = { $badge } «{ $name }»
 achievement-gamerscore = { $score } G
 achievement-rarity = редкость { $percent }%
 
-# Plural forms
+# Plural forms. The form is selected by Fluent itself from $count, using the
+# CLDR plural rules of whichever locale this file belongs to — $pretty (the
+# same number, thousands-separated for display) is what actually gets shown,
+# because selecting on an already-formatted string would not work.
 achievement-plural =
-    { $form ->
-        [one] { $count } достижение
-        [few] { $count } достижения
-       *[many] { $count } достижений
+    { $count ->
+        [one] { $pretty } достижение
+        [few] { $pretty } достижения
+       *[many] { $pretty } достижений
     }
 achievement-trophy-plural =
-    { $form ->
-        [one] { $count } трофей
-        [few] { $count } трофея
-       *[many] { $count } трофеев
+    { $count ->
+        [one] { $pretty } трофей
+        [few] { $pretty } трофея
+       *[many] { $pretty } трофеев
     }

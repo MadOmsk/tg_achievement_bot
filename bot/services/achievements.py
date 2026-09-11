@@ -359,17 +359,14 @@ def plural_achievements(count: int) -> str:
     """ "Достижение" everywhere, not "ачивка" — the two used to appear
     side by side across different messages (2026-09-05 terminology pass);
     "ач." stays fine as a space-saving abbreviation where one is needed,
-    just not the full colloquial word."""
-    tail = count % 10
-    hundreds = count % 100
-    number = thousands(count)
-    return _(
-        "achievement-plural",
-        count=number,
-        form="one"
-        if tail == 1 and hundreds != 11
-        else ("few" if tail in (2, 3, 4) and hundreds not in (12, 13, 14) else "many"),
-    )
+    just not the full colloquial word.
+
+    The plural form itself is Fluent's job, not this function's (#48): it
+    picks the CLDR category for whichever locale the .ftl belongs to, so a
+    second language brings its own rules with it instead of being handed
+    Russian's one/few/many. `count` selects, `pretty` displays — selecting
+    on the thousands-separated string would never match a category."""
+    return _("achievement-plural", count=count, pretty=thousands(count))
 
 
 def plural_trophies(count: int) -> str:
@@ -379,17 +376,9 @@ def plural_trophies(count: int) -> str:
     untouched everywhere it serves a *combined* cross-platform total (e.g.
     /stats' "Сегодня"), which is correctly "достижений" regardless of how
     many of them came from PSN specifically — this is only for a count
-    that is entirely PSN's own."""
-    tail = count % 10
-    hundreds = count % 100
-    number = thousands(count)
-    return _(
-        "achievement-trophy-plural",
-        count=number,
-        form="one"
-        if tail == 1 and hundreds != 11
-        else ("few" if tail in (2, 3, 4) and hundreds not in (12, 13, 14) else "many"),
-    )
+    that is entirely PSN's own. Plural form selection is Fluent's, same as
+    plural_achievements above."""
+    return _("achievement-trophy-plural", count=count, pretty=thousands(count))
 
 
 #  Xbox/Steam's "100%-completed game" count and PSN's own platinum count
