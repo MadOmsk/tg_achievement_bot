@@ -24,6 +24,7 @@ from bot.services.achievements import (
     passes_filters,
     telegram_identity,
 )
+from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import stats_category
 from bot.util import utcnow
 
@@ -130,6 +131,14 @@ class Publisher:
                 if not allowed:
                     continue  # every item this call was buffered, not sent
 
+            # The description is the one piece of an achievement message that
+            # is not built from a .ftl: it comes from the platform, and the
+            # bilingual cache is what actually holds both languages (#48).
+            # Swapped in per chat, after filtering — the same `achievements`
+            # list is rendered again for the next chat, possibly in another
+            # language, so this must not mutate it.
+            allowed = await localize_descriptions(self._repo, allowed, chat.locale)
+
             # The digest decision is per chat and happens after filtering:
             # what one chat sees as five achievements may be one in another
             # (digest_threshold lives on the subscription now, not on
@@ -234,6 +243,7 @@ class Publisher:
         # no ChatTarget in hand (it is driven by the throttle table, not by a
         # subscription walk), and one lookup per flushed window is nothing.
         locale = await self._repo.chat_locale(chat_id)
+        achievements = await localize_descriptions(self._repo, achievements, locale)
         user = await self._repo.get_user(tg_id)
         links = await self._repo.platform_links_of(tg_id)
         name = (

@@ -329,8 +329,14 @@ every column.
   ever consults this cache and, when needed, the Anthropic API — it never
   talks to a platform itself. Steam, Xbox, and (2026-09-09) PSN all call it
   now (see their own sections under Platform integrations).
-  Nothing renders a description in anything but Russian regardless — that
-  needs the still-separate, not-yet-built chat/user locale switch.
+  **This cache is what a published message actually renders from**
+  (2026-09-11, #48, `services/descriptions_view.py::localize_descriptions`,
+  applied per chat in `poller/publisher.py`) — `seen_achievements.description`
+  is a single-language snapshot taken when one person unlocked the thing, so
+  it is now only the fallback, for a row older than the cache or an
+  achievement whose second language genuinely never arrived. Rows are copied,
+  never mutated: the publisher renders the same list once per chat, and two
+  chats can be in two languages.
 
 ## Platform integrations
 

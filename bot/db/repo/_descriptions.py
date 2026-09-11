@@ -30,6 +30,39 @@ class _DescriptionsRepo:
             source=row["source"],
         )
 
+    async def cached_descriptions(
+        self, keys: list[tuple[str, str, str]]
+    ) -> dict[tuple[str, str, str], CachedDescription]:
+        """The bulk form of `get_cached_description` above, for the render
+        path (#48): a digest can carry a whole game's worth of achievements,
+        and the anti-flood digest can carry several games across several
+        platforms, so one query per achievement would be one query per line
+        of a message.
+
+        Keyed by the full (platform, title_id, achievement_id) triple rather
+        than one shared title, because that flood digest genuinely mixes
+        them. Missing keys are simply absent from the result.
+        """
+        if not keys:
+            return {}
+        clause = " OR ".join(
+            ["(platform = ? AND title_id = ? AND achievement_id = ?)"] * len(keys)
+        )
+        parameters = [value for key in keys for value in key]
+        cursor = await self._conn.execute(
+            "SELECT platform, title_id, achievement_id, description_ru, description_en, source "
+            f"FROM achievement_description_cache WHERE {clause}",
+            parameters,
+        )
+        return {
+            (row["platform"], row["title_id"], row["achievement_id"]): CachedDescription(
+                description_ru=row["description_ru"],
+                description_en=row["description_en"],
+                source=row["source"],
+            )
+            for row in await cursor.fetchall()
+        }
+
     async def cache_description(
         self,
         platform: str,
