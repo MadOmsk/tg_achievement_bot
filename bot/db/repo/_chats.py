@@ -9,7 +9,7 @@ import json
 
 from bot.constants import RarityMode
 from bot.db.repo._models import ChatDailySettings, ChatTarget, UserChatRow
-from bot.i18n import gettext
+from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.util import utcnow_iso
 
 
@@ -180,6 +180,18 @@ class _ChatsRepo:
             )
             for row in await cursor.fetchall()
         ]
+
+    async def chat_locale(self, chat_id: int) -> str:
+        """This chat's own language (#48). One value per chat, not per
+        viewer — see schema.sql. A chat with no settings row yet (it is
+        created by upsert_chat, so only a chat the bot has never really
+        seen) reads as the default rather than raising: this is called on
+        the render path for every group message."""
+        cursor = await self._conn.execute(
+            "SELECT locale FROM chat_settings WHERE chat_id = ?", (chat_id,)
+        )
+        row = await cursor.fetchone()
+        return row["locale"] if row else DEFAULT_LOCALE
 
     async def get_chat_daily_settings(self, chat_id: int) -> ChatDailySettings:
         cursor = await self._conn.execute(

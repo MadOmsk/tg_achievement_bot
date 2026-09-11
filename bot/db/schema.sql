@@ -95,7 +95,14 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- picks what new users start with via app_settings, same pattern as
     -- default_rarity_mode (repo.py's ensure_user). /panel is exempt — it's
     -- only ever shown to its own owner, always shows links there.
-    show_profile_links INTEGER NOT NULL DEFAULT 0
+    show_profile_links INTEGER NOT NULL DEFAULT 0,
+    -- This person's own language, for DMs only (/panel, /stats in a DM,
+    -- personal notifications) — a group always follows chat_settings.locale
+    -- instead, see there (#48). Deliberately not seeded from Telegram's own
+    -- language_code: plenty of this Russian-speaking community run Telegram
+    -- itself in English, and auto-switching them would be a silent
+    -- regression rather than a feature. Explicit opt-in, default 'ru'.
+    locale           TEXT    NOT NULL DEFAULT 'ru'
 );
 
 -- Rare-achievement threshold, daily-summary time and its timezone are always
@@ -127,7 +134,13 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     -- `flood_limit = 0` disables the filter for this chat entirely — same
     -- "0 = off" convention as min_gamerscore/summary_top_limit.
     flood_limit              INTEGER NOT NULL DEFAULT 3,
-    flood_window_minutes     INTEGER NOT NULL DEFAULT 60
+    flood_window_minutes     INTEGER NOT NULL DEFAULT 60,
+    -- Multi-language (#48). One locale per *chat*, not per viewer: Telegram
+    -- cannot show two people reading the same group message different text,
+    -- so everything this bot broadcasts into a group needs one shared
+    -- answer, set by an admin. A person's DMs follow user_settings.locale
+    -- instead.
+    locale                   TEXT    NOT NULL DEFAULT 'ru'
 );
 
 -- Global settings the admin turns

@@ -17,6 +17,7 @@ from bot.db.repo._models import (
     _as_user,
     _as_user_settings,
 )
+from bot.i18n import DEFAULT_LOCALE
 from bot.util import utcnow, utcnow_iso
 
 
@@ -192,8 +193,18 @@ class _AccountsRepo:
         row = await cursor.fetchone()
         return _as_user_settings(row) if row else None
 
+    async def user_locale(self, tg_id: int) -> str:
+        """This person's own language, used for DMs only (#48) — a group
+        follows chat_settings.locale instead. Someone with no settings row
+        yet reads as the default, same as every other per-user setting."""
+        cursor = await self._conn.execute(
+            "SELECT locale FROM user_settings WHERE tg_id = ?", (tg_id,)
+        )
+        row = await cursor.fetchone()
+        return row["locale"] if row else DEFAULT_LOCALE
+
     async def update_user_settings(self, tg_id: int, **fields: Any) -> None:
-        allowed = {"tz_offset_min", "show_profile_links"}
+        allowed = {"tz_offset_min", "show_profile_links", "locale"}
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"unknown user_settings fields: {sorted(unknown)}")

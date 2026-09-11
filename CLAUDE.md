@@ -192,9 +192,26 @@ when this tree itself goes stale — a map nobody trusts is worse than no map.
 
 All user-facing text is stored in `bot/locales/<locale>/LC_MESSAGES/*.ftl` and
 resolved through `aiogram_i18n` in handlers or `bot.i18n.gettext` in pollers,
-services, and other code without handler dependency injection. Only `ru` ships
-today, and `ConstManager("ru")` deliberately preserves the bot's Russian-only
-behavior while keeping the second-language seam explicit.
+services, and other code without handler dependency injection.
+
+**Which locale a message renders in is decided per context, never per process**
+(#48, 2026-09-11) — `bot.i18n.LocaleManager` resolves a group to its own
+`chat_settings.locale` and a DM to the person's `user_settings.locale`. A group
+gets one shared answer because Telegram cannot show two viewers of the same
+message different text; only DMs can be personal. `AVAILABLE_LOCALES` lists what
+may actually be picked, and `normalize_locale()` coerces anything else (a
+hand-edited row, a locale dropped in a later version) back to `ru` rather than
+raising mid-render.
+
+Outside aiogram's own update handling the locale is an **explicit argument** —
+`gettext(module, key, locale=...)`, or `translator(module, locale)` bound once at
+the top of a function that renders a whole screen. Deliberately not a
+`ContextVar`: the publisher and the daily summary both loop over chats, and an
+ambient locale someone forgot to re-set is exactly how one chat's message ends up
+in another chat's language. A key missing from a non-default locale falls back to
+`ru` on both seams (`LOCALES_MAP` on the core, Fluent's own locale chain in
+`gettext`), so `bot/locales/en/` can be filled in file by file without a
+half-translated locale ever breaking a screen.
 
 **New user-facing strings go only into `.ftl` files** — never hardcoded Russian (or
 any other language) in Python. Handlers/services/pollers reference keys via
@@ -260,7 +277,12 @@ every column.
   `flood_limit`/`flood_window_minutes` (see Publication rules below). `user_settings`
   holds personal, chat-independent settings: timezone offset, muted games, and
   `show_profile_links` (off by default; a new user's starting value comes from
-  `app_settings['default_show_profile_links']`).
+  `app_settings['default_show_profile_links']`). Both tables also carry a
+  `locale` (#48, 2026-09-11, `'ru'` by default) — the chat's own for everything
+  broadcast to a group, the person's own for DMs; see Localization above.
+  Neither is seeded from Telegram's `language_code`: plenty of this
+  Russian-speaking community run Telegram itself in English, so auto-switching
+  them on deploy would be a silent regression rather than a feature.
 - **Anti-flood state.** `notification_throttle (tg_id, chat_id, window_started_at,
   count_in_window, throttled)` — one row per (person, chat) currently inside a
   counting or throttled window (2026-09-09). No separate buffer/queue table: an

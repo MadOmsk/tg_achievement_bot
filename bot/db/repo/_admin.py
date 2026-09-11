@@ -165,6 +165,7 @@ class _AdminRepo:
             "tz_offset_min",
             "flood_limit",
             "flood_window_minutes",
+            "locale",
         }
         unknown = set(fields) - allowed
         if unknown:

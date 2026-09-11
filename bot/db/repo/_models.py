@@ -47,6 +47,10 @@ class UserSettings:
     tg_id: int
     tz_offset_min: int | None
     show_profile_links: bool
+    # This person's own language for DMs (#48); a group follows its own
+    # chat_settings.locale instead. Defaulted rather than required so the
+    # many test/call sites that build a UserSettings by hand keep working.
+    locale: str = "ru"
 
 
 @dataclass(slots=True)
@@ -504,6 +508,7 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         tg_id=row["tg_id"],
         tz_offset_min=row["tz_offset_min"],
         show_profile_links=bool(row["show_profile_links"]),
+        locale=row["locale"],
     )
 
 
