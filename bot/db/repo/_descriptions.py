@@ -58,6 +58,38 @@ class _DescriptionsRepo:
             for row in await cursor.fetchall()
         ]
 
+    async def uncached_description_titles(
+        self, platforms: tuple[str, ...], limit: int
+    ) -> list[tuple[str, str, int]]:
+        """A few titles at a time that still have uncached descriptions, as
+        (platform, title_id, tg_id) — the poller's own small bite
+        (poller/description_backfill.py, 2026-09-11 user request).
+
+        Deliberately not `uncached_descriptions()` above: that returns the
+        whole gap, which is tens of thousands of rows and fine for a one-off
+        script but absurd to run every minute. This asks only for as many
+        titles as the next tick can actually fetch, and stops there.
+
+        `tg_id` is any one owner of the title — the description belongs to
+        the game, not the person, so whoever the group-by happens to pick is
+        as good as any other; the caller falls back to another owner itself
+        if that one's token turns out to be dead.
+        """
+        placeholders = ", ".join("?" * len(platforms))
+        cursor = await self._conn.execute(
+            "SELECT s.platform, s.title_id, MIN(s.tg_id) AS tg_id "
+            "FROM seen_achievements s "
+            "LEFT JOIN achievement_description_cache d "
+            "       ON d.platform = s.platform AND d.title_id = s.title_id "
+            "      AND d.achievement_id = s.achievement_id "
+            f"WHERE d.achievement_id IS NULL AND s.platform IN ({placeholders}) "
+            "  AND s.description IS NOT NULL AND TRIM(s.description) <> '' "
+            "GROUP BY s.platform, s.title_id "
+            "LIMIT ?",
+            (*platforms, limit),
+        )
+        return [(row["platform"], row["title_id"], row["tg_id"]) for row in await cursor.fetchall()]
+
     async def cached_descriptions(
         self, keys: list[tuple[str, str, str]]
     ) -> dict[tuple[str, str, str], CachedDescription]:

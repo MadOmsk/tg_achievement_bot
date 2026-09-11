@@ -38,6 +38,7 @@ from bot.i18n import (
 from bot.lock import AlreadyRunningError, single_instance
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.daily import DailySummary
+from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
@@ -178,6 +179,7 @@ async def run(settings: Settings) -> None:
         psn_fetcher,
         psn_presence,
         flood_flush,
+        DescriptionBackfill(repo, client, anthropic_auth),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

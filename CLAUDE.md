@@ -105,6 +105,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │   ├── client.py            Xbox Live requests, rate limiting, retry, backoff
 │   │   │   └── models.py            pydantic response models (incl. rarity from contract 4)
 │   │   ├── rows.py                 ParsedAchievement -> AchievementRow, shared by both pollers and psn/achievements.py
+│   │   ├── description_backfill.py one Xbox title's descriptions in both locales — shared
+│   │   │                           by the one-off script and the self-healing poller (#48)
 │   │   ├── steam/                  the official Steam Web API, no OAuth (one shared key)
 │   │   │   ├── client.py            profile resolve, visibility, presence, achievements, rarity
 │   │   │   ├── auth.py              SteamAuth: the admin-settable API key (encrypted in app_settings), health check (#17)
@@ -137,6 +139,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           backfill, admin resync (#27)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
+│   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
+│   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
 │   │   ├── flood_flush.py          the anti-flood filter's read/flush side — buffered
 │   │   │                           achievements once a throttled window closes (2026-09-09)
 │   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
@@ -415,6 +419,21 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   hang, just unbounded — 120s is generous enough for a real large account
   (RideTheSun's 1011 titles, ~46s for title_history alone, verified live)
   to still finish rather than being cut off just short of succeeding.
+- **A new Xbox account's history arrives uncached, and something has to
+  come back for it** (2026-09-11, user request). `backfill` uses the broad
+  contract-2 call for the whole library — one request instead of one per
+  title, which is the entire point of it — and that endpoint takes no
+  language at all. Steam and PSN have no such gap: their backfills route
+  through the same function their pollers use. So `poller/description_backfill.py`
+  fills the Xbox cache a few titles per tick, forever, and the one-off
+  `scripts/backfill_descriptions.py` exists only for the history that
+  predates all of this. **It is a poller and not a cron'd script on
+  purpose**: Xbox rotates a per-user refresh token and Microsoft invalidates
+  the previous one, so two processes refreshing the same person concurrently
+  log that person out — `XboxAuthService`'s guard is an `asyncio.Lock`, which
+  serializes callers inside one process and does nothing across two. Inside
+  the bot it is covered; outside it, the bot must be stopped first (which is
+  what the script requires, every time).
 - **Bilingual descriptions** (2026-09-09, second platform wired to
   `services/translate`, same shape as Steam's own): `title_achievements`
   always requested `en-US` only; now also requests `ru-RU`

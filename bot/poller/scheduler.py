@@ -15,6 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from bot.db.repo import Repo
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.daily import DailySummary
+from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
@@ -47,6 +48,7 @@ class PollerScheduler:
         psn_fetcher: PsnFetcher,
         psn_presence: PsnPresencePoller,
         flood_flush: FloodFlush,
+        description_backfill: DescriptionBackfill,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -61,6 +63,7 @@ class PollerScheduler:
         self._psn_fetcher = psn_fetcher
         self._psn_presence = psn_presence
         self._flood_flush = flood_flush
+        self._description_backfill = description_backfill
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -106,6 +109,15 @@ class PollerScheduler:
         )
         # Same cadence as everything else here — a message due at minute 5
         # sits at most one tick past its TTL, not worth a tighter schedule.
+        # A few titles a minute, forever — see the module docstring for why
+        # this lives inside the bot process rather than in a cron'd script.
+        self._scheduler.add_job(
+            self._description_backfill.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="description_backfill",
+            coalesce=True,
+            max_instances=1,
+        )
         self._scheduler.add_job(
             self._message_cleanup.tick,
             IntervalTrigger(seconds=TICK_SECONDS),

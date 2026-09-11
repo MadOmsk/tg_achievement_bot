@@ -48,6 +48,7 @@ from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Database, Repo
 from bot.services.crypto import TokenCipher
+from bot.services.description_backfill import fill_xbox_title_any_owner
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
     PsnApiError,
@@ -59,7 +60,7 @@ from bot.services.steam.client import SteamApiError, get_player_achievements
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.auth import XboxAuthService
-from bot.services.xbox.client import XboxApiError, XboxClient
+from bot.services.xbox.client import XboxClient
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)-7s %(message)s")
 # Same suppression, same reason as every other script here (M-Steam-1):
@@ -125,6 +126,20 @@ async def gather_work(repo: Repo, platforms: set[str]) -> list[TitleWork]:
     return sorted(grouped.values(), key=lambda w: (w.platform, w.title_id))
 
 
+async def _count_cached(repo: Repo, work: TitleWork, totals: Totals) -> None:
+    """Count what the cache actually ended up holding for this title —
+    `bilingual_descriptions` returns text, not whether it had to pay for it."""
+    for achievement_id in work.achievement_ids:
+        cached = await repo.get_cached_description(work.platform, work.title_id, achievement_id)
+        if cached is None:
+            continue
+        totals.cached += 1
+        if cached.source == "llm":
+            totals.llm += 1
+        else:
+            totals.native += 1
+
+
 async def _record(
     repo: Repo,
     anthropic_auth: AnthropicAuth,
@@ -161,30 +176,21 @@ async def run_xbox(
     totals: Totals,
 ) -> None:
     """Any owner will do — the description is the game's, not the person's.
-    A dead or unlucky token just means trying the next owner rather than
-    giving up on the title."""
-    platform = Platform.XBOX_360 if work.platform == Platform.XBOX_360 else Platform.XBOX_MODERN
-    for tg_id, _external in work.owners:
-        try:
-            russian = await client.title_achievements(
-                tg_id, work.title_id, platform, language="ru-RU"
-            )
-            english = await client.title_achievements(
-                tg_id, work.title_id, platform, language="en-US"
-            )
-        except XboxApiError as exc:
-            log.warning("  %s: owner %s failed (%s), trying the next", work.title_id, tg_id, exc)
-            continue
-        english_by_id = {item.achievement_id: item.description for item in english}
-        native = {
-            item.achievement_id: (item.description, english_by_id.get(item.achievement_id))
-            for item in russian
-            if item.description
-        }
-        await _record(repo, anthropic_auth, work, native, totals)
+    The per-title fetch itself lives in services/description_backfill.py,
+    shared with the poller that keeps this from reopening (see that module)."""
+    cached = await fill_xbox_title_any_owner(
+        repo,
+        anthropic_auth,
+        client,
+        owners=[tg_id for tg_id, _external in work.owners],
+        title_id=work.title_id,
+        platform=work.platform,
+    )
+    if cached is None:
+        totals.failed += 1
+        log.warning("  %s/%s: every owner failed", work.platform, work.title_id)
         return
-    totals.failed += 1
-    log.warning("  %s/%s: every owner failed", work.platform, work.title_id)
+    await _count_cached(repo, work, totals)
 
 
 async def run_steam(
