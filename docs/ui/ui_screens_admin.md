@@ -1,11 +1,23 @@
-# UI screens — admin panel (mockups, draft, issue #41)
+# UI screens — super-admin panel (mockups, draft, issue #41)
 
-Layout only, placeholders instead of real data — for editing. Nickname principles
+Layout only, placeholders instead of real data — for editing. Nickname rules
 and table contents are documented separately: see [tables.md](tables.md) for
-"which rule builds `<ник>` here" (referenced below as **rule A/B/C/D/E**) and for
-what actually goes into every `→ table:` line.
+"which rule builds `<nick>` here" (referenced below as **rule A/B/C/D/E**) and
+for what actually goes into every `→ table:` line.
 
-## Админ-панель (главная)
+**Language convention** (2026-09-11): the prose in these files is English,
+like everything else written in this project. The mockups themselves stay in
+Russian, because that is what the bot renders by default and therefore what
+you are comparing against when you test a screen. The bot also ships an
+English locale (#48) — a screen set to it renders the same layout with the
+`en` strings; nothing here changes shape per language except the column
+padding, which is part of each locale's own `.ftl`.
+
+**Roles** (2026-09-11): **super-admin** is the global operator, the Telegram
+ids in `ADMIN_TG_IDS`, who owns every screen in this file. **Chat admin** is
+the per-chat role issue #47 is about, which does not exist yet.
+
+## Super-admin panel (home)
 
 ```
 ⚙️ Администрирование  ·  обновлено HH:MM
@@ -17,12 +29,12 @@ what actually goes into every `→ table:` line.
 Чатов:          N
 API XBOX:  used/limit за окно
 API Steam: used/limit за окно
-Ключ Steam: <статус>
-Ключ PSN:   <статус>
+Ключ Steam: <status>
+Ключ PSN:   <status>
 Запросов к PSN за сутки: N
 ```
 
-Кнопки:
+Buttons:
 ```
 [ 👤 Новые пользователи ]
 [ ⚙️ Глобальные лимиты ]
@@ -31,62 +43,64 @@ API Steam: used/limit за окно
 [ 🔑 Ключи платформ ]
 ```
 
-## 🔑 Ключи платформ
+## 🔑 Platform keys
 
 ```
 🔑 Ключи платформ
 
-Steam: <установлен/не установлен>
-PSN:   <установлен/не установлен>
+Steam:     <set / not set>
+PSN:       <set / not set>
+Anthropic: <set / not set>
 ```
 
-Кнопки:
+Buttons:
 ```
-[ Установить/сменить ключ Steam ]
-[ Очистить ключ Steam ]           (только если установлен)
-[ Установить/сменить NPSSO PSN ]
-[ Очистить NPSSO PSN ]            (только если установлен)
+[ Задать/сменить ключ Steam ]
+[ Убрать ключ Steam ]              (only when set)
+[ Задать/сменить NPSSO PSN ]
+[ Убрать NPSSO PSN ]               (only when set)
+[ Задать/сменить ключ Anthropic ]
+[ Убрать ключ Anthropic ]          (only when set)
 [ ‹ Назад ]
 ```
 
-Кнопка "установить/сменить" переводит в режим ожидания одного текстового
-сообщения с самим значением — секрет никогда не показывается обратно после
-сохранения, только сам факт "установлен".
+"Set/change" puts the panel into a wait-for-one-text-message state carrying
+the value itself. A secret is never shown back after saving — only the fact
+that it is set.
 
-## ⚙️ Глобальные лимиты
+## ⚙️ Global limits
 
 ```
 ⚙️ Глобальные настройки
 
-<название лимита>: <текущее значение или "без лимита">
+<limit name>: <current value, or "без ограничения">
 ...
 ```
 
-Список лимитов (каждый — отдельная кнопка, открывающая свой текстовый
-ввод): строк в /summary и /stats' списке игр (0 = без лимита), строк в
-результатах /hltb, размер страницы /hltb, TTL системных сообщений (0 =
-выключено), интервал/TTL авто-обновления /online, частота проверки
-Steam/PSN-ключей.
+The limits, each its own button opening its own text input: rows in /summary
+and in /stats' game list (0 = no limit), rows in /hltb results, /hltb page
+size, system-message TTL (0 = off), /online auto-refresh interval and TTL,
+and how often the Steam/PSN/Anthropic keys are checked.
 
-## 👤 Новые пользователи (умолчания)
+## 👤 New users (defaults)
 
 ```
-👤 Настройки по умолчанию для новых подписок
+👤 Новые пользователи — настройки по умолчанию
 
-Режим редкости по умолчанию: <all/rare/hidden>
-Профиль виден другим по умолчанию: <да/нет>
+Ачивки по умолчанию: <all/rare/hidden>
+Профиль виден другим: <да/нет>
 ```
 
-Кнопки:
+Buttons:
 ```
-[ Режим редкости: X ]     (по тапу — циклический перебор all → rare → hidden)
-[ Профиль виден: да/нет ] (тумблер)
+[ Ачивки по умолчанию: X ]   (tap cycles all → rare → hidden)
+[ Профиль виден другим: да/нет ]  (toggle)
 [ ‹ Назад ]
 ```
 
-Действует только на *новые* подписки/аккаунты — уже существующих не трогает.
+Applies only to *new* subscriptions/accounts — existing ones are untouched.
 
-## Список пользователей
+## User list
 
 ```
 👥 Пользователи, стр. N/M
@@ -94,50 +108,50 @@ Steam/PSN-ключей.
 → table: `admin-user-list`
 ```
 
-Каждая строка списка — кнопка, открывающая карточку этого пользователя.
+Every row is a button opening that person's card.
 
-## Карточка пользователя
+## User card
 
 ```
-👤 <имя>, @<username>, tg_id N                            [rule A, полная форма]
+👤 <name>, @<username>, tg_id N                           [rule A, full form]
 
-🟢 XBOX: <ник>                                            [rule B]
+🟢 XBOX: <nick>                                           [rule B]
 XUID <id>
-Вход: <статус>, обновлён N назад
+Вход: <status>, обновлён N назад
 N достижений  ·  🏆 K  ·  сегодня N  ·  gamerscore G
 В сети: N назад
 
-⚫ Steam: <ник>                                            [rule B]
+⚫ Steam: <nick>                                           [rule B]
 id <id>
-Вход: <видимость>
+Вход: <visibility>
 N достижений  ·  🏆 K  ·  сегодня N
 В сети: N назад
 
-🔵 PSN: <ник>                                             [rule B]
+🔵 PSN: <nick>                                            [rule B]
 account_id <id>
-Вход: <видимость>
+Вход: <visibility>
 N трофеев  ·  сегодня N  ·  уровень L
 
-Подписан: <чаты>
+Подписан: <chats>
 ```
 
-Заголовок карточки — единственное место в проекте, где сразу видны все три
-Telegram-идентификатора (имя, `@username`, `tg_id`) вместе; это не то же самое,
-что rule A из tables.md (та выбирает *один* лучший вариант), а полная,
-неусечённая форма специально для админского поиска/сверки.
+The card's header is the one place in the project that shows all three
+Telegram identifiers (name, `@username`, `tg_id`) at once. That is not the
+same as rule A in tables.md — rule A picks *one* best name; this is the full,
+untruncated form, specifically so the super-admin can search and cross-check.
 
-Кнопки:
+Buttons:
 ```
-[ 🚫 Исключить / ✅ Вернуть ]
-[ 🔄 Обновить XBOX ]   [ 🗑 Сброс XBOX ]     (только если подключён)
-[ 🔄 Обновить Steam ]  [ 🗑 Сброс Steam ]    (только если подключён)
-[ 🔄 Обновить PSN ]    [ 🗑 Сброс PSN ]      (только если подключён)
-[ ‹ К пользователям ]
+[ 🚫 Исключить / ↩️ Вернуть ]
+[ 🔄 Обновить XBOX ]   [ 🗑 Сброс XBOX ]     (only when connected)
+[ 🔄 Обновить Steam ]  [ 🗑 Сброс Steam ]    (only when connected)
+[ 🔄 Обновить PSN ]    [ 🗑 Сброс PSN ]      (only when connected)
+[ ‹ К списку ]
 ```
-"🗑 Сброс X" — отдельное подтверждение в один тап перед стиранием (см. паттерн
-отключения платформы в [ui_screens_users.md](ui_screens_users.md)).
+"🗑 Сброс X" asks for a one-tap confirmation before wiping (the same pattern
+as disconnecting a platform in [ui_screens_users.md](ui_screens_users.md)).
 
-## Список чатов
+## Chat list
 
 ```
 💬 Чаты, стр. N/M
@@ -145,32 +159,64 @@ Telegram-идентификатора (имя, `@username`, `tg_id`) вмест�
 → table: `admin-chat-list`
 ```
 
-Каждая строка списка — кнопка, открывающая карточку этого чата.
+Every row is a button opening that chat's card.
 
-## Карточка чата
+## Chat card
 
 ```
-💬 <название чата>
+💬 <chat title>
 
-Состояние:    <активен/неактивен>
+Состояние:    <активен/отключён>
 Публикуется:  N чел.
 Порог редк.:  N%
-Итог дня:     да/нет, в HH:MM
+Итог дня:     включён/выключен, в HH:MM
 Часовой пояс: UTC±N
 Мин. G:       N
-Антиспам:     N ач. / M мин  (или "выключен")
+Антиспам:     N ач. / M мин   (or "выключен")
+Язык:         Русский / English
 
 Подписаны: → table: `admin-chat-subscribers`
 ```
 
-Кнопки (2026-09-09 перекомпоновка, user request — меньше рядов, короче подписи):
+Buttons (2026-09-11 rework, user request — the rows that used to hold two to
+four buttons side by side are entries now, each opening its own screen):
 ```
 [ Порог редкости: N% ]
-[ Итог дня: вкл/выкл ]   [ Время итога: HH:MM (UTC±N) ]
-[ Антиспам: вкл/выкл ]   [ N ач. ▸ ]   [ M мин ▸ ]
+[ Итог дня: включён ▸ ]
+[ Антиспам: N ач. / M мин ▸ ]
+[ Язык: Русский ]
 [ ⏸ Отключить чат / ▶️ Включить чат ]
-[ 🗑 Последнее ]  [ 🗑 Бота (24ч) ]  [ 🗑 Системные (24ч) ]  [ 🗑 Все системные ]
+[ 🗑 Сообщения ▸ ]
 [ ‹ К списку ]
 ```
-Единая иконка 🗑 на всех четырёх кнопках удаления (раньше первая была 🗑, остальные три —
-🧹 — несогласованно).
+
+Each entry carries the state you would otherwise have to open the submenu to
+read, so nothing is hidden — only uncrowded.
+
+### Chat card → sub-screens
+
+All three keep the chat card's own text above them, unchanged, so the chat's
+whole state stays readable while its settings are being tuned. Every control
+inside one redraws *that* screen rather than the root card.
+
+```
+Итог дня:                        Антиспам:
+[ Итог дня: включён ]            [ Антиспам-фильтр: включён ]
+[ Время итога: HH:MM (UTC±N) ]   [ Антиспам: N ач. ▸ ]  [ Окно: M мин ▸ ]
+[ ‹ Назад ]                      [ ‹ Назад ]
+
+🗑 Сообщения:
+[ 🗑 Последнее ]
+[ 🗑 Бота (24ч) ]
+[ 🗑 Системные (24ч) ]
+[ 🗑 Все системные ]
+[ ‹ Назад ]
+```
+
+One wipe action per row: these are the destructive ones, and a cramped row of
+four 🗑 buttons was exactly what made them easy to mistap.
+
+**Language** is one shared value per chat, not per viewer — Telegram cannot
+render a single group message differently for two people reading it, so
+somebody has to decide for everyone. The super-admin today; a chat admin once
+#47 exists.

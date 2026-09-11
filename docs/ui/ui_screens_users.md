@@ -1,130 +1,136 @@
 # UI screens — user-facing (mockups, draft, issue #41)
 
-Layout only, placeholders instead of real data — for editing. Nickname principles
+Layout only, placeholders instead of real data — for editing. Nickname rules
 and table contents are documented separately: see [tables.md](tables.md) for
-"which rule builds `<ник>` here" (referenced below as **rule A/B/C/D/E**) and for
-what actually goes into every `→ table:` line.
+"which rule builds `<nick>` here" (referenced below as **rule A/B/C/D/E**) and
+for what actually goes into every `→ table:` line.
 
-## Онбординг: /start, /connect_xbox
+**Language convention** (2026-09-11): the prose here is English, like
+everything else written in this project; the mockups stay in Russian, because
+that is what the bot renders by default and therefore what you compare
+against when testing. A person who switches their own language (#48) sees the
+same layout with the `en` strings.
+
+## Onboarding: /start, /connect_xbox
 
 ```
-<приветствие>
+<greeting>
 
 [ Войти через Microsoft ]
 ```
 
-Часовой пояс (сразу после первого входа, если ещё не задан):
+Timezone (right after the first login, when not set yet):
 
 ```
-<часовой пояс — тот же экран, что и в /panel, см. ниже>
+<timezone — the same screen /panel uses, see below>
 ```
 
-## Отключение платформы: /disconnect_xbox, /disconnect_steam, /disconnect_psn
+## Disconnecting a platform: /disconnect_xbox, /disconnect_steam, /disconnect_psn
 
-Один и тот же паттерн на все три платформы — подтверждение в один тап, без
-отдельного текстового ввода:
+One pattern for all three — a one-tap confirmation, no separate text input:
 
 ```
-<отключить платформу X? кратко что произойдёт>
+<disconnect platform X? briefly, what will happen>
 
 [ Да, отключить ]   [ Отмена ]
 ```
 
-## Подключение Steam: /connect_steam
+## Connecting Steam: /connect_steam
 
 ```
-<как прислать ссылку на профиль/vanity URL/SteamID64, ссылка на приватность>
+<how to send a profile link / vanity URL / SteamID64, plus the privacy link>
 ```
 
-Если прислали текст, похожий на профиль, но бот не уверен — подтверждение:
+When the text looks like a profile but the bot is not sure — a confirmation:
 
 ```
-<это твой профиль? имя, ссылка>
+<is this your profile? name, link>
 
-[ Да, это я ]   [ Нет ]
+[ Да, подключить ]   [ Нет ]
 ```
 
-После успешного связывания — два отдельных сообщения подряд (не одно):
+After a successful link — two separate messages, not one:
 
 ```
-<подключено: <ник>>
+<connected: <nick>>
 ```
 ```
-<бэкафилл начат>
+<backfill started>
 ```
-(дальше, отдельным сообщением, когда бэкафилл закончится: `<бэкафилл готов, N ачивок>`
-— или, если профиль/список игр приватный, отдельное сообщение со ссылкой на
-настройки приватности Steam вместо этого)
+(then, as its own message once the backfill finishes: `<backfill done, N
+achievements>` — or, when the profile / game list is private, a message
+pointing at Steam's privacy settings instead)
 
-## Подключение PSN: /connect_psn
+## Connecting PSN: /connect_psn
 
-Тот же трёхшаговый паттерн, что у Steam (ссылка/id → подключено → бэкафилл),
-своя терминология («трофеи», не «достижения»); список приватных игр в
-уведомлении о готовом бэкафилле — отдельной строкой, только если такие есть.
+The same three-step pattern as Steam (link/id → connected → backfill), with
+its own vocabulary ("trophies", never "achievements"). The list of private
+games appears in the backfill-done message as its own line, and only when
+there are any.
 
 ## /hltb
 
 ```
-<название игры?>
+<game title?>
 
-→ table: `hltb-recent-suggestions`   (только если есть недавние игры чата)
+→ table: `hltb-recent-suggestions`   (only when the chat has recent games)
 
-[ Отмена ]
+[ ❌ Отмена ]
 ```
 
-Список кандидатов после поиска:
+Candidates after the search:
 
 ```
-<выбери игру>
+<pick your game>
 
 → table: `hltb-search-results`
 
 [ ‹ ]  [ › ]
-[ Отмена ]
+[ ❌ Отмена ]
 ```
 
-Карточка выбранной игры:
+The chosen game's card:
 
 ```
-🎮 <название> (<год>)
+🎮 <title> (<year>)
 
-Основная история:     N ч.
-Основная + допы:       N ч.
-На 100%:                N ч.
+Основной сюжет · N ч
+Основной + доп. · N ч
+Полное прохождение · N ч
 
-Платформы: <список>
-Жанр:      <жанр>
-<ссылка на HowLongToBeat>
+Платформы: <list>
+Жанры:     <genre>
+<link to HowLongToBeat>
 ```
 
-## Групповой хаб (/help в группе, бот только что добавлен в чат)
+## Group hub (/help in a group, or the bot having just been added)
 
 ```
-<краткая справка по командам чата>
+<short help for the chat's own commands>
 
-<кто уже публикует здесь: список ников, или "пока никто">
+<who already publishes here: a list of nicks, or "пока никто">
 ```
 
-Кнопки:
+Buttons:
 ```
-[ Публиковать мои достижения ]
-[ 🎮 Xbox ]  [ ⚫ Steam ]  [ 🔵 PSN ]     (все три открывают ЛС на нужном шаге)
-[ ⚙️ Настройки ]                          (открывает ЛС, /panel)
+[ ✅ Публиковать мои достижения ]
+[ 🔗 XBOX ]  [ 🎮 Steam ]  [ 🎮 PSN ]   (all three open a DM at the right step)
+[ ⚙️ Настройки ]                        (opens a DM, /panel)
 ```
 
 ## /subscribe, /unsubscribe
 
 ```
-<подписался/отписался от публикации в этом чате>
+<subscribed to / unsubscribed from publishing in this chat>
 ```
 
 ## /stats
 
 ```
-📊 <Ник/Имя>                                              [rule A]
-🟢 XBOX: <ник>  ·  N достижений  ·  🏆 K  ·  gamerscore G     [rule B]
-⚫ Steam: <ник>  ·  N достижений  ·  🏆 K                     [rule B]
-🔵 PlayStation: <ник>  ·  N трофеев  ·  уровень L             [rule B]
+📊 <Nick/Name>                                            [rule A]
+🟢 XBOX: <nick>  ·  N достижений  ·  🏆 K  ·  gamerscore G    [rule B]
+⚫ Steam: <nick>  ·  N достижений  ·  🏆 K                    [rule B]
+🔵 PlayStation: <nick>  ·  N трофеев  ·  уровень L            [rule B]
 
 Сегодня:   N достижений
 За месяц:  N достижений (🟢 N · ⚫ N) (+G G)
@@ -135,31 +141,38 @@ what actually goes into every `→ table:` line.
 ## /panel
 
 ```
-👤 <ник>                                                  [rule A]
-🟢 XBOX: <ник>  ·  N достижений  ·  🏆 K  ·  gamerscore G     [rule B]
-⚫ Steam: <ник>  ·  N достижений  ·  🏆 K                     [rule B]
-🔵 PlayStation: <ник>  ·  N трофеев  ·  уровень L             [rule B]
+👤 <nick>                                                 [rule A]
+🟢 XBOX: <nick>  ·  N достижений  ·  🏆 K  ·  gamerscore G    [rule B]
+⚫ Steam: <nick>  ·  N достижений  ·  🏆 K                    [rule B]
+🔵 PlayStation: <nick>  ·  N трофеев  ·  уровень L            [rule B]
 
-Вход XBOX:   <статус токена>
-Вход Steam:  <ник>  ·  <видимость ачивок>                     [rule B]
-Вход PSN:    <ник>  ·  <видимость трофеев>                    [rule B]
-Публикация:  <чаты>
-Сейчас:      <онлайн/оффлайн, во что играет>
+Вход XBOX:   <token status>
+Вход Steam:  <nick>  ·  <achievement visibility>              [rule B]
+Вход PSN:    <nick>  ·  <trophy visibility>                   [rule B]
+Публикация:  <chats>
+Сейчас:      <online/offline, what they are playing>
 
 Часовой пояс: UTC±N
 ```
 
-Кнопки:
+Buttons:
 ```
-[ Часовой пояс: UTC±N ]
-[ Мои чаты ]
-[ Синхронизировать ]
-[ Профиль виден другим: да/нет ]
-[ Профиль | Отключить XBOX ]     (или [ 🎮 Подключить Xbox ], если не подключён)
-[ Профиль | Отключить Steam ]    (или [ 🎮 Подключить Steam ])
-[ Профиль | Отключить PSN ]      (или [ 🎮 Подключить PSN ])
+[ Часовой пояс: UTC±N ▸ ]
+[ 💬 Мои чаты ▸ ]
+[ 🔄 Синхронизировать ]
+[ Профиль виден другим: да/нет ▸ ]
+[ Язык: Русский ▸ ]
+[ 👤 Профиль | 🔕 Отключить XBOX ]   (or [ 🎮 Подключить Xbox ] when not connected)
+[ 👤 Профиль | 🔕 Отключить Steam ]  (or [ 🎮 Подключить Steam ])
+[ 👤 Профиль | 🔕 Отключить PSN ]    (or [ 🎮 Подключить PSN ])
 [ Обновить ]
 ```
+
+**Language** here is personal and applies to DMs only (#48) — a group follows
+its own setting, which no individual member can move (see
+[ui_screens_admin.md](ui_screens_admin.md)). One tap cycles it; the names are
+always written in their own language ("Русский", "English") so somebody who
+cannot read the current interface can still find theirs.
 
 ## /recent
 
@@ -178,24 +191,28 @@ what actually goes into every `→ table:` line.
 → table: `online-presence`
 ```
 
-## /summary (день + месяц)
+## /summary (day + month)
 
 ```
-📊 Итог дня, <дата>
+📊 Итог дня, <date>
 
 24 часа: N достижений, +G G
 → table: `summary-leaderboard-day`
 
-с 1 <месяц>: N достижений, +G G
+с 1 <month>: N достижений, +G G
 → table: `summary-leaderboard-month`
 
 → table: `summary-top-games-month`
 ```
 
+In English the header puts the month before the day ("Daily summary, June
+12"), and the month window reads "since June 1" — word order is each locale's
+own business, decided in its `.ftl`, not by the caller.
+
 ## /summary_day
 
 ```
-📊 Итог дня, <дата>
+📊 Итог дня, <date>
 
 24 часа: N достижений, +G G
 → table: `summary-leaderboard-day`
@@ -206,7 +223,7 @@ what actually goes into every `→ table:` line.
 ```
 📊 Итоги за месяц
 
-с 1 <месяц>: N достижений, +G G
+с 1 <month>: N достижений, +G G
 → table: `summary-leaderboard-month`
 
 → table: `summary-top-games-month`
