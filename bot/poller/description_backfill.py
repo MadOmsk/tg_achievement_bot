@@ -36,10 +36,23 @@ from bot.services.xbox.client import XboxClient
 
 log = logging.getLogger(__name__)
 
-# Two requests per title, once a minute — 6 requests/min against Xbox's own
-# 300-per-5-minutes-per-token. Small enough that it never competes with the
-# presence and achievement pollers for the same budget.
-TITLES_PER_TICK = 3
+# Two requests per title, once a minute — 20 requests/min.
+#
+# The ceiling that matters is not Microsoft's: `XboxClient` is built once for
+# the whole bot and every caller shares one `RateLimiter` (100/15s, 300/5min
+# — services/xbox/client.py), so overrunning the quota is impossible,
+# `acquire()` simply blocks. What overreaching would actually cost is the
+# *presence and achievement pollers*, which draw on that same window — a
+# greedy backfill would delay real publications to pre-warm a cache nobody
+# is waiting on. 20/min leaves two thirds of the window to them.
+#
+# Raised from 3 (2026-09-11, user request) once the one-off script was
+# retired mid-run and this became the only thing finishing that work: at 3
+# it was ~7x slower than the script it replaced, which is the right pace for
+# a trickle that runs forever and the wrong one for a known backlog.
+# APScheduler's own `max_instances=1` makes overshoot self-correcting — a
+# tick that runs long simply skips the next one.
+TITLES_PER_TICK = 10
 
 XBOX_PLATFORMS = (Platform.XBOX_MODERN, Platform.XBOX_360)
 
