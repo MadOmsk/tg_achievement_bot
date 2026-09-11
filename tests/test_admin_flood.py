@@ -39,18 +39,18 @@ def _callback_datas(markup) -> list[str]:
     return [btn.callback_data for row in markup.inline_keyboard for btn in row if btn.callback_data]
 
 
-async def test_bounds_reject_a_negative_limit_and_an_absurd_window() -> None:
+async def test_bounds_reject_a_negative_limit_and_an_absurd_window(i18n) -> None:
     assert not (FLOOD_LIMIT_MIN <= -1 <= FLOOD_LIMIT_MAX)
     assert FLOOD_LIMIT_MIN <= 0 <= FLOOD_LIMIT_MAX  # 0 = off, a valid value
     assert not (FLOOD_WINDOW_MIN <= 0 <= FLOOD_WINDOW_MAX)  # 0 minutes is not a real window
     assert FLOOD_WINDOW_MIN <= 60 <= FLOOD_WINDOW_MAX
 
 
-async def test_chat_card_shows_the_flood_settings_and_their_edit_buttons(repo: Repo) -> None:
+async def test_chat_card_shows_the_flood_settings_and_their_edit_buttons(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=5, flood_window_minutes=45)
 
-    text, markup = await _chat(repo, CHAT_ID)
+    text, markup = await _chat(repo, CHAT_ID, locale="ru")
 
     assert "5 ач." in text
     assert "45 мин" in text
@@ -59,45 +59,45 @@ async def test_chat_card_shows_the_flood_settings_and_their_edit_buttons(repo: R
     assert f"a:cflw:{CHAT_ID}" in datas
 
 
-async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo) -> None:
+async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=0)
 
-    text, _markup = await _chat(repo, CHAT_ID)
+    text, _markup = await _chat(repo, CHAT_ID, locale="ru")
 
     assert "выключен" in text
 
 
-async def test_chat_card_has_the_toggle_button(repo: Repo) -> None:
+async def test_chat_card_has_the_toggle_button(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
 
-    _text, markup = await _chat(repo, CHAT_ID)
+    _text, markup = await _chat(repo, CHAT_ID, locale="ru")
 
     assert f"a:cfltoggle:{CHAT_ID}" in _callback_datas(markup)
 
 
-async def test_toggle_turns_a_configured_filter_off(repo: Repo) -> None:
+async def test_toggle_turns_a_configured_filter_off(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=7)
 
-    await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo)
+    await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo, i18n)
 
-    text, _markup = await _chat(repo, CHAT_ID)
+    text, _markup = await _chat(repo, CHAT_ID, locale="ru")
     assert "выключен" in text
 
 
-async def test_toggle_turns_an_off_filter_back_on_at_the_default(repo: Repo) -> None:
+async def test_toggle_turns_an_off_filter_back_on_at_the_default(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=0)
 
-    await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo)
+    await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo, i18n)
 
-    text, _markup = await _chat(repo, CHAT_ID)
+    text, _markup = await _chat(repo, CHAT_ID, locale="ru")
     assert f"{FLOOD_LIMIT_DEFAULT} ач." in text
     assert "выключен" not in text
 
 
-async def test_saved_confirmations_append_the_chat_card_exactly_once() -> None:
+async def test_saved_confirmations_append_the_chat_card_exactly_once(i18n) -> None:
     """Found while translating admin.ftl (#48): admin-flood-window-saved
     carried { $text } twice, so changing the anti-flood window replied with
     the whole chat card duplicated. Its two siblings always had it once."""

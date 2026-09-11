@@ -45,9 +45,7 @@ class _DescriptionsRepo:
         """
         if not keys:
             return {}
-        clause = " OR ".join(
-            ["(platform = ? AND title_id = ? AND achievement_id = ?)"] * len(keys)
-        )
+        clause = " OR ".join(["(platform = ? AND title_id = ? AND achievement_id = ?)"] * len(keys))
         parameters = [value for key in keys for value in key]
         cursor = await self._conn.execute(
             "SELECT platform, title_id, achievement_id, description_ru, description_en, source "

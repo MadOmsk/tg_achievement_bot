@@ -23,6 +23,7 @@ from aiogram.types import (
     TelegramObject,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram_i18n import I18nContext
 
 from bot.config import Settings
 from bot.constants import Platform, PresenceState, RarityMode, SettingKey, TokenStatus
@@ -39,7 +40,7 @@ from bot.handlers.keyboards import (
     format_rarity,
     next_rarity_mode,
 )
-from bot.i18n import DEFAULT_LOCALE, gettext
+from bot.i18n import translator
 from bot.poller.daily import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.poller.fetcher import Fetcher
 from bot.poller.message_cleanup import DEFAULT_TTL_MINUTES as DEFAULT_SYSTEM_MESSAGE_TTL_MIN
@@ -89,7 +90,6 @@ log = logging.getLogger(__name__)
 
 router = Router(name="admin")
 
-_ = lambda key, **kwargs: gettext("admin", key, **kwargs)  # noqa: E731
 
 PAGE_SIZE = 8
 
@@ -126,7 +126,12 @@ async def _replace_admin_home(
     every flow that confirms a change and redraws home as a new message
     rather than editing the current one in place (a:home's own callback
     does the latter, so it never needs this)."""
-    text, markup = await render_admin_home(repo, fetcher, steam_fetcher, psn_auth, steam_auth)
+    # This one knows whose panel it is rebuilding, so it reads the locale
+    # itself rather than making every caller carry it (#48).
+    locale = await repo.user_locale(admin_id)
+    text, markup = await render_admin_home(
+        repo, fetcher, steam_fetcher, psn_auth, steam_auth, locale=locale
+    )
     if prefix:
         text = f"{prefix}\n\n{text}"
     previous = await repo.get_admin_panel_refresh(admin_id)
@@ -163,10 +168,14 @@ async def admin_home(
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
     steam_auth: SteamAuth,
+    i18n: I18nContext,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
-        callback, *await render_admin_home(repo, fetcher, steam_fetcher, psn_auth, steam_auth)
+        callback,
+        *await render_admin_home(
+            repo, fetcher, steam_fetcher, psn_auth, steam_auth, locale=i18n.locale
+        ),
     )
 
 
@@ -205,7 +214,8 @@ class AwaitingAdminTextInput(BaseFilter):
         )
 
 
-def _cancel_input_keyboard() -> InlineKeyboardMarkup:
+def _cancel_input_keyboard(*, locale: str) -> InlineKeyboardMarkup:
+    _ = translator("admin", locale)
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=_("admin-cancel"), callback_data="a:psncancel")]
@@ -217,8 +227,9 @@ def _cancel_input_keyboard() -> InlineKeyboardMarkup:
 
 
 async def _keys_screen(
-    steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth
+    steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
+    _ = translator("admin", locale)
     steam_configured = await steam_auth.status() != STEAM_NOT_CONFIGURED
     psn_configured = await psn_auth.status() != PSN_NOT_CONFIGURED
     anthropic_configured = await anthropic_auth.status() != ANTHROPIC_NOT_CONFIGURED
@@ -269,10 +280,16 @@ async def _keys_screen(
 
 @router.callback_query(F.data == "a:keys")
 async def keys_menu(
-    callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth
+    callback: CallbackQuery,
+    steam_auth: SteamAuth,
+    psn_auth: PsnAuth,
+    anthropic_auth: AnthropicAuth,
+    i18n: I18nContext,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth, anthropic_auth))
+    await _redraw(
+        callback, *await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+    )
 
 
 # One parameterized handler per action instead of a Steam/PSN pair each
@@ -294,17 +311,22 @@ _KEYSET_PROMPT = {
 
 
 @router.callback_query(F.data.startswith("a:keyset:"))
-async def keys_set(callback: CallbackQuery) -> None:
+async def keys_set(callback: CallbackQuery, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     platform = callback.data.rsplit(":", 1)[1]
     key = _KEYSET_APP_SETTING_KEY[platform]
     _awaiting_input[callback.from_user.id] = (key, None)
-    await _redraw(callback, _(_KEYSET_PROMPT[key]), _cancel_input_keyboard())
+    await _redraw(callback, _(_KEYSET_PROMPT[key]), _cancel_input_keyboard(locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:keyclr:"))
 async def keys_clear(
-    callback: CallbackQuery, steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth
+    callback: CallbackQuery,
+    steam_auth: SteamAuth,
+    psn_auth: PsnAuth,
+    anthropic_auth: AnthropicAuth,
+    i18n: I18nContext,
 ) -> None:
     assert callback.data is not None
     platform = callback.data.rsplit(":", 1)[1]
@@ -315,7 +337,9 @@ async def keys_clear(
     }[platform]
     await auth.clear(callback.from_user.id)
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await _keys_screen(steam_auth, psn_auth, anthropic_auth))
+    await _redraw(
+        callback, *await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+    )
 
 
 @router.callback_query(F.data == "a:psncancel")
@@ -326,20 +350,29 @@ async def admin_text_input_cancel(
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
     steam_auth: SteamAuth,
+    i18n: I18nContext,
 ) -> None:
     """The way out of a still-armed key/NPSSO retry (Follow-up 2026-09-06,
     found live: a stray later message got misread as the next answer once
     nobody explicitly cancelled) — drops back to the admin home screen."""
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
-        callback, *await render_admin_home(repo, fetcher, steam_fetcher, psn_auth, steam_auth)
+        callback,
+        *await render_admin_home(
+            repo, fetcher, steam_fetcher, psn_auth, steam_auth, locale=i18n.locale
+        ),
     )
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingAdminTextInput())
 async def admin_text_input(
-    message: Message, psn_auth: PsnAuth, steam_auth: SteamAuth, anthropic_auth: AnthropicAuth
+    message: Message,
+    psn_auth: PsnAuth,
+    steam_auth: SteamAuth,
+    anthropic_auth: AnthropicAuth,
+    i18n: I18nContext,
 ) -> None:
+    _ = translator("admin", i18n.locale)
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
     assert pending is not None
@@ -354,11 +387,11 @@ async def admin_text_input(
             # cancel is there for a stray later paste, same as PSN below.
             await message.answer(
                 _("admin-keys-steam-invalid"),
-                reply_markup=_cancel_input_keyboard(),
+                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth)
+        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
         await message.answer(_("admin-keys-steam-saved", text=text), reply_markup=markup)
         return
 
@@ -373,7 +406,7 @@ async def admin_text_input(
             # explicit way out too, not just "send something else".
             await message.answer(
                 _("admin-psn-npsso-invalid"),
-                reply_markup=_cancel_input_keyboard(),
+                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
             )
             return
         except PsnClientSetupError as exc:
@@ -384,11 +417,11 @@ async def admin_text_input(
             log.exception("admin_text_input: could not set up the PSN client")
             await message.answer(
                 _("admin-psn-client-error", error=exc),
-                reply_markup=_cancel_input_keyboard(),
+                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth)
+        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
         await message.answer(_("admin-keys-psn-saved", text=text), reply_markup=markup)
         return
 
@@ -400,36 +433,36 @@ async def admin_text_input(
             # Steam/PSN above.
             await message.answer(
                 _("admin-keys-anthropic-invalid"),
-                reply_markup=_cancel_input_keyboard(),
+                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth)
+        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
         await message.answer(_("admin-keys-anthropic-saved", text=text), reply_markup=markup)
         return
 
 
 @router.callback_query(F.data == "a:newusers")
-async def new_user_defaults_menu(callback: CallbackQuery, repo: Repo) -> None:
-    await _redraw(callback, *await _new_user_defaults(repo))
+async def new_user_defaults_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    await _redraw(callback, *await _new_user_defaults(repo, locale=i18n.locale))
 
 
 @router.callback_query(F.data == "a:defaultrarity")
-async def default_rarity_cycle(callback: CallbackQuery, repo: Repo) -> None:
+async def default_rarity_cycle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     current = await repo.get_app_setting(DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT)
     assert current is not None
     mode = next_rarity_mode(current)
     await repo.set_app_setting(DEFAULT_RARITY_MODE_KEY, mode, callback.from_user.id)
-    await _redraw(callback, *await _new_user_defaults(repo))
+    await _redraw(callback, *await _new_user_defaults(repo, locale=i18n.locale))
 
 
 @router.callback_query(F.data == "a:defaultlinks")
-async def default_show_links_toggle(callback: CallbackQuery, repo: Repo) -> None:
+async def default_show_links_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     current = await repo.get_int_setting(DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT))
     await repo.set_app_setting(
         DEFAULT_SHOW_LINKS_KEY, "0" if current else "1", callback.from_user.id
     )
-    await _redraw(callback, *await _new_user_defaults(repo))
+    await _redraw(callback, *await _new_user_defaults(repo, locale=i18n.locale))
 
 
 # ------------------------------------------------------ free-text numeric settings
@@ -480,7 +513,13 @@ DEFAULT_RARITY_MODE_DEFAULT = RarityMode.ALL
 DEFAULT_SHOW_LINKS_KEY = "default_show_profile_links"
 DEFAULT_SHOW_LINKS_DEFAULT = "0"
 
-UNLIMITED_LABEL = _("admin-unlimited")
+
+def unlimited_label(locale: str) -> str:
+    """What a 0 renders as in the numeric-settings screens. Was a
+    module-level constant, which froze whichever locale loaded first (#48) —
+    the same trap PLATFORM_LABEL and HELP_TEXT had."""
+    return translator("admin", locale)("admin-unlimited")
+
 
 # stats_games_limit's own (key, default) belong to handlers/chat.py by rights
 # (same as the other five, each imported from wherever it actually lives) —
@@ -557,23 +596,29 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
 }
 
 
-def _format_limit(key: str, value: str) -> str:
+def _format_limit(key: str, value: str, *, locale: str) -> str:
+    _ = translator("admin", locale)
     spec = NUMERIC_SETTINGS[key]
     return _(spec.zero_label) if value == "0" else value
 
 
-def _setting_label(spec: NumericSetting) -> str:
+def _setting_label(spec: NumericSetting, *, locale: str) -> str:
+    _ = translator("admin", locale)
     return _(spec.label)
 
 
 @router.callback_query(F.data == "a:limits")
-async def limits_menu(callback: CallbackQuery, repo: Repo) -> None:
+async def limits_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     builder = InlineKeyboardBuilder()
     for key, spec in NUMERIC_SETTINGS.items():
         current = await repo.get_app_setting(key, str(spec.default))
         builder.row(
             InlineKeyboardButton(
-                text=f"{_setting_label(spec)}: {_format_limit(key, current)} ▸",
+                text=(
+                    f"{_setting_label(spec, locale=i18n.locale)}: "
+                    f"{_format_limit(key, current, locale=i18n.locale)} ▸"
+                ),
                 callback_data=f"a:limit:{key}",
             )
         )
@@ -586,21 +631,26 @@ async def limits_menu(callback: CallbackQuery, repo: Repo) -> None:
 
 
 @router.callback_query(F.data.startswith("a:limit:"))
-async def limit_menu(callback: CallbackQuery, repo: Repo) -> None:
+async def limit_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     key = callback.data.rsplit(":", 1)[1]
     spec = NUMERIC_SETTINGS[key]
     current = await repo.get_app_setting(key, str(spec.default))
     _awaiting_input[callback.from_user.id] = (key, None)
-    zero_hint = f" (0 — {_format_limit(key, '0')})" if spec.min == 0 else ""
+    zero_hint = (
+        f" (0 — {_format_limit(key, '0')}, locale=i18n.locale, locale=i18n.locale)"
+        if spec.min == 0
+        else ""
+    )
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
     await _redraw(
         callback,
         _(
             "admin-limit-prompt",
-            label=_setting_label(spec),
-            current=_format_limit(key, current),
+            label=_setting_label(spec, locale=i18n.locale),
+            current=_format_limit(key, current, locale=i18n.locale),
             minimum=spec.min,
             maximum=spec.max,
             zero_hint=zero_hint,
@@ -618,7 +668,9 @@ async def numeric_setting_input(
     psn_auth: PsnAuth,
     steam_auth: SteamAuth,
     bot: Bot,
+    i18n: I18nContext,
 ) -> None:
+    _ = translator("admin", i18n.locale)
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
     if pending is None:
@@ -644,7 +696,7 @@ async def numeric_setting_input(
             return
         del _awaiting_input[message.from_user.id]
         await repo.update_chat_settings(chat_id, rare_threshold_percent=value)
-        reply_text, markup = await _chat(repo, chat_id)
+        reply_text, markup = await _chat(repo, chat_id, locale=i18n.locale)
         await message.answer(
             _("admin-threshold-saved", value=f"{value:g}", text=reply_text),
             reply_markup=markup,
@@ -667,7 +719,7 @@ async def numeric_setting_input(
             return
         del _awaiting_input[message.from_user.id]
         await repo.update_chat_settings(chat_id, **{key: value_int})
-        reply_text, markup = await _chat(repo, chat_id)
+        reply_text, markup = await _chat(repo, chat_id, locale=i18n.locale)
         saved_key = "admin-flood-saved" if key == "flood_limit" else "admin-flood-window-saved"
         await message.answer(_(saved_key, value=value_int, text=reply_text), reply_markup=markup)
         return
@@ -683,7 +735,10 @@ async def numeric_setting_input(
         await message.answer(_("admin-number-range-retry", minimum=spec.min, maximum=spec.max))
         return
     stored = str(value_int)
-    confirm = f"{_setting_label(spec)}: {_format_limit(key, stored)}"
+    confirm = (
+        f"{_setting_label(spec, locale=i18n.locale)}: "
+        f"{_format_limit(key, stored, locale=i18n.locale)}"
+    )
 
     del _awaiting_input[message.from_user.id]
     await repo.set_app_setting(key, stored, message.from_user.id)
@@ -707,8 +762,9 @@ async def numeric_setting_input(
 
 
 def _hour_grid_markup(
-    current: str, set_prefix: str, tz_callback: str, back_callback: str
+    current: str, set_prefix: str, tz_callback: str, back_callback: str, *, locale: str
 ) -> InlineKeyboardMarkup:
+    _ = translator("admin", locale)
     builder = InlineKeyboardBuilder()
     for hour in range(24):
         label = f"{hour:02d}"
@@ -723,8 +779,9 @@ def _hour_grid_markup(
 
 
 def _tz_grid_markup(
-    current_minutes: int, set_prefix: str, manual_callback: str, back_callback: str
+    current_minutes: int, set_prefix: str, manual_callback: str, back_callback: str, *, locale: str
 ) -> InlineKeyboardMarkup:
+    _ = translator("admin", locale)
     builder = InlineKeyboardBuilder()
     for hours in COMMON_OFFSETS_HOURS:
         minutes = hours * 60
@@ -743,7 +800,8 @@ def _tz_grid_markup(
 
 
 @router.callback_query(F.data.startswith("a:crt:"))
-async def chat_rare_menu(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_rare_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -765,7 +823,7 @@ async def chat_rare_menu(callback: CallbackQuery, repo: Repo) -> None:
 
 
 @router.callback_query(F.data.startswith("a:cfltoggle:"))
-async def chat_flood_toggle(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_flood_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """On/off for the whole filter (2026-09-09 user request), next to the
     limit/window buttons below — same one-tap-toggle shape as the daily
     summary switch above. Off is flood_limit = 0 (the schema's own "off"
@@ -773,6 +831,7 @@ async def chat_flood_toggle(callback: CallbackQuery, repo: Repo) -> None:
     remembering whatever it was set to before — no column exists to
     remember that, and re-tuning it with the limit button right next to
     this one costs one more tap, not a real loss."""
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -782,11 +841,12 @@ async def chat_flood_toggle(callback: CallbackQuery, repo: Repo) -> None:
     new_limit = 0 if chat.flood_limit > 0 else FLOOD_LIMIT_DEFAULT
     await repo.update_chat_settings(chat_id, flood_limit=new_limit)
     await callback.answer()
-    await _redraw(callback, *await _chat(repo, chat_id))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:cfl:"))
-async def chat_flood_menu(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_flood_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -810,7 +870,8 @@ async def chat_flood_menu(callback: CallbackQuery, repo: Repo) -> None:
 
 
 @router.callback_query(F.data.startswith("a:cflw:"))
-async def chat_flood_window_menu(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_flood_window_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -834,7 +895,8 @@ async def chat_flood_window_menu(callback: CallbackQuery, repo: Repo) -> None:
 
 
 @router.callback_query(F.data.startswith("a:ctime:"))
-async def chat_time_menu(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_time_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -845,23 +907,29 @@ async def chat_time_menu(callback: CallbackQuery, repo: Repo) -> None:
         callback,
         _("admin-chat-time-prompt", title=chat.title or chat_id, time=chat.daily_summary_time),
         _hour_grid_markup(
-            chat.daily_summary_time, f"a:ctimes:{chat_id}:", f"a:ctz:{chat_id}", f"a:chat:{chat_id}"
+            chat.daily_summary_time,
+            f"a:ctimes:{chat_id}:",
+            f"a:ctz:{chat_id}",
+            f"a:chat:{chat_id}",
+            locale=i18n.locale,
         ),
     )
 
 
 @router.callback_query(F.data.startswith("a:ctimes:"))
-async def chat_time_set(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_time_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     _, _, chat_id_raw, hour_raw = callback.data.split(":")
     chat_id, hour = int(chat_id_raw), int(hour_raw)
     await repo.update_chat_settings(chat_id, daily_summary_time=f"{hour:02d}:00")
     await callback.answer(_("admin-chat-time-saved", time=f"{hour:02d}:00"))
-    await _redraw(callback, *await _chat(repo, chat_id))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:ctz:"))
-async def chat_zone_menu(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_zone_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -876,23 +944,28 @@ async def chat_zone_menu(callback: CallbackQuery, repo: Repo) -> None:
             offset=format_offset(chat.tz_offset_min),
         ),
         _tz_grid_markup(
-            chat.tz_offset_min, f"a:ctzs:{chat_id}:", f"a:ctzm:{chat_id}", f"a:ctime:{chat_id}"
+            chat.tz_offset_min,
+            f"a:ctzs:{chat_id}:",
+            f"a:ctzm:{chat_id}",
+            f"a:ctime:{chat_id}",
+            locale=i18n.locale,
         ),
     )
 
 
 @router.callback_query(F.data.startswith("a:ctzs:"))
-async def chat_zone_set(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_zone_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     _, _, chat_id_raw, minutes_raw = callback.data.split(":")
     chat_id, minutes = int(chat_id_raw), int(minutes_raw)
     await repo.update_chat_settings(chat_id, tz_offset_min=minutes)
     await callback.answer(format_offset(minutes))
-    await _redraw(callback, *await _chat(repo, chat_id))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:ctzm:"))
-async def chat_zone_manual_prompt(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_zone_manual_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -916,7 +989,8 @@ async def chat_zone_manual_prompt(callback: CallbackQuery, repo: Repo) -> None:
 @router.message(
     F.chat.type == ChatType.PRIVATE, F.text.regexp(r"(?i)^(?:utc)?\s*[+-]\d{1,2}(?::[0-5]\d)?$")
 )
-async def chat_timezone_input(message: Message, repo: Repo) -> None:
+async def chat_timezone_input(message: Message, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
     if pending is None or pending[0] != "tz_offset_min":
@@ -931,7 +1005,7 @@ async def chat_timezone_input(message: Message, repo: Repo) -> None:
 
     del _awaiting_input[message.from_user.id]
     await repo.update_chat_settings(chat_id, tz_offset_min=minutes)
-    reply_text, markup = await _chat(repo, chat_id)
+    reply_text, markup = await _chat(repo, chat_id, locale=i18n.locale)
     await message.answer(
         _("admin-timezone-saved", offset=format_offset(minutes), text=reply_text),
         reply_markup=markup,
@@ -942,27 +1016,28 @@ async def chat_timezone_input(message: Message, repo: Repo) -> None:
 
 
 @router.callback_query(F.data.startswith("a:users:"))
-async def users_page(callback: CallbackQuery, repo: Repo) -> None:
+async def users_page(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     page = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await _users(repo, page))
+    await _redraw(callback, *await _users(repo, page, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:u:"))
-async def user_card(callback: CallbackQuery, repo: Repo) -> None:
+async def user_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     tg_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await _card(repo, tg_id))
+    await _redraw(callback, *await _card(repo, tg_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:excl:"))
-async def user_exclude(callback: CallbackQuery, repo: Repo) -> None:
+async def user_exclude(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     _, _, raw_id, raw_flag = callback.data.split(":")
     tg_id, excluded = int(raw_id), raw_flag == "1"
     await repo.set_excluded(tg_id, excluded, callback.from_user.id)
     await callback.answer(_("admin-user-excluded") if excluded else _("admin-user-restored"))
-    await _redraw(callback, *await _card(repo, tg_id))
+    await _redraw(callback, *await _card(repo, tg_id, locale=i18n.locale))
 
 
 _SYNC_NOT_CONNECTED_KEY = {
@@ -972,11 +1047,14 @@ _SYNC_NOT_CONNECTED_KEY = {
 }
 
 
-async def _sync_target(repo: Repo, platform: str, tg_id: int) -> tuple[str, str] | None:
+async def _sync_target(
+    repo: Repo, platform: str, tg_id: int, *, locale: str
+) -> tuple[str, str] | None:
     """(external_id, display_name) for user_refresh below, or None if this
     platform isn't connected for this person — Xbox resolves through
     `users`, Steam/PSN through `platform_links`, same split every other
     per-platform lookup in this file already has."""
+    _ = translator("admin", locale)
     if platform == "xbox":
         user = await repo.get_user(tg_id)
         if user is None or not user.xuid:
@@ -997,17 +1075,19 @@ async def user_refresh(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_fetcher: PsnFetcher,
+    i18n: I18nContext,
 ) -> None:
     """The only place in the whole interface that may call the API on demand
     (SPEC 1.5) — one handler for all three platforms (2026-09-09 refactor,
     same shape reset_platform_confirm/_confirmed below already used):
     Fetcher/SteamFetcher/PsnFetcher all expose a compatible
     refresh_user(tg_id, external_id, name, locale) -> str."""
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     _, _prefix, platform, tg_id_s = callback.data.split(":")
     tg_id = int(tg_id_s)
 
-    target = await _sync_target(repo, platform, tg_id)
+    target = await _sync_target(repo, platform, tg_id, locale=i18n.locale)
     if target is None:
         await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
         return
@@ -1021,13 +1101,13 @@ async def user_refresh(
     }
     try:
         summary = await fetcher_by_platform[platform].refresh_user(
-            tg_id, external_id, name, DEFAULT_LOCALE
+            tg_id, external_id, name, i18n.locale
         )
     except Exception:
         log.exception("admin %s refresh of tg_id=%s failed", platform, tg_id)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
         return
-    text, markup = await _card(repo, tg_id)
+    text, markup = await _card(repo, tg_id, locale=i18n.locale)
     await _redraw(callback, f"{text}\n\n{summary}", markup)
 
 
@@ -1035,19 +1115,20 @@ async def user_refresh(
 
 
 @router.callback_query(F.data == "a:chats")
-async def chats_list(callback: CallbackQuery, repo: Repo) -> None:
-    await _redraw(callback, *await _chats(repo))
+async def chats_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    await _redraw(callback, *await _chats(repo, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:chat:"))
-async def chat_card(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await _chat(repo, chat_id))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:cds:"))
-async def chat_daily(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_daily(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -1056,11 +1137,12 @@ async def chat_daily(callback: CallbackQuery, repo: Repo) -> None:
         return
     await repo.update_chat_settings(chat_id, daily_summary=0 if chat.daily_summary else 1)
     await callback.answer()
-    await _redraw(callback, *await _chat(repo, chat_id))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:coff:"))
-async def chat_toggle_active(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_toggle_active(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -1069,7 +1151,7 @@ async def chat_toggle_active(callback: CallbackQuery, repo: Repo) -> None:
         return
     await repo.set_chat_active(chat_id, not chat.is_active)
     await callback.answer(_("admin-chat-disabled") if chat.is_active else _("admin-chat-enabled"))
-    await _redraw(callback, *await _chat(repo, chat_id))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
 
 
 # Telegram caps an answerCallbackQuery's own text at 200 characters total
@@ -1089,7 +1171,9 @@ def _toast_preview(preview: str) -> str:
 
 
 @router.callback_query(F.data.startswith("a:cdellast:"))
-async def chat_delete_last(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
+async def chat_delete_last(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
     """The admin panel's own way in to /delete_last's logic (chat.py) —
     found live: an admin looking to undo the bot's last message in a chat
     went looking for it here first, not the group chat itself. Same target
@@ -1104,6 +1188,7 @@ async def chat_delete_last(callback: CallbackQuery, repo: Repo, bot: Bot) -> Non
     permanent clutter, the toast is the right place for something
     transient).
     """
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     target = await repo.last_non_system_bot_message(chat_id)
@@ -1124,14 +1209,15 @@ async def chat_delete_last(callback: CallbackQuery, repo: Repo, bot: Bot) -> Non
         else _("admin-deleted-last")
     )
     await callback.answer(feedback)
-    await _redraw(callback, *await _chat(repo, chat_id))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
 
 
 WIPE_WINDOW_HOURS = 24
 
 
 @router.callback_query(F.data.startswith("a:cwipe:"))
-async def chat_wipe_prompt(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_wipe_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     chat = await _find_chat(repo, chat_id)
@@ -1176,24 +1262,27 @@ async def _bulk_delete_messages(bot: Bot, chat_id: int, ids: list[int]) -> bool:
 
 
 async def _wipe_confirm(
-    callback: CallbackQuery, repo: Repo, bot: Bot, chat_id: int, ids: list[int]
+    callback: CallbackQuery, repo: Repo, bot: Bot, chat_id: int, ids: list[int], *, locale: str
 ) -> None:
     """Shared tail of every wipe variant below: delete what the caller
     already decided on, forget the log rows either way (Telegram silently
     skips ids it can no longer delete — too old, already gone — and
     retrying those later would not help), report, redraw the chat card."""
+    _ = translator("admin", locale)
     ok = await _bulk_delete_messages(bot, chat_id, ids)
     await repo.forget_bot_messages(chat_id, ids)
     await callback.answer(_("admin-wipe-done") if ok else _("admin-wipe-partial"))
-    await _redraw(callback, *await _chat(repo, chat_id))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=locale))
 
 
 @router.callback_query(F.data.startswith("a:cwipey:"))
-async def chat_wipe_confirm(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
+async def chat_wipe_confirm(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     ids = await repo.bot_messages_since(chat_id, utcnow() - timedelta(hours=WIPE_WINDOW_HOURS))
-    await _wipe_confirm(callback, repo, bot, chat_id, ids)
+    await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
 
 
 # A narrower sibling of the unconditional wipe above (2026-09-05 follow-up,
@@ -1204,8 +1293,15 @@ async def chat_wipe_confirm(callback: CallbackQuery, repo: Repo, bot: Bot) -> No
 
 
 async def _system_wipe_prompt(
-    callback: CallbackQuery, repo: Repo, chat_id: int, ids: list[int], confirm_callback: str
+    callback: CallbackQuery,
+    repo: Repo,
+    chat_id: int,
+    ids: list[int],
+    confirm_callback: str,
+    *,
+    locale: str,
 ) -> None:
+    _ = translator("admin", locale)
     chat = await _find_chat(repo, chat_id)
     if chat is None:
         await callback.answer(_("admin-chat-not-found"), show_alert=True)
@@ -1230,49 +1326,60 @@ async def _system_wipe_prompt(
 
 
 @router.callback_query(F.data.startswith("a:cswipe:"))
-async def chat_system_wipe_prompt(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_system_wipe_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     since = utcnow() - timedelta(hours=WIPE_WINDOW_HOURS)
     ids = await repo.system_bot_messages_since(chat_id, since)
-    await _system_wipe_prompt(callback, repo, chat_id, ids, f"a:cswipey:{chat_id}")
+    await _system_wipe_prompt(
+        callback, repo, chat_id, ids, f"a:cswipey:{chat_id}", locale=i18n.locale
+    )
 
 
 @router.callback_query(F.data.startswith("a:cswipey:"))
-async def chat_system_wipe_confirm(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
+async def chat_system_wipe_confirm(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     since = utcnow() - timedelta(hours=WIPE_WINDOW_HOURS)
     ids = await repo.system_bot_messages_since(chat_id, since)
-    await _wipe_confirm(callback, repo, bot, chat_id, ids)
+    await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
 
 
 @router.callback_query(F.data.startswith("a:cswipeall:"))
-async def chat_system_wipe_all_prompt(callback: CallbackQuery, repo: Repo) -> None:
+async def chat_system_wipe_all_prompt(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     ids = await repo.all_system_bot_messages(chat_id)
-    await _system_wipe_prompt(callback, repo, chat_id, ids, f"a:cswipeally:{chat_id}")
+    await _system_wipe_prompt(
+        callback, repo, chat_id, ids, f"a:cswipeally:{chat_id}", locale=i18n.locale
+    )
 
 
 @router.callback_query(F.data.startswith("a:cswipeally:"))
-async def chat_system_wipe_all_confirm(callback: CallbackQuery, repo: Repo, bot: Bot) -> None:
+async def chat_system_wipe_all_confirm(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     ids = await repo.all_system_bot_messages(chat_id)
-    await _wipe_confirm(callback, repo, bot, chat_id, ids)
+    await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
 
 
 # ------------------------------------------------------------------- screens
 
 
-async def _new_user_defaults(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
+async def _new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
     """Settings that only ever apply at the moment someone new subscribes —
     grouped on their own screen (2026-09-05 follow-up) rather than sitting
     on the home screen forever, since none of them affect anyone already
     subscribed. Just default_rarity_mode for now (SPEC 9, M-Steam-2e's own
     Repo.subscribe reads it) — the natural home for anything else of the
     same shape added later."""
+    _ = translator("admin", locale)
     default_rarity_mode = await repo.get_app_setting(
         DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT
     )
@@ -1308,10 +1415,11 @@ async def _new_user_defaults(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
     return text, keyboard
 
 
-async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
+async def _users(repo: Repo, page: int, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+    _ = translator("admin", locale)
     users = await repo.admin_users()
     if not users:
-        return _("admin-users-empty"), _back_home()
+        return _("admin-users-empty"), _back_home(locale=locale)
 
     # By tg_id, not xuid (2026-09-05 follow-up) — the old xuid-keyed lookup
     # showed 0 for a Steam-only person's achievements, and only the Xbox
@@ -1341,10 +1449,10 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
                 "admin-users-row",
                 icon=_icon(user),
                 name=truncate_name(name, 14),
-                ago=humanize_ago(user.last_online_at, DEFAULT_LOCALE),
+                ago=humanize_ago(user.last_online_at, locale),
                 today=today.get(user.tg_id, (0, 0))[0],
                 month=month.get(user.tg_id, (0, 0))[0],
-                note=_note(user),
+                note=_note(user, locale=locale),
             )
         )
         builder.row(
@@ -1364,7 +1472,7 @@ async def _users(repo: Repo, page: int) -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), builder.as_markup()
 
 
-def _admin_tg_header(user: User) -> str:
+def _admin_tg_header(user: User, *, locale: str) -> str:
     """Telegram identity, always shown in full (2026-09-08 user request) —
     unlike /stats' header (one best single name), the admin needs to see
     everything at once for lookups. The bare tg_id is never "@"-prefixed:
@@ -1373,6 +1481,7 @@ def _admin_tg_header(user: User) -> str:
     a real account could later register that exact numeric string as its
     username and retroactively become a target of every old message that
     did this)."""
+    _ = translator("admin", locale)
     bits = []
     full_name = " ".join(part for part in (user.first_name, user.last_name) if part)
     if full_name:
@@ -1383,14 +1492,15 @@ def _admin_tg_header(user: User) -> str:
     return _("admin-user-header", identity=", ".join(bits))
 
 
-async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[str]:
+async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale: str) -> list[str]:
     """One block, five fixed lines (2026-09-08 restructure, user request):
     nickname, id, status (+ when last checked), achievements, last online —
     each its own line instead of the old single achievements-and-all header
     line, so a long line no longer buries the id next to the nickname."""
+    _ = translator("admin", locale)
     count = await repo.xbox_achievement_count(user.tg_id)
     completed = await repo.xbox_completed_games_count(user.xuid)
-    parts = [plural_achievements(count, DEFAULT_LOCALE)]
+    parts = [plural_achievements(count, locale)]
     if completed:
         parts.append(f"{COMPLETED_BADGE} {completed}")
     parts.append(_("admin-today-tag", count=today_count))
@@ -1402,7 +1512,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[st
     if token is not None:
         login = {
             TokenStatus.ACTIVE: _(
-                "admin-login-active", ago=humanize_ago(token.last_refresh_at, DEFAULT_LOCALE)
+                "admin-login-active", ago=humanize_ago(token.last_refresh_at, locale)
             ),
             TokenStatus.INVALID: _("admin-login-invalid"),
             TokenStatus.REVOKED: _("admin-login-revoked"),
@@ -1419,11 +1529,11 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[st
         online = (
             _(
                 "admin-online-playing",
-                ago=humanize_ago(presence.updated_at, DEFAULT_LOCALE),
+                ago=humanize_ago(presence.updated_at, locale),
                 game=game,
             )
             if presence.state == PresenceState.ONLINE
-            else humanize_ago(presence.updated_at, DEFAULT_LOCALE)
+            else humanize_ago(presence.updated_at, locale)
         )
     return [
         _("admin-xbox-header", gamertag=user.gamertag or _("admin-no-name")),
@@ -1434,14 +1544,17 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int) -> list[st
     ]
 
 
-async def _steam_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> list[str]:
+async def _steam_admin_block(
+    repo: Repo, link: PlatformLink, today_count: int, *, locale: str
+) -> list[str]:
     """Steam's counterpart of `_xbox_admin_block` — same five-line shape,
     its "status" line is achievement *visibility* (there is no login/token
     to be active or dead), worded exactly like /panel's own status
     (`visibility_status_text`, shared so the two never drift)."""
+    _ = translator("admin", locale)
     count = await repo.platform_achievement_count(link.tg_id, Platform.STEAM)
     completed = await repo.steam_completed_games_count(link.tg_id)
-    parts = [plural_achievements(count, DEFAULT_LOCALE)]
+    parts = [plural_achievements(count, locale)]
     if completed:
         parts.append(f"{COMPLETED_BADGE} {completed}")
     parts.append(_("admin-today-tag", count=today_count))
@@ -1454,35 +1567,38 @@ async def _steam_admin_block(repo: Repo, link: PlatformLink, today_count: int) -
         online = (
             _(
                 "admin-online-playing",
-                ago=humanize_ago(steam_presence.updated_at, DEFAULT_LOCALE),
+                ago=humanize_ago(steam_presence.updated_at, locale),
                 game=game,
             )
             if is_online and game
             else (
                 _("admin-online-idle")
                 if is_online
-                else humanize_ago(steam_presence.updated_at, DEFAULT_LOCALE)
+                else humanize_ago(steam_presence.updated_at, locale)
             )
         )
     return [
         _("admin-steam-header", name=link.display_name or _("admin-no-name")),
         _("admin-steamid-tag", external_id=link.external_id),
-        _("admin-login-row", login=visibility_status_text(link, DEFAULT_LOCALE)),
+        _("admin-login-row", login=visibility_status_text(link, locale)),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
     ]
 
 
-async def _psn_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> list[str]:
+async def _psn_admin_block(
+    repo: Repo, link: PlatformLink, today_count: int, *, locale: str
+) -> list[str]:
     """PSN's counterpart — five lines now, same shape as Xbox/Steam
     (issue #1's presence poller, poller/psn_presence.py): trophy sync
     itself still has no presence hook at all (that's a separate, permanent
     design decision — see CLAUDE.md's PSN section), but /online's presence
     tracking is unrelated to it, so this block gets its "last online" line
     back same as the other two platforms."""
+    _ = translator("admin", locale)
     count = await repo.platform_achievement_count(link.tg_id, Platform.PSN)
     platinum = await repo.psn_platinum_count(link.tg_id)
-    parts = [plural_trophies(count, DEFAULT_LOCALE)]
+    parts = [plural_trophies(count, locale)]
     if platinum:
         parts.append(f"{COMPLETED_BADGE} {platinum}")
     parts.append(_("admin-today-tag", count=today_count))
@@ -1497,26 +1613,27 @@ async def _psn_admin_block(repo: Repo, link: PlatformLink, today_count: int) -> 
         online = (
             _(
                 "admin-online-playing",
-                ago=humanize_ago(psn_presence.updated_at, DEFAULT_LOCALE),
+                ago=humanize_ago(psn_presence.updated_at, locale),
                 game=game,
             )
             if is_online and game
             else (
                 _("admin-online-idle")
                 if is_online
-                else humanize_ago(psn_presence.updated_at, DEFAULT_LOCALE)
+                else humanize_ago(psn_presence.updated_at, locale)
             )
         )
     return [
         _("admin-psn-header", name=link.display_name or _("admin-no-name")),
         _("admin-psn-id-tag", external_id=link.external_id),
-        _("admin-login-row", login=visibility_status_text(link, DEFAULT_LOCALE)),
+        _("admin-login-row", login=visibility_status_text(link, locale)),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
     ]
 
 
-async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
+async def _card(repo: Repo, tg_id: int, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+    _ = translator("admin", locale)
     user = await repo.get_user(tg_id)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
     psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
@@ -1524,7 +1641,7 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     # A Steam-only person got a "user not found" result in the admin panel,
     # same class of gap /stats had before it learned to work without Xbox.
     if user is None or (not user.xuid and steam_link is None and psn_link is None):
-        return _("admin-user-not-found"), _back_home()
+        return _("admin-user-not-found"), _back_home(locale=locale)
 
     today_xbox, today_steam, today_psn = await repo.achievement_platform_breakdown(
         tg_id, today_cutoff_utc()
@@ -1536,15 +1653,15 @@ async def _card(repo: Repo, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     # groups everything about that platform together (nickname/id, status,
     # achievements, last online where it applies), five fixed lines each
     # (2026-09-08 restructure) instead of one crowded header line.
-    lines = [_admin_tg_header(user), ""]
+    lines = [_admin_tg_header(user, locale=locale), ""]
     if user.xuid:
-        lines += await _xbox_admin_block(repo, user, today_xbox)
+        lines += await _xbox_admin_block(repo, user, today_xbox, locale=locale)
         lines.append("")
     if steam_link is not None:
-        lines += await _steam_admin_block(repo, steam_link, today_steam)
+        lines += await _steam_admin_block(repo, steam_link, today_steam, locale=locale)
         lines.append("")
     if psn_link is not None:
-        lines += await _psn_admin_block(repo, psn_link, today_psn)
+        lines += await _psn_admin_block(repo, psn_link, today_psn, locale=locale)
         lines.append("")
 
     # The combined cross-platform counters line that used to follow here
@@ -1600,10 +1717,11 @@ _RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
 
 
 @router.callback_query(F.data.startswith("a:reset:"))
-async def reset_platform_confirm(callback: CallbackQuery) -> None:
+async def reset_platform_confirm(callback: CallbackQuery, i18n: I18nContext) -> None:
     """ "Сброс базы" is destructive and not undoable (user request 2026-09-08)
     — same one-tap-confirm shape as /disconnect_steam's own prompt, not an
     instant action behind a single tap."""
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     _, _prefix, platform, tg_id_s = callback.data.split(":")
     builder = InlineKeyboardBuilder()
@@ -1627,7 +1745,9 @@ async def reset_platform_confirmed(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_fetcher: PsnFetcher,
+    i18n: I18nContext,
 ) -> None:
+    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     _, platform, tg_id_s = callback.data.split(":")
     tg_id = int(tg_id_s)
@@ -1653,14 +1773,15 @@ async def reset_platform_confirmed(
         log.exception("admin reset+resync of tg_id=%s platform=%s failed", tg_id, platform)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
 
-    text, markup = await _card(repo, tg_id)
+    text, markup = await _card(repo, tg_id, locale=i18n.locale)
     await _redraw(callback, text, markup)
 
 
-async def _chats(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
+async def _chats(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+    _ = translator("admin", locale)
     chats = await repo.admin_chats()
     if not chats:
-        return _("admin-chats-empty"), _back_home()
+        return _("admin-chats-empty"), _back_home(locale=locale)
 
     builder = InlineKeyboardBuilder()
     for chat in chats:
@@ -1680,10 +1801,11 @@ async def _chats(repo: Repo) -> tuple[str, InlineKeyboardMarkup]:
     return _("admin-chats-header"), builder.as_markup()
 
 
-async def _chat(repo: Repo, chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
+async def _chat(repo: Repo, chat_id: int, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+    _ = translator("admin", locale)
     chat = await _find_chat(repo, chat_id)
     if chat is None:
-        return _("admin-chat-not-found-period"), _back_home()
+        return _("admin-chat-not-found-period"), _back_home(locale=locale)
 
     names = await repo.chat_subscriber_names(chat_id)
     threshold_label = f"{chat.rare_threshold_percent:g}%"
@@ -1779,7 +1901,8 @@ async def _find_chat(repo: Repo, chat_id: int) -> ChatTarget | None:
     return next((c for c in await repo.admin_chats() if c.chat_id == chat_id), None)
 
 
-def _back_home() -> InlineKeyboardMarkup:
+def _back_home(*, locale: str) -> InlineKeyboardMarkup:
+    _ = translator("admin", locale)
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")]]
     )
@@ -1802,7 +1925,8 @@ def _icon(user: AdminUserRow) -> str:
     return "".join(parts)
 
 
-def _note(user: AdminUserRow) -> str:
+def _note(user: AdminUserRow, *, locale: str) -> str:
+    _ = translator("admin", locale)
     if user.is_excluded:
         return _("admin-note-excluded")
     if user.token_status == TokenStatus.INVALID:

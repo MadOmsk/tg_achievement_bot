@@ -14,7 +14,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
-from bot.i18n import DEFAULT_LOCALE, gettext
+from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
@@ -25,8 +25,6 @@ from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURE
 from bot.services.steam.auth import SteamAuth
 from bot.util import humanize_ago
 
-_ = lambda key, **kwargs: gettext("adminview", key, **kwargs)  # noqa: E731
-
 # Europe/Moscow — same default the rest of the project falls back to
 # (schema.sql's chat_settings.tz_offset_min, config.py's Settings.tz) when
 # nothing more specific applies. The admin panel isn't scoped to any one
@@ -34,28 +32,32 @@ _ = lambda key, **kwargs: gettext("adminview", key, **kwargs)  # noqa: E731
 _DEFAULT_TZ_OFFSET_MIN = 180
 
 
-async def _key_status_line(status: str, checked_at: str | None, *, active_value: str) -> str:
+async def _key_status_line(
+    status: str, checked_at: str | None, *, active_value: str, locale: str
+) -> str:
     """Common rendering for the two shared-credential status lines below
     (SPEC 9, M-PSN-1's "мониторинг живости" paragraph, applied to Steam
     too) — a bare word would hide a stale check, so this always says when
     it last actually ran."""
+    _ = translator("adminview", locale)
     if status == active_value:
         return (
-            _("adminview-key-alive-checked", ago=humanize_ago(checked_at, DEFAULT_LOCALE))
+            _("adminview-key-alive-checked", ago=humanize_ago(checked_at, locale))
             if checked_at
             else _("adminview-key-alive")
         )
     return (
-        _("adminview-key-stale-checked", ago=humanize_ago(checked_at, DEFAULT_LOCALE))
+        _("adminview-key-stale-checked", ago=humanize_ago(checked_at, locale))
         if checked_at
         else _("adminview-key-stale")
     )
 
 
-def _format_api_usage(windows: list[tuple[int, int, float]]) -> str:
+def _format_api_usage(windows: list[tuple[int, int, float]], *, locale: str) -> str:
     """A compact usage summary — how close the shared achievements
     rate limiter is to Microsoft's own windows (SPEC 4), a diagnostic against
     a bug in the poller, not a persisted budget."""
+    _ = translator("adminview", locale)
     parts = []
     for used, limit, span in windows:
         label = (
@@ -73,7 +75,10 @@ async def render_admin_home(
     steam_fetcher: SteamFetcher,
     psn_auth: PsnAuth,
     steam_auth: SteamAuth,
+    *,
+    locale: str,
 ) -> tuple[str, InlineKeyboardMarkup]:
+    _ = translator("adminview", locale)
     users = await repo.admin_users()
     chats = await repo.admin_chats()
 
@@ -99,12 +104,16 @@ async def render_admin_home(
     psn_key_line = (
         _("adminview-psn-not-configured")
         if psn_status == PSN_NOT_CONFIGURED
-        else await _key_status_line(psn_status, psn_checked, active_value=TokenStatus.ACTIVE)
+        else await _key_status_line(
+            psn_status, psn_checked, active_value=TokenStatus.ACTIVE, locale=locale
+        )
     )
     steam_key_line = (
         _("adminview-steam-not-configured")
         if steam_status == STEAM_NOT_CONFIGURED
-        else await _key_status_line(steam_status, steam_checked, active_value=TokenStatus.ACTIVE)
+        else await _key_status_line(
+            steam_status, steam_checked, active_value=TokenStatus.ACTIVE, locale=locale
+        )
     )
 
     # Same "always show when this was last true" treatment /online's table
@@ -125,8 +134,8 @@ async def render_admin_home(
         steam_linked=len(steam_linked),
         psn_linked=len(psn_linked),
         chats=sum(1 for c in chats if c.is_active),
-        xbox_usage=_format_api_usage(fetcher.api_usage()),
-        steam_usage=_format_api_usage(steam_fetcher.api_usage()),
+        xbox_usage=_format_api_usage(fetcher.api_usage(), locale=locale),
+        steam_usage=_format_api_usage(steam_fetcher.api_usage(), locale=locale),
         steam_key_line=steam_key_line,
         psn_key_line=psn_key_line,
         # No known daily cap to compare against (SPEC 9, M-PSN-1 checklist

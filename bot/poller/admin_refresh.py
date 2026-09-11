@@ -65,8 +65,15 @@ class AdminPanelRefresh:
             await self._refresh_one(row)
 
     async def _refresh_one(self, row: AdminPanelRefreshRow) -> None:
+        # One row per super-admin, so the panel being redrawn always belongs
+        # to exactly one known person — rendered in their own language (#48).
         text, markup = await render_admin_home(
-            self._repo, self._fetcher, self._steam_fetcher, self._psn_auth, self._steam_auth
+            self._repo,
+            self._fetcher,
+            self._steam_fetcher,
+            self._psn_auth,
+            self._steam_auth,
+            locale=await self._repo.user_locale(row.admin_id),
         )
         try:
             await self._bot.edit_message_text(

@@ -156,6 +156,7 @@ async def test_home_does_not_count_a_steam_only_person_as_a_broken_xbox_login(
         _FakeUsageFetcher(),
         PsnAuth(repo, cipher),
         SteamAuth(repo, cipher),
+        locale="ru",
     )  # type: ignore[arg-type]
 
     assert "XBOX:  0" in text

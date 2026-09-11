@@ -137,3 +137,31 @@ async def test_the_same_summary_in_russian_keeps_its_own_word_order(repo: Repo) 
     assert built is not None
     text, _markup = built
     assert "<b>Итог дня</b>, 12 июня" in text  # day before month, genitive
+
+
+# ------------------------------------------------------ the super-admin panel
+
+
+async def test_the_super_admin_panel_renders_in_english(repo: Repo) -> None:
+    """The super-admin's own screens follow their `user_settings.locale`,
+    same as any other DM — the panel is not a special case (#48)."""
+    from bot.handlers.admin import _chat
+
+    await repo.upsert_chat(CHAT_ID, "Gaming chat", TG_ID)
+
+    text, _markup = await _chat(repo, CHAT_ID, locale="en")
+
+    assert "Daily summary:" in text
+    assert "Anti-flood:" in text
+    assert "Итог дня" not in text
+
+
+async def test_the_same_super_admin_screen_in_russian(repo: Repo) -> None:
+    from bot.handlers.admin import _chat
+
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
+
+    text, _markup = await _chat(repo, CHAT_ID, locale="ru")
+
+    assert "Итог дня:" in text
+    assert "Антиспам:" in text

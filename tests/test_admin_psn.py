@@ -17,7 +17,7 @@ async def test_card_shows_a_psn_resync_button_when_psn_is_linked(repo: Repo) -> 
     await repo.ensure_user(1, "igor")
     await repo.link_platform_account(1, "psn", ACCOUNT_ID, "Gamer")
 
-    _text, markup = await _card(repo, 1)
+    _text, markup = await _card(repo, 1, locale="ru")
 
     assert "a:sync:psn:1" in _callback_datas(markup)
 
@@ -26,7 +26,7 @@ async def test_card_has_no_psn_resync_button_without_a_psn_link(repo: Repo) -> N
     await repo.ensure_user(1, "igor")
     await repo.link_platform_account(1, "steam", "76561197960287930", "SteamOnly")
 
-    _text, markup = await _card(repo, 1)
+    _text, markup = await _card(repo, 1, locale="ru")
 
     datas = _callback_datas(markup)
     assert "a:sync:steam:1" in datas

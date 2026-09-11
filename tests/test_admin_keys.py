@@ -28,10 +28,10 @@ def _callback_datas(markup) -> list[str]:
 
 
 async def test_keys_screen_lists_all_platforms_unconfigured(
-    repo: Repo, cipher: TokenCipher
+    repo: Repo, cipher: TokenCipher, i18n
 ) -> None:
     text, markup = await _keys_screen(
-        SteamAuth(repo, cipher), PsnAuth(repo, cipher), AnthropicAuth(repo, cipher)
+        SteamAuth(repo, cipher), PsnAuth(repo, cipher), AnthropicAuth(repo, cipher), locale="ru"
     )
 
     datas = _callback_datas(markup)
@@ -46,7 +46,7 @@ async def test_keys_screen_lists_all_platforms_unconfigured(
 
 
 async def test_keys_screen_offers_clear_once_steam_is_configured(
-    repo: Repo, cipher: TokenCipher, monkeypatch
+    repo: Repo, cipher: TokenCipher, monkeypatch, i18n
 ) -> None:
     async def _alive(api_key: str) -> bool:
         return True
@@ -56,7 +56,7 @@ async def test_keys_screen_offers_clear_once_steam_is_configured(
     await steam_auth.set_key(KEY, admin_id=ADMIN_ID)
 
     _text, markup = await _keys_screen(
-        steam_auth, PsnAuth(repo, cipher), AnthropicAuth(repo, cipher)
+        steam_auth, PsnAuth(repo, cipher), AnthropicAuth(repo, cipher), locale="ru"
     )
 
     datas = _callback_datas(markup)
@@ -77,7 +77,7 @@ class _FakeMessage:
 
 
 async def test_admin_text_input_saves_a_valid_steam_key(
-    repo: Repo, cipher: TokenCipher, monkeypatch
+    repo: Repo, cipher: TokenCipher, monkeypatch, i18n
 ) -> None:
     async def _alive(api_key: str) -> bool:
         return True
@@ -89,7 +89,7 @@ async def test_admin_text_input_saves_a_valid_steam_key(
     _awaiting_input[ADMIN_ID] = (STEAM_KEY_KEY, None)
     msg = _FakeMessage(KEY)
 
-    await admin_text_input(msg, psn_auth, steam_auth, anthropic_auth)
+    await admin_text_input(msg, psn_auth, steam_auth, anthropic_auth, i18n)
 
     assert await steam_auth.get_key() == KEY
     assert ADMIN_ID not in _awaiting_input  # flow finished
@@ -97,7 +97,7 @@ async def test_admin_text_input_saves_a_valid_steam_key(
 
 
 async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
-    repo: Repo, cipher: TokenCipher, monkeypatch
+    repo: Repo, cipher: TokenCipher, monkeypatch, i18n
 ) -> None:
     async def _dead(api_key: str) -> bool:
         return False
@@ -107,7 +107,9 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
     _awaiting_input[ADMIN_ID] = (STEAM_KEY_KEY, None)
     msg = _FakeMessage("bad-key")
 
-    await admin_text_input(msg, PsnAuth(repo, cipher), steam_auth, AnthropicAuth(repo, cipher))
+    await admin_text_input(
+        msg, PsnAuth(repo, cipher), steam_auth, AnthropicAuth(repo, cipher), i18n
+    )
 
     assert await steam_auth.get_key() is None
     assert _awaiting_input.get(ADMIN_ID) == (STEAM_KEY_KEY, None)  # still armed for a retry
