@@ -454,6 +454,8 @@ class HltbCacheRow:
     game_url: str | None = None
     image_url: str | None = None
     genre: str | None = None
+    description_en: str | None = None
+    description_ru: str | None = None
 
 
 @dataclass(slots=True)

@@ -89,19 +89,32 @@ Candidates after the search:
 [ ❌ Отмена ]
 ```
 
-The chosen game's card:
+The chosen game's card, sent as HLTB's own cover art with this as the
+caption (it falls back to a plain text message when the game has no cover,
+or Telegram refuses to fetch it):
 
 ```
-🎮 <title> (<year>)
+⏱ <title> (<year>)
 
 Основной сюжет · N ч
 Основной + доп. · N ч
 Полное прохождение · N ч
 
 Платформы: <list>
-Жанры:     <genre>
+Жанры: <genre>
+
+▍<the game's own description, collapsed>
+
 <link to HowLongToBeat>
 ```
+
+The description is a collapsed blockquote, and the link stays the card's
+last line — the numbers are what /hltb is for, the description is there for
+whoever wants it and must not push the rest off a phone screen. Title,
+platforms and genres are HLTB's own English strings and stay untranslated;
+only the description is translated, once, and stored in both languages. A
+game HLTB has no description for simply has no blockquote — no placeholder,
+no empty line.
 
 ## Group hub (/help in a group, or the bot having just been added)
 

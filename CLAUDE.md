@@ -115,14 +115,15 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │   ├── client.py            async wrapper (asyncio.to_thread), resolve, trophies, presence
 │   │   │   ├── auth.py              NPSSO storage/refresh, health check, PsnAuth
 │   │   │   └── achievements.py      sync_account(): scan + persist trophies + progress cache, one game at a time (#26)
-│   │   └── translate/              Anthropic API, achievement-description translation only
-│   │       │                       (2026-09-09) — raw httpx like Steam's own client, not the
-│   │       │                       `anthropic` SDK. Key management + cache/LLM plumbing ship;
-│   │       │                       no platform client calls into it yet (open work).
-│   │       ├── client.py            check_alive() (GET /v1/models, free) + translate_descriptions()
-│   │       │                       (the actual Haiku call, batched — never called for names)
-│   │       ├── descriptions.py      bilingual_descriptions(): cache-or-translate orchestration,
-│   │       │                       the one thing a platform client would call (none do yet)
+│   │   └── translate/              Anthropic API, *description* translation only — an
+│   │       │                       achievement's (2026-09-09) and a game's (#2, 2026-09-12).
+│   │       │                       Raw httpx like Steam's own client, not the `anthropic` SDK.
+│   │       │                       All three platform clients call into it now.
+│   │       ├── client.py            check_alive() (GET /v1/models, free), translate_descriptions()
+│   │       │                       (a whole game's achievements in one batched Haiku call) and
+│   │       │                       translate_game_description() (one HLTB summary). Never names.
+│   │       ├── descriptions.py      bilingual_descriptions(): cache-or-translate orchestration
+│   │       │                       for achievements; the one thing a platform client calls
 │   │       └── auth.py              admin-settable key storage, AnthropicAuth, same #17 shape
 │   │                               as SteamAuth/PsnAuth
 │   │
@@ -167,6 +168,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── db_status.py               summary for `manage.ps1 status` (no dependencies)
 │   ├── reconcile_achievements.py  one-off full achievement-history backfill
 │   ├── backfill_hltb_platforms.py one-off: fill in `platforms` on already-cached games
+│   ├── backfill_hltb_descriptions.py one-off: fill in `description_*` on games cached before #2
 │   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
 │   ├── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
 │   │                               account linked before that column meant anything (#5)
@@ -325,7 +327,9 @@ every column.
   PSN's own cached account level: `platform_links.psn_trophy_level` (refreshed by
   the poller after backfill and after any tick that finds new trophies — the level
   only changes when a trophy is earned, so there's no reason to touch it every
-  tick). HowLongToBeat cache: `hltb_cache`. Telegram message bookkeeping:
+  tick). HowLongToBeat cache: `hltb_cache` — completion times, platforms,
+  genre, and (#2) the game's own description in both languages. Telegram
+  message bookkeeping:
   `bot_messages`, `tracked_messages`, `online_auto_refresh`, `admin_panel_refresh`.
 - **Bilingual achievement descriptions** (2026-09-09 user request):
   `achievement_description_cache (platform, title_id, achievement_id,
@@ -838,10 +842,30 @@ cleans noisy platform title strings before searching, shows candidates rather th
 trusting the first search result, and caches the chosen result by HLTB id forever.
 Treat HLTB outages as an expected external failure, not an exception.
 
-Open work: optional game descriptions once a reliable source is picked — issue #2.
-Steam Store API was checked and rejected (marketing copy or unparsed HTML); IGDB,
-an LLM-generated summary, and Wikipedia are candidates, none chosen yet. Do not add
-recurring paid LLM usage without explicit rate limits and cost controls.
+**Game descriptions** (2026-09-12 user request, #2) come from HLTB itself, not a
+second service — no id-matching between two databases, and HLTB covers console
+exclusives a Steam-based source never would (verified: Mario Kart World). They
+live in the game page's own `__NEXT_DATA__` as `profile_summary`, the exact JSON
+path `genre` already used, so both come out of one fetch
+(`services/hltb.py::_fetch_page_details`) — deliberately *not* parsed out of the
+rendered HTML, where the paragraph is only reachable through a CSS-module class
+name carrying a build hash that changes on every HLTB frontend deploy.
+
+HLTB publishes English only, so unlike an achievement description there is no
+native-translation path to try first: the Russian side is always Haiku's, stored
+beside the original in `hltb_cache.description_en`/`description_ru`. Cost control
+is the shape of the work, not a rate limit bolted on: **lazy only** (user
+decision — no prewarm), one call per game ever, the first time somebody looks it
+up, on a table that today holds three rows and grows by a game per `/hltb`.
+A row cached before this existed tops its Russian side up on the next lookup;
+`scripts/backfill_hltb_descriptions.py` is the one-off for rows that predate the
+English side too. With no Anthropic key the card just shows HLTB's English text.
+
+The card renders it as a collapsed `<blockquote expandable>` between the genres
+and the HLTB link (`docs/ui/ui_screens_users.md`), capped at
+`handlers/hltb.py::DESCRIPTION_LIMIT` — the card is a photo *caption* whenever
+the game has cover art, and Telegram caps those at 1024 characters, so an
+overlong summary would cost the whole card rather than just its own tail.
 
 ## Security and privacy
 

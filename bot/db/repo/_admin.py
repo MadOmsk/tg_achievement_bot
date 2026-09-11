@@ -226,7 +226,8 @@ class _AdminRepo:
     async def hltb_get_cached(self, hltb_id: int) -> HltbCacheRow | None:
         cursor = await self._conn.execute(
             "SELECT hltb_id, name, release_year, main_hours, extra_hours,"
-            " completionist_hours, platforms, game_url, image_url, genre "
+            " completionist_hours, platforms, game_url, image_url, genre,"
+            " description_en, description_ru "
             "FROM hltb_cache WHERE hltb_id = ?",
             (hltb_id,),
         )
@@ -244,6 +245,8 @@ class _AdminRepo:
             game_url=row["game_url"],
             image_url=row["image_url"],
             genre=row["genre"],
+            description_en=row["description_en"],
+            description_ru=row["description_ru"],
         )
 
     async def hltb_cache_result(self, entry: HltbCacheRow) -> None:
@@ -252,8 +255,9 @@ class _AdminRepo:
         await self._conn.execute(
             "INSERT OR REPLACE INTO hltb_cache "
             "(hltb_id, name, release_year, main_hours, extra_hours, completionist_hours,"
-            " platforms, game_url, image_url, genre, cached_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " platforms, game_url, image_url, genre, description_en, description_ru,"
+            " cached_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 entry.hltb_id,
                 entry.name,
@@ -265,6 +269,8 @@ class _AdminRepo:
                 entry.game_url,
                 entry.image_url,
                 entry.genre,
+                entry.description_en,
+                entry.description_ru,
                 utcnow_iso(),
             ),
         )

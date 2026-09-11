@@ -7,12 +7,19 @@ from __future__ import annotations
 import json
 
 from bot.db.repo import HltbCacheRow, Repo, TitleHistoryRow
-from bot.handlers.hltb import _card, _label, _recent_keyboard, _results_keyboard
+from bot.handlers.hltb import (
+    DESCRIPTION_LIMIT,
+    _card,
+    _label,
+    _recent_keyboard,
+    _results_keyboard,
+    _shorten,
+)
 from bot.services.hltb import (
     HltbResult,
     _clean,
     _clean_query,
-    _extract_genre,
+    _extract_details,
     _from_cache_row,
     _pick_fallback_word,
 )
@@ -32,6 +39,8 @@ def result(hltb_id: int = 1, year: int | None = 2021) -> HltbResult:
         game_url="https://howlongtobeat.com/game/1",
         image_url="https://howlongtobeat.com/games/1_Halo_Infinite.jpg",
         genre="First-Person, Shooter",
+        description_en="The Master Chief returns.",
+        description_ru="Мастер Чиф возвращается.",
     )
 
 
@@ -63,29 +72,41 @@ def test_clean_query_leaves_an_ordinary_title_untouched() -> None:
     assert _clean_query("Gears of War 3") == "Gears of War 3"
 
 
-def _next_data_page(profile_genre: str | None) -> str:
+def _next_data_page(profile_genre: str | None, profile_summary: str | None = None) -> str:
     # A stripped-down but structurally real fragment of the game page's own
     # __NEXT_DATA__ blob (SPEC 6.6) — verified live, same path every time:
-    # props.pageProps.game.data.game[0].profile_genre.
+    # props.pageProps.game.data.game[0], both profile_genre and
+    # profile_summary.
     game = {"game_name": "Halo Infinite"}
     if profile_genre is not None:
         game["profile_genre"] = profile_genre
+    if profile_summary is not None:
+        game["profile_summary"] = profile_summary
     payload = json.dumps({"props": {"pageProps": {"game": {"data": {"game": [game]}}}}})
     return f'<html><script id="__NEXT_DATA__" type="application/json">{payload}</script></html>'
 
 
-def test_extract_genre_reads_the_next_data_blob() -> None:
-    assert _extract_genre(_next_data_page("First-Person, Open World, Shooter")) == (
-        "First-Person, Open World, Shooter"
+def test_extract_details_reads_the_next_data_blob() -> None:
+    page = _next_data_page("First-Person, Open World, Shooter", "The Master Chief returns.")
+    assert _extract_details(page) == (
+        "First-Person, Open World, Shooter",
+        "The Master Chief returns.",
     )
 
 
-def test_extract_genre_is_none_when_the_field_is_missing() -> None:
-    assert _extract_genre(_next_data_page(None)) is None
+def test_extract_details_is_none_when_the_fields_are_missing() -> None:
+    assert _extract_details(_next_data_page(None)) == (None, None)
 
 
-def test_extract_genre_is_none_when_the_page_has_no_next_data_at_all() -> None:
-    assert _extract_genre("<html><body>not the page you're looking for</body></html>") is None
+def test_extract_details_treats_an_empty_summary_as_no_summary() -> None:
+    # HLTB returns "" rather than omitting the key for a game it has no
+    # description for — common for obscure entries (verified live).
+    assert _extract_details(_next_data_page("Action", "   "))[1] is None
+
+
+def test_extract_details_is_none_when_the_page_has_no_next_data_at_all() -> None:
+    page = "<html><body>not the page you're looking for</body></html>"
+    assert _extract_details(page) == (None, None)
 
 
 def test_pick_fallback_word_takes_the_first_real_word() -> None:
@@ -126,6 +147,8 @@ def test_from_cache_row_round_trips() -> None:
         game_url="https://howlongtobeat.com/game/42",
         image_url="https://howlongtobeat.com/games/42_A_Game.jpg",
         genre="Adventure, Puzzle",
+        description_en="A game about a game.",
+        description_ru="Игра про игру.",
     )
     r = _from_cache_row(row)
     assert (r.hltb_id, r.name, r.release_year) == (42, "A Game", 2020)
@@ -134,6 +157,7 @@ def test_from_cache_row_round_trips() -> None:
     assert r.game_url == "https://howlongtobeat.com/game/42"
     assert r.image_url == "https://howlongtobeat.com/games/42_A_Game.jpg"
     assert r.genre == "Adventure, Puzzle"
+    assert (r.description_en, r.description_ru) == ("A game about a game.", "Игра про игру.")
 
 
 def test_label_includes_year_when_known() -> None:
@@ -180,6 +204,73 @@ def test_card_shows_genre_when_known(i18n) -> None:
 def test_card_separates_genre_from_platforms_with_a_blank_line(i18n) -> None:
     text = _card(result(), i18n)
     assert "Платформы: PC, Xbox Series X/S\n\nЖанры: First-Person, Shooter" in text
+
+
+def test_card_shows_the_description_as_a_collapsed_blockquote(i18n) -> None:
+    text = _card(result(), i18n)
+    assert "<blockquote expandable>Мастер Чиф возвращается.</blockquote>" in text
+
+
+def test_card_puts_the_description_before_the_link(i18n) -> None:
+    # Agreed layout (#2, user request, 2026-09-12): the summary sits between
+    # the genres and the HLTB link, not after it — the link is the card's
+    # own last line, the way it was before descriptions existed.
+    text = _card(result(), i18n)
+    assert text.index("Мастер Чиф") < text.index("howlongtobeat.com/game/1")
+
+
+def test_card_falls_back_to_english_when_there_is_no_translation(i18n) -> None:
+    """An untranslated description still says more than none at all — the
+    Russian side is filled in lazily, and this is what a card looks like in
+    between (no Anthropic key, or the call having failed once)."""
+    untranslated = result()
+    untranslated.description_ru = None
+    assert "The Master Chief returns." in _card(untranslated, i18n)
+
+
+def test_card_has_no_description_block_when_hltb_has_no_summary(i18n) -> None:
+    without = result()
+    without.description_en = without.description_ru = None
+    assert "blockquote" not in _card(without, i18n)
+
+
+def test_card_escapes_html_in_the_description(i18n) -> None:
+    tricky = result()
+    tricky.description_ru = "Half-Life <b>2</b> & friends"
+    text = _card(tricky, i18n)
+    assert "<b>2</b>" not in text
+    assert "Half-Life &lt;b&gt;2&lt;/b&gt; &amp; friends" in text
+
+
+def test_description_follows_the_locale() -> None:
+    r = result()
+    assert r.description("ru") == "Мастер Чиф возвращается."
+    assert r.description("en") == "The Master Chief returns."
+
+
+def test_description_falls_back_to_whichever_side_exists() -> None:
+    only_english = result()
+    only_english.description_ru = None
+    assert only_english.description("ru") == "The Master Chief returns."
+
+    only_russian = result()
+    only_russian.description_en = None
+    assert only_russian.description("en") == "Мастер Чиф возвращается."
+
+
+def test_shorten_cuts_a_long_description_on_a_word_boundary() -> None:
+    # Telegram caps a photo caption at 1024 characters, and the card is a
+    # caption whenever HLTB has cover art — an overlong summary would cost
+    # the whole card, not just its own tail.
+    long_text = "word " * 400
+    shortened = _shorten(long_text)
+    assert len(shortened) <= DESCRIPTION_LIMIT + 1  # the ellipsis itself
+    assert shortened.endswith("…")
+    assert "wor…" not in shortened  # never mid-word
+
+
+def test_shorten_leaves_an_ordinary_description_untouched() -> None:
+    assert _shorten("Short enough.") == "Short enough."
 
 
 def test_card_uses_a_dot_separator_not_padding_spaces(i18n) -> None:

@@ -1,5 +1,7 @@
-"""Anthropic API wrapper — translation of achievement descriptions only
-(2026-09-09 user request). A thin httpx wrapper, not the `anthropic` SDK
+"""Anthropic API wrapper — translation of *descriptions* only: an
+achievement's own (2026-09-09 user request) and, since 2026-09-12 (#2), a
+game's own summary for the /hltb card. Never a name, of either kind.
+A thin httpx wrapper, not the `anthropic` SDK
 (CLAUDE.md: don't add a dependency unless it's clearly needed) — the same
 choice already made for Steam and Xbox Live, both raw HTTP too.
 """
@@ -139,6 +141,58 @@ async def translate_descriptions(
         return {}
 
     return dict(zip(ids, translations, strict=False))
+
+
+async def translate_game_description(
+    api_key: str, text: str, *, target_language: str
+) -> str | None:
+    """One game's own summary, for the /hltb card (#2). A separate call from
+    translate_descriptions() above rather than a one-item batch, because the
+    prompts genuinely differ: that one carries a whole game's achievement
+    list and must answer with a JSON array to keep ids aligned, this one is
+    a single paragraph and can just answer with the text — one less thing to
+    mis-parse for no benefit.
+
+    Called lazily, once per game, the first time somebody looks it up (user
+    decision, 2026-09-12: no prewarm) — the result is cached in `hltb_cache`
+    forever, beside the English original.
+
+    Returns None on any failure, never raises: the card then simply shows
+    HLTB's own English text, and the next lookup of that game tries again.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return None
+    language = _LANGUAGE_NAME[target_language]
+    prompt = (
+        f"Translate this video game description into {language}. Keep the same "
+        f"tone and length, do not add commentary, do not translate the game's "
+        f"own title or any character names. Reply with ONLY the translation, "
+        f"nothing else.\n\n{stripped}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=_timeout()) as client:
+            response = await client.post(
+                f"{API_BASE}/messages",
+                headers=_headers(api_key),
+                json={
+                    "model": HAIKU_MODEL,
+                    "max_tokens": _MAX_OUTPUT_TOKENS,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+    except httpx.RequestError as exc:
+        log.warning("anthropic game-description translate failed: %r", exc)
+        return None
+    if response.status_code != 200:
+        log.warning("anthropic game-description translate failed: HTTP %s", response.status_code)
+        return None
+    try:
+        translated = response.json()["content"][0]["text"].strip()
+    except (KeyError, IndexError, ValueError) as exc:
+        log.warning("anthropic game-description translate: could not parse response: %r", exc)
+        return None
+    return translated or None
 
 
 def _strip_json_fence(text: str) -> str:

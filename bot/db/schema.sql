@@ -315,6 +315,13 @@ CREATE TABLE IF NOT EXISTS hltb_cache (
     game_url            TEXT,  -- game_web_link — the HLTB page itself
     image_url           TEXT,  -- game_image_url — HLTB's own cover art
     genre               TEXT,  -- HLTB's own profile_genre, comma-separated as HLTB writes it
+    -- The game's own summary, HLTB's profile_summary (#2). English is what
+    -- HLTB actually publishes; the Russian side is a one-off LLM translation
+    -- of it, kept beside the original so a locale switch never re-pays for
+    -- the same game. Either may be NULL: HLTB has no summary for every entry,
+    -- and the translation is skipped entirely when no Anthropic key is set.
+    description_en      TEXT,
+    description_ru      TEXT,
     cached_at           TEXT NOT NULL
 );
 

@@ -31,6 +31,8 @@ from aiogram_i18n import I18nContext
 from bot.db.repo import Repo
 from bot.services.hltb import HltbError, HltbResult, resolve, search
 from bot.services.message_log import stats_category
+from bot.services.tables import blockquote
+from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +42,11 @@ RESULTS_LIMIT_KEY = "hltb_results_limit"
 PAGE_SIZE_KEY = "hltb_page_size"
 DEFAULT_RESULTS_LIMIT = 20
 DEFAULT_PAGE_SIZE = 5
+# The rest of the card runs to roughly 300 characters at its longest (a long
+# title, every platform HLTB lists, three genres, the link), so this leaves
+# comfortable room under Telegram's own 1024-character caption cap — see
+# _shorten() below for why the cap is what binds here.
+DESCRIPTION_LIMIT = 600
 # Generous — the reply-to-message check is the real guard against a stray
 # match, this is just a backstop against sessions piling up forever.
 SESSION_TTL_SECONDS = 1800
@@ -154,18 +161,26 @@ async def _is_awaited_reply(message: Message) -> bool:
 
 
 @router.message(_is_awaited_reply)
-async def hltb_query(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+async def hltb_query(
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, anthropic_auth: AnthropicAuth
+) -> None:
     assert message.text is not None and message.reply_to_message is not None
     prompt_id = message.reply_to_message.message_id
     session = _sessions.get((message.chat.id, prompt_id))
     if session is None:  # pragma: no cover — filter already checked this
         return
-    await _run_search(bot, repo, message.chat.id, prompt_id, session, message.text, i18n)
+    await _run_search(
+        bot, repo, message.chat.id, prompt_id, session, message.text, i18n, anthropic_auth
+    )
 
 
 @router.callback_query(F.data.startswith("hltb:qr:"))
 async def hltb_recent_pick(
-    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+    callback: CallbackQuery,
+    repo: Repo,
+    bot: Bot,
+    i18n: I18nContext,
+    anthropic_auth: AnthropicAuth,
 ) -> None:
     if not isinstance(callback.message, Message):
         return
@@ -180,7 +195,9 @@ async def hltb_recent_pick(
         await callback.answer()
         return
     await callback.answer()
-    await _run_search(bot, repo, key[0], key[1], session, session.recent_games[idx], i18n)
+    await _run_search(
+        bot, repo, key[0], key[1], session, session.recent_games[idx], i18n, anthropic_auth
+    )
 
 
 async def _run_search(
@@ -191,6 +208,7 @@ async def _run_search(
     session: _Session,
     query: str,
     i18n: I18nContext,
+    anthropic_auth: AnthropicAuth,
 ) -> None:
     try:
         results = await search(query, limit=session.results_limit)
@@ -208,7 +226,9 @@ async def _run_search(
     if len(results) == 1:
         # One match — asking "which of these?" over a single button is a
         # pointless extra tap, just show the card straight away.
-        if not await _show_card(bot, repo, chat_id, message_id, results[0].hltb_id, i18n):
+        if not await _show_card(
+            bot, repo, chat_id, message_id, results[0].hltb_id, i18n, anthropic_auth
+        ):
             await _edit(bot, chat_id, message_id, i18n.get("hltb-unavailable"), None)
         _sessions.pop((chat_id, message_id), None)
         return
@@ -278,13 +298,19 @@ async def hltb_page(callback: CallbackQuery, bot: Bot, i18n: I18nContext) -> Non
 
 
 @router.callback_query(F.data.startswith("hltb:pick:"))
-async def hltb_pick(callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+async def hltb_pick(
+    callback: CallbackQuery,
+    repo: Repo,
+    bot: Bot,
+    i18n: I18nContext,
+    anthropic_auth: AnthropicAuth,
+) -> None:
     if not isinstance(callback.message, Message):
         return
     assert callback.data is not None
     hltb_id = int(callback.data.rsplit(":", 1)[1])
     chat_id, message_id = callback.message.chat.id, callback.message.message_id
-    if not await _show_card(bot, repo, chat_id, message_id, hltb_id, i18n):
+    if not await _show_card(bot, repo, chat_id, message_id, hltb_id, i18n, anthropic_auth):
         await callback.answer(i18n.get("hltb-unavailable"), show_alert=True)
         return
     await callback.answer()
@@ -292,10 +318,16 @@ async def hltb_pick(callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nCon
 
 
 async def _show_card(
-    bot: Bot, repo: Repo, chat_id: int, message_id: int, hltb_id: int, i18n: I18nContext
+    bot: Bot,
+    repo: Repo,
+    chat_id: int,
+    message_id: int,
+    hltb_id: int,
+    i18n: I18nContext,
+    anthropic_auth: AnthropicAuth,
 ) -> bool:
     try:
-        result = await resolve(repo, hltb_id)
+        result = await resolve(repo, hltb_id, anthropic_auth=anthropic_auth)
     except HltbError:
         return False
     await _send_card(bot, chat_id, message_id, result, i18n)
@@ -346,10 +378,29 @@ def _card(result: HltbResult, i18n: I18nContext) -> str:
         lines += ["", i18n.get("hltb-card-platforms", platforms=platforms)]
     if result.genre:
         lines += ["", i18n.get("hltb-card-genres", genre=html.escape(result.genre))]
+    description = result.description(i18n.locale)
+    if description:
+        # Collapsed by default (#2, user request): the card's own numbers are
+        # what /hltb is for, the summary is there for whoever wants it and
+        # must not push the rest off a phone screen.
+        lines += ["", blockquote([html.escape(_shorten(description))])]
     if result.game_url:
         url = html.escape(result.game_url, quote=True)
         lines += ["", i18n.get("hltb-card-link", url=url)]
     return "\n".join(lines)
+
+
+def _shorten(description: str) -> str:
+    """A card carrying a cover image is a photo *caption*, and Telegram caps
+    those at 1024 characters — a long summary would cost the whole card, not
+    just its own tail. Cut on a word boundary well inside that budget; the
+    blockquote is collapsed anyway, so nobody is reading a 600-character
+    summary in place."""
+    if len(description) <= DESCRIPTION_LIMIT:
+        return description
+    cut = description[:DESCRIPTION_LIMIT]
+    head, _, _ = cut.rpartition(" ")
+    return (head or cut).rstrip(" ,;:") + "…"
 
 
 async def _edit(
