@@ -1,13 +1,4 @@
-# User-facing strings, Fluent format (bot/i18n.py wires this in).
-#
-
-# Only "ru" exists today — the bot is Russian-only by design (CLAUDE.md).
-# This file is the migration target for text currently hardcoded in
-# handlers/services as plain f-strings; nothing is required to move here at
-# once. Migrate one handler at a time, pulling its literals in as they're
-# touched anyway, rather than a single mass rewrite (see issue tracking i18n
-# migration for the running checklist of what's moved and what's still
-# inline).
+# HowLongToBeat lookup (bot/handlers/hltb.py, bot/services/hltb.py).
 # Search flow
 hltb-unavailable = HowLongToBeat сейчас недоступен, попробуй позже.
 hltb-session-stale = Сессия устарела, начни заново — /hltb

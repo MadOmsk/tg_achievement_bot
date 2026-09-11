@@ -70,7 +70,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── lock.py                   "one process per .env" guard (single instance)
 │   ├── util.py                   small shared helpers (UTC time, secret masking)
 │   ├── i18n.py                   Fluent/aiogram_i18n wiring; Russian locale is the default
-│   ├── locales/                  user-facing translations, currently ru/*.ftl only
+│   ├── locales/                  user-facing translations: ru/ (the default and the
+│   │                             per-key fallback) and en/, both complete (#48)
 │   │
 │   ├── handlers/                 aiogram routers — UI layer only, no SQL, no platform API calls
 │   │   ├── connect.py             /start, /connect_xbox, /disconnect_xbox
@@ -210,8 +211,21 @@ the top of a function that renders a whole screen. Deliberately not a
 ambient locale someone forgot to re-set is exactly how one chat's message ends up
 in another chat's language. A key missing from a non-default locale falls back to
 `ru` on both seams (`LOCALES_MAP` on the core, Fluent's own locale chain in
-`gettext`), so `bot/locales/en/` can be filled in file by file without a
-half-translated locale ever breaking a screen.
+`gettext`), so a locale can be filled in file by file without a
+half-translated one ever breaking a screen.
+
+`ru` and `en` both ship complete today (23 files, 500 keys each).
+`tests/test_locale_parity.py` enforces that they stay that way — same files,
+same keys, same `$variables` per key, and every key actually renders in every
+locale. It asserts *structure*, never wording: what the English says is a
+translation decision, that it carries the same variables is a correctness one.
+Adding a key to one locale and forgetting the other fails there, loudly,
+instead of degrading to a silently Russian screen in production.
+
+**Plural forms are Fluent's job, not Python's.** A counted string selects on
+`$count` and displays `$pretty` (the same number, thousands-separated) — never
+a form computed by the caller, which can only ever produce one language's
+categories (Russian's one/few/many are not English's one/other).
 
 **New user-facing strings go only into `.ftl` files** — never hardcoded Russian (or
 any other language) in Python. Handlers/services/pollers reference keys via

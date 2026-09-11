@@ -1,8 +1,8 @@
-"""Locale resolution (#48) — the mechanism only.
+"""Locale resolution (#48) — the mechanism: which locale a context resolves
+to, and that asking for one actually reaches the right .ftl.
 
-Nothing here asserts English text: bot/locales/en/ does not exist yet at
-this point, and the whole point of these tests is that the seam behaves
-(and keeps answering Russian) before, during, and after it is filled in.
+Structural parity between the locale trees (same files, same keys, same
+variables) is tests/test_locale_parity.py's job, not this file's.
 """
 
 from __future__ import annotations
@@ -64,8 +64,22 @@ def test_gettext_explicit_default_locale_is_unchanged() -> None:
     assert gettext("util", "util-ago-never", locale=DEFAULT_LOCALE) == "никогда"
 
 
+def test_gettext_renders_english_when_asked() -> None:
+    assert gettext("util", "util-ago-never", locale="en") == "never"
+
+
 def test_gettext_unknown_locale_falls_back_to_russian() -> None:
     assert gettext("util", "util-ago-never", locale="de") == "никогда"
+
+
+def test_english_plurals_use_englishs_own_categories() -> None:
+    # The point of moving form selection into Fluent: English has one/other
+    # where Russian has one/few/many, and 2 is "other" here but "few" there.
+    english = translator("achievements", "en")
+    assert english("achievement-plural", count=1, pretty="1") == "1 achievement"
+    assert english("achievement-plural", count=2, pretty="2") == "2 achievements"
+    assert english("achievement-trophy-plural", count=1, pretty="1") == "1 trophy"
+    assert english("achievement-trophy-plural", count=5, pretty="5") == "5 trophies"
 
 
 def test_gettext_passes_arguments_through() -> None:
@@ -85,10 +99,7 @@ def test_translator_without_locale_is_russian() -> None:
 def test_static_i18n_carries_its_locale() -> None:
     context = static_i18n("util", "en")
     assert context.locale == "en"
-    # No en/ files exist yet, so this still resolves through the fallback
-    # chain to the Russian string — the seam works, the translation is just
-    # not there yet.
-    assert context.get("util-ago-never") == "никогда"
+    assert context.get("util-ago-never") == "never"
 
 
 def test_static_i18n_bad_locale_is_normalized() -> None:

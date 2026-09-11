@@ -109,7 +109,7 @@ admin-timezone-saved = Часовой пояс: { $offset }
 # Anti-flood filter (2026-09-09): after N individually-notified achievements
 # for one person land in this chat within the window, further ones stop
 # posting on their own and get grouped into one message once the window
-# closes. 0 = выключено для этого чата.
+# closes. 0 = off for this chat.
 admin-chat-flood-prompt =
     Антиспам-фильтр в «{ $title }»: { $value } ач.
 
