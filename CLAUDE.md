@@ -164,8 +164,11 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── reconcile_achievements.py  one-off full achievement-history backfill
 │   ├── backfill_hltb_platforms.py one-off: fill in `platforms` on already-cached games
 │   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
-│   └── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
-│                                   account linked before that column meant anything (#5)
+│   ├── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
+│   │                               account linked before that column meant anything (#5)
+│   └── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
+│                                   before the description cache existed (#48) — per title,
+│                                   two locales, then the shared bilingual_descriptions()
 │
 ├── docs/                        design references, not code — see Engineering rules' own
 │   │                             "UI design lives in docs/ui/" entry before editing anything here
