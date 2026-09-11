@@ -701,7 +701,11 @@ exclusion/restore; per-chat settings (rarity threshold, summary time, timezone,
 mutes, minimum gamerscore, daily-summary switch, anti-flood limit/window, and
 the chat's own **language** — #48, one shared value per chat since Telegram
 cannot render one group message differently per viewer); bot-message
-cleanup actions. (The
+cleanup actions. The per-chat card keeps its settings in **three sub-screens**
+(2026-09-11, user request) — daily summary, anti-flood, message cleanup —
+rather than rows of two to four buttons crammed side by side; the card's own
+text stays on screen in all of them, and each control redraws the section it
+lives in instead of throwing the operator back to the root. (The
 standalone "🏆 Трофеи PSN (тест)" screen — a live, uncached trophy lookup by Online
 ID, predating any of this being wired into /stats — was removed once the Keys
 screen covered NPSSO management on its own and it had nothing left to justify.)

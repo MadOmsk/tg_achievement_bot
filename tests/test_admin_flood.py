@@ -46,7 +46,10 @@ async def test_bounds_reject_a_negative_limit_and_an_absurd_window(i18n) -> None
     assert FLOOD_WINDOW_MIN <= 60 <= FLOOD_WINDOW_MAX
 
 
-async def test_chat_card_shows_the_flood_settings_and_their_edit_buttons(repo: Repo, i18n) -> None:
+async def test_chat_card_shows_the_flood_settings_and_opens_their_submenu(repo: Repo, i18n) -> None:
+    """The two tunables moved onto a sub-screen of their own (2026-09-11,
+    user request) — the card still *states* them, and now carries one entry
+    that opens them instead of three buttons crammed into a row."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=5, flood_window_minutes=45)
 
@@ -54,9 +57,13 @@ async def test_chat_card_shows_the_flood_settings_and_their_edit_buttons(repo: R
 
     assert "5 ач." in text
     assert "45 мин" in text
-    datas = _callback_datas(markup)
+    assert f"a:mflood:{CHAT_ID}" in _callback_datas(markup)
+
+    _text, submenu = await _chat(repo, CHAT_ID, locale="ru", section="flood")
+    datas = _callback_datas(submenu)
     assert f"a:cfl:{CHAT_ID}" in datas
     assert f"a:cflw:{CHAT_ID}" in datas
+    assert f"a:chat:{CHAT_ID}" in datas  # back to the card
 
 
 async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo, i18n) -> None:
@@ -68,10 +75,10 @@ async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo, i18n) ->
     assert "выключен" in text
 
 
-async def test_chat_card_has_the_toggle_button(repo: Repo, i18n) -> None:
+async def test_the_flood_submenu_has_the_toggle_button(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
 
-    _text, markup = await _chat(repo, CHAT_ID, locale="ru")
+    _text, markup = await _chat(repo, CHAT_ID, locale="ru", section="flood")
 
     assert f"a:cfltoggle:{CHAT_ID}" in _callback_datas(markup)
 

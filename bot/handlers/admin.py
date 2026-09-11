@@ -843,7 +843,33 @@ async def chat_flood_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nConte
     new_limit = 0 if chat.flood_limit > 0 else FLOOD_LIMIT_DEFAULT
     await repo.update_chat_settings(chat_id, flood_limit=new_limit)
     await callback.answer()
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="flood"))
+
+
+# The chat card's three sub-screens (2026-09-11, user request). Each used to
+# be a single row of two to four buttons on the card itself; the card now
+# carries one entry per group and these open the group. The card *text* is
+# unchanged in all of them — only the keyboard differs — so the chat's state
+# stays on screen while its settings are being tuned.
+@router.callback_query(F.data.startswith("a:msum:"))
+async def chat_summary_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.split(":")[2])
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="summary"))
+
+
+@router.callback_query(F.data.startswith("a:mflood:"))
+async def chat_flood_menu_screen(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.split(":")[2])
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="flood"))
+
+
+@router.callback_query(F.data.startswith("a:mdel:"))
+async def chat_messages_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.split(":")[2])
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="messages"))
 
 
 @router.callback_query(F.data.startswith("a:cloc:"))
@@ -951,7 +977,7 @@ async def chat_time_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) 
     chat_id, hour = int(chat_id_raw), int(hour_raw)
     await repo.update_chat_settings(chat_id, daily_summary_time=f"{hour:02d}:00")
     await callback.answer(_("admin-chat-time-saved", time=f"{hour:02d}:00"))
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="summary"))
 
 
 @router.callback_query(F.data.startswith("a:ctz:"))
@@ -987,7 +1013,7 @@ async def chat_zone_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) 
     chat_id, minutes = int(chat_id_raw), int(minutes_raw)
     await repo.update_chat_settings(chat_id, tz_offset_min=minutes)
     await callback.answer(format_offset(minutes))
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="summary"))
 
 
 @router.callback_query(F.data.startswith("a:ctzm:"))
@@ -1164,7 +1190,7 @@ async def chat_daily(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> 
         return
     await repo.update_chat_settings(chat_id, daily_summary=0 if chat.daily_summary else 1)
     await callback.answer()
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="summary"))
 
 
 @router.callback_query(F.data.startswith("a:coff:"))
@@ -1236,7 +1262,7 @@ async def chat_delete_last(
         else _("admin-deleted-last")
     )
     await callback.answer(feedback)
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="messages"))
 
 
 WIPE_WINDOW_HOURS = 24
@@ -1299,7 +1325,7 @@ async def _wipe_confirm(
     ok = await _bulk_delete_messages(bot, chat_id, ids)
     await repo.forget_bot_messages(chat_id, ids)
     await callback.answer(_("admin-wipe-done") if ok else _("admin-wipe-partial"))
-    await _redraw(callback, *await _chat(repo, chat_id, locale=locale))
+    await _redraw(callback, *await _chat(repo, chat_id, locale=locale, section="messages"))
 
 
 @router.callback_query(F.data.startswith("a:cwipey:"))
@@ -1828,7 +1854,16 @@ async def _chats(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]
     return _("admin-chats-header"), builder.as_markup()
 
 
-async def _chat(repo: Repo, chat_id: int, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+async def _chat(
+    repo: Repo, chat_id: int, *, locale: str, section: str | None = None
+) -> tuple[str, InlineKeyboardMarkup]:
+    """The chat card. `section` picks which keyboard goes under it: the root
+    card, or one of its three sub-screens (2026-09-11, user request — the
+    rows that used to cram two to four buttons side by side each became a
+    submenu instead). The *text* never changes, so a person tuning the
+    anti-flood window still sees the whole chat's state above the buttons,
+    and every toggle redraws the section it lives in rather than throwing
+    the person back to the root."""
     _ = translator("admin", locale)
     chat = await _find_chat(repo, chat_id)
     if chat is None:
@@ -1861,45 +1896,90 @@ async def _chat(repo: Repo, chat_id: int, *, locale: str) -> tuple[str, InlineKe
         ),
     )
     builder = InlineKeyboardBuilder()
+    back_to_card = InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}")
+    summary_state = _("admin-enabled") if chat.daily_summary else _("admin-disabled-state")
+
+    if section == "summary":
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-chat-summary-button", state=summary_state),
+                callback_data=f"a:cds:{chat_id}",
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-chat-time-button", time=chat.daily_summary_time, offset=zone_label),
+                callback_data=f"a:ctime:{chat_id}",
+            )
+        )
+        builder.row(back_to_card)
+        return text, builder.as_markup()
+
+    if section == "flood":
+        builder.row(
+            InlineKeyboardButton(
+                text=_(
+                    "admin-chat-flood-toggle-button",
+                    state=_("admin-enabled") if chat.flood_limit > 0 else _("admin-disabled-state"),
+                ),
+                callback_data=f"a:cfltoggle:{chat_id}",
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-chat-flood-button", limit=chat.flood_limit),
+                callback_data=f"a:cfl:{chat_id}",
+            ),
+            InlineKeyboardButton(
+                text=_("admin-chat-flood-window-button", window=chat.flood_window_minutes),
+                callback_data=f"a:cflw:{chat_id}",
+            ),
+        )
+        builder.row(back_to_card)
+        return text, builder.as_markup()
+
+    if section == "messages":
+        # One wipe action per row here: these are the destructive ones, and a
+        # cramped row of four 🗑 buttons was exactly what made them easy to
+        # mistap (2026-09-11, user request).
+        builder.row(
+            InlineKeyboardButton(text=_("admin-delete-last"), callback_data=f"a:cdellast:{chat_id}")
+        )
+        builder.row(
+            InlineKeyboardButton(text=_("admin-wipe-bot-24h"), callback_data=f"a:cwipe:{chat_id}")
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-wipe-system-24h"), callback_data=f"a:cswipe:{chat_id}"
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-wipe-system-all"), callback_data=f"a:cswipeall:{chat_id}"
+            )
+        )
+        builder.row(back_to_card)
+        return text, builder.as_markup()
+
+    # The root card: one entry per group, each carrying the state a person
+    # would otherwise have to open the submenu to read.
     builder.row(
         InlineKeyboardButton(
             text=_("admin-chat-threshold-button", threshold=threshold_label),
             callback_data=f"a:crt:{chat_id}",
         )
     )
-    # Daily summary's own on/off + time/tz share one row (2026-09-09
-    # button-layout consolidation, user request — fewer rows, same "type a
-    # number to tune it, tap to toggle it" split every pair here already has).
     builder.row(
         InlineKeyboardButton(
-            text=_(
-                "admin-chat-summary-button",
-                state=_("admin-enabled") if chat.daily_summary else _("admin-disabled-state"),
-            ),
-            callback_data=f"a:cds:{chat_id}",
-        ),
-        InlineKeyboardButton(
-            text=_("admin-chat-time-button", time=chat.daily_summary_time, offset=zone_label),
-            callback_data=f"a:ctime:{chat_id}",
-        ),
+            text=_("admin-chat-summary-menu-button", state=summary_state),
+            callback_data=f"a:msum:{chat_id}",
+        )
     )
-    # Same idea for the anti-flood filter: on/off + its two tunables, one row.
     builder.row(
         InlineKeyboardButton(
-            text=_(
-                "admin-chat-flood-toggle-button",
-                state=_("admin-enabled") if chat.flood_limit > 0 else _("admin-disabled-state"),
-            ),
-            callback_data=f"a:cfltoggle:{chat_id}",
-        ),
-        InlineKeyboardButton(
-            text=_("admin-chat-flood-button", limit=chat.flood_limit),
-            callback_data=f"a:cfl:{chat_id}",
-        ),
-        InlineKeyboardButton(
-            text=_("admin-chat-flood-window-button", window=chat.flood_window_minutes),
-            callback_data=f"a:cflw:{chat_id}",
-        ),
+            text=_("admin-chat-flood-menu-button", value=flood_label),
+            callback_data=f"a:mflood:{chat_id}",
+        )
     )
     # The chat's own language (#48) — a group cannot be per-viewer, so this
     # is one shared setting, currently the super-admin's to move (issue #47
@@ -1916,16 +1996,10 @@ async def _chat(repo: Repo, chat_id: int, *, locale: str) -> tuple[str, InlineKe
             callback_data=f"a:coff:{chat_id}",
         )
     )
-    # The four delete/wipe actions share one row and one icon (2026-09-09,
-    # user request) — used to be four separate rows, and the first alone
-    # had 🗑 while the other three had 🧹, an inconsistency nobody meant.
     builder.row(
-        InlineKeyboardButton(text=_("admin-delete-last"), callback_data=f"a:cdellast:{chat_id}"),
-        InlineKeyboardButton(text=_("admin-wipe-bot-24h"), callback_data=f"a:cwipe:{chat_id}"),
-        InlineKeyboardButton(text=_("admin-wipe-system-24h"), callback_data=f"a:cswipe:{chat_id}"),
         InlineKeyboardButton(
-            text=_("admin-wipe-system-all"), callback_data=f"a:cswipeall:{chat_id}"
-        ),
+            text=_("admin-chat-messages-menu-button"), callback_data=f"a:mdel:{chat_id}"
+        )
     )
     builder.row(InlineKeyboardButton(text=_("admin-back-to-chats"), callback_data="a:chats"))
     return text, builder.as_markup()

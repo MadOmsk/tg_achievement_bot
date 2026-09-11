@@ -150,3 +150,44 @@ async def test_the_chat_toggle_survives_a_missing_chat(repo: Repo, i18n: I18nCon
     await chat_locale_toggle(callback, repo, i18n)  # type: ignore[arg-type]
 
     assert callback.answers == ["Чат не найден"]
+
+
+# ------------------------------------------------- the chat card's submenus
+
+
+async def test_the_card_opens_three_submenus_instead_of_crowded_rows(repo: Repo) -> None:
+    """2026-09-11, user request: the rows that used to hold two to four
+    buttons side by side are entries now, each opening its own screen."""
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
+
+    _text, markup = await _chat(repo, CHAT_ID, locale="ru")
+    datas = [button.callback_data for row in markup.inline_keyboard for button in row]
+
+    assert f"a:msum:{CHAT_ID}" in datas
+    assert f"a:mflood:{CHAT_ID}" in datas
+    assert f"a:mdel:{CHAT_ID}" in datas
+    # and none of what they now contain is still on the card itself
+    assert f"a:ctime:{CHAT_ID}" not in datas
+    assert f"a:cdellast:{CHAT_ID}" not in datas
+
+
+async def test_every_submenu_leads_back_to_the_card(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
+
+    for section in ("summary", "flood", "messages"):
+        text, markup = await _chat(repo, CHAT_ID, locale="ru", section=section)
+        datas = [button.callback_data for row in markup.inline_keyboard for button in row]
+        assert f"a:chat:{CHAT_ID}" in datas, section
+        # The card's own text stays put on every sub-screen, so the chat's
+        # state is still readable while its settings are being changed.
+        assert "Гейминг-чат" in text
+
+
+async def test_the_messages_submenu_holds_every_wipe_action(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
+
+    _text, markup = await _chat(repo, CHAT_ID, locale="ru", section="messages")
+    datas = [button.callback_data for row in markup.inline_keyboard for button in row]
+
+    for action in ("cdellast", "cwipe", "cswipe", "cswipeall"):
+        assert f"a:{action}:{CHAT_ID}" in datas
