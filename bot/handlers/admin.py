@@ -38,6 +38,8 @@ from bot.handlers.keyboards import (
     COMMON_OFFSETS_HOURS,
     format_offset,
     format_rarity,
+    locale_name,
+    next_locale,
     next_rarity_mode,
 )
 from bot.i18n import translator
@@ -841,6 +843,31 @@ async def chat_flood_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nConte
     new_limit = 0 if chat.flood_limit > 0 else FLOOD_LIMIT_DEFAULT
     await repo.update_chat_settings(chat_id, flood_limit=new_limit)
     await callback.answer()
+    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+
+
+@router.callback_query(F.data.startswith("a:cloc:"))
+async def chat_locale_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """Cycles the chat's own language (#48). One shared value per chat, not
+    per viewer: Telegram cannot show two members of the same group different
+    text, so somebody has to decide for everyone — the super-admin today,
+    a chat admin once #47 exists.
+
+    Only the chat's own broadcasts move; the super-admin's panel keeps
+    rendering in the super-admin's own language, which is why this redraws
+    with the injected context rather than a rebuilt one (unlike /panel's
+    personal toggle, where the two are the same person).
+    """
+    _ = translator("admin", i18n.locale)
+    assert callback.data is not None
+    chat_id = int(callback.data.split(":")[2])
+    chat = await _find_chat(repo, chat_id)
+    if chat is None:
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
+        return
+    await repo.update_chat_settings(chat_id, locale=next_locale(chat.locale))
+    # No toast of its own: _redraw already acknowledges the press, and the
+    # card it redraws shows the new language on its own line anyway.
     await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
 
 
@@ -1826,6 +1853,7 @@ async def _chat(repo: Repo, chat_id: int, *, locale: str) -> tuple[str, InlineKe
         offset=zone_label,
         min_score=chat.min_gamerscore,
         flood=flood_label,
+        locale_name=locale_name(chat.locale),
         names=(
             _("admin-subscribers-list", names=", ".join(names))
             if names
@@ -1872,6 +1900,15 @@ async def _chat(repo: Repo, chat_id: int, *, locale: str) -> tuple[str, InlineKe
             text=_("admin-chat-flood-window-button", window=chat.flood_window_minutes),
             callback_data=f"a:cflw:{chat_id}",
         ),
+    )
+    # The chat's own language (#48) — a group cannot be per-viewer, so this
+    # is one shared setting, currently the super-admin's to move (issue #47
+    # is about handing every chat setting to a chat admin, this one too).
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-chat-locale-button", name=locale_name(chat.locale)),
+            callback_data=f"a:cloc:{chat_id}",
+        )
     )
     builder.row(
         InlineKeyboardButton(

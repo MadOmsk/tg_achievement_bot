@@ -655,9 +655,10 @@ and the keyboard hard-gated the whole screen on Xbox specifically, a
 leftover from before Steam/PSN existed). The keyboard is one row per
 platform (Xbox → Steam → PSN) in a fixed position — `[Profile, Disconnect]`
 when connected, one wide "🎮 Подключить X" when not (#33) — plus timezone / My
-chats / sync / `show_profile_links` toggle, and the per-chat subscription cards
-(rarity mode, digest threshold), all shown regardless of which platforms are
-connected. Own profile links here are always visible
+chats / sync / `show_profile_links` toggle, a **language toggle** (#48 — this
+person's own `user_settings.locale`, one tap, applying to DMs only), and the
+per-chat subscription cards (rarity mode, digest threshold), all shown
+regardless of which platforms are connected. Own profile links here are always visible
 regardless of the privacy toggle — this screen is never rendered to anyone but its
 owner. The panel must never call a platform API except the one explicit
 manual-sync button.
@@ -682,7 +683,14 @@ A nickname in `/stats`/`/who` becomes a clickable profile link only when the per
 *the card is about* has `show_profile_links` on — there is no exception for viewing
 your own card: the rendered message is identical regardless of who asked for it.
 
-**The admin panel** (`/admin`, private, restricted to `ADMIN_TG_IDS`, also
+**Two admin roles, named distinctly** (2026-09-11, user request): the
+**суперадмин** is the global operator — the Telegram ids in `ADMIN_TG_IDS`,
+who owns `/admin` and every chat's settings today. The **админ чата** is the
+per-chat role issue #47 is about, which does not exist yet. Both used to be
+called "админ", which was ambiguous in exactly the sentences #47 needs
+precise.
+
+**The super-admin panel** (`/admin`, private, restricted to `ADMIN_TG_IDS`, also
 self-refreshing) provides: Steam/PSN/Anthropic shared-credential health; a "🔑
 Ключи платформ" screen to set / change / clear all three shared credentials
 (the Steam key, the PSN NPSSO, and — 2026-09-09 — the Anthropic key) from
@@ -690,7 +698,9 @@ inside the bot, no `.env` edit (#17); API usage
 snapshots; global display/cleanup limits; defaults for new users (including
 `default_show_profile_links`); the user list; the chat list and per-chat cards;
 exclusion/restore; per-chat settings (rarity threshold, summary time, timezone,
-mutes, minimum gamerscore, daily-summary switch, anti-flood limit/window); bot-message
+mutes, minimum gamerscore, daily-summary switch, anti-flood limit/window, and
+the chat's own **language** — #48, one shared value per chat since Telegram
+cannot render one group message differently per viewer); bot-message
 cleanup actions. (The
 standalone "🏆 Трофеи PSN (тест)" screen — a live, uncached trophy lookup by Online
 ID, predating any of this being wired into /stats — was removed once the Keys

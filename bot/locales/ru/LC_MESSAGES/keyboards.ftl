@@ -37,6 +37,7 @@ kb-profile-visible-yes = да
 kb-profile-visible-no = нет
 kb-profile = 👤 Профиль
 kb-xbox-disconnect = 🔕 Отключить XBOX
+kb-locale = Язык: { $name } ▸
 kb-refresh = Обновить
 kb-back = ‹ Назад
 kb-open = Открыть

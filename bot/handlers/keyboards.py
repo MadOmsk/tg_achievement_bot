@@ -20,7 +20,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.constants import RarityMode
-from bot.i18n import StaticI18nContext, gettext, static_i18n
+from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
 
 # Re-exported (not redefined) — services/profile_links.py is the one place
 # that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
@@ -130,6 +130,28 @@ def format_rarity(mode: str, i18n: I18nContext | None = None) -> str:
         # would only ever be right for one of possibly several chats.
         return _text(i18n, "kb-rarity-rare")
     return _text(i18n, "kb-rarity-all")
+
+
+#  Language names are endonyms, always written in their own language and
+#  never translated (#48) — the whole point of a language picker is that
+#  someone who cannot read the current interface can still find their own
+#  language in it. Same reasoning as platform brand names, so these live
+#  here rather than in a .ftl.
+LOCALE_NAMES = {"ru": "Русский", "en": "English"}
+
+
+def next_locale(current: str) -> str:
+    """Cycles through the shipped locales, same shape as next_rarity_mode
+    below. Two today, so this is a plain toggle; it stays correct as a cycle
+    if a third ever lands, at which point the button should probably become
+    a submenu instead."""
+    order = list(AVAILABLE_LOCALES)
+    index = order.index(current) if current in order else 0
+    return order[(index + 1) % len(order)]
+
+
+def locale_name(locale: str) -> str:
+    return LOCALE_NAMES.get(locale, locale)
 
 
 def next_rarity_mode(current: str) -> str:
@@ -277,6 +299,14 @@ def panel_keyboard(
                     ),
                 ),
                 callback_data="panel:linkstoggle",
+            )
+        ],
+        # Personal, and only ever applies to DMs — a group follows its own
+        # chat_settings.locale, which no individual member can move (#48).
+        [
+            InlineKeyboardButton(
+                text=i18n.get("kb-locale", name=locale_name(i18n.locale)),
+                callback_data="panel:locale",
             )
         ],
     ]

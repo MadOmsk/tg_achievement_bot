@@ -43,6 +43,7 @@ kb-profile-visible-yes = yes
 kb-profile-visible-no = no
 kb-profile = 👤 Profile
 kb-xbox-disconnect = 🔕 Disconnect XBOX
+kb-locale = Language: { $name } ▸
 kb-refresh = Refresh
 kb-back = ‹ Back
 kb-open = Open

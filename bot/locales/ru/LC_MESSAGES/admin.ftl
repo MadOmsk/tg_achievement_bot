@@ -241,6 +241,7 @@ admin-chat-card =
     Часовой пояс: { $offset }
     Мин. G:       { $min_score }
     Антиспам:     { $flood }
+    Язык:         { $locale_name }
 
     { $names }
 admin-chat-flood-value = { $limit } ач. / { $window } мин
@@ -252,6 +253,7 @@ admin-chat-summary-button = Итог дня: { $state }
 admin-chat-time-button = Время итога: { $time } ({ $offset }) ▸
 admin-chat-flood-toggle-button = Антиспам-фильтр: { $state }
 admin-chat-flood-button = Антиспам: { $limit } ач. ▸
+admin-chat-locale-button = Язык: { $name }
 admin-chat-flood-window-button = Окно антиспама: { $window } мин ▸
 admin-disable-chat = ⏸ Отключить чат
 admin-enable-chat = ▶️ Включить чат

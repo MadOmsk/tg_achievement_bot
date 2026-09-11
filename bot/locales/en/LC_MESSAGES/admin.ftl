@@ -241,6 +241,7 @@ admin-chat-card =
     Timezone:      { $offset }
     Min G:         { $min_score }
     Anti-flood:    { $flood }
+    Language:      { $locale_name }
 
     { $names }
 admin-chat-flood-value = { $limit } ach. / { $window } min
@@ -252,6 +253,7 @@ admin-chat-summary-button = Daily summary: { $state }
 admin-chat-time-button = Summary time: { $time } ({ $offset }) ▸
 admin-chat-flood-toggle-button = Anti-flood filter: { $state }
 admin-chat-flood-button = Anti-flood: { $limit } ach. ▸
+admin-chat-locale-button = Language: { $name }
 admin-chat-flood-window-button = Anti-flood window: { $window } min ▸
 admin-disable-chat = ⏸ Disable the chat
 admin-enable-chat = ▶️ Enable the chat

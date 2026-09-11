@@ -25,12 +25,14 @@ from bot.handlers.keyboards import (
     format_digest,
     format_offset,
     format_rarity,
+    locale_name,
+    next_locale,
     next_rarity_mode,
     panel_keyboard,
     safe_edit,
     timezone_keyboard,
 )
-from bot.i18n import StaticI18nContext, static_i18n
+from bot.i18n import StaticI18nContext, build_i18n_context, static_i18n
 from bot.poller.fetcher import Fetcher
 from bot.services.achievements import (
     platform_header_lines,
@@ -206,6 +208,27 @@ async def panel_toggle_profile_links(
         i18n.get("panel-links-hidden-toast" if currently_on else "panel-links-shown-toast")
     )
     text, markup = await render_panel(repo, callback.from_user.id, i18n)
+    await safe_edit(callback, text, markup)
+
+
+@router.callback_query(F.data == "panel:locale")
+async def panel_toggle_locale(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """Flips this person's own language (#48) — one tap, same weight as the
+    profile-links toggle above, and just as undoable.
+
+    Personal, and only ever applies to DMs: a group renders from its own
+    `chat_settings.locale`, which no individual member can move. The panel
+    is re-rendered with a context built from the *new* locale rather than
+    the injected one, which the middleware resolved from the old value
+    before this handler ran.
+    """
+    tg_id = callback.from_user.id
+    chosen = next_locale(await repo.user_locale(tg_id))
+    await repo.update_user_settings(tg_id, locale=chosen)
+
+    switched = await build_i18n_context(chosen)
+    await callback.answer(locale_name(chosen))
+    text, markup = await render_panel(repo, tg_id, switched)
     await safe_edit(callback, text, markup)
 
 
