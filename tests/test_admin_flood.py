@@ -15,6 +15,7 @@ from bot.handlers.admin import (
     _chat,
     chat_flood_toggle,
 )
+from bot.i18n import AVAILABLE_LOCALES, gettext
 
 CHAT_ID = -100999
 
@@ -94,3 +95,13 @@ async def test_toggle_turns_an_off_filter_back_on_at_the_default(repo: Repo) -> 
     text, _markup = await _chat(repo, CHAT_ID)
     assert f"{FLOOD_LIMIT_DEFAULT} ач." in text
     assert "выключен" not in text
+
+
+async def test_saved_confirmations_append_the_chat_card_exactly_once() -> None:
+    """Found while translating admin.ftl (#48): admin-flood-window-saved
+    carried { $text } twice, so changing the anti-flood window replied with
+    the whole chat card duplicated. Its two siblings always had it once."""
+    for locale in AVAILABLE_LOCALES:
+        for key in ("admin-threshold-saved", "admin-flood-saved", "admin-flood-window-saved"):
+            rendered = gettext("admin", key, locale=locale, value=5, text="THE-CARD")
+            assert rendered.count("THE-CARD") == 1, f"{locale}/{key}"

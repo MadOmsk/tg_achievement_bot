@@ -127,8 +127,6 @@ admin-flood-window-saved = Окно антиспам-фильтра: { $value } 
 
 { $text }
 
-{ $text }
-
 # User and message actions
 admin-user-excluded = Исключён
 admin-user-restored = Возвращён

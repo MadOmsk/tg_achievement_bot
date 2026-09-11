@@ -127,8 +127,6 @@ admin-flood-window-saved = Anti-flood window: { $value } min
 
 { $text }
 
-{ $text }
-
 # User and message actions
 admin-user-excluded = Excluded
 admin-user-restored = Restored
