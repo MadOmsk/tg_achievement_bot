@@ -76,7 +76,7 @@ log = logging.getLogger("backfill_descriptions")
 # Steam: the documented cap is 100k/day, which this could not approach.
 # PSN: no published limit at all — it is a reverse-engineered API behind one
 # shared credential, so this is politeness, not arithmetic.
-DELAYS = {Platform.MODERN: 2.0, Platform.X360: 2.0, Platform.STEAM: 0.5, Platform.PSN: 2.0}
+DELAYS = {Platform.XBOX_MODERN: 2.0, Platform.XBOX_360: 2.0, Platform.STEAM: 0.5, Platform.PSN: 2.0}
 
 
 @dataclass(slots=True)
@@ -163,7 +163,7 @@ async def run_xbox(
     """Any owner will do — the description is the game's, not the person's.
     A dead or unlucky token just means trying the next owner rather than
     giving up on the title."""
-    platform = Platform.X360 if work.platform == Platform.X360 else Platform.MODERN
+    platform = Platform.XBOX_360 if work.platform == Platform.XBOX_360 else Platform.XBOX_MODERN
     for tg_id, _external in work.owners:
         try:
             russian = await client.title_achievements(
@@ -252,7 +252,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--platform",
-        choices=["all", "xbox", "modern", "x360", "steam", "psn"],
+        choices=["all", "xbox", "xbox_modern", "xbox_360", "steam", "psn"],
         default="all",
     )
     parser.add_argument("--limit", type=int, default=0, help="stop after N titles (0 = no limit)")
@@ -260,10 +260,10 @@ async def main() -> None:
     args = parser.parse_args()
 
     wanted = {
-        "all": {Platform.MODERN, Platform.X360, Platform.STEAM, Platform.PSN},
-        "xbox": {Platform.MODERN, Platform.X360},
-        "modern": {Platform.MODERN},
-        "x360": {Platform.X360},
+        "all": {Platform.XBOX_MODERN, Platform.XBOX_360, Platform.STEAM, Platform.PSN},
+        "xbox": {Platform.XBOX_MODERN, Platform.XBOX_360},
+        "xbox_modern": {Platform.XBOX_MODERN},
+        "xbox_360": {Platform.XBOX_360},
         "steam": {Platform.STEAM},
         "psn": {Platform.PSN},
     }[args.platform]
@@ -344,7 +344,7 @@ async def main() -> None:
             len(item.achievement_ids),
         )
         try:
-            if item.platform in (Platform.MODERN, Platform.X360):
+            if item.platform in (Platform.XBOX_MODERN, Platform.XBOX_360):
                 await run_xbox(repo, anthropic_auth, xbox_client, item, totals)
             elif item.platform == Platform.STEAM:
                 if steam_key is None:

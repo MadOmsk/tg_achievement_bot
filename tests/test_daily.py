@@ -49,7 +49,7 @@ def achievement(
         unlocked_at=unlocked_at.isoformat(timespec="seconds"),
         gamerscore=score,
         rarity_percent=rarity,
-        platform="modern",
+        platform="xbox_modern",
     )
 
 
@@ -492,7 +492,7 @@ async def test_monthly_summary_includes_a_games_block(repo: Repo) -> None:
     await repo.insert_new_achievements(
         XUID_A, [achievement("a1", utcnow()), achievement("a2", utcnow())], is_backfill=False
     )
-    await repo.upsert_title("1", "Halo Infinite", "modern")
+    await repo.upsert_title("1", "Halo Infinite", "xbox_modern")
 
     text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
 
@@ -511,7 +511,7 @@ async def test_games_block_shows_platform_icon_and_gamerscore(repo: Repo) -> Non
     await repo.insert_new_achievements(
         XUID_A, [achievement("a1", utcnow(), score=50)], is_backfill=False
     )
-    await repo.upsert_title("1", "Halo Infinite", "modern")
+    await repo.upsert_title("1", "Halo Infinite", "xbox_modern")
 
     text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
 

@@ -280,7 +280,12 @@ every column.
   of #17 the Steam API key too) are encrypted in `app_settings`. Token status
   distinguishes active, invalid, and intentionally revoked.
 - **Achievements and publications.** `seen_achievements` is the dedup table, primary
-  key `(tg_id, platform, title_id, achievement_id)`; `platform` is `modern`, `x360`,
+  key `(tg_id, platform, title_id, achievement_id)`; `platform` is `xbox_modern`
+  (Xbox One, Series and the PC Microsoft Store — one achievement service, one
+  contract; renamed from plain `modern` in migration 034, 2026-09-11, because
+  the bare word had an obvious subject only while Xbox was the only platform
+  here), `xbox_360` (renamed from `x360` alongside it, so both Xbox values look
+  alike),
   `steam`, or `psn`. `xuid` is kept as a generic external-account-id column used by
   publication paths (holding a SteamID64 or PSN account_id on non-Xbox rows).
   `is_backfill` marks history that must never publish. `is_secret` marks

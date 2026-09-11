@@ -25,7 +25,7 @@ CHAT_ID = -100700
 TG_ID = 7007
 
 
-def _achievement(achievement_id: str = "a1", platform: str = "modern") -> AchievementRow:
+def _achievement(achievement_id: str = "a1", platform: str = "xbox_modern") -> AchievementRow:
     return AchievementRow(
         title_id="t1",
         achievement_id=achievement_id,

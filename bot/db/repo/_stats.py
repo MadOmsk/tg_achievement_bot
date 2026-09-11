@@ -122,7 +122,7 @@ class _StatsRepo:
         from the parenthetical while still counting toward the total —
         the numbers next to each other didn't add up)."""
         query = (
-            "SELECT SUM(CASE WHEN platform IN ('modern', 'x360') THEN 1 ELSE 0 END),"
+            "SELECT SUM(CASE WHEN platform IN ('xbox_modern', 'xbox_360') THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN platform = 'steam' THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN platform = 'psn' THEN 1 ELSE 0 END) "
             "FROM seen_achievements WHERE tg_id = ?"
@@ -162,7 +162,7 @@ class _StatsRepo:
         — accepted as the one remaining soft spot, not fixed by this."""
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM seen_achievements "
-            "WHERE tg_id = ? AND platform IN ('modern', 'x360')",
+            "WHERE tg_id = ? AND platform IN ('xbox_modern', 'xbox_360')",
             (tg_id,),
         )
         row = await cursor.fetchone()

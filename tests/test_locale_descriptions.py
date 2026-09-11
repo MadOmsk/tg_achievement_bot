@@ -13,7 +13,7 @@ from __future__ import annotations
 from bot.db.repo import AchievementRow, Repo
 from bot.services.descriptions_view import localize_descriptions
 
-PLATFORM = "modern"
+PLATFORM = "xbox_modern"
 TITLE_ID = "t1"
 
 

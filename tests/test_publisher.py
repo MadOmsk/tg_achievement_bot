@@ -20,7 +20,7 @@ def achievement(
         unlocked_at="2026-09-02T10:00:00+00:00",
         gamerscore=10,
         rarity_percent=None,
-        platform="x360",
+        platform="xbox_360",
         is_secret=is_secret,
     )
 

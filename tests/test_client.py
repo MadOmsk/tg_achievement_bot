@@ -91,7 +91,7 @@ def _client(session: StubSession) -> XboxClient:
 
 async def test_modern_title_uses_contract_4_only() -> None:
     session = StubSession({"4": MODERN_PAYLOAD})
-    parsed = await _client(session).title_achievements(1, "111", "modern")
+    parsed = await _client(session).title_achievements(1, "111", "xbox_modern")
 
     assert session.contracts == ["4"]
     assert [item.achievement_id for item in parsed] == ["2"]
@@ -100,25 +100,25 @@ async def test_modern_title_uses_contract_4_only() -> None:
 
 async def test_back_compat_title_falls_back_to_contract_1() -> None:
     """Presence reports the console, not the game. A 360 title played on a
-    Series X arrives as "modern" and contract 4 answers with an empty list —
+    Series X arrives as "xbox_modern" and contract 4 answers with an empty list —
     without the retry the whole session would publish nothing."""
     session = StubSession({"4": {"achievements": []}, "1": X360_PAYLOAD})
 
-    parsed = await _client(session).title_achievements(1, "222", "modern")
+    parsed = await _client(session).title_achievements(1, "222", "xbox_modern")
 
     assert session.contracts == ["4", "1"]
     assert len(parsed) == 1
-    assert parsed[0].platform == "x360"
+    assert parsed[0].platform == "xbox_360"
     assert parsed[0].rarity_percent is None
     assert parsed[0].gamerscore == 25
 
 
 async def test_known_x360_console_skips_contract_4() -> None:
     session = StubSession({"1": X360_PAYLOAD})
-    parsed = await _client(session).title_achievements(1, "222", "x360")
+    parsed = await _client(session).title_achievements(1, "222", "xbox_360")
 
     assert session.contracts == ["1"]
-    assert parsed[0].platform == "x360"
+    assert parsed[0].platform == "xbox_360"
 
 
 class _HangingTitlehub:

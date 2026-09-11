@@ -336,7 +336,7 @@ async def test_chat_recent_games_orders_by_recency_and_dedupes(repo: Repo) -> No
         return TitleHistoryRow(
             title_id=title_id,
             name=name,
-            platform="modern",
+            platform="xbox_modern",
             current_gamerscore=0,
             max_gamerscore=0,
             achievements_unlocked=0,

@@ -170,8 +170,8 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     unlocked_at     TEXT,               -- UTC
     gamerscore      INTEGER,
     rarity_percent  REAL,               -- NULL on Xbox 360 and Steam
-    platform        TEXT NOT NULL DEFAULT 'modern'
-                    CHECK (platform IN ('modern', 'x360', 'steam', 'psn')),
+    platform        TEXT NOT NULL DEFAULT 'xbox_modern'
+                    CHECK (platform IN ('xbox_modern', 'xbox_360', 'steam', 'psn')),
     is_backfill     INTEGER NOT NULL DEFAULT 0,  -- arrived via backfill, never published
     is_secret       INTEGER NOT NULL DEFAULT 0,  -- Xbox's own isSecret; name/description are
                                                   -- real either way, we're the ones who spoiler it
@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS title_history (
 CREATE TABLE IF NOT EXISTS titles (
     title_id   TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
-    platform   TEXT,               -- x360 / modern
+    platform   TEXT,               -- xbox_360 / xbox_modern
     -- The game's own box art (titlehub's display_image), not an achievement
     -- icon — used as a stand-in icon for Xbox 360 achievement messages
     -- (fetcher.py's ensure_title_icon): contract 1 only ever gives a bare

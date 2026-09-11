@@ -22,7 +22,7 @@ def row(
         game=game,
         gamerscore=gamerscore,
         rarity_percent=rarity_percent,
-        platform="modern",
+        platform="xbox_modern",
         unlocked_at="2026-09-02T10:00:00+00:00",
         is_secret=is_secret,
     )
@@ -76,7 +76,7 @@ def test_recent_row_shows_the_platform_icon_before_the_game_name() -> None:
             unlocked_at="2026-09-02T10:00:00+00:00",
         )
     )
-    assert "🟢 Left 4 Dead 2" in line  # default platform="modern" from row()
+    assert "🟢 Left 4 Dead 2" in line  # default platform="xbox_modern" from row()
     assert "⚫ Left 4 Dead 2" in steam_line
 
 

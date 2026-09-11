@@ -36,7 +36,7 @@ def test_trophy_tier_badge_covers_all_four_tiers_and_nothing_else() -> None:
 
 def achievement(
     rarity: float | None = 50.0,
-    platform: str = "modern",
+    platform: str = "xbox_modern",
     gamerscore: int = 20,
     is_secret: bool = False,
     trophy_type: str | None = None,
@@ -89,7 +89,7 @@ def test_x360_passes_rare_mode_regardless_of_rarity() -> None:
     rarity data at all is exempt from the rarity check, not hidden by it
     (SPEC 5.5, 1.4 — one rarity_mode for every platform since M-Steam-2e,
     no more separate show_x360 switch)."""
-    item = achievement(rarity=None, platform="x360")
+    item = achievement(rarity=None, platform="xbox_360")
     assert passes_filters(item, chat(rarity_mode="rare"), 10.0) is True
 
 
@@ -97,7 +97,7 @@ def test_hidden_mode_hides_every_platform_including_x360() -> None:
     """One switch for every platform (SPEC 9, M-Steam-2e) — 'hidden' now
     silences Xbox 360 too, not just the modern feed."""
     assert passes_filters(achievement(rarity=30.0), chat(rarity_mode="hidden"), 10.0) is False
-    item = achievement(rarity=None, platform="x360")
+    item = achievement(rarity=None, platform="xbox_360")
     assert passes_filters(item, chat(rarity_mode="hidden"), 10.0) is False
 
 
@@ -138,7 +138,9 @@ def test_single_message_for_x360_has_no_rarity_percent_but_still_a_badge() -> No
     but the badge itself still shows — unproven defaults to the cup, not to
     no badge at all (found live: a whole game with no badge anywhere read
     as broken, not as "no data", 2026-09-05)."""
-    text = format_single("Igor", achievement(rarity=None, platform="x360"), "Halo 3", locale="ru")
+    text = format_single(
+        "Igor", achievement(rarity=None, platform="xbox_360"), "Halo 3", locale="ru"
+    )
     assert "Halo 3 (<i>🟢 XBOX 360</i>)" in text
     assert "🏆 «Ashes to Ashes» · 20 G" in text
     assert "редкость" not in text
@@ -204,7 +206,7 @@ def test_single_message_gold_tier_replaces_rarity_badge_too() -> None:
 
 def test_single_message_has_no_tier_badge_on_other_platforms() -> None:
     text = format_single(
-        "Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite", locale="ru"
+        "Igor", achievement(rarity=2.4, platform="xbox_modern"), "Halo Infinite", locale="ru"
     )
     assert "🥇" not in text  # would only appear if a tier badge leaked in
     assert "💎" in text
@@ -225,7 +227,7 @@ def test_single_message_calls_it_a_trophy_on_psn() -> None:
 
 def test_single_message_still_calls_it_an_achievement_elsewhere() -> None:
     text = format_single(
-        "Igor", achievement(rarity=2.4, platform="modern"), "Halo Infinite", locale="ru"
+        "Igor", achievement(rarity=2.4, platform="xbox_modern"), "Halo Infinite", locale="ru"
     )
     assert text.startswith("<b>Igor</b> получает достижение")
 
@@ -259,9 +261,9 @@ def test_digest_groups_achievements_by_game() -> None:
     """2026-09-05 follow-up: one block per game, not one flat list —
     publish() only ever hands over one game's worth today, but the
     renderer itself must not assume that stays true forever."""
-    halo = achievement(rarity=2.4, platform="modern")
+    halo = achievement(rarity=2.4, platform="xbox_modern")
     halo.title_id = "1"
-    forza = achievement(rarity=50.0, platform="modern")
+    forza = achievement(rarity=50.0, platform="xbox_modern")
     forza.title_id = "2"
     forza.title_name = "Forza Horizon 5"
     forza.name = "Speed Demon"

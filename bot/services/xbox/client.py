@@ -124,7 +124,7 @@ class XboxClient:
             state=item.state or PresenceState.OFFLINE,
             title_id=title_id,
             title_name=title_name,
-            platform=Platform.X360 if device in X360_DEVICES else Platform.MODERN,
+            platform=Platform.XBOX_360 if device in X360_DEVICES else Platform.XBOX_MODERN,
             last_seen_at=getattr(last_seen, "timestamp", None),
         )
 
@@ -137,7 +137,7 @@ class XboxClient:
 
         `platform` is a hint from presence, and presence reports the *console*,
         not the game: an Xbox 360 title played through back-compat on a Series X
-        arrives here as "modern". Contract 4 answers such a title with an empty
+        arrives here as "xbox_modern". Contract 4 answers such a title with an empty
         list, while a modern title always returns its full set (including
         NotStarted), so an empty answer means "wrong contract", not "no
         achievements" — and we ask again as Xbox 360. Without this a whole
@@ -151,21 +151,21 @@ class XboxClient:
         own default strings when no match exists for the requested locale.
         """
         params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
-        if platform == Platform.X360:
+        if platform == Platform.XBOX_360:
             return parse_achievements(
                 await self._get_achievements(tg_id, "1", params, language=language),
-                Platform.X360,
+                Platform.XBOX_360,
                 title_id,
             )
 
         payload = await self._get_achievements(tg_id, "4", params, language=language)
         if payload.get("achievements"):
-            return parse_achievements(payload, Platform.MODERN, title_id)
+            return parse_achievements(payload, Platform.XBOX_MODERN, title_id)
 
         log.info("title %s looks like Xbox 360, retrying on contract 1", title_id)
         return parse_achievements(
             await self._get_achievements(tg_id, "1", params, language=language),
-            Platform.X360,
+            Platform.XBOX_360,
             title_id,
         )
 
@@ -179,7 +179,7 @@ class XboxClient:
         params = {"maxItems": str(PAGE_SIZE)}
         for _ in range(100):  # a hard stop; nobody has 100k achievements
             payload = await self._get_achievements(tg_id, "2", params)
-            collected.extend(parse_achievements(payload, Platform.MODERN))
+            collected.extend(parse_achievements(payload, Platform.XBOX_MODERN))
             token = continuation_token(payload)
             if not token:
                 break
@@ -336,7 +336,9 @@ def _as_entry(title: object) -> TitleHistoryEntry:
     return TitleHistoryEntry(
         title_id=str(title.title_id),
         name=title.name or "",
-        platform=Platform.X360 if any(d in X360_DEVICES for d in devices) else Platform.MODERN,
+        platform=Platform.XBOX_360
+        if any(d in X360_DEVICES for d in devices)
+        else Platform.XBOX_MODERN,
         current_gamerscore=getattr(achievement, "current_gamerscore", None),
         max_gamerscore=getattr(achievement, "total_gamerscore", None),
         achievements_unlocked=getattr(achievement, "current_achievements", None),

@@ -48,7 +48,7 @@ def _row_name(row: ChatPresenceRow) -> str:
     table auto-refreshes every few minutes, and a live "@mention" would ping
     that person's Telegram client on every single refresh.
     """
-    if row.platform == "modern" and row.gamertag:
+    if row.platform == "xbox_modern" and row.gamertag:
         return row.gamertag
     if row.platform == "steam" and row.steam_display_name:
         return row.steam_display_name

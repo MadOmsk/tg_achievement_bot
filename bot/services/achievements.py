@@ -55,20 +55,20 @@ def trophy_tier_badge(trophy_type: str | None) -> str:
 
 
 # The one canonical platform palette (2026-09-05 refactor — chat.py and
-# online_view.py used to keep their own, smaller copies with no "x360" key
+# online_view.py used to keep their own, smaller copies with no "xbox_360" key
 # at all, so an Xbox 360 game silently got no icon in /stats' games list and
 # no colour in presence rows; both now import this one instead). Public
 # names, not underscore-prefixed: this module is the home for them, other
 # services are allowed to depend on it (only handlers->services is one-way).
 PLATFORM_ICON = {
-    Platform.MODERN: "🟢",
-    Platform.X360: "🟢",
+    Platform.XBOX_MODERN: "🟢",
+    Platform.XBOX_360: "🟢",
     Platform.STEAM: "⚫",
     Platform.PSN: "🔵",
 }
 PLATFORM_LABEL_KEYS = {
-    Platform.MODERN: "achievement-platform-xbox",
-    Platform.X360: "achievement-platform-xbox360",
+    Platform.XBOX_MODERN: "achievement-platform-xbox",
+    Platform.XBOX_360: "achievement-platform-xbox360",
     Platform.STEAM: "achievement-platform-steam",
     Platform.PSN: "achievement-platform-psn",
 }
@@ -118,7 +118,7 @@ def platform_breakdown_suffix(
     zero-achievement row)."""
     parts = []
     if xbox_count:
-        parts.append(f"{PLATFORM_ICON[Platform.MODERN]} {xbox_count}")
+        parts.append(f"{PLATFORM_ICON[Platform.XBOX_MODERN]} {xbox_count}")
     if steam_count:
         parts.append(f"{PLATFORM_ICON[Platform.STEAM]} {steam_count}")
     if psn_count:
@@ -185,7 +185,7 @@ def platform_tag(platform: str, locale: str) -> str:
 #  (contract 1 never carries a rarity block); Steam is NOT here — it has a
 #  real rarity_percent (GetGlobalAchievementPercentagesForApp, M-Steam-2b),
 #  so it goes through the ordinary rarity check like modern Xbox.
-_NO_RARITY_DATA_PLATFORMS = {Platform.X360}
+_NO_RARITY_DATA_PLATFORMS = {Platform.XBOX_360}
 
 
 def passes_filters(
@@ -484,7 +484,8 @@ async def platform_header_lines(
             parts.append(f"{COMPLETED_BADGE} {xbox_completed}")
         parts.append(f"gamerscore {thousands(gamerscore or 0)}")
         lines.append(
-            f"{PLATFORM_ICON[Platform.MODERN]} XBOX: {gamertag_html}  ·  " + "  ·  ".join(parts)
+            f"{PLATFORM_ICON[Platform.XBOX_MODERN]} XBOX: {gamertag_html}  ·  "
+            + "  ·  ".join(parts)
         )
 
     for link in platform_links:

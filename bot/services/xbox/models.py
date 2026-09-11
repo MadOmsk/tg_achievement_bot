@@ -116,7 +116,7 @@ class ModernAchievement(BaseModel):
             ),
             gamerscore=self._gamerscore(),
             rarity_percent=self.rarity.current_percentage if self.rarity else None,
-            platform=Platform.MODERN,
+            platform=Platform.XBOX_MODERN,
             is_secret=self.is_secret,
         )
 
@@ -169,7 +169,7 @@ class X360Achievement(BaseModel):
             unlocked_at=parse_timestamp(self.time_unlocked),
             gamerscore=self.gamerscore,
             rarity_percent=None,
-            platform=Platform.X360,
+            platform=Platform.XBOX_360,
         )
 
 
@@ -194,7 +194,7 @@ def parse_achievements(
     Anything that fails to parse is skipped rather than raising: one malformed
     record must not cost a user his whole session.
     """
-    model = X360Achievement if platform == Platform.X360 else ModernAchievement
+    model = X360Achievement if platform == Platform.XBOX_360 else ModernAchievement
     result: list[ParsedAchievement] = []
     for item in payload.get("achievements") or []:
         try:

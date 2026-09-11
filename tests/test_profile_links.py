@@ -46,7 +46,7 @@ def test_platform_profile_url_psn_without_display_name_is_none() -> None:
 
 
 def test_platform_profile_url_unknown_platform_is_none() -> None:
-    assert platform_profile_url("modern", external_id="xuid-1", display_name="Igor") is None
+    assert platform_profile_url("xbox_modern", external_id="xuid-1", display_name="Igor") is None
 
 
 def test_link_html_wraps_text_when_a_url_is_given() -> None:

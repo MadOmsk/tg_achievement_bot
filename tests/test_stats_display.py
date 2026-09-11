@@ -55,7 +55,7 @@ def _achievement(title_id: str) -> AchievementRow:
         unlocked_at=utcnow().isoformat(timespec="seconds"),
         gamerscore=10,
         rarity_percent=50.0,
-        platform="modern",
+        platform="xbox_modern",
     )
 
 
@@ -75,7 +75,7 @@ async def test_header_gamerscore_is_the_profile_value_not_a_sum(repo: Repo) -> N
                 unlocked_at="2026-01-01T00:00:00+00:00",
                 gamerscore=10,
                 rarity_percent=50.0,
-                platform="modern",
+                platform="xbox_modern",
             )
         ],
         is_backfill=False,
@@ -213,10 +213,10 @@ async def test_steam_line_shows_its_own_lifetime_achievement_count(repo: Repo) -
 
 def test_games_list_colours_x360_the_same_as_modern_xbox() -> None:
     """Found live (2026-09-05 platform-icon refactor): chat.py's own
-    _PLATFORM_ICON copy never had an "x360" key at all, so an Xbox 360
+    _PLATFORM_ICON copy never had an "xbox_360" key at all, so an Xbox 360
     game silently got no icon here — unlike services/achievements.py's own
     copy, used everywhere else, which always has. Both now share one dict."""
-    line = _games_list([TopGame(name="Fallout 3", gamerscore=100, unlocked=5, platform="x360")])
+    line = _games_list([TopGame(name="Fallout 3", gamerscore=100, unlocked=5, platform="xbox_360")])
     assert "🟢 Fallout 3" in line
 
 
@@ -553,7 +553,7 @@ async def test_game_row_tail_omits_a_zero_score_too(repo: Repo) -> None:
                 unlocked_at=utcnow().isoformat(timespec="seconds"),
                 gamerscore=0,
                 rarity_percent=None,
-                platform="modern",
+                platform="xbox_modern",
             )
         ],
         is_backfill=False,
@@ -700,7 +700,7 @@ async def test_xbox_achievement_count_counts_modern_and_x360(repo: Repo) -> None
                 unlocked_at=utcnow().isoformat(timespec="seconds"),
                 gamerscore=10,
                 rarity_percent=None,
-                platform="x360",
+                platform="xbox_360",
             )
         ],
         is_backfill=False,

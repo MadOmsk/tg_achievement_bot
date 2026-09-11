@@ -19,7 +19,7 @@ TG_ID = 1
 XUID = "xuid-flood"
 
 
-def achievement(achievement_id: str, platform: str = "modern") -> AchievementRow:
+def achievement(achievement_id: str, platform: str = "xbox_modern") -> AchievementRow:
     return AchievementRow(
         title_id="title-1",
         achievement_id=achievement_id,
@@ -129,7 +129,7 @@ async def test_flood_flush_sends_pending_items_as_one_digest_once_the_window_exp
     """The buffered backlog can mix platforms — the whole point of scoping
     the filter to the person, not one platform at a time (feature request)."""
     await _setup_chat(repo, flood_limit=1, flood_window_minutes=60)
-    xbox_item = achievement("x1", platform="modern")
+    xbox_item = achievement("x1", platform="xbox_modern")
     steam_item = achievement("s1", platform="steam")
     await repo.insert_new_achievements(XUID, [xbox_item], is_backfill=False)
     await repo.link_platform_account(TG_ID, "steam", "steamid-1", "SteamGamer")
@@ -197,7 +197,7 @@ async def test_flood_flush_all_force_exits_every_window_regardless_of_expiry(
 
 
 def test_format_digest_says_achievements_not_trophies_for_a_mixed_platform_batch() -> None:
-    items = [achievement("m1", platform="modern"), achievement("m2", platform="psn")]
+    items = [achievement("m1", platform="xbox_modern"), achievement("m2", platform="psn")]
     text = format_digest("Игрок", None, items, locale="ru")
     assert "трофе" not in text.lower()
 

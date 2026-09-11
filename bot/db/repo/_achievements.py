@@ -30,7 +30,8 @@ class _AchievementsRepo:
         an empty achievement list. The caller re-runs backfill right after.
         """
         cursor = await self._conn.execute(
-            "DELETE FROM seen_achievements WHERE tg_id = ? AND platform IN ('modern', 'x360')",
+            "DELETE FROM seen_achievements WHERE tg_id = ? "
+            "AND platform IN ('xbox_modern', 'xbox_360')",
             (tg_id,),
         )
         deleted = cursor.rowcount

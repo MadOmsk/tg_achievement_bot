@@ -14,7 +14,7 @@ def presence(
     state: str | None,
     title_id: str | None = None,
     title_name: str | None = None,
-    platform: str = "modern",
+    platform: str = "xbox_modern",
     **extra: str | None,
 ):
     return ChatPresenceRow(
@@ -53,8 +53,8 @@ def test_presence_icon_is_platform_colour_while_online() -> None:
     """SPEC 9, M-Steam-2e: online (playing or not) — the circle marks which
     platform, not whether they're playing (status is already in the text
     next to it). Playing and merely-online both get the platform colour."""
-    assert presence_icon(presence("Online", "123", "Halo Infinite", platform="modern")) == "🟢"
-    assert presence_icon(presence("Online", None, platform="modern")) == "🟢"
+    assert presence_icon(presence("Online", "123", "Halo Infinite", platform="xbox_modern")) == "🟢"
+    assert presence_icon(presence("Online", None, platform="xbox_modern")) == "🟢"
     assert presence_icon(presence("Online", "550", "L4D2", platform="steam")) == "⚫"
     assert presence_icon(presence("Online", None, platform="steam")) == "⚫"
 
@@ -63,9 +63,9 @@ def test_presence_icon_is_grey_when_offline_regardless_of_platform() -> None:
     """Found live: a pure platform colour made offline rows indistinguishable
     from online ones — grey is the one thing a status colour is actually
     good for, and it should mean the same thing on every platform."""
-    assert presence_icon(presence("Offline", platform="modern")) == "⚪"
+    assert presence_icon(presence("Offline", platform="xbox_modern")) == "⚪"
     assert presence_icon(presence("Offline", platform="steam")) == "⚪"
-    assert presence_icon(presence(None, platform="modern")) == "⚪"
+    assert presence_icon(presence(None, platform="xbox_modern")) == "⚪"
     assert presence_icon(presence(None, platform="steam")) == "⚪"
 
 
@@ -79,7 +79,7 @@ def test_render_online_table_shows_the_updated_stamp_in_italics() -> None:
 
 
 def test_row_name_uses_the_gamertag_when_platform_is_modern() -> None:
-    row = presence("Online", "123", "Halo Infinite", platform="modern")
+    row = presence("Online", "123", "Halo Infinite", platform="xbox_modern")
     assert _row_name(row) == "Igor"
 
 

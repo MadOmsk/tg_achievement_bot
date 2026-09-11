@@ -22,7 +22,7 @@ def _parsed(**overrides: object) -> ParsedAchievement:
         "unlocked_at": datetime(2026, 9, 5, 10, 0, 0, tzinfo=UTC),
         "gamerscore": 50,
         "rarity_percent": 12.5,
-        "platform": "modern",
+        "platform": "xbox_modern",
         "is_secret": False,
     }
     defaults.update(overrides)
@@ -39,7 +39,7 @@ def test_converts_every_field_across() -> None:
     assert row.unlocked_at == "2026-09-05T10:00:00+00:00"
     assert row.gamerscore == 50
     assert row.rarity_percent == 12.5
-    assert row.platform == "modern"
+    assert row.platform == "xbox_modern"
     assert row.title_name == "Some Game"
     assert row.is_secret is False
 

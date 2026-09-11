@@ -47,7 +47,7 @@ X360 = {
 
 
 def test_modern_parses_rarity_and_icon() -> None:
-    parsed = parse_achievements(MODERN, "modern")
+    parsed = parse_achievements(MODERN, "xbox_modern")
     assert len(parsed) == 1  # InProgress is dropped
     item = parsed[0]
     assert item.rarity_percent == 65.41
@@ -55,7 +55,7 @@ def test_modern_parses_rarity_and_icon() -> None:
     assert item.icon_url == "https://example/icon.png"
     assert item.title_id == "1829869520"
     assert item.title_name == "Gears of War: Reloaded"
-    assert item.platform == "modern"
+    assert item.platform == "xbox_modern"
     assert item.is_secret is True
 
 
@@ -74,19 +74,19 @@ def test_missing_is_secret_defaults_to_false() -> None:
             }
         ]
     }
-    assert parse_achievements(payload, "modern")[0].is_secret is False
+    assert parse_achievements(payload, "xbox_modern")[0].is_secret is False
 
 
 def test_x360_is_never_secret() -> None:
     """Contract 1 has no isSecret concept at all — X360Achievement.to_parsed()
     always defaults it to False."""
-    assert parse_achievements(X360, "x360", "1297287339")[0].is_secret is False
+    assert parse_achievements(X360, "xbox_360", "1297287339")[0].is_secret is False
 
 
 def test_in_progress_never_becomes_a_row() -> None:
     """An InProgress row in seen_achievements would hide the achievement
     forever, because the real unlock would look like a duplicate (SPEC 5.3)."""
-    assert [item.achievement_id for item in parse_achievements(MODERN, "modern")] == ["4"]
+    assert [item.achievement_id for item in parse_achievements(MODERN, "xbox_modern")] == ["4"]
 
 
 def test_missing_rarity_block_does_not_crash() -> None:
@@ -102,21 +102,21 @@ def test_missing_rarity_block_does_not_crash() -> None:
             }
         ]
     }
-    parsed = parse_achievements(payload, "modern")
+    parsed = parse_achievements(payload, "xbox_modern")
     assert len(parsed) == 1
     assert parsed[0].rarity_percent is None
 
 
 def test_broken_record_is_skipped_not_fatal() -> None:
     payload = {"achievements": [{"nonsense": True}, MODERN["achievements"][0]]}
-    assert len(parse_achievements(payload, "modern")) == 1
+    assert len(parse_achievements(payload, "xbox_modern")) == 1
 
 
 def test_x360_has_no_rarity_and_only_unlocked() -> None:
-    parsed = parse_achievements(X360, "x360", "1297287339")
+    parsed = parse_achievements(X360, "xbox_360", "1297287339")
     assert len(parsed) == 1
     assert parsed[0].rarity_percent is None
-    assert parsed[0].platform == "x360"
+    assert parsed[0].platform == "xbox_360"
     assert parsed[0].gamerscore == 15
 
 

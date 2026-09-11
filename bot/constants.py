@@ -4,8 +4,19 @@ from enum import IntEnum, StrEnum
 
 
 class Platform(StrEnum):
-    MODERN = "modern"
-    X360 = "x360"
+    """Persisted values — `seen_achievements.platform` and friends store
+    these strings directly, so renaming one is a migration (034).
+
+    `XBOX_MODERN` covers Xbox One, Series and the PC Microsoft Store: one
+    achievement service, one contract (4), no distinction the bot could draw
+    even if it wanted to. It was called plain `modern` while Xbox was the
+    only platform here and the word had an obvious subject; next to `steam`
+    and `psn` it stopped having one (2026-09-11, user request), and both
+    Xbox values now say Xbox.
+    """
+
+    XBOX_MODERN = "xbox_modern"
+    XBOX_360 = "xbox_360"
     STEAM = "steam"
     PSN = "psn"
 

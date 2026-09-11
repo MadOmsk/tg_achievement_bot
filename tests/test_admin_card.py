@@ -72,7 +72,7 @@ async def test_header_tgid_is_never_at_prefixed(repo: Repo) -> None:
 async def test_xbox_block_shows_id_count_today_and_gamerscore(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.link_xbox_account(1, XUID, "GamerTag", 500)
-    await repo.insert_new_achievements(XUID, [_achievement("1", "modern")], is_backfill=False)
+    await repo.insert_new_achievements(XUID, [_achievement("1", "xbox_modern")], is_backfill=False)
 
     text, _markup = await _card(repo, 1, locale="ru")
 
@@ -207,7 +207,7 @@ async def test_reset_xbox_data_clears_achievements_and_title_history(repo: Repo)
     await repo.link_xbox_account(1, XUID, "GamerTag", 0)
     await repo.insert_new_achievements(
         XUID,
-        [_achievement("1", "modern"), _achievement("2", "x360")],
+        [_achievement("1", "xbox_modern"), _achievement("2", "xbox_360")],
         is_backfill=False,
     )
     await repo._conn.execute(

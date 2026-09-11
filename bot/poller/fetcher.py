@@ -115,7 +115,7 @@ class Fetcher:
         """Shared by poll_title() and catch_up() — both publish live x360
         unlocks and must agree on the icon, not just the one that happens
         to run more often."""
-        if platform != Platform.X360:
+        if platform != Platform.XBOX_360:
             return
         icon_url = await self.ensure_title_icon(tg_id, title_id)
         if icon_url:
@@ -194,11 +194,11 @@ class Fetcher:
             # session in such a game would look like 33 fresh unlocks.
             history = await self._client.title_history(tg_id)
             for entry in history:
-                if entry.platform != Platform.X360:
+                if entry.platform != Platform.XBOX_360:
                     continue
                 try:
                     parsed = await self._client.title_achievements(
-                        tg_id, entry.title_id, Platform.X360
+                        tg_id, entry.title_id, Platform.XBOX_360
                     )
                 except XboxApiError as exc:
                     log.info("x360 backfill of %s skipped: %s", entry.title_id, exc)

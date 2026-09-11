@@ -38,7 +38,7 @@ async def test_chat_member_presence_orders_playing_first(repo: Repo) -> None:
     rows = await repo.chat_member_presence(CHAT_ID)
 
     assert [row.gamertag for row in rows] == ["Playing", "Offline"]
-    assert {row.platform for row in rows} == {"modern"}
+    assert {row.platform for row in rows} == {"xbox_modern"}
 
 
 async def test_chat_member_presence_reports_platform_for_steam_only_and_mixed(
@@ -117,7 +117,7 @@ async def test_chat_member_presence_untracked_psn_never_outranks_real_activity(
     rows = await repo.chat_member_presence(CHAT_ID)
 
     assert len(rows) == 1
-    assert rows[0].platform == "modern"
+    assert rows[0].platform == "xbox_modern"
 
 
 async def test_chat_member_presence_psn_wins_when_actually_playing(repo: Repo) -> None:

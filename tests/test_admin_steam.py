@@ -61,7 +61,7 @@ async def test_achievement_counts_by_tg_id_sums_every_platform(repo: Repo) -> No
                 unlocked_at=now.isoformat(timespec="seconds"),
                 gamerscore=10,
                 rarity_percent=50.0,
-                platform="modern",
+                platform="xbox_modern",
             )
         ],
         is_backfill=False,

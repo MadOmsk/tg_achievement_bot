@@ -102,7 +102,7 @@ class PresencePoller:
     ) -> None:
         if not force and not self._debounce_passed(target):
             return
-        platform = platform_hint.platform if platform_hint else Platform.MODERN
+        platform = platform_hint.platform if platform_hint else Platform.XBOX_MODERN
         await self._fetcher.poll_title(
             target.tg_id, target.xuid, gamertag, title_id, platform, title_name
         )

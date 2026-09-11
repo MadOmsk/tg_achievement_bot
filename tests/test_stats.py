@@ -20,7 +20,7 @@ def row(achievement_id: str, unlocked_at: str | None, score: int = 10) -> Achiev
         unlocked_at=unlocked_at,
         gamerscore=score,
         rarity_percent=None,
-        platform="modern",
+        platform="xbox_modern",
     )
 
 
