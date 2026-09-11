@@ -30,6 +30,34 @@ class _DescriptionsRepo:
             source=row["source"],
         )
 
+    async def uncached_descriptions(self) -> list[tuple[str, str, str, int, str]]:
+        """Every stored achievement that has a description but no cache entry
+        — the whole input of the one-time backfill
+        (scripts/backfill_descriptions.py, #48).
+
+        Returns (platform, title_id, achievement_id, tg_id, external_id) so
+        the caller can group by title and still know whose credentials can be
+        used to ask for it: Xbox needs a token-bearing owner, Steam a
+        SteamID64, PSN an account_id — all of which live in `xuid` for their
+        own platform's rows.
+
+        Rows with no description are excluded here rather than by the caller:
+        there is nothing to translate, so they are not a gap.
+        """
+        cursor = await self._conn.execute(
+            "SELECT s.platform, s.title_id, s.achievement_id, s.tg_id, s.xuid "
+            "FROM seen_achievements s "
+            "LEFT JOIN achievement_description_cache d "
+            "       ON d.platform = s.platform AND d.title_id = s.title_id "
+            "      AND d.achievement_id = s.achievement_id "
+            "WHERE d.achievement_id IS NULL "
+            "  AND s.description IS NOT NULL AND TRIM(s.description) <> ''"
+        )
+        return [
+            (row["platform"], row["title_id"], row["achievement_id"], row["tg_id"], row["xuid"])
+            for row in await cursor.fetchall()
+        ]
+
     async def cached_descriptions(
         self, keys: list[tuple[str, str, str]]
     ) -> dict[tuple[str, str, str], CachedDescription]:

@@ -99,3 +99,46 @@ async def test_a_mixed_batch_is_resolved_in_one_query(repo: Repo) -> None:
 
 async def test_cached_descriptions_returns_nothing_for_no_keys(repo: Repo) -> None:
     assert await repo.cached_descriptions([]) == {}
+
+
+# ------------------------------------------------- the one-time backfill gap
+
+
+async def test_uncached_descriptions_lists_only_what_is_missing(repo: Repo) -> None:
+    """scripts/backfill_descriptions.py's whole input (#48)."""
+    await repo.ensure_user(1)
+    await repo.link_xbox_account(1, "xuid-1", "Mad Omsk", None)
+    await repo.insert_new_achievements(
+        "xuid-1",
+        [_row("a1", "есть описание"), _row("a2", "тоже есть")],
+        is_backfill=True,
+    )
+    await _cache(repo, "a1", "Первое", "First")
+
+    gap = await repo.uncached_descriptions()
+
+    assert [(p, t, a) for p, t, a, _tg, _x in gap] == [(PLATFORM, TITLE_ID, "a2")]
+
+
+async def test_uncached_descriptions_ignores_rows_with_no_description(repo: Repo) -> None:
+    # Nothing to translate, so not a gap — this is what keeps the backfill's
+    # own count honest against `seen_achievements`' raw row count.
+    await repo.ensure_user(1)
+    await repo.link_xbox_account(1, "xuid-1", "Mad Omsk", None)
+    await repo.insert_new_achievements(
+        "xuid-1", [_row("a1", None), _row("a2", "")], is_backfill=True
+    )
+
+    assert await repo.uncached_descriptions() == []
+
+
+async def test_uncached_descriptions_carries_the_owner(repo: Repo) -> None:
+    """Xbox needs a token-bearing owner to ask on behalf of; the row has to
+    say who that can be."""
+    await repo.ensure_user(42)
+    await repo.link_xbox_account(42, "xuid-42", "Mad Omsk", None)
+    await repo.insert_new_achievements("xuid-42", [_row("a1", "описание")], is_backfill=True)
+
+    [(_platform, _title, _achievement, tg_id, external_id)] = await repo.uncached_descriptions()
+
+    assert (tg_id, external_id) == (42, "xuid-42")
