@@ -696,12 +696,15 @@ Per-platform chains — the same "digits last, newest form first" shape:
 |---|---|---|
 | Xbox | `ModernGamertag` → `Gamertag` → XUID | the `#1234` suffix is never shown; the profile **link** is always built from the classic `Gamertag`, which is what Xbox's own search accepts |
 | Steam | `personaname` → vanity → SteamID64 | no vanity set means there is no vanity string at all: `profileurl` simply degrades from `/id/<vanity>/` to `/profiles/<id>/`, so the last path segment *is* this chain's last two steps |
-| PSN | current `onlineId` → previous `onlineId` → `account_id` | Sony only returns the previous id from the endpoint addressed **by nickname**; we look accounts up by `account_id`, so the middle step is the value *we* last saw before a rename, remembered on our side |
+| PSN | current `onlineId` → previous `onlineId` → `account_id` | Sony returns the previous id only from the legacy endpoint, addressed **by nickname** — reachable, since the current nickname is always in hand; it is also detectable without asking Sony at all, as the stored value a refresh replaces |
 
-The later steps of the Steam and PSN chains are near-unreachable in practice
-(neither platform lets an account exist without a display name) — they are the
-rule, not an expected sight. A previous PSN id earns its place as "formerly
-known as", not as a fallback.
+The later steps of the Steam and PSN chains are near-unreachable in practice —
+neither platform lets an account exist without a display name — so they are the
+rule rather than an expected sight. They are still populated: a previous PSN
+online ID is fetched and stored whether or not a screen shows it today, and
+`currentOnlineId` appearing in that response is itself the only signal Sony
+gives that an account was ever renamed (verified against production: absent
+for every account that still carries its original id).
 
 **A nickname is refreshed from what already arrives, never by a request of its
 own.** All three platforms hand us the current value inside a response the bot
