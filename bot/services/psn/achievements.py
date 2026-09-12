@@ -155,6 +155,27 @@ async def sync_account(
             await _bilingual_descriptions(
                 repo, anthropic_auth, translation_client, account_id, title, earned
             )
+        # The denominator of the "47/50" beside a notification's game line
+        # (#46). PSN never reports a count for a person, but the title list
+        # this poll already walked carries how many trophies the game has —
+        # the one number Xbox's title_history and Steam's cached schema
+        # supply for themselves.
+        # getattr, not attribute access: `title` is psnawp's own object and
+        # this field is not part of any contract we control — the same
+        # defensiveness services/psn/client.py already applies to its types.
+        defined = getattr(title, "defined_trophies", None)
+        total = (
+            (defined.bronze + defined.silver + defined.gold + defined.platinum)
+            if defined is not None
+            else 0
+        )
+        if total:
+            await repo.upsert_title(
+                title.np_communication_id,
+                title.title_name,
+                Platform.PSN,
+                achievements_total=total,
+            )
         rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
         inserted = await repo.insert_new_achievements_psn(
             tg_id, account_id, rows, is_backfill=is_backfill

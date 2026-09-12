@@ -13,9 +13,11 @@ XUID = "2533274829605736"
 STEAM_ID = "76561197981065056"
 
 
-def _achievement(achievement_id: str = "a1", platform: str = "xbox_modern") -> AchievementRow:
+def _achievement(
+    achievement_id: str = "a1", platform: str = "xbox_modern", title_id: str = "550"
+) -> AchievementRow:
     return AchievementRow(
-        title_id="550",
+        title_id=title_id,
         achievement_id=achievement_id,
         name="An achievement",
         description=None,
@@ -73,10 +75,46 @@ async def test_steam_progress_counts_rows_against_the_cached_schema(repo: Repo) 
     assert await repo.title_progress(AccountPlatform.STEAM, STEAM_ID, "550") == (2, 4)
 
 
-async def test_psn_has_no_honest_total_so_reports_none(repo: Repo) -> None:
-    """PSN stores progress as a percentage and never a count — the counter
-    is left off that line rather than invented."""
-    assert await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00001_00") is None
+async def test_psn_counts_against_the_titles_whole_trophy_set(repo: Repo) -> None:
+    """PSN reports no count for a person, but the title list the poller
+    already walks carries how many trophies the game has (#46).
+
+    That total includes DLC groups — verified against production: Marvel's
+    Spider-Man reports 74, split 51 base + 23 across four DLC groups. So
+    somebody who platinumed the base game reads 51/74, not 51/51, which is
+    exactly what Sony's own trophy list and every PSN tracker show. Taking
+    only the `default` group instead would need an extra request per title
+    and disagree with all of them.
+    """
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Someone")
+    await repo.upsert_title("NPWR00001_00", "Spider-Man", "psn", achievements_total=74)
+    await repo.insert_new_achievements_psn(
+        TG_ID,
+        "acc-1",
+        [
+            _achievement("t1", "psn", title_id="NPWR00001_00"),
+            _achievement("t2", "psn", title_id="NPWR00001_00"),
+        ],
+        is_backfill=False,
+    )
+
+    assert await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00001_00") == (2, 74)
+
+
+async def test_psn_reports_none_until_the_total_is_known(repo: Repo) -> None:
+    """A game last polled before the total was being stored — the counter is
+    left off that line rather than invented."""
+    assert await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR99999_00") is None
+
+
+async def test_upsert_title_never_blanks_a_known_total(repo: Repo) -> None:
+    """Most upserts here know only the name — the Steam/PSN insert paths call
+    this per game — and must not erase a total the poller cached."""
+    await repo.upsert_title("NPWR00001_00", "Spider-Man", "psn", achievements_total=74)
+    await repo.upsert_title("NPWR00001_00", "Spider-Man", "psn")
+
+    assert await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00001_00") == (0, 74)
 
 
 async def test_steam_progress_is_none_until_the_schema_is_cached(repo: Repo) -> None:

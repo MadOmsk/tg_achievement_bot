@@ -322,6 +322,12 @@ CREATE TABLE IF NOT EXISTS titles (
     -- imageId int for an achievement, no documented way to turn it into a
     -- URL (verified live against the real API).
     icon_url   TEXT,
+    -- How many achievements/trophies the game has in total (#46) — the
+    -- denominator of the "47/50" beside a notification's game line. Only
+    -- PSN fills it: Xbox states its own total per account in title_history,
+    -- and Steam's is the length of its cached schema, so those two have an
+    -- answer already. NULL until a platform that needs this one says so.
+    achievements_total INTEGER,
     updated_at TEXT NOT NULL
 );
 

@@ -195,19 +195,30 @@ class _AdminRepo:
         await self._conn.commit()
 
     async def upsert_title(
-        self, title_id: str, name: str, platform: str | None, icon_url: str | None = None
+        self,
+        title_id: str,
+        name: str,
+        platform: str | None,
+        icon_url: str | None = None,
+        achievements_total: int | None = None,
     ) -> None:
         # icon_url only overwrites when this call actually has one —
         # ensure_title_name() (fetcher.py) upserts just the name/platform on
         # every new title it resolves, and must not blank out an icon_url a
         # separate ensure_title_icon() call already cached here.
         await self._conn.execute(
-            "INSERT INTO titles (title_id, name, platform, icon_url, updated_at) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO titles"
+            " (title_id, name, platform, icon_url, achievements_total, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
             " platform = excluded.platform, updated_at = excluded.updated_at,"
-            " icon_url = COALESCE(excluded.icon_url, titles.icon_url)",
-            (title_id, name, platform, icon_url, utcnow_iso()),
+            " icon_url = COALESCE(excluded.icon_url, titles.icon_url),"
+            # Same "only overwrite when this call actually has one" rule as
+            # icon_url above (#46): most upserts here know the name and
+            # nothing else, and must not blank a total somebody else cached.
+            " achievements_total = COALESCE(excluded.achievements_total,"
+            "                               titles.achievements_total)",
+            (title_id, name, platform, icon_url, achievements_total, utcnow_iso()),
         )
         await self._conn.commit()
 

@@ -313,9 +313,15 @@ class _PlatformLinksRepo:
           refreshes anyway;
         - Steam has no per-user total, but `steam_schema_cache` holds the
           game's whole achievement list, so its length is the total;
-        - PSN stores progress as a percentage (`psn_title_progress`) and
-          never a count, so there is nothing honest to show. Returning None
-          leaves the counter off that line rather than inventing one.
+        - PSN reports progress as a percentage and never a count, but the
+          trophy-title list it already fetches carries `defined_trophies`;
+          that sum is kept on `titles.achievements_total`, so the counter
+          reads the same on all three platforms (#46, owner decision:
+          a count everywhere rather than a percentage on one).
+
+        None only when the total genuinely is not known yet — a game polled
+        before this shipped, or a Steam schema not cached. The counter is
+        then left off that line rather than invented.
         """
         if account_platform == AccountPlatform.XBOX:
             cursor = await self._conn.execute(
@@ -340,7 +346,20 @@ class _PlatformLinksRepo:
             row = await cursor.fetchone()
             return int(row[0]) if row else 0, len(cached[1])
 
-        return None
+        cursor = await self._conn.execute(
+            "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None or not row["achievements_total"]:
+            return None
+        total = int(row["achievements_total"])
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+            (account_platform, external_id, title_id),
+        )
+        row = await cursor.fetchone()
+        return (int(row[0]) if row else 0), total
 
     async def account_latest_unlock(self, platform: str, external_id: str) -> str | None:
         """The newest unlock we already hold for this account — where a

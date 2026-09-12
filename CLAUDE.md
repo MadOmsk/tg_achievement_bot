@@ -894,9 +894,16 @@ manual DB script.
 A single achievement/trophy post: bold name + "gets an achievement" (or, for PSN,
 "gets a trophy"), a blank line, the game name and platform in italics — with
 this person's progress through that game beside it when the total is known
-("47/50", #46; Xbox states it in `title_history`, Steam's total is the length
-of its cached schema, and PSN keeps a percentage rather than a count so the
-counter is omitted rather than invented) — a badge
+("47/50", #46). Xbox states the total in `title_history`, Steam's is the
+length of its cached schema, and PSN's comes from `defined_trophies` on the
+trophy-title list the poller already walks, kept on `titles.achievements_total`
+— a count on every platform rather than a percentage on one. PSN's total
+**includes DLC groups** (verified: Marvel's Spider-Man reports 74 = 51 base +
+23 across four DLC groups), so a base-game platinum reads 51/74, exactly as
+Sony's own trophy list and every PSN tracker show it. Sony's own `progress`
+percentage is deliberately not used: it weights trophies by tier, so 17 of 47
+reports as 25%, not 36%. A game whose total is not known yet simply renders
+without the counter — a badge
 before the achievement's name in quotes, then gamerscore (if nonzero) and rarity
 percent (if known) separated by a period, then the description if present (behind a
 spoiler if secret/hidden).
