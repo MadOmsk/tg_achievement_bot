@@ -180,17 +180,24 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
 │   ├── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
 │   │                               account linked before that column meant anything (#5)
-│   └── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
-│                                   before the description cache existed (#48) — per title,
-│                                   two locales, then the shared bilingual_descriptions()
+│   ├── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
+│   │                               before the description cache existed (#48) — per title,
+│   │                               two locales, then the shared bilingual_descriptions()
+│   └── ui_capture/                captures docs/ui/captured_production.md from a running
+│                                   build: the real dispatcher and routers against a copy of
+│                                   the database, with Telegram itself replaced by a session
+│                                   that records outgoing calls. No network, nothing sent.
 │
 ├── docs/                        design references, not code — see Engineering rules' own
 │   │                             "UI design lives in docs/ui/" entry before editing anything here
 │   └── ui/                        every screen's own design: layout, buttons, and which table
 │       ├── ui_screens_users.md      user-facing screens (mockups) — grows as coverage grows
 │       ├── ui_screens_admin.md      admin panel screens (mockups) — same idea, admin-only
-│       └── tables.md                how each named table/list is built + the nickname rules
-│                                   ui_screens_*.md reference by letter (A/B/C/D/E)
+│       ├── tables.md                how each named table/list is built + the nickname rules
+│       │                            ui_screens_*.md reference by letter (A/B/C/D/E)
+│       └── captured_production.md   NOT a design file: what the deployed bot actually
+│                                    renders, captured from a real build (scripts/ui_capture/)
+│                                    so the mockups above have something to be checked against
 │
 ├── tests/                       pytest + pytest-asyncio; real platform/Telegram calls forbidden
 │   └── ...                        one file per module/behavior area; see the test files

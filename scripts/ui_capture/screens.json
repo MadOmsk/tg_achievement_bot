@@ -1,0 +1,462 @@
+[
+ {
+  "id": "start",
+  "title": "/start",
+  "kind": "command",
+  "input": "/start"
+ },
+ {
+  "id": "panel",
+  "title": "/panel",
+  "kind": "command",
+  "input": "/panel"
+ },
+ {
+  "id": "panel-refresh",
+  "title": "Панель: Обновить",
+  "kind": "callback",
+  "input": "panel:refresh"
+ },
+ {
+  "id": "panel-tz",
+  "title": "Панель: часовой пояс",
+  "kind": "callback",
+  "input": "panel:tz"
+ },
+ {
+  "id": "panel-chatlist",
+  "title": "Панель: мои чаты",
+  "kind": "callback",
+  "input": "panel:chatlist"
+ },
+ {
+  "id": "panel-chat",
+  "title": "Панель: карточка чата",
+  "kind": "callback",
+  "input": "panel:chat:-1001103247578"
+ },
+ {
+  "id": "panel-chatrarity",
+  "title": "Панель: режим редкости в чате",
+  "kind": "callback",
+  "input": "panel:chatrarity:-1001103247578"
+ },
+ {
+  "id": "panel-chatdigest",
+  "title": "Панель: порог дайджеста",
+  "kind": "callback",
+  "input": "panel:chatdigest:-1001103247578"
+ },
+ {
+  "id": "panel-chatunsub",
+  "title": "Панель: отписаться от чата (подтверждение)",
+  "kind": "callback",
+  "input": "panel:chatunsub:-1001103247578"
+ },
+ {
+  "id": "panel-linkstoggle",
+  "title": "Панель: профиль виден другим",
+  "kind": "callback",
+  "input": "panel:linkstoggle"
+ },
+ {
+  "id": "panel-locale",
+  "title": "Панель: язык",
+  "kind": "callback",
+  "input": "panel:locale"
+ },
+ {
+  "id": "panel-disconnect",
+  "title": "Панель: отключить Xbox (подтверждение)",
+  "kind": "callback",
+  "input": "panel:disconnect"
+ },
+ {
+  "id": "connect-xbox",
+  "title": "/connect_xbox",
+  "kind": "command",
+  "input": "/connect_xbox"
+ },
+ {
+  "id": "disconnect-xbox",
+  "title": "/disconnect_xbox",
+  "kind": "command",
+  "input": "/disconnect_xbox"
+ },
+ {
+  "id": "disconnect-xbox-no",
+  "title": "Отмена отключения Xbox",
+  "kind": "callback",
+  "input": "disconnect:no"
+ },
+ {
+  "id": "relogin",
+  "title": "Кнопка «войти заново»",
+  "kind": "callback",
+  "input": "relogin"
+ },
+ {
+  "id": "tz-more",
+  "title": "Часовой пояс: ещё",
+  "kind": "callback",
+  "input": "tz:more"
+ },
+ {
+  "id": "tz-manual",
+  "title": "Часовой пояс: ввести вручную",
+  "kind": "callback",
+  "input": "tz:manual"
+ },
+ {
+  "id": "connect-steam",
+  "title": "/connect_steam",
+  "kind": "command",
+  "input": "/connect_steam"
+ },
+ {
+  "id": "disconnect-steam",
+  "title": "/disconnect_steam",
+  "kind": "command",
+  "input": "/disconnect_steam"
+ },
+ {
+  "id": "steam-disconnect-no",
+  "title": "Отмена отключения Steam",
+  "kind": "callback",
+  "input": "steam:disconnect:no"
+ },
+ {
+  "id": "connect-psn",
+  "title": "/connect_psn",
+  "kind": "command",
+  "input": "/connect_psn"
+ },
+ {
+  "id": "disconnect-psn",
+  "title": "/disconnect_psn",
+  "kind": "command",
+  "input": "/disconnect_psn"
+ },
+ {
+  "id": "psn-disconnect-no",
+  "title": "Отмена отключения PSN",
+  "kind": "callback",
+  "input": "psn:disconnect:no"
+ },
+ {
+  "id": "hltb-dm",
+  "title": "/hltb в личке",
+  "kind": "command",
+  "input": "/hltb"
+ },
+ {
+  "id": "hltb-cancel",
+  "title": "/hltb: отмена",
+  "kind": "callback",
+  "input": "hltb:cancel"
+ },
+ {
+  "id": "admin",
+  "title": "/admin — главный экран",
+  "kind": "command",
+  "input": "/admin"
+ },
+ {
+  "id": "admin-home",
+  "title": "Админка: домой",
+  "kind": "callback",
+  "input": "a:home"
+ },
+ {
+  "id": "admin-keys",
+  "title": "Админка: ключи платформ",
+  "kind": "callback",
+  "input": "a:keys"
+ },
+ {
+  "id": "admin-keyset",
+  "title": "Админка: ввод ключа Steam",
+  "kind": "callback",
+  "input": "a:keyset:steam"
+ },
+ {
+  "id": "admin-newusers",
+  "title": "Админка: настройки новых пользователей",
+  "kind": "callback",
+  "input": "a:newusers"
+ },
+ {
+  "id": "admin-limits",
+  "title": "Админка: лимиты отображения",
+  "kind": "callback",
+  "input": "a:limits"
+ },
+ {
+  "id": "admin-users",
+  "title": "Админка: список пользователей",
+  "kind": "callback",
+  "input": "a:users:0"
+ },
+ {
+  "id": "admin-user",
+  "title": "Админка: карточка пользователя",
+  "kind": "callback",
+  "input": "a:u:319472587"
+ },
+ {
+  "id": "admin-user-xbox",
+  "title": "Админка: карточка пользователя (Xbox+Steam)",
+  "kind": "callback",
+  "input": "a:u:127383366"
+ },
+ {
+  "id": "admin-chats",
+  "title": "Админка: список чатов",
+  "kind": "callback",
+  "input": "a:chats"
+ },
+ {
+  "id": "admin-chat",
+  "title": "Админка: карточка чата",
+  "kind": "callback",
+  "input": "a:chat:-1001103247578"
+ },
+ {
+  "id": "admin-chat-summary",
+  "title": "Админка: чат → итог дня",
+  "kind": "callback",
+  "input": "a:msum:-1001103247578"
+ },
+ {
+  "id": "admin-chat-flood",
+  "title": "Админка: чат → антифлуд",
+  "kind": "callback",
+  "input": "a:mflood:-1001103247578"
+ },
+ {
+  "id": "admin-chat-cleanup",
+  "title": "Админка: чат → уборка сообщений",
+  "kind": "callback",
+  "input": "a:mdel:-1001103247578"
+ },
+ {
+  "id": "admin-chat-tz",
+  "title": "Админка: чат → часовой пояс",
+  "kind": "callback",
+  "input": "a:ctz:-1001103247578"
+ },
+ {
+  "id": "admin-chat-time",
+  "title": "Админка: чат → время итога",
+  "kind": "callback",
+  "input": "a:ctime:-1001103247578"
+ },
+ {
+  "id": "admin-chat-wipe",
+  "title": "Админка: чат → стереть сообщения (подтверждение)",
+  "kind": "callback",
+  "input": "a:cwipe:-1001103247578"
+ },
+ {
+  "id": "admin-reset",
+  "title": "Админка: сброс платформы (подтверждение)",
+  "kind": "callback",
+  "input": "a:reset:psn:319472587"
+ },
+ {
+  "id": "group-help",
+  "title": "/help в группе",
+  "kind": "command",
+  "input": "/help",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-subscribe",
+  "title": "/subscribe",
+  "kind": "command",
+  "input": "/subscribe",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-unsubscribe",
+  "title": "/unsubscribe",
+  "kind": "command",
+  "input": "/unsubscribe",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-stats",
+  "title": "/stats",
+  "kind": "command",
+  "input": "/stats",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-stats-other",
+  "title": "/stats @другой",
+  "kind": "command",
+  "input": "/stats @keimaks",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-online",
+  "title": "/online",
+  "kind": "command",
+  "input": "/online",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-who",
+  "title": "/who",
+  "kind": "command",
+  "input": "/who",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-recent",
+  "title": "/recent",
+  "kind": "command",
+  "input": "/recent",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-summary",
+  "title": "/summary",
+  "kind": "command",
+  "input": "/summary",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-summary-day",
+  "title": "/summary_day",
+  "kind": "command",
+  "input": "/summary_day",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-summary-month",
+  "title": "/summary_month",
+  "kind": "command",
+  "input": "/summary_month",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-hltb",
+  "title": "/hltb в группе",
+  "kind": "command",
+  "input": "/hltb",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-connect-steam",
+  "title": "/connect_steam в группе",
+  "kind": "command",
+  "input": "/connect_steam",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-connect-psn",
+  "title": "/connect_psn в группе",
+  "kind": "command",
+  "input": "/connect_psn",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-who-stats",
+  "title": "/who → карточка человека",
+  "kind": "callback",
+  "input": "who:stats:319472587",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-sub-on",
+  "title": "Хаб: публиковать мои достижения",
+  "kind": "callback",
+  "input": "sub:on",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "admin-sync",
+  "title": "Админка: карточка пользователя → Обновить (PSN)",
+  "kind": "callback",
+  "input": "a:sync:psn:319472587"
+ },
+ {
+  "id": "admin-resetok",
+  "title": "Админка: сброс платформы → подтверждено",
+  "kind": "callback",
+  "input": "a:resetok:psn:319472587"
+ },
+ {
+  "id": "admin-excl",
+  "title": "Админка: исключить пользователя",
+  "kind": "callback",
+  "input": "a:excl:933710666"
+ },
+ {
+  "id": "admin-chat-daily-toggle",
+  "title": "Админка: чат → итог дня вкл/выкл",
+  "kind": "callback",
+  "input": "a:cds:-1001103247578"
+ },
+ {
+  "id": "admin-chat-locale",
+  "title": "Админка: чат → язык",
+  "kind": "callback",
+  "input": "a:cloc:-1001103247578"
+ },
+ {
+  "id": "admin-chat-rare",
+  "title": "Админка: чат → порог редкости",
+  "kind": "callback",
+  "input": "a:crt:-1001103247578"
+ },
+ {
+  "id": "group-unsub-confirm",
+  "title": "/unsubscribe → подтверждение",
+  "kind": "callback",
+  "input": "unsub:yes:-1001103247578",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-who-cancel",
+  "title": "/who → отмена",
+  "kind": "callback",
+  "input": "who:cancel",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-summary-all",
+  "title": "/summary → показать всех",
+  "kind": "callback",
+  "input": "summary:all:-1001103247578",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ },
+ {
+  "id": "group-delete-last",
+  "title": "/delete_last",
+  "kind": "command",
+  "input": "/delete_last",
+  "chat_id": -1001103247578,
+  "chat_type": "supergroup"
+ }
+]
