@@ -52,8 +52,13 @@ class _StatsRepo:
         await self._conn.commit()
 
     async def update_gamerscore(self, tg_id: int, gamerscore: int) -> None:
+        """On the account, not the person (#52) — a gamerscore is a fact
+        about an Xbox account and travels with it."""
         await self._conn.execute(
-            "UPDATE users SET gamerscore = ?, updated_at = ? WHERE tg_id = ?",
+            "UPDATE accounts SET gamerscore = ?, updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)",
             (gamerscore, utcnow_iso(), tg_id),
         )
         await self._conn.commit()
@@ -71,12 +76,14 @@ class _StatsRepo:
         the bot already knows.
         """
         cursor = await self._conn.execute(
-            "UPDATE users SET gamertag = COALESCE(?, gamertag),"
-            "                 gamertag_modern = COALESCE(?, gamertag_modern),"
-            "                 updated_at = ? "
-            "WHERE tg_id = ?"
-            "  AND ((? IS NOT NULL AND gamertag IS NOT ?)"
-            "    OR (? IS NOT NULL AND gamertag_modern IS NOT ?))",
+            "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
+            "                    display_name = COALESCE(?, display_name),"
+            "                    updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)"
+            "  AND ((? IS NOT NULL AND secondary_name IS NOT ?)"
+            "    OR (? IS NOT NULL AND display_name IS NOT ?))",
             (
                 gamertag,
                 gamertag_modern,

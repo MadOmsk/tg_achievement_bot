@@ -20,7 +20,7 @@ from bot.db.repo._models import (
     _as_user,
     _iso,
 )
-from bot.db.repo._sql import active_account
+from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS, active_account
 from bot.util import utcnow_iso
 
 
@@ -78,11 +78,13 @@ class _MessagesRepo:
         renders and sorts.
         """
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
-            "       u.last_name, steam.display_name AS steam_name,"
+            "SELECT u.tg_id, u.username, u.first_name,"
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name "
             "FROM subscriptions s "
             "JOIN users u ON u.tg_id = s.tg_id "
+            + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
             + "WHERE s.chat_id = ? AND u.is_excluded = 0",
@@ -107,13 +109,15 @@ class _MessagesRepo:
             # Every field the person chain needs (#51) — this used to select
             # `u.gamertag` alone, so a member with no Xbox account was
             # rendered as the literal word "кто-то".
-            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
-            "       u.last_name, steam.display_name AS steam_name,"
+            "SELECT u.tg_id, u.username, u.first_name,"
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
             "       s.name, t.name AS game, s.gamerscore, s.rarity_percent,"
             "       s.platform, s.unlocked_at, s.is_secret "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
+            + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
             # Through the accounts this person holds right now (#52, _sql.py).
@@ -198,8 +202,9 @@ class _MessagesRepo:
             "FROM title_history th "
             "JOIN titles t ON t.title_id = th.title_id "
             "WHERE th.xuid IN ("
-            "  SELECT u.xuid FROM users u "
-            "  WHERE u.xuid IS NOT NULL AND u.tg_id IN ("
+            "  SELECT xb.external_id FROM users u "
+            + XBOX_ACCOUNT
+            + "  WHERE xb.external_id IS NOT NULL AND u.tg_id IN ("
             "    SELECT tg_id FROM subscriptions WHERE chat_id = ? "
             "    UNION "
             "    SELECT tg_id FROM chat_seen WHERE chat_id = ?"

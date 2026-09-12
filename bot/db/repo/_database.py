@@ -57,8 +57,11 @@ class Database:
         # by default in SQLite and our ON DELETE CASCADE depends on them.
         await self._conn.execute("PRAGMA journal_mode = WAL")
         await self._conn.execute("PRAGMA foreign_keys = ON")
+        # Whether this file had anything in it *before* schema.sql ran — see
+        # _apply_migrations for why that one bit matters.
+        fresh = await self._is_empty()
         await self._apply_schema()
-        await self._apply_migrations()
+        await self._apply_migrations(fresh=fresh)
         await self._seed_app_settings()
         await self._conn.commit()
         return self
@@ -68,10 +71,35 @@ class Database:
             await self._conn.close()
             self._conn = None
 
+    async def _is_empty(self) -> bool:
+        cursor = await self.conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'  AND name NOT LIKE 'sqlite_%'"
+        )
+        row = await cursor.fetchone()
+        return (row[0] if row else 0) == 0
+
     async def _apply_schema(self) -> None:
         await self.conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    async def _apply_migrations(self) -> None:
+    async def _apply_migrations(self, *, fresh: bool = False) -> None:
+        """Bring an existing database up to the current schema.
+
+        A brand-new one is *baselined* instead: schema.sql already created
+        the current shape, so its migrations are recorded as applied without
+        being run (2026-09-12). Running them was the older behaviour and it
+        quietly constrained every migration ever written — each had to stay
+        executable against the finished schema as well as against the older
+        one it was written for, which is impossible the moment a migration
+        reads a column that a later one removes. That trap was hit three
+        times in two days (#52): a column renamed, a table dropped, and
+        finally `users.xuid` moving out to `accounts`, where there was no
+        way to write 037 so that it also parsed against a schema without
+        that column.
+
+        The bit that decides is "was the file empty before schema.sql ran",
+        not "does schema_migrations exist" — a database old enough to
+        predate that table must still have its migrations applied.
+        """
         await self.conn.execute(
             "CREATE TABLE IF NOT EXISTS schema_migrations ("
             "  version TEXT PRIMARY KEY,"
@@ -85,8 +113,11 @@ class Database:
         for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
             if path.stem in applied:
                 continue
-            log.info("applying migration %s", path.stem)
-            await self.conn.executescript(path.read_text(encoding="utf-8"))
+            if fresh:
+                log.info("baselining migration %s (new database)", path.stem)
+            else:
+                log.info("applying migration %s", path.stem)
+                await self.conn.executescript(path.read_text(encoding="utf-8"))
             await self.conn.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                 (path.stem, utcnow_iso()),

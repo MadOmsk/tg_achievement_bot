@@ -17,6 +17,17 @@ from bot.constants import RarityMode
 
 @dataclass(slots=True)
 class User:
+    """A person, plus their Xbox account's own fields alongside.
+
+    `users` itself holds only the Telegram identity since #52 — `xuid`,
+    `gamertag`, `gamertag_modern` and `gamerscore` are read from the
+    `accounts` row the person currently has linked (db/repo/_sql.py's
+    XBOX_ACCOUNT join), and are None for anyone with no Xbox. They keep
+    their old names here so the many Xbox paths that read them did not all
+    have to change at once; what changed is that there is now one place
+    those facts live.
+    """
+
     tg_id: int
     username: str | None
     xuid: str | None

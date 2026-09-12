@@ -59,6 +59,9 @@ class PsnFetcher:
         self._psn_auth = psn_auth
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
+        # account_id -> the window its next publish is capped to, set by a
+        # relink (see expect_relink_catch_up) and consumed once.
+        self._relink_window: dict[str, int] = {}
 
     async def tick(self) -> None:
         if await self._psn_auth.status() == STATUS_NOT_CONFIGURED:
@@ -131,12 +134,36 @@ class PsnFetcher:
         # multi-achievement paragraph) — format_digest/_group_by_title
         # (services/achievements.py) already handle that by grouping on
         # each row's own title_name, same as a Xbox/Steam catch-up burst.
-        await self._publisher.publish(tg_id, account_id, online_id, outcome.new_rows, None)
+        await self._publisher.publish(
+            tg_id,
+            account_id,
+            online_id,
+            outcome.new_rows,
+            None,
+            window_hours=self._relink_window.pop(account_id, None),
+        )
         # Level only ever changes when a trophy is earned (Follow-up
         # 2026-09-06, /stats' own PSN line) — refreshed here, not on every
         # tick.
         await self._refresh_level(client, tg_id, account_id)
         return len(outcome.new_rows)
+
+    def expect_relink_catch_up(self, account_id: str, window_hours: int) -> None:
+        """Relinking an account the bot already knows needs no backfill at
+        all (#52): PSN's ordinary tick *is* a delta — one paginated call
+        lists every trophy title with its progress, and detail is fetched
+        only where the progress grew, against `psn_title_progress`, which
+        survives an unlink along with everything else.
+
+        So the only thing a relink has to arrange is that the catch-up this
+        produces does not arrive as a month of trophies at once. The next
+        publish for this account is capped to `window_hours`; after that it
+        is an ordinary live poll again.
+
+        In-memory and single-use, like every other "must not survive a
+        restart" flag here — losing it costs at most one unwindowed catch-up.
+        """
+        self._relink_window[account_id] = window_hours
 
     async def backfill(self, tg_id: int, account_id: str) -> PsnBackfillResult:
         """Mark everything already earned as seen, publishing nothing — same

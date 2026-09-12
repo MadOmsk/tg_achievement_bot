@@ -1,25 +1,20 @@
 -- Full schema, SPEC section 3. Applied once to an empty database; later changes
 -- go to db/migrations/ so an existing bot.db is never recreated from scratch.
 
--- Telegram users linked to an Xbox account
+-- Telegram users. Only the Telegram identity lives here (#52): an Xbox
+-- account is an `accounts` row like any other, reached through the active
+-- link in `account_links`, and used to be cached in xuid/gamertag/gamerscore
+-- columns beside these. A second copy of a fact is a second version of it
+-- waiting to happen.
 CREATE TABLE IF NOT EXISTS users (
     tg_id           INTEGER PRIMARY KEY,
-    username        TEXT,                 -- for /compare @user, refreshed on every message
+    username        TEXT,                 -- for /stats @user, refreshed on every message
     -- /stats' header identity (Follow-up 2026-09-06) — refreshed the same
     -- way username is, on every message (handlers/chat.py's message
     -- middleware). first_name always exists for a real Telegram account;
     -- last_name doesn't.
     first_name      TEXT,
     last_name       TEXT,
-    xuid            TEXT UNIQUE,          -- identity key, NOT the gamertag
-    gamertag        TEXT,                 -- classic gamertag: display cache, can change
-    -- Xbox's own ModernGamertag, the first step of the Xbox naming chain
-    -- (#51) — the pretty current form ("Mad Omsk") next to the classic ASCII
-    -- one ("MadOmsk"). Both arrive in the profile response already read for
-    -- gamerscore. NULL until that call runs once; the `#1234` suffix beside
-    -- it in that response is deliberately not stored, it is never shown.
-    gamertag_modern TEXT,
-    gamerscore      INTEGER,              -- cache, refreshed together with titleHistory
     is_excluded     INTEGER NOT NULL DEFAULT 0,
     excluded_by     INTEGER,
     excluded_at     TEXT,

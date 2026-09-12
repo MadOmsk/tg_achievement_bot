@@ -25,6 +25,7 @@ from aiogram.types import (
 )
 from aiogram_i18n import I18nContext
 
+from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.handlers import awaiting
@@ -249,6 +250,16 @@ async def _connect(
     # first (link_platform_account already replaces an existing one) —
     # idempotent (INSERT OR IGNORE) and safe, same as Xbox/Steam's own
     # reconnect handling.
+    # Known account -> no backfill (#52). Its trophies are already stored,
+    # and the regular tick is itself a delta; all a relink has to arrange is
+    # that the catch-up does not arrive as a month of trophies at once.
+    if await repo.account_latest_unlock(Platform.PSN, profile.account_id) is not None:
+        psn_fetcher.expect_relink_catch_up(
+            profile.account_id, get_settings().catchup_publish_window_hours
+        )
+        await bot.send_message(tg_id, i18n.get("psn-catch-up-started"))
+        return
+
     await bot.send_message(tg_id, i18n.get("psn-backfill-started"))
     asyncio.create_task(  # noqa: RUF006
         _backfill_and_notify(bot, psn_fetcher, tg_id, profile.account_id, i18n)

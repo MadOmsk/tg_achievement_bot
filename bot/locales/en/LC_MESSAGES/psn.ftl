@@ -21,3 +21,7 @@ psn-cancel-button = Cancel
 psn-already-disconnected = PSN isn't connected anyway.
 psn-disconnect-prompt = Disconnect PSN ({ $name })?
 psn-disconnected = PSN disconnected. You can come back any time.
+
+# Relinking a known account (#52) — the trophies are already stored, and the
+# ordinary poll tick picks up whatever appeared since last time.
+psn-catch-up-started = I know this account already — its trophies are still here. I will pick up what is new on my own.

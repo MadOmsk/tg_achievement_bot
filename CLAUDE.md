@@ -166,7 +166,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │       │                            section markers); `from bot.db.repo import Repo, User,
 │       │                            PlatformLink, ...` still works unchanged, see the
 │       │                            package's own __init__.py for the full file-by-file map
-│       └── migrations/              one file per schema change, applied in order
+│       └── migrations/              one file per schema change, applied in order — but only
+│                                    to an existing database; a brand-new one is baselined
+│                                    (see Data model's own note)
 │
 ├── scripts/                     operational one-off helpers, outside the running application
 │   ├── db_status.py               summary for `manage.ps1 status` (no dependencies)
@@ -278,6 +280,19 @@ can't resurrect it.
 The canonical schema is `bot/db/schema.sql`. This section describes the model, not
 every column.
 
+- **Schema bring-up.** `schema.sql` is the current shape and runs on every
+  start; migrations then bring an *existing* database up to it. A brand-new
+  database is **baselined** instead (2026-09-12) — its migrations are recorded
+  as applied without being run, because schema.sql already produced the result.
+  Running them on a fresh database was the older behaviour and it silently
+  constrained every migration ever written: each had to stay executable against
+  the finished schema as well as the older one it was written for, which is
+  impossible as soon as one migration reads a column a later one removes. That
+  trap was hit three times in two days during #52. The deciding question is
+  "was the file empty before schema.sql ran", not "does schema_migrations
+  exist" — a database old enough to predate that table still needs its
+  migrations.
+
 - **Identity: a person and an account are separate things** (#52, 2026-09-12).
   `users` is keyed by Telegram `tg_id` and holds only the Telegram identity.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
@@ -294,10 +309,11 @@ every column.
   multi-account support, #10, needs**) and `idx_links_one_owner` (an account has
   one current owner, which is what makes a takeover a defined event).
 
-  `users.xuid`/`gamertag`/`gamertag_modern`/`gamerscore` still exist as a cache
-  of the active Xbox link, because some seventy Xbox call sites read them;
-  `link_xbox_account`/`unlink_xbox_account` are the only writers. They are
-  scheduled to go in #52's follow-up step.
+  **`users` holds only the Telegram identity.** Xbox's own fields moved onto
+  the account with everything else (migration 038); `User` still exposes
+  `xuid`/`gamertag`/`gamerscore` under their old names, read through the
+  `XBOX_ACCOUNT` join in `db/repo/_sql.py`, so the ~70 Xbox call sites kept
+  working — what changed is that those facts have one home.
   `achievements_visible` (#5) is the last actually-checked answer to "can the
   shared credential see this account's achievements/trophies" — `NULL` until
   checked once, then `1`/`0`; set at connect time and refreshed by every

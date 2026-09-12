@@ -17,6 +17,7 @@ from bot.db.repo._models import (
     _as_user,
     _as_user_settings,
 )
+from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS
 from bot.i18n import DEFAULT_LOCALE
 from bot.util import utcnow, utcnow_iso
 
@@ -82,13 +83,22 @@ class _AccountsRepo:
         )
         await self._conn.commit()
 
+    # `users` is only the Telegram identity now (#52); the Xbox columns that
+    # used to sit beside it are an `accounts` row reached through the active
+    # link, and are aliased back to their old names so every caller of
+    # `User` keeps reading `user.xuid` / `user.gamertag` unchanged.
+    _USER_COLUMNS = "SELECT u.*, " + XBOX_COLUMNS + "FROM users u " + XBOX_ACCOUNT
+
     async def get_user(self, tg_id: int) -> User | None:
-        cursor = await self._conn.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,))
+        cursor = await self._conn.execute(self._USER_COLUMNS + "WHERE u.tg_id = ?", (tg_id,))
         row = await cursor.fetchone()
         return _as_user(row) if row else None
 
     async def get_user_by_xuid(self, xuid: str) -> User | None:
-        cursor = await self._conn.execute("SELECT * FROM users WHERE xuid = ?", (xuid,))
+        """Whoever currently holds that Xbox account — nobody, once they
+        unlink it (#52). The poller only ever asks about accounts it just
+        got a link for, so "nobody" here means the link moved mid-poll."""
+        cursor = await self._conn.execute(self._USER_COLUMNS + "WHERE xb.external_id = ?", (xuid,))
         row = await cursor.fetchone()
         return _as_user(row) if row else None
 
@@ -108,23 +118,11 @@ class _AccountsRepo:
         holding it — same contract as `link_platform_account`.
         """
         taken_from = await self.link_platform_account(tg_id, AccountPlatform.XBOX, xuid, gamertag)
-        if taken_from is not None:
-            # The cache on the previous owner has to go with the account, or
-            # they would keep polling and displaying an account that is no
-            # longer theirs.
-            await self._conn.execute(
-                "UPDATE users SET xuid = NULL, updated_at = ? WHERE tg_id = ?",
-                (utcnow_iso(), taken_from),
-            )
         await self._conn.execute(
-            "UPDATE users SET xuid = ?, gamertag = ?, gamerscore = ?, updated_at = ? "
-            "WHERE tg_id = ?",
-            (xuid, gamertag, gamerscore, utcnow_iso(), tg_id),
-        )
-        await self._conn.execute(
-            "UPDATE accounts SET gamerscore = COALESCE(?, gamerscore), updated_at = ? "
+            "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
+            "       gamerscore = COALESCE(?, gamerscore), updated_at = ? "
             "WHERE platform = ? AND external_id = ?",
-            (gamerscore, utcnow_iso(), AccountPlatform.XBOX, xuid),
+            (gamertag, gamerscore, utcnow_iso(), AccountPlatform.XBOX, xuid),
         )
         await self._conn.commit()
         return taken_from
@@ -134,11 +132,6 @@ class _AccountsRepo:
         everything it earned stay (SPEC 6.1, and #52's own rule — relinking
         later finds its history waiting instead of paying for a backfill)."""
         await self.unlink_platform_account(tg_id, AccountPlatform.XBOX)
-        await self._conn.execute(
-            "UPDATE users SET xuid = NULL, updated_at = ? WHERE tg_id = ?",
-            (utcnow_iso(), tg_id),
-        )
-        await self._conn.commit()
 
     # --------------------------------------------------------------- tokens
 

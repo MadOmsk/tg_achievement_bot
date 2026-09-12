@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 from bot.db.repo._models import AdminPanelRefreshRow, AdminUserRow, ChatTarget, HltbCacheRow
-from bot.db.repo._sql import active_account
+from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS, active_account
 from bot.util import utcnow_iso
 
 
@@ -85,16 +85,17 @@ class _AdminRepo:
         `WHERE u.xuid IS NOT NULL`, which hid every Steam-only person from
         the admin panel entirely."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
-            "       u.last_name, u.xuid, u.gamerscore, u.is_excluded,"
+            "SELECT u.tg_id, u.username, u.first_name,"
+            "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
             "       pp.external_id AS psn_account_id, pp.display_name AS psn_online_id "
             "FROM users u "
-            "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
+            + XBOX_ACCOUNT
+            + "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
             + active_account("ps", "steam")
             + active_account("pp", "psn")
-            + "WHERE u.xuid IS NOT NULL OR ps.external_id IS NOT NULL"
+            + "WHERE xb.external_id IS NOT NULL OR ps.external_id IS NOT NULL"
             "   OR pp.external_id IS NOT NULL "
             "ORDER BY u.is_excluded, u.last_online_at DESC"
         )
