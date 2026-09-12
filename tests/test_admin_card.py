@@ -230,6 +230,8 @@ async def test_reset_xbox_data_clears_achievements_and_title_history(repo: Repo)
 async def test_reset_steam_data_clears_only_that_persons_steam_rows(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.ensure_user(2, "other")
+    await repo.link_platform_account(1, "steam", "111", "Someone")
+    await repo.link_platform_account(2, "steam", "222", "Other")
     await repo.insert_new_achievements_steam(
         1, "111", [_achievement("550", "steam", gamerscore=0)], is_backfill=False
     )
@@ -237,7 +239,9 @@ async def test_reset_steam_data_clears_only_that_persons_steam_rows(repo: Repo) 
         2, "222", [_achievement("550", "steam", gamerscore=0)], is_backfill=False
     )
 
-    deleted = await repo.reset_steam_data(1)
+    # By account, not by person (#52): the rows belong to the account, so
+    # that is what a reset addresses.
+    deleted = await repo.reset_steam_data("111")
 
     assert deleted == 1
     assert await repo.platform_achievement_count(1, "steam") == 0

@@ -135,12 +135,23 @@ async def test_recent_achievements_orders_newest_first_and_respects_limit(
     assert [item.achievement_id for item in recent] == ["third", "second"]
 
 
-async def test_insert_for_an_unlinked_xuid_is_dropped_not_crashed(repo: Repo) -> None:
-    """No `users` row has this xuid at all — insert_new_achievements resolves
-    tg_id from it (SPEC 9, M-Steam-2) and must not crash when that lookup
-    comes up empty; it just drops the rows (should never happen in practice,
-    an xuid always comes from a connected user)."""
+async def test_insert_for_an_unlinked_account_is_stored_but_invisible(repo: Repo) -> None:
+    """Nobody has this account linked. Since #52 the rows still belong to it
+    and are recorded — an achievement is proof the account exists — but they
+    count for no one until somebody links it.
+
+    This used to drop the batch instead, because the insert resolved a
+    `tg_id` from the xuid first and gave up when it found none. Storing is
+    the better answer: the data is real, and whoever links that account next
+    finds their history already there rather than paying for a backfill.
+    """
+    await repo.ensure_user(1, "someone")
     new_rows = await repo.insert_new_achievements(
         "no-such-xuid", [row("a", "2026-09-02T09:00:00+00:00")], is_backfill=False
     )
-    assert new_rows == []
+    assert len(new_rows) == 1
+    assert await repo.achievement_counts_for_person(1, None) == (0, 0)
+
+    # Link it, and the same rows are suddenly theirs — nothing was re-fetched.
+    await repo.link_xbox_account(1, "no-such-xuid", "Someone", 0)
+    assert await repo.achievement_counts_for_person(1, None) == (1, 10)

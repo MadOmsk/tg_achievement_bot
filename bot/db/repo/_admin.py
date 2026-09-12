@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from bot.db.repo._models import AdminPanelRefreshRow, AdminUserRow, ChatTarget, HltbCacheRow
+from bot.db.repo._sql import active_account
 from bot.util import utcnow_iso
 
 
@@ -91,9 +92,10 @@ class _AdminRepo:
             "       pp.external_id AS psn_account_id, pp.display_name AS psn_online_id "
             "FROM users u "
             "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
-            "LEFT JOIN platform_links ps ON ps.tg_id = u.tg_id AND ps.platform = 'steam' "
-            "LEFT JOIN platform_links pp ON pp.tg_id = u.tg_id AND pp.platform = 'psn' "
-            "WHERE u.xuid IS NOT NULL OR ps.external_id IS NOT NULL OR pp.external_id IS NOT NULL "
+            + active_account("ps", "steam")
+            + active_account("pp", "psn")
+            + "WHERE u.xuid IS NOT NULL OR ps.external_id IS NOT NULL"
+            "   OR pp.external_id IS NOT NULL "
             "ORDER BY u.is_excluded, u.last_online_at DESC"
         )
         return [

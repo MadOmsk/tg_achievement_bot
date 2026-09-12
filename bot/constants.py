@@ -21,6 +21,19 @@ class Platform(StrEnum):
     PSN = "psn"
 
 
+class AccountPlatform(StrEnum):
+    """Which platform an *account* is on (#52) — coarser than `Platform`
+    above, which says where an achievement came from. Both Xbox generations
+    are one account and one platform to a person (owner decision, they bind
+    as a pair), so there is no `xbox_360` here; `seen_achievements`'
+    GENERATED `account_platform` column computes exactly this mapping.
+    """
+
+    XBOX = "xbox"
+    STEAM = "steam"
+    PSN = "psn"
+
+
 class PresenceState(StrEnum):
     ONLINE = "Online"
     OFFLINE = "Offline"

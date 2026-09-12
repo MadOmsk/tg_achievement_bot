@@ -1,5 +1,8 @@
 # Secrets and local state — never commit
 .env
+.env.*
+!.env.example
+!.env.test.example
 data/
 *.db
 *.db-journal

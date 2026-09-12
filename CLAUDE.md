@@ -159,6 +159,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   └── db/
 │       ├── schema.sql               full DDL for a brand-new database
 │       ├── repo/                    every piece of data access; the only place with SQL —
+│       │                            `_sql.py` there holds the one join that resolves
+│       │                            "whose achievement is this row" (#52)
 │       │                            one Repo class assembled from mixins (2026-09-09 split,
 │       │                            one file per related group of the old repo.py's own
 │       │                            section markers); `from bot.db.repo import Repo, User,
@@ -276,11 +278,26 @@ can't resurrect it.
 The canonical schema is `bot/db/schema.sql`. This section describes the model, not
 every column.
 
-- **Identity.** `users` is keyed by Telegram `tg_id`. Xbox identity stays on
-  `users.xuid` (it was the first platform, and Xbox-specific paths still use it
-  directly). Steam and PSN accounts live in `platform_links (tg_id, platform,
-  external_id, display_name, psn_trophy_level, achievements_visible, ...)`. `tg_id`
-  is the cross-platform owner key — never aggregate cross-platform data by `xuid`.
+- **Identity: a person and an account are separate things** (#52, 2026-09-12).
+  `users` is keyed by Telegram `tg_id` and holds only the Telegram identity.
+  `accounts (platform, external_id, display_name, secondary_name, gamerscore,
+  psn_trophy_level, achievements_visible, ...)` is a platform account on its own
+  terms — `platform` there is `xbox`/`steam`/`psn`, one value for Xbox because
+  both generations are one account and one platform to a person.
+  `account_links (tg_id, platform, external_id, is_active, linked_at,
+  unlinked_at)` says who has it now and who had it before.
+
+  **Unlinking never deletes.** A link is deactivated, the account and everything
+  it earned stay, so relinking finds its history waiting. Two partial unique
+  indexes carry the current rules: `idx_links_one_active_per_platform` (one
+  account per platform per person — **dropping this single index is all that
+  multi-account support, #10, needs**) and `idx_links_one_owner` (an account has
+  one current owner, which is what makes a takeover a defined event).
+
+  `users.xuid`/`gamertag`/`gamertag_modern`/`gamerscore` still exist as a cache
+  of the active Xbox link, because some seventy Xbox call sites read them;
+  `link_xbox_account`/`unlink_xbox_account` are the only writers. They are
+  scheduled to go in #52's follow-up step.
   `achievements_visible` (#5) is the last actually-checked answer to "can the
   shared credential see this account's achievements/trophies" — `NULL` until
   checked once, then `1`/`0`; set at connect time and refreshed by every
@@ -289,8 +306,24 @@ every column.
   and XSTS tokens stay in memory. Shared service credentials (the PSN NPSSO, and as
   of #17 the Steam API key too) are encrypted in `app_settings`. Token status
   distinguishes active, invalid, and intentionally revoked.
-- **Achievements and publications.** `seen_achievements` is the dedup table, primary
-  key `(tg_id, platform, title_id, achievement_id)`; `platform` is `xbox_modern`
+- **Achievements and publications.** `seen_achievements` is the dedup table,
+  keyed by **the account that earned the row** (#52): `(platform, xuid,
+  title_id, achievement_id)`. It used to lead with `tg_id`, which is #29's bug —
+  `title_id`/`achievement_id` are not account-specific, so a person swapping
+  accounts on one platform inherited the old account's rows and kept losing the
+  new account's genuinely new unlocks to `INSERT OR IGNORE` forever.
+
+  A person's achievements are therefore *the rows of the accounts they hold
+  right now*, resolved through `account_links` — `db/repo/_sql.py` holds the one
+  join that answers it, written once because twenty copies of an answer
+  eventually disagree (the naming chains, #51, had exactly that failure).
+  Two consequences, both intended: an account nobody holds is invisible
+  everywhere, and an account that changes hands takes its history with it,
+  retroactively — a summary already posted will recompute differently.
+
+  `account_platform` is a GENERATED column mapping both Xbox generations onto
+  the single `xbox` account, so the pair can never drift and none of the ~60
+  places that branch on the generation had to change. `platform` is `xbox_modern`
   (Xbox One, Series and the PC Microsoft Store — one achievement service, one
   contract; renamed from plain `modern` in migration 034, 2026-09-11, because
   the bare word had an obvious subject only while Xbox was the only platform

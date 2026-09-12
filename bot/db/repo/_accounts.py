@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from bot.constants import TokenStatus
+from bot.constants import AccountPlatform, TokenStatus
 from bot.db.repo._models import (
     TokenRecord,
     User,
@@ -94,16 +94,46 @@ class _AccountsRepo:
 
     async def link_xbox_account(
         self, tg_id: int, xuid: str, gamertag: str | None, gamerscore: int | None
-    ) -> None:
+    ) -> int | None:
+        """Link an Xbox account, through the same `accounts`/`account_links`
+        pair every other platform uses since #52 — Xbox is one account and
+        one platform here, both generations together.
+
+        `users.xuid`/`gamertag`/`gamerscore` are still written as a cache of
+        the active link, because ~70 Xbox call sites still read them; they
+        are scheduled to go in the follow-up step, and this is the single
+        writer keeping them true in the meantime.
+
+        Returns the tg_id the account was taken from, when somebody else was
+        holding it — same contract as `link_platform_account`.
+        """
+        taken_from = await self.link_platform_account(tg_id, AccountPlatform.XBOX, xuid, gamertag)
+        if taken_from is not None:
+            # The cache on the previous owner has to go with the account, or
+            # they would keep polling and displaying an account that is no
+            # longer theirs.
+            await self._conn.execute(
+                "UPDATE users SET xuid = NULL, updated_at = ? WHERE tg_id = ?",
+                (utcnow_iso(), taken_from),
+            )
         await self._conn.execute(
             "UPDATE users SET xuid = ?, gamertag = ?, gamerscore = ?, updated_at = ? "
             "WHERE tg_id = ?",
             (xuid, gamertag, gamerscore, utcnow_iso(), tg_id),
         )
+        await self._conn.execute(
+            "UPDATE accounts SET gamerscore = COALESCE(?, gamerscore), updated_at = ? "
+            "WHERE platform = ? AND external_id = ?",
+            (gamerscore, utcnow_iso(), AccountPlatform.XBOX, xuid),
+        )
         await self._conn.commit()
+        return taken_from
 
     async def unlink_xbox_account(self, tg_id: int) -> None:
-        """/disconnect_xbox: the link goes, seen_achievements and history stay (SPEC 6.1)."""
+        """/disconnect_xbox: the link is deactivated, the account and
+        everything it earned stay (SPEC 6.1, and #52's own rule — relinking
+        later finds its history waiting instead of paying for a backfill)."""
+        await self.unlink_platform_account(tg_id, AccountPlatform.XBOX)
         await self._conn.execute(
             "UPDATE users SET xuid = NULL, updated_at = ? WHERE tg_id = ?",
             (utcnow_iso(), tg_id),

@@ -157,16 +157,25 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TEXT NOT NULL
 );
 
--- Deduplication: what we have already seen. Keyed by tg_id, not by
--- xuid/external_id (M-Steam-2, TODO.md and SPEC 9): a person will soon have
--- achievements from more than one platform, each with its own external_id
--- (Xbox xuid, Steam SteamID64) — summing "how many across every platform"
--- for one person needs one stable per-person key, and tg_id is the only one
--- that never changes per platform. `xuid` stays as a plain column (not part
--- of the key) — still the platform-specific external_id, just no longer
--- what identifies whose row this is.
+-- Deduplication: what we have already seen. Keyed by the **account** that
+-- earned it (#52, 2026-09-12), not by the person who happened to have that
+-- account linked at the time. Keying by tg_id was the older answer to "one
+-- person, several platforms" (M-Steam-2, SPEC 9) and it broke the moment a
+-- person swapped one account for another on the same platform: title_id and
+-- achievement_id are not account-specific, so a second account's genuinely
+-- new unlock collided with the first account's row and was silently dropped
+-- by INSERT OR IGNORE — never published, never counted (#29).
+--
+-- A person's achievements are now "every row belonging to an account they
+-- currently have linked", resolved through account_links. An account nobody
+-- has linked is invisible everywhere; the moment someone links it, its whole
+-- history is theirs.
 CREATE TABLE IF NOT EXISTS seen_achievements (
-    tg_id           INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    -- The platform-specific account id: XUID / SteamID64 / PSN account_id.
+    -- The name is older than the meaning (it has been generic since
+    -- M-Steam-2) and is kept deliberately: renaming it would leave migration
+    -- 037 selecting a column a brand-new database does not have, since this
+    -- file runs in full before any migration.
     xuid            TEXT NOT NULL,
     title_id        TEXT NOT NULL,
     achievement_id  TEXT NOT NULL,
@@ -185,17 +194,30 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
                                           -- elsewhere — new dimension, no analogue on any other
                                           -- platform (M-PSN-1's design notes), M-PSN-2
     created_at      TEXT NOT NULL,
-    PRIMARY KEY (tg_id, platform, title_id, achievement_id)
+    -- Which `accounts` row this belongs to. Both Xbox generations are one
+    -- account and one platform as far as a person is concerned (#52, owner
+    -- decision: they bind as a pair and display as one everywhere), while
+    -- `platform` above keeps the distinction the achievement contract, the
+    -- missing rarity data and the box-art substitution all still need.
+    -- GENERATED so the two can never drift apart, and so none of the ~60
+    -- places that branch on xbox_modern/xbox_360 had to change.
+    account_platform TEXT GENERATED ALWAYS AS (
+        CASE WHEN platform IN ('xbox_modern', 'xbox_360') THEN 'xbox' ELSE platform END
+    ) STORED,
+    PRIMARY KEY (platform, xuid, title_id, achievement_id),
+    FOREIGN KEY (account_platform, xuid) REFERENCES accounts(platform, external_id)
 );
-CREATE INDEX IF NOT EXISTS idx_seen_unlocked ON seen_achievements(xuid, unlocked_at DESC);
--- idx_seen_tg_unlocked is NOT created here on purpose: _apply_schema() runs
--- this whole file via executescript on every startup, before migrations —
--- on a database that hasn't run 011 yet, `tg_id` doesn't exist on the
--- on-disk table, and this index would crash startup with "no such column:
--- tg_id" (hit for real in production, migration 009->011 upgrade). 011's
--- own rebuild-and-swap already (re)creates it, for both a fresh database
--- (011 still runs once, unconditionally, same as every migration) and an
--- upgraded one.
+-- The indexes are NOT created here, on purpose — see migration 037 and the
+-- note below: this file runs before any migration, so naming a column that
+-- only a migration adds crashes startup for every existing database.
+-- idx_seen_tg_unlocked is gone with `tg_id` itself (#52): who a row belongs
+-- to is account_links' answer now, and the two indexes above are what the
+-- reads actually use. Its old comment here explained why it could not be
+-- created in this file — _apply_schema() runs the whole file on every
+-- startup, before migrations, so a column a migration had not added yet
+-- crashed startup (hit for real on the 009->011 upgrade). The hazard is
+-- unchanged and worth remembering: nothing in this file may assume a shape
+-- that only a migration produces.
 
 -- What was actually published where. Separate from seen_achievements: a user can be
 -- subscribed in two chats, and a failure in one must not lose the achievement in the other.
@@ -382,41 +404,62 @@ CREATE TABLE IF NOT EXISTS online_auto_refresh (
     last_updated_at TEXT NOT NULL
 );
 
--- One person, several platform accounts (M-Steam-1, TODO.md) — Xbox stays in
--- users.xuid unchanged (nothing about it needs to change to add a second
--- platform), this is only for accounts beyond it. No tokens here on purpose:
--- unlike Xbox, Steam's public data needs no per-user OAuth, just one API key
--- for the whole bot plus the person's own profile visibility set to public.
-CREATE TABLE IF NOT EXISTS platform_links (
-    tg_id        INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
-    platform     TEXT    NOT NULL CHECK (platform IN ('steam', 'psn')),
-    external_id  TEXT    NOT NULL,  -- SteamID64 / PSN account id
-    display_name TEXT,              -- persona name / online ID, display cache
-    -- The middle step of this platform's own naming chain (#51): Steam's
-    -- vanity name (the `xxx` in /id/xxx, NULL when no custom URL was ever
-    -- set) and PSN's previous online ID (what the account was called before
-    -- a rename). One column because both answer the same question in their
-    -- own chain and a row is never both platforms at once.
+-- A platform account, on its own terms (#52, 2026-09-12) — not "a person's
+-- Steam", but "this Steam account", whoever currently has it linked. Split
+-- out of `users` (Xbox) and the old `platform_links` (Steam/PSN) because
+-- achievement history belongs to the account that earned it: a person who
+-- swaps accounts must not inherit the previous one's history, and an account
+-- that changes hands must take its history along.
+--
+-- `platform` here is the account's platform, so Xbox is one value: both
+-- generations are the same account and the same platform to a person (owner
+-- decision). seen_achievements.platform keeps the finer distinction.
+CREATE TABLE IF NOT EXISTS accounts (
+    platform     TEXT NOT NULL CHECK (platform IN ('xbox', 'steam', 'psn')),
+    external_id  TEXT NOT NULL,     -- XUID / SteamID64 / PSN account_id
+    -- The naming chains (#51): display_name is the current nickname,
+    -- secondary_name that platform's own second step — Xbox's classic
+    -- gamertag beside the modern one, Steam's vanity, PSN's previous
+    -- online ID.
+    display_name TEXT,
     secondary_name TEXT,
-    linked_at    TEXT    NOT NULL,
-    -- Account-wide PSN trophy level, shown in /stats next to the
-    -- achievement count (Follow-up 2026-09-06) — NULL for Steam rows and
-    -- for a PSN row the poller hasn't cached yet. Set by
-    -- poller/psn_fetcher.py, never read live (SPEC 1.5's cache-only rule).
-    psn_trophy_level INTEGER,
+    gamerscore   INTEGER,           -- Xbox only, from the profile; NULL elsewhere
+    psn_trophy_level INTEGER,       -- PSN only
     -- Whether the shared service credential could actually see this
-    -- account's achievements/trophies as of the last check (#5, /panel
-    -- login-row rework) — NULL until checked once, then 1/0. Set at connect
-    -- time and refreshed by every backfill and resync (SteamFetcher/
-    -- PsnFetcher), since the coarser "My Profile" visibility check at
-    -- connect time doesn't cover Steam's separate "Game details" toggle.
+    -- account's achievements/trophies as of the last check (#5) — NULL
+    -- until checked once, then 1/0. A property of the account's own privacy
+    -- settings, which is why it lives here and not on the link.
     achievements_visible INTEGER,
-    -- When the check above last ran, so /panel and the admin card can show
-    -- "as of ..." next to the status instead of a bare unlabeled flag —
-    -- Xbox's own login row already has this via token.last_refresh_at.
     achievements_visible_checked_at TEXT,
-    PRIMARY KEY (tg_id, platform)
+    first_seen_at TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    PRIMARY KEY (platform, external_id)
 );
+
+-- Who has an account linked now, and who had it before (#52). Unlinking
+-- flips `is_active` and stamps `unlinked_at`; nothing is ever deleted, so
+-- "which account was linked before this one" is just a row, and relinking a
+-- previously-known account finds its history waiting.
+CREATE TABLE IF NOT EXISTS account_links (
+    tg_id       INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    platform    TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    linked_at   TEXT NOT NULL,
+    unlinked_at TEXT,
+    PRIMARY KEY (tg_id, platform, external_id),
+    FOREIGN KEY (platform, external_id) REFERENCES accounts(platform, external_id)
+);
+-- One account per platform per person — **this single index is the only
+-- thing enforcing that limit**. Dropping it is what multi-account support
+-- (#10) needs; no query in the codebase assumes at most one active link.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_links_one_active_per_platform
+    ON account_links(tg_id, platform) WHERE is_active = 1;
+-- An account has at most one current owner, which is what makes a takeover
+-- well-defined: linking an account somebody else holds deactivates their
+-- link (and tells them), rather than quietly producing two owners.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_links_one_owner
+    ON account_links(platform, external_id) WHERE is_active = 1;
 
 -- Steam's own achievement schema for a game (M-Steam-2b, SPEC 9) — not about
 -- any one person, one row per appid, JSON-blobbed like hltb_cache.platforms:

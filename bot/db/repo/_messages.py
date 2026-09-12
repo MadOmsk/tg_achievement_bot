@@ -20,6 +20,7 @@ from bot.db.repo._models import (
     _as_user,
     _iso,
 )
+from bot.db.repo._sql import active_account
 from bot.util import utcnow_iso
 
 
@@ -82,9 +83,9 @@ class _MessagesRepo:
             "       psn.display_name AS psn_name "
             "FROM subscriptions s "
             "JOIN users u ON u.tg_id = s.tg_id "
-            "LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam' "
-            "LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn' "
-            "WHERE s.chat_id = ? AND u.is_excluded = 0",
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            + "WHERE s.chat_id = ? AND u.is_excluded = 0",
             (chat_id,),
         )
         return [
@@ -113,13 +114,15 @@ class _MessagesRepo:
             "       s.platform, s.unlocked_at, s.is_secret "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
-            "LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam' "
-            "LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn' "
-            # tg_id, not xuid (SPEC 9, M-Steam-2a): xuid is Xbox-only on
-            # `users`, always NULL for a Steam-only person and never the
-            # SteamID64 `seen_achievements.xuid` holds for a Steam row even
-            # for someone with both platforms — this join saw Xbox rows only.
-            "JOIN seen_achievements s ON s.tg_id = u.tg_id "
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            # Through the accounts this person holds right now (#52, _sql.py).
+            # The old join was `s.tg_id = u.tg_id`, which is the column that
+            # made an account's history follow the person rather than the
+            # account.
+            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             "WHERE sub.chat_id = ? AND u.is_excluded = 0 AND s.unlocked_at IS NOT NULL "
             "ORDER BY s.unlocked_at DESC LIMIT ?",

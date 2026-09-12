@@ -9,8 +9,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from bot.constants import Platform
+from bot.constants import AccountPlatform, Platform
 from bot.db.repo._models import AchievementRow
+from bot.db.repo._sql import OWNED_BY_PERSON
 from bot.util import utcnow_iso
 
 log = logging.getLogger(__name__)
@@ -30,22 +31,23 @@ class _AchievementsRepo:
         an empty achievement list. The caller re-runs backfill right after.
         """
         cursor = await self._conn.execute(
-            "DELETE FROM seen_achievements WHERE tg_id = ? "
+            "DELETE FROM seen_achievements WHERE xuid = ? "
             "AND platform IN ('xbox_modern', 'xbox_360')",
-            (tg_id,),
+            (xuid,),
         )
         deleted = cursor.rowcount
         await self._conn.execute("DELETE FROM title_history WHERE xuid = ?", (xuid,))
         await self._conn.commit()
         return deleted
 
-    async def reset_steam_data(self, tg_id: int) -> int:
+    async def reset_steam_data(self, external_id: str) -> int:
         """Steam's counterpart of `reset_xbox_data` — no per-user cache table
         to clear beyond `seen_achievements` itself (`steam_schema_cache`/
         `steam_rarity_cache` are per-game, shared across every user, and
         must not be touched by resetting one person)."""
         cursor = await self._conn.execute(
-            "DELETE FROM seen_achievements WHERE tg_id = ? AND platform = 'steam'", (tg_id,)
+            "DELETE FROM seen_achievements WHERE xuid = ? AND platform = 'steam'",
+            (external_id,),
         )
         deleted = cursor.rowcount
         await self._conn.commit()
@@ -58,7 +60,8 @@ class _AchievementsRepo:
         the regular poller (#21's gate) leaves this account alone until the
         caller's fresh backfill flips it back on."""
         cursor = await self._conn.execute(
-            "DELETE FROM seen_achievements WHERE tg_id = ? AND platform = 'psn'", (tg_id,)
+            "DELETE FROM seen_achievements WHERE xuid = ? AND platform = 'psn'",
+            (account_id,),
         )
         deleted = cursor.rowcount
         await self._conn.execute(
@@ -72,41 +75,48 @@ class _AchievementsRepo:
 
     # -------------------------------------------------------- achievements
 
+    async def _ensure_account(self, account_platform: str, external_id: str) -> None:
+        """An achievement is proof the account exists, so record it if this
+        is the first we hear of it (#52).
+
+        The foreign key from `seen_achievements` to `accounts` is what keeps
+        a row attached to something real; without this, a poll for an account
+        nobody has linked would raise mid-tick instead of quietly storing
+        what it found. Storing it is right: the rows belong to the account
+        and simply stay invisible until somebody links it.
+        """
+        now = utcnow_iso()
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO accounts (platform, external_id, first_seen_at, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            (account_platform, external_id, now, now),
+        )
+
     async def insert_new_achievements(
         self, xuid: str, achievements: Sequence[AchievementRow], *, is_backfill: bool
     ) -> list[AchievementRow]:
         """Insert what we have not seen and report back only the new rows.
 
-        The primary key (tg_id, platform, title_id, achievement_id) is the
+        The primary key (platform, xuid, title_id, achievement_id) is the
         deduplication: INSERT OR IGNORE tells us which rows were actually
-        new. tg_id, not xuid, is what identifies whose row this is (SPEC
-        9, M-Steam-2) — resolved here from xuid so every existing (Xbox-
-        only) caller keeps working unchanged; a future Steam call site
-        would resolve its own tg_id from platform_links instead and this
-        method would need a platform-aware variant.
+        new. Since #52 the account is what identifies whose row this is, so
+        no owner lookup happens here at all — which also retires a real
+        failure mode: this used to resolve a tg_id from the xuid first and
+        drop the whole batch when it found none.
         """
         if not achievements:
             return []
-        owner = await self.get_user_by_xuid(xuid)
-        if owner is None:  # defensive — an xuid always comes from a connected user
-            log.warning(
-                "insert_new_achievements: no user for xuid=%s, dropped %d rows",
-                xuid,
-                len(achievements),
-            )
-            return []
-        tg_id = owner.tg_id
+        await self._ensure_account(AccountPlatform.XBOX, xuid)
 
         new_rows: list[AchievementRow] = []
         now = utcnow_iso()
         for item in achievements:
             cursor = await self._conn.execute(
                 "INSERT OR IGNORE INTO seen_achievements "
-                "(tg_id, xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
+                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
                 " gamerscore, rarity_percent, platform, is_backfill, is_secret, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    tg_id,
                     xuid,
                     item.title_id,
                     item.achievement_id,
@@ -157,17 +167,17 @@ class _AchievementsRepo:
                 cached_titles[item.title_id] = item.title_name
         for title_id, name in cached_titles.items():
             await self.upsert_title(title_id, name, Platform.STEAM)
+        await self._ensure_account(AccountPlatform.STEAM, steam_id)
 
         new_rows: list[AchievementRow] = []
         now = utcnow_iso()
         for item in achievements:
             cursor = await self._conn.execute(
                 "INSERT OR IGNORE INTO seen_achievements "
-                "(tg_id, xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
+                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
                 " gamerscore, rarity_percent, platform, is_backfill, is_secret, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    tg_id,
                     steam_id,
                     item.title_id,
                     item.achievement_id,
@@ -213,18 +223,18 @@ class _AchievementsRepo:
                 cached_titles[item.title_id] = item.title_name
         for title_id, name in cached_titles.items():
             await self.upsert_title(title_id, name, Platform.PSN)
+        await self._ensure_account(AccountPlatform.PSN, account_id)
 
         new_rows: list[AchievementRow] = []
         now = utcnow_iso()
         for item in achievements:
             cursor = await self._conn.execute(
                 "INSERT OR IGNORE INTO seen_achievements "
-                "(tg_id, xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
+                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
                 " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
                 " created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    tg_id,
                     account_id,
                     item.title_id,
                     item.achievement_id,
@@ -346,10 +356,11 @@ class _AchievementsRepo:
         """
         cursor = await self._conn.execute(
             "SELECT s.*, t.name AS game FROM seen_achievements s "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + OWNED_BY_PERSON
+            + "LEFT JOIN titles t ON t.title_id = s.title_id "
             "LEFT JOIN publications p ON p.chat_id = ? AND p.xuid = s.xuid"
             "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "
-            "WHERE s.tg_id = ? AND s.is_backfill = 0 AND s.unlocked_at IS NOT NULL"
+            "WHERE al.tg_id = ? AND s.is_backfill = 0 AND s.unlocked_at IS NOT NULL"
             "   AND p.chat_id IS NULL "
             "ORDER BY s.unlocked_at ASC",
             (chat_id, tg_id),
