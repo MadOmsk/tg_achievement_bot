@@ -685,6 +685,17 @@ Two questions, and only two:
    own rows, and the achievement/trophy announcement itself (deliberate: that
    message is scoped to one platform by construction).
 
+**A chain answers a display question, so code that needs one specific value
+does not go through one** — a lookup key (XUID, SteamID64, `account_id`), a
+URL built from a particular field, a comparison against what a platform
+returned. Reaching for the raw column there is correct, not an exception to
+the rule; the rule is about what a person reads.
+
+**A third chain is a question for the project owner, not a decision at the
+keyboard.** If a screen seems to need an order neither chain gives, ask
+whether one of the existing chains fits before writing a new one — that is
+exactly how four of them accumulated, each defensible on its own.
+
 **Never an `@` anywhere.** A username is shown bare. Live mentions ping the
 person — harmless once a day, actively bad in `/online`, which redraws itself
 every few minutes (this was already reverted once, #38). One rule everywhere
