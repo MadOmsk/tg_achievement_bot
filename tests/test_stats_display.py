@@ -106,7 +106,10 @@ async def test_header_shows_the_telegram_username_not_the_gamertag(repo: Repo) -
 
     assert text is not None
     header = text.split("\n")[0]
-    assert "@realusername" in header
+    # Bare, with no "@" (#51): a username is never rendered as a live
+    # mention anywhere in the bot.
+    assert "realusername" in header
+    assert "@realusername" not in header
     assert "GamerTag" not in header
 
 
@@ -848,18 +851,36 @@ def _presence_row(**over) -> ChatPresenceRow:
     return ChatPresenceRow(**base)  # type: ignore[arg-type]
 
 
-def test_who_label_prefers_username_then_name_then_gamertag() -> None:
-    assert _who_label(_presence_row(username="mad", gamertag="MadXbox"), None) == "@mad"
-    assert _who_label(_presence_row(first_name="Igor", last_name="Petrov"), None) == "Igor Petrov"
-    assert _who_label(_presence_row(first_name="Igor"), None) == "Igor"
-    assert _who_label(_presence_row(gamertag="MadXbox"), None) == "MadXbox"
+def test_who_label_prefers_the_name_then_username_then_gamertag() -> None:
+    """The one person chain (#51): name first, then a bare username, then a
+    platform nickname. A Telegram name now outranks a username — it is the
+    more human form — and the username carries no "@"."""
+    assert (
+        _who_label(_presence_row(first_name="Igor", last_name="Petrov", username="mad"))
+        == "Igor Petrov"
+    )
+    assert _who_label(_presence_row(first_name="Igor")) == "Igor"
+    assert _who_label(_presence_row(username="mad", gamertag="MadXbox")) == "mad"
+    assert _who_label(_presence_row(gamertag="MadXbox")) == "MadXbox"
+
+
+def test_who_label_prefers_the_modern_gamertag_over_the_classic_one() -> None:
+    row = _presence_row(gamertag="MadOmsk", gamertag_modern="Mad Omsk")
+    assert _who_label(row) == "Mad Omsk"
 
 
 def test_who_label_falls_back_to_a_platform_name_not_a_bare_id() -> None:
     # A Steam/PSN-only member with no Telegram identity — used to render "idNNNN".
-    assert _who_label(_presence_row(steam_display_name="SteamNick"), None) == "SteamNick"
-    assert _who_label(_presence_row(psn_display_name="PsnNick"), None) == "PsnNick"
+    assert _who_label(_presence_row(steam_display_name="SteamNick")) == "SteamNick"
+    assert _who_label(_presence_row(psn_display_name="PsnNick")) == "PsnNick"
+
+
+def test_who_label_never_stops_at_the_empty_xbox_dash() -> None:
+    """The account chains end at a dash so their own line renders something;
+    inside the person chain that dash is an absence, and stopping on it
+    would show "—" while a real PSN nickname sat one step further down."""
+    assert _who_label(_presence_row(psn_display_name="PsnNick")) != "—"
 
 
 def test_who_label_last_resort_is_the_id_when_nothing_else_exists() -> None:
-    assert "1" in _who_label(_presence_row(tg_id=1), None)
+    assert "1" in _who_label(_presence_row(tg_id=1))

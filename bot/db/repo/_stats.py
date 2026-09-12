@@ -57,6 +57,39 @@ class _StatsRepo:
         )
         await self._conn.commit()
 
+    async def update_xbox_names(
+        self, tg_id: int, *, gamertag: str | None, gamertag_modern: str | None
+    ) -> bool:
+        """Refresh the Xbox naming chain from the profile response the
+        poller already made for gamerscore (#51). Writes only when something
+        actually changed, and says whether it did — this runs on every title
+        history refresh, and rewriting the same two strings is pure churn.
+
+        A NULL from the platform never overwrites a stored value: an
+        occasional response missing ModernGamertag should not blank a name
+        the bot already knows.
+        """
+        cursor = await self._conn.execute(
+            "UPDATE users SET gamertag = COALESCE(?, gamertag),"
+            "                 gamertag_modern = COALESCE(?, gamertag_modern),"
+            "                 updated_at = ? "
+            "WHERE tg_id = ?"
+            "  AND ((? IS NOT NULL AND gamertag IS NOT ?)"
+            "    OR (? IS NOT NULL AND gamertag_modern IS NOT ?))",
+            (
+                gamertag,
+                gamertag_modern,
+                utcnow_iso(),
+                tg_id,
+                gamertag,
+                gamertag,
+                gamertag_modern,
+                gamertag_modern,
+            ),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
     # ------------------------------------------------------------ aggregates
 
     async def _achievement_counts_by(

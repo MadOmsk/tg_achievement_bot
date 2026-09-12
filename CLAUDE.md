@@ -90,6 +90,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── stats.py                aggregates for the panels, /stats, the daily summary
 │   │   ├── models.py               ParsedAchievement/Platform, shared by Xbox/Steam/PSN
 │   │   ├── tables.py               shared blockquote-list table renderer
+│   │   ├── naming.py               the naming chains (#51) — the only place that answers
+│   │   │                           "what is this person called" / "what is this account called"
 │   │   ├── profile_links.py        one profile-URL builder per platform, gated by
 │   │   │                           user_settings.show_profile_links
 │   │   ├── hltb.py                 wrapper over howlongtobeatpy, cached in hltb_cache
@@ -169,6 +171,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── reconcile_achievements.py  one-off full achievement-history backfill
 │   ├── backfill_hltb_platforms.py one-off: fill in `platforms` on already-cached games
 │   ├── backfill_hltb_descriptions.py one-off: fill in `description_*` on games cached before #2
+│   ├── backfill_psn_previous_ids.py one-off: previous PSN online IDs for renames that
+│   │                               predate the poller noticing them (#51)
 │   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
 │   ├── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
 │   │                               account linked before that column meant anything (#5)

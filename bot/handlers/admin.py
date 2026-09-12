@@ -64,6 +64,7 @@ from bot.services.achievements import (
     visibility_status_text,
 )
 from bot.services.admin_view import render_admin_home
+from bot.services.naming import account_nickname, person_name, xbox_nickname
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
@@ -1491,11 +1492,18 @@ async def _users(repo: Repo, page: int, *, locale: str) -> tuple[str, InlineKeyb
     lines = [_("admin-users-header", page=page + 1, pages=pages), ""]
     builder = InlineKeyboardBuilder()
     for user in chunk:
-        name = (
-            user.gamertag
-            or user.steam_name
-            or user.psn_online_id
-            or _("admin-id", tg_id=user.tg_id)
+        # The person chain (#51), not "whichever platform answered first" —
+        # this list is a roster of people, and its rows are how the operator
+        # finds one. The bare id stays reachable as the last step, which on
+        # this screen is diagnostic rather than a bad label.
+        name = person_name(
+            tg_id=user.tg_id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            username=user.username,
+            xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
+            steam=user.steam_name,
+            psn=user.psn_online_id,
         )
         lines.append(
             _(
@@ -1589,7 +1597,12 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
             else humanize_ago(presence.updated_at, locale)
         )
     return [
-        _("admin-xbox-header", gamertag=user.gamertag or _("admin-no-name")),
+        _(
+            "admin-xbox-header",
+            gamertag=xbox_nickname(
+                gamertag_modern=user.gamertag_modern, gamertag=user.gamertag, xuid=user.xuid
+            ),
+        ),
         _("admin-xuid-tag", xuid=user.xuid),
         _("admin-login-row", login=login),
         "  ·  ".join(parts),
@@ -1631,7 +1644,15 @@ async def _steam_admin_block(
             )
         )
     return [
-        _("admin-steam-header", name=link.display_name or _("admin-no-name")),
+        _(
+            "admin-steam-header",
+            name=account_nickname(
+                Platform.STEAM,
+                display_name=link.display_name,
+                secondary_name=link.secondary_name,
+                external_id=link.external_id,
+            ),
+        ),
         _("admin-steamid-tag", external_id=link.external_id),
         _("admin-login-row", login=visibility_status_text(link, locale)),
         "  ·  ".join(parts),
@@ -1677,7 +1698,15 @@ async def _psn_admin_block(
             )
         )
     return [
-        _("admin-psn-header", name=link.display_name or _("admin-no-name")),
+        _(
+            "admin-psn-header",
+            name=account_nickname(
+                Platform.PSN,
+                display_name=link.display_name,
+                secondary_name=link.secondary_name,
+                external_id=link.external_id,
+            ),
+        ),
         _("admin-psn-id-tag", external_id=link.external_id),
         _("admin-login-row", login=visibility_status_text(link, locale)),
         "  ·  ".join(parts),

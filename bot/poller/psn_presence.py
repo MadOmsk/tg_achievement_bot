@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 
 from bot.config import Settings
+from bot.constants import Platform
 from bot.db.repo import PsnPresenceTarget, Repo
 from bot.poller.cadence import is_due, presence_interval
 from bot.services.psn.auth import PsnAuth, PsnNotConfiguredError
@@ -76,6 +77,24 @@ class PsnPresencePoller:
         )
         if snapshot.state == "Online":
             await self._repo.touch_last_online(target.tg_id)
+        await self._refresh_nickname(target, snapshot.online_id)
+
+    async def _refresh_nickname(self, target: PsnPresenceTarget, online_id: str | None) -> None:
+        """The current online ID came along with the presence request (#51),
+        so keeping it fresh costs nothing. A change here is also the only
+        signal Sony gives us that an account was renamed — the endpoint that
+        reports a previous online ID is addressed by nickname, and by the
+        time we would ask, we would already be asking with the new one. So
+        the value being replaced *is* the previous id, kept as this
+        platform's own second naming step.
+        """
+        if not online_id or online_id == target.online_id:
+            return
+        previous = target.online_id
+        await self._repo.update_platform_names(target.tg_id, Platform.PSN, online_id)
+        if previous:
+            await self._repo.set_platform_secondary_name(target.tg_id, Platform.PSN, previous)
+            log.info("psn account %s renamed: %s -> %s", target.account_id, previous, online_id)
 
     def _is_due(self, target: PsnPresenceTarget) -> bool:
         return is_due(target.updated_at, self._interval(target))

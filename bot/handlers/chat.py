@@ -52,9 +52,9 @@ from bot.services.achievements import (
     plural_achievements,
     rarity_badge,
     score_suffix,
-    telegram_identity,
 )
 from bot.services.message_log import stats_category
+from bot.services.naming import person_name, person_name_of, xbox_nickname
 from bot.services.online_view import render_online_table
 from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for, local_now
@@ -173,7 +173,10 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext) -> None:
     await message.answer(
         i18n.get(
             "chat-subscribe-done",
-            gamertag=user.gamertag or i18n.get("chat-subscribe-your-achievements"),
+            # The person, not their Xbox account (#51) — this read
+            # `user.gamertag`, so anyone without Xbox got the generic
+            # "твои достижения" instead of their own name.
+            gamertag=person_name_of(user, await repo.platform_links_of(message.from_user.id)),
         )
     )
 
@@ -262,40 +265,27 @@ def _display_name(target: User, links: list[PlatformLink]) -> str:
     platform happened to be Xbox reads better once someone has more than
     one. first_name/last_name only exist once UsernameMiddleware (below)
     has seen at least one message from them — a brand-new /start with
-    nothing yet falls through to a platform name as a last resort, same
-    defensive shape this function already had before this change."""
-    name = telegram_identity(
-        username=target.username,
-        first_name=target.first_name,
-        last_name=target.last_name,
-        gamertag=target.gamertag,
-    )
-    if name:
-        return name
-    if links:
-        return links[0].display_name or links[0].external_id
-    return ""
+    nothing yet falls through to a platform name as a last resort.
+
+    One of four hand-rolled versions of this chain until #51; now just the
+    shared one, handed whichever platform links this person happens to
+    have."""
+    return person_name_of(target, links)
 
 
-def _who_label(row: ChatPresenceRow, i18n: I18nContext | None) -> str:
-    """/who's picker button (#40) — identify *the person*, the same
-    priority `_display_name` above uses for /stats' header: @username >
-    first+last name > gamertag > a connected platform's own name, never a
-    bare "idNNNN" for someone who has any of those. `chat_member_presence`
-    already carries these fields (the #38 /online work joined them in), so
-    no extra lookup per row is needed."""
-    name = telegram_identity(
-        username=row.username,
+def _who_label(row: ChatPresenceRow) -> str:
+    """/who's picker button (#40) — identify *the person*, the same chain
+    /stats' header uses, never a bare "idNNNN" for someone who has anything
+    else. `chat_member_presence` already carries every field it needs (the
+    #38 /online work joined them in), so no extra lookup per row."""
+    return person_name(
+        tg_id=row.tg_id,
         first_name=row.first_name,
         last_name=row.last_name,
-        gamertag=row.gamertag,
-    )
-    if name:
-        return name
-    return (
-        row.steam_display_name
-        or row.psn_display_name
-        or _hub_text(i18n, "chat-who-fallback-id", tg_id=row.tg_id)
+        username=row.username,
+        xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
+        steam=row.steam_display_name,
+        psn=row.psn_display_name,
     )
 
 
@@ -508,7 +498,7 @@ async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
     builder = InlineKeyboardBuilder()
     for row in rows:
         builder.button(
-            text=_who_label(row, i18n),
+            text=_who_label(row),
             callback_data=f"who:stats:{row.tg_id}",
         )
     builder.adjust(3)
@@ -710,7 +700,19 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
     # empty), a separate generic bullet would double up with it on every
     # "common" row: two trophies back to back on the same line.
     badge = rarity_badge(row.rarity_percent)
-    gamertag = html_escape(truncate_name(row.gamertag or _hub_text(i18n, "chat-recent-someone")))
+    gamertag = html_escape(
+        truncate_name(
+            person_name(
+                tg_id=row.tg_id,
+                first_name=row.first_name,
+                last_name=row.last_name,
+                username=row.username,
+                xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
+                steam=row.steam_name,
+                psn=row.psn_name,
+            )
+        )
+    )
     game = html_escape(truncate_name(row.game or _hub_text(i18n, "chat-untitled")))
     icon = PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
     # Found live: every Steam row showed a flat "+0 G" — Steam achievements

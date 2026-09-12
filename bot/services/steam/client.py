@@ -184,6 +184,10 @@ class SteamPresence:
     persona_state: int  # Steam's own enum, 0=offline..6
     gameid: str | None
     game_name: str | None  # gameextrainfo — set only while actually playing
+    # The vanity name, second step of the Steam naming chain (#51) — None
+    # when this person never set a custom URL. Read off `profileurl`, which
+    # the same batch already returns; Steam has no field of its own for it.
+    vanity: str | None = None
 
 
 async def get_presence_batch(api_key: str, steam_ids: list[str]) -> dict[str, SteamPresence]:
@@ -205,8 +209,22 @@ async def get_presence_batch(api_key: str, steam_ids: list[str]) -> dict[str, St
             persona_state=int(player.get("personastate") or 0),
             gameid=player.get("gameid"),
             game_name=player.get("gameextrainfo"),
+            vanity=_vanity_from(player.get("profileurl"), str(steam_id)),
         )
     return result
+
+
+def _vanity_from(profile_url: str | None, steam_id: str) -> str | None:
+    """Steam exposes no "vanity name" field — `profileurl` is the only place
+    it appears, as `https://steamcommunity.com/id/<vanity>/`. An account
+    with no custom URL gets `.../profiles/<steamid64>/` instead, so the last
+    path segment is the vanity when there is one and the id when there is
+    not; returning None for the latter keeps "no vanity" distinguishable
+    from "vanity that happens to look like an id"."""
+    if not profile_url:
+        return None
+    segment = profile_url.rstrip("/").rsplit("/", 1)[-1]
+    return segment if segment and segment != steam_id else None
 
 
 @dataclass(slots=True)

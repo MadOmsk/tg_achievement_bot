@@ -28,6 +28,7 @@ from bot.services.achievements import (
     score_suffix,
 )
 from bot.services.message_log import stats_category
+from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import local_now, month_cutoff_utc
 from bot.services.tables import blockquote, total_line, truncate_name
 from bot.util import thousands, utcnow
@@ -305,8 +306,24 @@ def _section(
     return [summary, rows_block], has_more
 
 
+def _member_name(row: ChatMemberStat) -> str:
+    """#51: the one person chain, not this row's own. It used to read
+    `row.gamertag or f"id{row.tg_id}"` — an Xbox-only display cache — so a
+    member with no Xbox account appeared as a bare id while the bot held his
+    Telegram name, his username and his PSN nickname."""
+    return person_name(
+        tg_id=row.tg_id,
+        first_name=row.first_name,
+        last_name=row.last_name,
+        username=row.username,
+        xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
+        steam=row.steam_name,
+        psn=row.psn_name,
+    )
+
+
 def _leader_row(place: int, row: ChatMemberStat, locale: str, *, show_rare: bool = True) -> str:
-    name = html_escape(truncate_name(row.gamertag or f"id{row.tg_id}"))
+    name = html_escape(truncate_name(_member_name(row)))
     tail = f" {AchievementBadge.DIAMOND}{row.rare}" if show_rare and row.rare else ""
     breakdown = platform_breakdown_suffix(
         row.xbox_count, row.steam_count, row.psn_count, always=True

@@ -81,10 +81,11 @@ class SteamPresencePoller:
             snapshot.game_name,
             changed=changed,
         )
-        # Already have a fresh persona name from this same batch call — keep
-        # the panel/connect card from drifting stale, at zero extra cost.
-        await self._repo.update_platform_display_name(
-            target.tg_id, Platform.STEAM, snapshot.persona_name
+        # Already have a fresh persona name (and vanity, #51) from this same
+        # batch call — keep the panel/connect card from drifting stale, at
+        # zero extra cost. Writes only when something actually changed.
+        await self._repo.update_platform_names(
+            target.tg_id, Platform.STEAM, snapshot.persona_name, snapshot.vanity
         )
         # Found while adding Steam to the admin panel (2026-09-05): only
         # presence.py ever touched this, so a Steam-only person's "last

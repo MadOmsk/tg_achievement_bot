@@ -309,6 +309,44 @@ class PsnPresenceSnapshot:
     state: str  # PresenceState.ONLINE / OFFLINE
     title_id: str | None
     title_name: str | None
+    # The account's current online ID (#51). Building the User object to ask
+    # for presence already fetches /profiles/<account_id>, whose `onlineId`
+    # is the current one — a rename is visible here for free, and PSN used
+    # to store the nickname once at connect and never again.
+    online_id: str | None = None
+
+
+LEGACY_PROFILE_URL = "https://us-prof.np.community.playstation.net/userProfile/v1/users"
+
+
+async def legacy_profile(client: PSNAWP, online_id: str) -> dict[str, str] | None:
+    """Sony's legacy profile blob for one nickname (#51) — the only place a
+    *previous* online ID is exposed, and only for an account that was
+    actually renamed: `currentOnlineId` is absent otherwise, and `onlineId`
+    is then simply the current name.
+
+    Addressed by nickname rather than by account_id, which is why the modern
+    `/profiles/<account_id>` path the rest of this module uses cannot answer
+    the question. Raw HTTP through psnawp's own authenticator: the library
+    reads these fields in `User.from_online_id` and throws the previous one
+    away, and `User.prev_online_id` is a copy of the current id rather than a
+    real previous value in this version.
+
+    None on any failure — this is a best-effort enrichment, never a reason to
+    fail a backfill run.
+    """
+    try:
+        user = await _call(client.user, online_id=online_id)
+        response = await _call(
+            lambda: user.authenticator.get(
+                url=f"{LEGACY_PROFILE_URL}/{online_id}/profile2",
+                params={"fields": "accountId,onlineId,currentOnlineId"},
+            )
+        )
+        return response.json().get("profile") or None
+    except Exception as exc:  # every failure here simply means "no answer"
+        log.info("legacy PSN profile unavailable for %s: %s", online_id, exc)
+        return None
 
 
 async def get_presence(client: PSNAWP, account_id: str) -> PsnPresenceSnapshot:
@@ -335,7 +373,12 @@ async def get_presence(client: PSNAWP, account_id: str) -> PsnPresenceSnapshot:
     titles = basic.get("gameTitleInfoList") or []
     title_id = titles[0].get("npTitleId") if titles else None
     title_name = titles[0].get("titleName") if titles else None
-    return PsnPresenceSnapshot(state=state, title_id=title_id, title_name=title_name)
+    return PsnPresenceSnapshot(
+        state=state,
+        title_id=title_id,
+        title_name=title_name,
+        online_id=getattr(user, "online_id", None) or None,
+    )
 
 
 async def trophy_titles_for_account(

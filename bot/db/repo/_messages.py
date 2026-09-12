@@ -70,10 +70,18 @@ class _MessagesRepo:
 
     async def chat_recent(self, chat_id: int, limit: int) -> list[RecentAchievement]:
         cursor = await self._conn.execute(
-            "SELECT u.gamertag, s.name, t.name AS game, s.gamerscore, s.rarity_percent,"
+            # Every field the person chain needs (#51) — this used to select
+            # `u.gamertag` alone, so a member with no Xbox account was
+            # rendered as the literal word "кто-то".
+            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
+            "       u.last_name, steam.display_name AS steam_name,"
+            "       psn.display_name AS psn_name,"
+            "       s.name, t.name AS game, s.gamerscore, s.rarity_percent,"
             "       s.platform, s.unlocked_at, s.is_secret "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
+            "LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam' "
+            "LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn' "
             # tg_id, not xuid (SPEC 9, M-Steam-2a): xuid is Xbox-only on
             # `users`, always NULL for a Steam-only person and never the
             # SteamID64 `seen_achievements.xuid` holds for a Steam row even
@@ -86,7 +94,14 @@ class _MessagesRepo:
         )
         return [
             RecentAchievement(
+                tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
                 name=row["name"],
                 game=row["game"],
                 gamerscore=int(row["gamerscore"] or 0),

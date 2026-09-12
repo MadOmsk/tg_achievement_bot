@@ -12,7 +12,13 @@ CREATE TABLE IF NOT EXISTS users (
     first_name      TEXT,
     last_name       TEXT,
     xuid            TEXT UNIQUE,          -- identity key, NOT the gamertag
-    gamertag        TEXT,                 -- display cache, can change
+    gamertag        TEXT,                 -- classic gamertag: display cache, can change
+    -- Xbox's own ModernGamertag, the first step of the Xbox naming chain
+    -- (#51) — the pretty current form ("Mad Omsk") next to the classic ASCII
+    -- one ("MadOmsk"). Both arrive in the profile response already read for
+    -- gamerscore. NULL until that call runs once; the `#1234` suffix beside
+    -- it in that response is deliberately not stored, it is never shown.
+    gamertag_modern TEXT,
     gamerscore      INTEGER,              -- cache, refreshed together with titleHistory
     is_excluded     INTEGER NOT NULL DEFAULT 0,
     excluded_by     INTEGER,
@@ -386,6 +392,12 @@ CREATE TABLE IF NOT EXISTS platform_links (
     platform     TEXT    NOT NULL CHECK (platform IN ('steam', 'psn')),
     external_id  TEXT    NOT NULL,  -- SteamID64 / PSN account id
     display_name TEXT,              -- persona name / online ID, display cache
+    -- The middle step of this platform's own naming chain (#51): Steam's
+    -- vanity name (the `xxx` in /id/xxx, NULL when no custom URL was ever
+    -- set) and PSN's previous online ID (what the account was called before
+    -- a rename). One column because both answer the same question in their
+    -- own chain and a row is never both platforms at once.
+    secondary_name TEXT,
     linked_at    TEXT    NOT NULL,
     -- Account-wide PSN trophy level, shown in /stats next to the
     -- achievement count (Follow-up 2026-09-06) — NULL for Steam rows and

@@ -8,6 +8,7 @@ from datetime import timedelta
 from bot.db.repo import AchievementRow, Repo
 from bot.poller.fetcher import Fetcher
 from bot.poller.reminders import MAX_REMINDERS, REMINDER_INTERVAL_HOURS, ReminderJob
+from bot.services.xbox.client import XboxProfileSnapshot
 from bot.services.xbox.models import ParsedAchievement
 from bot.util import utcnow
 
@@ -64,8 +65,12 @@ class FakeClient:
     async def title_history(self, tg_id, max_items: int = 200):
         return self.history
 
-    async def gamerscore(self, tg_id):
-        return 35776
+    async def profile(self, tg_id):
+        # One request, three cacheable facts (#51) — the two gamertags were
+        # always in this response and used to be thrown away.
+        return XboxProfileSnapshot(
+            gamerscore=35776, gamertag="RideTheSun", gamertag_modern="Ride The Sun"
+        )
 
     async def resolve_title(self, tg_id, title_id):
         self.resolved.append(title_id)

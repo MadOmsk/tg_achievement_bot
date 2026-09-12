@@ -303,7 +303,8 @@ class _PollingRepo:
 
     async def psn_presence_pollable_accounts(self) -> list[PsnPresenceTarget]:
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, pl.external_id AS account_id, pp.state, pp.title_id,"
+            "SELECT u.tg_id, pl.external_id AS account_id, pl.display_name AS online_id,"
+            "       pp.state, pp.title_id,"
             "       pp.title_name, pp.changed_at, pp.updated_at "
             "FROM platform_links pl "
             "JOIN users u ON u.tg_id = pl.tg_id "
@@ -319,6 +320,7 @@ class _PollingRepo:
                 title_name=row["title_name"],
                 changed_at=row["changed_at"],
                 updated_at=row["updated_at"],
+                online_id=row["online_id"],
             )
             for row in await cursor.fetchall()
         ]

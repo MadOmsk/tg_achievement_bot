@@ -22,10 +22,10 @@ from bot.services.achievements import (
     format_digest,
     format_single,
     passes_filters,
-    telegram_identity,
 )
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import stats_category
+from bot.services.naming import person_name_of
 from bot.util import utcnow
 
 log = logging.getLogger(__name__)
@@ -246,16 +246,7 @@ class Publisher:
         achievements = await localize_descriptions(self._repo, achievements, locale)
         user = await self._repo.get_user(tg_id)
         links = await self._repo.platform_links_of(tg_id)
-        name = (
-            telegram_identity(
-                username=user.username if user else None,
-                first_name=user.first_name if user else None,
-                last_name=user.last_name if user else None,
-                gamertag=user.gamertag if user else None,
-            )
-            or (links[0].display_name or links[0].external_id if links else None)
-            or f"id{tg_id}"
-        )
+        name = person_name_of(user, links) if user else f"id{tg_id}"
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,

@@ -54,9 +54,12 @@ def achievement(
 
 
 async def _chat_with_two_players(repo: Repo) -> None:
+    """Both players carry a Telegram first name as well as an Xbox gamertag —
+    the summary names *people* (#51), so the leaderboard shows the first
+    name and the gamertag only ever appears on a platform's own line."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     for tg_id, xuid, tag in ((1, XUID_A, "Igor"), (2, XUID_B, "Alex")):
-        await repo.ensure_user(tg_id, tag.lower())
+        await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
         await repo.link_xbox_account(tg_id, xuid, tag, 1000)
         await repo.subscribe(CHAT_ID, tg_id)
 
@@ -121,11 +124,11 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     second follow-up), where /stats stays silent (SPEC 9, M-Steam-2e's own
     leaderboard sort is untouched either way)."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
-    await repo.ensure_user(1, "both")
+    await repo.ensure_user(1, "both", first_name="Both")
     await repo.link_xbox_account(1, XUID_A, "Both", 0)
     await repo.link_platform_account(1, "steam", "76561197960287930", "BothSteam")
     await repo.subscribe(CHAT_ID, 1)
-    await repo.ensure_user(2, "xboxonly")
+    await repo.ensure_user(2, "xboxonly", first_name="XboxOnly")
     await repo.link_xbox_account(2, XUID_B, "XboxOnly", 0)
     await repo.subscribe(CHAT_ID, 2)
 
@@ -151,7 +154,9 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     )
     await repo.insert_new_achievements(XUID_B, [achievement("b1", now)], is_backfill=False)
 
-    await repo.ensure_user(3, "psnonly")
+    # Nothing from Telegram at all — no username, no first name — so the
+    # person chain has to reach the PSN nickname to name this row (#51).
+    await repo.ensure_user(3)
     await repo.link_platform_account(3, "psn", "internal-account-id", "PsnOnly")
     await repo.subscribe(CHAT_ID, 3)
     await repo.insert_new_achievements_psn(
@@ -182,11 +187,12 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     assert "(🟢 1 · ⚫ 1)" in both_line
     xbox_only_line = next(line for line in text.split("\n") if "XboxOnly" in line)
     assert "(🟢 1)" in xbox_only_line
-    # PsnOnly has no Xbox gamertag, so — same as any Steam-only person
-    # elsewhere in this project — the row falls back to "id<tg_id>", not
-    # their PSN display name; that fallback isn't what #32 is about, only
-    # the platform breakdown next to it is.
-    psn_only_line = next(line for line in text.split("\n") if "id3" in line)
+    # PsnOnly has no Xbox gamertag and nothing from Telegram either, so the
+    # person chain walks all the way down to the PSN nickname (#51). This
+    # line used to read a bare "id3": the leaderboard selected only the Xbox
+    # display cache, so a member without one had no name to render at all.
+    assert "id3" not in text
+    psn_only_line = next(line for line in text.split("\n") if "PsnOnly" in line)
     assert "(🔵 1)" in psn_only_line  # #32 — used to have no bucket to land in at all
 
 
@@ -204,9 +210,13 @@ async def test_zero_scorers_still_appear(repo: Repo) -> None:
 
 async def test_gamertag_is_escaped_inside_the_html_table(repo: Repo) -> None:
     """The list lives inside a <blockquote>; an unescaped "<" or "&" in a
-    gamertag would break the markup Telegram parses."""
+    name would break the markup Telegram parses.
+
+    No Telegram name or username here on purpose (#51): that walks the person
+    chain all the way down to the gamertag, so this covers both the escaping
+    and the fallback that puts a gamertag on this line at all."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
-    await repo.ensure_user(1, "weird")
+    await repo.ensure_user(1)
     await repo.link_xbox_account(1, XUID_A, "A&B<C>", 1000)
     await repo.subscribe(CHAT_ID, 1)
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
@@ -305,7 +315,7 @@ async def test_summary_offers_show_all_button_only_past_the_configured_limit(
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     for i in range(3):
         tg_id, xuid, tag = i + 1, f"xuid-{i}", f"Player{i}"
-        await repo.ensure_user(tg_id, tag.lower())
+        await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
         await repo.link_xbox_account(tg_id, xuid, tag, 0)
         await repo.subscribe(CHAT_ID, tg_id)
         await repo.insert_new_achievements(
@@ -333,7 +343,7 @@ async def test_summary_top_limit_zero_means_no_cap(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     for i in range(3):
         tg_id, xuid, tag = i + 1, f"xuid-{i}", f"Player{i}"
-        await repo.ensure_user(tg_id, tag.lower())
+        await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
         await repo.link_xbox_account(tg_id, xuid, tag, 0)
         await repo.subscribe(CHAT_ID, tg_id)
         await repo.insert_new_achievements(

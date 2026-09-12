@@ -50,7 +50,14 @@ class _ChatStatsRepo:
             date_params.append(_iso(until))
 
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.gamertag, u.xuid, COUNT(s.achievement_id) AS cnt,"
+            # Every field the person chain needs, not just the Xbox one
+            # (#51): a member with no Xbox account used to have no name here
+            # at all and rendered as a bare "id319472587", which is exactly
+            # what #38 fixed and a revert took back out.
+            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
+            "       u.last_name, u.xuid,"
+            "       steam.display_name AS steam_name, psn.display_name AS psn_name,"
+            "       COUNT(s.achievement_id) AS cnt,"
             "       COALESCE(SUM(s.gamerscore), 0) AS score,"
             "       SUM(CASE WHEN s.rarity_percent IS NOT NULL AND s.rarity_percent <= ?"
             "                THEN 1 ELSE 0 END) AS rare,"
@@ -66,6 +73,8 @@ class _ChatStatsRepo:
             # (2a). gamerscore stays Xbox-only automatically: a Steam row's
             # gamerscore is always 0 (services/steam/achievements.py).
             "LEFT JOIN seen_achievements s ON s.tg_id = u.tg_id " + date_bound + " "
+            "LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam' "
+            "LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn' "
             "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
             "GROUP BY u.tg_id ORDER BY cnt DESC, score DESC",
             [rare_threshold, *date_params, chat_id],
@@ -75,6 +84,12 @@ class _ChatStatsRepo:
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 xuid=row["xuid"],
+                gamertag_modern=row["gamertag_modern"],
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
                 count=int(row["cnt"]),
                 score=int(row["score"]),
                 rare=int(row["rare"] or 0),
@@ -206,7 +221,8 @@ class _ChatStatsRepo:
             "  UNION "
             "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
             "), presence AS ("
-            "  SELECT u.tg_id, u.gamertag, u.username, u.first_name, u.last_name, u.xuid,"
+            "  SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
+            "         u.last_name, u.xuid,"
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
             "         xp.title_name AS xbox_title_name, xp.updated_at AS xbox_updated_at,"
             "         sp.persona_state AS steam_persona_state, sp.gameid AS steam_gameid,"
@@ -261,7 +277,7 @@ class _ChatStatsRepo:
             "    END AS winner"
             "  FROM picked"
             ") "
-            "SELECT tg_id, gamertag, username, first_name, last_name, xuid,"
+            "SELECT tg_id, gamertag, gamertag_modern, username, first_name, last_name, xuid,"
             "       CASE winner"
             "         WHEN 'steam' THEN"
             "           CASE WHEN steam_persona_state != 0 THEN 'Online' ELSE 'Offline' END"
@@ -280,13 +296,19 @@ class _ChatStatsRepo:
             "  CASE WHEN state = 'Online' AND title_id IS NOT NULL THEN 0 "
             "       WHEN state = 'Online' THEN 1 "
             "       ELSE 2 END, "
-            "  gamertag",
+            # By the label the table actually renders (#51) — this used to
+            # order by `gamertag` alone, i.e. by an Xbox nickname that a
+            # Steam/PSN row does not even have and that /online never shows.
+            "  CASE winner WHEN 'steam' THEN steam_display_name"
+            "              WHEN 'psn' THEN psn_display_name"
+            "              ELSE COALESCE(gamertag_modern, gamertag) END COLLATE NOCASE",
             (chat_id, chat_id),
         )
         return [
             ChatPresenceRow(
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
                 xuid=row["xuid"],
                 state=row["state"],
                 title_id=row["title_id"],

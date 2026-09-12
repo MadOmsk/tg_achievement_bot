@@ -64,6 +64,10 @@ class XboxApiValue(StrEnum):
     ACHIEVED = "Achieved"
     ICON = "Icon"
     GAMERSCORE = "Gamerscore"
+    # The two naming steps of the Xbox chain (#51) — both already ride along
+    # in the profile response read for GAMERSCORE, no extra request.
+    GAMERTAG = "Gamertag"
+    MODERN_GAMERTAG = "ModernGamertag"
     FULL = "Full"
     ACTIVE = "Active"
     INVALID_GRANT = "invalid_grant"

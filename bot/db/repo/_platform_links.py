@@ -87,24 +87,57 @@ class _PlatformLinksRepo:
         )
         await self._conn.commit()
 
-    async def update_platform_display_name(
-        self, tg_id: int, platform: str, display_name: str
+    async def update_platform_names(
+        self, tg_id: int, platform: str, display_name: str, secondary_name: str | None = None
+    ) -> bool:
+        """Opportunistic refresh only (SPEC 9, M-Steam-2c, widened to every
+        platform by #51) — each poller already holds a fresh nickname inside
+        a response it made for another reason, so no request exists just for
+        this. A no-op if the link was removed in the meantime.
+
+        Writes only when something actually changed, and returns whether it
+        did: this runs on every presence tick for every linked account, and
+        rewriting the same two strings a few times a minute is pure churn.
+        The changed/unchanged answer is also the one signal PSN has that an
+        account was renamed — `secondary_name` is left alone here, since the
+        caller is the only one that knows whether the old value was a
+        previous online ID worth keeping (PSN) or a vanity name that simply
+        travels with the new persona (Steam).
+        """
+        cursor = await self._conn.execute(
+            "UPDATE platform_links SET display_name = ?,"
+            "       secondary_name = COALESCE(?, secondary_name) "
+            "WHERE tg_id = ? AND platform = ?"
+            "  AND (display_name IS NOT ? OR (? IS NOT NULL AND secondary_name IS NOT ?))",
+            (
+                display_name,
+                secondary_name,
+                tg_id,
+                platform,
+                display_name,
+                secondary_name,
+                secondary_name,
+            ),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def set_platform_secondary_name(
+        self, tg_id: int, platform: str, secondary_name: str | None
     ) -> None:
-        """Opportunistic refresh only (SPEC 9, M-Steam-2c) — the presence
-        poller already has a fresh persona name from the same batch call it
-        used to update presence, so the panel/connect card doesn't drift
-        stale between actual /connect_steam calls. A no-op if the link was
-        removed in the meantime (no row to update)."""
+        """The chain's middle step on its own — PSN's previous online ID when
+        a rename is noticed (or backfilled once from Sony's legacy endpoint),
+        Steam's vanity when it is first read off `profileurl`."""
         await self._conn.execute(
-            "UPDATE platform_links SET display_name = ? WHERE tg_id = ? AND platform = ?",
-            (display_name, tg_id, platform),
+            "UPDATE platform_links SET secondary_name = ? WHERE tg_id = ? AND platform = ?",
+            (secondary_name, tg_id, platform),
         )
         await self._conn.commit()
 
     async def get_platform_link(self, tg_id: int, platform: str) -> PlatformLink | None:
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
-            "       achievements_visible, achievements_visible_checked_at "
+            "SELECT tg_id, platform, external_id, display_name, secondary_name, linked_at,"
+            "       psn_trophy_level, achievements_visible, achievements_visible_checked_at "
             "FROM platform_links WHERE tg_id = ? AND platform = ?",
             (tg_id, platform),
         )
@@ -116,6 +149,7 @@ class _PlatformLinksRepo:
             platform=row["platform"],
             external_id=row["external_id"],
             display_name=row["display_name"],
+            secondary_name=row["secondary_name"],
             linked_at=row["linked_at"],
             psn_trophy_level=row["psn_trophy_level"],
             achievements_visible=(
@@ -128,8 +162,8 @@ class _PlatformLinksRepo:
 
     async def platform_links_of(self, tg_id: int) -> list[PlatformLink]:
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
-            "       achievements_visible, achievements_visible_checked_at "
+            "SELECT tg_id, platform, external_id, display_name, secondary_name, linked_at,"
+            "       psn_trophy_level, achievements_visible, achievements_visible_checked_at "
             "FROM platform_links WHERE tg_id = ?",
             (tg_id,),
         )
@@ -139,6 +173,7 @@ class _PlatformLinksRepo:
                 platform=row["platform"],
                 external_id=row["external_id"],
                 display_name=row["display_name"],
+                secondary_name=row["secondary_name"],
                 linked_at=row["linked_at"],
                 psn_trophy_level=row["psn_trophy_level"],
                 achievements_visible=(
@@ -187,8 +222,8 @@ class _PlatformLinksRepo:
         harmless to always select.
         """
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, linked_at, psn_trophy_level,"
-            "       achievements_visible, achievements_visible_checked_at "
+            "SELECT tg_id, platform, external_id, display_name, secondary_name, linked_at,"
+            "       psn_trophy_level, achievements_visible, achievements_visible_checked_at "
             "FROM platform_links WHERE platform = ?",
             (platform,),
         )
@@ -198,6 +233,7 @@ class _PlatformLinksRepo:
                 platform=row["platform"],
                 external_id=row["external_id"],
                 display_name=row["display_name"],
+                secondary_name=row["secondary_name"],
                 linked_at=row["linked_at"],
                 psn_trophy_level=row["psn_trophy_level"],
                 achievements_visible=(

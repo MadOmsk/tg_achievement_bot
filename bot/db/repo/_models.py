@@ -28,6 +28,10 @@ class User:
     # in schema.sql for how these get refreshed.
     first_name: str | None = None
     last_name: str | None = None
+    # Xbox's ModernGamertag, the first step of the Xbox chain (#51) —
+    # `gamertag` above stays the classic one. Defaulted so the many call
+    # sites that build a User by hand keep working.
+    gamertag_modern: str | None = None
 
 
 @dataclass(slots=True)
@@ -121,6 +125,10 @@ class PsnPresenceTarget:
     title_name: str | None
     changed_at: str | None
     updated_at: str | None
+    # The stored online ID, so the poller can tell a rename from a no-op
+    # without a second query (#51) — the value it replaces is this
+    # platform's own "previous online ID" step.
+    online_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -271,6 +279,12 @@ class AdminUserRow:
     steam_name: str | None = None
     psn_account_id: str | None = None
     psn_online_id: str | None = None
+    # The rest of what the person chain needs (#51) — this row carried only
+    # `gamertag`/`username`, so the roster sorted people under whichever
+    # platform happened to answer first.
+    first_name: str | None = None
+    last_name: str | None = None
+    gamertag_modern: str | None = None
 
 
 @dataclass(slots=True)
@@ -331,6 +345,8 @@ class ChatPresenceRow:
     title_id: str | None
     title_name: str | None
     platform: str  # whichever platform state/title_id/title_name came from
+    # Xbox's ModernGamertag, the first step of the Xbox chain (#51).
+    gamertag_modern: str | None = None
     # Follow-up 2026-09-08 — services/online_view.py's row label: the
     # platform-specific nickname of `platform` above, or (platform == "none")
     # the Telegram name/username fallback. See chat_member_presence()'s
@@ -379,6 +395,15 @@ class ChatMemberStat:
     xbox_count: int = 0
     steam_count: int = 0
     psn_count: int = 0
+    # Everything services/naming.py::person_name needs (#51) — the leaderboard
+    # used to carry only `gamertag`, so a member with no Xbox account had no
+    # name to render and fell through to a bare "id<tg_id>".
+    gamertag_modern: str | None = None
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    steam_name: str | None = None
+    psn_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -391,6 +416,15 @@ class RecentAchievement:
     platform: str
     unlocked_at: str | None
     is_secret: bool = False
+    # Same as ChatMemberStat above (#51): /recent rendered "кто-то" for
+    # anyone without an Xbox account, for the same reason.
+    tg_id: int = 0
+    gamertag_modern: str | None = None
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    steam_name: str | None = None
+    psn_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -465,6 +499,9 @@ class PlatformLink:
     external_id: str
     display_name: str | None
     linked_at: str
+    # The middle step of this platform's naming chain (#51): Steam's vanity,
+    # PSN's previous online ID. See schema.sql's own column comment.
+    secondary_name: str | None = None
     # Account-wide PSN level (Follow-up 2026-09-06) — always None for a
     # Steam row, or a PSN row the poller hasn't cached one for yet.
     psn_trophy_level: int | None = None
@@ -498,6 +535,7 @@ def _as_user(row: aiosqlite.Row) -> User:
         last_online_at=row["last_online_at"],
         first_name=row["first_name"],
         last_name=row["last_name"],
+        gamertag_modern=row["gamertag_modern"],
     )
 
 

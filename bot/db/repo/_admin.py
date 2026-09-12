@@ -84,7 +84,8 @@ class _AdminRepo:
         `WHERE u.xuid IS NOT NULL`, which hid every Steam-only person from
         the admin panel entirely."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.gamertag, u.username, u.xuid, u.gamerscore, u.is_excluded,"
+            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
+            "       u.last_name, u.xuid, u.gamerscore, u.is_excluded,"
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
             "       pp.external_id AS psn_account_id, pp.display_name AS psn_online_id "
@@ -110,6 +111,9 @@ class _AdminRepo:
                 steam_name=row["steam_name"],
                 psn_account_id=row["psn_account_id"],
                 psn_online_id=row["psn_online_id"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
+                gamertag_modern=row["gamertag_modern"],
             )
             for row in await cursor.fetchall()
         ]

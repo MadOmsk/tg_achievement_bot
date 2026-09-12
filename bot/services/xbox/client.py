@@ -88,6 +88,17 @@ class TitleHistoryEntry:
     icon_url: str | None = None
 
 
+@dataclass(slots=True)
+class XboxProfileSnapshot:
+    """One profile request's worth of cacheable facts (#51) — the gamerscore
+    this call has always been made for, plus the two gamertags that were
+    already in the same response and used to be discarded."""
+
+    gamerscore: int | None
+    gamertag: str | None
+    gamertag_modern: str | None
+
+
 class XboxClient:
     def __init__(self, auth: XboxAuthService, limiter: RateLimiter | None = None) -> None:
         self._auth = auth
@@ -234,12 +245,20 @@ class XboxClient:
 
         raise XboxApiError("achievements request gave up")
 
-    async def gamerscore(self, tg_id: int) -> int | None:
-        """The real total from the profile.
+    async def profile(self, tg_id: int) -> XboxProfileSnapshot:
+        """Gamerscore and both gamertags, from one profile request.
 
-        Summing title history would understate it: the history request is
-        capped, and an account with more titles than the cap silently loses the
-        rest of its score.
+        The gamerscore is the real total from the profile: summing title
+        history would understate it, since that request is capped and an
+        account with more titles than the cap silently loses the rest.
+
+        The two names ride along for free (#51). This call has always asked
+        for `Gamertag`, `ModernGamertag`, `ModernGamertagSuffix` and
+        `UniqueModernGamertag` — xbox-webapi-python puts them in its own
+        fixed settings list — and threw all four away, which is why a
+        gamertag written once at connect stayed stale forever and the
+        profile link built from it went dead on a rename. The `#1234`
+        suffix is deliberately not kept: it is never shown.
         """
         manager = await self._auth.authenticated_manager(tg_id)
         assert manager.xsts_token is not None
@@ -252,14 +271,26 @@ class XboxClient:
         except httpx.RequestError as exc:
             raise XboxApiError(f"profile request failed: {exc!r}") from None
 
+        wanted = {
+            XboxApiValue.GAMERSCORE: None,
+            XboxApiValue.GAMERTAG: None,
+            XboxApiValue.MODERN_GAMERTAG: None,
+        }
         for user in getattr(response, "profile_users", None) or []:
             for setting in getattr(user, "settings", None) or []:
-                if getattr(setting, "id", None) == XboxApiValue.GAMERSCORE:
-                    try:
-                        return int(setting.value)
-                    except (TypeError, ValueError):
-                        return None
-        return None
+                key = getattr(setting, "id", None)
+                if key in wanted:
+                    wanted[key] = setting.value or None
+        raw_score = wanted[XboxApiValue.GAMERSCORE]
+        try:
+            gamerscore = int(raw_score) if raw_score is not None else None
+        except (TypeError, ValueError):
+            gamerscore = None
+        return XboxProfileSnapshot(
+            gamerscore=gamerscore,
+            gamertag=wanted[XboxApiValue.GAMERTAG],
+            gamertag_modern=wanted[XboxApiValue.MODERN_GAMERTAG],
+        )
 
     async def resolve_title(self, tg_id: int, title_id: str) -> TitleHistoryEntry | None:
         """Look one game up by id.

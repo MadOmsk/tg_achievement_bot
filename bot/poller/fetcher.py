@@ -316,12 +316,20 @@ class Fetcher:
         # capped, so an account with more games than the cap would show too low
         # a score.
         try:
-            total = await self._client.gamerscore(tg_id)
+            snapshot = await self._client.profile(tg_id)
         except XboxApiError as exc:
-            log.info("gamerscore for tg_id=%s not refreshed: %s", tg_id, exc)
+            log.info("profile for tg_id=%s not refreshed: %s", tg_id, exc)
             return
-        if total is not None:
-            await self._repo.update_gamerscore(tg_id, total)
+        if snapshot.gamerscore is not None:
+            await self._repo.update_gamerscore(tg_id, snapshot.gamerscore)
+        # The gamertags came in the same response (#51). Xbox used to store
+        # them once at connect and never again, so a rename left the bot
+        # calling someone by an old name and pointing at a dead profile
+        # link — both Xbox links are built from the nickname, not the XUID.
+        if snapshot.gamertag or snapshot.gamertag_modern:
+            await self._repo.update_xbox_names(
+                tg_id, gamertag=snapshot.gamertag, gamertag_modern=snapshot.gamertag_modern
+            )
 
 
 def _played_since(

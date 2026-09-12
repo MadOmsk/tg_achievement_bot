@@ -36,9 +36,9 @@ from bot.i18n import StaticI18nContext, build_i18n_context, static_i18n
 from bot.poller.fetcher import Fetcher
 from bot.services.achievements import (
     platform_header_lines,
-    telegram_identity,
     visibility_status_text,
 )
+from bot.services.naming import person_name_of
 from bot.services.single_message import send_replacing
 from bot.util import cooldown_minutes_left, humanize_ago, parse_iso
 
@@ -501,19 +501,14 @@ async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I
     await _redraw_chat_list(callback, repo, i18n)
 
 
-def _panel_identity(user: User, i18n: I18nContext | StaticI18nContext) -> str:
-    """The person's own name for the /panel header (#18) — same priority as
-    /stats' header (@username > first+last > gamertag, `telegram_identity`,
-    2026-09-08 review: this used to reimplement that chain a third time).
-    This screen is only ever shown to its owner, so a bare id is the
-    guaranteed last resort."""
-    name = telegram_identity(
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        gamertag=user.gamertag,
-    )
-    return i18n.get("panel-header-identity", name=name or str(user.tg_id))
+def _panel_identity(
+    user: User, links: list[PlatformLink], i18n: I18nContext | StaticI18nContext
+) -> str:
+    """The person's own name for the /panel header (#18) — the one shared
+    person chain (#51). This used to be the third hand-written copy of it,
+    and the only one whose last resort was a bare `tg_id` with no `id`
+    prefix at all."""
+    return i18n.get("panel-header-identity", name=person_name_of(user, links))
 
 
 async def _panel_header_lines(
@@ -534,7 +529,7 @@ async def _panel_header_lines(
     (CLAUDE.md: "always visible regardless of the privacy toggle" is about
     those buttons, not a second, redundant link inside the header text)."""
     platform_links = [link for link in (steam_link, psn_link) if link is not None]
-    return [_panel_identity(user, i18n)] + await platform_header_lines(
+    return [_panel_identity(user, platform_links, i18n)] + await platform_header_lines(
         repo,
         tg_id=user.tg_id,
         xuid=user.xuid,

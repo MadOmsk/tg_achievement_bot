@@ -139,7 +139,8 @@ async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(re
 
     text, _markup = await render_panel(repo, TG_ID)
 
-    assert text.splitlines()[0] == "👤 @madomsk"  # identity, not "gamertag · gamerscore"
+    # Identity, not "gamertag · gamerscore" — and bare, no "@" (#51).
+    assert text.splitlines()[0] == "👤 madomsk"
     assert "🟢 XBOX: MadXbox" in text
     assert "gamerscore 12" in text  # thousands() formatting of the profile value
     assert "Сегодня:" not in text
