@@ -101,6 +101,32 @@ def connect_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
     )
 
 
+def onboarding_keyboard(url: str, i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarkup:
+    """All three platforms, one row each, in the same fixed order /panel
+    uses (#53, #33). /start used to offer the Microsoft sign-in and nothing
+    else, so Steam and PSN existed only for whoever already knew the
+    commands.
+
+    Xbox is a URL button because its flow leaves Telegram for Microsoft;
+    the other two are callbacks — they only need a nickname typed back.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("kb-panel-connect-steam"), callback_data="steam:connect"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("kb-panel-connect-psn"), callback_data="psn:connect"
+                )
+            ],
+        ]
+    )
+
+
 # "Never digest" is stored as a number rather than NULL so the publisher stays
 # a single comparison: any real session is smaller than this.
 DIGEST_NEVER = 99

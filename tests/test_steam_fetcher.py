@@ -34,7 +34,9 @@ class FakePublisher:
     def __init__(self) -> None:
         self.published: list[list[AchievementRow]] = []
 
-    async def publish(self, tg_id, xuid, gamertag, achievements, title_name=None) -> None:
+    async def publish(
+        self, tg_id, xuid, gamertag, achievements, title_name=None, *, window_hours=None
+    ) -> None:
         self.published.append(list(achievements))
 
 

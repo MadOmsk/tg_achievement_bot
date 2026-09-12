@@ -26,7 +26,7 @@ from bot.services.achievements import (
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import stats_category
 from bot.services.naming import person_name_of
-from bot.util import utcnow
+from bot.util import parse_iso, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -104,10 +104,34 @@ class Publisher:
         gamertag: str,
         achievements: list[AchievementRow],
         title_name: str | None = None,
+        *,
+        window_hours: int | None = None,
     ) -> None:
-        """Decide per chat what to send, then hand it to the queue."""
+        """Decide per chat what to send, then hand it to the queue.
+
+        `window_hours` caps how old an achievement may be and still be
+        *announced* (#52, user rule: "only the last day"). Everything is
+        recorded either way — the caller already stored these rows; this
+        only decides what reaches a chat.
+
+        Passed by the paths that are not live: catching up after downtime,
+        and relinking an account whose history the bot already had. Left
+        None on the ordinary poll, and that is deliberate — PSN trophies
+        sync to Sony only when a player opens trophy data on the console,
+        sometimes days after the unlock, so a blanket age cap on the normal
+        path would silently swallow genuinely new trophies.
+        """
         if not achievements:
             return
+        if window_hours is not None:
+            cutoff = utcnow() - timedelta(hours=window_hours)
+            achievements = [
+                item
+                for item in achievements
+                if item.unlocked_at and parse_iso(item.unlocked_at) >= cutoff
+            ]
+            if not achievements:
+                return
 
         for chat in await self._repo.publication_targets(tg_id):
             allowed = [

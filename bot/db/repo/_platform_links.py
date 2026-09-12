@@ -299,6 +299,18 @@ class _PlatformLinksRepo:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
+    async def account_latest_unlock(self, platform: str, external_id: str) -> str | None:
+        """The newest unlock we already hold for this account — where a
+        relink's delta starts (#52). None when the account is new to us, and
+        then only a full backfill will do."""
+        cursor = await self._conn.execute(
+            "SELECT MAX(unlocked_at) FROM seen_achievements "
+            "WHERE account_platform = ? AND xuid = ?",
+            (platform, external_id),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
     async def account_has_history(self, platform: str, external_id: str) -> bool:
         """Whether anything was ever recorded for this account — the signal
         that a relink can run a delta instead of a full backfill (#52)."""

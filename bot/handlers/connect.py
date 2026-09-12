@@ -21,6 +21,7 @@ from bot.handlers.keyboards import (
     TZ_SKIP,
     connect_keyboard,
     format_offset,
+    onboarding_keyboard,
     safe_edit,
     timezone_keyboard,
 )
@@ -258,12 +259,24 @@ async def timezone_manual_input(message: Message, repo: Repo, i18n: I18nContext)
 async def _greet(
     message: Message, repo: Repo, connect: ConnectService, bot: Bot, i18n: I18nContext
 ) -> None:
+    """Already connected on *any* platform -> straight to the panel;
+    otherwise greet and offer all three (#53).
+
+    This used to decide on `user.xuid` alone, so someone with only PSN
+    linked was greeted as a stranger and pushed back into the Microsoft
+    sign-in — the same Xbox-shaped gate /panel itself had before 2026-09-09,
+    one screen earlier.
+    """
     user = await repo.get_user(message.chat.id)
-    if user is not None and user.xuid:
+    links = await repo.platform_links_of(message.chat.id)
+    if (user is not None and user.xuid) or links:
         await send_panel(bot, repo, message.chat.id, i18n)
         return
-    await message.answer(i18n.get("connect-greeting"))
-    await _send_login_link(message, connect, i18n)
+    await message.answer(i18n.get("connect-greeting-multi"))
+    await message.answer(
+        i18n.get("connect-pick-platform"),
+        reply_markup=onboarding_keyboard(connect.start_login(message.chat.id), i18n),
+    )
 
 
 async def _send_login_link(

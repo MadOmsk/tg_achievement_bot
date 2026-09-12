@@ -27,3 +27,7 @@ steam-cancel-button = Cancel
 steam-already-disconnected = Steam isn't connected anyway.
 steam-disconnect-prompt = Disconnect Steam ({ $name })?
 steam-disconnected = Steam disconnected. You can come back any time.
+
+# Relinking an account the bot already knows (#52): its history is already
+# stored, so only what appeared since last time needs fetching.
+steam-catch-up-started = I know this account already — its achievements are still here. Fetching only what is new.

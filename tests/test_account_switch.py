@@ -192,3 +192,29 @@ def test_switch_prompt_warns_when_the_account_belongs_to_someone_else(i18n) -> N
 def test_switch_keyboard_carries_the_platform_in_its_callbacks(i18n) -> None:
     rows = switch_keyboard("psn", i18n).inline_keyboard
     assert [row[0].callback_data for row in rows] == ["psn:switch:yes", "psn:switch:no"]
+
+
+async def test_greeting_shows_the_panel_for_a_psn_only_person(repo: Repo) -> None:
+    """#53: /start used to decide on `users.xuid` alone, so someone with
+    only PSN linked was greeted as a stranger and pushed back into the
+    Microsoft sign-in."""
+    await repo.ensure_user(ALICE, "alice")
+    await repo.link_platform_account(ALICE, Platform.PSN, "psn-account", "AlicePSN")
+
+    user = await repo.get_user(ALICE)
+    links = await repo.platform_links_of(ALICE)
+
+    assert user is not None and user.xuid is None
+    assert links, "a PSN-only person must still count as connected"
+
+
+async def test_relink_delta_starts_from_the_newest_stored_unlock(repo: Repo) -> None:
+    """What makes a relink cost two requests instead of three hundred: only
+    games touched since this can hold anything new."""
+    await _linked_with(repo, ALICE, ACCOUNT_A, 0)
+    assert await repo.account_latest_unlock(Platform.STEAM, ACCOUNT_A) is None
+
+    await repo.insert_new_achievements_steam(
+        ALICE, ACCOUNT_A, [_achievement("a1")], is_backfill=False
+    )
+    assert await repo.account_latest_unlock(Platform.STEAM, ACCOUNT_A) is not None

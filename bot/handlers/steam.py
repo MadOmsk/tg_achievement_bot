@@ -37,6 +37,7 @@ from aiogram.types import (
 )
 from aiogram_i18n import I18nContext
 
+from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.handlers.keyboards import (
@@ -361,11 +362,26 @@ async def _connect(
             locale=await repo.user_locale(taken_from),
         )
 
+    # An account the bot already knows needs a delta, not a backfill (#52):
+    # its history is already stored, and only games played since our newest
+    # stored unlock can hold anything new. Measured on a real account: 301
+    # requests for the backfill, 2 for the delta.
+    since = await repo.account_latest_unlock(Platform.STEAM, profile.steam_id)
+    if since is not None:
+        await bot.send_message(tg_id, i18n.get("steam-catch-up-started"))
+        asyncio.create_task(  # noqa: RUF006
+            steam_fetcher.catch_up(
+                tg_id,
+                profile.steam_id,
+                profile.persona_name,
+                since,
+                get_settings().catchup_publish_window_hours,
+            )
+        )
+        return
+
     # Backgrounded (SPEC 9, M-Steam-2d) — a big library is genuinely
-    # hundreds of requests, the reply above must not wait for it. Run on
-    # every link, not just the first (link_platform_account already
-    # replaces an existing one) — idempotent and safe, same reasoning as
-    # Xbox's refresh_after_reconnect (main.py).
+    # hundreds of requests, the reply above must not wait for it.
     await bot.send_message(tg_id, i18n.get("steam-backfill-started"))
     asyncio.create_task(  # noqa: RUF006
         _backfill_and_notify(bot, steam_fetcher, tg_id, profile.steam_id, i18n)

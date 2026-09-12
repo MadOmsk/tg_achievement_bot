@@ -232,6 +232,11 @@ class OwnedGame:
     appid: str
     name: str
     playtime_forever: int
+    # Unix seconds of the last session, straight from GetOwnedGames — Steam
+    # has returned it all along and the bot discarded it (#52). It is what
+    # makes a relink cost two requests instead of three hundred: only games
+    # touched since the newest unlock we already hold can have anything new.
+    last_played: int = 0
 
 
 async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
@@ -258,6 +263,7 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
             appid=str(item["appid"]),
             name=item.get("name") or str(item["appid"]),
             playtime_forever=int(item.get("playtime_forever") or 0),
+            last_played=int(item.get("rtime_last_played") or 0),
         )
         for item in games
         if item.get("appid") and int(item.get("playtime_forever") or 0) > 0

@@ -58,3 +58,17 @@ connect-account-taken =
     ⚠️ Your { $platform } account "{ $name }" is now linked to a different user of this bot.
 
     Its achievements no longer count towards your stats. If that was a mistake, just link the account again.
+
+# Onboarding (#53, 2026-09-12): /start no longer leads with one platform.
+# The greeting used to promise "XBOX achievements" and hand over a Microsoft
+# sign-in link, leaving Steam and PSN to whoever already knew the commands.
+connect-greeting-multi =
+    Hi! I follow achievements on Xbox, Steam and PlayStation and post the new ones to your chat.
+
+    What I do:
+    • catch new achievements and trophies and publish them;
+    • filter by rarity, if you would rather not see everything;
+    • keep personal stats and a daily summary.
+
+    Start with a profile — connect at least one platform.
+connect-pick-platform = Where do we start?
