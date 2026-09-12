@@ -33,7 +33,6 @@ chat-user-not-found = Не нашёл такого пользователя.
 
 # Summary and recent feed
 chat-summary-group-only = Сводка считается по чату — набери команду в группе.
-chat-summary-cooldown = Сводку уже присылали недавно. Ещё раз — через { $minutes } мин.
 chat-summary-empty = В этом чате пока никто не подключил аккаунт — сводке не о ком.
 chat-recent-group-only = Лента считается по чату — набери команду в группе.
 chat-recent-empty = Пока пусто.

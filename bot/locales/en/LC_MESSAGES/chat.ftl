@@ -33,7 +33,6 @@ chat-user-not-found = I couldn't find that user.
 
 # Summary and recent feed
 chat-summary-group-only = The summary is per chat — run the command in a group.
-chat-summary-cooldown = A summary was sent recently. You can ask again in { $minutes } min.
 chat-summary-empty = Nobody in this chat has connected an account yet — there's no one to sum up.
 chat-recent-group-only = The feed is per chat — run the command in a group.
 chat-recent-empty = Nothing here yet.

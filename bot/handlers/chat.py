@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import time
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from html import escape as html_escape
@@ -64,7 +63,7 @@ from bot.services.online_view import render_online_table
 from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for, local_now
 from bot.services.tables import blockquote, truncate_name
-from bot.util import cooldown_minutes_left, humanize_ago, thousands, utcnow
+from bot.util import humanize_ago, thousands, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -88,11 +87,6 @@ def _locale_of(i18n: I18nContext | None) -> str:
 
 
 GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
-
-# Per chat, not per person: rate-limiting only the requester would still let a
-# whole chat spam it in turns.
-SUMMARY_COOLDOWN_SECONDS = 600
-_last_summary: dict[int, float] = {}
 
 # subscribe/unsubscribe is a check-then-act (is_subscribed, then write) —
 # without a lock, a fast confirm-then-/subscribe (or a double-tapped button)
@@ -547,29 +541,21 @@ async def who_stats_button(
 # ------------------------------------------------------------------- summary
 
 
-async def _summary_or_cooldown(
+async def _summary(
     repo: Repo, chat_id: int, *, with_day: bool = True, with_month: bool = True
-) -> tuple[str | None, InlineKeyboardMarkup | None, int]:
-    """The report itself, or how many minutes are left before it can be asked
-    for again (SPEC 5.7, 6.3) — one cooldown clock and one set of numbers
-    no matter how it was triggered.
+) -> tuple[str | None, InlineKeyboardMarkup | None]:
+    """The report, however it was asked for — one set of numbers no matter
+    which command triggered it.
 
-    Rate-limited per chat rather than per person: limiting only the requester
-    would still let the whole chat spam it by taking turns.
+    There is no rate limit (2026-09-12, user request: the ten-minute one got
+    in the way more than it protected). /summary replaces the chat's own
+    previous copy instead of stacking, which is what kept repeated asks from
+    piling up in the first place.
 
     `with_day`/`with_month` (2026-09-08, user request) let /summary_day and
-    /summary_month ask for one block only, sharing this same cooldown and
-    the same underlying report /summary's own "both" call builds.
+    /summary_month ask for one block only, from the same report /summary's
+    own "both" call builds.
     """
-    minutes_left = cooldown_minutes_left(
-        _last_summary.get(chat_id), time.monotonic(), SUMMARY_COOLDOWN_SECONDS
-    )
-    if minutes_left:
-        return None, None, minutes_left
-
-    # The cooldown covers "nothing new" too — that answer is still a message,
-    # and without this it could be spammed just as freely as a real summary.
-    _last_summary[chat_id] = time.monotonic()
     settings_row = await repo.get_chat_daily_settings(chat_id)
     built = await build_summary(
         repo,
@@ -581,10 +567,7 @@ async def _summary_or_cooldown(
         with_day=with_day,
         with_month=with_month,
     )
-    if built is None:
-        return None, None, 0
-    text, markup = built
-    return text, markup, 0
+    return built if built is not None else (None, None)
 
 
 async def _run_summary_command(
@@ -594,13 +577,7 @@ async def _run_summary_command(
         await message.answer(i18n.get("chat-summary-group-only"))
         return
 
-    text, markup, minutes_left = await _summary_or_cooldown(
-        repo, message.chat.id, with_day=with_day, with_month=with_month
-    )
-    if minutes_left:
-        # A rate-limit notice, not a report — system, not stats.
-        await message.answer(i18n.get("chat-summary-cooldown", minutes=minutes_left))
-        return
+    text, markup = await _summary(repo, message.chat.id, with_day=with_day, with_month=with_month)
     if text is None:
         with stats_category():
             await message.answer(i18n.get("chat-summary-empty"))
