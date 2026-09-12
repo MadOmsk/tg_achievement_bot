@@ -52,8 +52,11 @@ Used by: the per-platform lines of `/stats` and `/panel`
 (`platform_header_lines`), the published achievement/trophy text
 (`format_single`/`format_digest` — that message is scoped to one platform by
 construction), the per-platform blocks of the super-admin's user card, and
-`/online`'s rows, which deliberately keep the nickname of whichever platform
-the person is on: the row answers "where are they right now".
+`/online`'s rows **while someone is online**, where the nickname answers
+"where are they right now" alongside the platform-coloured icon. An offline
+row has no "where" left to answer, so it switches to **P** like everything
+else (2026-09-12) — otherwise the same member reads as two different people
+between this table and the summary above it.
 
 The later steps of the Steam and PSN chains are near-unreachable in practice —
 neither platform lets an account exist without a display name. They are the

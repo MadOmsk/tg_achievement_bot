@@ -40,25 +40,30 @@ def presence_icon(row: ChatPresenceRow) -> str:
 
 
 def _row_name(row: ChatPresenceRow) -> str:
-    """The nickname of whichever platform `row.platform` points at — the one
-    being played, or (while offline) the last-active one that actually has
-    tracked presence; see chat_member_presence()'s docstring. `platform ==
-    "none"` means no tracked presence exists anywhere (PSN-only, or never
-    polled yet) — falls through to the shared person chain there.
+    """**Online**: the nickname of the platform they are on right now
+    (#51, user decision) — the row answers "where is this person", and the
+    nickname belongs to that answer, matching the platform-coloured icon
+    beside it.
 
-    This screen deliberately keeps the platform nickname (#51, user
-    decision): the row answers "where is this person right now", and the
-    nickname belongs to that answer. No "@" here or anywhere else — this
-    table auto-refreshes every few minutes, and a live mention would ping
-    that person's Telegram client on every single refresh (Follow-up
-    2026-09-08, reverting an earlier attempt that did exactly that).
+    **Offline, or no data at all**: the person chain, like every other
+    screen (2026-09-12, user request). The platform nickname earns its place
+    by saying something the icon does not; once the row reads "offline"
+    there is no "where" left for it to answer, and showing a stale
+    last-active platform's nickname just makes the same person look
+    different here than in the summary right above it.
+
+    No "@" here or anywhere else — this table auto-refreshes every few
+    minutes, and a live mention would ping that person's Telegram client on
+    every single refresh (Follow-up 2026-09-08, reverting an earlier attempt
+    that did exactly that).
     """
-    if row.platform == Platform.XBOX_MODERN and (row.gamertag_modern or row.gamertag):
-        return xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag)
-    if row.platform == Platform.STEAM and row.steam_display_name:
-        return row.steam_display_name
-    if row.platform == Platform.PSN and row.psn_display_name:
-        return row.psn_display_name
+    if row.state == PresenceState.ONLINE:
+        if row.platform == Platform.XBOX_MODERN and (row.gamertag_modern or row.gamertag):
+            return xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag)
+        if row.platform == Platform.STEAM and row.steam_display_name:
+            return row.steam_display_name
+        if row.platform == Platform.PSN and row.psn_display_name:
+            return row.psn_display_name
     return person_name(
         tg_id=row.tg_id,
         first_name=row.first_name,

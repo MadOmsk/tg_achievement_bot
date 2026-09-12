@@ -78,26 +78,48 @@ def test_render_online_table_shows_the_updated_stamp_in_italics() -> None:
     assert "Igor" in text
 
 
-def test_row_name_uses_the_gamertag_when_platform_is_modern() -> None:
+def test_row_name_uses_the_gamertag_while_online_on_xbox() -> None:
     row = presence("Online", "123", "Halo Infinite", platform="xbox_modern")
     assert _row_name(row) == "Igor"
 
 
-def test_row_name_uses_the_steam_display_name_when_platform_is_steam() -> None:
+def test_row_name_uses_the_steam_display_name_while_online_on_steam() -> None:
     row = presence("Online", "550", "L4D2", platform="steam", steam_display_name="IgorSteam")
     assert _row_name(row) == "IgorSteam"
 
 
-def test_row_name_uses_the_psn_display_name_when_platform_is_psn() -> None:
-    row = presence(None, platform="psn", psn_display_name="IgorPSN")
+def test_row_name_uses_the_psn_display_name_while_online_on_psn() -> None:
+    row = presence("Online", platform="psn", psn_display_name="IgorPSN")
     assert _row_name(row) == "IgorPSN"
+
+
+def test_row_name_switches_to_the_person_chain_once_offline() -> None:
+    """2026-09-12, user request: the platform nickname earns its place by
+    saying where someone is. An offline row has no "where" left to answer,
+    so it names the person like every other screen — otherwise the same
+    member reads as two different people between this table and the summary
+    right above it."""
+    playing = presence(
+        "Online", "550", "L4D2", platform="steam", steam_display_name="IgorSteam", first_name="Igor"
+    )
+    assert _row_name(playing) == "IgorSteam"
+
+    same_person_offline = presence(
+        "Offline", platform="steam", steam_display_name="IgorSteam", first_name="Igor"
+    )
+    assert _row_name(same_person_offline) == "Igor"
+
+
+def test_row_name_treats_no_presence_data_as_offline() -> None:
+    """`state is None` is "never polled", which is not "online" — same
+    branch as an explicit Offline."""
+    row = presence(None, platform="psn", psn_display_name="IgorPSN", first_name="Igor")
+    assert _row_name(row) == "Igor"
 
 
 def test_row_name_falls_back_to_telegram_full_name_when_nothing_tracked() -> None:
     """`platform == "none"` (Follow-up 2026-09-08): no Xbox/Steam presence
-    was ever tracked — a PSN-only person, or an account never polled yet.
-    Falls back to the Telegram name, not a platform nickname it has no
-    presence evidence for."""
+    was ever tracked — a PSN-only person, or an account never polled yet."""
     row = presence(None, platform="none", first_name="Igor", last_name="Petrov")
     assert _row_name(row) == "Igor Petrov"
 

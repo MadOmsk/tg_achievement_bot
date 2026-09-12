@@ -685,9 +685,12 @@ Two questions, and only two:
 2. **Which account is this?** → that platform's own chain (below). Used
    *only* where the line is genuinely about one platform: the per-platform
    rows in `/stats` and `/panel`, the per-platform blocks on the super-admin's
-   user card, the super-admin's connect/disconnect notifications, `/online`'s
-   own rows, and the achievement/trophy announcement itself (deliberate: that
-   message is scoped to one platform by construction).
+   user card, the super-admin's connect/disconnect notifications, the
+   achievement/trophy announcement itself (deliberate: that message is scoped
+   to one platform by construction), and `/online`'s rows **while someone is
+   online** — there the nickname says where they are, which the row is for.
+   An offline `/online` row has no "where" left to answer and names the
+   person instead.
 
 **A chain answers a display question, so code that needs one specific value
 does not go through one** — a lookup key (XUID, SteamID64, `account_id`), a
