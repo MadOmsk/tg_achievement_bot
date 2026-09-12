@@ -288,6 +288,17 @@ class _PlatformLinksRepo:
         row = await cursor.fetchone()
         return row["tg_id"] if row else None
 
+    async def account_achievement_count(self, platform: str, external_id: str) -> int:
+        """How much this account has earned, regardless of who holds it —
+        what a person is about to gain or stop seeing when a link changes
+        (#52, services/relink.py)."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements WHERE account_platform = ? AND xuid = ?",
+            (platform, external_id),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
     async def account_has_history(self, platform: str, external_id: str) -> bool:
         """Whether anything was ever recorded for this account — the signal
         that a relink can run a delta instead of a full backfill (#52)."""

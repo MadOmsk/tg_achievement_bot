@@ -27,9 +27,17 @@ from aiogram_i18n import I18nContext
 
 from bot.constants import Platform
 from bot.db.repo import Repo
-from bot.handlers.keyboards import deep_link_keyboard, safe_edit
+from bot.handlers.keyboards import (
+    deep_link_keyboard,
+    notify_previous_owner,
+    safe_edit,
+    switch_keyboard,
+    switch_prompt,
+)
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.psn_fetcher import PsnFetcher
+from bot.services import relink
+from bot.services.achievements import platform_label
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
@@ -48,6 +56,10 @@ GROUP_HINT_TTL = 30
 # Same in-memory "next plain message is the answer" pattern as steam.py's own
 # _awaiting_link — nothing here needs to survive a restart.
 _awaiting_link: set[int] = set()
+
+# tg_id -> the Online ID waiting on a "yes, switch accounts" tap (#52).
+# Same in-memory, dies-with-the-process treatment as _awaiting_link above.
+_pending_switch: dict[int, str] = {}
 
 
 class AwaitingPsnLink(BaseFilter):
@@ -162,6 +174,8 @@ async def _connect(
     username: str | None,
     raw: str,
     i18n: I18nContext | StaticI18nContext | None = None,
+    *,
+    confirmed: bool = False,
 ) -> None:
     i18n = i18n or static_i18n("psn")
     if await psn_auth.status() == STATUS_NOT_CONFIGURED:
@@ -194,13 +208,39 @@ async def _connect(
         return
 
     await repo.ensure_user(tg_id, username)
-    await repo.link_platform_account(tg_id, Platform.PSN, profile.account_id, profile.online_id)
+
+    # Same as Steam's own switch guard (#52): trading one PSN account for
+    # another leaves the first one's trophies behind, so ask before doing it
+    # — but never for relinking the same account.
+    preview = await relink.preview(repo, tg_id, Platform.PSN, profile.account_id)
+    if preview.is_switch and not confirmed:
+        _pending_switch[tg_id] = raw
+        await bot.send_message(
+            tg_id,
+            switch_prompt(
+                preview, platform_label(Platform.PSN, i18n.locale), profile.online_id, i18n
+            ),
+            reply_markup=switch_keyboard("psn", i18n),
+        )
+        return
+
+    taken_from = await relink.perform(
+        repo, tg_id, Platform.PSN, profile.account_id, profile.online_id
+    )
     # Already verified True right above (#5) — recorded so /panel's login
     # row has a real answer from the moment someone links, not just after
     # the first backfill/resync gets around to setting it.
     await repo.set_achievements_visible(tg_id, Platform.PSN, True)
     log.info("connect_psn: tg_id=%s linked account_id=%s", tg_id, profile.account_id)
     await bot.send_message(tg_id, i18n.get("psn-connected", name=profile.online_id))
+    if taken_from is not None:
+        await notify_previous_owner(
+            bot,
+            taken_from,
+            Platform.PSN,
+            profile.online_id,
+            locale=await repo.user_locale(taken_from),
+        )
 
     # Backgrounded (SPEC 9, M-Steam-2d's own reasoning applies here too) —
     # the reply above must not wait for it. Run on every link, not just the
@@ -211,6 +251,42 @@ async def _connect(
     asyncio.create_task(  # noqa: RUF006
         _backfill_and_notify(bot, psn_fetcher, tg_id, profile.account_id, i18n)
     )
+
+
+@router.callback_query(F.data == "psn:switch:yes")
+async def psn_switch_confirmed(
+    callback: CallbackQuery,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
+    bot: Bot,
+    i18n: I18nContext,
+) -> None:
+    raw = _pending_switch.pop(callback.from_user.id, None)
+    await callback.answer()
+    if raw is None:
+        return  # the prompt outlived a restart, or was answered twice
+    with contextlib.suppress(Exception):
+        await callback.message.delete()
+    await _connect(
+        bot,
+        repo,
+        psn_auth,
+        psn_fetcher,
+        callback.from_user.id,
+        callback.from_user.username,
+        raw,
+        i18n,
+        confirmed=True,
+    )
+
+
+@router.callback_query(F.data == "psn:switch:no")
+async def psn_switch_cancelled(callback: CallbackQuery, i18n: I18nContext) -> None:
+    _pending_switch.pop(callback.from_user.id, None)
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_text(i18n.get("connect-switch-cancelled"))
 
 
 async def _backfill_and_notify(

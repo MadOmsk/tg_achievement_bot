@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 
+from aiogram import Bot
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
@@ -26,7 +27,9 @@ from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
 # that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
 # need the exact same builders), this module just re-uses them for panel.py's
 # own profile buttons below.
+from bot.services.achievements import platform_label
 from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
+from bot.services.relink import LinkPreview
 
 
 async def safe_edit(
@@ -339,3 +342,79 @@ def deep_link_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=i18n.get("kb-open"), url=url)]]
     )
+
+
+def switch_keyboard(platform: str, i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarkup:
+    """Yes/no for "you already have a different account linked" (#52).
+    One shape for every platform: the question is the same everywhere, only
+    the callback prefix differs."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("connect-switch-yes"),
+                    callback_data=f"{platform}:switch:yes",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("connect-switch-cancel"),
+                    callback_data=f"{platform}:switch:no",
+                )
+            ],
+        ]
+    )
+
+
+def switch_prompt(
+    preview: LinkPreview,
+    platform_name: str,
+    incoming_name: str,
+    i18n: I18nContext | StaticI18nContext,
+) -> str:
+    """What changes, in numbers, before anything changes (#52).
+
+    The second paragraph only appears when the incoming account is already
+    known — it is the difference between "this will take a while" and "this
+    is instant", and staying quiet about it would make a cheap operation
+    look expensive.
+    """
+    current = preview.current.display_name if preview.current else "—"
+    text = i18n.get(
+        "connect-switch-confirm",
+        platform=platform_name,
+        current=current,
+        incoming=incoming_name,
+        current_count=preview.current_achievements,
+    )
+    if preview.incoming_achievements:
+        text += "\n\n" + i18n.get(
+            "connect-switch-incoming-known",
+            incoming=incoming_name,
+            incoming_count=preview.incoming_achievements,
+        )
+    return text
+
+
+async def notify_previous_owner(
+    bot: Bot, tg_id: int, platform: str, name: str, *, locale: str
+) -> None:
+    """Tell whoever just lost an account that they lost it (#52, owner
+    decision) — deliberately without naming who took it: that is somebody
+    else's Telegram identity, and the person who lost the account can sort
+    it out with the account itself, not with a name we volunteered.
+
+    Best-effort: they may have blocked the bot, and a failed notice must not
+    fail the linking that triggered it.
+    """
+    with contextlib.suppress(Exception):
+        await bot.send_message(
+            tg_id,
+            gettext(
+                "connect",
+                "connect-account-taken",
+                locale=locale,
+                platform=platform_label(platform, locale),
+                name=name,
+            ),
+        )

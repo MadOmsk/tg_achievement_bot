@@ -38,3 +38,22 @@ connect-timezone-manual-hint =
 connect-timezone-manual-invalid = Это не похоже на реальный часовой пояс. { $hint }
 connect-login-button-hint =
     Жми кнопку и войди своим аккаунтом Microsoft. Пароль вижу не я — его спрашивает сам Microsoft.
+
+# Смена и перехват аккаунта (#52). Общие для всех платформ: текст один и
+# тот же независимо от того, Steam это, PSN или Xbox — меняется только
+# название платформы и ник.
+connect-switch-confirm =
+    На { $platform } у тебя сейчас { $current }.
+
+    Если привязать { $incoming }, достижения прошлого аккаунта ({ $current_count }) перестанут учитываться в статистике и саммари. Они никуда не денутся — вернёшь аккаунт, вернутся и они.
+
+    Привязываем { $incoming }?
+connect-switch-incoming-known =
+    Про { $incoming } я уже знаю: { $incoming_count } достижений. Заново выкачивать не буду.
+connect-switch-yes = Да, привязать
+connect-switch-cancel = Отмена
+connect-switch-cancelled = Оставил как было.
+connect-account-taken =
+    ⚠️ Аккаунт { $platform } «{ $name }» теперь привязан к другому пользователю бота.
+
+    Его достижения больше не учитываются в твоей статистике. Если это ошибка — привяжи аккаунт заново.

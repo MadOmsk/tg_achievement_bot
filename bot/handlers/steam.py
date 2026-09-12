@@ -39,9 +39,17 @@ from aiogram_i18n import I18nContext
 
 from bot.constants import Platform
 from bot.db.repo import Repo
-from bot.handlers.keyboards import deep_link_keyboard, safe_edit
+from bot.handlers.keyboards import (
+    deep_link_keyboard,
+    notify_previous_owner,
+    safe_edit,
+    switch_keyboard,
+    switch_prompt,
+)
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services import relink
+from bot.services.achievements import platform_label
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import (
     SteamApiError,
@@ -75,6 +83,11 @@ _awaiting_link: set[int] = set()
 # tg_id -> the raw text of a steamcommunity.com link spotted in an
 # *unprompted* message, waiting on a yes/no tap (steam_link_spotted below).
 _pending_confirmation: dict[int, str] = {}
+
+# tg_id -> the raw profile link/nickname waiting on a "yes, switch accounts"
+# tap (#52). Same in-memory, dies-with-the-process treatment as everything
+# else here: a lost prompt just means answering /connect_steam again.
+_pending_switch: dict[int, str] = {}
 
 # Loose on purpose — /id/ and /profiles/ cover every real profile URL shape,
 # and being stricter buys nothing: a false match here just offers a button
@@ -278,6 +291,8 @@ async def _connect(
     username: str | None,
     raw: str,
     i18n: I18nContext | StaticI18nContext | None = None,
+    *,
+    confirmed: bool = False,
 ) -> None:
     """The actual link-and-backfill, shared by every entry point above —
     replying through `bot.send_message(tg_id, ...)` rather than a specific
@@ -311,9 +326,40 @@ async def _connect(
         return
 
     await repo.ensure_user(tg_id, username)
-    await repo.link_platform_account(tg_id, Platform.STEAM, profile.steam_id, profile.persona_name)
+
+    # Swapping one Steam account for another is not an overwrite any more
+    # (#52): the old account keeps its achievements, and they stop counting
+    # for this person the moment the link moves. Worth asking first — but
+    # only for a genuine identity change, never for relinking the same
+    # account after a hiccup.
+    preview = await relink.preview(repo, tg_id, Platform.STEAM, profile.steam_id)
+    if preview.is_switch and not confirmed:
+        _pending_switch[tg_id] = raw
+        await bot.send_message(
+            tg_id,
+            switch_prompt(
+                preview,
+                platform_label(Platform.STEAM, i18n.locale),
+                profile.persona_name,
+                i18n,
+            ),
+            reply_markup=switch_keyboard("steam", i18n),
+        )
+        return
+
+    taken_from = await relink.perform(
+        repo, tg_id, Platform.STEAM, profile.steam_id, profile.persona_name
+    )
     log.info("connect_steam: tg_id=%s linked steam_id=%s", tg_id, profile.steam_id)
     await bot.send_message(tg_id, i18n.get("steam-connected", name=profile.persona_name))
+    if taken_from is not None:
+        await notify_previous_owner(
+            bot,
+            taken_from,
+            Platform.STEAM,
+            profile.persona_name,
+            locale=await repo.user_locale(taken_from),
+        )
 
     # Backgrounded (SPEC 9, M-Steam-2d) — a big library is genuinely
     # hundreds of requests, the reply above must not wait for it. Run on
@@ -324,6 +370,42 @@ async def _connect(
     asyncio.create_task(  # noqa: RUF006
         _backfill_and_notify(bot, steam_fetcher, tg_id, profile.steam_id, i18n)
     )
+
+
+@router.callback_query(F.data == "steam:switch:yes")
+async def steam_switch_confirmed(
+    callback: CallbackQuery,
+    repo: Repo,
+    steam_auth: SteamAuth,
+    steam_fetcher: SteamFetcher,
+    bot: Bot,
+    i18n: I18nContext,
+) -> None:
+    raw = _pending_switch.pop(callback.from_user.id, None)
+    await callback.answer()
+    if raw is None:
+        return  # the prompt outlived a restart, or was answered twice
+    with contextlib.suppress(Exception):
+        await callback.message.delete()
+    await _connect(
+        bot,
+        repo,
+        steam_auth,
+        steam_fetcher,
+        callback.from_user.id,
+        callback.from_user.username,
+        raw,
+        i18n,
+        confirmed=True,
+    )
+
+
+@router.callback_query(F.data == "steam:switch:no")
+async def steam_switch_cancelled(callback: CallbackQuery, i18n: I18nContext) -> None:
+    _pending_switch.pop(callback.from_user.id, None)
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_text(i18n.get("connect-switch-cancelled"))
 
 
 async def _backfill_and_notify(

@@ -38,3 +38,22 @@ connect-timezone-manual-hint =
 connect-timezone-manual-invalid = That doesn't look like a real timezone. { $hint }
 connect-login-button-hint =
     Press the button and sign in with your Microsoft account. I never see your password — Microsoft asks for it, not me.
+
+# Switching and taking over an account (#52). Shared by every platform: the
+# wording does not depend on whether this is Steam, PSN or Xbox — only the
+# platform name and the nickname change.
+connect-switch-confirm =
+    You currently have { $current } linked on { $platform }.
+
+    Linking { $incoming } means the old account's achievements ({ $current_count }) stop counting towards your stats and summaries. Nothing is deleted — link it back and they come back with it.
+
+    Link { $incoming }?
+connect-switch-incoming-known =
+    I already know { $incoming }: { $incoming_count } achievements. No need to fetch them again.
+connect-switch-yes = Yes, link it
+connect-switch-cancel = Cancel
+connect-switch-cancelled = Left as it was.
+connect-account-taken =
+    ⚠️ Your { $platform } account "{ $name }" is now linked to a different user of this bot.
+
+    Its achievements no longer count towards your stats. If that was a mistake, just link the account again.
