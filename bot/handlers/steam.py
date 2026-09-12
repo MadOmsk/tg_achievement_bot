@@ -333,7 +333,7 @@ async def _connect(
     # only for a genuine identity change, never for relinking the same
     # account after a hiccup.
     preview = await relink.preview(repo, tg_id, Platform.STEAM, profile.steam_id)
-    if preview.is_switch and not confirmed:
+    if preview.needs_confirmation and not confirmed:
         _pending_switch[tg_id] = raw
         await bot.send_message(
             tg_id,

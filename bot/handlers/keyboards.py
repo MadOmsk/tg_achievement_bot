@@ -374,26 +374,38 @@ def switch_prompt(
 ) -> str:
     """What changes, in numbers, before anything changes (#52).
 
-    The second paragraph only appears when the incoming account is already
-    known — it is the difference between "this will take a while" and "this
-    is instant", and staying quiet about it would make a cheap operation
-    look expensive.
+    Built from independent paragraphs because the two reasons to ask are
+    independent: this person is replacing their own account, and/or the
+    incoming one belongs to somebody else. Either can happen alone, and
+    when both do, both are worth saying.
+
+    The "already known" line appears only when it is true — it is the
+    difference between "this will take a while" and "this is instant", and
+    staying quiet about it would make a cheap operation look expensive.
     """
-    current = preview.current.display_name if preview.current else "—"
-    text = i18n.get(
-        "connect-switch-confirm",
-        platform=platform_name,
-        current=current,
-        incoming=incoming_name,
-        current_count=preview.current_achievements,
-    )
-    if preview.incoming_achievements:
-        text += "\n\n" + i18n.get(
-            "connect-switch-incoming-known",
-            incoming=incoming_name,
-            incoming_count=preview.incoming_achievements,
+    parts = []
+    if preview.is_switch and preview.current is not None:
+        parts.append(
+            i18n.get(
+                "connect-switch-confirm",
+                platform=platform_name,
+                current=preview.current.display_name or preview.current.external_id,
+                incoming=incoming_name,
+                current_count=preview.current_achievements,
+            )
         )
-    return text
+    if preview.taken_from is not None:
+        parts.append(i18n.get("connect-switch-taken", incoming=incoming_name))
+    if preview.incoming_achievements:
+        parts.append(
+            i18n.get(
+                "connect-switch-incoming-known",
+                incoming=incoming_name,
+                incoming_count=preview.incoming_achievements,
+            )
+        )
+    parts.append(i18n.get("connect-switch-question", incoming=incoming_name))
+    return "\n\n".join(parts)
 
 
 async def notify_previous_owner(

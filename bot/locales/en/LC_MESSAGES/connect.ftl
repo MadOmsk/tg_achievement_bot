@@ -46,8 +46,9 @@ connect-switch-confirm =
     You currently have { $current } linked on { $platform }.
 
     Linking { $incoming } means the old account's achievements ({ $current_count }) stop counting towards your stats and summaries. Nothing is deleted — link it back and they come back with it.
-
-    Link { $incoming }?
+connect-switch-taken =
+    ⚠️ { $incoming } is already linked to a different user of this bot. Continuing takes it from them, and the account's achievements become yours.
+connect-switch-question = Link { $incoming }?
 connect-switch-incoming-known =
     I already know { $incoming }: { $incoming_count } achievements. No need to fetch them again.
 connect-switch-yes = Yes, link it

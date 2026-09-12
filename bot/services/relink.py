@@ -48,10 +48,22 @@ class LinkPreview:
 
     @property
     def is_switch(self) -> bool:
-        """True only for a genuine identity change. Relinking the same
-        account — after a failure, or just running /connect_steam twice — is
-        not a switch and must not ask for confirmation."""
+        """True only for a genuine identity change of *this person's* own
+        account. Relinking the same account — after a failure, or just
+        running /connect_steam twice — is not a switch."""
         return self.current is not None and self.current.external_id != self.incoming_id
+
+    @property
+    def needs_confirmation(self) -> bool:
+        """Ask before anything irreversible-looking happens: swapping one's
+        own account, or taking one that somebody else holds (2026-09-12,
+        user request — a takeover used to go through silently, with only
+        the loser finding out afterwards).
+
+        A plain first link, and a relink of the same account, both stay
+        silent. Those are the common cases and a prompt there is noise.
+        """
+        return self.is_switch or self.taken_from is not None
 
 
 async def preview(repo: Repo, tg_id: int, platform: str, external_id: str) -> LinkPreview:

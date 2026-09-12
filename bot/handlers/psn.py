@@ -213,7 +213,7 @@ async def _connect(
     # another leaves the first one's trophies behind, so ask before doing it
     # — but never for relinking the same account.
     preview = await relink.preview(repo, tg_id, Platform.PSN, profile.account_id)
-    if preview.is_switch and not confirmed:
+    if preview.needs_confirmation and not confirmed:
         _pending_switch[tg_id] = raw
         await bot.send_message(
             tg_id,

@@ -46,8 +46,9 @@ connect-switch-confirm =
     На { $platform } у тебя сейчас { $current }.
 
     Если привязать { $incoming }, достижения прошлого аккаунта ({ $current_count }) перестанут учитываться в статистике и саммари. Они никуда не денутся — вернёшь аккаунт, вернутся и они.
-
-    Привязываем { $incoming }?
+connect-switch-taken =
+    ⚠️ Аккаунт { $incoming } уже привязан к другому пользователю бота. Если продолжить, он его потеряет, а достижения аккаунта перейдут к тебе.
+connect-switch-question = Привязываем { $incoming }?
 connect-switch-incoming-known =
     Про { $incoming } я уже знаю: { $incoming_count } достижений. Заново выкачивать не буду.
 connect-switch-yes = Да, привязать
