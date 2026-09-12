@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from bot.constants import Platform
-from bot.db.repo import PlatformLink, User
+from bot.db.repo import ChatSubscriber, PlatformLink, User
 
 # Shown in place of a nickname a platform never gave us. Only the super-admin
 # card falls back to a raw id instead (there it is diagnostic, not a label) —
@@ -146,3 +146,22 @@ def _link_name(link: PlatformLink | None) -> str | None:
     if link is None:
         return None
     return link.display_name or link.secondary_name or link.external_id or None
+
+
+def subscriber_names(rows: Iterable[ChatSubscriber]) -> list[str]:
+    """One subscriber list, named by the person chain and sorted by what is
+    actually shown (#51) — the query used to sort by `gamertag`, a column a
+    Steam/PSN-only member does not have."""
+    names = [
+        person_name(
+            tg_id=row.tg_id,
+            first_name=row.first_name,
+            last_name=row.last_name,
+            username=row.username,
+            xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
+            steam=row.steam_name,
+            psn=row.psn_name,
+        )
+        for row in rows
+    ]
+    return sorted(names, key=str.casefold)

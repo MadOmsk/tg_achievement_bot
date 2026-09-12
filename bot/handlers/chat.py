@@ -54,7 +54,12 @@ from bot.services.achievements import (
     score_suffix,
 )
 from bot.services.message_log import stats_category
-from bot.services.naming import person_name, person_name_of, xbox_nickname
+from bot.services.naming import (
+    person_name,
+    person_name_of,
+    subscriber_names,
+    xbox_nickname,
+)
 from bot.services.online_view import render_online_table
 from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for, local_now
@@ -819,7 +824,7 @@ def hub_keyboard(
 
 
 async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
-    names = await repo.chat_subscriber_names(chat_id)
+    names = subscriber_names(await repo.chat_subscribers(chat_id))
     if not names:
         return i18n.get("chat-help-text") + "\n\n" + i18n.get("chat-hub-nobody")
     return (

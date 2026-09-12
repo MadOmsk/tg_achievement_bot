@@ -4,8 +4,8 @@ Companion to [ui_screens_users.md](ui_screens_users.md) /
 [ui_screens_admin.md](ui_screens_admin.md), which just say **"→ table: `<id>`"**
 wherever a list goes. This file is the source of truth for each `<id>`'s source
 query, scope, sort, cap, and which nickname rule its rows use. Verified against
-the code (2026-09-09) — update in the same change as the underlying query or
-fallback chain.
+the code (2026-09-12) — update in the same change as the underlying query or
+naming chain.
 
 **Language convention** (2026-09-11): English, like the rest of what is
 written in this project. Where a label below is quoted in Russian it is
@@ -13,49 +13,56 @@ because that is the literal string the bot renders in its default locale.
 
 ## Nickname rules
 
-Five different chains, not one shared function everywhere:
+Two questions, two chains, reused everywhere — never a new one invented at a
+call site (#51, 2026-09-12). This section used to list **five**, one per group
+of screens, each defensible on its own; what that cost is written up in the
+issue. `services/naming.py` is the only implementation.
 
-| # | Chain | Used by |
-|---|-------|---------|
-| **A** | `@username` → first+last name → Xbox nick → *(see below)* | `/stats`, `/who`, `/panel` headers |
-| **B** | the platform's own nick (Xbox/Steam/PSN), no Telegram name at all | per-line on `/stats`, `/panel`; publications; the blocks in a user card |
-| **C** | nick of whichever platform shows them online → first+last name → username without `@` → id | `/online` only |
-| **D** | Xbox nick → Steam nick → PSN nick → id | the super-admin's user list only |
-| **E** | `users.gamertag` alone, no Steam/PSN at all | `/recent`, both `/summary` leaderboards, the subscriber list on a chat card |
+| # | Question | Chain | Used by |
+|---|----------|-------|---------|
+| **P** | who is this person? | `Имя Фамилия` → `username` → any platform's nick (Xbox → Steam → PSN) → `id<tg_id>` | every screen that names a *person* |
+| **X / S / N** | which account is this? | that platform's own chain (below) | every line that is about one platform |
 
-**A — Telegram identity** (`services/achievements.py::telegram_identity`).
-"Who is this person", not which platform they linked.
-- `/stats`, `/who` (`handlers/chat.py::_display_name`/`_who_label`): the tail of
-  the chain is any connected platform's nick, then `id<tg_id>`.
-- `/panel` (`handlers/panel.py::_panel_identity`): the tail is `id<tg_id>`
-  directly, with no platform nick in between — this screen is only ever shown
-  to its owner.
+**P — the person chain** (`person_name`, or `person_name_of` for the common
+"a user row plus their links" shape). Digits last, the most human form first.
+Used by `/stats`, `/who` and `/panel` headers; both `/summary` leaderboards;
+`/recent`; the anti-flood digest header; the super-admin's user list; the
+chat's subscriber list; `/subscribe`'s confirmation; and `/online` whenever
+no platform nickname applies.
 
-**B — the platform's own nick.** Xbox gamertag / Steam persona / PSN online ID,
-each with its own small fallback (a "no name" placeholder for Xbox, the raw id
-for Steam/PSN). The Telegram name plays no part here.
-- `services/achievements.py::platform_header_lines` — the per-line blocks of
-  `/stats` and `/panel`.
-- `services/achievements.py::format_single`/`format_digest` — the published text.
-- `handlers/admin.py::_xbox_admin_block`/`_steam_admin_block`/`_psn_admin_block`.
+**No `@` anywhere.** A username renders bare. A live mention pings its
+target, which is wrong in `/online` (it redraws every few minutes — this was
+already reverted once, #38) and inconsistent everywhere else; one rule beats
+remembering which screen is safe.
 
-**C — nick by presence, never an `@mention`**
-(`services/online_view.py::_row_name`). The nick of whichever platform
-currently "wins" on presence (in a game takes priority, otherwise the last one
-actually tracked), else first+last name, else the bare username **without
-`@`** — this table auto-refreshes every few minutes, and a live `@mention`
-would ping that person on every single refresh.
+**The account chains**, same "digits last, newest form first" shape:
 
-**D — the super-admin list's own priority** (`handlers/admin.py`, only the user
-list on the panel's home screen). The Telegram name plays no part.
+| Platform | Chain |
+|---|---|
+| **X** Xbox | `ModernGamertag` → `Gamertag` → XUID |
+| **S** Steam | `personaname` → vanity → SteamID64 |
+| **N** PSN | current `onlineId` → previous `onlineId` → `account_id` |
 
-**E — Xbox gamertag only, no fallback.** `/recent`, both `/summary`
-leaderboards and the chat card's subscriber list read `users.gamertag`
-directly — a Steam/PSN-only person gets a placeholder there ("кто-то" /
-`id<tg_id>`) rather than their real nick.
-> ⚠️ This looks like the same class of bug that was fixed in `/panel`
-> (2026-09-09). Not fixed — waiting on a decision about which chain (A or B)
-> to bring it in line with.
+Each ends at an em dash when a platform gave us no name at all, because the
+line it renders has to say *something*. Inside the person chain that dash is
+an absence and is stepped over — handled in `person_name` itself, so passing
+`xbox_nickname(...)` straight in is safe.
+
+Used by: the per-platform lines of `/stats` and `/panel`
+(`platform_header_lines`), the published achievement/trophy text
+(`format_single`/`format_digest` — that message is scoped to one platform by
+construction), the per-platform blocks of the super-admin's user card, and
+`/online`'s rows, which deliberately keep the nickname of whichever platform
+the person is on: the row answers "where are they right now".
+
+The later steps of the Steam and PSN chains are near-unreachable in practice —
+neither platform lets an account exist without a display name. They are the
+rule, not an expected sight; a previous PSN online ID earns its place as
+"formerly known as".
+
+Xbox's profile **link** is built from the classic `Gamertag`, not from
+whatever the chain displays: `account.xbox.com`'s own search is what has to
+accept it.
 
 ## Tables
 
@@ -68,14 +75,14 @@ directly — a Steam/PSN-only person gets a placeholder there ("кто-то" /
 | `summary-top-games-month` | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
 | `admin-user-list` | `repo.admin_users()` | connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page |
 | `admin-chat-list` | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
-| `admin-chat-subscribers` | `repo.chat_subscriber_names()` | the chat's subscribers | by nick ↑ | — |
+| `admin-chat-subscribers` | `repo.chat_subscribers()` | the chat's subscribers | by the rendered name ↑ | — |
 | `hltb-recent-suggestions` | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit` |
 | `hltb-search-results` | HowLongToBeat API (an external search, not the database) | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, shown `hltb_page_size` at a time |
 
-Each table's nickname follows one of the rules above: `stats-recent-games` has
-none (those are games, not people); `online-presence` → **C**;
-`admin-user-list` → **D**; `recent-achievements`, both `summary-leaderboard-*`
-and `admin-chat-subscribers` → **E** (see the warning above).
+Each table's nickname follows one of the rules above: `stats-recent-games`
+and both `hltb-*` have none (those are games, not people); `online-presence`
+→ the account chain of whichever platform won on presence, falling through to
+**P**; every other table here → **P**.
 
 ### Per-table specifics
 
@@ -100,8 +107,9 @@ and `admin-chat-subscribers` → **E** (see the warning above).
   (`achievement_counts_by_tg_id`, summed across platforms).
 - **`hltb-recent-suggestions`** — the same "known member" scope `/online` uses
   (subscribers ∪ `chat_seen`), but the source itself (`title_history`) is
-  currently **Xbox only** — Steam/PSN games never reach it, another instance of
-  the same class of gap as rule E above, likewise not separately fixed.
+  currently **Xbox only** — Steam/PSN games never reach it. The same class of
+  gap the naming chains had before #51 (a query that only knows how to answer
+  for Xbox), one layer over; not fixed here.
 
 The super-admin panel's home screen is not a table but a set of aggregates
 (`services/admin_view.py`: `repo.admin_users()` + `repo.admin_chats()`), with

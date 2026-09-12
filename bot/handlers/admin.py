@@ -64,7 +64,12 @@ from bot.services.achievements import (
     visibility_status_text,
 )
 from bot.services.admin_view import render_admin_home
-from bot.services.naming import account_nickname, person_name, xbox_nickname
+from bot.services.naming import (
+    account_nickname,
+    person_name,
+    subscriber_names,
+    xbox_nickname,
+)
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
@@ -1898,7 +1903,7 @@ async def _chat(
     if chat is None:
         return _("admin-chat-not-found-period"), _back_home(locale=locale)
 
-    names = await repo.chat_subscriber_names(chat_id)
+    names = subscriber_names(await repo.chat_subscribers(chat_id))
     threshold_label = f"{chat.rare_threshold_percent:g}%"
     zone_label = format_offset(chat.tz_offset_min)
     flood_label = (

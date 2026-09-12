@@ -407,6 +407,22 @@ class ChatMemberStat:
 
 
 @dataclass(slots=True)
+class ChatSubscriber:
+    """One subscriber of a chat, carrying exactly what the person chain needs
+    (#51) and nothing else — the label itself is built by the caller, since
+    naming is a display decision and this layer holds only SQL."""
+
+    tg_id: int
+    gamertag: str | None = None
+    gamertag_modern: str | None = None
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    steam_name: str | None = None
+    psn_name: str | None = None
+
+
+@dataclass(slots=True)
 class RecentAchievement:
     gamertag: str | None
     name: str

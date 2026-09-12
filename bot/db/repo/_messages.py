@@ -11,7 +11,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
-from bot.db.repo._models import DeletableMessage, RecentAchievement, TopGame, User, _as_user, _iso
+from bot.db.repo._models import (
+    ChatSubscriber,
+    DeletableMessage,
+    RecentAchievement,
+    TopGame,
+    User,
+    _as_user,
+    _iso,
+)
 from bot.util import utcnow_iso
 
 
@@ -58,15 +66,40 @@ class _MessagesRepo:
         )
         await self._conn.commit()
 
-    async def chat_subscriber_names(self, chat_id: int) -> list[str]:
+    async def chat_subscribers(self, chat_id: int) -> list[ChatSubscriber]:
+        """Who publishes here, with everything the person chain needs (#51).
+
+        Returns the fields, not a rendered label: this used to select
+        `u.gamertag` alone and sort by it — so a member without an Xbox
+        account was listed as a bare id and sorted as if nameless — and the
+        obvious fix, resolving the name here, would put display logic in the
+        one layer that is supposed to hold nothing but SQL. The caller
+        renders and sorts.
+        """
         cursor = await self._conn.execute(
-            "SELECT u.gamertag, u.tg_id FROM subscriptions s "
+            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
+            "       u.last_name, steam.display_name AS steam_name,"
+            "       psn.display_name AS psn_name "
+            "FROM subscriptions s "
             "JOIN users u ON u.tg_id = s.tg_id "
-            "WHERE s.chat_id = ? AND u.is_excluded = 0 "
-            "ORDER BY u.gamertag",
+            "LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam' "
+            "LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn' "
+            "WHERE s.chat_id = ? AND u.is_excluded = 0",
             (chat_id,),
         )
-        return [row["gamertag"] or f"id{row['tg_id']}" for row in await cursor.fetchall()]
+        return [
+            ChatSubscriber(
+                tg_id=row["tg_id"],
+                gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
+            )
+            for row in await cursor.fetchall()
+        ]
 
     async def chat_recent(self, chat_id: int, limit: int) -> list[RecentAchievement]:
         cursor = await self._conn.execute(
