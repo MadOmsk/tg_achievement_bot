@@ -662,6 +662,57 @@ announced by the time it runs).
 All user-facing bot text is Russian. Code identifiers, comments, and this
 documentation are English.
 
+### Naming people and accounts
+
+**One chain per question, reused — never a new one invented at the call
+site** (2026-09-12, user request). This is the rule that outlives the chains
+themselves: the chains below may be adjusted, but a screen must always reach
+for an existing one rather than hand-rolling its own priority order. The bot
+accumulated four slightly different versions of "who is this person" before
+this was written down, and the visible result was one member showing up as a
+bare `id319472587` in the daily summary while the bot held his Telegram name,
+his username and his PSN nickname all along.
+
+Two questions, and only two:
+
+1. **Who is this person?** → `Имя Фамилия` → `username` → nickname of any
+   connected platform (Xbox → Steam → PSN) → `id<tg_id>`. Digits last, the
+   most human form first.
+2. **Which account is this?** → that platform's own chain (below). Used
+   *only* where the line is genuinely about one platform: the per-platform
+   rows in `/stats` and `/panel`, the per-platform blocks on the super-admin's
+   user card, the super-admin's connect/disconnect notifications, `/online`'s
+   own rows, and the achievement/trophy announcement itself (deliberate: that
+   message is scoped to one platform by construction).
+
+**Never an `@` anywhere.** A username is shown bare. Live mentions ping the
+person — harmless once a day, actively bad in `/online`, which redraws itself
+every few minutes (this was already reverted once, #38). One rule everywhere
+beats remembering which screen is safe.
+
+Per-platform chains — the same "digits last, newest form first" shape:
+
+| Platform | Chain | Notes |
+|---|---|---|
+| Xbox | `ModernGamertag` → `Gamertag` → XUID | the `#1234` suffix is never shown; the profile **link** is always built from the classic `Gamertag`, which is what Xbox's own search accepts |
+| Steam | `personaname` → vanity → SteamID64 | no vanity set means there is no vanity string at all: `profileurl` simply degrades from `/id/<vanity>/` to `/profiles/<id>/`, so the last path segment *is* this chain's last two steps |
+| PSN | current `onlineId` → previous `onlineId` → `account_id` | Sony only returns the previous id from the endpoint addressed **by nickname**; we look accounts up by `account_id`, so the middle step is the value *we* last saw before a rename, remembered on our side |
+
+The later steps of the Steam and PSN chains are near-unreachable in practice
+(neither platform lets an account exist without a display name) — they are the
+rule, not an expected sight. A previous PSN id earns its place as "formerly
+known as", not as a fallback.
+
+**A nickname is refreshed from what already arrives, never by a request of its
+own.** All three platforms hand us the current value inside a response the bot
+already makes — Xbox in the profile call read for gamerscore, Steam in
+`GetPlayerSummaries`, PSN in the profile fetch behind `get_presence` — so
+there is no cadence to tune and no cost to ration; the only discipline is to
+write to the database *when the value changed*, not on every tick. Xbox and
+PSN nicknames used to be stored once at connect and never again, so a rename
+left the bot calling someone by an old name and pointing at a dead profile
+link (both links are built from the nickname, not the id).
+
 **Private commands**: `/start`, `/connect_xbox`, `/disconnect_xbox`,
 `/connect_steam`, `/disconnect_steam`, `/connect_psn`, `/disconnect_psn`, `/panel`.
 A private flow started from a group must redirect the person to a DM, never fail
