@@ -229,8 +229,28 @@ async def _bilingual_descriptions(
         _apply(earned, cached)
         return
 
+    # A trophy missing from the response is a fact about the trophy; a
+    # failed request is a fact about the client (#50). The two deserve
+    # opposite answers, and conflating them is what lost descriptions:
+    #
+    # - a transient failure (rate limit, half-dead session) says nothing
+    #   about whether Russian text exists, so skip and let a later pass get
+    #   it natively rather than paying the LLM for something that will
+    #   arrive free;
+    # - a permanent one — Sony 404ing the title for this client — is never
+    #   going to improve. Verified against production on NPWR23378_00,
+    #   which 404s from *both* the US and RU clients, so it is not a
+    #   regional gap either. Those trophies fall through to the LLM.
+    permanently_unavailable = False
     try:
         russian_earned = await trophies_for_title(translation_client, account_id, title)
+    except PsnTitleUnavailableError:
+        log.info(
+            "psn title %s unavailable to the translation client — translating from English",
+            title.np_communication_id,
+        )
+        russian_earned = []
+        permanently_unavailable = True
     except Exception:
         log.info(
             "psn bilingual fetch for title %s skipped", title.np_communication_id, exc_info=True
@@ -239,11 +259,18 @@ async def _bilingual_descriptions(
         return
 
     russian_by_id = {item.trophy_id: item.trophy_detail for item in russian_earned}
+    # A trophy present in English and absent from Russian is precisely "Sony
+    # has no Russian text for this one" — the case the LLM exists for (#50).
+    # It used to be filtered out here and never reached the translator at
+    # all: not cached, not translated, uncached again on every future pass.
+    # Handing the English text as both halves is how the shared
+    # bilingual_descriptions() already spells "no native translation".
     native = {
-        str(trophy_id): (russian_text, english_text)
+        str(trophy_id): (russian_by_id.get(trophy_id) or english_text, english_text)
         for trophy_id, english_text in to_fetch.items()
-        if (russian_text := russian_by_id.get(trophy_id)) is not None
     }
+    if permanently_unavailable:
+        native = {key: (english, english) for key, (_ru, english) in native.items()}
     if native:
         resolved = await bilingual_descriptions(
             repo, anthropic_auth, Platform.PSN, title.np_communication_id, native

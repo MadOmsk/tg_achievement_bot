@@ -32,3 +32,7 @@ achievement-trophy-plural =
         [one] { $pretty } trophy
        *[other] { $pretty } trophies
     }
+
+# Per-game progress beside the title (#46). Shown only when the total is
+# actually known: PSN keeps progress as a percentage, never a count.
+achievement-game-progress = { " " }· { $unlocked }/{ $total }

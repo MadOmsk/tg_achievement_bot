@@ -33,3 +33,7 @@ achievement-trophy-plural =
         [few] { $pretty } трофея
        *[many] { $pretty } трофеев
     }
+
+# Прогресс по игре рядом с её названием (#46). Появляется только когда итог
+# действительно известен: у PSN прогресс хранится процентом, а не счётом.
+achievement-game-progress = { " " }· { $unlocked }/{ $total }

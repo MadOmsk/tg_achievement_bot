@@ -255,13 +255,25 @@ def _rarity_line(achievement: AchievementRow, locale: str) -> str:
     return name_part if not tail else f"{name_part} · {' · '.join(tail)}"
 
 
-def _game_line(title: str, platform: str, locale: str) -> str:
+def _game_line(
+    title: str, platform: str, locale: str, progress: tuple[int, int] | None = None
+) -> str:
+    """The game, its platform, and how far this person is through it (#46).
+
+    The counter is omitted rather than guessed when the total is unknown —
+    PSN keeps progress as a percentage and never a count, and a Steam game
+    whose schema has not been cached yet has no total either.
+    """
     _ = translator("achievements", locale)
-    return _(
+    line = _(
         "achievement-game-line",
         title=html_escape(title),
         platform=platform_tag(platform, locale),
     )
+    if progress is not None:
+        unlocked, total = progress
+        line += _("achievement-game-progress", unlocked=unlocked, total=total)
+    return line
 
 
 def _achievement_word(platform: str, locale: str) -> str:
@@ -274,7 +286,12 @@ def _achievement_word(platform: str, locale: str) -> str:
 
 
 def format_single(
-    gamertag: str, achievement: AchievementRow, title_name: str | None, *, locale: str
+    gamertag: str,
+    achievement: AchievementRow,
+    title_name: str | None,
+    *,
+    locale: str,
+    progress: tuple[int, int] | None = None,
 ) -> str:
     """Standardized form (2026-09-05 follow-up to SPEC 9, M-Steam-2e), one
     wording per platform (Follow-up 2026-09-06: PSN's own "трофей" word).
@@ -289,7 +306,7 @@ def format_single(
         gamertag=html_escape(gamertag),
         word=_achievement_word(achievement.platform, locale),
     )
-    game_line = _game_line(title, achievement.platform, locale)
+    game_line = _game_line(title, achievement.platform, locale, progress)
     text = f"{header}\n\n{game_line}\n{_rarity_line(achievement, locale)}"
     if achievement.description:
         description = _spoiler(html_escape(achievement.description), secret=achievement.is_secret)
@@ -315,7 +332,12 @@ def _group_by_title(
 
 
 def format_digest(
-    gamertag: str, title_name: str | None, achievements: list[AchievementRow], *, locale: str
+    gamertag: str,
+    title_name: str | None,
+    achievements: list[AchievementRow],
+    *,
+    locale: str,
+    progress: dict[tuple[str, str], tuple[int, int]] | None = None,
 ) -> str:
     """Standardized form (2026-09-05 follow-up): one block per game, each
     shaped like format_single's own game+rarity lines — a digest reader who
@@ -351,7 +373,10 @@ def format_digest(
         if index > 0:
             lines.append("")  # a blank line between one game's block and the next
         title = group[0].title_name or title_name or _("achievement-unknown-game")
-        lines.append(_game_line(title, group[0].platform, locale))
+        # Keyed the same way _group_by_title groups (#46) — one progress
+        # figure per game, and a digest can span several.
+        key = (group[0].platform, group[0].title_id)
+        lines.append(_game_line(title, group[0].platform, locale, (progress or {}).get(key)))
         lines.extend(_rarity_line(item, locale) for item in group)
     return "\n".join(lines)
 

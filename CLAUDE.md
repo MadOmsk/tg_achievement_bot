@@ -518,8 +518,14 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
 - Profiles and game stats must be public enough for the API to expose them — not
   fixable on our end, only by the person changing their own Steam privacy settings.
 - Presence is fetched in batches of up to 100 SteamIDs via `GetPlayerSummaries`.
-- Achievement schema is cached forever per app; global rarity is cached with an
-  expiry (it drifts over time, unlike the schema).
+- Achievement schema is cached per app; global rarity is cached with an expiry
+  (it drifts over time). The schema has no expiry but is **re-fetched the
+  moment an unlocked achievement is missing from it** (#49) — games add
+  achievements after release, and a cached-forever schema meant a DLC
+  achievement published with no icon and, worse, `is_secret = False`: a secret
+  one would never be spoilered. One extra call in exactly the broken case and
+  none otherwise; one retry per game per process, so an `apiname` Steam
+  genuinely does not publish cannot drive a refetch on every poll.
 - Backfill scans owned games with nonzero playtime and inserts unlocked achievements
   as backfill rows — expensive by nature (one call per played game, not one call for
   the whole library like Xbox), so it runs with a two-level concurrency limit
@@ -886,7 +892,11 @@ manual DB script.
 ## Message formats
 
 A single achievement/trophy post: bold name + "gets an achievement" (or, for PSN,
-"gets a trophy"), a blank line, the game name and platform in italics, a badge
+"gets a trophy"), a blank line, the game name and platform in italics — with
+this person's progress through that game beside it when the total is known
+("47/50", #46; Xbox states it in `title_history`, Steam's total is the length
+of its cached schema, and PSN keeps a percentage rather than a count so the
+counter is omitted rather than invented) — a badge
 before the achievement's name in quotes, then gamerscore (if nonzero) and rarity
 percent (if known) separated by a period, then the description if present (behind a
 spoiler if secret/hidden).

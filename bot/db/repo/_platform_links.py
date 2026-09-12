@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 
+from bot.constants import AccountPlatform
 from bot.db.repo._models import PlatformLink, SteamSchemaAchievement
 from bot.util import utcnow_iso
 
@@ -298,6 +299,48 @@ class _PlatformLinksRepo:
         )
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
+
+    async def title_progress(
+        self, account_platform: str, external_id: str, title_id: str
+    ) -> tuple[int, int] | None:
+        """(unlocked, total) for one game on one account, or None when the
+        total is not something the bot knows (#46).
+
+        Where the total comes from differs per platform, and only two of
+        three have one at all:
+
+        - Xbox states it directly in `title_history`, which the poller
+          refreshes anyway;
+        - Steam has no per-user total, but `steam_schema_cache` holds the
+          game's whole achievement list, so its length is the total;
+        - PSN stores progress as a percentage (`psn_title_progress`) and
+          never a count, so there is nothing honest to show. Returning None
+          leaves the counter off that line rather than inventing one.
+        """
+        if account_platform == AccountPlatform.XBOX:
+            cursor = await self._conn.execute(
+                "SELECT achievements_unlocked, achievements_total FROM title_history "
+                "WHERE xuid = ? AND title_id = ?",
+                (external_id, title_id),
+            )
+            row = await cursor.fetchone()
+            if row is None or not row["achievements_total"]:
+                return None
+            return int(row["achievements_unlocked"] or 0), int(row["achievements_total"])
+
+        if account_platform == AccountPlatform.STEAM:
+            cached = await self.steam_schema_get_cached(title_id)
+            if cached is None or not cached[1]:
+                return None
+            cursor = await self._conn.execute(
+                "SELECT COUNT(*) FROM seen_achievements "
+                "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+                (account_platform, external_id, title_id),
+            )
+            row = await cursor.fetchone()
+            return int(row[0]) if row else 0, len(cached[1])
+
+        return None
 
     async def account_latest_unlock(self, platform: str, external_id: str) -> str | None:
         """The newest unlock we already hold for this account — where a

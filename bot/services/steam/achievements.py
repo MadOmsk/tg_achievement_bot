@@ -13,6 +13,7 @@ the poller that calls this (SPEC 9, M-Steam-2c), not to this layer.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from bot.constants import Platform
@@ -35,6 +36,9 @@ from bot.util import parse_iso, utcnow
 RARITY_CACHE_TTL_DAYS = 7
 
 
+log = logging.getLogger(__name__)
+
+
 async def fetch_unlocked(
     repo: Repo, anthropic_auth: AnthropicAuth, api_key: str, steam_id: str, appid: str
 ) -> list[ParsedAchievement]:
@@ -51,6 +55,22 @@ async def fetch_unlocked(
         return []
 
     schema_by_id = {a.apiname: a for a in await _schema(repo, api_key, appid)}
+    # A game that added achievements after release (an update, a DLC) has
+    # them missing from a schema cached forever (#49). The achievement
+    # itself still arrives — `unlocked` came from a live call — but it would
+    # publish with no icon and, far worse, `is_secret = False`: a secret
+    # achievement added by a DLC would never be spoilered, giving the plot
+    # away to everyone who has not finished the game. Spoilering is a
+    # courtesy this bot does on its own, and Steam's `hidden` flag is the
+    # only thing driving it.
+    #
+    # Re-fetching only when an unlocked achievement is missing costs one
+    # extra call in exactly the case that is broken and none otherwise — a
+    # TTL would pay for every game whether or not anything changed.
+    if any(item.apiname not in schema_by_id for item in unlocked):
+        refreshed = await _schema(repo, api_key, appid, refresh=True)
+        if refreshed:
+            schema_by_id = {a.apiname: a for a in refreshed}
     percentages = await _percentages(repo, appid)
     descriptions = await _bilingual_descriptions(
         repo, anthropic_auth, api_key, steam_id, appid, unlocked
@@ -129,10 +149,26 @@ async def _bilingual_descriptions(
     return {**result, **resolved}
 
 
-async def _schema(repo: Repo, api_key: str, appid: str) -> list[SteamSchemaAchievement]:
-    cached = await repo.steam_schema_get_cached(appid)
-    if cached is not None:
-        return cached[1]
+# appids whose schema this process already re-fetched (#49) — without it, an
+# `apiname` Steam genuinely does not publish (a leftover from a removed
+# achievement, say) would trigger a fresh schema call on every single poll
+# of that game, forever. One retry per game per process is enough to pick up
+# a real DLC; the next restart is soon enough to try again.
+_REFRESHED_SCHEMAS: set[str] = set()
+
+
+async def _schema(
+    repo: Repo, api_key: str, appid: str, *, refresh: bool = False
+) -> list[SteamSchemaAchievement]:
+    if refresh:
+        if appid in _REFRESHED_SCHEMAS:
+            return []
+        _REFRESHED_SCHEMAS.add(appid)
+        log.info("steam schema for appid=%s refetched: an unlocked achievement was missing", appid)
+    else:
+        cached = await repo.steam_schema_get_cached(appid)
+        if cached is not None:
+            return cached[1]
     raw = await get_schema(api_key, appid)
     achievements = [
         SteamSchemaAchievement(apiname=item.apiname, icon=item.icon, hidden=item.hidden)

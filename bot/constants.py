@@ -34,6 +34,15 @@ class AccountPlatform(StrEnum):
     PSN = "psn"
 
 
+def account_platform_of(platform: str) -> str:
+    """Which account a `seen_achievements.platform` value belongs to — the
+    Python twin of the GENERATED `account_platform` column (#52). Both Xbox
+    generations are one account and one platform to a person."""
+    if platform in (Platform.XBOX_MODERN, Platform.XBOX_360):
+        return AccountPlatform.XBOX
+    return platform
+
+
 class PresenceState(StrEnum):
     ONLINE = "Online"
     OFFLINE = "Offline"

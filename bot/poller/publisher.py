@@ -17,6 +17,7 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InputMediaPhoto
 
+from bot.constants import account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo
 from bot.services.achievements import (
     format_digest,
@@ -168,11 +169,14 @@ class Publisher:
             # (digest_threshold lives on the subscription now, not on
             # user_settings — Follow-up, 2026-09-05, same move as
             # rarity_mode before it).
+            progress = await self._progress_for(allowed)
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        text=format_digest(gamertag, title_name, allowed, locale=chat.locale),
+                        text=format_digest(
+                            gamertag, title_name, allowed, locale=chat.locale, progress=progress
+                        ),
                         gallery=_gallery(allowed),
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
                     )
@@ -187,7 +191,13 @@ class Publisher:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        text=format_single(gamertag, item, title_name, locale=chat.locale),
+                        text=format_single(
+                            gamertag,
+                            item,
+                            title_name,
+                            locale=chat.locale,
+                            progress=progress.get((item.platform, item.title_id)),
+                        ),
                         gallery=_gallery([item]),
                         items=[(xuid, item.title_id, item.achievement_id)],
                     )
@@ -247,6 +257,28 @@ class Publisher:
             throttled=throttled,
         )
         return to_send
+
+    async def _progress_for(
+        self, achievements: list[AchievementRow]
+    ) -> dict[tuple[str, str], tuple[int, int]]:
+        """ "47/50" per game, for whichever games have a known total (#46).
+
+        Looked up once per batch rather than per achievement: a digest of
+        ten unlocks in one game is one query, not ten. Games whose total the
+        bot does not know (PSN, or a Steam game with no cached schema yet)
+        simply have no entry, and their line renders without a counter.
+        """
+        result: dict[tuple[str, str], tuple[int, int]] = {}
+        for item in achievements:
+            key = (item.platform, item.title_id)
+            if key in result or not item.xuid:
+                continue
+            found = await self._repo.title_progress(
+                account_platform_of(item.platform), item.xuid, item.title_id
+            )
+            if found is not None:
+                result[key] = found
+        return result
 
     async def publish_flood_digest(
         self, tg_id: int, chat_id: int, achievements: list[AchievementRow]
