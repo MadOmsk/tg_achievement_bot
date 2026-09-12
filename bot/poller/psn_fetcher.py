@@ -33,6 +33,12 @@ from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
 
+# How far back a first group-aware scan of a game may still announce
+# something (#46, reusing #52's own "only the last day" rule). Before that
+# change only the base game's trophies were ever fetched, so the pass that
+# widens a game to all of its groups finds every DLC trophy at once.
+GROUP_WIDENING_WINDOW_HOURS = 24
+
 
 @dataclass(slots=True)
 class PsnBackfillResult:
@@ -125,8 +131,30 @@ class PsnFetcher:
                 account_id,
                 outcome.unmapped_errors,
             )
+        if outcome.catch_up_rows:
+            # A game looked at group-by-group for the first time (#46): its
+            # DLC trophies were never fetched before, so most of what just
+            # arrived is history. Same 24-hour cap a relink gets (#52) — a
+            # DLC trophy actually earned today still lands, the rest are
+            # recorded and stay quiet.
+            log.info(
+                "tg_id=%s: %s psn trophies from a first group-aware scan, capped to %sh",
+                tg_id,
+                len(outcome.catch_up_rows),
+                GROUP_WIDENING_WINDOW_HOURS,
+            )
+            await self._publisher.publish(
+                tg_id,
+                account_id,
+                online_id,
+                outcome.catch_up_rows,
+                None,
+                window_hours=GROUP_WIDENING_WINDOW_HOURS,
+            )
         if not outcome.new_rows:
-            return 0
+            if outcome.catch_up_rows:
+                await self._refresh_level(client, tg_id, account_id)
+            return len(outcome.catch_up_rows)
 
         log.info("tg_id=%s unlocked %s new psn trophies", tg_id, len(outcome.new_rows))
         # No game_name here (unlike Xbox/Steam's own poll_title): a single

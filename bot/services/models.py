@@ -40,3 +40,6 @@ class ParsedAchievement:
     # PSN's trophy tier (bronze/silver/gold/platinum) — new dimension, no
     # analogue on Xbox/Steam (M-PSN-1's design notes, SPEC 9 M-PSN-2).
     trophy_type: str | None = None
+    # PSN only — which group of the title's trophy list this came from:
+    # 'default' for the base game, '001'... per DLC (#46).
+    trophy_group_id: str | None = None

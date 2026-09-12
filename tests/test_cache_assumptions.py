@@ -4,7 +4,13 @@ per-game progress counter that rides on the same data (#46)."""
 from __future__ import annotations
 
 from bot.constants import AccountPlatform, account_platform_of
-from bot.db.repo import AchievementRow, Repo, SteamSchemaAchievement, TitleHistoryRow
+from bot.db.repo import (
+    AchievementRow,
+    Repo,
+    SteamSchemaAchievement,
+    TitleHistoryRow,
+    TitleProgress,
+)
 from bot.services.achievements import format_digest, format_single
 from bot.util import utcnow
 
@@ -14,7 +20,10 @@ STEAM_ID = "76561197981065056"
 
 
 def _achievement(
-    achievement_id: str = "a1", platform: str = "xbox_modern", title_id: str = "550"
+    achievement_id: str = "a1",
+    platform: str = "xbox_modern",
+    title_id: str = "550",
+    trophy_group_id: str | None = None,
 ) -> AchievementRow:
     return AchievementRow(
         title_id=title_id,
@@ -27,6 +36,7 @@ def _achievement(
         rarity_percent=None,
         platform=platform,
         title_name="Left 4 Dead 2",
+        trophy_group_id=trophy_group_id,
     )
 
 
@@ -52,7 +62,9 @@ async def test_xbox_progress_comes_from_title_history(repo: Repo) -> None:
         ],
     )
 
-    assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == (47, 50)
+    assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == TitleProgress(
+        unlocked=47, total=50
+    )
 
 
 async def test_steam_progress_counts_rows_against_the_cached_schema(repo: Repo) -> None:
@@ -72,7 +84,9 @@ async def test_steam_progress_counts_rows_against_the_cached_schema(repo: Repo) 
         is_backfill=False,
     )
 
-    assert await repo.title_progress(AccountPlatform.STEAM, STEAM_ID, "550") == (2, 4)
+    assert await repo.title_progress(AccountPlatform.STEAM, STEAM_ID, "550") == TitleProgress(
+        unlocked=2, total=4
+    )
 
 
 async def test_psn_counts_against_the_titles_whole_trophy_set(repo: Repo) -> None:
@@ -99,7 +113,9 @@ async def test_psn_counts_against_the_titles_whole_trophy_set(repo: Repo) -> Non
         is_backfill=False,
     )
 
-    assert await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00001_00") == (2, 74)
+    assert await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00001_00") == TitleProgress(
+        unlocked=2, total=74
+    )
 
 
 async def test_psn_reports_none_until_the_total_is_known(repo: Repo) -> None:
@@ -114,7 +130,9 @@ async def test_upsert_title_never_blanks_a_known_total(repo: Repo) -> None:
     await repo.upsert_title("NPWR00001_00", "Spider-Man", "psn", achievements_total=74)
     await repo.upsert_title("NPWR00001_00", "Spider-Man", "psn")
 
-    assert await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00001_00") == (0, 74)
+    assert await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00001_00") == TitleProgress(
+        unlocked=0, total=74
+    )
 
 
 async def test_steam_progress_is_none_until_the_schema_is_cached(repo: Repo) -> None:
@@ -124,7 +142,9 @@ async def test_steam_progress_is_none_until_the_schema_is_cached(repo: Repo) -> 
 
 
 def test_the_counter_is_rendered_next_to_the_game(i18n) -> None:
-    text = format_single("Igor", _achievement(), "Left 4 Dead 2", locale="ru", progress=(47, 50))
+    text = format_single(
+        "Igor", _achievement(), "Left 4 Dead 2", locale="ru", progress=TitleProgress(47, 50)
+    )
     assert "47/50" in text
 
     # Omitted, not zeroed, when the total is unknown. Asserting "no slash
@@ -137,7 +157,11 @@ def test_the_counter_is_rendered_next_to_the_game(i18n) -> None:
 def test_a_digest_carries_one_counter_per_game(i18n) -> None:
     rows = [_achievement("a1"), _achievement("a2")]
     text = format_digest(
-        "Igor", None, rows, locale="ru", progress={("xbox_modern", "550"): (47, 50)}
+        "Igor",
+        None,
+        rows,
+        locale="ru",
+        progress={("xbox_modern", "550", None): TitleProgress(47, 50)},
     )
     assert text.count("47/50") == 1, "one figure per game, not per achievement"
 
@@ -163,3 +187,117 @@ async def test_the_generated_column_agrees_with_the_python_twin(repo: Repo) -> N
 
     # Both generations resolve to the one Xbox account, in SQL as in Python.
     assert await repo.account_achievement_count(AccountPlatform.XBOX, XUID) == 2
+
+
+# ------------------------------------- PSN trophy groups, the second line
+
+
+async def _spider_man(repo: Repo) -> None:
+    """Marvel's Spider-Man as production actually reports it: 74 trophies in
+    the title, 51 of them in the base group, the rest across four DLC."""
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Someone")
+    await repo.upsert_title("NPWR00001_00", "Marvel's Spider-Man", "psn", achievements_total=74)
+    await repo.save_title_groups(
+        "NPWR00001_00",
+        [
+            ("default", "Marvel's Spider-Man", 51),
+            ("001", "The Heist", 7),
+            ("002", "Turf Wars", 8),
+        ],
+    )
+
+
+async def test_group_progress_counts_only_that_groups_trophies(repo: Repo) -> None:
+    await _spider_man(repo)
+    await repo.insert_new_achievements_psn(
+        TG_ID,
+        "acc-1",
+        [
+            _achievement("t1", "psn", title_id="NPWR00001_00", trophy_group_id="default"),
+            _achievement("t2", "psn", title_id="NPWR00001_00", trophy_group_id="001"),
+            _achievement("t3", "psn", title_id="NPWR00001_00", trophy_group_id="001"),
+        ],
+        is_backfill=False,
+    )
+
+    whole = await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00001_00", "001")
+    assert whole is not None
+    assert (whole.unlocked, whole.total) == (3, 74)
+    assert (whole.group_name, whole.group_unlocked, whole.group_total) == ("The Heist", 2, 7)
+    assert not whole.group_is_default
+
+
+async def test_a_single_group_title_reports_no_group_at_all(repo: Repo) -> None:
+    """Sony gives every title a 'default' group, so "has groups" is never
+    the question — a game that is only that one group would render a second
+    line repeating the first."""
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Someone")
+    await repo.upsert_title("NPWR00002_00", "Stray", "psn", achievements_total=25)
+    await repo.save_title_groups("NPWR00002_00", [("default", "Stray", 25)])
+
+    progress = await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00002_00", "default")
+    assert progress is not None
+    assert progress.group_total == 0
+
+
+def test_the_group_line_names_the_dlc_and_its_own_count(i18n) -> None:
+    trophy = _achievement("t2", "psn", title_id="NPWR00001_00", trophy_group_id="001")
+    text = format_single(
+        "Igor",
+        trophy,
+        "Marvel's Spider-Man",
+        locale="ru",
+        progress=TitleProgress(
+            unlocked=31, total=74, group_name="The Heist", group_unlocked=3, group_total=7
+        ),
+    )
+
+    assert "31/74" in text
+    assert "The Heist · 3/7" in text
+    # And the trophy's own line is still there, under both of them.
+    assert "«An achievement»" in text
+
+
+def test_the_base_group_is_renamed_not_repeated(i18n) -> None:
+    """Sony calls the base group after the game itself; printing the title
+    on two lines in a row says nothing (owner decision)."""
+    trophy = _achievement("t1", "psn", title_id="NPWR00001_00", trophy_group_id="default")
+    text = format_single(
+        "Igor",
+        trophy,
+        "Marvel's Spider-Man",
+        locale="ru",
+        progress=TitleProgress(
+            unlocked=24,
+            total=74,
+            group_name="Marvel's Spider-Man",
+            group_unlocked=24,
+            group_total=51,
+            group_is_default=True,
+        ),
+    )
+
+    assert "Основная игра · 24/51" in text
+    # html-escaped, as everything that reaches Telegram is.
+    assert text.count("Marvel&#x27;s Spider-Man") == 1
+
+
+def test_a_mixed_group_digest_block_keeps_the_game_counter_alone(i18n) -> None:
+    """One digest block is one game, but a PSN burst can cross groups — no
+    single group line is true of all of them, so none is printed."""
+    rows = [
+        _achievement("t1", "psn", title_id="NPWR00001_00", trophy_group_id="default"),
+        _achievement("t2", "psn", title_id="NPWR00001_00", trophy_group_id="001"),
+    ]
+    progress = {
+        ("psn", "NPWR00001_00", None): TitleProgress(unlocked=31, total=74),
+        ("psn", "NPWR00001_00", "001"): TitleProgress(
+            unlocked=31, total=74, group_name="The Heist", group_unlocked=3, group_total=7
+        ),
+    }
+    text = format_digest("Igor", None, rows, locale="ru", progress=progress)
+
+    assert "31/74" in text
+    assert "The Heist" not in text

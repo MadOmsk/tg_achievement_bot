@@ -94,7 +94,17 @@ class _FakeUser:
     def trophy_titles(self, limit: int | None = None) -> list[_FakeTitle]:
         return self._titles[:limit] if limit else list(self._titles)
 
-    def trophies(self, np_communication_id: str, platform: object, include_progress: bool = False):
+    def trophies(
+        self,
+        np_communication_id: str,
+        platform: object,
+        include_progress: bool = False,
+        trophy_group_id: str = "default",
+    ):
+        # Every real call must ask for every group, not just the base game
+        # (#46) — psnawp's own default is "default", which is what silently
+        # hid every DLC trophy from this bot until that was found.
+        assert trophy_group_id == "all", "the poller must fetch all trophy groups"
         title = next(t for t in self._titles if t.np_communication_id == np_communication_id)
         if title.trophies_by_id.get("__forbidden__"):
             raise PSNAWPForbiddenError("closed")

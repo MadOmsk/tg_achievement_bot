@@ -164,6 +164,28 @@ class AchievementRow:
     # codebase does (2026-09-09, anti-flood filter spans every platform a
     # person has, not just one).
     xuid: str | None = None
+    # Which trophy group this came from — PSN only, where a title's list is
+    # split into the base game plus one per DLC (#46). None everywhere else:
+    # Xbox and Steam have no notion of groups.
+    trophy_group_id: str | None = None
+
+
+@dataclass(slots=True)
+class TitleProgress:
+    """How far through a game somebody is, for the line beside its name (#46).
+
+    `group_*` is filled only when the platform has groups and the one this
+    achievement belongs to is known — PSN. The base game is a group like any
+    other there, so it gets a name too; Sony calls it after the game itself,
+    which says nothing twice, so the renderer substitutes its own wording.
+    """
+
+    unlocked: int
+    total: int
+    group_name: str | None = None
+    group_unlocked: int = 0
+    group_total: int = 0
+    group_is_default: bool = False
 
 
 @dataclass(slots=True)

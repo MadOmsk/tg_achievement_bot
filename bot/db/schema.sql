@@ -185,6 +185,11 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     is_backfill     INTEGER NOT NULL DEFAULT 0,  -- arrived via backfill, never published
     is_secret       INTEGER NOT NULL DEFAULT 0,  -- Xbox's own isSecret; name/description are
                                                   -- real either way, we're the ones who spoiler it
+    -- Which trophy group this came from — 'default' for the base game, then
+    -- '001'... per DLC (#46). PSN only; NULL everywhere else, the same way
+    -- trophy_type below is. The trophy itself reports it, so it costs
+    -- nothing to keep and is what makes "3/7 in this DLC" answerable.
+    trophy_group_id TEXT,
     trophy_type     TEXT,                -- PSN's tier (bronze/silver/gold/platinum), NULL
                                           -- elsewhere — new dimension, no analogue on any other
                                           -- platform (M-PSN-1's design notes), M-PSN-2
@@ -352,6 +357,22 @@ CREATE TABLE IF NOT EXISTS hltb_cache (
     description_en      TEXT,
     description_ru      TEXT,
     cached_at           TEXT NOT NULL
+);
+
+-- A PlayStation trophy list is split into groups: the base game plus one per
+-- DLC (#46). A trophy says which group it came from, so a notification can
+-- say which part of the game somebody is progressing through — but the
+-- group's own name and size come from a separate call, made once per game
+-- and cached here forever, the same way steam_schema_cache works.
+--
+-- PSN only: Xbox and Steam have no notion of groups.
+CREATE TABLE IF NOT EXISTS title_groups (
+    title_id   TEXT NOT NULL,     -- np_communication_id
+    group_id   TEXT NOT NULL,     -- 'default' for the base game, then '001'...
+    name       TEXT,
+    total      INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (title_id, group_id)
 );
 
 -- Which chats already got their summary for a given day: the job wakes up every

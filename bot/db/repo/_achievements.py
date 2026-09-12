@@ -232,8 +232,8 @@ class _AchievementsRepo:
                 "INSERT OR IGNORE INTO seen_achievements "
                 "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
                 " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
-                " created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " trophy_group_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     account_id,
                     item.title_id,
@@ -248,6 +248,7 @@ class _AchievementsRepo:
                     1 if is_backfill else 0,
                     1 if item.is_secret else 0,
                     item.trophy_type,
+                    item.trophy_group_id,
                     now,
                 ),
             )

@@ -8,7 +8,7 @@ from __future__ import annotations
 from html import escape as html_escape
 
 from bot.constants import AchievementBadge, Platform, PsnTrophyTier, RarityMode
-from bot.db.repo import AchievementRow, ChatTarget, PlatformLink, Repo
+from bot.db.repo import AchievementRow, ChatTarget, PlatformLink, Repo, TitleProgress
 from bot.i18n import gettext, translator
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.util import humanize_ago, thousands
@@ -256,13 +256,20 @@ def _rarity_line(achievement: AchievementRow, locale: str) -> str:
 
 
 def _game_line(
-    title: str, platform: str, locale: str, progress: tuple[int, int] | None = None
+    title: str, platform: str, locale: str, progress: TitleProgress | None = None
 ) -> str:
     """The game, its platform, and how far this person is through it (#46).
 
     The counter is omitted rather than guessed when the total is unknown —
     PSN keeps progress as a percentage and never a count, and a Steam game
     whose schema has not been cached yet has no total either.
+
+    A PlayStation trophy list split into groups (the base game plus one per
+    DLC) gets a second line naming the group this trophy came from and the
+    count inside it — always a count, never Sony's own percentage, which is
+    weighted by trophy tier and so would disagree with the line above it.
+    Sony names the base group after the game itself, and printing the title
+    twice says nothing, so that one group is renamed (owner decision).
     """
     _ = translator("achievements", locale)
     line = _(
@@ -270,9 +277,21 @@ def _game_line(
         title=html_escape(title),
         platform=platform_tag(platform, locale),
     )
-    if progress is not None:
-        unlocked, total = progress
-        line += _("achievement-game-progress", unlocked=unlocked, total=total)
+    if progress is None:
+        return line
+    line += _("achievement-game-progress", unlocked=progress.unlocked, total=progress.total)
+    if progress.group_total:
+        name = (
+            _("achievement-group-main")
+            if progress.group_is_default or not progress.group_name
+            else html_escape(progress.group_name)
+        )
+        line += "\n" + _(
+            "achievement-group-line",
+            group=name,
+            unlocked=progress.group_unlocked,
+            total=progress.group_total,
+        )
     return line
 
 
@@ -291,7 +310,7 @@ def format_single(
     title_name: str | None,
     *,
     locale: str,
-    progress: tuple[int, int] | None = None,
+    progress: TitleProgress | None = None,
 ) -> str:
     """Standardized form (2026-09-05 follow-up to SPEC 9, M-Steam-2e), one
     wording per platform (Follow-up 2026-09-06: PSN's own "трофей" word).
@@ -337,7 +356,7 @@ def format_digest(
     achievements: list[AchievementRow],
     *,
     locale: str,
-    progress: dict[tuple[str, str], tuple[int, int]] | None = None,
+    progress: dict[tuple[str, str, str | None], TitleProgress] | None = None,
 ) -> str:
     """Standardized form (2026-09-05 follow-up): one block per game, each
     shaped like format_single's own game+rarity lines — a digest reader who
@@ -375,7 +394,17 @@ def format_digest(
         title = group[0].title_name or title_name or _("achievement-unknown-game")
         # Keyed the same way _group_by_title groups (#46) — one progress
         # figure per game, and a digest can span several.
-        key = (group[0].platform, group[0].title_id)
+        # One block per game, but PSN's own groups cut across that: a
+        # burst can carry trophies from the base game and a DLC at once,
+        # and no single group line would be true of both. The group is
+        # named only when every trophy in this game's block shares one;
+        # otherwise the block keeps the game counter alone.
+        group_ids = {item.trophy_group_id for item in group}
+        key = (
+            group[0].platform,
+            group[0].title_id,
+            group_ids.pop() if len(group_ids) == 1 else None,
+        )
         lines.append(_game_line(title, group[0].platform, locale, (progress or {}).get(key)))
         lines.extend(_rarity_line(item, locale) for item in group)
     return "\n".join(lines)

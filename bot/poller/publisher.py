@@ -18,7 +18,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InputMediaPhoto
 
 from bot.constants import account_platform_of
-from bot.db.repo import AchievementRow, ChatTarget, Repo
+from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.services.achievements import (
     format_digest,
     format_single,
@@ -196,7 +196,9 @@ class Publisher:
                             item,
                             title_name,
                             locale=chat.locale,
-                            progress=progress.get((item.platform, item.title_id)),
+                            progress=progress.get(
+                                (item.platform, item.title_id, item.trophy_group_id)
+                            ),
                         ),
                         gallery=_gallery([item]),
                         items=[(xuid, item.title_id, item.achievement_id)],
@@ -260,24 +262,32 @@ class Publisher:
 
     async def _progress_for(
         self, achievements: list[AchievementRow]
-    ) -> dict[tuple[str, str], tuple[int, int]]:
+    ) -> dict[tuple[str, str, str | None], TitleProgress]:
         """ "47/50" per game, for whichever games have a known total (#46).
 
         Looked up once per batch rather than per achievement: a digest of
         ten unlocks in one game is one query, not ten. Games whose total the
-        bot does not know (PSN, or a Steam game with no cached schema yet)
-        simply have no entry, and their line renders without a counter.
+        bot does not know (a Steam game with no cached schema yet, a PSN
+        game last polled before totals were stored) simply have no entry,
+        and their line renders without a counter.
+
+        Keyed by group as well as game: a PSN trophy also says which part
+        of the game it came from, and the same game can appear twice in one
+        batch under two different groups. A `None` group is the game-only
+        answer — every Xbox and Steam row, and a digest block whose trophies
+        do not share one group.
         """
-        result: dict[tuple[str, str], tuple[int, int]] = {}
+        result: dict[tuple[str, str, str | None], TitleProgress] = {}
         for item in achievements:
-            key = (item.platform, item.title_id)
-            if key in result or not item.xuid:
-                continue
-            found = await self._repo.title_progress(
-                account_platform_of(item.platform), item.xuid, item.title_id
-            )
-            if found is not None:
-                result[key] = found
+            for group_id in {item.trophy_group_id, None}:
+                key = (item.platform, item.title_id, group_id)
+                if key in result or not item.xuid:
+                    continue
+                found = await self._repo.title_progress(
+                    account_platform_of(item.platform), item.xuid, item.title_id, group_id
+                )
+                if found is not None:
+                    result[key] = found
         return result
 
     async def publish_flood_digest(
@@ -306,7 +316,16 @@ class Publisher:
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,
-                text=format_digest(name, None, achievements, locale=locale),
+                text=format_digest(
+                    name,
+                    None,
+                    achievements,
+                    locale=locale,
+                    # Same counters as every other game line (#46) — a
+                    # flushed backlog is still one block per game, and the
+                    # figure is as true here as it is live.
+                    progress=await self._progress_for(achievements),
+                ),
                 gallery=_gallery(achievements),
                 items=[
                     (item.xuid, item.title_id, item.achievement_id)

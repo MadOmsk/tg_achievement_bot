@@ -349,7 +349,12 @@ every column.
   publication paths (holding a SteamID64 or PSN account_id on non-Xbox rows).
   `is_backfill` marks history that must never publish. `is_secret` marks
   spoiler-rendered achievements. `trophy_type` holds the PSN trophy tier, `NULL`
-  everywhere else. `publications` records what was actually posted to each chat.
+  everywhere else, and `trophy_group_id` (#46, 2026-09-13) which section of that
+  title's trophy list it came from — `default` for the base game, `001`… per DLC,
+  `NULL` on every non-PSN row *and* on every PSN row stored before that date,
+  which is exactly what tells the poller a game's DLC trophies have never been
+  fetched for that account (see the PSN section). `publications` records what was
+  actually posted to each chat.
 - **Chats and settings.** `chats` + `subscriptions` (who publishes where;
   `subscriptions.rarity_mode` and `subscriptions.digest_threshold` are per
   person-per-chat, not per person). `chat_settings` holds each chat's own rarity
@@ -380,7 +385,13 @@ every column.
   PSN's own cached account level: `platform_links.psn_trophy_level` (refreshed by
   the poller after backfill and after any tick that finds new trophies — the level
   only changes when a trophy is earned, so there's no reason to touch it every
-  tick). HowLongToBeat cache: `hltb_cache` — completion times, platforms,
+  tick). PSN trophy groups: `title_groups (title_id, group_id, name, total)` —
+  the base game plus one row per DLC, fetched once per game and kept forever
+  (#46), since a game's own shape only changes when its publisher ships new
+  trophies. Per-account progress inside a group is *not* cached with it: the
+  bot counts its own `seen_achievements` rows, so asking Sony for it would pay
+  a second request for something already known.
+  HowLongToBeat cache: `hltb_cache` — completion times, platforms,
   genre, and (#2) the game's own description in both languages. Telegram
   message bookkeeping:
   `bot_messages`, `tracked_messages`, `online_auto_refresh`, `admin_panel_refresh`.
@@ -589,6 +600,26 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   running fetches trophies backfill hasn't inserted yet and publishes the account's
   whole history at once. A stuck account (backfill crashed, flag never set) is
   recovered by an admin resync, not by the poller.
+- **Every trophy request must ask for `trophy_group_id="all"`** (#46,
+  2026-09-13). A PlayStation title's trophy list is split into groups — the
+  base game (`default`) plus one per DLC (`001`…) — and psnawp's `trophies()`
+  defaults that argument to `"default"`, i.e. the base game *only*. The bot
+  passed nothing and so had never once fetched a DLC trophy: never published,
+  never counted in `/stats`, while the game's own total
+  (`titles.achievements_total`, from `defined_trophies`) has always included
+  them, so a completed DLC could only ever make someone's counter look worse.
+  Costs nothing extra — one request either way. Found while adding the
+  per-group notification line, not by anyone noticing the gap.
+  - The pass that widens a game the bot knew only the base group of therefore
+    digs up years of DLC trophies at once. Those publish under the same
+    24-hour cap a relink gets (#52's "only the last day" rule) instead of as
+    fresh unlocks — `PsnSyncOutcome.catch_up_rows`, decided per account and
+    per game by `repo.psn_title_needs_widening` (rows stored, none of them
+    carrying a `trophy_group_id`). The condition stops being true the moment
+    that pass commits, so it costs no flag and no migration, and it is
+    deliberately *not* `title_groups`: that table is shared by everyone who
+    owns the game, so the second person to unlock something there would look
+    "already widened" while their own DLC trophies had never been fetched.
 - `Trophy.trophy_earn_rate` is typed `float | None` by `psnawp_api`, but the library
   hands it back as a numeric *string* with no cast — coerce it explicitly
   (`services/psn/client.py::_as_float`) rather than trusting the type annotation.
@@ -907,6 +938,22 @@ without the counter — a badge
 before the achievement's name in quotes, then gamerscore (if nonzero) and rarity
 percent (if known) separated by a period, then the description if present (behind a
 spoiler if secret/hidden).
+
+**A PSN post carries a second line** (#46, 2026-09-13, user request), between
+the game and the trophy: the trophy list of a PlayStation game is split into
+groups — the base game plus one per DLC — and the trophy itself says which
+one it came from, so the message names that group and how far through *it*
+the person is ("CTNS: The Heist · 3/7"). A count again, never Sony's
+tier-weighted percentage, which would disagree with the line above it. The
+base group is named after the game itself by Sony, so it renders as
+"Основная игра" / "Main Game" instead of repeating the title (user
+decision); nothing is ever prefixed with "DLC", because a group is not
+always one (Spider-Man's `001` is *New Game+*, a mode). A game whose trophy
+list is a single group has no second line at all — Sony gives every title a
+`default` group, so "has groups" is never the question, "more than one" is.
+Xbox and Steam have no notion of groups and stay at one line. In a digest,
+one block is one game and the group line appears only when every trophy in
+that block shares one group.
 
 The badge is `rarity_badge()` (💎 at or below the rare threshold, 🏆 otherwise,
 including when rarity is simply unknown) for every platform except PSN, which shows

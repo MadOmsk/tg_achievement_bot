@@ -36,6 +36,7 @@ from bot.services.psn.client import (
     PsnPrivateProfileError,
     PsnTitleUnavailableError,
     trophies_for_title,
+    trophy_groups_for_title,
     trophy_titles_for_account,
 )
 from bot.services.rows import to_achievement_row
@@ -61,6 +62,13 @@ class PsnSyncOutcome:
     `unmapped_errors` at the account level."""
 
     new_rows: list[AchievementRow] = field(default_factory=list)
+    # Rows from a game this bot had never looked at group-by-group before
+    # (#46). Until this shipped only the base game's trophies were ever
+    # fetched, so the first such pass surfaces every DLC trophy the person
+    # earned — years of them, all at once. Kept apart from `new_rows` so the
+    # poller can publish them under the same 24-hour cap a relink uses
+    # (#52's own rule) instead of announcing a history nobody asked for.
+    catch_up_rows: list[AchievementRow] = field(default_factory=list)
     scanned: int = 0
     # Games whose trophy detail is hidden by that game's own privacy setting
     # (PsnPrivateProfileError) — the account as a whole passed the connect-
@@ -155,6 +163,24 @@ async def sync_account(
             await _bilingual_descriptions(
                 repo, anthropic_auth, translation_client, account_id, title, earned
             )
+        # The name and size of each group this game's trophy list is split
+        # into (#46) — one request, once per game, then cached forever: a
+        # game's own shape only changes when its publisher ships new
+        # trophies.
+        if not await repo.has_title_groups(title.np_communication_id):
+            groups = await trophy_groups_for_title(client, account_id, title)
+            if groups:
+                await repo.save_title_groups(
+                    title.np_communication_id,
+                    [(group.group_id, group.name, group.total) for group in groups],
+                )
+        # Does this pass widen a game the bot only ever knew the base group
+        # of? (see repo.psn_title_needs_widening) Asked before the insert,
+        # because the insert is what stops it being true. Backfill publishes
+        # nothing at all, so it never needs the split.
+        widened = not is_backfill and await repo.psn_title_needs_widening(
+            account_id, title.np_communication_id
+        )
         # The denominator of the "47/50" beside a notification's game line
         # (#46). PSN never reports a count for a person, but the title list
         # this poll already walked carries how many trophies the game has —
@@ -186,7 +212,10 @@ async def sync_account(
         # (INSERT OR IGNORE), so the cost is one redundant fetch, never a
         # silently dropped trophy (#26).
         await repo.set_psn_title_progress(account_id, title.np_communication_id, progress)
-        outcome.new_rows.extend(inserted)
+        if widened:
+            outcome.catch_up_rows.extend(inserted)
+        else:
+            outcome.new_rows.extend(inserted)
 
     return outcome
 
@@ -205,6 +234,7 @@ def _to_parsed(np_communication_id: str, item: EarnedTrophy) -> ParsedAchievemen
         platform=Platform.PSN,
         is_secret=item.trophy_hidden,
         trophy_type=item.trophy_type.value if item.trophy_type else None,
+        trophy_group_id=item.trophy_group_id,
     )
 
 

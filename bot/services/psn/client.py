@@ -118,6 +118,10 @@ class EarnedTrophy:
     trophy_rarity: TrophyRarity | None
     trophy_earn_rate: float | None
     earned_date_time: str | None
+    # Which group of the title's trophy list this belongs to — 'default' for
+    # the base game, '001'... per DLC (#46). psnawp reports it on the trophy
+    # itself, so it costs no extra request.
+    trophy_group_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -422,6 +426,15 @@ async def trophies_for_title(
                 user.trophies(
                     np_communication_id=title.np_communication_id,
                     platform=platform,
+                    # 'all', not psnawp's own default of 'default' (#46,
+                    # found while adding the per-group line): a PlayStation
+                    # trophy list is split into the base game plus one group
+                    # per DLC, and 'default' is *only the base game* — so
+                    # every DLC trophy anyone ever earned was invisible to
+                    # this bot: never published, never counted in /stats,
+                    # while the game's own total (titles.achievements_total)
+                    # has always included them. One request either way.
+                    trophy_group_id="all",
                     include_progress=True,
                 )
             )
@@ -447,6 +460,7 @@ async def trophies_for_title(
             trophy_icon_url=trophy.trophy_icon_url,
             trophy_type=trophy.trophy_type,
             trophy_hidden=bool(trophy.trophy_hidden),
+            trophy_group_id=getattr(trophy, "trophy_group_id", None),
             trophy_rarity=trophy.trophy_rarity,
             trophy_earn_rate=_as_float(trophy.trophy_earn_rate),
             earned_date_time=(
@@ -456,6 +470,63 @@ async def trophies_for_title(
         for trophy in trophies
         if trophy.earned
     ]
+
+
+@dataclass(slots=True)
+class TrophyGroup:
+    """One section of a title's trophy list: the base game ('default'), then
+    one per DLC ('001'...). #46's second notification line names it and says
+    how far through it the person is."""
+
+    group_id: str
+    name: str | None
+    total: int
+
+
+async def trophy_groups_for_title(
+    client: PSNAWP, account_id: str, title: TrophyTitle
+) -> list[TrophyGroup]:
+    """The groups a game's trophy list is split into — id, name and size.
+
+    Deliberately `include_progress=False`: how many of them *this* person
+    has is already in `seen_achievements`, and asking Sony for it would cost
+    a second request (psnawp's own warning) to learn something the bot
+    already knows. What comes back here is a fact about the game, so it is
+    cached forever in `title_groups` and fetched once per game, ever.
+
+    Returns [] instead of raising on every expected failure: the group line
+    is cosmetic, and a missing one must never be the reason a title's
+    trophies go unstored.
+    """
+    try:
+        user = await _call(client.user, account_id=account_id)
+        platform = next(iter(title.title_platform), PlatformType.PS4)
+        summary = await _call(
+            lambda: user.trophy_groups_summary(
+                np_communication_id=title.np_communication_id,
+                platform=platform,
+                include_progress=False,
+            )
+        )
+    except Exception:
+        log.info(
+            "psn trophy groups for title %s unavailable", title.np_communication_id, exc_info=True
+        )
+        return []
+
+    groups: list[TrophyGroup] = []
+    for group in summary.trophy_groups:
+        if group.trophy_group_id is None:
+            continue
+        defined = group.defined_trophies
+        groups.append(
+            TrophyGroup(
+                group_id=group.trophy_group_id,
+                name=group.trophy_group_name,
+                total=defined.bronze + defined.silver + defined.gold + defined.platinum,
+            )
+        )
+    return groups
 
 
 async def recent_earned_trophies(client: PSNAWP, account_id: str, limit: int) -> list[EarnedTrophy]:

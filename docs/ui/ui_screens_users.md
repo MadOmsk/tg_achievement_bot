@@ -11,12 +11,23 @@ that is what the bot renders by default and therefore what you compare
 against when testing. A person who switches their own language (#48) sees the
 same layout with the `en` strings.
 
-## Onboarding: /start, /connect_xbox
+## Onboarding: /start
+
+Greets, then offers every platform — one row each, same fixed order /panel
+uses (#53). It used to lead with Xbox and hand over a Microsoft sign-in link,
+leaving Steam and PSN to whoever already knew the commands.
+
+Someone who already has *any* platform linked gets their panel instead, not
+this screen.
 
 ```
-<greeting>
+<greeting — what the bot does, no single platform named>
 
-[ Войти через Microsoft ]
+<С чего начнём?>
+
+[ Подключить XBOX ]        (a link out to Microsoft)
+[ 🎮 Подключить Steam ]
+[ 🎮 Подключить PSN ]
 ```
 
 Timezone (right after the first login, when not set yet):
@@ -24,6 +35,60 @@ Timezone (right after the first login, when not set yet):
 ```
 <timezone — the same screen /panel uses, see below>
 ```
+
+## A published achievement / trophy
+
+One per unlock, or one digest per batch — see CLAUDE.md's "Message formats"
+for the grouping rules. The progress counter beside the game is #46.
+
+```
+🏆 <nick> получает достижение          ← rule B, the platform's own nick
+
+<game> (<platform>) · <unlocked>/<total>
+<badge> «<name>» · <gamerscore> · <rarity>%
+
+<description, spoilered when secret>
+```
+
+The counter is omitted when the total is not known — a Steam game whose
+schema has not been cached yet, or a game last polled before the bot stored
+totals at all. It is never guessed.
+
+**PSN carries a second line**, because a PlayStation trophy list is split
+into groups: the base game plus one per DLC. The trophy itself says which
+group it came from, so the message says which part of the game the person is
+progressing through, and how far:
+
+```
+🏆 <nick> получает трофей
+
+Marvel's Spider-Man (🔵 PSN) · 31/74
+CTNS: The Heist · 3/7
+🥈 «<name>» · 12.8%
+```
+
+A trophy from the base game names that group too, as "Основная игра" — Sony
+names the default group after the game itself, and repeating the title
+verbatim on two lines says nothing:
+
+```
+🏆 <nick> получает трофей
+
+Marvel's Spider-Man (🔵 PSN) · 24/74
+Основная игра · 24/51
+🥉 «<name>» · 31.4%
+```
+
+The trophy's own line never moves: the group line is inserted between the
+game and the trophy, it does not replace anything.
+
+No "DLC" prefix anywhere: a group is not always one. Spider-Man's group
+`001` is called *New Game+*, which is a mode, not an add-on — so the group's
+own name is printed and nothing is added to it. A game whose trophy list is
+one single group (Ratchet & Clank, Stray) has no second line — it would only
+repeat the first one.
+
+Xbox and Steam have no notion of groups, so they stay at one line.
 
 ## Disconnecting a platform: /disconnect_xbox, /disconnect_steam, /disconnect_psn
 

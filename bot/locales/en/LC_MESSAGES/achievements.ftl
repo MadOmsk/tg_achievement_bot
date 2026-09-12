@@ -36,3 +36,12 @@ achievement-trophy-plural =
 # Per-game progress beside the title (#46). Shown only when the total is
 # actually known: PSN keeps progress as a percentage, never a count.
 achievement-game-progress = { " " }· { $unlocked }/{ $total }
+
+# The card's second line — PSN only, where a trophy list is split into
+# groups: the base game plus one per add-on (#46). A count here too, not
+# Sony's own percentage, which is weighted by trophy tier and so would
+# disagree with the line above it.
+achievement-group-line = { $group } · { $unlocked }/{ $total }
+# Sony names the base group after the game itself, and printing the title
+# twice says nothing — so this group gets a word of its own.
+achievement-group-main = Main Game

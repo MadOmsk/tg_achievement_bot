@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 from bot.constants import AccountPlatform
-from bot.db.repo._models import PlatformLink, SteamSchemaAchievement
+from bot.db.repo._models import PlatformLink, SteamSchemaAchievement, TitleProgress
 from bot.util import utcnow_iso
 
 
@@ -300,9 +300,59 @@ class _PlatformLinksRepo:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
+    async def save_title_groups(
+        self, title_id: str, groups: list[tuple[str, str | None, int]]
+    ) -> None:
+        """The base game plus one row per DLC (#46) — cached forever, like
+        every other "the game's own shape" fact here, because it only
+        changes when the publisher ships new trophies."""
+        now = utcnow_iso()
+        for group_id, name, total in groups:
+            await self._conn.execute(
+                "INSERT INTO title_groups (title_id, group_id, name, total, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(title_id, group_id) DO UPDATE SET "
+                "  name = excluded.name, total = excluded.total,"
+                "  updated_at = excluded.updated_at",
+                (title_id, group_id, name, total, now),
+            )
+        await self._conn.commit()
+
+    async def has_title_groups(self, title_id: str) -> bool:
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM title_groups WHERE title_id = ? LIMIT 1", (title_id,)
+        )
+        return await cursor.fetchone() is not None
+
+    async def psn_title_needs_widening(self, external_id: str, title_id: str) -> bool:
+        """Does this account already hold trophies for this game that were
+        stored back when only the base group was ever fetched? (#46)
+
+        Every row written before that carries a NULL `trophy_group_id` and
+        every row written since carries one, so "has rows, none of them
+        grouped" is an exact, self-clearing description of a game whose DLC
+        trophies are about to be discovered all at once. `title_groups`
+        could not answer this — it is shared by everyone who owns the game,
+        so the second person to unlock something there would look "already
+        widened" while their own DLC trophies had never been fetched.
+
+        No rows at all is *not* widening: that is simply a game this person
+        has just started, and its trophies are as new as they look.
+        """
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*), COUNT(trophy_group_id) FROM seen_achievements "
+            "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+            (AccountPlatform.PSN, external_id, title_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return False
+        stored, grouped = int(row[0]), int(row[1])
+        return stored > 0 and grouped == 0
+
     async def title_progress(
-        self, account_platform: str, external_id: str, title_id: str
-    ) -> tuple[int, int] | None:
+        self, account_platform: str, external_id: str, title_id: str, group_id: str | None = None
+    ) -> TitleProgress | None:
         """(unlocked, total) for one game on one account, or None when the
         total is not something the bot knows (#46).
 
@@ -332,7 +382,10 @@ class _PlatformLinksRepo:
             row = await cursor.fetchone()
             if row is None or not row["achievements_total"]:
                 return None
-            return int(row["achievements_unlocked"] or 0), int(row["achievements_total"])
+            return TitleProgress(
+                unlocked=int(row["achievements_unlocked"] or 0),
+                total=int(row["achievements_total"]),
+            )
 
         if account_platform == AccountPlatform.STEAM:
             cached = await self.steam_schema_get_cached(title_id)
@@ -344,7 +397,7 @@ class _PlatformLinksRepo:
                 (account_platform, external_id, title_id),
             )
             row = await cursor.fetchone()
-            return int(row[0]) if row else 0, len(cached[1])
+            return TitleProgress(unlocked=int(row[0]) if row else 0, total=len(cached[1]))
 
         cursor = await self._conn.execute(
             "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
@@ -359,7 +412,40 @@ class _PlatformLinksRepo:
             (account_platform, external_id, title_id),
         )
         row = await cursor.fetchone()
-        return (int(row[0]) if row else 0), total
+        progress = TitleProgress(unlocked=int(row[0]) if row else 0, total=total)
+        if group_id is None:
+            return progress
+
+        # Sony gives every title at least a 'default' group, so "has groups"
+        # is not the question — "is it split into more than one" is. A game
+        # with a single group would render a second line saying exactly what
+        # the first one already said.
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM title_groups WHERE title_id = ?", (title_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None or int(row[0]) < 2:
+            return progress
+
+        cursor = await self._conn.execute(
+            "SELECT name, total FROM title_groups WHERE title_id = ? AND group_id = ?",
+            (title_id, group_id),
+        )
+        group = await cursor.fetchone()
+        if group is None:
+            return progress
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE account_platform = ? AND xuid = ? AND title_id = ?"
+            "  AND trophy_group_id = ?",
+            (account_platform, external_id, title_id, group_id),
+        )
+        earned = await cursor.fetchone()
+        progress.group_name = group["name"]
+        progress.group_total = int(group["total"])
+        progress.group_unlocked = int(earned[0]) if earned else 0
+        progress.group_is_default = group_id == "default"
+        return progress
 
     async def account_latest_unlock(self, platform: str, external_id: str) -> str | None:
         """The newest unlock we already hold for this account — where a

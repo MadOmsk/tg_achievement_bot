@@ -20,6 +20,7 @@ from bot.services.psn.client import (
     PsnPrivateProfileError,
     PsnTitleUnavailableError,
     PsnTokenDeadError,
+    TrophyGroup,
 )
 
 TG_ID = 42
@@ -33,7 +34,7 @@ class _FakeTitle:
     progress: int = 0
 
 
-def _trophy(trophy_id: int, name: str = "T") -> EarnedTrophy:
+def _trophy(trophy_id: int, name: str = "T", group_id: str | None = "default") -> EarnedTrophy:
     return EarnedTrophy(
         trophy_id=trophy_id,
         title_name="Some Game",
@@ -46,10 +47,11 @@ def _trophy(trophy_id: int, name: str = "T") -> EarnedTrophy:
         trophy_rarity=None,
         trophy_earn_rate=None,
         earned_date_time="2026-09-06T10:00:00+00:00",
+        trophy_group_id=group_id,
     )
 
 
-def _install_fakes(monkeypatch, titles, trophies_by_title):
+def _install_fakes(monkeypatch, titles, trophies_by_title, groups_by_title=None):
     async def fake_titles(client, account_id, limit=None):
         return titles
 
@@ -59,8 +61,12 @@ def _install_fakes(monkeypatch, titles, trophies_by_title):
             raise result
         return result or []
 
+    async def fake_groups(client, account_id, title):
+        return groups_by_title.get(title.np_communication_id, []) if groups_by_title else []
+
     monkeypatch.setattr(psn_achievements_module, "trophy_titles_for_account", fake_titles)
     monkeypatch.setattr(psn_achievements_module, "trophies_for_title", fake_trophies)
+    monkeypatch.setattr(psn_achievements_module, "trophy_groups_for_title", fake_groups)
 
 
 async def _linked(repo: Repo) -> None:
@@ -279,3 +285,113 @@ async def test_parsed_trophy_carries_the_tier_rarity_secret_and_platform(
     assert row.rarity_percent == 12.5
     assert row.is_secret is True
     assert row.gamerscore == 0
+
+
+# ------------------------------------------------ per-group progress (#46)
+
+
+async def test_a_games_groups_are_fetched_once_and_cached(repo: Repo, monkeypatch) -> None:
+    """The group names and sizes are a fact about the game, not about the
+    person — one request, ever, then `title_groups` answers."""
+    await _linked(repo)
+    title = _FakeTitle("NPWR00001_00", "Spider-Man", progress=10)
+    calls: list[str] = []
+
+    _install_fakes(
+        monkeypatch,
+        [title],
+        {"NPWR00001_00": [_trophy(1)]},
+        {"NPWR00001_00": [TrophyGroup("default", "Spider-Man", 51), TrophyGroup("001", "DLC", 7)]},
+    )
+    real = psn_achievements_module.trophy_groups_for_title
+
+    async def counting(client, account_id, group_title):
+        calls.append(group_title.np_communication_id)
+        return await real(client, account_id, group_title)
+
+    monkeypatch.setattr(psn_achievements_module, "trophy_groups_for_title", counting)
+
+    await _run(repo)
+    assert calls == ["NPWR00001_00"]
+
+    title.progress = 20
+    await _run(repo)
+    assert calls == ["NPWR00001_00"], "the second pass must not ask Sony again"
+
+
+async def test_the_trophys_own_group_reaches_the_stored_row(repo: Repo, monkeypatch) -> None:
+    await _linked(repo)
+    title = _FakeTitle("NPWR00001_00", "Spider-Man", progress=10)
+    _install_fakes(
+        monkeypatch,
+        [title],
+        {"NPWR00001_00": [_trophy(1, group_id="default"), _trophy(2, group_id="001")]},
+    )
+
+    await _run(repo)
+
+    cur = await repo._conn.execute(
+        "SELECT achievement_id, trophy_group_id FROM seen_achievements "
+        "WHERE xuid = ? ORDER BY achievement_id",
+        (ACCOUNT_ID,),
+    )
+    assert [(r[0], r[1]) for r in await cur.fetchall()] == [("1", "default"), ("2", "001")]
+
+
+async def test_a_first_group_aware_pass_is_catch_up_not_news(repo: Repo, monkeypatch) -> None:
+    """Until #46 only the base group was ever fetched, so the pass that
+    widens a game to all of its groups digs up every DLC trophy at once —
+    years of them. Those go out under the 24h cap, not as fresh unlocks."""
+    await _linked(repo)
+    title = _FakeTitle("NPWR00001_00", "Spider-Man", progress=10)
+
+    # What the old code left behind: stored trophies, none carrying a group.
+    _install_fakes(monkeypatch, [title], {"NPWR00001_00": [_trophy(1, group_id=None)]})
+    await _run(repo)
+
+    title.progress = 40
+    _install_fakes(
+        monkeypatch,
+        [title],
+        {"NPWR00001_00": [_trophy(1, group_id="default"), _trophy(2, group_id="001")]},
+    )
+    outcome = await _run(repo)
+
+    assert [row.achievement_id for row in outcome.catch_up_rows] == ["2"]
+    assert outcome.new_rows == []
+
+    # And only once: the next pass is ordinary polling again.
+    title.progress = 60
+    _install_fakes(monkeypatch, [title], {"NPWR00001_00": [_trophy(3, group_id="001")]})
+    outcome = await _run(repo)
+    assert [row.achievement_id for row in outcome.new_rows] == ["3"]
+    assert outcome.catch_up_rows == []
+
+
+async def test_a_game_with_no_stored_trophies_is_not_treated_as_widening(
+    repo: Repo, monkeypatch
+) -> None:
+    """A game nobody has ever polled for this account is simply new — its
+    trophies are as fresh as they look, and must not be capped."""
+    await _linked(repo)
+    title = _FakeTitle("NPWR00002_00", "Stray", progress=10)
+    _install_fakes(monkeypatch, [title], {"NPWR00002_00": [_trophy(1)]})
+
+    outcome = await _run(repo)
+
+    assert [row.achievement_id for row in outcome.new_rows] == ["1"]
+    assert outcome.catch_up_rows == []
+
+
+async def test_backfill_never_splits_off_catch_up(repo: Repo, monkeypatch) -> None:
+    await _linked(repo)
+    title = _FakeTitle("NPWR00001_00", "Spider-Man", progress=10)
+    _install_fakes(monkeypatch, [title], {"NPWR00001_00": [_trophy(1, group_id=None)]})
+    await _run(repo, is_backfill=True)
+
+    title.progress = 40
+    _install_fakes(monkeypatch, [title], {"NPWR00001_00": [_trophy(2, group_id="001")]})
+    outcome = await _run(repo, is_backfill=True)
+
+    assert [row.achievement_id for row in outcome.new_rows] == ["2"]
+    assert outcome.catch_up_rows == []
