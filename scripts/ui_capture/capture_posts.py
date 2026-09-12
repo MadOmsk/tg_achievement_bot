@@ -59,7 +59,7 @@ class RecordingSession(BaseSession):
     async def close(self) -> None:
         return None
 
-    async def make_request(self, bot, method, timeout=None):  # type: ignore[override]
+    async def make_request(self, bot, method, timeout=None):  # noqa: ASYNC109 - aiogram's own signature
         name = type(method).__name__
         recorded.append(
             {
@@ -125,7 +125,7 @@ async def main() -> None:
                     break
                 await asyncio.sleep(0.1)
             await asyncio.sleep(0.4)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
         results.append(
             {
@@ -209,7 +209,9 @@ async def main() -> None:
         )
         print(f"{ident:<24} {len(recorded):>2} call(s)", flush=True)
 
-    await record("Напоминание о протухшем входе Xbox", "post-reminder", ReminderJob(bot, repo).run())
+    await record(
+        "Напоминание о протухшем входе Xbox", "post-reminder", ReminderJob(bot, repo).run()
+    )
     await record(
         "Суперадмину: общий ключ платформы умер",
         "post-key-dead",
@@ -227,9 +229,9 @@ async def main() -> None:
     # search and no network — only the shape of an I18nContext.
     from bot.handlers.hltb import _card
     from bot.i18n import translator
+    from bot.services.crypto import TokenCipher
     from bot.services.hltb import resolve
     from bot.services.translate.auth import AnthropicAuth
-    from bot.services.crypto import TokenCipher
 
     class _Shim:
         def __init__(self, locale: str) -> None:
@@ -251,9 +253,12 @@ async def main() -> None:
         try:
             result = await resolve(repo, hltb_id, anthropic_auth=anthropic_auth)
             await bot.send_photo(
-                CHAT_ID, photo=result.image_url, caption=_card(result, _Shim("ru")), parse_mode="HTML"
+                CHAT_ID,
+                photo=result.image_url,
+                caption=_card(result, _Shim("ru")),
+                parse_mode="HTML",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
         results.append(
             {
@@ -268,7 +273,9 @@ async def main() -> None:
         print(f"{ident:<24} {len(recorded):>2} call(s) {error or ''}", flush=True)
 
     await publisher.stop()
-    OUT.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    OUT.write_text(  # noqa: ASYNC240 - a one-shot script, nothing else is waiting
+        json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
     await database.close()
 
 

@@ -73,7 +73,7 @@ class RecordingSession(BaseSession):
     async def close(self) -> None:
         return None
 
-    async def make_request(self, bot, method: TelegramMethod, timeout=None):  # type: ignore[override]
+    async def make_request(self, bot, method: TelegramMethod, timeout=None):  # noqa: ASYNC109 - aiogram's own signature
         name = type(method).__name__
         payload = {
             key: _plain(value)
@@ -242,7 +242,10 @@ async def main() -> None:
     ):
         dispatcher.include_router(router)
 
-    screens = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+    # Blocking read: a one-shot script, nothing else is waiting on the loop.
+    screens = json.loads(
+        Path(sys.argv[3]).read_text(encoding="utf-8")  # noqa: ASYNC240
+    )
     results = []
     for screen in screens:
         await restore(database)
@@ -254,7 +257,9 @@ async def main() -> None:
         if kind == "command":
             event = Update(
                 update_id=1,
-                message=_message(screen["input"], chat_id=chat_id, chat_type=chat_type, tg_id=tg_id),
+                message=_message(
+                    screen["input"], chat_id=chat_id, chat_type=chat_type, tg_id=tg_id
+                ),
             )
         else:
             event = Update(
@@ -266,7 +271,7 @@ async def main() -> None:
         error = None
         try:
             await asyncio.wait_for(dispatcher.feed_update(bot, event), timeout=20)
-        except Exception as exc:  # noqa: BLE001 - the report says which screens failed
+        except Exception as exc:
             import traceback
 
             error = f"{type(exc).__name__}: {exc}"
@@ -284,7 +289,9 @@ async def main() -> None:
         )
         print(f"{screen['id']:<34} {len(recorded):>2} call(s) {error or ''}", flush=True)
 
-    OUT.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    OUT.write_text(  # noqa: ASYNC240 - a one-shot script, nothing else is waiting
+        json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
     await database.close()
 
 
