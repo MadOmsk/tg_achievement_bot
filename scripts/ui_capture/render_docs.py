@@ -109,9 +109,7 @@ def main() -> None:
     screens: list[dict[str, Any]] = []
     for path in sys.argv[2:]:
         screens.extend(json.loads(Path(path).read_text(encoding="utf-8")))
-    Path(sys.argv[1]).write_text(
-        "\n".join(render(screen) for screen in screens), encoding="utf-8"
-    )
+    Path(sys.argv[1]).write_text("\n".join(render(screen) for screen in screens), encoding="utf-8")
     broken = [s["id"] for s in screens if s.get("error")]
     print(f"{len(screens)} screens rendered, {len(broken)} broken: {broken}")
 
