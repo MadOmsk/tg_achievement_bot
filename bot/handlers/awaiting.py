@@ -27,7 +27,17 @@ def expect(tg_id: int, platform: str) -> None:
     _awaiting[tg_id] = platform
 
 
-def is_expecting(tg_id: int, platform: str) -> bool:
+def is_expecting(tg_id: int, platform: str, text: str | None = None) -> bool:
+    """Whether this person's next message answers `platform`'s question.
+
+    A message starting with "/" never does (2026-09-12, user report):
+    typing /connect_psn right after /connect_steam was swallowed as a Steam
+    nickname and answered with "invalid key". A command is the person
+    changing their mind, not answering — and the command's own handler is
+    what should see it.
+    """
+    if text is not None and text.lstrip().startswith("/"):
+        return False
     return _awaiting.get(tg_id) == platform
 
 

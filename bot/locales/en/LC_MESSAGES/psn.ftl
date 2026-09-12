@@ -2,7 +2,7 @@
 psn-not-configured = PSN linking isn't set up yet — ask the administrator.
 psn-connect-group-redirect = Message me privately — we'll connect PSN there.
 psn-private-only = This command works in a DM.
-psn-already-connected = PSN is already connected: { $name }.
+psn-already-connected = PSN is currently linked to { $name }. Send another Online ID and I will switch; to just unlink, use /disconnect_psn.
 psn-link-prompt = Send me your PSN Online ID — I'll link it.
 
     ⚠️ Your trophy privacy has to be open, or I can't read them: in the PS App → Settings → Privacy → “Trophy level and game collection” → “Anyone”.

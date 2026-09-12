@@ -93,7 +93,9 @@ _STEAM_LINK_PATTERN = r"(?i)steamcommunity\.com/(id|profiles)/"
 class AwaitingSteamLink(BaseFilter):
     async def __call__(self, event: TelegramObject) -> bool:
         user = getattr(event, "from_user", None)
-        return user is not None and awaiting.is_expecting(user.id, "steam")
+        return user is not None and awaiting.is_expecting(
+            user.id, "steam", getattr(event, "text", None)
+        )
 
 
 async def _redirect_to_dm(
@@ -142,11 +144,15 @@ async def prompt_for_link(
     if await steam_auth.get_key() is None:
         await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
         return
+    # Having an account linked is no longer a dead end (#52, user report):
+    # this used to answer "already connected" and stop, which is why the
+    # switch confirmation could never be reached from /connect_steam at all.
+    # Relinking is supported and cheap now, and swapping accounts is guarded
+    # by its own prompt further along, so say what is linked and ask anyway.
     link = await repo.get_platform_link(tg_id, Platform.STEAM)
+    awaiting.expect(tg_id, "steam")
     if link is not None:
         await bot.send_message(tg_id, i18n.get("steam-already-connected", name=link.display_name))
-        return
-    awaiting.expect(tg_id, "steam")
     await bot.send_message(tg_id, i18n.get("steam-link-prompt", privacy_url=PRIVACY_URL))
 
 

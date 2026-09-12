@@ -101,19 +101,22 @@ async def test_prompt_replies_not_configured_without_arming(
     assert awaiting.is_expecting(TG_ID, "psn") is False
 
 
-async def test_prompt_reports_already_connected_without_arming(
+async def test_prompt_names_the_linked_account_and_still_asks(
     repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Gamer")
+    """Same as Steam's own (#52, user report) — a linked account is not a
+    reason to refuse; switching is guarded by its own confirmation later."""
     auth = await _configured_auth(repo, cipher, monkeypatch)
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "SuperOmsk")
     bot = FakeBot()
     awaiting.clear(TG_ID)
 
     await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
 
-    assert bot.sent == [(TG_ID, "PSN уже подключён: Gamer.")]
-    assert awaiting.is_expecting(TG_ID, "psn") is False
+    assert len(bot.sent) == 2
+    assert "SuperOmsk" in bot.sent[0][1]
+    assert awaiting.is_expecting(TG_ID, "psn") is True
 
 
 async def test_prompt_arms_the_wait_and_sends_the_link_prompt(

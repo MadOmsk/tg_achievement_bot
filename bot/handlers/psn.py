@@ -64,7 +64,9 @@ _pending_switch: dict[int, str] = {}
 class AwaitingPsnLink(BaseFilter):
     async def __call__(self, event: TelegramObject) -> bool:
         user = getattr(event, "from_user", None)
-        return user is not None and awaiting.is_expecting(user.id, "psn")
+        return user is not None and awaiting.is_expecting(
+            user.id, "psn", getattr(event, "text", None)
+        )
 
 
 async def _redirect_to_dm(
@@ -107,11 +109,12 @@ async def prompt_for_link(
     if await psn_auth.status() == STATUS_NOT_CONFIGURED:
         await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
         return
+    # Same as Steam's own (#52, user report) — a linked account is not a
+    # reason to refuse; switching is guarded by its own confirmation later.
     link = await repo.get_platform_link(tg_id, Platform.PSN)
+    awaiting.expect(tg_id, "psn")
     if link is not None:
         await bot.send_message(tg_id, i18n.get("psn-already-connected", name=link.display_name))
-        return
-    awaiting.expect(tg_id, "psn")
     await bot.send_message(tg_id, i18n.get("psn-link-prompt"))
 
 

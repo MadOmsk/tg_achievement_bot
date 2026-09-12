@@ -96,7 +96,15 @@ async def test_prompt_replies_not_configured_without_arming(repo: Repo, cipher) 
     assert awaiting.is_expecting(TG_ID, "steam") is False
 
 
-async def test_prompt_reports_already_connected_without_arming(repo: Repo, steam_auth) -> None:
+async def test_prompt_names_the_linked_account_and_still_asks(repo: Repo, steam_auth) -> None:
+    """An account already linked is not a dead end (#52, user report).
+
+    This used to answer "already connected" and stop, which meant the
+    switch confirmation could never be reached from /connect_steam at all —
+    the only way to change accounts was to disconnect first. Relinking is
+    supported and cheap now, and swapping is guarded by its own prompt
+    later in the flow.
+    """
     await repo.ensure_user(TG_ID, "igor")
     await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
     bot = FakeBot()
@@ -104,8 +112,18 @@ async def test_prompt_reports_already_connected_without_arming(repo: Repo, steam
 
     await prompt_for_link(bot, repo, steam_auth, TG_ID)  # type: ignore[arg-type]
 
-    assert bot.sent == [(TG_ID, "Steam уже подключён: Gabe.")]
-    assert awaiting.is_expecting(TG_ID, "steam") is False
+    assert len(bot.sent) == 2
+    assert "Gabe" in bot.sent[0][1]
+    assert awaiting.is_expecting(TG_ID, "steam") is True
+
+
+def test_a_command_is_never_taken_as_an_answer() -> None:
+    """Typing /connect_psn right after /connect_steam used to be swallowed
+    as a Steam nickname and answered with "invalid key" (user report)."""
+    awaiting.expect(TG_ID, "steam")
+    assert awaiting.is_expecting(TG_ID, "steam", "gabelogannewell") is True
+    assert awaiting.is_expecting(TG_ID, "steam", "/connect_psn") is False
+    awaiting.clear(TG_ID)
 
 
 async def test_prompt_arms_the_wait_and_sends_the_link_prompt(repo: Repo, steam_auth) -> None:
