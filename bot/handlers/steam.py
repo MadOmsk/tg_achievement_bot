@@ -40,6 +40,7 @@ from aiogram_i18n import I18nContext
 from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Repo
+from bot.handlers import awaiting
 from bot.handlers.keyboards import (
     deep_link_keyboard,
     notify_previous_owner,
@@ -73,14 +74,6 @@ GROUP_HINT_TTL = 30
 # case someone doesn't read this first or fixes it only after sending the
 # link), which meant a round trip everyone with a private profile hit once.
 
-# tg_ids who just pressed "Подключить Steam" (button, bare command, or the
-# group hub's deep link) — their next plain private message is the link or
-# nickname, not something to route anywhere else. In-memory only, like
-# admin.py's own _awaiting_input: nothing here is worth surviving a
-# restart, and a stray leftover entry is harmless — it only ever affects
-# what happens to that one person's very next private message.
-_awaiting_link: set[int] = set()
-
 # tg_id -> the raw text of a steamcommunity.com link spotted in an
 # *unprompted* message, waiting on a yes/no tap (steam_link_spotted below).
 _pending_confirmation: dict[int, str] = {}
@@ -100,7 +93,7 @@ _STEAM_LINK_PATTERN = r"(?i)steamcommunity\.com/(id|profiles)/"
 class AwaitingSteamLink(BaseFilter):
     async def __call__(self, event: TelegramObject) -> bool:
         user = getattr(event, "from_user", None)
-        return user is not None and user.id in _awaiting_link
+        return user is not None and awaiting.is_expecting(user.id, "steam")
 
 
 async def _redirect_to_dm(
@@ -153,7 +146,7 @@ async def prompt_for_link(
     if link is not None:
         await bot.send_message(tg_id, i18n.get("steam-already-connected", name=link.display_name))
         return
-    _awaiting_link.add(tg_id)
+    awaiting.expect(tg_id, "steam")
     await bot.send_message(tg_id, i18n.get("steam-link-prompt", privacy_url=PRIVACY_URL))
 
 
@@ -200,7 +193,7 @@ async def steam_link_provided(
     """The answer to prompt_for_link's own prompt — whatever this message
     says, resolve_steam_id (services/steam/client.py) already accepts a
     full link, a bare SteamID64, or just a vanity nickname."""
-    _awaiting_link.discard(message.from_user.id)
+    awaiting.clear(message.from_user.id)
     username = message.from_user.username if message.from_user else None
     await _connect(
         bot,

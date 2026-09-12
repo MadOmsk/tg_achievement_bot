@@ -27,6 +27,7 @@ from aiogram_i18n import I18nContext
 
 from bot.constants import Platform
 from bot.db.repo import Repo
+from bot.handlers import awaiting
 from bot.handlers.keyboards import (
     deep_link_keyboard,
     notify_previous_owner,
@@ -54,18 +55,16 @@ NOT_CONFIGURED_KEY = "psn-not-configured"
 GROUP_HINT_TTL = 30
 
 # Same in-memory "next plain message is the answer" pattern as steam.py's own
-# _awaiting_link — nothing here needs to survive a restart.
-_awaiting_link: set[int] = set()
 
 # tg_id -> the Online ID waiting on a "yes, switch accounts" tap (#52).
-# Same in-memory, dies-with-the-process treatment as _awaiting_link above.
+# Same in-memory, dies-with-the-process treatment as handlers/awaiting.py.
 _pending_switch: dict[int, str] = {}
 
 
 class AwaitingPsnLink(BaseFilter):
     async def __call__(self, event: TelegramObject) -> bool:
         user = getattr(event, "from_user", None)
-        return user is not None and user.id in _awaiting_link
+        return user is not None and awaiting.is_expecting(user.id, "psn")
 
 
 async def _redirect_to_dm(
@@ -112,7 +111,7 @@ async def prompt_for_link(
     if link is not None:
         await bot.send_message(tg_id, i18n.get("psn-already-connected", name=link.display_name))
         return
-    _awaiting_link.add(tg_id)
+    awaiting.expect(tg_id, "psn")
     await bot.send_message(tg_id, i18n.get("psn-link-prompt"))
 
 
@@ -151,7 +150,7 @@ async def psn_link_provided(
     bot: Bot,
     i18n: I18nContext,
 ) -> None:
-    _awaiting_link.discard(message.from_user.id)
+    awaiting.clear(message.from_user.id)
     username = message.from_user.username if message.from_user else None
     await _connect(
         bot,

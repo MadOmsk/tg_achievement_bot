@@ -12,10 +12,10 @@ from types import SimpleNamespace
 import pytest
 
 from bot.db.repo import Repo
+from bot.handlers import awaiting
 from bot.handlers import psn as psn_handlers
 from bot.handlers.psn import (
     AwaitingPsnLink,
-    _awaiting_link,
     _connect,
     prompt_for_link,
 )
@@ -72,16 +72,16 @@ async def _configured_auth(
 
 
 async def test_awaiting_filter_is_false_for_an_unarmed_user() -> None:
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
     assert await AwaitingPsnLink()(_event(TG_ID)) is False
 
 
 async def test_awaiting_filter_is_true_once_armed() -> None:
-    _awaiting_link.add(TG_ID)
+    awaiting.expect(TG_ID, "psn")
     try:
         assert await AwaitingPsnLink()(_event(TG_ID)) is True
     finally:
-        _awaiting_link.discard(TG_ID)
+        awaiting.clear(TG_ID)
 
 
 async def test_awaiting_filter_is_false_with_no_user_at_all() -> None:
@@ -92,13 +92,13 @@ async def test_prompt_replies_not_configured_without_arming(
     repo: Repo, cipher: TokenCipher
 ) -> None:
     bot = FakeBot()
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
     auth = PsnAuth(repo, cipher)  # never configured
 
     await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
 
     assert bot.sent == [(TG_ID, "Подключение PSN пока не настроено — обратитесь к администратору.")]
-    assert TG_ID not in _awaiting_link
+    assert awaiting.is_expecting(TG_ID, "psn") is False
 
 
 async def test_prompt_reports_already_connected_without_arming(
@@ -108,12 +108,12 @@ async def test_prompt_reports_already_connected_without_arming(
     await repo.link_platform_account(TG_ID, "psn", "acc-1", "Gamer")
     auth = await _configured_auth(repo, cipher, monkeypatch)
     bot = FakeBot()
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
 
     await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
 
     assert bot.sent == [(TG_ID, "PSN уже подключён: Gamer.")]
-    assert TG_ID not in _awaiting_link
+    assert awaiting.is_expecting(TG_ID, "psn") is False
 
 
 async def test_prompt_arms_the_wait_and_sends_the_link_prompt(
@@ -122,14 +122,14 @@ async def test_prompt_arms_the_wait_and_sends_the_link_prompt(
     await repo.ensure_user(TG_ID, "igor")
     auth = await _configured_auth(repo, cipher, monkeypatch)
     bot = FakeBot()
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
 
     await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
 
-    assert TG_ID in _awaiting_link
+    assert awaiting.is_expecting(TG_ID, "psn") is True
     assert len(bot.sent) == 1
     assert "Online ID" in bot.sent[0][1]
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
 
 
 async def test_connect_links_a_visible_profile(

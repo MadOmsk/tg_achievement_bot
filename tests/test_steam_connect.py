@@ -12,10 +12,10 @@ from types import SimpleNamespace
 from aiogram import F
 
 from bot.db.repo import Repo
+from bot.handlers import awaiting
 from bot.handlers.steam import (
     _STEAM_LINK_PATTERN,
     AwaitingSteamLink,
-    _awaiting_link,
     _unresolved_profile_hint,
     prompt_for_link,
 )
@@ -38,16 +38,16 @@ def _event(tg_id: int | None) -> SimpleNamespace:
 
 
 async def test_awaiting_filter_is_false_for_an_unarmed_user() -> None:
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
     assert await AwaitingSteamLink()(_event(TG_ID)) is False
 
 
 async def test_awaiting_filter_is_true_once_armed() -> None:
-    _awaiting_link.add(TG_ID)
+    awaiting.expect(TG_ID, "steam")
     try:
         assert await AwaitingSteamLink()(_event(TG_ID)) is True
     finally:
-        _awaiting_link.discard(TG_ID)
+        awaiting.clear(TG_ID)
 
 
 async def test_awaiting_filter_is_false_with_no_user_at_all() -> None:
@@ -85,7 +85,7 @@ def test_unresolved_hint_skips_the_nickname_explanation_for_a_real_link() -> Non
 
 async def test_prompt_replies_not_configured_without_arming(repo: Repo, cipher) -> None:
     bot = FakeBot()
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
     unconfigured = SteamAuth(repo, cipher)  # no env seed, nothing stored
 
     await prompt_for_link(bot, repo, unconfigured, TG_ID)  # type: ignore[arg-type]
@@ -93,32 +93,32 @@ async def test_prompt_replies_not_configured_without_arming(repo: Repo, cipher) 
     assert bot.sent == [
         (TG_ID, "Подключение Steam пока не настроено — обратитесь к администратору.")
     ]
-    assert TG_ID not in _awaiting_link
+    assert awaiting.is_expecting(TG_ID, "steam") is False
 
 
 async def test_prompt_reports_already_connected_without_arming(repo: Repo, steam_auth) -> None:
     await repo.ensure_user(TG_ID, "igor")
     await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
     bot = FakeBot()
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
 
     await prompt_for_link(bot, repo, steam_auth, TG_ID)  # type: ignore[arg-type]
 
     assert bot.sent == [(TG_ID, "Steam уже подключён: Gabe.")]
-    assert TG_ID not in _awaiting_link
+    assert awaiting.is_expecting(TG_ID, "steam") is False
 
 
 async def test_prompt_arms_the_wait_and_sends_the_link_prompt(repo: Repo, steam_auth) -> None:
     await repo.ensure_user(TG_ID, "igor")
     bot = FakeBot()
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)
 
     await prompt_for_link(bot, repo, steam_auth, TG_ID)  # type: ignore[arg-type]
 
-    assert TG_ID in _awaiting_link
+    assert awaiting.is_expecting(TG_ID, "steam") is True
     assert len(bot.sent) == 1
     chat_id, text = bot.sent[0]
     assert chat_id == TG_ID
     assert "steamcommunity.com" in text
     assert "публичной" in text  # the privacy warning is up front now, not just on failure
-    _awaiting_link.discard(TG_ID)
+    awaiting.clear(TG_ID)

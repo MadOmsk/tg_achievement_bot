@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
+from bot.handlers import awaiting
 from bot.handlers.keyboards import switch_keyboard, switch_prompt
 from bot.services import relink
 from bot.util import utcnow
@@ -218,3 +219,33 @@ async def test_relink_delta_starts_from_the_newest_stored_unlock(repo: Repo) -> 
         ALICE, ACCOUNT_A, [_achievement("a1")], is_backfill=False
     )
     assert await repo.account_latest_unlock(Platform.STEAM, ACCOUNT_A) is not None
+
+
+def test_asking_for_one_platform_cancels_the_question_about_another() -> None:
+    """Found by hand while testing #52: pressing "connect Steam" and then
+    "connect PSN" without typing anything in between left both waiting.
+    The nickname matched both filters, Steam's router is registered first,
+    and the person was told their *Steam* profile could not be found after
+    asking to connect PSN.
+
+    A person can only answer the last thing they were asked, so there is
+    only ever one pending question each.
+    """
+    awaiting.expect(ALICE, "steam")
+    assert awaiting.is_expecting(ALICE, "steam") is True
+
+    awaiting.expect(ALICE, "psn")
+    assert awaiting.is_expecting(ALICE, "psn") is True
+    assert awaiting.is_expecting(ALICE, "steam") is False
+
+    awaiting.clear(ALICE)
+    assert awaiting.is_expecting(ALICE, "psn") is False
+
+
+def test_questions_are_tracked_per_person() -> None:
+    awaiting.expect(ALICE, "steam")
+    awaiting.expect(BOB, "psn")
+    assert awaiting.is_expecting(ALICE, "steam") is True
+    assert awaiting.is_expecting(BOB, "psn") is True
+    awaiting.clear(ALICE)
+    awaiting.clear(BOB)
