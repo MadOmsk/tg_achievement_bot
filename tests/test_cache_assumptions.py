@@ -335,3 +335,46 @@ def test_a_group_named_after_the_game_is_renamed_however_it_is_spelled(i18n) -> 
     assert "Кражи · 24/51" in line("Marvel's Spider-Man — Кражи")
     # A name of its own is printed as Sony wrote it, no "DLC" anywhere.
     assert "New Game+ · 24/51" in line("New Game+")
+
+
+async def test_the_counter_survives_the_real_publish_path(repo: Repo) -> None:
+    """The counter never once appeared in a real message, and every test
+    above missed it: they all hand `progress=` to the formatter directly.
+
+    The publisher looked the figure up by `AchievementRow.xuid`, which only
+    the anti-flood path (reading rows back out of the database) ever fills —
+    the pollers build their rows from the platform response, where there is
+    no xuid to put. So the lookup was skipped for every live publication.
+    Found from a screenshot of the test chat, 2026-09-13.
+    """
+    from bot.poller.publisher import Publisher
+
+    await repo.upsert_chat(-100500, "Test chat", TG_ID)
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    await repo.subscribe(-100500, TG_ID)
+    await repo.save_title_history(
+        XUID,
+        [
+            TitleHistoryRow(
+                title_id="550",
+                name="Left 4 Dead 2",
+                platform="xbox_modern",
+                current_gamerscore=470,
+                max_gamerscore=500,
+                achievements_unlocked=47,
+                achievements_total=50,
+                last_played_at=utcnow().isoformat(timespec="seconds"),
+            )
+        ],
+    )
+
+    publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+    # Exactly what a poller hands over: rows straight from the platform
+    # response, with no xuid of their own.
+    row = _achievement("a1")
+    assert row.xuid is None
+    await publisher.publish(TG_ID, XUID, "Someone", [row], "Left 4 Dead 2")
+
+    job = publisher._queue.get_nowait()
+    assert "47/50" in job.text

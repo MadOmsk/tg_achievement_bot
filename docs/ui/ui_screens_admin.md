@@ -33,8 +33,8 @@ the per-chat role issue #47 is about, which does not exist yet.
 
 Пользователей: N (исключено: N)
   XBOX:  N (вход активен: N, без входа: N)
-  Steam: N
   PSN:   N
+  Steam: N
 Чатов:          N
 API XBOX:  used/limit за окно
 API Steam: used/limit за окно

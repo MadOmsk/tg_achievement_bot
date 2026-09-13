@@ -169,7 +169,7 @@ class Publisher:
             # (digest_threshold lives on the subscription now, not on
             # user_settings — Follow-up, 2026-09-05, same move as
             # rarity_mode before it).
-            progress = await self._progress_for(allowed)
+            progress = await self._progress_for(allowed, xuid)
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
@@ -261,7 +261,7 @@ class Publisher:
         return to_send
 
     async def _progress_for(
-        self, achievements: list[AchievementRow]
+        self, achievements: list[AchievementRow], account_id: str | None = None
     ) -> dict[tuple[str, str, str | None], TitleProgress]:
         """ "47/50" per game, for whichever games have a known total (#46).
 
@@ -276,15 +276,27 @@ class Publisher:
         batch under two different groups. A `None` group is the game-only
         answer — every Xbox and Steam row, and a digest block whose trophies
         do not share one group.
+
+        `account_id` is whose achievements these are, for the ordinary path
+        where every row in the batch belongs to the one account `publish()`
+        was called for. Rows only carry an `xuid` of their own on the
+        anti-flood path, which reads them back out of the database precisely
+        because it can mix accounts — and relying on that field alone is why
+        the counter never appeared in a real message at all: the poller
+        builds its rows from the platform response (`to_achievement_row`),
+        which has no `xuid` to put there, so every lookup was skipped.
         """
         result: dict[tuple[str, str, str | None], TitleProgress] = {}
         for item in achievements:
+            external_id = item.xuid or account_id
+            if not external_id:
+                continue
             for group_id in {item.trophy_group_id, None}:
                 key = (item.platform, item.title_id, group_id)
-                if key in result or not item.xuid:
+                if key in result:
                     continue
                 found = await self._repo.title_progress(
-                    account_platform_of(item.platform), item.xuid, item.title_id, group_id
+                    account_platform_of(item.platform), external_id, item.title_id, group_id
                 )
                 if found is not None:
                     result[key] = found

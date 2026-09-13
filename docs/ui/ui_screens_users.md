@@ -281,7 +281,7 @@ no empty line.
 Buttons:
 ```
 [ ✅ Публиковать мои достижения ]
-[ 🔗 XBOX ]  [ 🎮 Steam ]  [ 🎮 PSN ]   (all three open a DM at the right step)
+[ 🔗 XBOX ]  [ 🎮 PSN ]  [ 🎮 Steam ]   (all three open a DM at the right step)
 [ ⚙️ Настройки ]                        (opens a DM, /panel)
 ```
 
@@ -296,8 +296,8 @@ Buttons:
 ```
 📊 <Nick/Name>                                            [rule A]
 🟢 XBOX: <nick>  ·  N достижений  ·  🏆 K  ·  gamerscore G    [rule B]
-⚫ Steam: <nick>  ·  N достижений  ·  🏆 K                    [rule B]
 🔵 PlayStation: <nick>  ·  N трофеев  ·  уровень L            [rule B]
+⚫ Steam: <nick>  ·  N достижений  ·  🏆 K                    [rule B]
 
 Сегодня:   N достижений
 За месяц:  N достижений (🟢 N · ⚫ N) (+G G)
@@ -310,12 +310,12 @@ Buttons:
 ```
 👤 <nick>                                                 [rule A]
 🟢 XBOX: <nick>  ·  N достижений  ·  🏆 K  ·  gamerscore G    [rule B]
-⚫ Steam: <nick>  ·  N достижений  ·  🏆 K                    [rule B]
 🔵 PlayStation: <nick>  ·  N трофеев  ·  уровень L            [rule B]
+⚫ Steam: <nick>  ·  N достижений  ·  🏆 K                    [rule B]
 
 Вход XBOX:   <token status>
-Вход Steam:  <nick>  ·  <achievement visibility>              [rule B]
 Вход PSN:    <nick>  ·  <trophy visibility>                   [rule B]
+Вход Steam:  <nick>  ·  <achievement visibility>              [rule B]
 Публикация:  <chats>
 Сейчас:      <online/offline, what they are playing>
 
@@ -330,8 +330,8 @@ Buttons:
 [ Профиль виден другим: да/нет ▸ ]
 [ Язык: Русский ▸ ]
 [ 👤 Профиль | 🔕 Отключить XBOX ]   (or [ 🎮 Подключить Xbox ] when not connected)
-[ 👤 Профиль | 🔕 Отключить Steam ]  (or [ 🎮 Подключить Steam ])
 [ 👤 Профиль | 🔕 Отключить PSN ]    (or [ 🎮 Подключить PSN ])
+[ 👤 Профиль | 🔕 Отключить Steam ]  (or [ 🎮 Подключить Steam ])
 [ Обновить ]
 ```
 
