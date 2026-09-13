@@ -110,7 +110,9 @@ def test_platform_breakdown_suffix_includes_psn() -> None:
     sits next to already included PSN (a plain tg_id sum), only this
     breakdown silently dropped it."""
     assert platform_breakdown_suffix(3, 0, 2) == " (🟢 3 · 🔵 2)"  # two platforms, shown either way
-    assert platform_breakdown_suffix(3, 5, 2) == " (🟢 3 · ⚫ 5 · 🔵 2)"
+    # Xbox, PlayStation, Steam — the one display order for a platform list
+    # (2026-09-13); the arguments stay in their older (xbox, steam, psn) order.
+    assert platform_breakdown_suffix(3, 5, 2) == " (🟢 3 · 🔵 2 · ⚫ 5)"
     assert platform_breakdown_suffix(0, 0, 2) == ""  # one platform, always=False hides it
     assert platform_breakdown_suffix(0, 0, 2, always=True) == " (🔵 2)"
 

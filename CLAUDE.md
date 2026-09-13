@@ -773,8 +773,8 @@ his username and his PSN nickname all along.
 Two questions, and only two:
 
 1. **Who is this person?** → `Имя Фамилия` → `username` → nickname of any
-   connected platform (Xbox → PlayStation → Steam, the one display order) →
-   `id<tg_id>`. Digits last, the
+   connected platform (Xbox → PlayStation → Steam, the same order platform
+   lists use) → `id<tg_id>`. Digits last, the
    most human form first.
 2. **Which account is this?** → that platform's own chain (below). Used
    *only* where the line is genuinely about one platform: the per-platform
@@ -828,11 +828,13 @@ PSN nicknames used to be stored once at connect and never again, so a rename
 left the bot calling someone by an old name and pointing at a dead profile
 link (both links are built from the nickname, not the id).
 
-**One platform order, everywhere** (2026-09-13, user request):
+**One platform order for every platform *list*** (2026-09-13, user request):
 **Xbox, PlayStation, Steam** — `constants.platform_display_rank` is the
 single source of it, and anything that renders a list of platforms (a
 header, a keyboard, an admin block) sorts by that rather than listing them
-by hand. It had already drifted: `/panel` listed Xbox → Steam → PSN while
+by hand. The naming chain's own platform fallback (see "Naming people and
+accounts" below) follows the same order — it was Xbox → Steam → PSN when that
+chain was agreed, and keeping two orders was judged not worth remembering. It had already drifted: `/panel` listed Xbox → Steam → PSN while
 `/stats`, ordering by the column name in SQL, listed Xbox → PSN → Steam —
 both describing themselves as "a fixed order", just not the same one. Found
 by capturing the real screens (see docs/ui/captured_production.md).

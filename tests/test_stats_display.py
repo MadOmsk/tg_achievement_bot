@@ -330,7 +330,7 @@ async def test_counters_show_psn_in_the_platform_breakdown(repo: Repo) -> None:
 
     assert text is not None
     today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
-    assert "(🟢 1 · ⚫ 1 · 🔵 1)" in today_line
+    assert "(🟢 1 · 🔵 1 · ⚫ 1)" in today_line  # Xbox, PlayStation, Steam (2026-09-13)
 
 
 async def test_counters_hide_breakdown_for_a_single_platform(repo: Repo) -> None:

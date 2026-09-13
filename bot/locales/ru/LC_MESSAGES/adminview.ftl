@@ -19,13 +19,13 @@ adminview-home =
 
     Пользователей: { $users } (исключено: { $excluded })
       XBOX:  { $xbox_linked } (вход активен: { $xbox_active }, без входа: { $xbox_broken })
-      Steam: { $steam_linked }
       PSN:   { $psn_linked }
+      Steam: { $steam_linked }
     Чатов:          { $chats }
     API XBOX (достижения):  { $xbox_usage }
     API Steam (достижения): { $steam_usage }
-    Ключ Steam: { $steam_key_line }
     Ключ PSN:   { $psn_key_line }
+    Ключ Steam: { $steam_key_line }
     Запросов к PSN за сутки: { $psn_requests }
 adminview-btn-newusers = 👤 Новые пользователи ▸
 adminview-btn-limits = ⚙️ Глобальные настройки ▸

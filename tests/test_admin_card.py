@@ -326,3 +326,35 @@ async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatc
     text, markup = drawn[0]
     assert "PSN" in text
     assert "a:resetok:psn:1" in _callback_datas(markup)
+
+
+async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> None:
+    """ "As if it had only just been added" (owner, 2026-09-13): a freshly
+    linked account has no presence row either, and a stale "last seen" beside
+    an empty achievement list is the half-reset state this avoids."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.save_presence_state(XUID, "Online", "550", "Left 4 Dead 2", changed=True)
+    await repo.save_steam_presence_state("76561197960287930", 1, "550", "L4D2", changed=True)
+    await repo.save_psn_presence_state("acc-1", "Online", "NPWR1", "Spider-Man", changed=True)
+
+    async def rows(table: str, column: str, value: str) -> int:
+        cursor = await repo._conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE {column} = ?", (value,)
+        )
+        return (await cursor.fetchone())[0]
+
+    # Or the assertions below would pass on three rows that never existed.
+    assert await rows("presence_state", "xuid", XUID) == 1
+    assert await rows("steam_presence_state", "steam_id", "76561197960287930") == 1
+    assert await rows("psn_presence_state", "account_id", "acc-1") == 1
+
+    await repo.reset_xbox_data(1, XUID)
+    await repo.reset_steam_data("76561197960287930")
+    await repo.reset_psn_data(1, "acc-1")
+
+    assert await rows("presence_state", "xuid", XUID) == 0
+    assert await rows("steam_presence_state", "steam_id", "76561197960287930") == 0
+    assert await rows("psn_presence_state", "account_id", "acc-1") == 0

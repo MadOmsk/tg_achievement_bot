@@ -21,14 +21,21 @@ class _AchievementsRepo:
     # --------------------------------------------- admin "reset & resync"
 
     async def reset_xbox_data(self, tg_id: int, xuid: str) -> int:
-        """Wipe this person's Xbox achievement history and per-game cache —
-        the admin card's "reset & resync" action (user request 2026-09-08):
-        deletes both modern and x360 `seen_achievements` rows (there is no
-        separate UI concept of "Xbox 360" outside the message/icon itself,
-        same reasoning as `achievement_platform_breakdown`) plus their
-        `title_history` cache, so a fresh backfill starts from nothing
-        rather than a stale gamerscore/progress snapshot lingering next to
-        an empty achievement list. The caller re-runs backfill right after.
+        """Wipe everything stored *about this Xbox account* — the admin card's
+        "🗑 Сброс" (user request 2026-09-08, restated 2026-09-13: "wipe the
+        platform account completely and start reading it as if it had only
+        just been added"). Deletes both modern and x360 `seen_achievements`
+        rows (there is no separate UI concept of "Xbox 360" outside the
+        message/icon itself, same reasoning as
+        `achievement_platform_breakdown`), the `title_history` cache, and the
+        cached presence row — a freshly linked account has none of the three,
+        and a stale gamerscore or "last seen" next to an empty achievement
+        list is exactly the half-reset state this is meant to avoid. The
+        caller re-runs backfill right after.
+
+        It is keyed by the account, not the person: since #52 the history
+        belongs to the account, and reaching it through a user card is just
+        the convenient way in (owner decision 2026-09-13).
         """
         cursor = await self._conn.execute(
             "DELETE FROM seen_achievements WHERE xuid = ? "
@@ -37,19 +44,26 @@ class _AchievementsRepo:
         )
         deleted = cursor.rowcount
         await self._conn.execute("DELETE FROM title_history WHERE xuid = ?", (xuid,))
+        await self._conn.execute("DELETE FROM presence_state WHERE xuid = ?", (xuid,))
         await self._conn.commit()
         return deleted
 
     async def reset_steam_data(self, external_id: str) -> int:
-        """Steam's counterpart of `reset_xbox_data` — no per-user cache table
-        to clear beyond `seen_achievements` itself (`steam_schema_cache`/
-        `steam_rarity_cache` are per-game, shared across every user, and
-        must not be touched by resetting one person)."""
+        """Steam's counterpart of `reset_xbox_data`: the account's own
+        achievements and its cached presence row, nothing else.
+
+        `steam_schema_cache` and `steam_rarity_cache` are per *game* and
+        shared by everybody who plays it — resetting one account must not
+        touch them.
+        """
         cursor = await self._conn.execute(
             "DELETE FROM seen_achievements WHERE xuid = ? AND platform = 'steam'",
             (external_id,),
         )
         deleted = cursor.rowcount
+        await self._conn.execute(
+            "DELETE FROM steam_presence_state WHERE steam_id = ?", (external_id,)
+        )
         await self._conn.commit()
         return deleted
 
@@ -69,6 +83,9 @@ class _AchievementsRepo:
         )
         await self._conn.execute(
             "UPDATE psn_poll_state SET backfill_done = 0 WHERE account_id = ?", (account_id,)
+        )
+        await self._conn.execute(
+            "DELETE FROM psn_presence_state WHERE account_id = ?", (account_id,)
         )
         await self._conn.commit()
         return deleted
@@ -306,6 +323,7 @@ class _AchievementsRepo:
                 title_name=row["game"],
                 is_secret=bool(row["is_secret"]),
                 trophy_type=row["trophy_type"],
+                trophy_group_id=row["trophy_group_id"],
             )
             for row in await cursor.fetchall()
         ]
@@ -380,6 +398,7 @@ class _AchievementsRepo:
                 title_name=row["game"],
                 is_secret=bool(row["is_secret"]),
                 trophy_type=row["trophy_type"],
+                trophy_group_id=row["trophy_group_id"],
                 xuid=row["xuid"],
             )
             for row in await cursor.fetchall()

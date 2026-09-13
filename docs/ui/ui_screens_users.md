@@ -83,6 +83,20 @@ Platform names are the platform's own label (`🔵 PlayStation`, not "PSN";
 `🟢 XBOX`; `⚫ Steam`), and the rarity carries the word "редкость" before
 the number, both from the `.ftl`.
 
+**The description is the one line on this card that does not come from a
+`.ftl`**, and it has its own translation rule that must not be bypassed: the
+text is the platform's own, and what actually renders is
+`achievement_description_cache` for *that chat's* language — `native` when
+the platform itself returned two genuinely different strings, `llm` when it
+returned the same one twice and `services/translate` filled the gap. The
+publisher swaps it in per chat (`localize_descriptions`), so the same
+achievement reaches a Russian chat and an English one in its own language.
+`seen_achievements.description` is only the fallback, for a row older than
+the cache. A card with no description renders without one — never with an
+empty line. A secret achievement has its name *and* description behind a
+spoiler; the platforms hand over the real, spoiling text either way, the
+hiding is this bot's own doing.
+
 ### PSN carries a second line
 
 A PlayStation trophy list is split into groups: the base game plus one per

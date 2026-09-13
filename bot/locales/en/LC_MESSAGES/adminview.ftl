@@ -19,13 +19,13 @@ adminview-home =
 
     Users: { $users } (excluded: { $excluded })
       XBOX:  { $xbox_linked } (signed in: { $xbox_active }, signed out: { $xbox_broken })
-      Steam: { $steam_linked }
       PSN:   { $psn_linked }
+      Steam: { $steam_linked }
     Chats:          { $chats }
     XBOX API (achievements):  { $xbox_usage }
     Steam API (achievements): { $steam_usage }
-    Steam key: { $steam_key_line }
     PSN key:   { $psn_key_line }
+    Steam key: { $steam_key_line }
     PSN requests in the last 24h: { $psn_requests }
 adminview-btn-newusers = 👤 New users ▸
 adminview-btn-limits = ⚙️ Global settings ▸

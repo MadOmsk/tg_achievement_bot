@@ -26,8 +26,8 @@ admin-setting-key-check = Key check / /admin auto-refresh (min)
 admin-keys-screen =
     🔑 Platform keys
 
-    Steam: { $steam }
     PSN: { $psn }
+    Steam: { $steam }
     Anthropic: { $anthropic }
 admin-keys-set = ✅ configured
 admin-keys-unset = ⚠️ not configured

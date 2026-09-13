@@ -26,8 +26,8 @@ admin-setting-key-check = Проверка ключей / автообновле
 admin-keys-screen =
     🔑 Ключи платформ
 
-    Steam: { $steam }
     PSN: { $psn }
+    Steam: { $steam }
     Anthropic: { $anthropic }
 admin-keys-set = ✅ настроен
 admin-keys-unset = ⚠️ не настроен

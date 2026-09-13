@@ -257,16 +257,6 @@ async def _keys_screen(
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text=_("admin-keys-steam-change") if steam_configured else _("admin-keys-steam-add"),
-            callback_data="a:keyset:steam",
-        )
-    )
-    if steam_configured:
-        builder.row(
-            InlineKeyboardButton(text=_("admin-keys-steam-clear"), callback_data="a:keyclr:steam")
-        )
-    builder.row(
-        InlineKeyboardButton(
             text=_("admin-keys-psn-change") if psn_configured else _("admin-keys-psn-add"),
             callback_data="a:keyset:psn",
         )
@@ -274,6 +264,16 @@ async def _keys_screen(
     if psn_configured:
         builder.row(
             InlineKeyboardButton(text=_("admin-keys-psn-clear"), callback_data="a:keyclr:psn")
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-keys-steam-change") if steam_configured else _("admin-keys-steam-add"),
+            callback_data="a:keyset:steam",
+        )
+    )
+    if steam_configured:
+        builder.row(
+            InlineKeyboardButton(text=_("admin-keys-steam-clear"), callback_data="a:keyclr:steam")
         )
     builder.row(
         InlineKeyboardButton(

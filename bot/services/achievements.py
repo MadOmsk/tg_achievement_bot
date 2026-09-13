@@ -122,13 +122,17 @@ def platform_breakdown_suffix(
     only thing on the row saying which platform those achievements came
     from at all. Still empty when there's nothing to show at all (a
     zero-achievement row)."""
+    # Xbox, PlayStation, Steam — the one display order for a platform list
+    # (constants.platform_display_rank). The argument order is the older
+    # (xbox, steam, psn) one every caller already passes; only what the reader
+    # sees is ordered here.
     parts = []
     if xbox_count:
         parts.append(f"{PLATFORM_ICON[Platform.XBOX_MODERN]} {xbox_count}")
-    if steam_count:
-        parts.append(f"{PLATFORM_ICON[Platform.STEAM]} {steam_count}")
     if psn_count:
         parts.append(f"{PLATFORM_ICON[Platform.PSN]} {psn_count}")
+    if steam_count:
+        parts.append(f"{PLATFORM_ICON[Platform.STEAM]} {steam_count}")
     if not parts or (len(parts) < 2 and not always):
         return ""
     return " (" + " · ".join(parts) + ")"
