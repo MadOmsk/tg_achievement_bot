@@ -24,6 +24,17 @@ CREATE TABLE IF NOT EXISTS users (
     excluded_by     INTEGER,
     excluded_at     TEXT,
     last_online_at  TEXT,
+    -- The person's Telegram profile photo, for the mini-app (2026-09-13).
+    -- Telegram's own `file_id` for the largest size, never an image and never
+    -- a URL: a file_id is only usable together with the bot token, so the
+    -- token stays on the server and this column is not a secret on its own.
+    -- `photo_unique_id` is stable per photo, so a refresh can tell "still the
+    -- same picture" without downloading it; `photo_checked_at` is stamped on
+    -- every check, including one that finds no photo at all (a private
+    -- profile), so poller/avatars.py does not ask again tomorrow.
+    photo_file_id   TEXT,
+    photo_unique_id TEXT,
+    photo_checked_at TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );

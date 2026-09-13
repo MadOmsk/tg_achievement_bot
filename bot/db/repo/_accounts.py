@@ -69,6 +69,32 @@ class _AccountsRepo:
         )
         await self._conn.commit()
 
+    async def users_needing_avatar(self, before: str, limit: int) -> list[int]:
+        """Who has not had their profile photo looked at since `before` —
+        oldest first, so a backlog drains in order rather than by chance
+        (poller/avatars.py, 2026-09-13). A NULL `photo_checked_at` has never
+        been checked at all and goes first."""
+        cursor = await self._conn.execute(
+            "SELECT tg_id FROM users "
+            "WHERE photo_checked_at IS NULL OR photo_checked_at < ? "
+            "ORDER BY photo_checked_at IS NOT NULL, photo_checked_at LIMIT ?",
+            (before, limit),
+        )
+        return [row["tg_id"] for row in await cursor.fetchall()]
+
+    async def set_user_photo(
+        self, tg_id: int, file_id: str | None, unique_id: str | None
+    ) -> None:
+        """The result of one look, including "this person has no photo we can
+        see" — `photo_checked_at` is stamped either way, or a private profile
+        would be asked about again every single tick."""
+        await self._conn.execute(
+            "UPDATE users SET photo_file_id = ?, photo_unique_id = ?, photo_checked_at = ? "
+            "WHERE tg_id = ?",
+            (file_id, unique_id, utcnow_iso(), tg_id),
+        )
+        await self._conn.commit()
+
     async def update_names(self, tg_id: int, first_name: str | None, last_name: str | None) -> None:
         """first_name/last_name's own refresh (Follow-up 2026-09-06,
         /stats' header) — separate from update_username above because
