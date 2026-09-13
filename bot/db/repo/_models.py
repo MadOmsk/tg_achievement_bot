@@ -43,6 +43,10 @@ class User:
     # `gamertag` above stays the classic one. Defaulted so the many call
     # sites that build a User by hand keep working.
     gamertag_modern: str | None = None
+    # Telegram's own file_id for this person's profile photo, for the
+    # mini-app (2026-09-13) — see users.photo_file_id in schema.sql. Only
+    # usable with the bot token, so it is not a secret on its own.
+    photo_file_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -589,6 +593,7 @@ def _as_user(row: aiosqlite.Row) -> User:
         first_name=row["first_name"],
         last_name=row["last_name"],
         gamertag_modern=row["gamertag_modern"],
+        photo_file_id=row["photo_file_id"],
     )
 
 

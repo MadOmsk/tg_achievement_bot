@@ -36,6 +36,7 @@ from bot.i18n import (
 )
 from bot.lock import AlreadyRunningError, single_instance
 from bot.poller.admin_refresh import AdminPanelRefresh
+from bot.poller.avatars import AvatarRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher
@@ -188,6 +189,7 @@ async def run(settings: Settings) -> None:
         flood_flush,
         DescriptionBackfill(repo, client, anthropic_auth),
         SteamLocalization(repo),
+        AvatarRefresh(bot, repo),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

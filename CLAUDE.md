@@ -172,6 +172,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           backfill, admin resync (#27)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
+│   │   ├── avatars.py             profile photos: each person's Telegram one, and each
+│   │   │                          platform account's own, a few per tick (#55)
 │   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
 │   │   ├── steam_localization.py   walks the Steam library a couple of games a tick for
