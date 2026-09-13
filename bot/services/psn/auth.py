@@ -109,13 +109,28 @@ class PsnAuth:
         self._client = None
         self._client_ru = None
 
+    def _stored_npsso(self, encrypted: str) -> str:
+        """The stored NPSSO, or "not configured" when this FERNET_KEY cannot
+        open it — rotated, or copied in from another instance. Every caller
+        already handles PsnNotConfiguredError; a raw ValueError from here
+        would instead surface as an unexplained poller failure (found live on
+        the test bot, 2026-09-13, with a key copied from production)."""
+        try:
+            return self._cipher.decrypt(encrypted.encode("ascii"))
+        except ValueError as exc:
+            log.warning(
+                "psn npsso in app_settings cannot be decrypted with this FERNET_KEY"
+                " — treating it as not configured; set it again in the admin panel"
+            )
+            raise PsnNotConfiguredError from exc
+
     async def get_client(self) -> PSNAWP:
         if self._client is not None:
             return self._client
         encrypted = await self._repo.get_app_setting(NPSSO_KEY)
         if encrypted is None:
             raise PsnNotConfiguredError
-        npsso = self._cipher.decrypt(encrypted.encode("ascii"))
+        npsso = self._stored_npsso(encrypted)
         self._client = await build_client(npsso)
         return self._client
 
@@ -133,7 +148,7 @@ class PsnAuth:
         encrypted = await self._repo.get_app_setting(NPSSO_KEY)
         if encrypted is None:
             raise PsnNotConfiguredError
-        npsso = self._cipher.decrypt(encrypted.encode("ascii"))
+        npsso = self._stored_npsso(encrypted)
         self._client_ru = await build_client(npsso, headers=TRANSLATION_HEADERS)
         return self._client_ru
 

@@ -89,7 +89,19 @@ class SteamAuth:
         encrypted = await self._repo.get_app_setting(KEY_ENC_KEY)
         if encrypted is None:
             return None
-        self._key = self._cipher.decrypt(encrypted.encode("ascii"))
+        try:
+            self._key = self._cipher.decrypt(encrypted.encode("ascii"))
+        except ValueError:
+            # A stored key this FERNET_KEY cannot open — rotated, or copied in
+            # from another instance. "No usable key" is the honest answer, and
+            # every consumer already handles it; raising from here would take
+            # down a poller instead (see services/translate/auth.py's own note,
+            # 2026-09-13).
+            log.warning(
+                "steam api key in app_settings cannot be decrypted with this FERNET_KEY"
+                " — treating it as not configured; set it again in the admin panel"
+            )
+            return None
         return self._key
 
     async def require_key(self) -> str:

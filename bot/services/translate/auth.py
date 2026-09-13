@@ -78,7 +78,20 @@ class AnthropicAuth:
         encrypted = await self._repo.get_app_setting(KEY_ENC_KEY)
         if encrypted is None:
             return None
-        self._key = self._cipher.decrypt(encrypted.encode("ascii"))
+        try:
+            self._key = self._cipher.decrypt(encrypted.encode("ascii"))
+        except ValueError:
+            # A stored key this FERNET_KEY cannot open — a rotated key, or a
+            # value copied in from another instance (found live on the test bot,
+            # 2026-09-13: a ciphertext copied from production, which uses its
+            # own key). That is "no usable key", not a reason to take a poller
+            # down: translation is optional everywhere it is used, and raising
+            # here killed the whole description backfill for every title.
+            log.warning(
+                "anthropic api key in app_settings cannot be decrypted with this FERNET_KEY"
+                " — treating it as not configured; set it again in the admin panel"
+            )
+            return None
         return self._key
 
     async def require_key(self) -> str:

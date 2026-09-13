@@ -114,3 +114,49 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
     assert await steam_auth.get_key() is None
     assert _awaiting_input.get(ADMIN_ID) == (STEAM_KEY_KEY, None)  # still armed for a retry
     _awaiting_input.pop(ADMIN_ID, None)
+
+
+# ---------------------------------------- a key this FERNET_KEY cannot open
+
+
+async def _store_foreign_ciphertext(repo: Repo, key: str) -> None:
+    """What a value copied in from another instance looks like: valid Fernet,
+    wrong key. Found live on the test bot (2026-09-13) after an Anthropic key
+    was copied across from production, which has its own FERNET_KEY — every
+    description-backfill tick then died on it, for every title, not only the
+    ones that wanted translating."""
+    from cryptography.fernet import Fernet
+
+    other = Fernet(Fernet.generate_key())
+    await repo.set_app_setting(key, other.encrypt(b"not-ours").decode("ascii"))
+
+
+async def test_an_undecryptable_anthropic_key_reads_as_not_configured(
+    repo: Repo, cipher: TokenCipher
+) -> None:
+    await _store_foreign_ciphertext(repo, "anthropic_api_key_enc")
+    auth = AnthropicAuth(repo, cipher, env_key=None)
+
+    assert await auth.get_key() is None
+    assert await auth.status() == "not_configured"
+
+
+async def test_an_undecryptable_steam_key_reads_as_not_configured(
+    repo: Repo, cipher: TokenCipher
+) -> None:
+    await _store_foreign_ciphertext(repo, "steam_api_key_enc")
+
+    assert await SteamAuth(repo, cipher, env_key=None).get_key() is None
+
+
+async def test_an_undecryptable_npsso_reads_as_not_configured(
+    repo: Repo, cipher: TokenCipher
+) -> None:
+    import pytest
+
+    from bot.services.psn.auth import PsnNotConfiguredError
+
+    await _store_foreign_ciphertext(repo, "psn_npsso_enc")
+
+    with pytest.raises(PsnNotConfiguredError):
+        await PsnAuth(repo, cipher).get_client()
