@@ -458,7 +458,7 @@ class _PlatformLinksRepo:
         relink's delta starts (#52). None when the account is new to us, and
         then only a full backfill will do."""
         cursor = await self._conn.execute(
-            "SELECT MAX(unlocked_at) FROM seen_achievements "
+            "SELECT MAX(COALESCE(unlocked_at, created_at)) FROM seen_achievements "
             "WHERE account_platform = ? AND xuid = ?",
             (platform, external_id),
         )

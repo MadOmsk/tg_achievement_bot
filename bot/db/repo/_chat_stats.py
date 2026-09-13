@@ -44,10 +44,10 @@ class _ChatStatsRepo:
         included PSN rows (plain `tg_id` sum), the per-platform split next
         to it silently didn't.
         """
-        date_bound = "AND s.unlocked_at >= ?"
+        date_bound = "AND COALESCE(s.unlocked_at, s.created_at) >= ?"
         date_params: list[object] = [_iso(since)]
         if until is not None:
-            date_bound += " AND s.unlocked_at < ?"
+            date_bound += " AND COALESCE(s.unlocked_at, s.created_at) < ?"
             date_params.append(_iso(until))
 
         cursor = await self._conn.execute(
@@ -142,7 +142,7 @@ class _ChatStatsRepo:
             + OWNED_BY_PERSON
             + "JOIN subscriptions sub ON sub.tg_id = al.tg_id AND sub.chat_id = ? "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.unlocked_at >= ? "
+            "WHERE COALESCE(s.unlocked_at, s.created_at) >= ? "
             "GROUP BY s.title_id, s.platform "
             "ORDER BY cnt DESC"
         )

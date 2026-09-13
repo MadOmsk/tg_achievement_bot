@@ -1083,7 +1083,20 @@ longer window being more worth it in.
 ## Statistics rules
 
 Normal stats read only from `seen_achievements`, `title_history`, platform links,
-and cached presence/level tables — never a live platform call. `/stats`' lifetime
+and cached presence/level tables — never a live platform call.
+
+**An achievement with no usable unlock time still counts** (2026-09-13, user
+request). Microsoft sends a placeholder date for some Xbox 360 achievements —
+`0001-01-01`, or `1753-01-01`, the old SQL Server minimum; 84 of 5239 rows on
+one real account — and `services/xbox/models.py::parse_timestamp` discards it
+rather than record an unlock in the year 1753. Every windowed read therefore
+uses `COALESCE(unlocked_at, created_at)`: when the platform gives no usable
+time, when the bot first saw the achievement is the honest stand-in, and the
+two readers that build an `AchievementRow` hand that stand-in to the caller so
+the publisher's own age cap agrees with the statistics. The stored column keeps
+its NULL — it records what the platform actually said. Before this, such rows
+were published normally and then silently absent from `/recent`, from both
+counters, and from every catch-up window, which is the worst of both. `/stats`' lifetime
 achievement count (`repo.xbox_achievement_count`/`platform_achievement_count`)
 always counts `seen_achievements` rows directly, never sums `title_history` —
 modern Xbox's broad history-endpoint backfill and Steam's full-library backfill

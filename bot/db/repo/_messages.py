@@ -114,7 +114,8 @@ class _MessagesRepo:
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
             "       s.name, t.name AS game, s.gamerscore, s.rarity_percent,"
-            "       s.platform, s.unlocked_at, s.is_secret "
+            "       s.platform, COALESCE(s.unlocked_at, s.created_at) AS unlocked_at,"
+            "       s.is_secret "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
@@ -128,8 +129,8 @@ class _MessagesRepo:
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE sub.chat_id = ? AND u.is_excluded = 0 AND s.unlocked_at IS NOT NULL "
-            "ORDER BY s.unlocked_at DESC LIMIT ?",
+            "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
+            "ORDER BY COALESCE(s.unlocked_at, s.created_at) DESC LIMIT ?",
             (chat_id, limit),
         )
         return [
@@ -173,7 +174,7 @@ class _MessagesRepo:
             "SELECT t.name, COALESCE(SUM(s.gamerscore), 0) AS score, COUNT(*) AS unlocked,"
             " MAX(s.platform) AS platform "
             "FROM seen_achievements s LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.xuid = ? AND s.unlocked_at >= ? "
+            "WHERE s.xuid = ? AND COALESCE(s.unlocked_at, s.created_at) >= ? "
             # Score ties on every Steam game (no gamerscore there at all) —
             # unlocked count as the tiebreaker instead of SQLite's undefined
             # order among equal scores.

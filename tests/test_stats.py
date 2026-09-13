@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from bot.db.repo import AchievementRow, Repo
 from bot.services.stats import counters_for, month_cutoff_utc, today_cutoff_utc
+from bot.util import utcnow
 
 XUID = "2533274829605736"
 
@@ -64,7 +65,6 @@ async def test_counters_include_backfilled_rows(repo: Repo) -> None:
         [
             row("today", "2026-09-02T09:00:00+00:00", 15),
             row("yesterday", "2026-09-01T09:00:00+00:00", 5),
-            row("undated", None, 50),
         ],
         is_backfill=False,
     )
@@ -75,8 +75,27 @@ async def test_counters_include_backfilled_rows(repo: Repo) -> None:
     assert (counters.month, counters.month_score) == (3, 40)
     # Counters has no lifetime total (SPEC 5.4, best-effort forever) — but
     # the repo-level, unbounded count (used only by the reconciliation
-    # script, never displayed) still sees the backfilled and undated rows.
-    assert await repo.achievement_counts(XUID, None) == (4, 90)
+    # script, never displayed) still sees the backfilled rows.
+    assert await repo.achievement_counts(XUID, None) == (3, 40)
+
+
+async def test_an_undated_row_counts_from_when_it_was_stored(repo: Repo) -> None:
+    """Microsoft sends a placeholder date for some Xbox 360 achievements and
+    the parser discards it, leaving `unlocked_at` NULL. Those rows count
+    anyway (owner decision, 2026-09-13): the stand-in is when the bot first
+    saw the achievement, which is what `created_at` already holds.
+
+    Before this they were invisible in every counter and in /recent, while
+    being published normally — about 1.5% of one real account's history.
+    """
+    await _link(repo, 1, XUID)
+    await repo.insert_new_achievements(XUID, [row("undated", None, 50)], is_backfill=False)
+
+    # `created_at` is "now", so the row lands in any window that includes now.
+    counters = await counters_for(repo, 1, utcnow())
+
+    assert (counters.today, counters.today_score) == (1, 50)
+    assert (counters.month, counters.month_score) == (1, 50)
 
 
 async def test_counters_today_crosses_midnight_correctly(repo: Repo) -> None:
@@ -125,14 +144,18 @@ async def test_recent_achievements_orders_newest_first_and_respects_limit(
             row("first", "2026-09-01T10:00:00+00:00"),
             row("second", "2026-09-02T10:00:00+00:00"),
             row("third", "2026-09-03T10:00:00+00:00"),
-            row("undated", None),  # never wins a "recent" slot
+            # No usable date from the platform, so it is ordered by when the
+            # bot stored it — which is now, making it the most recent of all
+            # (owner decision, 2026-09-13; it used to be hidden entirely).
+            row("undated", None),
         ],
         is_backfill=False,
     )
 
     recent = await repo.recent_achievements(XUID, limit=2)
 
-    assert [item.achievement_id for item in recent] == ["third", "second"]
+    assert [item.achievement_id for item in recent] == ["undated", "third"]
+    assert recent[0].unlocked_at is not None, "the stand-in reaches the caller"
 
 
 async def test_insert_for_an_unlinked_account_is_stored_but_invisible(repo: Repo) -> None:

@@ -303,10 +303,18 @@ class _AchievementsRepo:
         """The last N unlocks, newest first — for the panel (SPEC 6.2).
         Undated rows never win: an unknown unlock time is not "recent"."""
         cursor = await self._conn.execute(
-            "SELECT s.*, t.name AS game FROM seen_achievements s "
+            "SELECT s.*, t.name AS game,"
+            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder
+            # date for some Xbox 360 achievements, which the parser discards
+            # (see services/xbox/models.py). Those rows still count (owner
+            # decision, 2026-09-13) — when the platform gives no usable time,
+            # when the bot first saw it is the honest stand-in. The stored
+            # column keeps the NULL; only what is read carries the fallback.
+            "       COALESCE(s.unlocked_at, s.created_at) AS seen_at "
+            "FROM seen_achievements s "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.xuid = ? AND s.unlocked_at IS NOT NULL "
-            "ORDER BY s.unlocked_at DESC LIMIT ?",
+            "WHERE s.xuid = ? "
+            "ORDER BY seen_at DESC LIMIT ?",
             (xuid, limit),
         )
         return [
@@ -316,7 +324,7 @@ class _AchievementsRepo:
                 name=row["name"],
                 description=row["description"],
                 icon_url=row["icon_url"],
-                unlocked_at=row["unlocked_at"],
+                unlocked_at=row["seen_at"],
                 gamerscore=row["gamerscore"],
                 rarity_percent=row["rarity_percent"],
                 platform=row["platform"],
@@ -374,14 +382,15 @@ class _AchievementsRepo:
         as it is today outside the flood filter entirely.
         """
         cursor = await self._conn.execute(
-            "SELECT s.*, t.name AS game FROM seen_achievements s "
+            "SELECT s.*, t.name AS game,"
+            "       COALESCE(s.unlocked_at, s.created_at) AS seen_at "
+            "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
             "LEFT JOIN publications p ON p.chat_id = ? AND p.xuid = s.xuid"
             "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "
-            "WHERE al.tg_id = ? AND s.is_backfill = 0 AND s.unlocked_at IS NOT NULL"
-            "   AND p.chat_id IS NULL "
-            "ORDER BY s.unlocked_at ASC",
+            "WHERE al.tg_id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL "
+            "ORDER BY COALESCE(s.unlocked_at, s.created_at) ASC",
             (chat_id, tg_id),
         )
         return [
@@ -391,7 +400,7 @@ class _AchievementsRepo:
                 name=row["name"],
                 description=row["description"],
                 icon_url=row["icon_url"],
-                unlocked_at=row["unlocked_at"],
+                unlocked_at=row["seen_at"],
                 gamerscore=row["gamerscore"],
                 rarity_percent=row["rarity_percent"],
                 platform=row["platform"],
