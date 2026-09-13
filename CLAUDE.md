@@ -142,6 +142,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           backfill, admin resync (#27)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
+│   │   ├── avatars.py             each person's Telegram profile photo, a few per tick (see
+│   │   │                          Data model: a file_id, never an image or a URL)
 │   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
 │   │   ├── flood_flush.py          the anti-flood filter's read/flush side — buffered
@@ -276,6 +278,20 @@ can't resurrect it.
 The canonical schema is `bot/db/schema.sql`. This section describes the model, not
 every column.
 
+- **Profile photos** (2026-09-13, owner request — the mini-app shows people).
+  `users.photo_file_id` / `photo_unique_id` / `photo_checked_at` hold
+  Telegram's own `file_id` for the largest size of a person's current profile
+  photo: **never an image, never a URL**. A file_id is only usable together
+  with the bot token (getFile, then a download URL that carries the token), so
+  the token never leaves the server and the column is not a secret on its own
+  — whoever renders a face calls getFile at that moment.
+  `poller/avatars.py` refreshes a few people per tick, each looked at once a
+  week, oldest check first; a photo changes a few times a year, so this is
+  about noticing eventually, not promptly. Deliberately not the message
+  middleware: that runs on every message and refreshes names from what the
+  update already carries, for free, while a photo needs a request of its own.
+  Somebody with no visible photo (never set one, or a privacy setting) still
+  gets `photo_checked_at` stamped, or they would be asked about again forever.
 - **Identity.** `users` is keyed by Telegram `tg_id`. Xbox identity stays on
   `users.xuid` (it was the first platform, and Xbox-specific paths still use it
   directly). Steam and PSN accounts live in `platform_links (tg_id, platform,

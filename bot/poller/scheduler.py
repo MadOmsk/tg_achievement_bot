@@ -14,6 +14,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from bot.db.repo import Repo
 from bot.poller.admin_refresh import AdminPanelRefresh
+from bot.poller.avatars import AvatarRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher
@@ -49,6 +50,7 @@ class PollerScheduler:
         psn_presence: PsnPresencePoller,
         flood_flush: FloodFlush,
         description_backfill: DescriptionBackfill,
+        avatar_refresh: AvatarRefresh,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -64,6 +66,7 @@ class PollerScheduler:
         self._psn_presence = psn_presence
         self._flood_flush = flood_flush
         self._description_backfill = description_backfill
+        self._avatar_refresh = avatar_refresh
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -160,6 +163,16 @@ class PollerScheduler:
             self._psn_fetcher.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="psn_fetcher",
+            coalesce=True,
+            max_instances=1,
+        )
+        # Profile photos change a few times a year, so this is the slowest
+        # job here on purpose (poller/avatars.py): a handful of people per
+        # tick, each looked at once a week.
+        self._scheduler.add_job(
+            self._avatar_refresh.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="avatar_refresh",
             coalesce=True,
             max_instances=1,
         )
