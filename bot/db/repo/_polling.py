@@ -273,10 +273,6 @@ class _PollingRepo:
         )
         await self._conn.commit()
 
-    async def delete_psn_poll_state(self, account_id: str) -> None:
-        await self._conn.execute("DELETE FROM psn_poll_state WHERE account_id = ?", (account_id,))
-        await self._conn.commit()
-
     async def psn_backfill_done(self, account_id: str) -> bool:
         """Whether this account's first-ever backfill has finished (#21/#27).
         No psn_poll_state row yet (backfill still running, or crashed before

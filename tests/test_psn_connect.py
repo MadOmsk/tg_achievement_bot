@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.handlers import awaiting
 from bot.handlers import psn as psn_handlers
@@ -19,6 +20,7 @@ from bot.handlers.psn import (
     _connect,
     prompt_for_link,
 )
+from bot.i18n import static_i18n
 from bot.poller.psn_fetcher import PsnBackfillResult
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
@@ -26,6 +28,11 @@ from bot.services.psn.client import PsnApiError, PsnProfile, PsnTokenDeadError
 
 TG_ID = 42
 NPSSO = "fake-npsso"
+ACCOUNT_ID = "psn-account-1"
+
+
+async def _noop(*_args: object, **_kwargs: object) -> None:
+    return None
 
 
 class FakeBot:
@@ -225,3 +232,33 @@ async def test_disconnect_removes_the_link(repo: Repo) -> None:
     await repo.unlink_platform_account(TG_ID, "psn")
 
     assert await repo.get_platform_link(TG_ID, "psn") is None
+
+
+async def test_disconnecting_keeps_the_backfill_gate(repo: Repo) -> None:
+    """Found live on the test bot, 2026-09-13: an account earned two trophies
+    and the bot never looked at it.
+
+    Disconnecting used to delete the `psn_poll_state` row. A relink then skips
+    backfill on purpose (#52 — the trophies are already stored and the ordinary
+    tick is a delta), so nothing ever set `backfill_done` again, and
+    `psn_pollable_users` reads a missing row as "not done" and skips the
+    account forever. #52's own rule — deactivate, never delete — had simply
+    not reached this row, which is a gate and not a cache.
+    """
+    from bot.handlers.psn import disconnect_psn_confirm
+
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, Platform.PSN, ACCOUNT_ID, "Gamer")
+    await repo.mark_psn_backfill_done(ACCOUNT_ID)
+
+    callback = SimpleNamespace(
+        from_user=SimpleNamespace(id=TG_ID, username="someone"),
+        message=None,
+        answer=_noop,
+        data="psn:disconnect:yes",
+    )
+    await disconnect_psn_confirm(callback, repo, static_i18n("psn"))  # type: ignore[arg-type]
+
+    assert await repo.psn_backfill_done(ACCOUNT_ID) is True
+    pollable = [t for t in await repo.psn_pollable_users() if t.account_id == ACCOUNT_ID]
+    assert pollable == [], "an inactive link must not be polled"

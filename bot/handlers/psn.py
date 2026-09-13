@@ -254,6 +254,11 @@ async def _connect(
     # and the regular tick is itself a delta; all a relink has to arrange is
     # that the catch-up does not arrive as a month of trophies at once.
     if await repo.account_latest_unlock(Platform.PSN, profile.account_id) is not None:
+        # This account's history is already stored, so #21's gate is satisfied
+        # by definition — say so explicitly rather than relying on the row
+        # having survived, which is exactly what used to fail (see
+        # disconnect_psn_confirm below).
+        await repo.mark_psn_backfill_done(profile.account_id)
         psn_fetcher.expect_relink_catch_up(
             profile.account_id, get_settings().catchup_publish_window_hours
         )
@@ -372,13 +377,16 @@ async def disconnect_psn_cancel(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "psn:disconnect:yes")
 async def disconnect_psn_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    link = await repo.get_platform_link(callback.from_user.id, Platform.PSN)
     await repo.unlink_platform_account(callback.from_user.id, Platform.PSN)
-    if link is not None:
-        # Symmetric with Steam's own disconnect (steam.py's
-        # delete_steam_presence_state) — a stale poll-state row would
-        # otherwise sit there forever for an account no longer linked to
-        # anyone (SPEC 9, M-PSN-2).
-        await repo.delete_psn_poll_state(link.external_id)
+    # The `psn_poll_state` row stays. It used to be deleted here, by symmetry
+    # with Steam's own presence-cache cleanup — but this row is not a cache,
+    # it is #21's gate, and deleting it broke every reconnect: a relink skips
+    # backfill by design (#52 — the trophies are already stored and the
+    # ordinary tick is a delta), so nothing ever set `backfill_done` again,
+    # and `psn_pollable_users` reads a missing row as "not done" and skips the
+    # account forever. Found live on the test bot, 2026-09-13: an account
+    # earned two trophies and the bot never looked. An inactive link is
+    # already filtered out of every poller by `is_active`, so the row costs
+    # nothing where it is.
     await safe_edit(callback, i18n.get("psn-disconnected"))
     await callback.answer()
