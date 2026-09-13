@@ -40,9 +40,20 @@ async def fill_xbox_title(
 ) -> int:
     """Cache both locales for one title, asking on `tg_id`'s behalf.
 
-    Returns how many of that title's descriptions ended up cached. Raises
-    XboxApiError if this owner's token could not answer — the caller decides
-    whether to try another owner or leave the title for next time.
+    Returns how many descriptions this call **newly** cached — measured
+    against the cache, not counted from what the platform returned. Those two
+    numbers are not the same, and believing they were is what made the poller
+    spin (found live on the test bot, 2026-09-13): Xbox 360 answers both
+    locale requests with the same English text, which means "no native
+    translation", so those achievements go to the LLM instead — and with no
+    Anthropic key configured `bilingual_descriptions` deliberately leaves them
+    *uncached*, so a later attempt can still do better than a bad cache entry.
+    Reporting them as cached anyway told the poller the title was done while
+    the selection query still found it, and the same ten titles were re-fetched
+    every single minute, two Xbox requests each, forever.
+
+    Raises XboxApiError if this owner's token could not answer — the caller
+    decides whether to try another owner or leave the title for next time.
     """
     xbox_platform = Platform.XBOX_360 if platform == Platform.XBOX_360 else Platform.XBOX_MODERN
     russian = await client.title_achievements(tg_id, title_id, xbox_platform, language="ru-RU")
@@ -56,8 +67,10 @@ async def fill_xbox_title(
     }
     if not native:
         return 0
+    keys = [(platform, title_id, achievement_id) for achievement_id in native]
+    before = len(await repo.cached_descriptions(keys))
     await bilingual_descriptions(repo, anthropic_auth, platform, title_id, native)
-    return len(native)
+    return len(await repo.cached_descriptions(keys)) - before
 
 
 async def fill_xbox_title_any_owner(

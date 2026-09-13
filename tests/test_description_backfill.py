@@ -163,3 +163,44 @@ async def test_nothing_to_do_is_a_cheap_no_op(repo: Repo) -> None:
     await DescriptionBackfill(repo, client, object()).tick()  # type: ignore[arg-type]
 
     assert client.calls == []
+
+
+class _NoAnthropic:
+    """What the test bot actually has: no Anthropic key at all."""
+
+    async def require_key(self) -> str:
+        from bot.services.translate.auth import AnthropicNotConfiguredError
+
+        raise AnthropicNotConfiguredError
+
+
+async def test_a_title_that_cannot_be_cached_is_not_refetched_every_tick(repo: Repo) -> None:
+    """Found live on the test bot (2026-09-13): the same ten titles were
+    re-fetched every single minute, forever, two Xbox requests each, and the
+    log cheerfully reported "cached 24 descriptions" each time.
+
+    Xbox 360 answers both locale requests with the same English text — that
+    means "no native translation", so those achievements are handed to the
+    LLM, and with no Anthropic key `bilingual_descriptions` deliberately
+    leaves them uncached so a later attempt can still do better. The poller
+    was told they were cached anyway, while its own selection query kept
+    finding them.
+    """
+    await _seed(repo, "a1")
+    identical = "Complete Zillo Beast"
+    client = _FakeClient(
+        {
+            "ru-RU": [_parsed("a1", identical)],
+            "en-US": [_parsed("a1", identical)],
+        }
+    )
+    job = DescriptionBackfill(repo, client, _NoAnthropic())  # type: ignore[arg-type]
+
+    await job.tick()
+    assert await repo.get_cached_description(Platform.XBOX_MODERN, TITLE_ID, "a1") is None
+    first_pass = len(client.calls)
+    assert first_pass == 2  # one request per locale, once
+
+    await job.tick()
+    await job.tick()
+    assert len(client.calls) == first_pass, "the title was asked for again"
