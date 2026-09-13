@@ -106,6 +106,7 @@ async def test_no_anthropic_key_stores_the_text_untranslated(
     shown, untranslated — not silently dropped. It is marked `fallback` with
     no Russian side, which is both the honest record and what gets it offered
     to the translator again once a key exists."""
+
     async def _boom(*args: object, **kwargs: object) -> None:
         raise AssertionError("no key configured — must never even try to call the API")
 
