@@ -990,10 +990,14 @@ groups — the base game plus one per DLC — and the trophy itself says which
 one it came from, so the message names that group and how far through *it*
 the person is ("CTNS: The Heist · 3/7"). A count again, never Sony's
 tier-weighted percentage, which would disagree with the line above it. The
-base group is named after the game itself by Sony, so it renders as
-"Основная игра" / "Main Game" instead of repeating the title (user
-decision); nothing is ever prefixed with "DLC", because a group is not
-always one (Spider-Man's `001` is *New Game+*, a mode). A game whose trophy
+group name never repeats the game's own name (user decision): Sony names the
+base group after the game exactly, and sometimes a DLC group after the game
+*plus* the add-on, while the title is already on the line above — so a name
+equal to the game's renders as "Основная игра" / "Main Game", a name that
+starts with the game's keeps only the add-on part, and anything else is
+printed as Sony wrote it (`services/achievements.py::_group_label`). Nothing
+is ever prefixed with "DLC", because a group is not always one (Spider-Man's
+`001` is *New Game+*, a mode). A game whose trophy
 list is a single group has no second line at all — Sony gives every title a
 `default` group, so "has groups" is never the question, "more than one" is.
 Xbox and Steam have no notion of groups and stay at one line. In a digest,

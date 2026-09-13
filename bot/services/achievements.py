@@ -291,18 +291,44 @@ def _game_line(
         return line
     line += _("achievement-game-progress", unlocked=progress.unlocked, total=progress.total)
     if progress.group_total:
-        name = (
-            _("achievement-group-main")
-            if progress.group_is_default or not progress.group_name
-            else html_escape(progress.group_name)
-        )
         line += "\n" + _(
             "achievement-group-line",
-            group=name,
+            group=_group_label(progress, title, locale),
             unlocked=progress.group_unlocked,
             total=progress.group_total,
         )
     return line
+
+
+# Sony puts the game's own title inside a group name often enough that the rule
+# has to be about the duplication itself, not about which group it is (user
+# request): the base group is normally named after the game exactly, and a DLC
+# group is sometimes the game's name plus the add-on's ("Marvel's Spider-Man:
+# The Heist"). Either way the title is already on the line above.
+_TITLE_SEPARATORS = (":", "-", "–", "—", "|", "·")
+
+
+def _group_label(progress: TitleProgress, title: str, locale: str) -> str:
+    """What to call this trophy group on the second line.
+
+    Never anything that merely repeats the game's own name: a group named
+    exactly after the game becomes "Основная игра", and one that *starts* with
+    the game's name keeps only the part that is actually about the add-on. A
+    name that survives both is printed as Sony wrote it — and never with a
+    "DLC" prefix, since a group is not always one (Spider-Man's `001` is New
+    Game+, a mode).
+    """
+    _ = translator("achievements", locale)
+    name = (progress.group_name or "").strip()
+    bare_title = title.strip()
+    if not name or name.casefold() == bare_title.casefold():
+        return _("achievement-group-main")
+    if name.casefold().startswith(bare_title.casefold()):
+        tail = name[len(bare_title) :].lstrip()
+        while tail[:1] in _TITLE_SEPARATORS:
+            tail = tail[1:].lstrip()
+        return html_escape(tail) if tail else _("achievement-group-main")
+    return html_escape(name)
 
 
 def _achievement_word(platform: str, locale: str) -> str:

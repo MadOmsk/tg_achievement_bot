@@ -303,3 +303,35 @@ def test_a_digest_never_names_a_trophy_group(i18n) -> None:
     assert "31/74" in text
     assert "The Heist" not in text
     assert "Основная игра" not in text
+
+
+def test_a_group_named_after_the_game_is_renamed_however_it_is_spelled(i18n) -> None:
+    """The rule is about the duplication, not about which group it is (owner,
+    2026-09-13): Sony names the base group after the game, and names a DLC
+    group after the game *plus* the add-on often enough that both have to be
+    handled. The title is already on the line above either way."""
+    trophy = _achievement("t1", "psn", title_id="NPWR00001_00", trophy_group_id="default")
+
+    def line(group_name: str | None) -> str:
+        return format_single(
+            "Igor",
+            trophy,
+            "Marvel's Spider-Man",
+            locale="ru",
+            progress=TitleProgress(
+                unlocked=24,
+                total=74,
+                group_name=group_name,
+                group_unlocked=24,
+                group_total=51,
+            ),
+        ).splitlines()[3]
+
+    # Exactly the game's name, or nothing at all.
+    assert "Основная игра · 24/51" in line("Marvel's Spider-Man")
+    assert "Основная игра · 24/51" in line(None)
+    # The game's name plus the add-on's: only the add-on survives.
+    assert "The Heist · 24/51" in line("Marvel's Spider-Man: The Heist")
+    assert "Кражи · 24/51" in line("Marvel's Spider-Man — Кражи")
+    # A name of its own is printed as Sony wrote it, no "DLC" anywhere.
+    assert "New Game+ · 24/51" in line("New Game+")

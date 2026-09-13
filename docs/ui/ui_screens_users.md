@@ -111,9 +111,12 @@ CTNS: The Heist · 3/7
 🥈 «<name>» · редкость 12.8%
 ```
 
-A trophy from the base game names that group too, as "Основная игра" — Sony
-names the default group after the game itself, and repeating the title
-verbatim on two lines says nothing:
+**A group name never repeats the game's own name.** Sony names the base group
+after the game exactly, and sometimes names a DLC group after the game *plus*
+the add-on ("Marvel's Spider-Man: The Heist"), while the title is already on
+the line above. So: a name equal to the game's becomes "Основная игра", a name
+that starts with the game's keeps only the part about the add-on ("The Heist"),
+and a name of its own is printed as Sony wrote it.
 
 ```
 🏆 <nick> получает трофей
