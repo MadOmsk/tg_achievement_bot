@@ -148,7 +148,7 @@ async def test_second_poll_never_refetches_the_russian_locale(
     assert client.calls.count("ru-RU") == 1
 
 
-async def test_no_anthropic_key_leaves_description_in_english_and_uncached(
+async def test_no_anthropic_key_stores_the_english_description_untranslated(
     repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
     await _connected_user(repo, cipher)
@@ -168,5 +168,12 @@ async def test_no_anthropic_key_leaves_description_in_english_and_uncached(
 
     assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Game") == 1
 
-    assert await repo.get_cached_description("xbox_modern", "1", "A1") is None
+    # Stored untranslated rather than dropped (user request, 2026-09-13).
+    cached = await repo.get_cached_description("xbox_modern", "1", "A1")
+    assert cached is not None
+    assert (cached.description_ru, cached.description_en, cached.source) == (
+        None,
+        "Win the game",
+        "fallback",
+    )
     assert await _stored_description(repo, "A1") == "Win the game"

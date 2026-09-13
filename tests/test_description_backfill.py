@@ -197,10 +197,25 @@ async def test_a_title_that_cannot_be_cached_is_not_refetched_every_tick(repo: R
     job = DescriptionBackfill(repo, client, _NoAnthropic())  # type: ignore[arg-type]
 
     await job.tick()
-    assert await repo.get_cached_description(Platform.XBOX_MODERN, TITLE_ID, "a1") is None
-    first_pass = len(client.calls)
-    assert first_pass == 2  # one request per locale, once
+    # Stored untranslated, not dropped (user request, 2026-09-13) — and
+    # marked `fallback`, so the translator is offered it again once a key
+    # exists.
+    cached = await repo.get_cached_description(Platform.XBOX_MODERN, TITLE_ID, "a1")
+    assert cached is not None
+    assert (cached.description_ru, cached.description_en, cached.source) == (
+        None,
+        identical,
+        "fallback",
+    )
+    assert len(client.calls) == 2  # one request per locale
+
+    # The second tick finds the fallback row, re-offers it, caches nothing new
+    # — and that is what takes the title out of the rotation for the rest of
+    # the process. Before this the same title was re-fetched every minute.
+    await job.tick()
+    after_second = len(client.calls)
+    assert after_second == 4
 
     await job.tick()
     await job.tick()
-    assert len(client.calls) == first_pass, "the title was asked for again"
+    assert len(client.calls) == after_second, "the title was asked for again"

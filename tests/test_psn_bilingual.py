@@ -101,6 +101,9 @@ async def test_no_translation_client_leaves_the_english_text_untouched(
     outcome = await _run(repo, anthropic_auth, translation_client=None)
 
     assert outcome.new_rows[0].description == "Win the game"
+    # Nothing is cached here, and that is not the same thing as the no-key
+    # case below: without a second client PSN never asked for a second locale,
+    # so there is no "this has no translation" finding to record yet.
     assert await repo.get_cached_description("psn", "NPWR00001_00", "1") is None
 
 
@@ -224,7 +227,7 @@ async def test_second_sync_never_refetches_an_already_cached_trophy(
     assert calls.count(TRANSLATION_CLIENT) == 1
 
 
-async def test_no_anthropic_key_leaves_description_in_english_and_uncached(
+async def test_no_anthropic_key_stores_the_english_description_untranslated(
     repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
     await _linked(repo)
@@ -247,7 +250,10 @@ async def test_no_anthropic_key_leaves_description_in_english_and_uncached(
     outcome = await _run(repo, anthropic_auth, translation_client=TRANSLATION_CLIENT)
 
     assert outcome.new_rows[0].description == "Win the game"
-    assert await repo.get_cached_description("psn", "NPWR00001_00", "1") is None
+    # Stored untranslated rather than dropped (user request, 2026-09-13).
+    cached = await repo.get_cached_description("psn", "NPWR00001_00", "1")
+    assert cached is not None
+    assert (cached.description_ru, cached.source) == (None, "fallback")
 
 
 async def test_trophies_with_no_detail_text_are_left_alone(

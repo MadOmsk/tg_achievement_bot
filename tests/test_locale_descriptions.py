@@ -57,18 +57,28 @@ async def test_an_uncached_achievement_keeps_its_stored_snapshot(repo: Repo) -> 
     assert row.description == "снимок"
 
 
-async def test_a_half_filled_cache_entry_keeps_the_snapshot(repo: Repo) -> None:
-    # The translation genuinely never arrived (no Anthropic key, say);
-    # falling through to the snapshot beats rendering an empty description.
+async def test_a_half_filled_cache_entry_falls_back_to_the_other_language(repo: Repo) -> None:
+    """The translation genuinely never arrived (no Anthropic key, say), so
+    the cache holds one language only. Showing that one untranslated is what
+    the owner asked for (2026-09-13) — the platform itself would have shown
+    the reader the same text."""
     await _cache(repo, "a1", "Сжечь всех врагов", None)
     [row] = await localize_descriptions(repo, [_row()], "en")
-    assert row.description == "снимок"
+    assert row.description == "Сжечь всех врагов"
 
 
 async def test_a_blank_cached_translation_is_treated_as_missing(repo: Repo) -> None:
-    await _cache(repo, "a1", "Сжечь всех врагов", "   ")
+    """Blank on one side, nothing on the other: there is nothing to show from
+    the cache at all, so the row's own snapshot stands."""
+    await _cache(repo, "a1", None, "   ")
     [row] = await localize_descriptions(repo, [_row()], "en")
     assert row.description == "снимок"
+
+
+async def test_a_blank_side_falls_back_to_the_filled_one(repo: Repo) -> None:
+    await _cache(repo, "a1", "Сжечь всех врагов", "   ")
+    [row] = await localize_descriptions(repo, [_row()], "en")
+    assert row.description == "Сжечь всех врагов"
 
 
 async def test_the_original_rows_are_never_mutated(repo: Repo) -> None:

@@ -409,9 +409,20 @@ every column.
   (which is per-person by design), so the same achievement's translation is
   never paid for twice. Names are never translated, only descriptions.
   `source` is `native` (the platform itself returned two genuinely different
-  strings for the two locales requested) or `llm` (both locale requests came
+  strings for the two locales requested), `llm` (both locale requests came
   back identical — the platform has no real translation, only a silent
-  fallback — so `services/translate` filled the gap). Orchestrated by
+  fallback — so `services/translate` filled the gap), or `fallback`
+  (2026-09-13, user request: "with no Anthropic key, do not silently ignore
+  it — show the untranslated version"). A `fallback` row stores the
+  platform's own text with `description_ru` left NULL, so "we have no
+  Russian" is recorded as a fact rather than as a translation; the render
+  path falls back across languages and shows the untranslated text, which is
+  what the platform itself would have shown. It is the one `source` value
+  that is **re-offered to the translator**: `uncached_description_titles`
+  still counts it as unfinished, so the moment a key exists it becomes a real
+  `llm` row. Rows used to be left uncached in this case instead, which kept
+  that door open but left the render path with nothing to read and had every
+  caller re-fetch the same title forever. Orchestrated by
   `services/translate/descriptions.py::bilingual_descriptions`, which only
   ever consults this cache and, when needed, the Anthropic API — it never
   talks to a platform itself. Steam, Xbox, and (2026-09-09) PSN all call it

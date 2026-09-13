@@ -23,11 +23,26 @@ from dataclasses import replace
 from bot.db.repo import AchievementRow, CachedDescription, Repo
 
 
-def _for_locale(cached: CachedDescription, locale: str) -> str | None:
-    text = cached.description_en if locale == "en" else cached.description_ru
-    # An empty string is as useless as a missing one, and both platforms and
-    # the LLM can produce either.
+def _usable(text: str | None) -> str | None:
+    """An empty string is as useless as a missing one, and both platforms and
+    the LLM can produce either."""
     return text if text and text.strip() else None
+
+
+def _for_locale(cached: CachedDescription, locale: str) -> str | None:
+    """The asked-for language, or the other one untranslated.
+
+    Falling back across languages is deliberate (user request, 2026-09-13):
+    a `fallback` row has only the platform's own language, and showing that
+    beats showing nothing. The reader sees untranslated text, which is what
+    the platform itself would have shown them.
+    """
+    wanted, other = (
+        (cached.description_en, cached.description_ru)
+        if locale == "en"
+        else (cached.description_ru, cached.description_en)
+    )
+    return _usable(wanted) or _usable(other)
 
 
 async def localize_descriptions(

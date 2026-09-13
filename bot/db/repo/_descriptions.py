@@ -87,7 +87,13 @@ class _DescriptionsRepo:
             + "LEFT JOIN achievement_description_cache d "
             "       ON d.platform = s.platform AND d.title_id = s.title_id "
             "      AND d.achievement_id = s.achievement_id "
-            f"WHERE d.achievement_id IS NULL AND s.platform IN ({placeholders}) "
+            # A `fallback` row counts as unfinished: the text is stored and
+            # on screen, but nothing has translated it yet, so the next pass
+            # offers it to the translator again. Without a key that pass
+            # rewrites the same row, caches nothing new, and the poller drops
+            # the title for the rest of the process.
+            f"WHERE (d.achievement_id IS NULL OR d.source = 'fallback') "
+            f"  AND s.platform IN ({placeholders}) "
             "  AND s.description IS NOT NULL AND TRIM(s.description) <> '' "
             "GROUP BY s.platform, s.title_id "
             "LIMIT ?",

@@ -526,7 +526,16 @@ CREATE TABLE IF NOT EXISTS achievement_description_cache (
     achievement_id   TEXT NOT NULL,
     description_ru   TEXT,
     description_en   TEXT,
-    source           TEXT NOT NULL CHECK (source IN ('native', 'llm')),
+    -- native: the platform returned two genuinely different strings.
+    -- llm: it returned the same one twice (no translation exists there), so
+    --   services/translate filled the gap.
+    -- fallback: same as llm's case, but nothing could translate it yet — no
+    --   Anthropic key, or the call failed. The text is stored and shown
+    --   untranslated rather than dropped (user request, 2026-09-13), and
+    --   `description_ru` stays NULL so "no Russian" is a fact rather than a
+    --   lie. A fallback row is offered to the translator again; the other two
+    --   never are.
+    source           TEXT NOT NULL CHECK (source IN ('native', 'llm', 'fallback')),
     cached_at        TEXT NOT NULL,
     PRIMARY KEY (platform, title_id, achievement_id)
 );
