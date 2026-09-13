@@ -284,11 +284,12 @@ def test_the_base_group_is_renamed_not_repeated(i18n) -> None:
     assert text.count("Marvel&#x27;s Spider-Man") == 1
 
 
-def test_a_mixed_group_digest_block_keeps_the_game_counter_alone(i18n) -> None:
-    """One digest block is one game, but a PSN burst can cross groups — no
-    single group line is true of all of them, so none is printed."""
+def test_a_digest_never_names_a_trophy_group(i18n) -> None:
+    """One digest block is one game: its line carries the game's own name and
+    the game's own total, never a group (owner decision) — not even when every
+    trophy in the block shares one."""
     rows = [
-        _achievement("t1", "psn", title_id="NPWR00001_00", trophy_group_id="default"),
+        _achievement("t1", "psn", title_id="NPWR00001_00", trophy_group_id="001"),
         _achievement("t2", "psn", title_id="NPWR00001_00", trophy_group_id="001"),
     ]
     progress = {
@@ -301,3 +302,4 @@ def test_a_mixed_group_digest_block_keeps_the_game_counter_alone(i18n) -> None:
 
     assert "31/74" in text
     assert "The Heist" not in text
+    assert "Основная игра" not in text

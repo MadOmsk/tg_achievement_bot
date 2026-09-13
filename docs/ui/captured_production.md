@@ -1,44 +1,53 @@
-# Снимок интерфейса с боевого бота
+# The interface as the deployed bot renders it
 
-Не макет и не дизайн-решение — **снимок того, что боевой бот рисует
-сегодня**, снятый 2026-09-13 с кода `e51d044` (то, что развёрнуто на
-проде) и read-only копии боевой базы. Дизайнерские решения по-прежнему
-живут в [ui_screens_users.md](ui_screens_users.md),
-[ui_screens_admin.md](ui_screens_admin.md) и [tables.md](tables.md); этот
-файл существует, чтобы их было с чем сверять.
+Not a mockup and not a design decision — **a snapshot of what production
+actually draws**, taken 2026-09-13 from commit `e51d044` (what is deployed)
+and a read-only copy of the production database. The design decisions live
+in [ui_screens_users.md](ui_screens_users.md),
+[ui_screens_admin.md](ui_screens_admin.md) and [tables.md](tables.md); this
+file exists so that there is something to check them against.
 
-Как снято: `scripts/ui_capture/` — настоящий Dispatcher, настоящие роутеры и
-middleware, настоящая база; подменён только сам Telegram, на сессию, которая
-записывает исходящий вызов вместо отправки. Поэтому здесь ровно то, что
-ушло бы в Telegram: текст (с HTML-разметкой), инлайн-клавиатура по рядам,
-и URL картинки или галереи. Никакой сети: платформенные API не трогаются,
-а база — копия, не сервер.
+How it is taken: `scripts/ui_capture/` — the real Dispatcher, the real
+routers and middleware, the real database, with only Telegram itself
+replaced by a session that records each outgoing call instead of performing
+it. So what is below is exactly what would have reached Telegram: the text
+with its HTML, the inline keyboard row by row, and the URL of any photo or
+gallery. No network: no platform API is touched, and the database is a copy,
+never the server.
 
-Что это не покрывает: вводимый текст (ввод ника Steam, ручной часовой пояс
-и т.п.) показан только приглашением, а не последующим ответом; экраны,
-которым нужен живой вызов платформы, помечены как несобравшиеся.
+The prose here is English like everything else written in this project. Every
+Russian (or English) word inside a fenced block came out of the bot's own
+`.ftl` files — it is rendered output, not prose.
 
-Три общих замечания к снимку:
+What it does not cover: a flow that continues by typing (a Steam nickname, an
+Online ID, a manual timezone, a platform key) is captured at its prompt only,
+not at the answer; a screen that needs a live platform call cannot be taken
+at all and is marked as not building.
 
-- **Общие ключи** (Steam/PSN/Anthropic) в копии перешифрованы заглушками —
-  боевого `FERNET_KEY` на машине разработки нет. На экранах ключей это
-  видно как замаскированное значение-заглушку; «жив/мёртв» и раскладка
-  настоящие.
-- Экраны, которые меняют данные (кнопка языка, тумблеры, подписка), при
-  снятии откатываются — иначе следующий экран рисуется по данным, которые
-  наснимал сам снимок. Первый заход именно на это и напоролся: половина
-  инвентаря вышла по-английски, потому что кнопка языка сработала раньше.
-- **Главный чат «XBOX CG» стоит на английском** (`chat_settings.locale =
-  en`), поэтому все групповые экраны здесь английские. Это настоящее
-  состояние боевой базы, а не артефакт снятия. Личка админа — русская.
+Three things to know about the snapshot itself:
+
+- **The shared keys** (Steam/PSN/Anthropic) are re-encrypted with
+  placeholders in the copy — the production `FERNET_KEY` is not on the
+  development machine. On the key screens that shows as a masked placeholder
+  value; alive/dead and the layout are real.
+- Screens that change data (the language button, the toggles, subscribing)
+  are rolled back between captures, because otherwise the next screen renders
+  from data the capture itself wrote. The first run walked straight into
+  that: half the inventory came out in English because the language button
+  fired early, and a fabricated group callback with no chat title wrote NULL
+  over the real one.
+- **The main chat "XBOX CG" is set to English** (`chat_settings.locale =
+  en`), so every group screen here is in English. That is the real state of
+  the production database, not an artefact. The admin's own DMs are Russian.
+  Where a message goes to both chats, it appears twice — once per locale.
 
 ---
 
-## Личные экраны
+## Personal screens
 
 ### /start
 
-`start` · вход: `/start` · command / private
+`start` · input: `/start` · command, private
 
 
 ```
@@ -62,17 +71,17 @@ middleware, настоящая база; подменён только сам Te
 [ 🔄 Синхронизировать ]
 [ Профиль виден другим: да ▸ ]
 [ Язык: Русский ▸ ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить XBOX ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить Steam ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить PSN ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить XBOX ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить Steam ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить PSN ]
 [ Обновить ]
 ```
 
-Плюс удаление сообщения
+Plus a deletes a message
 
 ### /panel
 
-`panel` · вход: `/panel` · command / private
+`panel` · input: `/panel` · command, private
 
 
 ```
@@ -96,17 +105,17 @@ middleware, настоящая база; подменён только сам Te
 [ 🔄 Синхронизировать ]
 [ Профиль виден другим: да ▸ ]
 [ Язык: Русский ▸ ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить XBOX ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить Steam ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить PSN ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить XBOX ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить Steam ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить PSN ]
 [ Обновить ]
 ```
 
-Плюс удаление сообщения
+Plus a deletes a message
 
-### Панель: Обновить
+### Panel: Refresh
 
-`panel-refresh` · вход: `panel:refresh` · callback / private
+`panel-refresh` · input: `panel:refresh` · button, private
 
 
 ```
@@ -130,17 +139,17 @@ middleware, настоящая база; подменён только сам Te
 [ 🔄 Синхронизировать ]
 [ Профиль виден другим: да ▸ ]
 [ Язык: Русский ▸ ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить XBOX ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить Steam ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить PSN ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить XBOX ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить Steam ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить PSN ]
 [ Обновить ]
 ```
 
-Плюс всплывашка — «Обновил»
+Plus a toast — «Обновил»
 
-### Панель: часовой пояс
+### Panel: timezone picker
 
-`panel-tz` · вход: `panel:tz` · callback / private
+`panel-tz` · input: `panel:tz` · button, private
 
 
 ```
@@ -154,9 +163,9 @@ middleware, настоящая база; подменён только сам Te
 [ ✏️ Ввести вручную ]
 ```
 
-### Панель: мои чаты
+### Panel: my chats
 
-`panel-chatlist` · вход: `panel:chatlist` · callback / private
+`panel-chatlist` · input: `panel:chatlist` · button, private
 
 
 ```
@@ -169,9 +178,9 @@ middleware, настоящая база; подменён только сам Te
 [ ‹ Назад ]
 ```
 
-### Панель: карточка чата
+### Panel: one chat's card
 
-`panel-chat` · вход: `panel:chat:-1001103247578` · callback / private
+`panel-chat` · input: `panel:chat:-1001103247578` · button, private
 
 
 ```
@@ -187,9 +196,9 @@ middleware, настоящая база; подменён только сам Te
 [ ‹ К списку чатов ]
 ```
 
-### Панель: режим редкости в чате
+### Panel: rarity mode in a chat
 
-`panel-chatrarity` · вход: `panel:chatrarity:-1001103247578` · callback / private
+`panel-chatrarity` · input: `panel:chatrarity:-1001103247578` · button, private
 
 
 ```
@@ -205,9 +214,9 @@ middleware, настоящая база; подменён только сам Te
 [ ‹ К списку чатов ]
 ```
 
-### Панель: порог дайджеста
+### Panel: digest threshold
 
-`panel-chatdigest` · вход: `panel:chatdigest:-1001103247578` · callback / private
+`panel-chatdigest` · input: `panel:chatdigest:-1001103247578` · button, private
 
 
 ```
@@ -222,9 +231,9 @@ middleware, настоящая база; подменён только сам Te
 [ ‹ Назад ]
 ```
 
-### Панель: отписаться от чата (подтверждение)
+### Panel: unsubscribe from a chat (confirmation)
 
-`panel-chatunsub` · вход: `panel:chatunsub:-1001103247578` · callback / private
+`panel-chatunsub` · input: `panel:chatunsub:-1001103247578` · button, private
 
 
 ```
@@ -236,9 +245,9 @@ middleware, настоящая база; подменён только сам Te
 [ Отмена ]
 ```
 
-### Панель: профиль виден другим
+### Panel: profile visible to others
 
-`panel-linkstoggle` · вход: `panel:linkstoggle` · callback / private
+`panel-linkstoggle` · input: `panel:linkstoggle` · button, private
 
 
 ```
@@ -262,17 +271,17 @@ middleware, настоящая база; подменён только сам Te
 [ 🔄 Синхронизировать ]
 [ Профиль виден другим: нет ▸ ]
 [ Язык: Русский ▸ ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить XBOX ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить Steam ]
-[ 👤 Профиль ]→ссылка  [ 🔕 Отключить PSN ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить XBOX ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить Steam ]
+[ 👤 Профиль ]→url  [ 🔕 Отключить PSN ]
 [ Обновить ]
 ```
 
-Плюс всплывашка — «Скрыл»
+Plus a toast — «Скрыл»
 
-### Панель: язык
+### Panel: language
 
-`panel-locale` · вход: `panel:locale` · callback / private
+`panel-locale` · input: `panel:locale` · button, private
 
 
 ```
@@ -296,17 +305,17 @@ Timezone:     UTC+5
 [ 🔄 Sync now ]
 [ Profile visible to others: yes ▸ ]
 [ Language: English ▸ ]
-[ 👤 Profile ]→ссылка  [ 🔕 Disconnect XBOX ]
-[ 👤 Profile ]→ссылка  [ 🔕 Disconnect Steam ]
-[ 👤 Profile ]→ссылка  [ 🔕 Disconnect PSN ]
+[ 👤 Profile ]→url  [ 🔕 Disconnect XBOX ]
+[ 👤 Profile ]→url  [ 🔕 Disconnect Steam ]
+[ 👤 Profile ]→url  [ 🔕 Disconnect PSN ]
 [ Refresh ]
 ```
 
-Плюс всплывашка — «English»
+Plus a toast — «English»
 
-### Панель: отключить Xbox (подтверждение)
+### Panel: disconnect Xbox (confirmation)
 
-`panel-disconnect` · вход: `panel:disconnect` · callback / private
+`panel-disconnect` · input: `panel:disconnect` · button, private
 
 
 ```
@@ -324,7 +333,7 @@ Timezone:     UTC+5
 
 ### /connect_xbox
 
-`connect-xbox` · вход: `/connect_xbox` · command / private
+`connect-xbox` · input: `/connect_xbox` · command, private
 
 
 ```
@@ -333,7 +342,7 @@ XBOX уже подключён. Если нужно войти заново — 
 
 ### /disconnect_xbox
 
-`disconnect-xbox` · вход: `/disconnect_xbox` · command / private
+`disconnect-xbox` · input: `/disconnect_xbox` · command, private
 
 
 ```
@@ -349,15 +358,15 @@ XBOX уже подключён. Если нужно войти заново — 
 [ Отмена ]
 ```
 
-### Отмена отключения Xbox
+### Disconnecting Xbox: cancelled
 
-`disconnect-xbox-no` · вход: `disconnect:no` · callback / private
+`disconnect-xbox-no` · input: `disconnect:no` · button, private
 
-Ничего не рисует — только удаление сообщения, всплывашка.
+Draws nothing — only deletes a message, toast.
 
-### Кнопка «войти заново»
+### «Sign in again» button
 
-`relogin` · вход: `relogin` · callback / private
+`relogin` · input: `relogin` · button, private
 
 
 ```
@@ -365,12 +374,12 @@ XBOX уже подключён. Если нужно войти заново — 
 ```
 
 ```
-[ Подключить XBOX ]→ссылка
+[ Подключить XBOX ]→url
 ```
 
-### Часовой пояс: ещё
+### Timezone: more
 
-`tz-more` · вход: `tz:more` · callback / private
+`tz-more` · input: `tz:more` · button, private
 
 
 ```
@@ -389,9 +398,9 @@ XBOX уже подключён. Если нужно войти заново — 
 [ Пропустить ]
 ```
 
-### Часовой пояс: ввести вручную
+### Timezone: type it in
 
-`tz-manual` · вход: `tz:manual` · callback / private
+`tz-manual` · input: `tz:manual` · button, private
 
 
 ```
@@ -400,7 +409,7 @@ XBOX уже подключён. Если нужно войти заново — 
 
 ### /connect_steam
 
-`connect-steam` · вход: `/connect_steam` · command / private
+`connect-steam` · input: `/connect_steam` · command, private
 
 
 ```
@@ -409,7 +418,7 @@ Steam уже подключён: Mad Omsk.
 
 ### /disconnect_steam
 
-`disconnect-steam` · вход: `/disconnect_steam` · command / private
+`disconnect-steam` · input: `/disconnect_steam` · command, private
 
 
 ```
@@ -421,15 +430,15 @@ Steam уже подключён: Mad Omsk.
 [ Отмена ]
 ```
 
-### Отмена отключения Steam
+### Disconnecting Steam: cancelled
 
-`steam-disconnect-no` · вход: `steam:disconnect:no` · callback / private
+`steam-disconnect-no` · input: `steam:disconnect:no` · button, private
 
-Ничего не рисует — только удаление сообщения, всплывашка.
+Draws nothing — only deletes a message, toast.
 
 ### /connect_psn
 
-`connect-psn` · вход: `/connect_psn` · command / private
+`connect-psn` · input: `/connect_psn` · command, private
 
 
 ```
@@ -438,7 +447,7 @@ PSN уже подключён: SuperOmsk.
 
 ### /disconnect_psn
 
-`disconnect-psn` · вход: `/disconnect_psn` · command / private
+`disconnect-psn` · input: `/disconnect_psn` · command, private
 
 
 ```
@@ -450,15 +459,15 @@ PSN уже подключён: SuperOmsk.
 [ Отмена ]
 ```
 
-### Отмена отключения PSN
+### Disconnecting PSN: cancelled
 
-`psn-disconnect-no` · вход: `psn:disconnect:no` · callback / private
+`psn-disconnect-no` · input: `psn:disconnect:no` · button, private
 
-Ничего не рисует — только удаление сообщения, всплывашка.
+Draws nothing — only deletes a message, toast.
 
-### /hltb в личке
+### /hltb in a DM
 
-`hltb-dm` · вход: `/hltb` · command / private
+`hltb-dm` · input: `/hltb` · command, private
 
 
 ```
@@ -470,47 +479,17 @@ PSN уже подключён: SuperOmsk.
 [ ❌ Отмена ]
 ```
 
-### /hltb: отмена
+### /hltb: cancelled
 
-`hltb-cancel` · вход: `hltb:cancel` · callback / private
+`hltb-cancel` · input: `hltb:cancel` · button, private
 
-Ничего не рисует — только всплывашка, удаление сообщения.
+Draws nothing — only toast, deletes a message.
 
-## Панель суперадмина
+## Super-admin panel
 
-### /admin — главный экран
+### /admin — home
 
-`admin` · вход: `/admin` · command / private
-
-
-```
-⚙️ Администрирование  ·  обновлено 00:18
-
-Пользователей: 7 (исключено: 0)
-  XBOX:  5 (вход активен: 5, без входа: 0)
-  Steam: 2
-  PSN:   4
-Чатов:          2
-API XBOX (достижения):  0/100 за 15с · 0/300 за 5 мин
-API Steam (достижения): 0/100 000 за 1440 мин
-Ключ Steam: ✅ жив, проверен 10 ч назад
-Ключ PSN:   ✅ жив, проверен 11 ч назад
-Запросов к PSN за сутки: 0
-```
-
-```
-[ 👤 Новые пользователи ▸ ]
-[ ⚙️ Глобальные настройки ▸ ]
-[ Пользователи ▸ ]
-[ Чаты ▸ ]
-[ 🔑 Ключи платформ ▸ ]
-```
-
-Плюс удаление сообщения
-
-### Админка: домой
-
-`admin-home` · вход: `a:home` · callback / private
+`admin` · input: `/admin` · command, private
 
 
 ```
@@ -536,9 +515,39 @@ API Steam (достижения): 0/100 000 за 1440 мин
 [ 🔑 Ключи платформ ▸ ]
 ```
 
-### Админка: ключи платформ
+Plus a deletes a message
 
-`admin-keys` · вход: `a:keys` · callback / private
+### Admin: home
+
+`admin-home` · input: `a:home` · button, private
+
+
+```
+⚙️ Администрирование  ·  обновлено 00:18
+
+Пользователей: 7 (исключено: 0)
+  XBOX:  5 (вход активен: 5, без входа: 0)
+  Steam: 2
+  PSN:   4
+Чатов:          2
+API XBOX (достижения):  0/100 за 15с · 0/300 за 5 мин
+API Steam (достижения): 0/100 000 за 1440 мин
+Ключ Steam: ✅ жив, проверен 10 ч назад
+Ключ PSN:   ✅ жив, проверен 11 ч назад
+Запросов к PSN за сутки: 0
+```
+
+```
+[ 👤 Новые пользователи ▸ ]
+[ ⚙️ Глобальные настройки ▸ ]
+[ Пользователи ▸ ]
+[ Чаты ▸ ]
+[ 🔑 Ключи платформ ▸ ]
+```
+
+### Admin: platform keys
+
+`admin-keys` · input: `a:keys` · button, private
 
 
 ```
@@ -559,9 +568,9 @@ Anthropic: ✅ настроен
 [ ‹ Назад ]
 ```
 
-### Админка: ввод ключа Steam
+### Admin: entering the Steam key
 
-`admin-keyset` · вход: `a:keyset:steam` · callback / private
+`admin-keyset` · input: `a:keyset:steam` · button, private
 
 
 ```
@@ -573,9 +582,9 @@ https://steamcommunity.com/dev/apikey
 [ Отмена ]
 ```
 
-### Админка: настройки новых пользователей
+### Admin: defaults for new users
 
-`admin-newusers` · вход: `a:newusers` · callback / private
+`admin-newusers` · input: `a:newusers` · button, private
 
 
 ```
@@ -591,9 +600,9 @@ https://steamcommunity.com/dev/apikey
 [ ‹ Назад ]
 ```
 
-### Админка: лимиты отображения
+### Admin: display limits
 
-`admin-limits` · вход: `a:limits` · callback / private
+`admin-limits` · input: `a:limits` · button, private
 
 
 ```
@@ -615,9 +624,9 @@ https://steamcommunity.com/dev/apikey
 [ ‹ Назад ]
 ```
 
-### Админка: список пользователей
+### Admin: user list
 
-`admin-users` · вход: `a:users:0` · callback / private
+`admin-users` · input: `a:users:0` · button, private
 
 
 ```
@@ -645,9 +654,9 @@ https://steamcommunity.com/dev/apikey
 [ ‹ Назад ]
 ```
 
-### Админка: карточка пользователя
+### Admin: user card (PSN only)
 
-`admin-user` · вход: `a:u:319472587` · callback / private
+`admin-user` · input: `a:u:319472587` · button, private
 
 
 ```
@@ -668,9 +677,9 @@ account_id 2137511672114883405
 [ ‹ К списку ]
 ```
 
-### Админка: карточка пользователя (Xbox+Steam)
+### Admin: user card (Xbox + Steam)
 
-`admin-user-xbox` · вход: `a:u:127383366` · callback / private
+`admin-user-xbox` · input: `a:u:127383366` · button, private
 
 
 ```
@@ -698,9 +707,9 @@ id 76561199705430962
 [ ‹ К списку ]
 ```
 
-### Админка: список чатов
+### Admin: chat list
 
-`admin-chats` · вход: `a:chats` · callback / private
+`admin-chats` · input: `a:chats` · button, private
 
 
 ```
@@ -713,9 +722,9 @@ id 76561199705430962
 [ ‹ Назад ]
 ```
 
-### Админка: карточка чата
+### Admin: chat card
 
-`admin-chat` · вход: `a:chat:-1001103247578` · callback / private
+`admin-chat` · input: `a:chat:-1001103247578` · button, private
 
 
 ```
@@ -743,9 +752,9 @@ id 76561199705430962
 [ ‹ К списку ]
 ```
 
-### Админка: чат → итог дня
+### Admin: chat → daily summary
 
-`admin-chat-summary` · вход: `a:msum:-1001103247578` · callback / private
+`admin-chat-summary` · input: `a:msum:-1001103247578` · button, private
 
 
 ```
@@ -769,9 +778,9 @@ id 76561199705430962
 [ ‹ Назад ]
 ```
 
-### Админка: чат → антифлуд
+### Admin: chat → anti-flood
 
-`admin-chat-flood` · вход: `a:mflood:-1001103247578` · callback / private
+`admin-chat-flood` · input: `a:mflood:-1001103247578` · button, private
 
 
 ```
@@ -795,9 +804,9 @@ id 76561199705430962
 [ ‹ Назад ]
 ```
 
-### Админка: чат → уборка сообщений
+### Admin: chat → message cleanup
 
-`admin-chat-cleanup` · вход: `a:mdel:-1001103247578` · callback / private
+`admin-chat-cleanup` · input: `a:mdel:-1001103247578` · button, private
 
 
 ```
@@ -823,9 +832,9 @@ id 76561199705430962
 [ ‹ Назад ]
 ```
 
-### Админка: чат → часовой пояс
+### Admin: chat → timezone
 
-`admin-chat-tz` · вход: `a:ctz:-1001103247578` · callback / private
+`admin-chat-tz` · input: `a:ctz:-1001103247578` · button, private
 
 
 ```
@@ -839,9 +848,9 @@ id 76561199705430962
 [ ‹ Назад ]
 ```
 
-### Админка: чат → время итога
+### Admin: chat → summary time
 
-`admin-chat-time` · вход: `a:ctime:-1001103247578` · callback / private
+`admin-chat-time` · input: `a:ctime:-1001103247578` · button, private
 
 
 ```
@@ -857,9 +866,9 @@ id 76561199705430962
 [ ‹ Назад ]
 ```
 
-### Админка: чат → стереть сообщения (подтверждение)
+### Admin: chat → wipe messages (confirmation)
 
-`admin-chat-wipe` · вход: `a:cwipe:-1001103247578` · callback / private
+`admin-chat-wipe` · input: `a:cwipe:-1001103247578` · button, private
 
 
 ```
@@ -874,17 +883,17 @@ id 76561199705430962
 [ Отмена ]
 ```
 
-### Админка: сброс платформы (подтверждение)
+### Admin: reset a platform (confirmation)
 
-`admin-reset` · вход: `a:reset:psn:319472587` · callback / private
+`admin-reset` · input: `a:reset:psn:319472587` · button, private
 
-> ⚠️ **Экран не построился:** `TypeError: 'str' object is not callable`
+> ⚠️ **This screen does not build:** `TypeError: 'str' object is not callable`
 
-## Групповые экраны
+## Group screens
 
-### /help в группе
+### /help in a group
 
-`group-help` · вход: `/help` · command / supergroup
+`group-help` · input: `/help` · command, supergroup
 
 
 ```
@@ -905,15 +914,15 @@ Publishing: Igor, k_maks, Key Real, Vitaliy, Ｗｈａｌｅｒｉｄｅｒ➑�
 
 ```
 [ ✅ Publish my achievements ]
-[ 🔗 XBOX ]→ссылка  [ 🎮 Steam ]→ссылка  [ 🎮 PSN ]→ссылка
-[ ⚙️ Settings ]→ссылка
+[ 🔗 XBOX ]→url  [ 🎮 Steam ]→url  [ 🎮 PSN ]→url
+[ ⚙️ Settings ]→url
 ```
 
-Плюс GetMe
+Plus a GetMe
 
 ### /subscribe
 
-`group-subscribe` · вход: `/subscribe` · command / supergroup
+`group-subscribe` · input: `/subscribe` · command, supergroup
 
 
 ```
@@ -922,7 +931,7 @@ You're already publishing here.
 
 ### /unsubscribe
 
-`group-unsubscribe` · вход: `/unsubscribe` · command / supergroup
+`group-unsubscribe` · input: `/unsubscribe` · command, supergroup
 
 
 ```
@@ -936,7 +945,7 @@ Stop publishing your achievements in this chat?
 
 ### /stats
 
-`group-stats` · вход: `/stats` · command / supergroup
+`group-stats` · input: `/stats` · command, supergroup
 
 
 ```
@@ -962,11 +971,11 @@ This month: 5 achievements (🟢 1 · ⚫ 4) (+10 G)
 11. ⚫ HELLDIVERS™ 2 — 1 ach.</blockquote>
 ```
 
-Плюс удаление сообщения
+Plus a deletes a message
 
-### /stats @другой
+### /stats @somebody
 
-`group-stats-other` · вход: `/stats @keimaks` · command / supergroup
+`group-stats-other` · input: `/stats @keimaks` · command, supergroup
 
 
 ```
@@ -984,11 +993,11 @@ This month: 29 achievements
 5. 🔵 Hogwarts Legacy — 1 ach.</blockquote>
 ```
 
-Плюс удаление сообщения
+Plus a deletes a message
 
 ### /online
 
-`group-online` · вход: `/online` · command / supergroup
+`group-online` · input: `/online` · command, supergroup
 
 
 ```
@@ -1005,7 +1014,7 @@ This month: 29 achievements
 
 ### /who
 
-`group-who` · вход: `/who` · command / supergroup
+`group-who` · input: `/who` · command, supergroup
 
 
 ```
@@ -1020,7 +1029,7 @@ Whose stats do you want?
 
 ### /recent
 
-`group-recent` · вход: `/recent` · command / supergroup
+`group-recent` · input: `/recent` · command, supergroup
 
 
 ```
@@ -1032,11 +1041,11 @@ Whose stats do you want?
 🏆 Key Real — 🟢 Call of Duty®: Black Ops Co…, Nowhere Left to Run (+15 G · 35.61%) · 12 h ago</blockquote>
 ```
 
-Плюс удаление сообщения
+Plus a deletes a message
 
 ### /summary
 
-`group-summary` · вход: `/summary` · command / supergroup
+`group-summary` · input: `/summary` · command, supergroup
 
 
 ```
@@ -1074,11 +1083,11 @@ Whose stats do you want?
 15. 🟢 Microsoft Solitaire Collection — 1 achievement (+10 G)</blockquote>
 ```
 
-Плюс удаление сообщения
+Plus a deletes a message
 
 ### /summary_day
 
-`group-summary-day` · вход: `/summary_day` · command / supergroup
+`group-summary-day` · input: `/summary_day` · command, supergroup
 
 
 ```
@@ -1087,16 +1096,16 @@ A summary was sent recently. You can ask again in 10 min.
 
 ### /summary_month
 
-`group-summary-month` · вход: `/summary_month` · command / supergroup
+`group-summary-month` · input: `/summary_month` · command, supergroup
 
 
 ```
 A summary was sent recently. You can ask again in 10 min.
 ```
 
-### /hltb в группе
+### /hltb in a group
 
-`group-hltb` · вход: `/hltb` · command / supergroup
+`group-hltb` · input: `/hltb` · command, supergroup
 
 
 ```
@@ -1114,9 +1123,9 @@ Reply to this message, or pick one of your recent games:
 [ ❌ Cancel ]
 ```
 
-### /connect_steam в группе
+### /connect_steam in a group
 
-`group-connect-steam` · вход: `/connect_steam` · command / supergroup
+`group-connect-steam` · input: `/connect_steam` · command, supergroup
 
 
 ```
@@ -1124,12 +1133,12 @@ Message me privately — we'll connect Steam there.
 ```
 
 ```
-[ Open ]→ссылка
+[ Open ]→url
 ```
 
-### /connect_psn в группе
+### /connect_psn in a group
 
-`group-connect-psn` · вход: `/connect_psn` · command / supergroup
+`group-connect-psn` · input: `/connect_psn` · command, supergroup
 
 
 ```
@@ -1137,12 +1146,12 @@ Message me privately — we'll connect PSN there.
 ```
 
 ```
-[ Open ]→ссылка
+[ Open ]→url
 ```
 
-### /who → карточка человека
+### /who → that person's card
 
-`group-who-stats` · вход: `who:stats:319472587` · callback / supergroup
+`group-who-stats` · input: `who:stats:319472587` · button, supergroup
 
 
 ```
@@ -1160,37 +1169,37 @@ This month: 29 achievements
 5. 🔵 Hogwarts Legacy — 1 ach.</blockquote>
 ```
 
-Плюс удаление сообщения
+Plus a deletes a message
 
-Плюс удаление сообщения
+Plus a deletes a message
 
-### Хаб: публиковать мои достижения
+### Hub: publish my achievements
 
-`group-sub-on` · вход: `sub:on` · callback / supergroup
+`group-sub-on` · input: `sub:on` · button, supergroup
 
-Ничего не рисует — только всплывашка «You're already publishing here.».
+Draws nothing — only toast «You're already publishing here.».
 
-### Админка: карточка пользователя → Обновить (PSN)
+### Admin: user card → Refresh (PSN)
 
-`admin-sync` · вход: `a:sync:psn:319472587` · callback / private
+`admin-sync` · input: `a:sync:psn:319472587` · button, private
 
-> ⚠️ **Экран не построился:** `TypeError: 'str' object is not callable`
+> ⚠️ **This screen does not build:** `TypeError: 'str' object is not callable`
 
-### Админка: сброс платформы → подтверждено
+### Admin: reset a platform → confirmed
 
-`admin-resetok` · вход: `a:resetok:psn:319472587` · callback / private
+`admin-resetok` · input: `a:resetok:psn:319472587` · button, private
 
-> ⚠️ **Экран не построился:** `ValueError: too many values to unpack (expected 3)`
+> ⚠️ **This screen does not build:** `ValueError: too many values to unpack (expected 3)`
 
-### Админка: исключить пользователя
+### Admin: exclude a user
 
-`admin-excl` · вход: `a:excl:933710666` · callback / private
+`admin-excl` · input: `a:excl:933710666` · button, private
 
-> ⚠️ **Экран не построился:** `ValueError: not enough values to unpack (expected 4, got 3)`
+> ⚠️ **This screen does not build:** `ValueError: not enough values to unpack (expected 4, got 3)`
 
-### Админка: чат → итог дня вкл/выкл
+### Admin: chat → daily summary on/off
 
-`admin-chat-daily-toggle` · вход: `a:cds:-1001103247578` · callback / private
+`admin-chat-daily-toggle` · input: `a:cds:-1001103247578` · button, private
 
 
 ```
@@ -1214,9 +1223,9 @@ This month: 29 achievements
 [ ‹ Назад ]
 ```
 
-### Админка: чат → язык
+### Admin: chat → language
 
-`admin-chat-locale` · вход: `a:cloc:-1001103247578` · callback / private
+`admin-chat-locale` · input: `a:cloc:-1001103247578` · button, private
 
 
 ```
@@ -1244,9 +1253,9 @@ This month: 29 achievements
 [ ‹ К списку ]
 ```
 
-### Админка: чат → порог редкости
+### Admin: chat → rarity threshold
 
-`admin-chat-rare` · вход: `a:crt:-1001103247578` · callback / private
+`admin-chat-rare` · input: `a:crt:-1001103247578` · button, private
 
 
 ```
@@ -1260,21 +1269,21 @@ This month: 29 achievements
 [ ‹ Назад ]
 ```
 
-### /unsubscribe → подтверждение
+### /unsubscribe → confirmation
 
-`group-unsub-confirm` · вход: `unsub:yes:-1001103247578` · callback / supergroup
+`group-unsub-confirm` · input: `unsub:yes:-1001103247578` · button, supergroup
 
-Ничего не рисует — только всплывашка «That's not your button.».
+Draws nothing — only toast «That's not your button.».
 
-### /who → отмена
+### /who → cancel
 
-`group-who-cancel` · вход: `who:cancel` · callback / supergroup
+`group-who-cancel` · input: `who:cancel` · button, supergroup
 
-Ничего не рисует — только удаление сообщения, всплывашка.
+Draws nothing — only deletes a message, toast.
 
-### /summary → показать всех
+### /summary → show everyone
 
-`group-summary-all` · вход: `summary:all:-1001103247578` · callback / supergroup
+`group-summary-all` · input: `summary:all:-1001103247578` · button, supergroup
 
 
 ```
@@ -1290,7 +1299,7 @@ This month: 29 achievements
 
 ### /delete_last
 
-`group-delete-last` · вход: `/delete_last` · command / supergroup
+`group-delete-last` · input: `/delete_last` · command, supergroup
 
 
 ```
@@ -1299,17 +1308,17 @@ This month: 29 achievements
 Call of Duty®: Black Ops Cold War (Windows) (🟢 XBOX)”
 ```
 
-Плюс удаление сообщения
+Plus a deletes a message
 
-Плюс удаление сообщения
+Plus a deletes a message
 
-## Что бот присылает сам
+## What the bot sends on its own
 
-### Опубликованный трофей PSN (одиночный)
+### A published PSN trophy (single)
 
-`post-psn-single` · вход: `—` · автоматическое сообщение
+`post-psn-single` · input: `—` · sent by the bot itself
 
-**картинка: https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/DB6F8A3EA774156DC7585DDC45E5AACD939F84C3.PNG**
+**1. photo with a caption · image: https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/DB6F8A3EA774156DC7585DDC45E5AACD939F84C3.PNG**
 
 ```
 <b>SuperOmsk</b> получает трофей
@@ -1320,11 +1329,22 @@ Ratchet &amp; Clank™ (<i>🔵 PlayStation</i>)
 <span class="tg-spoiler">Стать добычей акулоида в океане Покитару.</span>
 ```
 
-### Дайджест трофеев PSN (порог дайджеста пройден)
+**2. photo with a caption · image: https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/DB6F8A3EA774156DC7585DDC45E5AACD939F84C3.PNG**
 
-`post-psn-digest` · вход: `—` · автоматическое сообщение
+```
+<b>SuperOmsk</b> gets a trophy
 
-**3 картинк(и): https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/DB6F8A3EA774156DC7585DDC45E5AACD939F84C3.PNG, https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/36848ACBFF1C6505FA439BEFE562E3263F9A5464.PNG, https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/50872504698C5CBB8F4DE80687A01C42F6FB6C2E.PNG**
+Ratchet &amp; Clank™ (<i>🔵 PlayStation</i>)
+🥉 “<span class="tg-spoiler">Pool Sharks Are The Worst</span>” · 25.8% rarity
+
+<span class="tg-spoiler">Get eaten by a Pool Shark in the Pokitaru Ocean.</span>
+```
+
+### A PSN trophy digest (over the digest threshold)
+
+`post-psn-digest` · input: `—` · sent by the bot itself
+
+**1. gallery · 3 image(s): https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/DB6F8A3EA774156DC7585DDC45E5AACD939F84C3.PNG, https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/36848ACBFF1C6505FA439BEFE562E3263F9A5464.PNG, https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/50872504698C5CBB8F4DE80687A01C42F6FB6C2E.PNG**
 
 ```
 <b>SuperOmsk</b> получает 3 трофея
@@ -1335,117 +1355,150 @@ Ratchet &amp; Clank™ (<i>🔵 PlayStation</i>)
 🥉 «<span class="tg-spoiler">I Shot Down Your Battleship</span>» · редкость 35.4%
 ```
 
-### Дайджест после антифлуда (смешанные платформы)
-
-`post-flood-digest` · вход: `—` · автоматическое сообщение
-
-**3 картинк(и): https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/DB6F8A3EA774156DC7585DDC45E5AACD939F84C3.PNG, https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/36848ACBFF1C6505FA439BEFE562E3263F9A5464.PNG, https://images-eds-ssl.xboxlive.com/image?url=27S1DHqE.cHkmFg4nspsd2r1oWt0fAGaJaS.E_5OsWhaiTV3JUfUUPofXSM22ZiEqNim9Q9e2lYhgjAQ4WERdSKyb6J7UYssXaDFLJNho1zn5m3cc_zFXTTL1ndrk8onxFrw3txopesFr34FMWysfA--**
+**2. photo with a caption · image: https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/DB6F8A3EA774156DC7585DDC45E5AACD939F84C3.PNG**
 
 ```
-<b>Igor</b> получает 3 достижения
+<b>SuperOmsk</b> gets a trophy
 
 Ratchet &amp; Clank™ (<i>🔵 PlayStation</i>)
-🥉 «<span class="tg-spoiler">Pool Sharks Are The Worst</span>» · редкость 25.8%
-🥉 «<span class="tg-spoiler">Splashdown!</span>» · редкость 32.9%
+🥉 “<span class="tg-spoiler">Pool Sharks Are The Worst</span>” · 25.8% rarity
+
+<span class="tg-spoiler">Get eaten by a Pool Shark in the Pokitaru Ocean.</span>
+```
+
+### The anti-flood digest (mixed platforms)
+
+`post-flood-digest` · input: `—` · sent by the bot itself
+
+**1. photo with a caption · image: https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/36848ACBFF1C6505FA439BEFE562E3263F9A5464.PNG**
+
+```
+<b>SuperOmsk</b> gets a trophy
+
+Ratchet &amp; Clank™ (<i>🔵 PlayStation</i>)
+🥉 “<span class="tg-spoiler">Splashdown!</span>” · 32.9% rarity
+
+<span class="tg-spoiler">Shoot down the hydroharvesters on Pokitaru.</span>
+```
+
+**2. photo with a caption · image: https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/50872504698C5CBB8F4DE80687A01C42F6FB6C2E.PNG**
+
+```
+<b>SuperOmsk</b> gets a trophy
+
+Ratchet &amp; Clank™ (<i>🔵 PlayStation</i>)
+🥉 “<span class="tg-spoiler">I Shot Down Your Battleship</span>” · 35.4% rarity
+
+<span class="tg-spoiler">Shoot down the Blarg Battleships on Batalia.</span>
+```
+
+### A published Xbox achievement (single)
+
+`post-xbox-single` · input: `—` · sent by the bot itself
+
+**1. gallery · 3 image(s): https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/DB6F8A3EA774156DC7585DDC45E5AACD939F84C3.PNG, https://image.api.playstation.com/trophy/np/NPWR07942_00_006F781DB9EE3B1A96EB9472B006DA21899A916D8F/36848ACBFF1C6505FA439BEFE562E3263F9A5464.PNG, https://images-eds-ssl.xboxlive.com/image?url=27S1DHqE.cHkmFg4nspsd2r1oWt0fAGaJaS.E_5OsWhaiTV3JUfUUPofXSM22ZiEqNim9Q9e2lYhgjAQ4WERdSKyb6J7UYssXaDFLJNho1zn5m3cc_zFXTTL1ndrk8onxFrw3txopesFr34FMWysfA--**
+
+```
+<b>Igor</b> gets 3 achievements
+
+Ratchet &amp; Clank™ (<i>🔵 PlayStation</i>)
+🥉 “<span class="tg-spoiler">Pool Sharks Are The Worst</span>” · 25.8% rarity
+🥉 “<span class="tg-spoiler">Splashdown!</span>” · 32.9% rarity
 
 Microsoft Flight Simulator 2024 (<i>🟢 XBOX</i>)
-🏆 «Earning Your Wings» · 15 G
+🏆 “Earning Your Wings” · 15 G
 ```
 
-### Опубликованное достижение Xbox (одиночное)
-
-`post-xbox-single` · вход: `—` · автоматическое сообщение
-
-**картинка: https://images-eds-ssl.xboxlive.com/image?url=27S1DHqE.cHkmFg4nspsd2r1oWt0fAGaJaS.E_5OsWhaiTV3JUfUUPofXSM22ZiEqNim9Q9e2lYhgjAQ4WERdSKyb6J7UYssXaDFLJNho1zn5m3cc_zFXTTL1ndrk8onxFrw3txopesFr34FMWysfA--**
+**2. photo with a caption · image: https://images-eds-ssl.xboxlive.com/image?url=27S1DHqE.cHkmFg4nspsd2r1oWt0fAGaJaS.E_5OsWhaiTV3JUfUUPofXSM22ZiEqNim9Q9e2lYhgjAQ4WERdSKyb6J7UYssXaDFLJNho1zn5m3cc_zFXTTL1ndrk8onxFrw3txopesFr34FMWysfA--**
 
 ```
-<b>Whalerider84</b> получает достижение
+<b>Whalerider84</b> gets an achievement
 
 Microsoft Flight Simulator 2024 (<i>🟢 XBOX</i>)
-🏆 «Earning Your Wings» · 15 G
+🏆 “Earning Your Wings” · 15 G
 
-Получите лицензию частного пилота в режиме «Карьера»
+Earn your Private Pilots License in the Career
 ```
 
-### Итог дня (плановая рассылка)
+### The scheduled daily summary
 
-`post-daily` · вход: `—` · автоматическое сообщение
-
-
-```
-📊 <b>Итог дня</b>, 12 сентября
-
-<b>24 часа:</b> 5 достижений, +75 G
-<blockquote expandable>1. Key Real — 5 достижений (🟢 5) (+75 G)
-2. Ｗｈａｌｅｒｉｄｅｒ➑➍ — 0 достижений (+0 G)
-3. Igor — 0 достижений (+0 G)
-4. Vitaliy — 0 достижений (+0 G)
-5. k_maks — 0 достижений (+0 G)</blockquote>
-```
-
-### Итоги за месяц (последний день месяца)
-
-`post-monthly` · вход: `—` · автоматическое сообщение
+`post-daily` · input: `—` · sent by the bot itself
 
 
 ```
-📊 <b>Итоги за месяц</b>
+📊 <b>Daily summary</b>, September 13
 
-<b>с 1 сентября:</b> 122 достижения, +1 900 G
-<blockquote expandable>1. Key Real — 56 достижений 💎32 (🟢 56) (+1 670 G)
-2. Vitaliy — 32 достижения 💎26 (🟢 5 · 🔵 27) (+220 G)
-3. k_maks — 29 достижений (🔵 29) (+0 G)
-4. Igor — 5 достижений (🟢 1 · ⚫ 4) (+10 G)
-5. Ｗｈａｌｅｒｉｄｅｒ➑➍ — 0 достижений (+0 G)</blockquote>
-
-<b>Игры за месяц</b>
-<blockquote expandable>1. 🔵 Call of Duty®: Black Ops II — 27 трофеев 🥇1 🥈2 🥉24
-2. 🔵 Marvel&#x27;s Spider-Man Remastered — 26 трофеев 🥈4 🥉22
-3. 🟢 S.T.A.L.K.E.R. 2: Heart of Chornobyl - Windows Edition — 16 достижений (+340 G)
-4. 🟢 Rue Valley — 16 достижений (+715 G)
-5. 🟢 Breathedge — 15 достижений (+310 G)
-6. 🟢 Call of Duty®: Black Ops Cold War (Windows) — 5 достижений (+75 G)
-7. 🟢 Denshattack! — 4 достижения (+120 G)
-8. ⚫ G.O.P.O.T.A — 3 достижения
-9. 🔵 STAR WARS Jedi: Fallen Order — 3 трофея 🥉3
-10. 🟢 Resonance: A Plague Tale Legacy — 2 достижения (+30 G)
-11. ⚫ Weird West: Definitive Edition — 1 достижение
-12. 🟢 Idle Wizard (Xbox One) — 1 достижение (+100 G)
-13. 🟢 DPS IDLE 2 — 1 достижение (+100 G)
-14. 🟢 VALORANT — 1 достижение (+100 G)
-15. 🟢 Microsoft Solitaire Collection — 1 достижение (+10 G)</blockquote>
+<b>24 hours:</b> 5 achievements, +75 G
+<blockquote expandable>1. Key Real — 5 achievements (🟢 5) (+75 G)
+2. Ｗｈａｌｅｒｉｄｅｒ➑➍ — 0 achievements (+0 G)
+3. Igor — 0 achievements (+0 G)
+4. Vitaliy — 0 achievements (+0 G)
+5. k_maks — 0 achievements (+0 G)</blockquote>
 ```
 
-### Напоминание о протухшем входе Xbox
+### The month-end wrap-up
 
-`post-reminder` · вход: `—` · автоматическое сообщение
-
-Ничего не рисует — только тишина.
-
-### Суперадмину: общий ключ платформы умер
-
-`post-key-dead` · вход: `—` · автоматическое сообщение
+`post-monthly` · input: `—` · sent by the bot itself
 
 
 ```
-⚠️ The shared PSN key is dead — every PSN account stopped being polled at once, send a new key via the admin panel.
+📊 <b>The month in review</b>
+
+<b>since September 1:</b> 122 achievements, +1 900 G
+<blockquote expandable>1. Key Real — 56 achievements 💎32 (🟢 56) (+1 670 G)
+2. Vitaliy — 32 achievements 💎26 (🟢 5 · 🔵 27) (+220 G)
+3. k_maks — 29 achievements (🔵 29) (+0 G)
+4. Igor — 5 achievements (🟢 1 · ⚫ 4) (+10 G)
+5. Ｗｈａｌｅｒｉｄｅｒ➑➍ — 0 achievements (+0 G)</blockquote>
+
+<b>Games this month</b>
+<blockquote expandable>1. 🔵 Call of Duty®: Black Ops II — 27 trophies 🥇1 🥈2 🥉24
+2. 🔵 Marvel&#x27;s Spider-Man Remastered — 26 trophies 🥈4 🥉22
+3. 🟢 S.T.A.L.K.E.R. 2: Heart of Chornobyl - Windows Edition — 16 achievements (+340 G)
+4. 🟢 Rue Valley — 16 achievements (+715 G)
+5. 🟢 Breathedge — 15 achievements (+310 G)
+6. 🟢 Call of Duty®: Black Ops Cold War (Windows) — 5 achievements (+75 G)
+7. 🟢 Denshattack! — 4 achievements (+120 G)
+8. ⚫ G.O.P.O.T.A — 3 achievements
+9. 🔵 STAR WARS Jedi: Fallen Order — 3 trophies 🥉3
+10. 🟢 Resonance: A Plague Tale Legacy — 2 achievements (+30 G)
+11. ⚫ Weird West: Definitive Edition — 1 achievement
+12. 🟢 Idle Wizard (Xbox One) — 1 achievement (+100 G)
+13. 🟢 DPS IDLE 2 — 1 achievement (+100 G)
+14. 🟢 VALORANT — 1 achievement (+100 G)
+15. 🟢 Microsoft Solitaire Collection — 1 achievement (+10 G)</blockquote>
 ```
 
-### Суперадмину: пользователь подключился
+### Reminder: the Xbox login has gone stale
 
-`post-user-connected` · вход: `—` · автоматическое сообщение
+`post-reminder` · input: `—` · sent by the bot itself
+
+Draws nothing — only silence.
+
+### To the super-admin: a shared platform key died
+
+`post-key-dead` · input: `—` · sent by the bot itself
 
 
 ```
-➕ User added: kmaks90
-tg_id 319,472,587 · @keimaks
+⚠️ Умер общий ключ PSN — все аккаунты PSN разом перестали опрашиваться, пришли новый ключ через админ-панель.
 ```
 
-### Карточка игры /hltb (с описанием)
+### To the super-admin: somebody connected
 
-`hltb-card` · вход: `/hltb → выбор игры` · карточка
+`post-user-connected` · input: `—` · sent by the bot itself
 
-**картинка: https://howlongtobeat.com/games/162277_Mario_Kart_9.png**
+
+```
+➕ Добавлен пользователь: kmaks90
+tg_id 319 472 587 · @keimaks
+```
+
+### A game card from /hltb
+
+`hltb-card` · input: `/hltb → picking the game` · card
+
+**photo with a caption · image: https://howlongtobeat.com/games/162277_Mario_Kart_9.png**
 
 ```
 ⏱ <b>Mario Kart World</b> (2025)
@@ -1463,11 +1516,11 @@ tg_id 319,472,587 · @keimaks
 <a href="https://howlongtobeat.com/game/162277">Страница на HowLongToBeat ↗</a>
 ```
 
-### Карточка игры /hltb (описания нет)
+### A game card from /hltb (another game)
 
-`hltb-card-no-description` · вход: `/hltb → выбор игры` · карточка
+`hltb-card-no-description` · input: `/hltb → picking the game` · card
 
-**картинка: https://howlongtobeat.com/games/129232_Helldivers_2.jpg**
+**photo with a caption · image: https://howlongtobeat.com/games/129232_Helldivers_2.jpg**
 
 ```
 ⏱ <b>Helldivers 2</b> (2024)
@@ -1487,37 +1540,36 @@ tg_id 319,472,587 · @keimaks
 
 ---
 
-## Что снимок не сошёлся с макетами
+## Where the snapshot and the mockups disagreed
 
-Собрано при сверке 2026-09-13. Поломки — в issues, расхождения макета и
-кода — к решению владельца, что из них правда.
+From the review on 2026-09-13. Everything in the first two groups was acted
+on the same day; the third is what the method cannot reach.
 
-**Сломано в бою (не косметика):**
+**Broken in production, not cosmetic:**
 
-1. **«🔄 Обновить» и «🗑 Сброс» в карточке пользователя не работают ни
-   разу.** `a:sync:*`, `a:reset:*` и `a:resetok:*` распаковывают
-   `callback.data.split(":")` в переменную `_`, которой двумя строками
-   выше присвоен переводчик — дальше первый же `_("ключ")` падает с
-   `TypeError: 'str' object is not callable`, а `a:resetok:` ещё и
-   разбирает четыре части в три. Кнопки нарисованы, нажатие не делает
-   ничего. Есть и на боевом, и в ветке.
+1. **"🔄 Обновить" and "🗑 Сброс" in the user card have never worked.**
+   `a:sync:*`, `a:reset:*` and `a:resetok:*` unpack
+   `callback.data.split(":")` into `_`, which two lines above was assigned
+   the translator — so the next `_("key")` raises `TypeError: 'str' object
+   is not callable`, and `a:resetok:` additionally unpacks four parts into
+   three. The buttons are drawn and tapping them does nothing. Still open;
+   the fix does not belong in a docs commit.
 
-**Расходится с тем, что написано в макетах:**
+**Settled against the mockups (owner decisions, 2026-09-13):**
 
-2. `(🔵 PlayStation)` в карточке достижения против `(🔵 PSN)` в
-   [ui_screens_users.md](ui_screens_users.md); и «редкость 12.8%» против
-   «12.8%» там же.
-3. Порядок платформ: `/panel` — XBOX → Steam → PSN, `/stats` —
-   XBOX → PlayStation → Steam. Макет обещает один порядок для обоих.
-4. `tg_id 127 383 366` в карточке суперадмина — идентификатор с
-   разделителями разрядов, как будто это количество. CLAUDE.md требует
-   «a plain `tg_id N`».
-5. `/help` в группе перечисляет «XBOX and Steam» — PSN в тексте нет, хотя
-   кнопка PSN в том же экране есть.
+2. The platform's own label wins: `🔵 PlayStation`, not "PSN", and the
+   rarity keeps the word "редкость" before the number. The mockups were
+   written shorter than the `.ftl`; the mockups changed.
+3. One platform order everywhere — **Xbox, PlayStation, Steam**
+   (`constants.platform_display_rank`). /panel had listed Steam second and
+   /stats PlayStation second.
+4. `tg_id 127 383 366` — an identifier formatted as a quantity, because
+   Fluent groups digits in a number. It is passed as a string now.
+5. `/help` in a group listed "XBOX and Steam" while offering a PSN button;
+   the text names all three platforms now.
 
-**Чего в снимке нет, хотя экран существует:**
+**What the snapshot cannot show:**
 
-6. Напоминание о протухшем входе XBOX: на боевых данных живых
-   протухших токенов нет, рисовать нечего.
-7. Всё, что продолжается вводом текста (ник Steam, Online ID, ручной
-   часовой пояс, ключ платформы) — снято только приглашение.
+6. The stale-Xbox-login reminder: no live dead token exists in the
+   production data, so there is nothing to render.
+7. Anything that continues by typing — only the prompt is captured.

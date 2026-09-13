@@ -43,7 +43,7 @@ chat-recent-row = { $badge } { $gamertag } — { $icon } { $game }, { $name }{ $
 
 # Group hub and chat actions
 chat-unknown-user = I don't know them. The Bot API can't look people up by @name — I remember the ones who have written in the chat. You can also reply to their message with /stats.
-chat-help-text = 🎮 I watch the achievements of everyone playing on XBOX and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
+chat-help-text = 🎮 I watch the achievements and trophies of everyone playing on XBOX, PlayStation and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
 
     Chat commands:
     /stats [@who] — stats: yours with no argument, someone else's with a name

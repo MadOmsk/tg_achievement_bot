@@ -69,6 +69,19 @@ async def test_header_tgid_is_never_at_prefixed(repo: Repo) -> None:
     assert "@7" not in header
 
 
+async def test_header_tgid_has_no_thousands_separators(repo: Repo) -> None:
+    """An identifier is not a quantity. Fluent formats a number for the
+    locale, so a real id came out as "tg_id 127 383 366" — unsearchable, and
+    wrong about what the value is (found 2026-09-13 by capturing the real
+    screens). It is passed as a string now."""
+    await repo.ensure_user(127383366, "whalerider84", None, None)
+    await repo.link_xbox_account(127383366, XUID, "GamerTag", 0)
+
+    text, _markup = await _card(repo, 127383366, locale="ru")
+
+    assert "tg_id 127383366" in text.splitlines()[0]
+
+
 async def test_xbox_block_shows_id_count_today_and_gamerscore(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.link_xbox_account(1, XUID, "GamerTag", 500)
@@ -165,7 +178,9 @@ async def test_psn_status_line_shows_visibility_not_nickname(repo: Repo) -> None
     assert "PsnPerson" not in status_line
 
 
-async def test_blocks_appear_in_a_fixed_platform_order(repo: Repo) -> None:
+async def test_blocks_appear_in_the_one_display_order(repo: Repo) -> None:
+    """Xbox, PlayStation, Steam — the same order /panel and /stats use
+    (constants.platform_display_rank, owner decision 2026-09-13)."""
     await repo.ensure_user(1, "someone")
     await repo.link_xbox_account(1, XUID, "GamerTag", 0)
     await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
@@ -173,7 +188,7 @@ async def test_blocks_appear_in_a_fixed_platform_order(repo: Repo) -> None:
 
     text, _markup = await _card(repo, 1, locale="ru")
 
-    assert text.index("XBOX:") < text.index("Steam:") < text.index("PSN:")
+    assert text.index("XBOX:") < text.index("PSN:") < text.index("Steam:")
 
 
 async def test_reset_button_appears_next_to_each_connected_platforms_refresh_button(

@@ -7,7 +7,13 @@ from __future__ import annotations
 
 from html import escape as html_escape
 
-from bot.constants import AchievementBadge, Platform, PsnTrophyTier, RarityMode
+from bot.constants import (
+    AchievementBadge,
+    Platform,
+    PsnTrophyTier,
+    RarityMode,
+    platform_display_rank,
+)
 from bot.db.repo import AchievementRow, ChatTarget, PlatformLink, Repo, TitleProgress
 from bot.i18n import gettext, translator
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
@@ -394,17 +400,13 @@ def format_digest(
         title = group[0].title_name or title_name or _("achievement-unknown-game")
         # Keyed the same way _group_by_title groups (#46) — one progress
         # figure per game, and a digest can span several.
-        # One block per game, but PSN's own groups cut across that: a
-        # burst can carry trophies from the base game and a DLC at once,
-        # and no single group line would be true of both. The group is
-        # named only when every trophy in this game's block shares one;
-        # otherwise the block keeps the game counter alone.
-        group_ids = {item.trophy_group_id for item in group}
-        key = (
-            group[0].platform,
-            group[0].title_id,
-            group_ids.pop() if len(group_ids) == 1 else None,
-        )
+        # A digest never names a trophy group, even when every trophy in
+        # this game's block happens to share one (owner decision, #46):
+        # one block is one *game*, so its line carries the game's name and
+        # the game's own total, and a group line would be a second subject
+        # in a message that is already grouping things. `None` is the
+        # game-only progress entry every platform has.
+        key = (group[0].platform, group[0].title_id, None)
         lines.append(_game_line(title, group[0].platform, locale, (progress or {}).get(key)))
         lines.extend(_rarity_line(item, locale) for item in group)
     return "\n".join(lines)
@@ -516,7 +518,10 @@ async def platform_header_lines(
             + "  ·  ".join(parts)
         )
 
-    for link in platform_links:
+    # Sorted here rather than trusted from the caller (2026-09-13): one of
+    # the two callers used to pass Steam before PSN and the other the other
+    # way round, which is how the same header rendered two different orders.
+    for link in sorted(platform_links, key=lambda item: platform_display_rank(item.platform)):
         icon = PLATFORM_ICON.get(link.platform, PLATFORM_ICON_UNKNOWN)
         label = platform_label(link.platform, locale)
         # A lifetime Steam/PSN count has always been fine here — a Steam

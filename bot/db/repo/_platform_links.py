@@ -230,7 +230,13 @@ class _PlatformLinksRepo:
         if not include_xbox:
             clause += "AND al.platform != 'xbox' "
         cursor = await self._conn.execute(
-            self._LINK_COLUMNS + clause + "ORDER BY al.platform",
+            # Xbox, PlayStation, Steam — the one display order
+            # (constants.platform_display_rank). Plain ORDER BY al.platform
+            # is alphabetical, which is a different order by coincidence
+            # rather than by decision.
+            self._LINK_COLUMNS
+            + clause
+            + "ORDER BY CASE al.platform WHEN 'xbox' THEN 0 WHEN 'psn' THEN 1 ELSE 2 END",
             (tg_id,),
         )
         return [_as_platform_link(row) for row in await cursor.fetchall()]

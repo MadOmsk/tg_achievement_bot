@@ -773,7 +773,7 @@ his username and his PSN nickname all along.
 Two questions, and only two:
 
 1. **Who is this person?** → `Имя Фамилия` → `username` → nickname of any
-   connected platform (Xbox → Steam → PSN) → `id<tg_id>`. Digits last, the
+   connected platform (Xbox → PlayStation → Steam) → `id<tg_id>`. Digits last, the
    most human form first.
 2. **Which account is this?** → that platform's own chain (below). Used
    *only* where the line is genuinely about one platform: the per-platform
@@ -827,6 +827,15 @@ PSN nicknames used to be stored once at connect and never again, so a rename
 left the bot calling someone by an old name and pointing at a dead profile
 link (both links are built from the nickname, not the id).
 
+**One platform order, everywhere** (2026-09-13, user request):
+**Xbox, PlayStation, Steam** — `constants.platform_display_rank` is the
+single source of it, and anything that renders a list of platforms (a
+header, a keyboard, an admin block) sorts by that rather than listing them
+by hand. It had already drifted: `/panel` listed Xbox → Steam → PSN while
+`/stats`, ordering by the column name in SQL, listed Xbox → PSN → Steam —
+both describing themselves as "a fixed order", just not the same one. Found
+by capturing the real screens (see docs/ui/captured_production.md).
+
 **Private commands**: `/start`, `/connect_xbox`, `/disconnect_xbox`,
 `/connect_steam`, `/disconnect_steam`, `/connect_psn`, `/disconnect_psn`, `/panel`.
 A private flow started from a group must redirect the person to a DM, never fail
@@ -849,7 +858,8 @@ Steam/PSN-only person used to get an entirely different, stripped-down body
 and keyboard — no timezone/chats/sync/toggle at all — because both the text
 and the keyboard hard-gated the whole screen on Xbox specifically, a
 leftover from before Steam/PSN existed). The keyboard is one row per
-platform (Xbox → Steam → PSN) in a fixed position — `[Profile, Disconnect]`
+platform (Xbox → PlayStation → Steam, the one display order above) in a
+fixed position — `[Profile, Disconnect]`
 when connected, one wide "🎮 Подключить X" when not (#33) — plus timezone / My
 chats / sync / `show_profile_links` toggle, a **language toggle** (#48 — this
 person's own `user_settings.locale`, one tap, applying to DMs only), and the
@@ -913,8 +923,11 @@ instead of that needing a manual DB script on the server.
 
 The **per-user card** (2026-09-08 rework, user request) shows the Telegram
 identity in full (name, `@username`, and a plain `tg_id N` — never `@N`, since a
-bare id isn't a real, resolvable username the way a genuine `user.username` is),
-then one block per connected platform in a fixed order (Xbox → Steam → PSN):
+bare id isn't a real, resolvable username the way a genuine `user.username` is;
+and passed to Fluent as a *string*, or it comes out thousands-separated like a
+quantity, which it was until 2026-09-13),
+then one block per connected platform in the one display order (Xbox →
+PlayStation → Steam):
 nickname/id, lifetime achievement/trophy count with the same 🏆-completions/level
 suffixes `/stats`' own line has, today's count for that platform
 (`achievement_platform_breakdown`), and whatever admin-only diagnostics apply
@@ -966,12 +979,33 @@ The badge is `rarity_badge()` (💎 at or below the rare threshold, 🏆 otherwi
 including when rarity is simply unknown) for every platform except PSN, which shows
 its own tier icon instead (🥉🥈🥇🏆) — see the PSN section above for why.
 
+**A single post is a photo message**, not a text one: the achievement's own
+icon is the photo and everything above is its *caption*, so the whole card
+lives under Telegram's 1024-character caption cap. Xbox 360 is the exception —
+contract 1 gives a bare image id with no documented way to build a URL, so
+those cards use the game's box art, which means every achievement in an x360
+game carries the same picture.
+
 A digest groups several achievements under one header ("gets N achievements" / "gets
 N trophies" for an all-PSN batch), one block per game, same per-line format as a
 single post, every item listed. `plural_achievements()` itself is never
 platform-specific — it also serves combined cross-platform totals (e.g. `/stats`'
 "Today: N achievements"), which are correctly "achievements" regardless of how many
 of them came from PSN.
+
+**The ordinary digest and the anti-flood digest are one form**
+(2026-09-13, user request) — same layout, same per-game counter, same
+gallery. The only difference is the header's name: the anti-flood one can
+genuinely mix platforms, so it uses the person's Telegram identity rather
+than one platform's nickname. A digest is a `sendMediaGroup` with the
+caption on the first image, deduped by image URL.
+
+**A digest never names a trophy group**, even when every trophy in a game's
+block came from the same one (2026-09-13, user request). One block is one
+*game*: its line carries the game's name and the game's own overall count.
+The group line belongs to a single card, where there is exactly one trophy
+to attribute — in a digest it would add a second subject to a message whose
+whole job is grouping.
 
 Lists (`/stats`, `/recent`, `/summary`, the daily summary) render as sentence-lines
 inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table

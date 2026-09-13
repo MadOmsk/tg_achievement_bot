@@ -528,7 +528,7 @@ async def _panel_header_lines(
     inline hyperlinks — /panel's own "Profile" buttons already cover that
     (CLAUDE.md: "always visible regardless of the privacy toggle" is about
     those buttons, not a second, redundant link inside the header text)."""
-    platform_links = [link for link in (steam_link, psn_link) if link is not None]
+    platform_links = [link for link in (psn_link, steam_link) if link is not None]
     return [_panel_identity(user, platform_links, i18n)] + await platform_header_lines(
         repo,
         tg_id=user.tg_id,

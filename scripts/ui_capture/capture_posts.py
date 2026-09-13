@@ -132,7 +132,7 @@ async def main() -> None:
                 "id": ident,
                 "title": title,
                 "input": "—",
-                "scope": "автоматическое сообщение",
+                "scope": "sent by the bot itself",
                 "calls": list(recorded),
                 "error": error,
             }
@@ -153,26 +153,26 @@ async def main() -> None:
     if psn:
         await forget_publications()
         await record(
-            "Опубликованный трофей PSN (одиночный)",
+            "A published PSN trophy (single)",
             "post-psn-single",
             publisher.publish(188022193, PSN_ACCOUNT, "SuperOmsk", psn[:1], None),
         )
         await forget_publications()
         await record(
-            "Дайджест трофеев PSN (порог дайджеста пройден)",
+            "A PSN trophy digest (over the digest threshold)",
             "post-psn-digest",
             publisher.publish(188022193, PSN_ACCOUNT, "SuperOmsk", psn, None),
         )
         await forget_publications()
         await record(
-            "Дайджест после антифлуда (смешанные платформы)",
+            "The anti-flood digest (mixed platforms)",
             "post-flood-digest",
             publisher.publish_flood_digest(188022193, CHAT_ID, psn[:2] + xbox[:1]),
         )
     if xbox:
         await forget_publications()
         await record(
-            "Опубликованное достижение Xbox (одиночное)",
+            "A published Xbox achievement (single)",
             "post-xbox-single",
             publisher.publish(127383366, XBOX_XUID, "Whalerider84", xbox[:1], None),
         )
@@ -180,8 +180,8 @@ async def main() -> None:
     chat = next(c for c in await repo.admin_chats() if c.chat_id == CHAT_ID)
     today = dt.datetime.now(dt.UTC).date()
     for ident, title, day, month in [
-        ("post-daily", "Итог дня (плановая рассылка)", True, False),
-        ("post-monthly", "Итоги за месяц (последний день месяца)", False, True),
+        ("post-daily", "The scheduled daily summary", True, False),
+        ("post-monthly", "The month-end wrap-up", False, True),
     ]:
         recorded.clear()
         built = await build_summary(
@@ -202,23 +202,23 @@ async def main() -> None:
                 "id": ident,
                 "title": title,
                 "input": "—",
-                "scope": "автоматическое сообщение",
+                "scope": "sent by the bot itself",
                 "calls": list(recorded),
-                "error": None if built else "build_summary вернул None",
+                "error": None if built else "build_summary returned None",
             }
         )
         print(f"{ident:<24} {len(recorded):>2} call(s)", flush=True)
 
     await record(
-        "Напоминание о протухшем входе Xbox", "post-reminder", ReminderJob(bot, repo).run()
+        "Reminder: the Xbox login has gone stale", "post-reminder", ReminderJob(bot, repo).run()
     )
     await record(
-        "Суперадмину: общий ключ платформы умер",
+        "To the super-admin: a shared platform key died",
         "post-key-dead",
         AdminNotifier(bot, repo, settings.admin_tg_ids).service_key_dead("psn"),
     )
     await record(
-        "Суперадмину: пользователь подключился",
+        "To the super-admin: somebody connected",
         "post-user-connected",
         AdminNotifier(bot, repo, settings.admin_tg_ids).user_connected(
             319472587, "kmaks90", is_new=True
@@ -245,8 +245,8 @@ async def main() -> None:
         repo, TokenCipher(settings.fernet_key.get_secret_value()), env_key=None
     )
     for hltb_id, ident, title in [
-        (162277, "hltb-card", "Карточка игры /hltb (с описанием)"),
-        (129232, "hltb-card-no-description", "Карточка игры /hltb (описания нет)"),
+        (162277, "hltb-card", "A game card from /hltb"),
+        (129232, "hltb-card-no-description", "A game card from /hltb (another game)"),
     ]:
         recorded.clear()
         error = None
@@ -264,8 +264,8 @@ async def main() -> None:
             {
                 "id": ident,
                 "title": title,
-                "input": "/hltb → выбор игры",
-                "scope": "карточка",
+                "input": "/hltb → picking the game",
+                "scope": "card",
                 "calls": list(recorded),
                 "error": error,
             }

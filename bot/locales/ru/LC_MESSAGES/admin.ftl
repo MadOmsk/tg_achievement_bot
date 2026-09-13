@@ -182,6 +182,8 @@ admin-no-name = без имени
 # tg_id N" string (admin.py::_admin_tg_header) — never "@" + a bare id, only
 # a real username earns the "@".
 admin-user-header = 👤 { $identity }
+# $tg_id arrives as a string on purpose — as a number Fluent groups the
+# digits, and an identifier is not a quantity.
 admin-user-tgid = tg_id { $tg_id }
 admin-login-not-connected = не подключён
 admin-login-active = ✅ активен, обновлён { $ago }

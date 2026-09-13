@@ -776,18 +776,19 @@ def hub_keyboard(
                     url=f"https://t.me/{bot_username}?start=connect{chat_id}",
                 ),
                 InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-psn-button"),
+                    # No chat id here (unlike Xbox above) — see Steam's own
+                    # button below for why (SPEC 9, M-PSN-1, handlers/psn.py,
+                    # connect.py's ?start=connectpsn).
+                    url=f"https://t.me/{bot_username}?start=connectpsn",
+                ),
+                InlineKeyboardButton(
                     text=_hub_text(i18n, "chat-hub-steam-button"),
                     # No chat id here (unlike Xbox above) — /connect_steam
                     # needs a profile link a button tap can't supply anyway,
                     # so this just opens the DM at the right prompt (SPEC 9,
                     # handlers/steam.py, connect.py's ?start=connectsteam).
                     url=f"https://t.me/{bot_username}?start=connectsteam",
-                ),
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-psn-button"),
-                    # Same reasoning as Steam's own button above (SPEC 9,
-                    # M-PSN-1, handlers/psn.py, connect.py's ?start=connectpsn).
-                    url=f"https://t.me/{bot_username}?start=connectpsn",
                 ),
             ],
             [

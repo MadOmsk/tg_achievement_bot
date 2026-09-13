@@ -13,61 +13,61 @@
  },
  {
   "id": "panel-refresh",
-  "title": "Панель: Обновить",
+  "title": "Panel: Refresh",
   "kind": "callback",
   "input": "panel:refresh"
  },
  {
   "id": "panel-tz",
-  "title": "Панель: часовой пояс",
+  "title": "Panel: timezone picker",
   "kind": "callback",
   "input": "panel:tz"
  },
  {
   "id": "panel-chatlist",
-  "title": "Панель: мои чаты",
+  "title": "Panel: my chats",
   "kind": "callback",
   "input": "panel:chatlist"
  },
  {
   "id": "panel-chat",
-  "title": "Панель: карточка чата",
+  "title": "Panel: one chat's card",
   "kind": "callback",
   "input": "panel:chat:-1001103247578"
  },
  {
   "id": "panel-chatrarity",
-  "title": "Панель: режим редкости в чате",
+  "title": "Panel: rarity mode in a chat",
   "kind": "callback",
   "input": "panel:chatrarity:-1001103247578"
  },
  {
   "id": "panel-chatdigest",
-  "title": "Панель: порог дайджеста",
+  "title": "Panel: digest threshold",
   "kind": "callback",
   "input": "panel:chatdigest:-1001103247578"
  },
  {
   "id": "panel-chatunsub",
-  "title": "Панель: отписаться от чата (подтверждение)",
+  "title": "Panel: unsubscribe from a chat (confirmation)",
   "kind": "callback",
   "input": "panel:chatunsub:-1001103247578"
  },
  {
   "id": "panel-linkstoggle",
-  "title": "Панель: профиль виден другим",
+  "title": "Panel: profile visible to others",
   "kind": "callback",
   "input": "panel:linkstoggle"
  },
  {
   "id": "panel-locale",
-  "title": "Панель: язык",
+  "title": "Panel: language",
   "kind": "callback",
   "input": "panel:locale"
  },
  {
   "id": "panel-disconnect",
-  "title": "Панель: отключить Xbox (подтверждение)",
+  "title": "Panel: disconnect Xbox (confirmation)",
   "kind": "callback",
   "input": "panel:disconnect"
  },
@@ -85,25 +85,25 @@
  },
  {
   "id": "disconnect-xbox-no",
-  "title": "Отмена отключения Xbox",
+  "title": "Disconnecting Xbox: cancelled",
   "kind": "callback",
   "input": "disconnect:no"
  },
  {
   "id": "relogin",
-  "title": "Кнопка «войти заново»",
+  "title": "«Sign in again» button",
   "kind": "callback",
   "input": "relogin"
  },
  {
   "id": "tz-more",
-  "title": "Часовой пояс: ещё",
+  "title": "Timezone: more",
   "kind": "callback",
   "input": "tz:more"
  },
  {
   "id": "tz-manual",
-  "title": "Часовой пояс: ввести вручную",
+  "title": "Timezone: type it in",
   "kind": "callback",
   "input": "tz:manual"
  },
@@ -121,7 +121,7 @@
  },
  {
   "id": "steam-disconnect-no",
-  "title": "Отмена отключения Steam",
+  "title": "Disconnecting Steam: cancelled",
   "kind": "callback",
   "input": "steam:disconnect:no"
  },
@@ -139,133 +139,133 @@
  },
  {
   "id": "psn-disconnect-no",
-  "title": "Отмена отключения PSN",
+  "title": "Disconnecting PSN: cancelled",
   "kind": "callback",
   "input": "psn:disconnect:no"
  },
  {
   "id": "hltb-dm",
-  "title": "/hltb в личке",
+  "title": "/hltb in a DM",
   "kind": "command",
   "input": "/hltb"
  },
  {
   "id": "hltb-cancel",
-  "title": "/hltb: отмена",
+  "title": "/hltb: cancelled",
   "kind": "callback",
   "input": "hltb:cancel"
  },
  {
   "id": "admin",
-  "title": "/admin — главный экран",
+  "title": "/admin — home",
   "kind": "command",
   "input": "/admin"
  },
  {
   "id": "admin-home",
-  "title": "Админка: домой",
+  "title": "Admin: home",
   "kind": "callback",
   "input": "a:home"
  },
  {
   "id": "admin-keys",
-  "title": "Админка: ключи платформ",
+  "title": "Admin: platform keys",
   "kind": "callback",
   "input": "a:keys"
  },
  {
   "id": "admin-keyset",
-  "title": "Админка: ввод ключа Steam",
+  "title": "Admin: entering the Steam key",
   "kind": "callback",
   "input": "a:keyset:steam"
  },
  {
   "id": "admin-newusers",
-  "title": "Админка: настройки новых пользователей",
+  "title": "Admin: defaults for new users",
   "kind": "callback",
   "input": "a:newusers"
  },
  {
   "id": "admin-limits",
-  "title": "Админка: лимиты отображения",
+  "title": "Admin: display limits",
   "kind": "callback",
   "input": "a:limits"
  },
  {
   "id": "admin-users",
-  "title": "Админка: список пользователей",
+  "title": "Admin: user list",
   "kind": "callback",
   "input": "a:users:0"
  },
  {
   "id": "admin-user",
-  "title": "Админка: карточка пользователя",
+  "title": "Admin: user card (PSN only)",
   "kind": "callback",
   "input": "a:u:319472587"
  },
  {
   "id": "admin-user-xbox",
-  "title": "Админка: карточка пользователя (Xbox+Steam)",
+  "title": "Admin: user card (Xbox + Steam)",
   "kind": "callback",
   "input": "a:u:127383366"
  },
  {
   "id": "admin-chats",
-  "title": "Админка: список чатов",
+  "title": "Admin: chat list",
   "kind": "callback",
   "input": "a:chats"
  },
  {
   "id": "admin-chat",
-  "title": "Админка: карточка чата",
+  "title": "Admin: chat card",
   "kind": "callback",
   "input": "a:chat:-1001103247578"
  },
  {
   "id": "admin-chat-summary",
-  "title": "Админка: чат → итог дня",
+  "title": "Admin: chat → daily summary",
   "kind": "callback",
   "input": "a:msum:-1001103247578"
  },
  {
   "id": "admin-chat-flood",
-  "title": "Админка: чат → антифлуд",
+  "title": "Admin: chat → anti-flood",
   "kind": "callback",
   "input": "a:mflood:-1001103247578"
  },
  {
   "id": "admin-chat-cleanup",
-  "title": "Админка: чат → уборка сообщений",
+  "title": "Admin: chat → message cleanup",
   "kind": "callback",
   "input": "a:mdel:-1001103247578"
  },
  {
   "id": "admin-chat-tz",
-  "title": "Админка: чат → часовой пояс",
+  "title": "Admin: chat → timezone",
   "kind": "callback",
   "input": "a:ctz:-1001103247578"
  },
  {
   "id": "admin-chat-time",
-  "title": "Админка: чат → время итога",
+  "title": "Admin: chat → summary time",
   "kind": "callback",
   "input": "a:ctime:-1001103247578"
  },
  {
   "id": "admin-chat-wipe",
-  "title": "Админка: чат → стереть сообщения (подтверждение)",
+  "title": "Admin: chat → wipe messages (confirmation)",
   "kind": "callback",
   "input": "a:cwipe:-1001103247578"
  },
  {
   "id": "admin-reset",
-  "title": "Админка: сброс платформы (подтверждение)",
+  "title": "Admin: reset a platform (confirmation)",
   "kind": "callback",
   "input": "a:reset:psn:319472587"
  },
  {
   "id": "group-help",
-  "title": "/help в группе",
+  "title": "/help in a group",
   "kind": "command",
   "input": "/help",
   "chat_id": -1001103247578,
@@ -297,7 +297,7 @@
  },
  {
   "id": "group-stats-other",
-  "title": "/stats @другой",
+  "title": "/stats @somebody",
   "kind": "command",
   "input": "/stats @keimaks",
   "chat_id": -1001103247578,
@@ -353,7 +353,7 @@
  },
  {
   "id": "group-hltb",
-  "title": "/hltb в группе",
+  "title": "/hltb in a group",
   "kind": "command",
   "input": "/hltb",
   "chat_id": -1001103247578,
@@ -361,7 +361,7 @@
  },
  {
   "id": "group-connect-steam",
-  "title": "/connect_steam в группе",
+  "title": "/connect_steam in a group",
   "kind": "command",
   "input": "/connect_steam",
   "chat_id": -1001103247578,
@@ -369,7 +369,7 @@
  },
  {
   "id": "group-connect-psn",
-  "title": "/connect_psn в группе",
+  "title": "/connect_psn in a group",
   "kind": "command",
   "input": "/connect_psn",
   "chat_id": -1001103247578,
@@ -377,7 +377,7 @@
  },
  {
   "id": "group-who-stats",
-  "title": "/who → карточка человека",
+  "title": "/who → that person's card",
   "kind": "callback",
   "input": "who:stats:319472587",
   "chat_id": -1001103247578,
@@ -385,7 +385,7 @@
  },
  {
   "id": "group-sub-on",
-  "title": "Хаб: публиковать мои достижения",
+  "title": "Hub: publish my achievements",
   "kind": "callback",
   "input": "sub:on",
   "chat_id": -1001103247578,
@@ -393,43 +393,43 @@
  },
  {
   "id": "admin-sync",
-  "title": "Админка: карточка пользователя → Обновить (PSN)",
+  "title": "Admin: user card → Refresh (PSN)",
   "kind": "callback",
   "input": "a:sync:psn:319472587"
  },
  {
   "id": "admin-resetok",
-  "title": "Админка: сброс платформы → подтверждено",
+  "title": "Admin: reset a platform → confirmed",
   "kind": "callback",
   "input": "a:resetok:psn:319472587"
  },
  {
   "id": "admin-excl",
-  "title": "Админка: исключить пользователя",
+  "title": "Admin: exclude a user",
   "kind": "callback",
   "input": "a:excl:933710666"
  },
  {
   "id": "admin-chat-daily-toggle",
-  "title": "Админка: чат → итог дня вкл/выкл",
+  "title": "Admin: chat → daily summary on/off",
   "kind": "callback",
   "input": "a:cds:-1001103247578"
  },
  {
   "id": "admin-chat-locale",
-  "title": "Админка: чат → язык",
+  "title": "Admin: chat → language",
   "kind": "callback",
   "input": "a:cloc:-1001103247578"
  },
  {
   "id": "admin-chat-rare",
-  "title": "Админка: чат → порог редкости",
+  "title": "Admin: chat → rarity threshold",
   "kind": "callback",
   "input": "a:crt:-1001103247578"
  },
  {
   "id": "group-unsub-confirm",
-  "title": "/unsubscribe → подтверждение",
+  "title": "/unsubscribe → confirmation",
   "kind": "callback",
   "input": "unsub:yes:-1001103247578",
   "chat_id": -1001103247578,
@@ -437,7 +437,7 @@
  },
  {
   "id": "group-who-cancel",
-  "title": "/who → отмена",
+  "title": "/who → cancel",
   "kind": "callback",
   "input": "who:cancel",
   "chat_id": -1001103247578,
@@ -445,7 +445,7 @@
  },
  {
   "id": "group-summary-all",
-  "title": "/summary → показать всех",
+  "title": "/summary → show everyone",
   "kind": "callback",
   "input": "summary:all:-1001103247578",
   "chat_id": -1001103247578,
