@@ -198,15 +198,42 @@ The `tg_id` in the header is printed as digits with no thousands separators —
 it is an identifier, not a quantity, and a grouped one is not even
 searchable (it was grouped until 2026-09-13).
 
-"🗑 Сброс X" asks for a one-tap confirmation before wiping (the same pattern
-as disconnecting a platform in [ui_screens_users.md](ui_screens_users.md)):
+**What the two buttons actually do** (2026-09-13, user request — both were
+dead until that day, see [captured_production.md](captured_production.md)):
+
+- **🔄 Обновить** — look at this one account out of turn, and pull in what is
+  new since the newest achievement already stored. Two halves: the platform's
+  "right now" look (presence, plus the game being played at this moment) and
+  a delta from the last known unlock. Without the second half the button
+  found nothing at all for anybody offline, which is not what it says. PSN
+  needs no second half: its ordinary scan already *is* a delta — it walks the
+  recently-touched titles and fetches detail only where progress grew.
+  Anything found is stored in full and announced only inside the usual
+  catch-up window, so a delta reaching back a month does not land in a chat
+  at once.
+- **🗑 Сброс** — delete this account's stored history on that platform and
+  read it again from nothing: a backfill, which publishes nothing. Xbox also
+  loses its `title_history` cache, PSN its per-game progress checkpoints and
+  `backfill_done`. Since #52 the history belongs to the *account*, not to the
+  person holding it — so a reset is about that account, and whoever links it
+  next inherits the re-read result.
+
+The reset asks first, one tap, the same pattern as disconnecting a platform
+in [ui_screens_users.md](ui_screens_users.md):
 
 ```
-<wipe every X achievement of this person and read them again from scratch?>
+Стереть базу <platform> для этого пользователя и синхронизировать заново?
+
+Это необратимо: вся история достижений/трофеев по этой платформе будет
+удалена и перечитана с нуля (в чат ничего не публикуется — как при первой
+привязке).
 ```
 ```
-[ Да, сбросить ]   [ Отмена ]
+[ Да, стереть и пересинхронизировать ]   [ Отмена ]
 ```
+
+Both buttons answer in place: the card redraws with a line under it saying
+what happened.
 
 ## Chat list
 

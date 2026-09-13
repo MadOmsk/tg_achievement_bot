@@ -62,10 +62,13 @@ def test_person_chain_order() -> None:
     assert person_name(tg_id=TG_ID, username=None, xbox="MadXbox") == "MadXbox"
 
 
-def test_person_chain_prefers_xbox_then_steam_then_psn() -> None:
+def test_person_chain_prefers_xbox_then_psn_then_steam() -> None:
+    """The one display order, same as every screen that lists platforms
+    (constants.platform_display_rank, owner decision 2026-09-13 — it was
+    Xbox → Steam → PSN when the chain was first agreed)."""
     assert person_name(tg_id=TG_ID, xbox="X", steam="S", psn="P") == "X"
-    assert person_name(tg_id=TG_ID, steam="S", psn="P") == "S"
-    assert person_name(tg_id=TG_ID, psn="P") == "P"
+    assert person_name(tg_id=TG_ID, steam="S", psn="P") == "P"
+    assert person_name(tg_id=TG_ID, steam="S") == "S"
 
 
 def test_person_chain_never_renders_an_at_sign() -> None:

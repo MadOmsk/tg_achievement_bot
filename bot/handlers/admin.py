@@ -26,7 +26,14 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
-from bot.constants import Platform, PresenceState, RarityMode, SettingKey, TokenStatus
+from bot.constants import (
+    Platform,
+    PresenceState,
+    RarityMode,
+    SettingKey,
+    TokenStatus,
+    account_platform_of,
+)
 from bot.db.repo import AdminUserRow, ChatTarget, PlatformLink, Repo, User
 from bot.handlers.hltb import (
     DEFAULT_PAGE_SIZE,
@@ -92,7 +99,7 @@ from bot.services.translate.auth import (
     AnthropicAuth,
     AnthropicKeyInvalidError,
 )
-from bot.util import humanize_ago, parse_utc_offset, utcnow
+from bot.util import humanize_ago, parse_iso, parse_utc_offset, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -1134,6 +1141,7 @@ async def user_refresh(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_fetcher: PsnFetcher,
+    settings: Settings,
     i18n: I18nContext,
 ) -> None:
     """The only place in the whole interface that may call the API on demand
@@ -1143,7 +1151,11 @@ async def user_refresh(
     refresh_user(tg_id, external_id, name, locale) -> str."""
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
-    _, _prefix, platform, tg_id_s = callback.data.split(":")
+    # Not `_, _prefix, platform, tg_id_s`: that bound `_` — the translator,
+    # two lines up — to the string "a", so the next `_("key")` raised
+    # TypeError and this button had never once worked (found 2026-09-13 by
+    # capturing the real screens; the same slip killed "🗑 Сброс" below).
+    _prefix, _action, platform, tg_id_s = callback.data.split(":")
     tg_id = int(tg_id_s)
 
     target = await _sync_target(repo, platform, tg_id, locale=i18n.locale)
@@ -1162,12 +1174,70 @@ async def user_refresh(
         summary = await fetcher_by_platform[platform].refresh_user(
             tg_id, external_id, name, i18n.locale
         )
+        delta = await _sync_delta(
+            repo,
+            fetcher,
+            steam_fetcher,
+            settings,
+            platform=platform,
+            tg_id=tg_id,
+            external_id=external_id,
+            name=name,
+            locale=i18n.locale,
+        )
     except Exception:
         log.exception("admin %s refresh of tg_id=%s failed", platform, tg_id)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
         return
     text, markup = await _card(repo, tg_id, locale=i18n.locale)
+    if delta:
+        summary = f"{summary}\n{delta}"
     await _redraw(callback, f"{text}\n\n{summary}", markup)
+
+
+async def _sync_delta(
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    settings: Settings,
+    *,
+    platform: str,
+    tg_id: int,
+    external_id: str,
+    name: str,
+    locale: str,
+) -> str:
+    """Everything earned since the newest unlock already stored — the "pull
+    what is new" half of "🔄 Обновить" (user request, 2026-09-13).
+
+    `refresh_user` on its own is a *right now* look: presence, plus the
+    achievements of the game being played at this moment. For somebody who is
+    offline that finds nothing at all, which is not what the button claims to
+    do. PSN needs nothing extra here — its own `refresh_user` already runs the
+    ordinary trophy scan, which is a delta by construction: it walks the
+    recently-touched titles and fetches detail only where progress grew.
+
+    What it finds is stored in full and *announced* only inside the usual
+    catch-up window. A delta reaching back a month is worth storing; it is
+    never worth posting to a chat all at once.
+    """
+    _ = translator("admin", locale)
+    since = await repo.account_latest_unlock(account_platform_of(platform), external_id)
+    window = settings.catchup_publish_window_hours
+    if platform == "xbox":
+        titles, published = await fetcher.catch_up(
+            tg_id,
+            external_id,
+            name,
+            parse_iso(since) if since else None,
+            window,
+            settings.catchup_max_titles,
+        )
+        return _("admin-sync-delta", titles=titles, published=published)
+    if platform == "steam" and since is not None:
+        published = await steam_fetcher.catch_up(tg_id, external_id, name, since, window)
+        return _("admin-sync-delta-steam", published=published)
+    return ""
 
 
 # --------------------------------------------------------------------- chats
@@ -1814,7 +1884,7 @@ async def reset_platform_confirm(callback: CallbackQuery, i18n: I18nContext) -> 
     instant action behind a single tap."""
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
-    _, _prefix, platform, tg_id_s = callback.data.split(":")
+    _prefix, _action, platform, tg_id_s = callback.data.split(":")  # not `_`, see user_refresh
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
@@ -1840,7 +1910,9 @@ async def reset_platform_confirmed(
 ) -> None:
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
-    _, platform, tg_id_s = callback.data.split(":")
+    # Four parts here too, and `_` stays the translator (see user_refresh):
+    # this one unpacked four into three and raised ValueError instead.
+    _prefix, _action, platform, tg_id_s = callback.data.split(":")
     tg_id = int(tg_id_s)
     await callback.answer(_("admin-refreshing"))
 
@@ -1853,7 +1925,11 @@ async def reset_platform_confirmed(
         elif platform == "steam":
             link = await repo.get_platform_link(tg_id, Platform.STEAM)
             assert link is not None
-            await repo.reset_steam_data(tg_id)
+            # The account's own id, not the person's: since #52 the history
+            # belongs to the account, and this call used to be handed `tg_id`,
+            # which matches no row — so it deleted nothing and "reset" re-ran
+            # backfill over data that was still there.
+            await repo.reset_steam_data(link.external_id)
             await steam_fetcher.backfill(tg_id, link.external_id)
         else:
             link = await repo.get_platform_link(tg_id, Platform.PSN)

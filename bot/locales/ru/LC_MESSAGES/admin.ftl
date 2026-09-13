@@ -133,6 +133,15 @@ admin-user-restored = Возвращён
 admin-user-not-connected = Не подключён
 admin-refreshing = Обновляю…
 admin-refresh-failed = Не получилось обновить
+# Вторая строка ответа «🔄 Обновить»: что нашлось с момента последнего
+# известного достижения. Публикуется только то, что попадает в обычное окно
+# догона, остальное молча сохраняется.
+admin-sync-delta =
+    { $titles ->
+        [0] Новых игр с прошлого раза нет.
+       *[other] Просмотрено игр: { $titles }, опубликовано: { $published }.
+    }
+admin-sync-delta-steam = Опубликовано с прошлого раза: { $published }.
 admin-steam-not-connected = Steam не подключён
 admin-psn-not-connected = PSN не подключён
 

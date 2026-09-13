@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from bot.db.repo import AchievementRow, Repo
 from bot.handlers.admin import _card
+from bot.i18n import static_i18n
 from bot.util import utcnow
 
 XUID = "xuid-admin-card"
@@ -277,3 +278,51 @@ async def test_reset_psn_data_clears_achievements_progress_and_backfill_flag(rep
     assert await repo.platform_achievement_count(1, "psn") == 0
     assert await repo.get_psn_title_progress("acc-1", "NPWR00001_00") is None
     assert await repo.psn_backfill_done("acc-1") is False
+
+
+# ----------------------------------------- the buttons actually doing something
+
+
+class _FakeCallback:
+    """Just enough CallbackQuery for a handler: the data it parses and
+    somewhere for its answers to land. `message` stays None, so _redraw is
+    patched out in the test below rather than edited into a fake Telegram."""
+
+    def __init__(self, data: str) -> None:
+        self.data = data
+        self.message = None
+        self.answers: list[tuple[str, bool]] = []
+
+    async def answer(self, text: str = "", show_alert: bool = False) -> None:
+        self.answers.append((text, show_alert))
+
+
+async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatch) -> None:
+    """All three of `a:reset:`, `a:resetok:` and `a:sync:` unpacked
+    callback.data into `_` — which is the translator, bound two lines above —
+    so the next `_("key")` raised TypeError (and a:resetok: unpacked four
+    parts into three). The buttons were drawn and did nothing, from the day
+    they shipped until 2026-09-13.
+
+    The existing test above only checks that they are *drawn*, which is why
+    this went unseen; this one runs the handler.
+    """
+    from bot.handlers import admin as admin_handlers
+
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+
+    drawn: list[tuple[str, object]] = []
+
+    async def record(callback, text, markup):
+        drawn.append((text, markup))
+
+    monkeypatch.setattr(admin_handlers, "_redraw", record)
+    callback = _FakeCallback("a:reset:psn:1")
+
+    await admin_handlers.reset_platform_confirm(callback, static_i18n("admin", "ru"))  # type: ignore[arg-type]
+
+    assert drawn, "the prompt never rendered"
+    text, markup = drawn[0]
+    assert "PSN" in text
+    assert "a:resetok:psn:1" in _callback_datas(markup)

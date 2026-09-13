@@ -20,7 +20,7 @@ issue. `services/naming.py` is the only implementation.
 
 | # | Question | Chain | Used by |
 |---|----------|-------|---------|
-| **P** | who is this person? | `Имя Фамилия` → `username` → any platform's nick (Xbox → Steam → PSN) → `id<tg_id>` | every screen that names a *person* |
+| **P** | who is this person? | `Имя Фамилия` → `username` → any platform's nick (Xbox → PlayStation → Steam) → `id<tg_id>` | every screen that names a *person* |
 | **X / S / N** | which account is this? | that platform's own chain (below) | every line that is about one platform |
 
 **P — the person chain** (`person_name`, or `person_name_of` for the common

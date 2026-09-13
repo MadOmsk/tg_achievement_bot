@@ -133,6 +133,15 @@ admin-user-restored = Restored
 admin-user-not-connected = Not connected
 admin-refreshing = Refreshing…
 admin-refresh-failed = Couldn't refresh
+# The second line of "🔄 Обновить"'s answer: what turned up since the newest
+# achievement already stored. Only what falls inside the usual catch-up window
+# is announced; the rest is stored quietly.
+admin-sync-delta =
+    { $titles ->
+        [0] Nothing new since last time.
+       *[other] Checked { $titles } game(s), posted { $published }.
+    }
+admin-sync-delta-steam = Posted since last time: { $published }.
 admin-steam-not-connected = Steam isn't connected
 admin-psn-not-connected = PSN isn't connected
 

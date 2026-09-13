@@ -773,7 +773,8 @@ his username and his PSN nickname all along.
 Two questions, and only two:
 
 1. **Who is this person?** → `Имя Фамилия` → `username` → nickname of any
-   connected platform (Xbox → PlayStation → Steam) → `id<tg_id>`. Digits last, the
+   connected platform (Xbox → PlayStation → Steam, the one display order) →
+   `id<tg_id>`. Digits last, the
    most human form first.
 2. **Which account is this?** → that platform's own chain (below). Used
    *only* where the line is genuinely about one platform: the per-platform
@@ -933,12 +934,34 @@ suffixes `/stats`' own line has, today's count for that platform
 (`achievement_platform_breakdown`), and whatever admin-only diagnostics apply
 (Xbox: login/token status; Steam/PSN: current presence where it exists). Next to
 each platform's "🔄 Обновить" button sits a "🗑 Сброс" button (one-tap confirm
-first, same shape as `/disconnect_steam`'s own prompt): deletes that platform's
-`seen_achievements` rows for this person (plus Xbox's own `title_history` and
+first, same shape as `/disconnect_steam`'s own prompt): deletes that *account's*
+`seen_achievements` rows (plus Xbox's own `title_history` and
 PSN's `psn_title_progress`/`backfill_done`), then re-runs that platform's own
 `backfill()` — the same "wipe and resync from nothing" recovery #27 already gave
 PSN's stuck-account case, generalized to every platform and reachable without a
-manual DB script.
+manual DB script. Since #52 that history belongs to the account rather than to
+whoever holds it, which is why the Steam path had to be handed the account's
+own id: it was being passed `tg_id`, matched no row, and so deleted nothing
+before re-running backfill over data that was still there.
+
+**"🔄 Обновить" is a delta, not just a glance** (2026-09-13, user request):
+after the platform's own out-of-turn look (presence + the game being played
+right now) it catches up everything since the newest unlock already stored —
+`Fetcher.catch_up` for Xbox, `SteamFetcher.catch_up` for Steam, nothing extra
+for PSN whose ordinary scan is already a delta by construction. Publication
+stays inside `catchup_publish_window_hours`; the rest is stored silently, the
+same rule every other catch-up path follows. Before this the button only ever
+looked at the current moment, so for anybody offline it did nothing at all.
+
+**All three of these handlers were dead on arrival** and nobody noticed until
+the interface was captured screen by screen (`scripts/ui_capture/`, 2026-09-13):
+`a:sync:`, `a:reset:` and `a:resetok:` each unpacked `callback.data.split(":")`
+into `_`, two lines after `_` was bound to the translator, so the next
+`_("key")` raised `TypeError: 'str' object is not callable`. Tests asserted the
+buttons were *drawn*, which they were. The lesson is in
+`tests/test_admin_card.py::test_the_reset_prompt_builds_instead_of_raising`:
+a keyboard test that never invokes the handler proves only that the keyboard
+exists.
 
 ## Message formats
 
