@@ -159,6 +159,16 @@ async def _search_raw(cleaned_query: str, limit: int) -> list[HltbResult]:
     return [_as_result(e) for e in entries[:limit]]
 
 
+async def overlay_cache(repo: Repo, results: list[HltbResult]) -> list[HltbResult]:
+    """Search JSON has no description/genre — if we already resolved this
+    game once, reuse the cached card so the Mini App isn't empty then jumps."""
+    out: list[HltbResult] = []
+    for item in results:
+        cached = await repo.hltb_get_cached(item.hltb_id)
+        out.append(_from_cache_row(cached) if cached is not None else item)
+    return out
+
+
 def _pick_fallback_word(cleaned_query: str) -> str | None:
     """The already-cleaned query's first word that isn't a stopword — or
     None if there's nothing worth retrying with (a single-word query would

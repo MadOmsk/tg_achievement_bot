@@ -32,3 +32,6 @@ daily-leaderboard-full-header = 📊 <b>{ $label }, полностью</b>
 # Monthly summary's own games block (#7, user request)
 daily-games-header = <b>Игры за месяц</b>
 daily-unknown-game = без названия
+# Scheduled chat posts are teasers; the full report lives in the Mini App.
+daily-teaser-day = Итоги за день — смотри в приложении
+daily-teaser-month = Итоги за месяц — смотри в приложении

@@ -38,6 +38,7 @@ main-cmd-recent = Последние достижения чата
 main-cmd-summary = Сводка за сутки и за месяц
 main-cmd-subscribe = Публиковать мои достижения здесь
 main-cmd-unsubscribe = Перестать публиковать
+main-menu-open-app = Приложение
 
 # Second-instance guard (main())
 main-already-running =

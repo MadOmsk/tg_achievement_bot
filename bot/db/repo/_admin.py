@@ -120,6 +120,15 @@ class _AdminRepo:
             for row in await cursor.fetchall()
         ]
 
+    async def admin_user_chat_ids(self) -> dict[int, list[int]]:
+        """Which chats each connected person publishes in — for the admin
+        people list filter, one query instead of one per row."""
+        cursor = await self._conn.execute("SELECT tg_id, chat_id FROM subscriptions")
+        mapping: dict[int, list[int]] = {}
+        for row in await cursor.fetchall():
+            mapping.setdefault(int(row["tg_id"]), []).append(int(row["chat_id"]))
+        return mapping
+
     async def set_excluded(self, tg_id: int, excluded: bool, by: int | None) -> None:
         """Exclusion is never silent: the person sees it in his panel (SPEC 6.4)."""
         await self._conn.execute(

@@ -44,19 +44,10 @@ chat-recent-row = { $badge } { $gamertag } — { $icon } { $game }, { $name }{ $
 
 # Group hub and chat actions
 chat-unknown-user = I don't know them. The Bot API can't look people up by @name — I remember the ones who have written in the chat. You can also reply to their message with /stats.
-chat-help-text = 🎮 I watch the achievements of everyone playing on XBOX and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
-
-    Chat commands:
-    /stats [@who] — stats: yours with no argument, someone else's with a name
-    /who — look up a specific player's stats
-    /online — who's in a game right now
-    /recent [N] — the chat's latest achievements
-    /summary — the day and the month in review
-    /hltb — a game's HowLongToBeat summary
-
-    Settings are in a DM, /panel.
+chat-help-text = 🎮 I follow achievements from Xbox, PlayStation, and Steam, and bring all your friends from different platforms together.
 chat-hub-nobody = Nobody is publishing here yet.
 chat-hub-publishing = Publishing: { $names }
+chat-hub-open-app = Bring your profile into the app
 chat-hub-publish-button = ✅ Publish my achievements
 chat-hub-xbox-button = 🔗 XBOX
 chat-hub-steam-button = 🎮 Steam
@@ -69,3 +60,5 @@ chat-delete-last-done =
     🗑 Deleted this message:
     “{ $preview }”
 chat-delete-last-done-generic = 🗑 Message deleted.
+chat-app-hint = Look in the app:
+chat-app-no-url = The app is not configured yet (no MINI_APP_URL).

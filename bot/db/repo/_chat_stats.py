@@ -109,7 +109,11 @@ class _ChatStatsRepo:
         ]
 
     async def chat_top_games(
-        self, chat_id: int, since: datetime, limit: int = 15
+        self,
+        chat_id: int,
+        since: datetime,
+        limit: int = 15,
+        until: datetime | None = None,
     ) -> list[ChatTopGame]:
         """Games the chat's subscribed members played this window, ranked by
         total achievements/trophies earned across all of them combined (#7,
@@ -131,7 +135,7 @@ class _ChatStatsRepo:
         so grouping by title_id only could in principle fold two unrelated
         games from different platforms into one row."""
         query = (
-            "SELECT s.title_id, s.platform, t.name,"
+            "SELECT s.title_id, s.platform, t.name, t.icon_url,"
             "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
             "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze,"
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
@@ -142,10 +146,15 @@ class _ChatStatsRepo:
             + "JOIN subscriptions sub ON sub.tg_id = al.tg_id AND sub.chat_id = ? "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             "WHERE s.unlocked_at >= ? "
+        )
+        params: list[object] = [chat_id, _iso(since)]
+        if until is not None:
+            query += "AND s.unlocked_at < ? "
+            params.append(_iso(until))
+        query += (
             "GROUP BY s.title_id, s.platform "
             "ORDER BY cnt DESC"
         )
-        params: list[object] = [chat_id, _iso(since)]
         if limit:
             query += " LIMIT ?"
             params.append(limit)
@@ -161,6 +170,7 @@ class _ChatStatsRepo:
                 silver=int(row["silver"] or 0),
                 gold=int(row["gold"] or 0),
                 platinum=int(row["platinum"] or 0),
+                icon_url=row["icon_url"],
             )
             for row in await cursor.fetchall()
         ]

@@ -93,7 +93,7 @@ def platform_label(platform: str, locale: str) -> str:
 def platform_breakdown_suffix(
     xbox_count: int, steam_count: int, psn_count: int = 0, *, always: bool = False
 ) -> str:
-    """The small "(🟢 3 · ⚫ 5 · 🔵 2)" next to a combined achievement total in
+    """The small "(🟢 3 · 🔵 2 · ⚫ 5)" next to a combined achievement total in
     /stats and /summary (2026-09-05 follow-up) — a parenthetical, not a
     second sort key or a second row: the combined number still leads and
     still sorts, this is purely for reference.
@@ -119,10 +119,10 @@ def platform_breakdown_suffix(
     parts = []
     if xbox_count:
         parts.append(f"{PLATFORM_ICON[Platform.XBOX_MODERN]} {xbox_count}")
-    if steam_count:
-        parts.append(f"{PLATFORM_ICON[Platform.STEAM]} {steam_count}")
     if psn_count:
         parts.append(f"{PLATFORM_ICON[Platform.PSN]} {psn_count}")
+    if steam_count:
+        parts.append(f"{PLATFORM_ICON[Platform.STEAM]} {steam_count}")
     if not parts or (len(parts) < 2 and not always):
         return ""
     return " (" + " · ".join(parts) + ")"
@@ -356,6 +356,68 @@ def format_digest(
     return "\n".join(lines)
 
 
+def _teaser_game_line(title: str, platform: str, locale: str) -> str:
+    _ = translator("achievements", locale)
+    # Icon only — the full "🟢 XBOX" label is too heavy for a teaser line.
+    return _(
+        "achievement-teaser-game",
+        title=html_escape(title),
+        platform=PLATFORM_ICON.get(platform, PLATFORM_ICON_UNKNOWN),
+    )
+
+
+def _teaser_item_line(achievement: AchievementRow, locale: str) -> str:
+    """Name + score (if any). PSN keeps its tier icon — that *is* the
+    trophy's identity on Sony's scale, unlike rarity% which the teaser
+    deliberately drops. Secrets stay behind a spoiler the same way the
+    full card does."""
+    _ = translator("achievements", locale)
+    quoted = _("achievement-teaser-name", name=html_escape(achievement.name))
+    if achievement.platform == Platform.PSN:
+        quoted = f"{_badge(achievement)} {quoted}"
+    line = _spoiler(quoted, secret=achievement.is_secret)
+    if achievement.gamerscore:
+        line += f" · {_('achievement-gamerscore', score=achievement.gamerscore)}"
+    return line
+
+
+def format_teaser(
+    gamertag: str, achievement: AchievementRow, title_name: str | None, *, locale: str
+) -> str:
+    """Short group post: person · platform-icon game, then the achievement title.
+    No 'gets an achievement', description, rarity, or media — just the existing
+    PLATFORM_ICON emoji so mixed Xbox/Steam/PSN feeds stay readable."""
+    _ = translator("achievements", locale)
+    title = title_name or achievement.title_name or _("achievement-unknown-game")
+    header = _(
+        "achievement-teaser-header",
+        gamertag=html_escape(gamertag),
+        game=html_escape(title),
+        platform=PLATFORM_ICON.get(achievement.platform, PLATFORM_ICON_UNKNOWN),
+    )
+    return f"{header}\n{_teaser_item_line(achievement, locale)}"
+
+
+def format_teaser_digest(
+    gamertag: str, title_name: str | None, achievements: list[AchievementRow], *, locale: str
+) -> str:
+    """Same grouping as format_digest, one short header plus teaser lines."""
+    _ = translator("achievements", locale)
+    header = _(
+        "achievement-teaser-digest",
+        gamertag=html_escape(gamertag),
+        pretty=thousands(len(achievements)),
+    )
+    lines = [header]
+    for index, group in enumerate(_group_by_title(achievements).values()):
+        if index > 0:
+            lines.append("")
+        title = group[0].title_name or title_name or _("achievement-unknown-game")
+        lines.append(_teaser_game_line(title, group[0].platform, locale))
+        lines.extend(_teaser_item_line(item, locale) for item in group)
+    return "\n".join(lines)
+
+
 def plural_achievements(count: int, locale: str) -> str:
     """ "Достижение" everywhere, not "ачивка" — the two used to appear
     side by side across different messages (2026-09-05 terminology pass);
@@ -462,7 +524,10 @@ async def platform_header_lines(
             + "  ·  ".join(parts)
         )
 
-    for link in platform_links:
+    # Xbox first (above), then PlayStation, then Steam — same order as
+    # the Mini App and /panel keyboard (2026-09-14).
+    ranked = {Platform.PSN: 0, Platform.STEAM: 1}
+    for link in sorted(platform_links, key=lambda item: ranked.get(item.platform, 9)):
         icon = PLATFORM_ICON.get(link.platform, PLATFORM_ICON_UNKNOWN)
         label = platform_label(link.platform, locale)
         # A lifetime Steam/PSN count has always been fine here — a Steam

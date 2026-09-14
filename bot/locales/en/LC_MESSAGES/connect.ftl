@@ -38,3 +38,8 @@ connect-timezone-manual-hint =
 connect-timezone-manual-invalid = That doesn't look like a real timezone. { $hint }
 connect-login-button-hint =
     Press the button and sign in with your Microsoft account. I never see your password — Microsoft asks for it, not me.
+connect-open-app-hint =
+    🎮 I follow achievements from Xbox, PlayStation, and Steam, and bring all your friends from different platforms together.
+
+    Short teasers stay in chat. The feed, stats, and settings live in the app.
+connect-open-app-button = Bring your profile into the app

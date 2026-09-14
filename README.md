@@ -59,6 +59,7 @@ itself):
 
 ```powershell
 .\manage.ps1 start | stop | restart | status | logs [-Lines N]
+.\manage.ps1 start -Test   # second bot from .env.test (#52)
 .\manage.ps1 dashboard   # a live-refreshing status view with hotkeys
 ```
 

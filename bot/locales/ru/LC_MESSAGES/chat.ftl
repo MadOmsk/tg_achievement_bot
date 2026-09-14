@@ -44,19 +44,10 @@ chat-recent-row = { $badge } { $gamertag } — { $icon } { $game }, { $name }{ $
 
 # Group hub and chat actions
 chat-unknown-user = Не знаю такого. Bot API не умеет искать людей по @имени — я запоминаю тех, кто писал в чат. Можно ответить на сообщение человека командой /stats.
-chat-help-text = 🎮 Слежу за достижениями тех, кто играет на XBOX и в Steam, и публикую их сюда — с фильтром по редкости, статистикой каждого и итогом дня.
-
-    Команды чата:
-    /stats [@кто] — статистика: без аргумента своя, с ником — чужая
-    /who — узнать стату конкретного игрока
-    /online — кто сейчас в игре
-    /recent [N] — последние достижения чата
-    /summary — сводка за сутки и за месяц
-    /hltb — показать сводку игры HowLongToBeat
-
-    Настройки — в личке, /panel.
+chat-help-text = 🎮 Слежу за достижениями тех, кто играет на Xbox, PlayStation и Steam, и собираю всех твоих друзей с разных платформ.
 chat-hub-nobody = Пока здесь никто не публикуется.
 chat-hub-publishing = Публикуются: { $names }
+chat-hub-open-app = Приведи свой профиль в приложение
 chat-hub-publish-button = ✅ Публиковать мои достижения
 chat-hub-xbox-button = 🔗 XBOX
 chat-hub-steam-button = 🎮 Steam
@@ -69,3 +60,5 @@ chat-delete-last-done =
     🗑 Удалено сообщение:
     «{ $preview }»
 chat-delete-last-done-generic = 🗑 Сообщение удалено.
+chat-app-hint = Смотри в приложении:
+chat-app-no-url = Приложение ещё не настроено (нет MINI_APP_URL).

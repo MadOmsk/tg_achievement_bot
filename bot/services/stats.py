@@ -16,7 +16,7 @@ unlabelled "month"s) no longer does.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from bot.db.repo import Repo
 from bot.util import start_of_month_utc, utcnow
@@ -47,6 +47,11 @@ def local_now(tz_offset_min: int | None, now: datetime | None = None) -> datetim
     return (now or utcnow()) + timedelta(minutes=tz_offset_min or 0)
 
 
+def week_cutoff_utc(now: datetime | None = None) -> datetime:
+    """Start of the rolling 7-day window — same idea as today, not a calendar week."""
+    return (now or utcnow()) - timedelta(days=7)
+
+
 def today_cutoff_utc(now: datetime | None = None) -> datetime:
     """Start of the rolling 24-hour "today" window.
 
@@ -62,6 +67,23 @@ def month_cutoff_utc(tz_offset_min: int | None, now: datetime | None = None) -> 
     instead of sliding. Takes a timezone now (a calendar boundary needs
     one), unlike the still-rolling `today_cutoff_utc`."""
     return start_of_month_utc(tz_offset_min, now)
+
+
+def month_window_utc(
+    year: int, month: int, tz_offset_min: int | None
+) -> tuple[datetime, datetime]:
+    """UTC `[start, end)` for a named calendar month in `tz_offset_min`.
+
+    Same shift as `month_cutoff_utc`: the local 1st at 00:00, then the next
+    local 1st. Used by the Mini App feed's month picker so September in
+    Moscow is not silently a UTC-September slice."""
+    offset = timedelta(minutes=tz_offset_min or 0)
+    start_local = datetime(year, month, 1, tzinfo=UTC)
+    if month == 12:
+        end_local = datetime(year + 1, 1, 1, tzinfo=UTC)
+    else:
+        end_local = datetime(year, month + 1, 1, tzinfo=UTC)
+    return start_local - offset, end_local - offset
 
 
 async def counters_for(repo: Repo, tg_id: int, now: datetime | None = None) -> Counters:

@@ -260,7 +260,7 @@ class _AccountsRepo:
         return row["locale"] if row else DEFAULT_LOCALE
 
     async def update_user_settings(self, tg_id: int, **fields: Any) -> None:
-        allowed = {"tz_offset_min", "show_profile_links", "locale"}
+        allowed = {"tz_offset_min", "show_profile_links", "show_secrets", "locale"}
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"unknown user_settings fields: {sorted(unknown)}")

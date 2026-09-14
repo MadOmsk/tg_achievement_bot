@@ -34,9 +34,11 @@ database, explicit admin controls, and predictable behavior, not public SaaS sca
 
 ### Non-goals
 
-- No public web UI. The only web endpoint is the Microsoft OAuth callback.
-- No `/compare` or `/top`; `/stats`, `/summary`, `/recent`, and `/online` cover the
-  useful group views.
+- No public marketing site. The HTTPS surfaces are the Microsoft OAuth callback
+  and the Telegram Mini App (React SPA + `/api/mini/*`, auth via `initData`).
+- No `/compare` or `/top`. Group views live in the Mini App (feed, online,
+  summary, person card). Telegram groups only get short unlock teasers (no Open
+  button under each one — the hub / menu opens the app).
 - No global per-platform visibility toggles. Visibility is per user and per chat, and
   applies to every platform consistently — one `rarity_mode`, not one switch per
   platform.
@@ -45,10 +47,11 @@ database, explicit admin controls, and predictable behavior, not public SaaS sca
 
 ## Stack
 
-Python 3.12+, aiogram 3, aiohttp (Microsoft OAuth callback server), httpx (platform
+Python 3.12+, aiogram 3, aiohttp (OAuth callback + Mini App JSON API), httpx (platform
 HTTP clients), aiosqlite, APScheduler (`AsyncIOScheduler`), pydantic v2 +
 pydantic-settings, cryptography Fernet, xbox-webapi-python, the official Steam Web
-API, psnawp (PSN), howlongtobeatpy, pytest + pytest-asyncio + ruff.
+API, psnawp (PSN), howlongtobeatpy, pytest + pytest-asyncio + ruff. Mini App front:
+Vite + React + TypeScript under `webapp/`.
 
 ## Repository layout
 
@@ -63,6 +66,10 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 ├── pyproject.toml               dependencies, ruff, pytest config
 ├── manage.ps1                   local Windows process manager (the bot cannot start itself)
 ├── manage.bat                   double-click -> manage.ps1 dashboard
+├── webapp/                      Telegram Mini App (Vite + React + TypeScript)
+│   ├── src/                     React UI; talks to `/api/mini/*` with `X-Telegram-Init-Data`
+│   │                            Club / Me / HLTB / Admin; cool glass dark UI
+│   └── vite.config.ts           dev proxy `/api` → local bot (port 8081 for `.env.test`)
 │
 ├── bot/                         the application
 │   ├── main.py                   entry point, application assembly, router registration
@@ -73,19 +80,19 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── locales/                  user-facing translations: ru/ (the default and the
 │   │                             per-key fallback) and en/, both complete (#48)
 │   │
-│   ├── handlers/                 aiogram routers — UI layer only, no SQL, no platform API calls
-│   │   ├── connect.py             /start, /connect_xbox, /disconnect_xbox
-│   │   ├── panel.py               the personal panel, "My chats"
-│   │   ├── admin.py               the admin panel (/admin, self-refreshing), bulk message wipe
-│   │   ├── chat.py                group commands: /subscribe, /stats, /online, /who, /recent,
-│   │   │                          /summary, /delete_last, the group hub
-│   │   ├── hltb.py                /hltb, HowLongToBeat lookup
-│   │   ├── steam.py               /connect_steam, /disconnect_steam
-│   │   ├── psn.py                 /connect_psn, /disconnect_psn
+│   ├── handlers/                 aiogram routers — leftover Telegram callbacks + /start
+│   │   ├── connect.py             /start opens the Mini App; reminder/timezone callbacks
+│   │   ├── panel.py               legacy /panel callbacks (slash command ignored)
+│   │   ├── admin.py               legacy /admin callbacks; Mini App `/api/mini/admin/*` is current
+│   │   ├── chat.py                group hub (/app) + chat_seen; old slash commands ignored
+│   │   ├── hltb.py                legacy /hltb callbacks; Mini App HLTB tab is current
+│   │   ├── steam.py               leftover Steam connect callbacks
+│   │   ├── psn.py                 leftover PSN connect callbacks
 │   │   └── keyboards.py           inline keyboards + small shared helpers (format_*, safe_edit)
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
-│   │   ├── achievements.py         achievement filtering, message formatting, platform_tag
+│   │   ├── achievements.py         achievement filtering, teaser/full formatting, platform_tag
+│   │   ├── mini_app.py             Mini App deep-link URLs for group teaser buttons
 │   │   ├── connect.py              one-time OAuth state, finishing a login
 │   │   ├── stats.py                aggregates for the panels, /stats, the daily summary
 │   │   ├── models.py               ParsedAchievement/Platform, shared by Xbox/Steam/PSN
@@ -140,7 +147,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
 │   │   ├── psn_fetcher.py          PSN trophies: no presence hook of its own, its own debounce,
 │   │   │                           backfill, admin resync (#27)
-│   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
+│   │   ├── publisher.py            step 3: teaser publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
 │   │   ├── avatars.py             each person's Telegram profile photo, a few per tick (see
 │   │   │                          Data model: a file_id, never an image or a URL)
@@ -148,7 +155,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
 │   │   ├── flood_flush.py          the anti-flood filter's read/flush side — buffered
 │   │   │                           achievements once a throttled window closes (2026-09-09)
-│   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
+│   │   ├── daily.py                build_summary for Mini App / leftover /summary;
+│   │   │                           scheduled day/month chat teasers retired (2026-09-14)
 │   │   ├── reminders.py            reminders for a dead Xbox login
 │   │   ├── message_cleanup.py      auto-deletes system messages in groups
 │   │   ├── online_refresh.py       auto-refreshes the /online table
@@ -156,7 +164,15 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   └── admin_refresh.py        auto-refreshes /admin, same cadence as service_health
 │   │
 │   ├── web/
-│   │   └── oauth.py                 Microsoft's aiohttp OAuth callback
+│   │   ├── oauth.py                 Microsoft's aiohttp OAuth callback (+ mounts Mini API)
+│   │   ├── mini_auth.py             Telegram Mini App initData HMAC validation
+│   │   ├── mini_me.py               `/api/mini/me` payload (panel-shaped, cache-only)
+│   │   ├── mini_chat.py             chat-scoped Mini App payloads (feed, online, summary, person)
+│   │   ├── mini_admin.py            super-admin JSON (home, keys, users, chats, wipe) — no secrets
+│   │   ├── mini_hltb.py             HowLongToBeat search/resolve for the SPA
+│   │   ├── mini_avatars.py          stored photo_file_id → bytes (in-process cache)
+│   │   └── mini_api.py              `/api/mini/*` JSON for the SPA (me, settings,
+│   │                                connect/disconnect, sync, chats, club, avatar, admin, HLTB)
 │   │
 │   └── db/
 │       ├── schema.sql               full DDL for a brand-new database
@@ -257,7 +273,9 @@ URL — Microsoft rejects plain `http://` and `localhost`), `FERNET_KEY` (encryp
 stored secrets).
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `OAUTH_LISTEN_HOST` /
-`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, and the poller interval settings
+`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (public HTTPS URL of
+the React Mini App — BotFather Main Mini App / private menu button; required for
+`/start` and group Open buttons to work), and the poller interval settings
 (presence, achievement, token, catch-up tuning).
 
 `STEAM_API_KEY` and `ANTHROPIC_API_KEY` (2026-09-09, the latter for
@@ -325,7 +343,9 @@ every column.
   `flood_limit`/`flood_window_minutes` (see Publication rules below). `user_settings`
   holds personal, chat-independent settings: timezone offset, muted games, and
   `show_profile_links` (off by default; a new user's starting value comes from
-  `app_settings['default_show_profile_links']`). Both tables also carry a
+  `app_settings['default_show_profile_links']`), and `show_secrets` (off by
+  default; Mini App only — when on, secret achievements render without the
+  spoiler veil; group teasers stay as published). Both tables also carry a
   `locale` (#48, 2026-09-11, `'ru'` by default) — the chat's own for everything
   broadcast to a group, the person's own for DMs; see Localization above.
   Neither is seeded from Telegram's `language_code`: plenty of this
@@ -644,9 +664,17 @@ otherwise) as the threshold; the person only ever picks a *mode* (`all`/`rare`/
 
 `subscriptions.digest_threshold` decides when a batch becomes one grouped message
 instead of several — grouped by platform and title. Every achievement in a digest is
-listed, never truncated with "and N more". A media gallery dedupes by image URL, so
-several achievements sharing one icon (all of Xbox 360's own achievements share the
-game's box art) don't repeat the same picture.
+listed, never truncated with "and N more".
+
+Group posts are **teasers**, not full cards: bold person · platform-icon game on one
+line (the same 🟢/⚫/🔵 `PLATFORM_ICON` emoji used elsewhere — icon only, not the
+full "🟢 XBOX" label), then the achievement title in quotes and score (if nonzero).
+PSN keeps its trophy-tier icon. No "gets an achievement", description, rarity%,
+pictures, or Open button under each unlock — those live in the Mini App / the
+group hub. Slash-command `/stats`/`/recent`/`format_single` still exist as
+fallback until cutover. The group hub Open button is a `t.me/bot?startapp=`
+link (`c<chat_id>`), not a `web_app` keyboard — Telegram rejects those in
+groups (`BUTTON_TYPE_INVALID`).
 
 Delivery goes through a send queue to stay under Telegram's group rate limit. A
 Telegram 403 means the bot was removed from that chat — deactivate it, don't keep
@@ -750,12 +778,40 @@ PSN nicknames used to be stored once at connect and never again, so a rename
 left the bot calling someone by an old name and pointing at a dead profile
 link (both links are built from the nickname, not the id).
 
-**Private commands**: `/start`, `/connect_xbox`, `/disconnect_xbox`,
-`/connect_steam`, `/disconnect_steam`, `/connect_psn`, `/disconnect_psn`, `/panel`.
-A private flow started from a group must redirect the person to a DM, never fail
-silently in the group.
+**The Mini App is the UI.** Telegram chats only get short achievement/summary
+teasers. `/start` opens the
+app. The SPA calls `disableVerticalSwipes()` so Telegram's own swipe-to-collapse
+does not steal the feed scroll — it does not change close-vs-minimize. The
+private `/` command menu is cleared on startup; the DM **menu button** (left of
+the input) is set on boot via `setChatMenuButton` to the Mini App
+(`MINI_APP_URL`). Groups get `/app`
+(posts an Open-club button — Telegram cannot launch a Mini App from
+the slash command itself). Old slash commands (`/stats`, `/panel`,
+…) are ignored — not redirected. The **attachment-menu** (paperclip)
+shortcut is BotFather-only (`Configure Mini App` / Attachment menu), not an
+API we own. The dock is Home / Feed /
+Stats / Settings. Home is your profile (last five unlocks this month as a slider — not tappable — a friends
+strip with online first and a See-all roster, your achievements). Someone with
+no linked platforms gets a Connect button in the header instead of platform logos.
+Feed is a social-style club unlock list for the **current calendar month** (chat timezone), with a glass month chip and sheet for earlier months (the live month is marked); tapping a name opens that profile.
+Stats is the club board
+(your share for the day and this month, month games as covers, live games, day + month leaders, shared hunts and rare unlocks from **this month**) — cache-only.
+The month picker is per screen, not global: Feed header filters only the feed, Stats header filters only the monthly board (games, month leaders, hunts, rares), and the Achievements header on Home / a person card filters only that profile's unlocks. The rolling 24h tile and day leaders on Stats stay as they are.
+Tapping someone else opens their profile;
+tapping yourself in the header returns Home. A person card's unlock list and
+recent games are this calendar month too (not a rolling 30 days). The header shows logos of linked
+platforms (not a cup); tap opens a per-platform achievement/trophy summary
+(lifetime plus day and month). Connect, language, secret-achievement visibility, and super-admin (a separate Admin screen from Settings)
+live under Settings. Per-chat knobs are admin-only. Search on Home debounces and matches
+people plus HowLongToBeat games in place (no separate search tap); while a
+lookup is in flight the field shows the same three-dot wait as the rest of the app.
+Avatars come from Telegram: the current user's `photo_url` when Mini App
+gives it, everyone else's through `/api/mini/avatar/{tg_id}` (only the stored
+`users.photo_file_id` — no live lookup; bot token never reaches the SPA). A group hub posted when the bot is added
+is a single Open-club button.
 
-**The personal panel** (`/panel`, one self-editing message): the header is the
+**The personal panel** used to be `/panel` (one self-editing Telegram message).
+That screen now lives as **Me** in the Mini App. The header is the
 person's own Telegram identity (same priority as `/stats`' header) followed by one
 line per connected platform with its lifetime achievement/trophy count, gamerscore,
 and PSN level — built by the *same function* `/stats`' own header uses
@@ -772,7 +828,7 @@ Steam/PSN-only person used to get an entirely different, stripped-down body
 and keyboard — no timezone/chats/sync/toggle at all — because both the text
 and the keyboard hard-gated the whole screen on Xbox specifically, a
 leftover from before Steam/PSN existed). The keyboard is one row per
-platform (Xbox → Steam → PSN) in a fixed position — `[Profile, Disconnect]`
+platform (Xbox → PSN → Steam) in a fixed position — `[Profile, Disconnect]`
 when connected, one wide "🎮 Подключить X" when not (#33) — plus timezone / My
 chats / sync / `show_profile_links` toggle, a **language toggle** (#48 — this
 person's own `user_settings.locale`, one tap, applying to DMs only), and the
@@ -790,7 +846,10 @@ platform gamertag, since every connected platform already gets its own line belo
 person the same way `/stats`' header does — `@username` > name > gamertag > platform
 name, never a bare id — #40), `/online` (cached presence,
 optionally auto-refreshing), `/recent [N]`, `/summary`, `/hltb`, `/delete_last`
-(deletes the chat's own latest non-system bot message). `/summary_day` and
+(deletes the chat's own latest non-system bot message). Day/month chat teasers
+are retired. Already-posted rows still
+send. `/app` in a group posts the same Open-club
+button as the hub. `/summary_day` and
 `/summary_month` (2026-09-08) ask `build_summary` for one block only — deliberately
 left out of the help text and `chat-help-text`, a diagnostic pair for the #14 block
 split rather than commands meant for everyday use alongside `/summary` itself.
@@ -809,9 +868,9 @@ per-chat role issue #47 is about, which does not exist yet. Both used to be
 called "админ", which was ambiguous in exactly the sentences #47 needs
 precise.
 
-**The super-admin panel** (`/admin`, private, restricted to `ADMIN_TG_IDS`, also
-self-refreshing) provides: Steam/PSN/Anthropic shared-credential health; a "🔑
-Ключи платформ" screen to set / change / clear all three shared credentials
+**The super-admin panel** lives in the Mini App (Admin on Me, `ADMIN_TG_IDS` only;
+`/api/mini/admin/*` never returns secrets, only set/unset). The leftover Telegram
+`/admin` callbacks still exist for old messages. It provides: Steam/PSN/Anthropic shared-credential health; a keys screen to set / change / clear all three shared credentials
 (the Steam key, the PSN NPSSO, and — 2026-09-09 — the Anthropic key) from
 inside the bot, no `.env` edit (#17); API usage
 snapshots; global display/cleanup limits; defaults for new users (including
@@ -837,7 +896,7 @@ instead of that needing a manual DB script on the server.
 The **per-user card** (2026-09-08 rework, user request) shows the Telegram
 identity in full (name, `@username`, and a plain `tg_id N` — never `@N`, since a
 bare id isn't a real, resolvable username the way a genuine `user.username` is),
-then one block per connected platform in a fixed order (Xbox → Steam → PSN):
+then one block per connected platform in a fixed order (Xbox → PSN → Steam):
 nickname/id, lifetime achievement/trophy count with the same 🏆-completions/level
 suffixes `/stats`' own line has, today's count for that platform
 (`achievement_platform_breakdown`), and whatever admin-only diagnostics apply
@@ -852,22 +911,22 @@ manual DB script.
 
 ## Message formats
 
-A single achievement/trophy post: bold name + "gets an achievement" (or, for PSN,
-"gets a trophy"), a blank line, the game name and platform in italics, a badge
-before the achievement's name in quotes, then gamerscore (if nonzero) and rarity
-percent (if known) separated by a period, then the description if present (behind a
-spoiler if secret/hidden).
+A group teaser (what the publisher actually sends): `<b>Name</b> · 🟢 Game`, then the
+achievement title in quotes and gamerscore if nonzero (platform is the emoji only).
+PSN keeps its tier icon in front of the title. Always `send_message` (never
+photo/media group). No description, rarity%, or pictures — those are in the Mini
+App club feed. `format_single` still builds the older full card for slash-command
+fallback until cutover.
 
-The badge is `rarity_badge()` (💎 at or below the rare threshold, 🏆 otherwise,
-including when rarity is simply unknown) for every platform except PSN, which shows
-its own tier icon instead (🥉🥈🥇🏆) — see the PSN section above for why.
+A digest teaser groups several unlocks under `<b>Name</b> · N`, one italic game
+line per title, then teaser lines only.
+`plural_achievements()` itself is never platform-specific — it also serves combined
+cross-platform totals (e.g. `/stats`' "Today: N achievements"), which are correctly
+"achievements" regardless of how many of them came from PSN.
 
-A digest groups several achievements under one header ("gets N achievements" / "gets
-N trophies" for an all-PSN batch), one block per game, same per-line format as a
-single post, every item listed. `plural_achievements()` itself is never
-platform-specific — it also serves combined cross-platform totals (e.g. `/stats`'
-"Today: N achievements"), which are correctly "achievements" regardless of how many
-of them came from PSN.
+The scheduled daily / month-end chat posts are retired (2026-09-14) — day and
+month boards live only in the Mini App. `build_summary` still composes the full
+report for the Mini App and for leftover on-demand `/summary` until cutover.
 
 Lists (`/stats`, `/recent`, `/summary`, the daily summary) render as sentence-lines
 inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table
@@ -885,16 +944,12 @@ days and is labelled as such ("за 30 дней"), so it no longer silently disa
 with the month window.
 
 **Three summary shapes**, composed by `daily.build_summary` from independent window
-blocks so their style can't drift apart (#14): the scheduled **daily** job sends
-the day block only; the **month-end** job (last calendar day of the month, same
-time, its own `daily_reports` marker `YYYY-MM-monthly`, *additional* to that day's
-daily summary) sends the month block only under an "Итоги за месяц" header;
-`/summary` on demand sends both. `/summary_day`/`/summary_month` (hidden from the
-help text) ask for one block only, on demand — a diagnostic pair for this block
-split, not commands meant for everyday use. A day on which nobody unlocked
-anything still sends — the roster with everyone at 0 (#34); `build_summary`
-returns `None`, and the chat gets nothing, only when there are no subscribed
-members at all. The month block (only) is followed by its own "Игры за месяц"
+blocks so their style can't drift apart (#14): Mini App / leftover `/summary`
+ask for day, month, or both. Scheduled day/month *chat* posts are retired
+(2026-09-14) — `DailySummary.tick` is a no-op. A day on which nobody unlocked
+anything still builds a roster with everyone at 0 for the Mini App (#34);
+`build_summary` returns `None` only when there are no subscribed members at
+all. The month block (only) is followed by its own "Игры за месяц"
 block (#7, user request, `repo.chat_top_games`) — every game the chat's
 subscribed members played that month, ranked by achievements/trophies earned in
 it combined across everyone and every platform, not who earned them
@@ -978,16 +1033,24 @@ overlong summary would cost the whole card rather than just its own tail.
 ## Operations
 
 **Local development** (Windows) is driven by `manage.ps1` (the bot cannot start
-itself): `start` / `stop` / `restart` / `status` / `logs [-Lines N]`. `status` shows
-uptime, whether port 8080 is taken, any stray bot process (two bots sharing one
-`BOT_TOKEN` fight over Telegram's updates), and a database summary.
+itself): `start` / `stop` / `restart` / `status` / `logs [-Lines N]`. Add `-Test`
+to drive the second instance from `.env.test` (#52) — own token, `data/test.db`,
+logs `bot.test.*`, port from that file (8081 by default). Pass `-Web` with `-Test`
+to also start Vite + a Cloudflare quick tunnel (`webapp` / `untun`); the tunnel
+URL is injected as `MINI_APP_URL` and `OAUTH_REDIRECT_URL` (`…/auth/callback`,
+Vite proxies `/auth` to the bot). Add that callback in the Azure app. Stop with
+`.\manage.ps1 stop -Test -Web` or `.\manage.ps1 web-stop`. `status` shows
+uptime, whether the instance's OAuth port is taken, any stray bot process (two
+bots sharing one `BOT_TOKEN` fight over Telegram's updates; the managed main
+and test instances are not flagged against each other), and a database summary.
 
 `.\manage.ps1 dashboard` (or double-clicking `manage.bat`) opens a live console
 view — the same block as `status`, plus a `bot.log` tail, redrawing every 5 seconds
 (`-RefreshSeconds N` to change it), with `[2] Start [3] Stop [4] Restart [Q] Quit`
-hotkeys live the whole time. The separate `start`/`stop`/`restart`/`status`/`logs`
-commands still work too, for a one-line terminal call when the dashboard isn't
-needed.
+hotkeys live the whole time. Operator-facing text in `manage.ps1` /
+`scripts/db_status.py` is English (bot UI stays in Fluent locales). The separate
+`start`/`stop`/`restart`/`status`/`logs` commands still work too, for a one-line
+terminal call when the dashboard isn't needed.
 
 Never run the local bot and the production bot with the same `BOT_TOKEN` at the same
 time — the home PC is for development only, its `.env` should point at `localhost`

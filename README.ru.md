@@ -60,6 +60,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ```powershell
 .\manage.ps1 start | stop | restart | status | logs [-Lines N]
+.\manage.ps1 start -Test   # второй бот из .env.test (#52)
 .\manage.ps1 dashboard   # живой статус с автообновлением и горячими клавишами
 ```
 

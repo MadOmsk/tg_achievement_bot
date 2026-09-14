@@ -31,3 +31,7 @@ history.md
 # Runtime artefacts
 logs/
 *.pid
+
+# Mini App
+webapp/node_modules/
+webapp/dist/

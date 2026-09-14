@@ -1736,7 +1736,7 @@ async def _card(repo: Repo, tg_id: int, *, locale: str) -> tuple[str, InlineKeyb
     chats = await repo.chats_of_user(tg_id)
 
     # Telegram identity first (2026-09-08 user request), then one block per
-    # connected platform in a fixed order (Xbox → Steam → PSN) — each block
+    # connected platform in a fixed order (Xbox → PSN → Steam) — each block
     # groups everything about that platform together (nickname/id, status,
     # achievements, last online where it applies), five fixed lines each
     # (2026-09-08 restructure) instead of one crowded header line.
@@ -1744,11 +1744,11 @@ async def _card(repo: Repo, tg_id: int, *, locale: str) -> tuple[str, InlineKeyb
     if user.xuid:
         lines += await _xbox_admin_block(repo, user, today_xbox, locale=locale)
         lines.append("")
-    if steam_link is not None:
-        lines += await _steam_admin_block(repo, steam_link, today_steam, locale=locale)
-        lines.append("")
     if psn_link is not None:
         lines += await _psn_admin_block(repo, psn_link, today_psn, locale=locale)
+        lines.append("")
+    if steam_link is not None:
+        lines += await _steam_admin_block(repo, steam_link, today_steam, locale=locale)
         lines.append("")
 
     # The combined cross-platform counters line that used to follow here
@@ -1779,6 +1779,11 @@ async def _card(repo: Repo, tg_id: int, *, locale: str) -> tuple[str, InlineKeyb
             ),
             InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{tg_id}"),
         )
+    if psn_link is not None:
+        builder.row(
+            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:sync:psn:{tg_id}"),
+            InlineKeyboardButton(text=_("admin-reset-psn"), callback_data=f"a:reset:psn:{tg_id}"),
+        )
     if steam_link is not None:
         builder.row(
             InlineKeyboardButton(
@@ -1787,11 +1792,6 @@ async def _card(repo: Repo, tg_id: int, *, locale: str) -> tuple[str, InlineKeyb
             InlineKeyboardButton(
                 text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
             ),
-        )
-    if psn_link is not None:
-        builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:sync:psn:{tg_id}"),
-            InlineKeyboardButton(text=_("admin-reset-psn"), callback_data=f"a:reset:psn:{tg_id}"),
         )
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
