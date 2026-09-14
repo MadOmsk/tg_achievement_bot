@@ -10,9 +10,11 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import (
-    BotCommand,
     BotCommandScopeAllGroupChats,
     BotCommandScopeAllPrivateChats,
+    BotCommandScopeDefault,
+    MenuButtonWebApp,
+    WebAppInfo,
 )
 
 from bot.config import Settings, get_settings
@@ -53,6 +55,7 @@ from bot.poller.scheduler import PollerScheduler
 from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_presence import SteamPresencePoller
+from bot.services.command_menu import publish_group_commands
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.message_log import MessageLogMiddleware
@@ -146,7 +149,7 @@ async def run(settings: Settings) -> None:
     anthropic_auth.on_dead = notifier.translation_key_dead
 
     client = XboxClient(auth)
-    publisher = Publisher(bot, repo)
+    publisher = Publisher(bot, repo, settings.mini_app_url)
     fetcher = Fetcher(
         repo, client, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
     )
@@ -170,7 +173,7 @@ async def run(settings: Settings) -> None:
         poller,
         fetcher,
         ReminderJob(bot, repo),
-        DailySummary(bot, repo),
+        DailySummary(bot, repo, settings.mini_app_url),
         repo,
         steam_poller,
         MessageCleanup(bot, repo),
@@ -251,7 +254,20 @@ async def run(settings: Settings) -> None:
             await bot.send_message(tg_id, _("main-linked-refreshing"))
             asyncio.create_task(refresh_after_reconnect(tg_id, identity.xuid))  # noqa: RUF006
 
-    web_server = OAuthServer(settings, connect_service, on_linked)
+    web_server = OAuthServer(
+        settings,
+        connect_service,
+        on_linked,
+        repo,
+        steam_auth=steam_auth,
+        steam_fetcher=steam_fetcher,
+        psn_auth=psn_auth,
+        psn_fetcher=psn_fetcher,
+        xbox_fetcher=fetcher,
+        notifier=notifier,
+        anthropic_auth=anthropic_auth,
+        bot=bot,
+    )
     await web_server.start()
 
     dispatcher = Dispatcher()
@@ -267,8 +283,8 @@ async def run(settings: Settings) -> None:
     dispatcher["anthropic_auth"] = anthropic_auth
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
     build_i18n_middleware().setup(dispatcher=dispatcher)
-    dispatcher.include_router(admin_handlers.router)
     dispatcher.include_router(connect_handlers.router)
+    dispatcher.include_router(admin_handlers.router)
     dispatcher.include_router(panel_handlers.router)
     dispatcher.include_router(chat_handlers.router)
     dispatcher.include_router(hltb_handlers.router)
@@ -327,7 +343,9 @@ async def run(settings: Settings) -> None:
     scheduler.start()
     asyncio.create_task(startup_catch_up())  # noqa: RUF006
 
-    await _publish_command_menu(bot)
+    await _clear_command_menu(bot)
+    await publish_group_commands(bot)
+    await _publish_mini_app_menu(bot, settings)
 
     me = await bot.me()
     log.info("bot @%s is up", me.username)
@@ -342,66 +360,42 @@ async def run(settings: Settings) -> None:
         await database.close()
 
 
-async def _publish_command_menu(bot: Bot) -> None:
-    """The command list Telegram shows behind the "/" button.
-
-    Two scopes, because the useful commands differ: in a group nobody needs
-    /connect_xbox, and in private nobody needs /online. Most-used first in
-    both — subscribe/unsubscribe is one-time setup, not read every time
-    (SPEC 6.3).
-
-    The menu is published once per shipped locale (#48). This is the one
-    place in the bot that honours Telegram's own `language_code` rather than
-    our `user_settings.locale`, and not by choice: Telegram renders this menu
-    itself, from whatever it was given, so there is no moment at which we
-    could substitute a person's own setting. Everything the bot actually
-    *says* still follows the explicit setting; only this hint list follows
-    the client's language. A locale Telegram has no entry for falls back to
-    the one published with no language_code at all, which stays Russian.
-    """
-
-    def menus(locale: str) -> tuple[list[BotCommand], list[BotCommand]]:
-        _ = translator("main", locale)
-        private = [
-            BotCommand(command="panel", description=_("main-cmd-panel")),
-            BotCommand(command="stats", description=_("main-cmd-stats-private")),
-            BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
-            BotCommand(command="disconnect_xbox", description=_("main-cmd-disconnect-xbox")),
-            BotCommand(command="connect_steam", description=_("main-cmd-connect-steam")),
-            BotCommand(command="disconnect_steam", description=_("main-cmd-disconnect-steam")),
-            BotCommand(command="connect_psn", description=_("main-cmd-connect-psn")),
-            BotCommand(command="disconnect_psn", description=_("main-cmd-disconnect-psn")),
-            BotCommand(command="hltb", description=_("main-cmd-hltb")),
-            BotCommand(command="help", description=_("main-cmd-help")),
-        ]
-        group = [
-            BotCommand(command="stats", description=_("main-cmd-stats-group")),
-            BotCommand(command="online", description=_("main-cmd-online")),
-            BotCommand(command="who", description=_("main-cmd-who")),
-            BotCommand(command="recent", description=_("main-cmd-recent")),
-            BotCommand(command="summary", description=_("main-cmd-summary")),
-            BotCommand(command="hltb", description=_("main-cmd-hltb")),
-            BotCommand(command="subscribe", description=_("main-cmd-subscribe")),
-            BotCommand(command="unsubscribe", description=_("main-cmd-unsubscribe")),
-            BotCommand(command="help", description=_("main-cmd-help")),
-        ]
-        return private, group
-
+async def _clear_command_menu(bot: Bot) -> None:
+    """Wipe the "/" command lists so Telegram stops advertising screens that
+    now live in the Mini App. Previously published scoped menus stick until
+    deleted — including per-locale copies (#48)."""
+    scopes = (
+        BotCommandScopeDefault(),
+        BotCommandScopeAllPrivateChats(),
+        BotCommandScopeAllGroupChats(),
+    )
     try:
-        for locale in AVAILABLE_LOCALES:
-            private, group = menus(locale)
-            # The default locale is published without a language_code as
-            # well, so it is what any unlisted client language falls back to.
-            language_code = None if locale == DEFAULT_LOCALE else locale
-            await bot.set_my_commands(
-                private, scope=BotCommandScopeAllPrivateChats(), language_code=language_code
-            )
-            await bot.set_my_commands(
-                group, scope=BotCommandScopeAllGroupChats(), language_code=language_code
-            )
+        for scope in scopes:
+            await bot.delete_my_commands(scope=scope)
+            for locale in AVAILABLE_LOCALES:
+                language_code = None if locale == DEFAULT_LOCALE else locale
+                if language_code is None:
+                    continue
+                await bot.delete_my_commands(scope=scope, language_code=language_code)
     except Exception:
-        # A cosmetic menu is not worth failing the whole startup for.
-        log.warning("could not publish the command menu", exc_info=True)
+        log.warning("could not clear the command menu", exc_info=True)
+
+
+async def _publish_mini_app_menu(bot: Bot, settings: Settings) -> None:
+    """Private-chat menu button → Mini App (Telegram has no group equivalent)."""
+    url = (settings.mini_app_url or "").strip()
+    if not url:
+        return
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text=gettext("main", "main-menu-open-app", locale=DEFAULT_LOCALE),
+                web_app=WebAppInfo(url=url),
+            )
+        )
+        log.info("mini app menu button -> %s", url)
+    except Exception:
+        log.warning("could not set Mini App menu button", exc_info=True)
 
 
 def main() -> None:

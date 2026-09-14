@@ -28,6 +28,7 @@ from bot.services.achievements import (
     score_suffix,
 )
 from bot.services.message_log import stats_category
+from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import local_now, month_cutoff_utc
 from bot.services.tables import blockquote, total_line, truncate_name
@@ -64,33 +65,17 @@ _MONTH_KEYS = (
 
 
 class DailySummary:
-    def __init__(self, bot: Bot, repo: Repo) -> None:
+    def __init__(self, bot: Bot, repo: Repo, mini_app_url: str | None = None) -> None:
         self._bot = bot
         self._repo = repo
+        self._mini_app_url = (mini_app_url or "").strip() or None
 
     async def tick(self) -> None:
-        # Every chat has its own time/zone/threshold in chat_settings (SPEC
-        # 5.7), so "is it time yet" is answered separately per chat, not once
-        # for everyone.
-        for chat in await self._repo.admin_chats():
-            if not chat.is_active or not chat.daily_summary:
-                continue
-
-            now_local = local_now(chat.tz_offset_min)
-            if now_local.strftime("%H:%M") != chat.daily_summary_time:
-                continue
-
-            report_date = now_local.date().isoformat()
-            if not await self._repo.daily_report_sent(chat.chat_id, report_date):
-                await self._send_scheduled(chat, report_date, with_day=True, with_month=False)
-
-            # On the last calendar day of the month, the month-end wrap-up
-            # goes out too (#14) — same time, its own dedup marker, and
-            # additional to that day's daily summary, not instead of it.
-            if _is_last_day_of_month(now_local):
-                month_key = _monthly_key(now_local)
-                if not await self._repo.daily_report_sent(chat.chat_id, month_key):
-                    await self._send_scheduled(chat, month_key, with_day=False, with_month=True)
+        # Day/month chat teasers are retired (2026-09-14): the full report
+        # lives in the Mini App summary tab. build_summary stays for that
+        # surface and for leftover /summary fallbacks — this job no longer
+        # posts anything to Telegram groups.
+        return
 
     async def _send_scheduled(self, chat, marker: str, *, with_day: bool, with_month: bool) -> None:
         now_local = local_now(chat.tz_offset_min)
@@ -110,7 +95,22 @@ class DailySummary:
             # tick doesn't keep re-checking.
             await self._repo.mark_daily_report_sent(chat.chat_id, marker)
             return
-        text, markup = built
+        # Full report lives in the Mini App; the chat only gets a one-line
+        # teaser + Open. build_summary still runs so an empty chat (no
+        # subscribers) stays silent.
+        _ = translator("daily", chat.locale)
+        text = _("daily-teaser-month") if with_month and not with_day else _("daily-teaser-day")
+        markup = None
+        if self._mini_app_url:
+            me = await self._bot.me()
+            markup = mini_app_open_markup(
+                translator("achievements", chat.locale)("achievement-open-app"),
+                https_url=self._mini_app_url,
+                bot_username=me.username or "",
+                chat_id=chat.chat_id,
+                tab="summary",
+                in_group=True,
+            )
         try:
             with stats_category():
                 await self._bot.send_message(

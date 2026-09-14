@@ -38,6 +38,7 @@ main-cmd-recent = The chat's latest achievements
 main-cmd-summary = The day and the month in review
 main-cmd-subscribe = Publish my achievements here
 main-cmd-unsubscribe = Stop publishing here
+main-menu-open-app = Open app
 
 # Second-instance guard (main())
 main-already-running =

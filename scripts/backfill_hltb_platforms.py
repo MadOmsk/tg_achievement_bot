@@ -63,7 +63,7 @@ async def main() -> None:
             )
         )
         done += 1
-        log.info("%s: %s -> %s", result.hltb_id, result.name, result.platforms or "нет данных")
+        log.info("%s: %s -> %s", result.hltb_id, result.name, result.platforms or "none")
         await asyncio.sleep(REQUEST_DELAY_SECONDS)
 
     log.info("done: %s/%s refreshed", done, len(ids))

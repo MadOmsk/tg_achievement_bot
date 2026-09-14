@@ -38,3 +38,8 @@ connect-timezone-manual-hint =
 connect-timezone-manual-invalid = Это не похоже на реальный часовой пояс. { $hint }
 connect-login-button-hint =
     Жми кнопку и войди своим аккаунтом Microsoft. Пароль вижу не я — его спрашивает сам Microsoft.
+connect-open-app-hint =
+    🎮 Слежу за достижениями тех, кто играет на Xbox, PlayStation и Steam, и собираю всех твоих друзей с разных платформ.
+
+    В чате — короткие анонсы. Лента, статистика и настройки — в приложении.
+connect-open-app-button = Приведи свой профиль в приложение

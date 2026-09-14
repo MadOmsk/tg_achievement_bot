@@ -31,7 +31,8 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
-from bot.constants import SettingKey
+from bot.config import Settings
+from bot.constants import Platform, SettingKey
 from bot.db.repo import (
     ChatPresenceRow,
     PlatformLink,
@@ -54,6 +55,7 @@ from bot.services.achievements import (
     score_suffix,
 )
 from bot.services.message_log import stats_category
+from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import (
     person_name,
     person_name_of,
@@ -769,56 +771,28 @@ async def _resolve(message: Message, repo: Repo, argument: str | None) -> User |
 # noise by comparison to what people actually come back to read: what the
 # bot is, and the commands.
 def hub_keyboard(
-    bot_username: str, chat_id: int, i18n: I18nContext | None = None
+    bot_username: str, chat_id: int, i18n: I18nContext | None = None, *, mini_app_url: str = ""
 ) -> InlineKeyboardMarkup:
-    """A short walkthrough, not a control panel: SPEC 6.3 walks through
-    connect → publish in that order, so the keyboard should not offer more
-    choices than that story needs. Steam's and PSN's connect buttons
-    (SPEC 9, M-Steam-2e, M-PSN-1) sit next to Xbox's rather than adding a
-    whole extra row each — it is still the same "connect" step, just
-    another platform for it.
-
-    Buttons act on whoever presses them — that is why "Публиковать мои
-    достижения" is allowed here at all: SPEC 6.3 forbids rendering *someone
-    else's* settings where any member could page through them, not a button
-    that only ever touches the presser's own subscription.
-    """
+    """Group landing: open the Mini App for this chat. Subscribe lives there."""
+    url = (mini_app_url or "").strip()
+    if url:
+        markup = mini_app_open_markup(
+            _hub_text(i18n, "chat-hub-open-app"),
+            https_url=url,
+            bot_username=bot_username,
+            chat_id=chat_id,
+            in_group=True,
+        )
+        if markup is not None:
+            return markup
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-xbox-button"),
-                    # The chat id rides along in the deep-link payload so a
-                    # successful login can auto-subscribe him right back here
-                    # (SPEC 6.3) — see _parse_connect_payload in connect.py.
+                    text=_hub_text(i18n, "chat-hub-open-app"),
                     url=f"https://t.me/{bot_username}?start=connect{chat_id}",
-                ),
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-steam-button"),
-                    # No chat id here (unlike Xbox above) — /connect_steam
-                    # needs a profile link a button tap can't supply anyway,
-                    # so this just opens the DM at the right prompt (SPEC 9,
-                    # handlers/steam.py, connect.py's ?start=connectsteam).
-                    url=f"https://t.me/{bot_username}?start=connectsteam",
-                ),
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-psn-button"),
-                    # Same reasoning as Steam's own button above (SPEC 9,
-                    # M-PSN-1, handlers/psn.py, connect.py's ?start=connectpsn).
-                    url=f"https://t.me/{bot_username}?start=connectpsn",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-settings-button"),
-                    url=f"https://t.me/{bot_username}?start=panel",
-                ),
-            ],
+                )
+            ]
         ]
     )
 
@@ -847,7 +821,9 @@ async def help_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
-async def greet_new_chat(event: ChatMemberUpdated, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+async def greet_new_chat(
+    event: ChatMemberUpdated, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
+) -> None:
     """Say what to do the moment the bot lands in a group, not later."""
     if event.chat.type not in GROUP_TYPES:
         return
@@ -856,7 +832,9 @@ async def greet_new_chat(event: ChatMemberUpdated, repo: Repo, bot: Bot, i18n: I
     await bot.send_message(
         event.chat.id,
         await hub_text(repo, event.chat.id, i18n),
-        reply_markup=hub_keyboard(me.username or "", event.chat.id, i18n),
+        reply_markup=hub_keyboard(
+            me.username or "", event.chat.id, i18n, mini_app_url=settings.mini_app_url
+        ),
     )
 
 
@@ -947,3 +925,28 @@ async def delete_last(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
         await message.answer(i18n.get("chat-delete-last-done-generic"))
     with contextlib.suppress(Exception):
         await message.delete()  # tidy up the /delete_last command itself too
+
+
+@router.message(Command("app"))
+async def open_app_from_chat(
+    message: Message, bot: Bot, settings: Settings, i18n: I18nContext
+) -> None:
+    """Group slash commands cannot launch a Mini App by themselves — Telegram
+    only opens a WebView from a WebApp button. This posts that button.
+    """
+    url = (settings.mini_app_url or "").strip()
+    if not url:
+        await message.answer(i18n.get("chat-app-no-url"))
+        return
+    if message.chat.type not in GROUP_TYPES:
+        from bot.handlers.connect import send_open_app
+
+        await send_open_app(message, settings, i18n)
+        return
+    me = await bot.me()
+    await message.answer(
+        i18n.get("chat-app-hint"),
+        reply_markup=hub_keyboard(
+            me.username or "", message.chat.id, i18n, mini_app_url=url
+        ),
+    )

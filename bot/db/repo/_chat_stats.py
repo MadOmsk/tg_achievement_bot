@@ -15,6 +15,7 @@ from bot.db.repo._models import (
     OnlineAutoRefreshRow,
     _iso,
 )
+from bot.db.repo._sql import OWNED_BY_PERSON, active_account
 from bot.util import utcnow_iso
 
 
@@ -72,10 +73,17 @@ class _ChatStatsRepo:
             # seen_achievements.tg_id is on every row regardless of platform
             # (2a). gamerscore stays Xbox-only automatically: a Steam row's
             # gamerscore is always 0 (services/steam/achievements.py).
-            "LEFT JOIN seen_achievements s ON s.tg_id = u.tg_id " + date_bound + " "
-            "LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam' "
-            "LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn' "
-            "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
+            # Through the accounts this person holds now (#52), not through
+            # a tg_id on the row: an account they no longer hold contributes
+            # nothing, and one they just linked contributes everything.
+            "LEFT JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "LEFT JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            + date_bound
+            + " "
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            + "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
             "GROUP BY u.tg_id ORDER BY cnt DESC, score DESC",
             [rare_threshold, *date_params, chat_id],
         )
@@ -101,7 +109,11 @@ class _ChatStatsRepo:
         ]
 
     async def chat_top_games(
-        self, chat_id: int, since: datetime, limit: int = 15
+        self,
+        chat_id: int,
+        since: datetime,
+        limit: int = 15,
+        until: datetime | None = None,
     ) -> list[ChatTopGame]:
         """Games the chat's subscribed members played this window, ranked by
         total achievements/trophies earned across all of them combined (#7,
@@ -123,20 +135,26 @@ class _ChatStatsRepo:
         so grouping by title_id only could in principle fold two unrelated
         games from different platforms into one row."""
         query = (
-            "SELECT s.title_id, s.platform, t.name,"
+            "SELECT s.title_id, s.platform, t.name, t.icon_url,"
             "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
             "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze,"
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
             "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
             "       SUM(CASE WHEN s.trophy_type = 'platinum' THEN 1 ELSE 0 END) AS platinum "
             "FROM seen_achievements s "
-            "JOIN subscriptions sub ON sub.tg_id = s.tg_id AND sub.chat_id = ? "
+            + OWNED_BY_PERSON
+            + "JOIN subscriptions sub ON sub.tg_id = al.tg_id AND sub.chat_id = ? "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             "WHERE s.unlocked_at >= ? "
+        )
+        params: list[object] = [chat_id, _iso(since)]
+        if until is not None:
+            query += "AND s.unlocked_at < ? "
+            params.append(_iso(until))
+        query += (
             "GROUP BY s.title_id, s.platform "
             "ORDER BY cnt DESC"
         )
-        params: list[object] = [chat_id, _iso(since)]
         if limit:
             query += " LIMIT ?"
             params.append(limit)
@@ -152,6 +170,7 @@ class _ChatStatsRepo:
                 silver=int(row["silver"] or 0),
                 gold=int(row["gold"] or 0),
                 platinum=int(row["platinum"] or 0),
+                icon_url=row["icon_url"],
             )
             for row in await cursor.fetchall()
         ]
@@ -244,11 +263,11 @@ class _ChatStatsRepo:
             "              ELSE 0 END AS psn_level"
             "  FROM member"
             "  JOIN users u ON u.tg_id = member.tg_id"
-            "  LEFT JOIN presence_state xp ON xp.xuid = u.xuid"
-            "  LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam'"
-            "  LEFT JOIN steam_presence_state sp ON sp.steam_id = steam.external_id"
-            "  LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn'"
-            "  LEFT JOIN psn_presence_state pp ON pp.account_id = psn.external_id"
+            "  LEFT JOIN presence_state xp ON xp.xuid = u.xuid "
+            + active_account("steam", "steam")
+            + "  LEFT JOIN steam_presence_state sp ON sp.steam_id = steam.external_id "
+            + active_account("psn", "psn")
+            + "  LEFT JOIN psn_presence_state pp ON pp.account_id = psn.external_id "
             "  WHERE (u.xuid IS NOT NULL OR steam.external_id IS NOT NULL"
             "         OR psn.external_id IS NOT NULL) AND u.is_excluded = 0"
             "), decided AS ("

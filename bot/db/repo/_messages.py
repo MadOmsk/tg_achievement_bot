@@ -20,7 +20,34 @@ from bot.db.repo._models import (
     _as_user,
     _iso,
 )
+from bot.db.repo._sql import active_account
 from bot.util import utcnow_iso
+
+
+def _as_recent(row) -> RecentAchievement:
+    return RecentAchievement(
+        tg_id=row["tg_id"],
+        gamertag=row["gamertag"],
+        gamertag_modern=row["gamertag_modern"],
+        username=row["username"],
+        first_name=row["first_name"],
+        last_name=row["last_name"],
+        steam_name=row["steam_name"],
+        psn_name=row["psn_name"],
+        name=row["name"],
+        game=row["game"],
+        gamerscore=int(row["gamerscore"] or 0),
+        rarity_percent=row["rarity_percent"],
+        platform=row["platform"],
+        unlocked_at=row["unlocked_at"],
+        is_secret=bool(row["is_secret"]),
+        title_id=row["title_id"] or "",
+        achievement_id=row["achievement_id"] or "",
+        icon_url=row["icon_url"],
+        game_icon_url=row["game_icon_url"],
+        description=row["description"],
+        trophy_type=row["trophy_type"],
+    )
 
 
 class _MessagesRepo:
@@ -82,9 +109,9 @@ class _MessagesRepo:
             "       psn.display_name AS psn_name "
             "FROM subscriptions s "
             "JOIN users u ON u.tg_id = s.tg_id "
-            "LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam' "
-            "LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn' "
-            "WHERE s.chat_id = ? AND u.is_excluded = 0",
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            + "WHERE s.chat_id = ? AND u.is_excluded = 0",
             (chat_id,),
         )
         return [
@@ -101,53 +128,109 @@ class _MessagesRepo:
             for row in await cursor.fetchall()
         ]
 
-    async def chat_recent(self, chat_id: int, limit: int) -> list[RecentAchievement]:
+    _RECENT_SELECT = (
+        "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
+        "       u.last_name, steam.display_name AS steam_name,"
+        "       psn.display_name AS psn_name,"
+        "       s.name, t.name AS game, s.gamerscore, s.rarity_percent,"
+        "       s.platform, s.unlocked_at, s.is_secret,"
+        "       s.title_id, s.achievement_id, s.icon_url, t.icon_url AS game_icon_url,"
+        "       s.description, s.trophy_type "
+    )
+    _RECENT_JOINS = (
+        active_account("steam", "steam")
+        + active_account("psn", "psn")
+        + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+        "JOIN seen_achievements s ON s.account_platform = al.platform"
+        "   AND s.xuid = al.external_id "
+        "LEFT JOIN titles t ON t.title_id = s.title_id "
+    )
+
+    async def chat_recent(
+        self,
+        chat_id: int,
+        limit: int,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[RecentAchievement]:
+        where = "WHERE sub.chat_id = ? AND u.is_excluded = 0 AND s.unlocked_at IS NOT NULL "
+        params: list[object] = [chat_id]
+        if since is not None:
+            where += "AND s.unlocked_at >= ? "
+            params.append(_iso(since))
+        if until is not None:
+            where += "AND s.unlocked_at < ? "
+            params.append(_iso(until))
+        params.append(limit)
         cursor = await self._conn.execute(
             # Every field the person chain needs (#51) — this used to select
             # `u.gamertag` alone, so a member with no Xbox account was
             # rendered as the literal word "кто-то".
-            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
-            "       u.last_name, steam.display_name AS steam_name,"
-            "       psn.display_name AS psn_name,"
-            "       s.name, t.name AS game, s.gamerscore, s.rarity_percent,"
-            "       s.platform, s.unlocked_at, s.is_secret "
+            self._RECENT_SELECT
+            + "FROM subscriptions sub "
+            "JOIN users u ON u.tg_id = sub.tg_id "
+            + self._RECENT_JOINS
+            + where
+            + "ORDER BY s.unlocked_at DESC LIMIT ?",
+            params,
+        )
+        return [_as_recent(row) for row in await cursor.fetchall()]
+
+    async def chat_unlock_months(self, chat_id: int, limit: int = 24) -> list[str]:
+        """Distinct `YYYY-MM` prefixes of unlock timestamps in this chat.
+
+        The Mini App month picker lists these; ISO strings are UTC, so a
+        late-evening Moscow unlock on the 1st can land in the previous UTC
+        month. Close enough for a picker — the feed itself uses the chat's
+        timezone window, not this list."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT substr(s.unlocked_at, 1, 7) AS ym "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
-            "LEFT JOIN platform_links steam ON steam.tg_id = u.tg_id AND steam.platform = 'steam' "
-            "LEFT JOIN platform_links psn ON psn.tg_id = u.tg_id AND psn.platform = 'psn' "
-            # tg_id, not xuid (SPEC 9, M-Steam-2a): xuid is Xbox-only on
-            # `users`, always NULL for a Steam-only person and never the
-            # SteamID64 `seen_achievements.xuid` holds for a Steam row even
-            # for someone with both platforms — this join saw Xbox rows only.
-            "JOIN seen_achievements s ON s.tg_id = u.tg_id "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE sub.chat_id = ? AND u.is_excluded = 0 AND s.unlocked_at IS NOT NULL "
-            "ORDER BY s.unlocked_at DESC LIMIT ?",
+            + self._RECENT_JOINS
+            + "WHERE sub.chat_id = ? AND u.is_excluded = 0 AND s.unlocked_at IS NOT NULL "
+            "ORDER BY ym DESC LIMIT ?",
             (chat_id, limit),
         )
-        return [
-            RecentAchievement(
-                tg_id=row["tg_id"],
-                gamertag=row["gamertag"],
-                gamertag_modern=row["gamertag_modern"],
-                username=row["username"],
-                first_name=row["first_name"],
-                last_name=row["last_name"],
-                steam_name=row["steam_name"],
-                psn_name=row["psn_name"],
-                name=row["name"],
-                game=row["game"],
-                gamerscore=int(row["gamerscore"] or 0),
-                rarity_percent=row["rarity_percent"],
-                platform=row["platform"],
-                unlocked_at=row["unlocked_at"],
-                is_secret=bool(row["is_secret"]),
-            )
-            for row in await cursor.fetchall()
-        ]
+        return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
+
+    async def person_recent(
+        self,
+        tg_id: int,
+        limit: int,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[RecentAchievement]:
+        """One person's unlocks, newest first — the Mini App person card's
+        feed. Same join as `chat_recent`, scoped to the account they hold
+        right now rather than to a chat's subscribers."""
+        where = "WHERE u.tg_id = ? AND u.is_excluded = 0 AND s.unlocked_at IS NOT NULL "
+        params: list[object] = [tg_id]
+        if since is not None:
+            where += "AND s.unlocked_at >= ? "
+            params.append(_iso(since))
+        if until is not None:
+            where += "AND s.unlocked_at < ? "
+            params.append(_iso(until))
+        params.append(limit)
+        cursor = await self._conn.execute(
+            self._RECENT_SELECT
+            + "FROM users u "
+            + self._RECENT_JOINS
+            + where
+            + "ORDER BY s.unlocked_at DESC LIMIT ?",
+            params,
+        )
+        return [_as_recent(row) for row in await cursor.fetchall()]
 
     async def recent_games(
-        self, external_id: str, since: datetime, limit: int = 15
+        self,
+        external_id: str,
+        since: datetime,
+        limit: int = 15,
+        until: datetime | None = None,
     ) -> list[TopGame]:
         """Games actually played recently, not the biggest lifetime scores —
         a person's five favourite old games would otherwise crowd out
@@ -162,16 +245,19 @@ class _MessagesRepo:
         to SQLite as -1, its own documented spelling of "unbounded LIMIT",
         rather than branching the query string for one case.
         """
+        bounds = "WHERE s.xuid = ? AND s.unlocked_at >= ? "
+        params: list[object] = [external_id, _iso(since)]
+        if until is not None:
+            bounds += "AND s.unlocked_at < ? "
+            params.append(_iso(until))
+        params.append(limit or -1)
         cursor = await self._conn.execute(
             "SELECT t.name, COALESCE(SUM(s.gamerscore), 0) AS score, COUNT(*) AS unlocked,"
             " MAX(s.platform) AS platform "
             "FROM seen_achievements s LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.xuid = ? AND s.unlocked_at >= ? "
-            # Score ties on every Steam game (no gamerscore there at all) —
-            # unlocked count as the tiebreaker instead of SQLite's undefined
-            # order among equal scores.
-            "GROUP BY s.title_id ORDER BY score DESC, unlocked DESC LIMIT ?",
-            (external_id, _iso(since), limit or -1),
+            + bounds
+            + "GROUP BY s.title_id ORDER BY score DESC, unlocked DESC LIMIT ?",
+            params,
         )
         return [
             TopGame(

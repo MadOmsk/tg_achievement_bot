@@ -1,7 +1,13 @@
-"""Steam's own achievement schema/rarity caches, and the generic
-platform_links table shared by Steam and PSN (link/unlink, visibility
-status) — one mixin of bot.db.repo.Repo (2026-09-09 split; see this
-package's own __init__.py). Behavior is unchanged from before the split.
+"""Steam's own achievement schema/rarity caches, and the `accounts` /
+`account_links` pair that replaced the old platform_links table (#52) —
+one mixin of bot.db.repo.Repo (2026-09-09 split; see this package's own
+__init__.py).
+
+An account exists on its own terms here: `accounts` is what the account *is*
+(nickname, gamerscore, trophy level, visibility), `account_links` is who has
+it and who had it before. Unlinking deactivates a link, it never deletes
+anything — so an account's achievements stay attached to the account and are
+waiting for whoever links it next.
 """
 
 from __future__ import annotations
@@ -71,21 +77,80 @@ class _PlatformLinksRepo:
         )
         await self._conn.commit()
 
+    # ------------------------------------------------- accounts and links
+
+    # `PlatformLink` is still the read model every caller sees (#52): it is
+    # now the join of `accounts` (what the account is) and `account_links`
+    # (who has it), rather than one row of the old platform_links table.
+    # Keeping that shape spared some forty call sites a rename that would
+    # have told them nothing new.
+    _LINK_COLUMNS = (
+        "SELECT al.tg_id, al.platform, al.external_id, a.display_name, a.secondary_name,"
+        "       al.linked_at, a.psn_trophy_level, a.achievements_visible,"
+        "       a.achievements_visible_checked_at "
+        "FROM account_links al "
+        "JOIN accounts a ON a.platform = al.platform AND a.external_id = al.external_id "
+    )
+
     async def link_platform_account(
         self, tg_id: int, platform: str, external_id: str, display_name: str | None
-    ) -> None:
-        """One row per (person, platform) — a second /connect_steam replaces
-        the link, same as reconnecting Xbox replaces the old identity."""
+    ) -> int | None:
+        """Link an account to a person; returns the tg_id it was taken from,
+        when somebody else was holding it.
+
+        Nothing is deleted. The account is remembered independently of who
+        has it, and any previous link is deactivated rather than removed —
+        so its achievements stay with the account, waiting for whoever links
+        it next, and "which account was linked before" is a row rather than
+        a guess.
+
+        Taking an account from another person is allowed on purpose (owner
+        decision, 2026-09-12: no hard block for now); telling them is the
+        caller's job. `idx_links_one_owner` is what makes that a defined
+        event rather than two silent owners.
+        """
+        now = utcnow_iso()
         await self._conn.execute(
-            "INSERT INTO platform_links (tg_id, platform, external_id, display_name, linked_at) "
+            "INSERT INTO accounts (platform, external_id, display_name, first_seen_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(tg_id, platform) DO UPDATE SET "
-            "  external_id = excluded.external_id,"
-            "  display_name = excluded.display_name,"
-            "  linked_at = excluded.linked_at",
-            (tg_id, platform, external_id, display_name, utcnow_iso()),
+            "ON CONFLICT(platform, external_id) DO UPDATE SET "
+            "  display_name = COALESCE(excluded.display_name, accounts.display_name),"
+            "  updated_at = excluded.updated_at",
+            (platform, external_id, display_name, now, now),
+        )
+
+        cursor = await self._conn.execute(
+            "SELECT tg_id FROM account_links "
+            "WHERE platform = ? AND external_id = ? AND is_active = 1 AND tg_id != ?",
+            (platform, external_id, tg_id),
+        )
+        row = await cursor.fetchone()
+        taken_from = row["tg_id"] if row else None
+
+        # Both deactivations happen before the new link goes in: the account
+        # may be held by someone else (idx_links_one_owner), and this person
+        # may already hold a different account on the same platform
+        # (idx_links_one_active_per_platform). Either index would reject the
+        # insert otherwise.
+        await self._conn.execute(
+            "UPDATE account_links SET is_active = 0, unlinked_at = ? "
+            "WHERE platform = ? AND external_id = ? AND is_active = 1",
+            (now, platform, external_id),
+        )
+        await self._conn.execute(
+            "UPDATE account_links SET is_active = 0, unlinked_at = ? "
+            "WHERE tg_id = ? AND platform = ? AND is_active = 1",
+            (now, tg_id, platform),
+        )
+        await self._conn.execute(
+            "INSERT INTO account_links (tg_id, platform, external_id, is_active, linked_at) "
+            "VALUES (?, ?, ?, 1, ?) "
+            "ON CONFLICT(tg_id, platform, external_id) DO UPDATE SET "
+            "  is_active = 1, linked_at = excluded.linked_at, unlinked_at = NULL",
+            (tg_id, platform, external_id, now),
         )
         await self._conn.commit()
+        return taken_from
 
     async def update_platform_names(
         self, tg_id: int, platform: str, display_name: str, secondary_name: str | None = None
@@ -93,25 +158,25 @@ class _PlatformLinksRepo:
         """Opportunistic refresh only (SPEC 9, M-Steam-2c, widened to every
         platform by #51) — each poller already holds a fresh nickname inside
         a response it made for another reason, so no request exists just for
-        this. A no-op if the link was removed in the meantime.
+        this.
 
-        Writes only when something actually changed, and returns whether it
+        Writes only when something actually changed, and says whether it
         did: this runs on every presence tick for every linked account, and
         rewriting the same two strings a few times a minute is pure churn.
-        The changed/unchanged answer is also the one signal PSN has that an
-        account was renamed — `secondary_name` is left alone here, since the
-        caller is the only one that knows whether the old value was a
-        previous online ID worth keeping (PSN) or a vanity name that simply
-        travels with the new persona (Steam).
+        A nickname belongs to the account rather than to the link, so this
+        reaches `accounts` through whichever one the person holds now.
         """
         cursor = await self._conn.execute(
-            "UPDATE platform_links SET display_name = ?,"
-            "       secondary_name = COALESCE(?, secondary_name) "
-            "WHERE tg_id = ? AND platform = ?"
+            "UPDATE accounts SET display_name = ?,"
+            "       secondary_name = COALESCE(?, secondary_name), updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = ? AND is_active = 1)"
             "  AND (display_name IS NOT ? OR (? IS NOT NULL AND secondary_name IS NOT ?))",
             (
                 display_name,
                 secondary_name,
+                utcnow_iso(),
                 tg_id,
                 platform,
                 display_name,
@@ -129,125 +194,121 @@ class _PlatformLinksRepo:
         a rename is noticed (or backfilled once from Sony's legacy endpoint),
         Steam's vanity when it is first read off `profileurl`."""
         await self._conn.execute(
-            "UPDATE platform_links SET secondary_name = ? WHERE tg_id = ? AND platform = ?",
-            (secondary_name, tg_id, platform),
+            "UPDATE accounts SET secondary_name = ?, updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = ? AND is_active = 1)",
+            (secondary_name, utcnow_iso(), tg_id, platform),
         )
         await self._conn.commit()
 
     async def get_platform_link(self, tg_id: int, platform: str) -> PlatformLink | None:
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, secondary_name, linked_at,"
-            "       psn_trophy_level, achievements_visible, achievements_visible_checked_at "
-            "FROM platform_links WHERE tg_id = ? AND platform = ?",
+            self._LINK_COLUMNS + "WHERE al.tg_id = ? AND al.platform = ? AND al.is_active = 1",
             (tg_id, platform),
         )
         row = await cursor.fetchone()
-        if row is None:
-            return None
-        return PlatformLink(
-            tg_id=row["tg_id"],
-            platform=row["platform"],
-            external_id=row["external_id"],
-            display_name=row["display_name"],
-            secondary_name=row["secondary_name"],
-            linked_at=row["linked_at"],
-            psn_trophy_level=row["psn_trophy_level"],
-            achievements_visible=(
-                bool(row["achievements_visible"])
-                if row["achievements_visible"] is not None
-                else None
-            ),
-            achievements_visible_checked_at=row["achievements_visible_checked_at"],
-        )
+        return _as_platform_link(row) if row is not None else None
 
-    async def platform_links_of(self, tg_id: int) -> list[PlatformLink]:
+    async def platform_links_of(
+        self, tg_id: int, *, include_xbox: bool = False
+    ) -> list[PlatformLink]:
+        """Every account this person holds right now — never a deactivated
+        one (#52): an account they no longer have must appear in no screen
+        and no statistic.
+
+        Xbox is excluded unless asked for. `PlatformLink` has meant "a
+        Steam/PSN link" since it existed, and every caller renders Xbox from
+        `users.xuid` on its own line first — returning Xbox here too made
+        /stats print the same account twice, once per shape (caught by
+        test_zero_limit_shows_every_game_uncapped, which counted its games
+        twice). The exclusion goes away with those cache columns in the
+        follow-up step, once Xbox is read the same way as everything else.
+        """
+        clause = "WHERE al.tg_id = ? AND al.is_active = 1 "
+        if not include_xbox:
+            clause += "AND al.platform != 'xbox' "
         cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, secondary_name, linked_at,"
-            "       psn_trophy_level, achievements_visible, achievements_visible_checked_at "
-            "FROM platform_links WHERE tg_id = ?",
+            self._LINK_COLUMNS + clause + "ORDER BY al.platform",
             (tg_id,),
         )
-        return [
-            PlatformLink(
-                tg_id=row["tg_id"],
-                platform=row["platform"],
-                external_id=row["external_id"],
-                display_name=row["display_name"],
-                secondary_name=row["secondary_name"],
-                linked_at=row["linked_at"],
-                psn_trophy_level=row["psn_trophy_level"],
-                achievements_visible=(
-                    bool(row["achievements_visible"])
-                    if row["achievements_visible"] is not None
-                    else None
-                ),
-                achievements_visible_checked_at=row["achievements_visible_checked_at"],
-            )
-            for row in await cursor.fetchall()
-        ]
+        return [_as_platform_link(row) for row in await cursor.fetchall()]
+
+    async def platform_links_all(self, platform: str) -> list[PlatformLink]:
+        """Every *active* link on one platform, across every person —
+        `platform_links_of` narrowed to one person, this is the bot-wide
+        counterpart (2026-09-05, scripts/backfill_steam_titles.py: needs
+        every Steam link to reconcile, not any one person's)."""
+        cursor = await self._conn.execute(
+            self._LINK_COLUMNS + "WHERE al.platform = ? AND al.is_active = 1",
+            (platform,),
+        )
+        return [_as_platform_link(row) for row in await cursor.fetchall()]
 
     async def set_psn_trophy_level(self, tg_id: int, level: int) -> None:
-        """Called by poller/psn_fetcher.py after backfill and after each poll
-        that finds new trophies (Follow-up 2026-09-06) — level can only
-        change when a trophy is earned, so there is no reason to touch this
-        on a tick that found nothing."""
         await self._conn.execute(
-            "UPDATE platform_links SET psn_trophy_level = ? WHERE tg_id = ? AND platform = 'psn'",
-            (level, tg_id),
+            "UPDATE accounts SET psn_trophy_level = ?, updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'psn' AND is_active = 1)",
+            (level, utcnow_iso(), tg_id),
         )
         await self._conn.commit()
 
     async def set_achievements_visible(self, tg_id: int, platform: str, visible: bool) -> None:
-        """Set at connect time and refreshed by every backfill/resync (#5,
-        SteamFetcher/PsnFetcher) — /panel's login row and the admin card read
-        this to show the last actually-checked achievement/trophy
-        visibility, and when it was checked, not nothing."""
+        now = utcnow_iso()
         await self._conn.execute(
-            "UPDATE platform_links SET achievements_visible = ?,"
-            "       achievements_visible_checked_at = ? "
-            "WHERE tg_id = ? AND platform = ?",
-            (int(visible), utcnow_iso(), tg_id, platform),
+            "UPDATE accounts SET achievements_visible = ?,"
+            "       achievements_visible_checked_at = ?, updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = ? AND is_active = 1)",
+            (int(visible), now, now, tg_id, platform),
         )
         await self._conn.commit()
-
-    async def platform_links_all(self, platform: str) -> list[PlatformLink]:
-        """Every linked account on one platform, across every user —
-        `platform_links_of` narrowed to one person, this is the admin-wide
-        counterpart (2026-09-05, scripts/backfill_steam_titles.py: needs
-        every Steam link to reconcile, not any one person's).
-
-        `psn_trophy_level` is selected too (Follow-up 2026-09-08,
-        scripts/backfill_psn_levels.py: needs to tell "already cached" apart
-        from "never cached" per link) — always NULL for a non-PSN platform,
-        harmless to always select.
-        """
-        cursor = await self._conn.execute(
-            "SELECT tg_id, platform, external_id, display_name, secondary_name, linked_at,"
-            "       psn_trophy_level, achievements_visible, achievements_visible_checked_at "
-            "FROM platform_links WHERE platform = ?",
-            (platform,),
-        )
-        return [
-            PlatformLink(
-                tg_id=row["tg_id"],
-                platform=row["platform"],
-                external_id=row["external_id"],
-                display_name=row["display_name"],
-                secondary_name=row["secondary_name"],
-                linked_at=row["linked_at"],
-                psn_trophy_level=row["psn_trophy_level"],
-                achievements_visible=(
-                    bool(row["achievements_visible"])
-                    if row["achievements_visible"] is not None
-                    else None
-                ),
-                achievements_visible_checked_at=row["achievements_visible_checked_at"],
-            )
-            for row in await cursor.fetchall()
-        ]
 
     async def unlink_platform_account(self, tg_id: int, platform: str) -> None:
+        """Deactivate, never delete (#52) — the account and everything it
+        earned stay where they are, so relinking it later finds its history
+        waiting instead of paying for a full backfill all over again."""
         await self._conn.execute(
-            "DELETE FROM platform_links WHERE tg_id = ? AND platform = ?", (tg_id, platform)
+            "UPDATE account_links SET is_active = 0, unlinked_at = ? "
+            "WHERE tg_id = ? AND platform = ? AND is_active = 1",
+            (utcnow_iso(), tg_id, platform),
         )
         await self._conn.commit()
+
+    async def account_owner(self, platform: str, external_id: str) -> int | None:
+        """Who holds this account right now, if anyone."""
+        cursor = await self._conn.execute(
+            "SELECT tg_id FROM account_links "
+            "WHERE platform = ? AND external_id = ? AND is_active = 1",
+            (platform, external_id),
+        )
+        row = await cursor.fetchone()
+        return row["tg_id"] if row else None
+
+    async def account_has_history(self, platform: str, external_id: str) -> bool:
+        """Whether anything was ever recorded for this account — the signal
+        that a relink can run a delta instead of a full backfill (#52)."""
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM seen_achievements WHERE account_platform = ? AND xuid = ? LIMIT 1",
+            (platform, external_id),
+        )
+        return await cursor.fetchone() is not None
+
+
+def _as_platform_link(row) -> PlatformLink:
+    return PlatformLink(
+        tg_id=row["tg_id"],
+        platform=row["platform"],
+        external_id=row["external_id"],
+        display_name=row["display_name"],
+        secondary_name=row["secondary_name"],
+        linked_at=row["linked_at"],
+        psn_trophy_level=row["psn_trophy_level"],
+        achievements_visible=(
+            bool(row["achievements_visible"]) if row["achievements_visible"] is not None else None
+        ),
+        achievements_visible_checked_at=row["achievements_visible_checked_at"],
+    )

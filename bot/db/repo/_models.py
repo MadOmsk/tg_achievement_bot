@@ -55,6 +55,9 @@ class UserSettings:
     tg_id: int
     tz_offset_min: int | None
     show_profile_links: bool
+    # Mini App: unspoiler secret achievements. Defaulted so hand-built
+    # UserSettings in tests keep working.
+    show_secrets: bool = False
     # This person's own language for DMs (#48); a group follows its own
     # chat_settings.locale instead. Defaulted rather than required so the
     # many test/call sites that build a UserSettings by hand keep working.
@@ -445,6 +448,12 @@ class RecentAchievement:
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
+    title_id: str = ""
+    achievement_id: str = ""
+    icon_url: str | None = None
+    game_icon_url: str | None = None
+    description: str | None = None
+    trophy_type: str | None = None
 
 
 @dataclass(slots=True)
@@ -466,6 +475,7 @@ class ChatTopGame:
     id, a Steam appid, or a PSN "NPWR..." string), so it can never actually
     span two platforms in practice, unlike the union `seen_achievements`
     itself is queried from.
+    `icon_url` is the cached box art from `titles` when we have one.
 
     `bronze`/`silver`/`gold`/`platinum` are PSN's own trophy tiers (#5, user
     request) — always 0 for a non-PSN row, no separate NULL handling needed
@@ -482,6 +492,7 @@ class ChatTopGame:
     silver: int = 0
     gold: int = 0
     platinum: int = 0
+    icon_url: str | None = None
 
 
 @dataclass(slots=True)
@@ -578,6 +589,7 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         tg_id=row["tg_id"],
         tz_offset_min=row["tz_offset_min"],
         show_profile_links=bool(row["show_profile_links"]),
+        show_secrets=bool(row["show_secrets"]) if "show_secrets" in row.keys() else False,
         locale=row["locale"],
     )
 

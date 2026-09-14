@@ -16,6 +16,14 @@ achievement-game-line = { $title } (<i>{ $platform }</i>)
 achievement-name = { $badge } “{ $name }”
 achievement-gamerscore = { $score } G
 achievement-rarity = { $percent }% rarity
+# Group teasers: person · platform-icon game, then the title + score. No
+# "gets an achievement", no pictures — the Open button launches the Mini App.
+# $platform is PLATFORM_ICON only (🟢/⚫/🔵), not the full platform_tag label.
+achievement-teaser-header = <b>{ $gamertag }</b> · { $platform } { $game }
+achievement-teaser-digest = <b>{ $gamertag }</b> · { $pretty }
+achievement-teaser-game = { $platform } <i>{ $title }</i>
+achievement-teaser-name = “{ $name }”
+achievement-open-app = Look in the app
 
 # Plural forms. The form is selected by Fluent itself from $count, using the
 # CLDR plural rules of whichever locale this file belongs to — English has

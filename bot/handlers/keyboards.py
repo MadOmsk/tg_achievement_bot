@@ -227,7 +227,7 @@ def panel_keyboard(
 ) -> InlineKeyboardMarkup:
     i18n = i18n or static_i18n("keyboards")
 
-    # One row per platform, xbox -> steam -> psn, in the same shape and
+    # One row per platform, xbox -> psn -> steam, in the same shape and
     # position whether or not the person has that platform connected (#33) —
     # no more connect buttons at the top and profile/disconnect rows at the
     # bottom for the same platform.
@@ -244,19 +244,19 @@ def panel_keyboard(
         ),
         _platform_row(
             i18n,
-            connected=steam_connected,
-            connect_key="kb-panel-connect-steam",
-            connect_cb="steam:connect",
-            profile_url=steam_profile_url(steam_id) if steam_id else None,
-            disconnect_btn=steam_disconnect_button(i18n),
-        ),
-        _platform_row(
-            i18n,
             connected=psn_connected,
             connect_key="kb-panel-connect-psn",
             connect_cb="psn:connect",
             profile_url=psn_profile_url(psn_id) if psn_id else None,
             disconnect_btn=psn_disconnect_button(i18n),
+        ),
+        _platform_row(
+            i18n,
+            connected=steam_connected,
+            connect_key="kb-panel-connect-steam",
+            connect_cb="steam:connect",
+            profile_url=steam_profile_url(steam_id) if steam_id else None,
+            disconnect_btn=steam_disconnect_button(i18n),
         ),
     ]
 

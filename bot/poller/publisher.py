@@ -15,12 +15,12 @@ from datetime import timedelta
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import InputMediaPhoto
+from aiogram.types import InlineKeyboardMarkup
 
 from bot.db.repo import AchievementRow, ChatTarget, Repo
 from bot.services.achievements import (
-    format_digest,
-    format_single,
+    format_teaser,
+    format_teaser_digest,
     passes_filters,
 )
 from bot.services.descriptions_view import localize_descriptions
@@ -32,22 +32,13 @@ log = logging.getLogger(__name__)
 
 SEND_INTERVAL_SECONDS = 3.0  # ~20 messages a minute
 
-# Telegram's own cap on one media group (sendMediaGroup) — a digest with more
-# achievements than this still lists every one of them in the text (SPEC
-# 7.2), the gallery is just illustrative, not required to be exhaustive.
-MEDIA_GROUP_MAX = 10
-
 
 @dataclass(slots=True)
 class PublishJob:
     chat_id: int
     text: str
-    # (icon_url, is_secret) per achievement, in order — a single achievement
-    # is just a one-item gallery here, not a separate field any more
-    # (2026-09-05 follow-up, SPEC 7.1/7.2): one delivery path for both
-    # instead of two that used to duplicate each other's fallback-to-text
-    # handling. Rows with no icon at all are dropped before this point, not
-    # here — an empty list means "no photo, plain text".
+    # Unused: teasers are text-only. Kept so older job constructors
+    # and tests that still pass gallery= do not break.
     gallery: list[tuple[str, bool]] = field(default_factory=list)
     # (xuid, title_id, achievement_id) per achievement — xuid used to live on
     # the job itself, one value for the whole job, until the anti-flood
@@ -56,6 +47,7 @@ class PublishJob:
     # one must record its *own* xuid in `publications`, not whichever
     # platform happened to be first.
     items: list[tuple[str, str, str]] = field(default_factory=list)
+    reply_markup: InlineKeyboardMarkup | None = None
 
 
 def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
@@ -81,9 +73,12 @@ def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
 
 
 class Publisher:
-    def __init__(self, bot: Bot, repo: Repo) -> None:
+    def __init__(self, bot: Bot, repo: Repo, mini_app_url: str | None = None) -> None:
         self._bot = bot
         self._repo = repo
+        # mini_app_url kept for call-site compatibility; unlock posts are
+        # text-only (no per-notification Open button) as of 2026-09-14.
+        self._mini_app_url = (mini_app_url or "").strip() or None
         self._queue: asyncio.Queue[PublishJob] = asyncio.Queue()
         self._worker: asyncio.Task[None] | None = None
 
@@ -143,13 +138,16 @@ class Publisher:
             # what one chat sees as five achievements may be one in another
             # (digest_threshold lives on the subscription now, not on
             # user_settings — Follow-up, 2026-09-05, same move as
-            # rarity_mode before it).
+            # rarity_mode before it). Teasers, not full cards: description,
+            # rarity% and icons live in the Mini App. No Open button under
+            # each unlock — the hub / menu already opens the app.
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        text=format_digest(gamertag, title_name, allowed, locale=chat.locale),
-                        gallery=_gallery(allowed),
+                        text=format_teaser_digest(
+                            gamertag, title_name, allowed, locale=chat.locale
+                        ),
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
                     )
                 )
@@ -163,8 +161,7 @@ class Publisher:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        text=format_single(gamertag, item, title_name, locale=chat.locale),
-                        gallery=_gallery([item]),
+                        text=format_teaser(gamertag, item, title_name, locale=chat.locale),
                         items=[(xuid, item.title_id, item.achievement_id)],
                     )
                 )
@@ -234,8 +231,8 @@ class Publisher:
         platforms together), so the header uses the person's own Telegram
         identity rather than one platform's own nickname — there is no
         single "gamertag" that's obviously right here the way there is for
-        format_single/format_digest's other callers, each already scoped to
-        one platform by construction.
+        format_teaser/format_teaser_digest's other callers, each already
+        scoped to one platform by construction.
         """
         if not achievements:
             return
@@ -250,8 +247,7 @@ class Publisher:
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,
-                text=format_digest(name, None, achievements, locale=locale),
-                gallery=_gallery(achievements),
+                text=format_teaser_digest(name, None, achievements, locale=locale),
                 items=[
                     (item.xuid, item.title_id, item.achievement_id)
                     for item in achievements
@@ -290,44 +286,13 @@ class Publisher:
             )
 
     async def _deliver(self, job: PublishJob) -> int | None:
-        # The achievement matters more than the picture(s) (SPEC 7.1) — any
-        # failure below falls through to plain text rather than losing the
-        # achievement, same principle at every step: gallery, then a single
-        # photo, then text. Every branch is a "stats" result (2026-09-05
-        # follow-up) — never a candidate for message_cleanup.py's auto-delete.
+        # Text teasers only — icons and the Open button live in the Mini App /
+        # group hub, not under every unlock.
         with stats_category():
-            if len(job.gallery) >= 2:
-                try:
-                    media = [
-                        InputMediaPhoto(
-                            media=url,
-                            has_spoiler=secret,
-                            caption=job.text if index == 0 else None,
-                            parse_mode=ParseMode.HTML if index == 0 else None,
-                        )
-                        for index, (url, secret) in enumerate(job.gallery[:MEDIA_GROUP_MAX])
-                    ]
-                    messages = await self._bot.send_media_group(job.chat_id, media)
-                    return messages[0].message_id if messages else None
-                except (TelegramForbiddenError, TelegramRetryAfter):
-                    raise
-                except Exception:
-                    log.info("gallery for chat %s did not go through, sending text", job.chat_id)
-            elif len(job.gallery) == 1:
-                url, secret = job.gallery[0]
-                try:
-                    message = await self._bot.send_photo(
-                        job.chat_id,
-                        photo=url,
-                        caption=job.text,
-                        parse_mode=ParseMode.HTML,
-                        has_spoiler=secret,
-                    )
-                    return message.message_id
-                except (TelegramForbiddenError, TelegramRetryAfter):
-                    raise
-                except Exception:
-                    log.info("icon for chat %s did not go through, sending text", job.chat_id)
-
-            message = await self._bot.send_message(job.chat_id, job.text, parse_mode=ParseMode.HTML)
+            message = await self._bot.send_message(
+                job.chat_id,
+                job.text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=job.reply_markup,
+            )
             return message.message_id

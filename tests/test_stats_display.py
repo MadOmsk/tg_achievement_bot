@@ -728,6 +728,9 @@ async def test_xbox_completed_games_count_needs_a_nonzero_total(repo: Repo) -> N
 
 async def test_psn_platinum_count_only_counts_platinum_rows(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
+    # Linked, not merely inserted (#52): a statistic counts the accounts a
+    # person holds, so trophies of an unlinked account are correctly zero.
+    await repo.link_platform_account(1, "psn", "acc-1", "SomeonePSN")
     await repo.insert_new_achievements_psn(
         1,
         "acc-1",
@@ -765,6 +768,7 @@ async def test_psn_platinum_count_only_counts_platinum_rows(repo: Repo) -> None:
 
 async def test_steam_completed_games_count_joins_against_the_schema_cache(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "Someone")
     await repo.steam_schema_cache_result(
         "550",
         "Left 4 Dead 2",

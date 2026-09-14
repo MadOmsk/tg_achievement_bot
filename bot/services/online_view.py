@@ -75,6 +75,11 @@ def _row_name(row: ChatPresenceRow) -> str:
     )
 
 
+def presence_display_name(row: ChatPresenceRow) -> str:
+    """Public name of `_row_name` — Mini App /online JSON uses the same chain."""
+    return _row_name(row)
+
+
 def render_online_table(rows: list[ChatPresenceRow], updated_label: str, locale: str) -> str:
     """`updated_label` is a ready-made "HH:MM" in the chat's own timezone
     (Follow-up 2026-09-05, the "Обновлено: …" line) — this module has no

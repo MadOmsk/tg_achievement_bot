@@ -9,6 +9,7 @@ achievement itself, not by who unlocked it.
 from __future__ import annotations
 
 from bot.db.repo._models import CachedDescription
+from bot.db.repo._sql import OWNED_BY_PERSON
 from bot.util import utcnow_iso
 
 
@@ -39,15 +40,18 @@ class _DescriptionsRepo:
         the caller can group by title and still know whose credentials can be
         used to ask for it: Xbox needs a token-bearing owner, Steam a
         SteamID64, PSN an account_id — all of which live in `xuid` for their
-        own platform's rows.
+        own platform's rows. The owner comes from the account's *current*
+        link (#52), so an account nobody holds any more contributes nothing
+        here either: there would be no credentials to ask with.
 
         Rows with no description are excluded here rather than by the caller:
         there is nothing to translate, so they are not a gap.
         """
         cursor = await self._conn.execute(
-            "SELECT s.platform, s.title_id, s.achievement_id, s.tg_id, s.xuid "
+            "SELECT s.platform, s.title_id, s.achievement_id, al.tg_id, s.xuid "
             "FROM seen_achievements s "
-            "LEFT JOIN achievement_description_cache d "
+            + OWNED_BY_PERSON
+            + "LEFT JOIN achievement_description_cache d "
             "       ON d.platform = s.platform AND d.title_id = s.title_id "
             "      AND d.achievement_id = s.achievement_id "
             "WHERE d.achievement_id IS NULL "
@@ -77,9 +81,10 @@ class _DescriptionsRepo:
         """
         placeholders = ", ".join("?" * len(platforms))
         cursor = await self._conn.execute(
-            "SELECT s.platform, s.title_id, MIN(s.tg_id) AS tg_id "
+            "SELECT s.platform, s.title_id, MIN(al.tg_id) AS tg_id "
             "FROM seen_achievements s "
-            "LEFT JOIN achievement_description_cache d "
+            + OWNED_BY_PERSON
+            + "LEFT JOIN achievement_description_cache d "
             "       ON d.platform = s.platform AND d.title_id = s.title_id "
             "      AND d.achievement_id = s.achievement_id "
             f"WHERE d.achievement_id IS NULL AND s.platform IN ({placeholders}) "

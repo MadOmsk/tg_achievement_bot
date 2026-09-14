@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from bot.db.repo._models import AdminPanelRefreshRow, AdminUserRow, ChatTarget, HltbCacheRow
+from bot.db.repo._sql import active_account
 from bot.util import utcnow_iso
 
 
@@ -91,9 +92,10 @@ class _AdminRepo:
             "       pp.external_id AS psn_account_id, pp.display_name AS psn_online_id "
             "FROM users u "
             "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
-            "LEFT JOIN platform_links ps ON ps.tg_id = u.tg_id AND ps.platform = 'steam' "
-            "LEFT JOIN platform_links pp ON pp.tg_id = u.tg_id AND pp.platform = 'psn' "
-            "WHERE u.xuid IS NOT NULL OR ps.external_id IS NOT NULL OR pp.external_id IS NOT NULL "
+            + active_account("ps", "steam")
+            + active_account("pp", "psn")
+            + "WHERE u.xuid IS NOT NULL OR ps.external_id IS NOT NULL"
+            "   OR pp.external_id IS NOT NULL "
             "ORDER BY u.is_excluded, u.last_online_at DESC"
         )
         return [
@@ -117,6 +119,15 @@ class _AdminRepo:
             )
             for row in await cursor.fetchall()
         ]
+
+    async def admin_user_chat_ids(self) -> dict[int, list[int]]:
+        """Which chats each connected person publishes in — for the admin
+        people list filter, one query instead of one per row."""
+        cursor = await self._conn.execute("SELECT tg_id, chat_id FROM subscriptions")
+        mapping: dict[int, list[int]] = {}
+        for row in await cursor.fetchall():
+            mapping.setdefault(int(row["tg_id"]), []).append(int(row["chat_id"]))
+        return mapping
 
     async def set_excluded(self, tg_id: int, excluded: bool, by: int | None) -> None:
         """Exclusion is never silent: the person sees it in his panel (SPEC 6.4)."""

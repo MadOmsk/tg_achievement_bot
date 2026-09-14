@@ -1,4 +1,4 @@
-"""/start, /connect_xbox, /disconnect_xbox and the timezone picker. UI only (CLAUDE.md)."""
+"""/start opens the Mini App; timezone callbacks; leftover connect callbacks."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    WebAppInfo,
+)
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
@@ -24,12 +30,9 @@ from bot.handlers.keyboards import (
     safe_edit,
     timezone_keyboard,
 )
-from bot.handlers.panel import send_panel
-from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
-from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
+from bot.services.mini_app import mini_app_open_markup
 from bot.services.notify import AdminNotifier
-from bot.services.psn.auth import PsnAuth
 from bot.util import parse_utc_offset
 
 log = logging.getLogger(__name__)
@@ -38,55 +41,111 @@ router = Router(name="connect")
 
 REVOKE_URL = "https://account.live.com/consent/Manage"
 
+# Old slash commands are not supported — swallow so leftover panel/chat/admin
+# handlers never answer them. Mini App only (/start, /app stay).
+_LEGACY_COMMANDS = (
+    "panel",
+    "stats",
+    "online",
+    "who",
+    "recent",
+    "summary",
+    "summary_day",
+    "summary_month",
+    "hltb",
+    "help",
+    "subscribe",
+    "unsubscribe",
+    "delete_last",
+    "admin",
+    "connect_xbox",
+    "disconnect_xbox",
+    "connect_steam",
+    "disconnect_steam",
+    "connect_psn",
+    "disconnect_psn",
+)
+
+
+def open_app_markup(
+    settings: Settings,
+    i18n: I18nContext,
+    *,
+    chat_id: int | None = None,
+    bot_username: str = "",
+    in_group: bool = False,
+) -> InlineKeyboardMarkup | None:
+    url = (settings.mini_app_url or "").strip()
+    if not url:
+        return None
+    text = i18n.get("connect-open-app-button")
+    if chat_id is not None:
+        return mini_app_open_markup(
+            text,
+            https_url=url,
+            bot_username=bot_username,
+            chat_id=chat_id,
+            in_group=in_group,
+        )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=text,
+                    web_app=WebAppInfo(url=url),
+                )
+            ]
+        ]
+    )
+
+
+async def send_open_app(
+    message: Message, settings: Settings, i18n: I18nContext, *, chat_id: int | None = None
+) -> None:
+    in_group = message.chat.type != ChatType.PRIVATE
+    username = ""
+    if in_group or chat_id is not None:
+        me = await message.bot.me()
+        username = me.username or ""
+    await message.answer(
+        i18n.get("connect-open-app-hint"),
+        reply_markup=open_app_markup(
+            settings,
+            i18n,
+            chat_id=chat_id if chat_id is not None else (message.chat.id if in_group else None),
+            bot_username=username,
+            in_group=in_group,
+        ),
+    )
+
 
 @router.message(CommandStart(deep_link=True))
 async def start_with_payload(
     message: Message,
     command: CommandObject,
     repo: Repo,
-    connect: ConnectService,
     settings: Settings,
-    psn_auth: PsnAuth,
-    bot: Bot,
     i18n: I18nContext,
 ) -> None:
-    """Deep link from a group chat: its buttons send people here (SPEC 6.3)."""
     await repo.ensure_user(message.chat.id, _username(message))
-    if command.args == "panel":
-        await send_panel(bot, repo, message.chat.id, i18n)
-        return
-    if command.args == "connectsteam":
-        # Same prompt-and-wait as every other door into this flow
-        # (steam.py's prompt_for_link, 2026-09-05 follow-up) — a deep link
-        # can't carry the profile URL itself, but landing here now arms the
-        # wait too, so there's nothing left to type but the link itself.
-        await prompt_for_link(bot, repo, settings, message.chat.id)
-        return
-    if command.args == "connectpsn":
-        # Same treatment as connectsteam above, for PSN (SPEC 9, M-PSN-1).
-        await prompt_for_psn_link(bot, repo, psn_auth, message.chat.id)
-        return
     is_connect, origin_chat_id = _parse_connect_payload(command.args or "")
-    if is_connect:
-        # Straight to the login link: the person pressed the Xbox connect button in a
-        # group and does not need the whole greeting again. If the button
-        # carried which group it was pressed in, we auto-subscribe him there
-        # once the login actually succeeds (see on_linked in bot/main.py).
-        user = await repo.get_user(message.chat.id)
-        if user is not None and user.xuid:
-            await message.answer(i18n.get("connect-xbox-already-connected"))
-            return
-        await _send_login_link(message, connect, i18n, origin_chat_id=origin_chat_id)
-        return
-    await _greet(message, repo, connect, bot, i18n)
+    await send_open_app(message, settings, i18n, chat_id=origin_chat_id if is_connect else None)
 
 
 @router.message(CommandStart())
 async def start(
-    message: Message, repo: Repo, connect: ConnectService, bot: Bot, i18n: I18nContext
+    message: Message,
+    repo: Repo,
+    i18n: I18nContext,
+    settings: Settings,
 ) -> None:
     await repo.ensure_user(message.chat.id, _username(message))
-    await _greet(message, repo, connect, bot, i18n)
+    await send_open_app(message, settings, i18n)
+
+
+@router.message(Command(*_LEGACY_COMMANDS))
+async def ignore_legacy_commands(message: Message) -> None:
+    return
 
 
 @router.message(Command("connect_xbox"))
@@ -256,14 +315,15 @@ async def timezone_manual_input(message: Message, repo: Repo, i18n: I18nContext)
 
 
 async def _greet(
-    message: Message, repo: Repo, connect: ConnectService, bot: Bot, i18n: I18nContext
+    message: Message,
+    repo: Repo,
+    connect: ConnectService,
+    bot: Bot,
+    i18n: I18nContext,
+    settings: Settings,
 ) -> None:
-    user = await repo.get_user(message.chat.id)
-    if user is not None and user.xuid:
-        await send_panel(bot, repo, message.chat.id, i18n)
-        return
-    await message.answer(i18n.get("connect-greeting"))
-    await _send_login_link(message, connect, i18n)
+    del repo, connect, bot
+    await send_open_app(message, settings, i18n)
 
 
 async def _send_login_link(
