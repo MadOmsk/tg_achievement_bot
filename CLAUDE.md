@@ -1404,6 +1404,16 @@ and never will be: that is what an upgrade looks like.
 - A person can disconnect locally at any time, but revoking Microsoft's own consent
   has to happen in the user's own Microsoft account settings — the bot can only link
   to that page, not do it for them.
+- **PSN's profile link points at PSNProfiles** (#30, 2026-09-16), not at
+  Sony: `my.playstation.com` has been dead since June 2021, when MyPlayStation
+  was shut down — the PlayStation App shows the last three games played and
+  the website shows no trophies at all, so there is no official page left to
+  link to (re-checked before switching, not assumed). A profile PSNProfiles
+  has not indexed yet answers "not tracked" on the first visit and is the real
+  profile on every visit after: that first visit is how the site learns about
+  somebody, so it is a feature of the link rather than a failure of it. The
+  bot never checks the link — PSNProfiles answers automated requests with 403,
+  so a liveness check would buy nothing and cost the address a ban.
 - Profile links in `/stats`/`/who` are gated by the profile's own owner's
   `user_settings.show_profile_links` (off by default) — see "User interface" above.
 

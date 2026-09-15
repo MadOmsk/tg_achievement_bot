@@ -99,7 +99,7 @@ async def test_psn_linked_gets_its_own_profile_button(repo: Repo) -> None:
         for row in markup.inline_keyboard
         if any(b.callback_data == "psn:disconnectprompt" for b in row)
     )
-    assert any(b.url == "https://my.playstation.com/profile/superomsk" for b in row)
+    assert any(b.url == "https://psnprofiles.com/superomsk" for b in row)
 
 
 async def test_show_profile_links_defaults_off(repo: Repo) -> None:
