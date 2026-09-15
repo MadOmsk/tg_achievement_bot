@@ -26,7 +26,6 @@ from bot.handlers import panel as panel_handlers
 from bot.handlers import psn as psn_handlers
 from bot.handlers import steam as steam_handlers
 from bot.handlers.chat import UsernameMiddleware
-from bot.handlers.keyboards import timezone_keyboard
 from bot.i18n import (
     AVAILABLE_LOCALES,
     DEFAULT_LOCALE,
@@ -63,6 +62,7 @@ from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.util import parse_iso
+from bot.views.keyboards import timezone_keyboard
 from bot.web.oauth import OAuthServer
 
 log = logging.getLogger(__name__)

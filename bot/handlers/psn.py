@@ -29,13 +29,7 @@ from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.handlers import awaiting
-from bot.handlers.keyboards import (
-    deep_link_keyboard,
-    notify_previous_owner,
-    safe_edit,
-    switch_keyboard,
-    switch_prompt,
-)
+from bot.handlers.delivery import notify_previous_owner, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.services import relink
@@ -46,6 +40,7 @@ from bot.services.psn.client import (
     is_trophy_visible,
     resolve_profile,
 )
+from bot.views.keyboards import deep_link_keyboard, switch_keyboard, switch_prompt
 from bot.views.parts import platform_label
 
 log = logging.getLogger(__name__)

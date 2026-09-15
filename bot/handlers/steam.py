@@ -41,13 +41,7 @@ from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.handlers import awaiting
-from bot.handlers.keyboards import (
-    deep_link_keyboard,
-    notify_previous_owner,
-    safe_edit,
-    switch_keyboard,
-    switch_prompt,
-)
+from bot.handlers.delivery import notify_previous_owner, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import relink
@@ -58,6 +52,7 @@ from bot.services.steam.client import (
     get_profile,
     resolve_steam_id,
 )
+from bot.views.keyboards import deep_link_keyboard, switch_keyboard, switch_prompt
 from bot.views.parts import platform_label
 
 log = logging.getLogger(__name__)

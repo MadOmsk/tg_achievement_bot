@@ -14,17 +14,7 @@ from aiogram_i18n import I18nContext
 from bot.config import Settings
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
-from bot.handlers.keyboards import (
-    TZ_MANUAL,
-    TZ_MORE,
-    TZ_SET,
-    TZ_SKIP,
-    connect_keyboard,
-    format_offset,
-    onboarding_keyboard,
-    safe_edit,
-    timezone_keyboard,
-)
+from bot.handlers.delivery import safe_edit
 from bot.handlers.panel import send_panel
 from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
@@ -32,6 +22,16 @@ from bot.services.connect import ConnectService
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.util import parse_utc_offset
+from bot.views.keyboards import (
+    TZ_MANUAL,
+    TZ_MORE,
+    TZ_SET,
+    TZ_SKIP,
+    connect_keyboard,
+    format_offset,
+    onboarding_keyboard,
+    timezone_keyboard,
+)
 
 log = logging.getLogger(__name__)
 

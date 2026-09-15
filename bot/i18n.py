@@ -152,7 +152,7 @@ def build_i18n_middleware() -> I18nMiddleware:
 
 async def build_i18n_context(locale: str = DEFAULT_LOCALE) -> I18nContext:
     """A standalone I18nContext for the rare bit of non-handler code (e.g.
-    main.py's on_linked callback) that calls into bot/handlers/keyboards.py
+    main.py's on_linked callback) that calls into bot/views/keyboards.py
     — those functions expect a real I18nContext (they call i18n.get(...)
     same as any handler), not the plain-string gettext() below. The caller
     passes the locale it already resolved for its own target; ConstManager

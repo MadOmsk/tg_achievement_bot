@@ -13,10 +13,7 @@ same way hltb.py got its own.
 
 from __future__ import annotations
 
-import contextlib
-
-from aiogram import Bot
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
@@ -29,22 +26,6 @@ from bot.services.relink import LinkPreview
 # that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
 # need the exact same builders), this module just re-uses them for panel.py's
 # own profile buttons below.
-from bot.views.parts import platform_label
-
-
-async def safe_edit(
-    callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup | None = None, **kwargs: object
-) -> None:
-    """Edit the callback's own message in place, tolerating the two routine
-    failures every caller already needs to: the message isn't a real,
-    editable Message (gone, or not accessible), or Telegram refuses an
-    edit that changes nothing. Never calls callback.answer() itself —
-    callers keep picking their own toast text, or none at all, same as
-    before this existed."""
-    if isinstance(callback.message, Message):
-        with contextlib.suppress(Exception):
-            await callback.message.edit_text(text, reply_markup=markup, **kwargs)
-
 
 # Offsets, not zone names: MSK and CST are ambiguous, +03:00 is not (SPEC 6.1.1).
 COMMON_OFFSETS_HOURS: tuple[int, ...] = (2, 3, 4, 5, 6, 7, 9, 10)
@@ -433,27 +414,3 @@ def switch_prompt(
         )
     parts.append(i18n.get("connect-switch-question", incoming=incoming_name))
     return "\n\n".join(parts)
-
-
-async def notify_previous_owner(
-    bot: Bot, tg_id: int, platform: str, name: str, *, locale: str
-) -> None:
-    """Tell whoever just lost an account that they lost it (#52, owner
-    decision) — deliberately without naming who took it: that is somebody
-    else's Telegram identity, and the person who lost the account can sort
-    it out with the account itself, not with a name we volunteered.
-
-    Best-effort: they may have blocked the bot, and a failed notice must not
-    fail the linking that triggered it.
-    """
-    with contextlib.suppress(Exception):
-        await bot.send_message(
-            tg_id,
-            gettext(
-                "connect",
-                "connect-account-taken",
-                locale=locale,
-                platform=platform_label(platform, locale),
-                name=name,
-            ),
-        )

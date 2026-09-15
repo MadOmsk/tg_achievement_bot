@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bot.handlers.keyboards import (
+from bot.views.keyboards import (
     next_rarity_mode,
     panel_keyboard,
     psn_profile_url,

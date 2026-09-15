@@ -9,9 +9,9 @@ from __future__ import annotations
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
 from bot.handlers import awaiting
-from bot.handlers.keyboards import switch_keyboard, switch_prompt
 from bot.services import relink
 from bot.util import utcnow
+from bot.views.keyboards import switch_keyboard, switch_prompt
 
 ALICE, BOB = 1, 2
 ACCOUNT_A, ACCOUNT_B = "76561190000000001", "76561190000000002"

@@ -41,14 +41,6 @@ from bot.handlers.hltb import (
     PAGE_SIZE_KEY,
     RESULTS_LIMIT_KEY,
 )
-from bot.handlers.keyboards import (
-    COMMON_OFFSETS_HOURS,
-    format_offset,
-    format_rarity,
-    locale_name,
-    next_locale,
-    next_rarity_mode,
-)
 from bot.i18n import translator
 from bot.poller.daily import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.poller.fetcher import Fetcher
@@ -93,6 +85,14 @@ from bot.services.translate.auth import (
 )
 from bot.util import humanize_ago, parse_iso, parse_utc_offset, utcnow
 from bot.views.admin_home import render_admin_home
+from bot.views.keyboards import (
+    COMMON_OFFSETS_HOURS,
+    format_offset,
+    format_rarity,
+    locale_name,
+    next_locale,
+    next_rarity_mode,
+)
 from bot.views.parts import (
     COMPLETED_BADGE,
     plural_achievements,
