@@ -73,7 +73,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── locales/                  user-facing translations: ru/ (the default and the
 │   │                             per-key fallback) and en/, both complete (#48)
 │   │
-│   ├── handlers/                 aiogram routers — UI layer only, no SQL, no platform API calls
+│   ├── handlers/                 aiogram routers — routing and actions only: no SQL, no
+│   │   │                          platform API calls, and since #63 no layout either
 │   │   ├── connect.py             /start, /connect_xbox, /disconnect_xbox
 │   │   ├── panel.py               the personal panel, "My chats"
 │   │   ├── admin.py               the admin panel (/admin, self-refreshing), bulk message wipe
@@ -82,24 +83,44 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── hltb.py                /hltb, HowLongToBeat lookup
 │   │   ├── steam.py               /connect_steam, /disconnect_steam
 │   │   ├── psn.py                 /connect_psn, /disconnect_psn
-│   │   └── keyboards.py           inline keyboards + small shared helpers (format_*, safe_edit)
+│   │   └── delivery.py            safe_edit + the notice to an account's previous owner —
+│   │                              the two things in the old keyboards.py that send
+│   │
+│   ├── views/                     every screen's layout, one module per screen (#63).
+│   │   │                          A view renders and never sends: it may read the database,
+│   │   │                          but knows nothing of Message/CallbackQuery and decides
+│   │   │                          nothing about when it is shown. `Screen` (text, keyboard,
+│   │   │                          photo/gallery) is what comes back. See scripts/render_screen.py
+│   │   ├── panel.py                /panel, "Мои чаты", one chat's card
+│   │   ├── chat.py                 /stats, /recent, /who's labels, the group hub
+│   │   ├── admin.py                the admin panel's screens
+│   │   ├── admin_home.py           /admin's own card — its own file because admin_refresh
+│   │   │                           redraws it on a timer
+│   │   ├── online.py               the /online table, redrawn by its own poller too
+│   │   ├── summary.py              the day/month blocks the three summary shapes compose
+│   │   ├── notification.py         the achievement/trophy card and the digest
+│   │   ├── hltb.py                 the /hltb card and the screens around it
+│   │   ├── keyboards.py            every inline keyboard + format_* helpers
+│   │   ├── parts.py                the vocabulary screens share: badges, the platform
+│   │   │                           palette, counted nouns, per-platform header rows
+│   │   └── tables.py               the shared blockquote-list renderer
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
-│   │   ├── achievements.py         achievement filtering, message formatting, platform_tag
+│   │   ├── achievements.py         whether an achievement may be published (the wording
+│   │   │                           moved to views/ in #63)
+│   │   ├── admin_settings.py       what the admin panel's settings *are*: bounds, labels,
+│   │   │                           defaults — read by the view and the handler alike
 │   │   ├── connect.py              one-time OAuth state, finishing a login
 │   │   ├── stats.py                aggregates for the panels, /stats, the daily summary
 │   │   ├── models.py               ParsedAchievement/Platform, shared by Xbox/Steam/PSN
-│   │   ├── tables.py               shared blockquote-list table renderer
 │   │   ├── naming.py               the naming chains (#51) — the only place that answers
 │   │   │                           "what is this person called" / "what is this account called"
 │   │   ├── profile_links.py        one profile-URL builder per platform, gated by
 │   │   │                           user_settings.show_profile_links
 │   │   ├── hltb.py                 wrapper over howlongtobeatpy, cached in hltb_cache
 │   │   ├── message_log.py          request middleware: logs outgoing group messages
-│   │   ├── online_view.py          renders the /online table, shared by the command and auto-refresh
 │   │   ├── presence_view.py        which platform answers "where is this person right
 │   │   │                           now" — /online's own rule, for one person (#1)
-│   │   ├── admin_view.py           renders /admin, shared by the command and auto-refresh
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
 │   │   ├── notify.py               notifications to the admin
 │   │   ├── crypto.py               refresh-token encryption (Fernet)
@@ -191,21 +212,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
 │   │                               before the description cache existed (#48) — per title,
 │   │                               two locales, then the shared bilingual_descriptions()
-│   └── ui_capture/                captures docs/ui/captured_production.md from a running
-│                                   build: the real dispatcher and routers against a copy of
-│                                   the database, with Telegram itself replaced by a session
-│                                   that records outgoing calls. No network, nothing sent.
-│
-├── docs/                        design references, not code — see Engineering rules' own
-│   │                             "UI design lives in docs/ui/" entry before editing anything here
-│   └── ui/                        every screen's own design: layout, buttons, and which table
-│       ├── ui_screens_users.md      user-facing screens (mockups) — grows as coverage grows
-│       ├── ui_screens_admin.md      admin panel screens (mockups) — same idea, admin-only
-│       ├── tables.md                how each named table/list is built + the nickname rules
-│       │                            ui_screens_*.md reference by letter (A/B/C/D/E)
-│       └── captured_production.md   NOT a design file: what the deployed bot actually
-│                                    renders, captured from a real build (scripts/ui_capture/)
-│                                    so the mockups above have something to be checked against
+│   └── render_screen.py           draws any screen in bot/views/ on demand and prints it,
+│                                   or sends it to the owner's DM as a real message (#63) —
+│                                   what replaced the hand-kept mockups in docs/ui/
 │
 ├── tests/                       pytest + pytest-asyncio; real platform/Telegram calls forbidden
 │   └── ...                        one file per module/behavior area; see the test files
@@ -924,12 +933,31 @@ accounts" below) follows the same order — it was Xbox → Steam → PSN when t
 chain was agreed, and keeping two orders was judged not worth remembering. It had already drifted: `/panel` listed Xbox → Steam → PSN while
 `/stats`, ordering by the column name in SQL, listed Xbox → PSN → Steam —
 both describing themselves as "a fixed order", just not the same one. Found
-by capturing the real screens (see docs/ui/captured_production.md).
+by capturing the real screens, back when that took a capture harness (#63
+replaced it with `scripts/render_screen.py`).
 
 **Private commands**: `/start`, `/connect_xbox`, `/disconnect_xbox`,
 `/connect_steam`, `/disconnect_steam`, `/connect_psn`, `/disconnect_psn`, `/panel`.
 A private flow started from a group must redirect the person to a DM, never fail
 silently in the group.
+
+**`/start` greets, then offers all three platforms** — one row each, the one
+display order (#53). Somebody who already has *any* platform linked gets their
+panel instead of the greeting: this used to branch on `user.xuid` alone, so a
+PSN-only person was greeted as a stranger and pushed back into a Microsoft
+sign-in. Disconnecting any platform is one shape too — a one-tap confirmation,
+never a typed word.
+
+**The timezone picker** offers the eight offsets this community actually lives
+in, then "Другой ▸" for the full −12…+14 grid and "✏️ Ввести вручную" for one
+typed message (`+3`, `-5`, `+5:30`) — a half-hour zone is not worth paging a
+keyboard for. Offsets, never zone names: MSK and CST are ambiguous, +03:00 is
+not.
+
+**The stale-login reminder is the only DM the bot starts on its own** (besides
+the connect flow's own progress messages), and it says outright that
+reconnecting will not replay a year of history into the chat — that fear is
+what makes people ignore a re-login prompt.
 
 **The personal panel** (`/panel`, one self-editing message): the header is the
 person's own Telegram identity (same priority as `/stats`' header) followed by one
@@ -975,7 +1003,13 @@ platform gamertag, since every connected platform already gets its own line belo
 person the same way `/stats`' header does — `@username` > name > gamertag > platform
 name, never a bare id — #40), `/online` (cached presence,
 optionally auto-refreshing), `/recent [N]`, `/summary`, `/hltb`, `/delete_last`
-(deletes the chat's own latest non-system bot message). `/summary_day` and
+(deletes the chat's own latest non-system bot message). When a leaderboard is
+capped by `summary_top_limit`, one button appears under it: it replaces the
+message with the same block uncapped, in a plain (not expandable) blockquote —
+the cap exists for the chat's scrollback, and asking for everything is an
+explicit act. `/delete_last` quotes the first two lines of what it deleted, so
+the deletion is auditable rather than silent, and that confirmation is itself a
+system message the cleanup job takes away later. `/summary_day` and
 `/summary_month` (2026-09-08) ask `build_summary` for one block only — deliberately
 left out of the help text and `chat-help-text`, a diagnostic pair for the #14 block
 split rather than commands meant for everyday use alongside `/summary` itself.
@@ -1005,7 +1039,13 @@ exclusion/restore; per-chat settings (rarity threshold, summary time, timezone,
 mutes, minimum gamerscore, daily-summary switch, anti-flood limit/window, and
 the chat's own **language** — #48, one shared value per chat since Telegram
 cannot render one group message differently per viewer); bot-message
-cleanup actions. The per-chat card keeps its settings in **three sub-screens**
+cleanup actions. A key is **never shown back after it is saved** — only the
+fact that it is set; setting one puts the panel into a wait-for-one-message
+state whose screen says where to find the value and offers nothing but a way
+out. Every numeric limit shows its current value on its own row and opens its
+own one-message input, so the screen reads as a settings list rather than a
+menu you have to walk to find out what is set; `0` renders as "без
+ограничения" wherever zero means off. The per-chat card keeps its settings in **three sub-screens**
 (2026-09-11, user request) — daily summary, anti-flood, message cleanup —
 rather than rows of two to four buttons crammed side by side; the card's own
 text stays on screen in all of them, and each control redraws the section it
@@ -1051,7 +1091,8 @@ same rule every other catch-up path follows. Before this the button only ever
 looked at the current moment, so for anybody offline it did nothing at all.
 
 **All three of these handlers were dead on arrival** and nobody noticed until
-the interface was captured screen by screen (`scripts/ui_capture/`, 2026-09-13):
+the interface was captured screen by screen (2026-09-13, by a harness #63
+later replaced with scripts/render_screen.py):
 `a:sync:`, `a:reset:` and `a:resetok:` each unpacked `callback.data.split(":")`
 into `_`, two lines after `_` was bound to the translator, so the next
 `_("key")` raised `TypeError: 'str' object is not callable`. Tests asserted the
@@ -1173,6 +1214,48 @@ it combined across everyone and every platform, not who earned them
 rare pull separately (#9, user request) — the month block's rows still do, a
 longer window being more worth it in.
 
+## Lists and tables
+
+Every list the bot renders, with where its rows come from, who appears in it,
+how it is sorted and what caps it (kept from `docs/ui/tables.md` when that
+file went away, #63 — the *queries* are visible in the code, but "who is in
+scope" and "what the cap is for" are decisions and are not).
+
+| List | Source | Who appears | Sort | Cap |
+|---|---|---|---|---|
+| `/stats`' recent games | `repo.recent_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
+| `/recent` | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
+| `/online` | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
+| summary leaderboards (day/month) | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
+| "Игры за месяц" | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
+| the admin's user list | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page |
+| the admin's chat list | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
+| a chat's subscribers | `repo.chat_subscribers()` | that chat's subscribers | by the rendered name ↑ | — |
+| `/hltb` suggestions | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit` |
+| `/hltb` results | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page |
+
+- **`/stats`' games** are a rolling 30 days (`RECENT_GAMES_DAYS`), labelled as
+  such, deliberately not the calendar month its counters use. One game on two
+  platforms is two rows.
+- **`/recent`** is subscribers only — not `/online`'s broader "known member"
+  set; excluded people never appear; a secret achievement's name stays behind
+  a spoiler.
+- **`/online`**: activity beats freshness (see the naming rules above and
+  `presence_view.pick_presence`).
+- **Summary leaderboards** keep zero rows: this is a report, not a live feed
+  (#34). The `💎N` rare badge is in the month block only (#9); the platform
+  breakdown is always there.
+- **"Игры за месяц"** groups by `(title_id, platform)`, never `title_id`
+  alone — a Steam appid and an Xbox title id are both bare numbers and can
+  collide by accident.
+- **The admin's user list** is printed twice on purpose: as text, where the
+  columns line up and can be read at a glance, and as one button per row,
+  because a row has to be tappable.
+- **`/hltb`'s suggestions** use `/online`'s "known member" scope, but their
+  source (`title_history`) is **Xbox-only** — Steam and PSN games never reach
+  it. Same class of gap the naming chains had before #51, one layer over; not
+  fixed.
+
 ## Statistics rules
 
 Normal stats read only from `seen_achievements`, `title_history`, platform links,
@@ -1234,7 +1317,7 @@ A row cached before this existed tops its Russian side up on the next lookup;
 English side too. With no Anthropic key the card just shows HLTB's English text.
 
 The card renders it as a collapsed `<blockquote expandable>` between the genres
-and the HLTB link (`docs/ui/ui_screens_users.md`), capped at
+and the HLTB link, capped at
 `handlers/hltb.py::DESCRIPTION_LIMIT` — the card is a photo *caption* whenever
 the game has cover art, and Telegram caps those at 1024 characters, so an
 overlong summary would cost the whole card rather than just its own tail.
@@ -1354,21 +1437,30 @@ repository — issue #4.
   go in the chat reply that accompanies the preview, never inside the previewed
   message itself, since anything inside it reads back as leftover clutter once the
   format ships for real.
-- **UI design lives in `docs/ui/`** (2026-09-09 user request) —
-  `ui_screens_users.md`, `ui_screens_admin.md`, `tables.md` today, and the list
-  grows as more of the interface gets documented there; new screens go in
-  whichever existing file they logically belong with (user-facing vs. admin), or
-  a new file alongside them if neither fits. These files are the project owner's
-  own design decisions, written down — not generated from the code, and not
-  regenerated on every build. **Never edit a file under `docs/ui/` on your own
-  initiative** — deciding to change a screen is not itself permission to go
-  rewrite its design file unreviewed; that needs its own explicit go-ahead. The
-  order, once a change is actually agreed: (1) agree
-  the design first — show the proposed result before writing anything down, same
-  preview discipline as the rule above; (2) update the relevant `docs/ui/`
-  file(s) to match what was agreed; (3) refresh only the screen(s) that actually
-  changed (never a blanket re-render of every screen the touched file happens to
-  also describe); (4) then everything else — tests, unrelated code, other docs.
+- **A screen's layout lives in `bot/views/`, and its mockup is rendered, not
+  written down** (#63, 2026-09-15, owner decision — this replaced `docs/ui/`,
+  which was three hand-kept mockup files plus a capture script to catch them
+  drifting). One module per screen; a view renders and never sends. To look at
+  a screen, draw it:
+
+  ```bash
+  python scripts/render_screen.py --list
+  python scripts/render_screen.py panel --locale en
+  python scripts/render_screen.py admin-user-card --send
+  ```
+
+  `--send` puts it in the owner's DM as a real message, keyboard and all —
+  which is the only form a layout decision can actually be judged in, and the
+  same preview discipline the rule above asks for. Point `DB_PATH` at a copy
+  of production to render against real data.
+
+  **Changing a screen is still not the same as deciding to change it.** The
+  order stays what it was: agree the design first — render the proposed result
+  and show it — then write the code, then everything else. What is gone is the
+  step that kept a second, hand-maintained description of the same screen in
+  sync; the design *decisions* (this file's "Message formats", "User
+  interface", "Lists and tables") are what survive in writing, because a rule
+  is not visible in a rendered screenshot.
 
 ## Tests
 

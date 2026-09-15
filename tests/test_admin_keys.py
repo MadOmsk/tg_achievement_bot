@@ -13,7 +13,7 @@ from bot.services.psn.auth import PsnAuth
 from bot.services.steam import auth as steam_auth_module
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
-from bot.views.admin import _keys_screen
+from bot.views.admin import render_keys
 
 KEY = "0123456789ABCDEF0123456789ABCDEF"
 ADMIN_ID = 1
@@ -26,7 +26,7 @@ def _callback_datas(markup) -> list[str]:
 async def test_keys_screen_lists_all_platforms_unconfigured(
     repo: Repo, cipher: TokenCipher, i18n
 ) -> None:
-    text, markup = await _keys_screen(
+    text, markup = await render_keys(
         SteamAuth(repo, cipher), PsnAuth(repo, cipher), AnthropicAuth(repo, cipher), locale="ru"
     )
 
@@ -51,7 +51,7 @@ async def test_keys_screen_offers_clear_once_steam_is_configured(
     steam_auth = SteamAuth(repo, cipher)
     await steam_auth.set_key(KEY, admin_id=ADMIN_ID)
 
-    _text, markup = await _keys_screen(
+    _text, markup = await render_keys(
         steam_auth, PsnAuth(repo, cipher), AnthropicAuth(repo, cipher), locale="ru"
     )
 

@@ -78,7 +78,7 @@ def _cancel_input_keyboard(*, locale: str) -> InlineKeyboardMarkup:
 # ---- Platform keys (#17) ----
 
 
-async def _keys_screen(
+async def render_keys(
     steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
@@ -186,7 +186,7 @@ def _toast_preview(preview: str) -> str:
     return collapsed[: TOAST_PREVIEW_MAX_CHARS - 1] + "…"
 
 
-async def _new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+async def render_new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
     """Settings that only ever apply at the moment someone new subscribes —
     grouped on their own screen (2026-09-05 follow-up) rather than sitting
     on the home screen forever, since none of them affect anyone already
@@ -229,7 +229,9 @@ async def _new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, InlineKey
     return text, keyboard
 
 
-async def _users(repo: Repo, page: int, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+async def render_user_list(
+    repo: Repo, page: int, *, locale: str
+) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
     users = await repo.admin_users()
     if not users:
@@ -477,7 +479,9 @@ async def _psn_admin_block(
     ]
 
 
-async def _card(repo: Repo, tg_id: int, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+async def render_user_card(
+    repo: Repo, tg_id: int, *, locale: str
+) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
     user = await repo.get_user(tg_id)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
@@ -561,7 +565,7 @@ async def _card(repo: Repo, tg_id: int, *, locale: str) -> tuple[str, InlineKeyb
 # spliced into "Стереть базу <label> для...".
 
 
-async def _chats(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
     chats = await repo.admin_chats()
     if not chats:
@@ -585,7 +589,7 @@ async def _chats(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]
     return _("admin-chats-header"), builder.as_markup()
 
 
-async def _chat(
+async def render_chat_card(
     repo: Repo, chat_id: int, *, locale: str, section: str | None = None
 ) -> tuple[str, InlineKeyboardMarkup]:
     """The chat card. `section` picks which keyboard goes under it: the root

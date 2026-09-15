@@ -15,7 +15,7 @@ from bot.services.admin_settings import (
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
 )
-from bot.views.admin import _chat
+from bot.views.admin import render_chat_card
 
 CHAT_ID = -100999
 
@@ -53,13 +53,13 @@ async def test_chat_card_shows_the_flood_settings_and_opens_their_submenu(repo: 
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=5, flood_window_minutes=45)
 
-    text, markup = await _chat(repo, CHAT_ID, locale="ru")
+    text, markup = await render_chat_card(repo, CHAT_ID, locale="ru")
 
     assert "5 ач." in text
     assert "45 мин" in text
     assert f"a:mflood:{CHAT_ID}" in _callback_datas(markup)
 
-    _text, submenu = await _chat(repo, CHAT_ID, locale="ru", section="flood")
+    _text, submenu = await render_chat_card(repo, CHAT_ID, locale="ru", section="flood")
     datas = _callback_datas(submenu)
     assert f"a:cfl:{CHAT_ID}" in datas
     assert f"a:cflw:{CHAT_ID}" in datas
@@ -70,7 +70,7 @@ async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo, i18n) ->
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=0)
 
-    text, _markup = await _chat(repo, CHAT_ID, locale="ru")
+    text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
 
     assert "выключен" in text
 
@@ -78,7 +78,7 @@ async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo, i18n) ->
 async def test_the_flood_submenu_has_the_toggle_button(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
 
-    _text, markup = await _chat(repo, CHAT_ID, locale="ru", section="flood")
+    _text, markup = await render_chat_card(repo, CHAT_ID, locale="ru", section="flood")
 
     assert f"a:cfltoggle:{CHAT_ID}" in _callback_datas(markup)
 
@@ -89,7 +89,7 @@ async def test_toggle_turns_a_configured_filter_off(repo: Repo, i18n) -> None:
 
     await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo, i18n)
 
-    text, _markup = await _chat(repo, CHAT_ID, locale="ru")
+    text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     assert "выключен" in text
 
 
@@ -99,7 +99,7 @@ async def test_toggle_turns_an_off_filter_back_on_at_the_default(repo: Repo, i18
 
     await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo, i18n)
 
-    text, _markup = await _chat(repo, CHAT_ID, locale="ru")
+    text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     assert f"{FLOOD_LIMIT_DEFAULT} ач." in text
     assert "выключен" not in text
 

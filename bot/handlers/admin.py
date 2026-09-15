@@ -69,18 +69,18 @@ from bot.services.translate.auth import (
 from bot.util import parse_iso, parse_utc_offset, utcnow
 from bot.views.admin import (
     _cancel_input_keyboard,
-    _card,
-    _chat,
-    _chats,
     _format_limit,
     _hour_grid_markup,
-    _keys_screen,
-    _new_user_defaults,
     _setting_label,
     _toast_preview,
     _tz_grid_markup,
-    _users,
     find_chat,
+    render_chat_card,
+    render_chat_list,
+    render_keys,
+    render_new_user_defaults,
+    render_user_card,
+    render_user_list,
 )
 from bot.views.admin_home import render_admin_home
 from bot.views.keyboards import (
@@ -219,7 +219,7 @@ async def keys_menu(
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
-        callback, *await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        callback, *await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
     )
 
 
@@ -270,7 +270,7 @@ async def keys_clear(
     await auth.clear(callback.from_user.id)
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
-        callback, *await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        callback, *await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
     )
 
 
@@ -323,7 +323,7 @@ async def admin_text_input(
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        text, markup = await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
         await message.answer(_("admin-keys-steam-saved", text=text), reply_markup=markup)
         return
 
@@ -353,7 +353,7 @@ async def admin_text_input(
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        text, markup = await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
         await message.answer(_("admin-keys-psn-saved", text=text), reply_markup=markup)
         return
 
@@ -369,14 +369,14 @@ async def admin_text_input(
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await _keys_screen(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        text, markup = await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
         await message.answer(_("admin-keys-anthropic-saved", text=text), reply_markup=markup)
         return
 
 
 @router.callback_query(F.data == "a:newusers")
 async def new_user_defaults_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    await _redraw(callback, *await _new_user_defaults(repo, locale=i18n.locale))
+    await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
 
 
 @router.callback_query(F.data == "a:defaultrarity")
@@ -385,7 +385,7 @@ async def default_rarity_cycle(callback: CallbackQuery, repo: Repo, i18n: I18nCo
     assert current is not None
     mode = next_rarity_mode(current)
     await repo.set_app_setting(DEFAULT_RARITY_MODE_KEY, mode, callback.from_user.id)
-    await _redraw(callback, *await _new_user_defaults(repo, locale=i18n.locale))
+    await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
 
 
 @router.callback_query(F.data == "a:defaultlinks")
@@ -394,7 +394,7 @@ async def default_show_links_toggle(callback: CallbackQuery, repo: Repo, i18n: I
     await repo.set_app_setting(
         DEFAULT_SHOW_LINKS_KEY, "0" if current else "1", callback.from_user.id
     )
-    await _redraw(callback, *await _new_user_defaults(repo, locale=i18n.locale))
+    await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
 
 
 # ------------------------------------------------------ free-text numeric settings
@@ -498,7 +498,7 @@ async def numeric_setting_input(
             return
         del _awaiting_input[message.from_user.id]
         await repo.update_chat_settings(chat_id, rare_threshold_percent=value)
-        reply_text, markup = await _chat(repo, chat_id, locale=i18n.locale)
+        reply_text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale)
         await message.answer(
             _("admin-threshold-saved", value=f"{value:g}", text=reply_text),
             reply_markup=markup,
@@ -521,7 +521,7 @@ async def numeric_setting_input(
             return
         del _awaiting_input[message.from_user.id]
         await repo.update_chat_settings(chat_id, **{key: value_int})
-        reply_text, markup = await _chat(repo, chat_id, locale=i18n.locale)
+        reply_text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale)
         saved_key = "admin-flood-saved" if key == "flood_limit" else "admin-flood-window-saved"
         await message.answer(_(saved_key, value=value_int, text=reply_text), reply_markup=markup)
         return
@@ -605,7 +605,9 @@ async def chat_flood_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nConte
     new_limit = 0 if chat.flood_limit > 0 else FLOOD_LIMIT_DEFAULT
     await repo.update_chat_settings(chat_id, flood_limit=new_limit)
     await callback.answer()
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="flood"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="flood")
+    )
 
 
 # The chat card's three sub-screens (2026-09-11, user request). Each used to
@@ -619,21 +621,27 @@ async def chat_flood_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nConte
 async def chat_summary_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.split(":")[2])
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="summary"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="summary")
+    )
 
 
 @router.callback_query(F.data.startswith("a:mflood:"))
 async def chat_flood_menu_screen(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.split(":")[2])
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="flood"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="flood")
+    )
 
 
 @router.callback_query(F.data.startswith("a:mdel:"))
 async def chat_messages_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.split(":")[2])
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="messages"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="messages")
+    )
 
 
 @router.callback_query(F.data.startswith("a:cloc:"))
@@ -658,7 +666,7 @@ async def chat_locale_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nCont
     await repo.update_chat_settings(chat_id, locale=next_locale(chat.locale))
     # No toast of its own: _redraw already acknowledges the press, and the
     # card it redraws shows the new language on its own line anyway.
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:cfl:"))
@@ -741,7 +749,9 @@ async def chat_time_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) 
     chat_id, hour = int(chat_id_raw), int(hour_raw)
     await repo.update_chat_settings(chat_id, daily_summary_time=f"{hour:02d}:00")
     await callback.answer(_("admin-chat-time-saved", time=f"{hour:02d}:00"))
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="summary"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="summary")
+    )
 
 
 @router.callback_query(F.data.startswith("a:ctz:"))
@@ -777,7 +787,9 @@ async def chat_zone_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) 
     chat_id, minutes = int(chat_id_raw), int(minutes_raw)
     await repo.update_chat_settings(chat_id, tz_offset_min=minutes)
     await callback.answer(format_offset(minutes))
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="summary"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="summary")
+    )
 
 
 @router.callback_query(F.data.startswith("a:ctzm:"))
@@ -822,7 +834,7 @@ async def chat_timezone_input(message: Message, repo: Repo, i18n: I18nContext) -
 
     del _awaiting_input[message.from_user.id]
     await repo.update_chat_settings(chat_id, tz_offset_min=minutes)
-    reply_text, markup = await _chat(repo, chat_id, locale=i18n.locale)
+    reply_text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale)
     await message.answer(
         _("admin-timezone-saved", offset=format_offset(minutes), text=reply_text),
         reply_markup=markup,
@@ -836,14 +848,14 @@ async def chat_timezone_input(message: Message, repo: Repo, i18n: I18nContext) -
 async def users_page(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     page = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await _users(repo, page, locale=i18n.locale))
+    await _redraw(callback, *await render_user_list(repo, page, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:u:"))
 async def user_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     tg_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await _card(repo, tg_id, locale=i18n.locale))
+    await _redraw(callback, *await render_user_card(repo, tg_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:excl:"))
@@ -854,7 +866,7 @@ async def user_exclude(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     tg_id, excluded = int(raw_id), raw_flag == "1"
     await repo.set_excluded(tg_id, excluded, callback.from_user.id)
     await callback.answer(_("admin-user-excluded") if excluded else _("admin-user-restored"))
-    await _redraw(callback, *await _card(repo, tg_id, locale=i18n.locale))
+    await _redraw(callback, *await render_user_card(repo, tg_id, locale=i18n.locale))
 
 
 _SYNC_NOT_CONNECTED_KEY = {
@@ -940,7 +952,7 @@ async def user_refresh(
         log.exception("admin %s refresh of tg_id=%s failed", platform, tg_id)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
         return
-    text, markup = await _card(repo, tg_id, locale=i18n.locale)
+    text, markup = await render_user_card(repo, tg_id, locale=i18n.locale)
     if delta:
         summary = f"{summary}\n{delta}"
     await _redraw(callback, f"{text}\n\n{summary}", markup)
@@ -996,14 +1008,14 @@ async def _sync_delta(
 
 @router.callback_query(F.data == "a:chats")
 async def chats_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    await _redraw(callback, *await _chats(repo, locale=i18n.locale))
+    await _redraw(callback, *await render_chat_list(repo, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:chat:"))
 async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:cds:"))
@@ -1017,7 +1029,9 @@ async def chat_daily(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> 
         return
     await repo.update_chat_settings(chat_id, daily_summary=0 if chat.daily_summary else 1)
     await callback.answer()
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="summary"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="summary")
+    )
 
 
 @router.callback_query(F.data.startswith("a:coff:"))
@@ -1031,7 +1045,7 @@ async def chat_toggle_active(callback: CallbackQuery, repo: Repo, i18n: I18nCont
         return
     await repo.set_chat_active(chat_id, not chat.is_active)
     await callback.answer(_("admin-chat-disabled") if chat.is_active else _("admin-chat-enabled"))
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale))
+    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
 
 
 # Telegram caps an answerCallbackQuery's own text at 200 characters total
@@ -1081,7 +1095,9 @@ async def chat_delete_last(
         else _("admin-deleted-last")
     )
     await callback.answer(feedback)
-    await _redraw(callback, *await _chat(repo, chat_id, locale=i18n.locale, section="messages"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="messages")
+    )
 
 
 WIPE_WINDOW_HOURS = 24
@@ -1262,7 +1278,7 @@ async def reset_platform_confirmed(
         log.exception("admin reset+resync of tg_id=%s platform=%s failed", tg_id, platform)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
 
-    text, markup = await _card(repo, tg_id, locale=i18n.locale)
+    text, markup = await render_user_card(repo, tg_id, locale=i18n.locale)
     await _redraw(callback, text, markup)
 
 
@@ -1277,7 +1293,9 @@ async def _wipe_confirm(
     ok = await _bulk_delete_messages(bot, chat_id, ids)
     await repo.forget_bot_messages(chat_id, ids)
     await callback.answer(_("admin-wipe-done") if ok else _("admin-wipe-partial"))
-    await _redraw(callback, *await _chat(repo, chat_id, locale=locale, section="messages"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=locale, section="messages")
+    )
 
 
 async def _system_wipe_prompt(

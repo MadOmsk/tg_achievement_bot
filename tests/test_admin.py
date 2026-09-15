@@ -14,7 +14,7 @@ from bot.services.admin_settings import (
     RARE_THRESHOLD_MIN,
     unlimited_label,
 )
-from bot.views.admin import _format_limit, _new_user_defaults
+from bot.views.admin import _format_limit, render_new_user_defaults
 from bot.views.admin_home import _format_api_usage
 
 
@@ -43,11 +43,11 @@ def test_row_limit_bounds_reject_zero_and_absurdly_large() -> None:
 async def test_new_user_defaults_shows_links_off_until_set(repo: Repo) -> None:
     """Follow-up 2026-09-06 — same admin-configurable-default shape as
     default_rarity_mode, just a plain on/off (Repo.ensure_user)."""
-    text, markup = await _new_user_defaults(repo, locale="ru")
+    text, markup = await render_new_user_defaults(repo, locale="ru")
     assert "нет" in text or any("нет" in b.text for row in markup.inline_keyboard for b in row)
 
     await repo.set_app_setting(DEFAULT_SHOW_LINKS_KEY, "1")
-    _text, markup = await _new_user_defaults(repo, locale="ru")
+    _text, markup = await render_new_user_defaults(repo, locale="ru")
     assert any("да" in b.text for row in markup.inline_keyboard for b in row)
 
 
