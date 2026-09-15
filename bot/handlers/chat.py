@@ -41,6 +41,7 @@ from bot.services.single_message import send_replacing
 from bot.services.stats import local_now
 from bot.views.chat import (
     build_stats_text,
+    help_text,
     hub_keyboard,
     hub_text,
     recent_list,
@@ -496,7 +497,7 @@ async def _resolve(message: Message, repo: Repo, argument: str | None) -> User |
 @router.message(Command("help"))
 async def help_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
-        await message.answer(i18n.get("chat-help-text"))
+        await message.answer(help_text(i18n))
         return
     me = await bot.me()
     await message.answer(

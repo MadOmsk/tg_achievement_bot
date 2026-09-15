@@ -54,6 +54,7 @@ chat-help-text = 🎮 Слежу за достижениями и трофеям
     /hltb — показать сводку игры HowLongToBeat
 
     Настройки — в личке, /panel.
+chat-help-version = <i>Версия { $version }</i>
 chat-hub-nobody = Пока здесь никто не публикуется.
 chat-hub-publishing = Публикуются: { $names }
 chat-hub-publish-button = ✅ Публиковать мои достижения

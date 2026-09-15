@@ -67,6 +67,7 @@ from bot.views.admin import (
 from bot.views.admin_home import render_admin_home
 from bot.views.chat import (
     build_stats_text,
+    help_text,
     hub_keyboard,
     hub_text,
     recent_list,
@@ -143,12 +144,17 @@ async def _recent(ctx: Context) -> Screen:
     return Screen(recent_list(rows, await i18n_for(ctx.locale)))
 
 
+@screen("help")
+async def _help(ctx: Context) -> Screen:
+    return Screen(help_text(await i18n_for(ctx.locale)))
+
+
 @screen("hub")
 async def _hub(ctx: Context) -> Screen:
     i18n = await i18n_for(ctx.locale)
     return Screen(
         await hub_text(ctx.repo, ctx.chat_id, i18n),
-        hub_keyboard(i18n, subscribed=False),
+        hub_keyboard("tg_achievement_bot", ctx.chat_id, i18n),
     )
 
 

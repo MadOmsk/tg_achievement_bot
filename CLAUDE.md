@@ -69,6 +69,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── config.py                 settings loaded from the environment (pydantic-settings)
 │   ├── lock.py                   "one process per .env" guard (single instance)
 │   ├── util.py                   small shared helpers (UTC time, secret masking)
+│   ├── version.py                A.B.C.D and the "database is newer than this code"
+│   │                             check that refuses to start (#56)
 │   ├── i18n.py                   Fluent/aiogram_i18n wiring; Russian locale is the default
 │   ├── locales/                  user-facing translations: ru/ (the default and the
 │   │                             per-key fallback) and en/, both complete (#48)
@@ -1321,6 +1323,30 @@ and the HLTB link, capped at
 `handlers/hltb.py::DESCRIPTION_LIMIT` — the card is a photo *caption* whenever
 the game has cover art, and Telegram caps those at 1024 characters, so an
 overlong summary would cost the whole card rather than just its own tail.
+
+## Versioning
+
+**`A.B.C.D`** (#56, 2026-09-16), one line in `bot/version.py`, rendered as
+the last line of `/help` and the group hub, and logged at startup —
+`bot @tg_achievement_bot is up (v1.1.1928dc3.045)`.
+
+- **A** — the architecture. By hand, on a rewrite. `1`.
+- **B** — which line of work this build is. `0` on `main`; a working branch
+  takes the next number and `main` inherits it on merge, so "is this the
+  test bot" is answerable from the version alone. `accounts-52` is `1`.
+- **C** — the commit, read from git at startup (`nogit` where there is no
+  checkout). Deliberately not stored in a file: a number you have to
+  remember to bump is wrong exactly when it matters, and one edited per
+  commit is a merge conflict per commit.
+- **D** — the newest migration this code ships. Not what the database has.
+
+**A database ahead of the code refuses to start** (`Database.connect` →
+`SchemaTooNewError`). That is the 2026-09-14 outage in one check: a script
+run from the `accounts-52` worktree opened production's `bot.db`,
+`connect()` applied that branch's migrations to it, and the production bot
+— older code on `main` — crashed on tables it had never heard of. Every
+step was reasonable alone; nothing compared the two. Behind is not an error
+and never will be: that is what an upgrade looks like.
 
 ## Security and privacy
 

@@ -13,6 +13,7 @@ import aiosqlite
 
 from bot.constants import SettingKey
 from bot.util import utcnow_iso
+from bot.version import schema_gap
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,10 @@ DEFAULT_APP_SETTINGS: dict[str, str] = {
     SettingKey.HLTB_RESULTS_LIMIT: "20",
     SettingKey.HLTB_PAGE_SIZE: "5",
 }
+
+
+class SchemaTooNewError(RuntimeError):
+    """The database has migrations this code does not ship (#56)."""
 
 
 class Database:
@@ -60,6 +65,7 @@ class Database:
         # Whether this file had anything in it *before* schema.sql ran — see
         # _apply_migrations for why that one bit matters.
         fresh = await self._is_empty()
+        await self._refuse_a_newer_database()
         await self._apply_schema()
         await self._apply_migrations(fresh=fresh)
         await self._seed_app_settings()
@@ -77,6 +83,32 @@ class Database:
         )
         row = await cursor.fetchone()
         return (row[0] if row else 0) == 0
+
+    async def _refuse_a_newer_database(self) -> None:
+        """Stop before touching a database that a *newer* build has already
+        migrated (#56).
+
+        This is the 2026-09-14 outage in one check. A script run out of the
+        accounts-52 worktree opened production's bot.db, `connect()` applied
+        that branch's migrations to it, and the production bot — older code,
+        on main — then crashed on tables it had never heard of. Every step
+        was reasonable on its own; nothing compared the two.
+
+        Only "database ahead of code" is fatal. Behind is the normal state
+        of an upgrade and is what the migrations below are for.
+        """
+        cursor = await self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        )
+        if await cursor.fetchone() is None:
+            return  # nothing has ever been applied here
+        cursor = await self.conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        complaint = schema_gap(row["version"] if row else None)
+        if complaint is not None:
+            raise SchemaTooNewError(complaint)
 
     async def _apply_schema(self) -> None:
         await self.conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
