@@ -14,8 +14,8 @@ from bot.poller.daily import (
     build_summary,
     full_leaderboard,
 )
-from bot.services.achievements import platform_breakdown_suffix
 from bot.util import start_of_month_utc, utcnow
+from bot.views.parts import platform_breakdown_suffix
 
 CHAT_ID = -100500
 XUID_A = "xuid-a"

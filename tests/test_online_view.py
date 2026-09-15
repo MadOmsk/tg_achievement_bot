@@ -1,11 +1,11 @@
 """Rendering /online's table (SPEC 6.3) — split out of test_chat_online.py
-when the rendering itself moved to services/online_view.py (Follow-up
+when the rendering itself moved to views/online.py (Follow-up
 2026-09-05, needed by the auto-refresh poller too)."""
 
 from __future__ import annotations
 
 from bot.db.repo import ChatPresenceRow
-from bot.services.online_view import _row_name, presence_icon, presence_text, render_online_table
+from bot.views.online import _row_name, presence_icon, presence_text, render_online_table
 
 XUID_A = "xuid-a"
 

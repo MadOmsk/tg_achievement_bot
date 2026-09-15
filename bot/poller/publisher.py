@@ -19,15 +19,12 @@ from aiogram.types import InputMediaPhoto
 
 from bot.constants import account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
-from bot.services.achievements import (
-    format_digest,
-    format_single,
-    passes_filters,
-)
+from bot.services.achievements import passes_filters
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import stats_category
 from bot.services.naming import person_name_of
 from bot.util import parse_iso, utcnow
+from bot.views.notification import format_digest, format_single
 
 log = logging.getLogger(__name__)
 

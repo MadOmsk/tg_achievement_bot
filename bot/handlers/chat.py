@@ -43,7 +43,18 @@ from bot.handlers.admin import IsAdmin
 from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.poller.daily import build_summary, full_leaderboard
 from bot.poller.online_refresh import refresh_interval_minutes
-from bot.services.achievements import (
+from bot.services.message_log import stats_category
+from bot.services.naming import (
+    person_name,
+    person_name_of,
+    subscriber_names,
+    xbox_nickname,
+)
+from bot.services.single_message import send_replacing
+from bot.services.stats import counters_for, local_now
+from bot.util import humanize_ago, thousands, utcnow
+from bot.views.online import render_online_table
+from bot.views.parts import (
     PLATFORM_ICON,
     PLATFORM_ICON_UNKNOWN,
     platform_breakdown_suffix,
@@ -52,18 +63,7 @@ from bot.services.achievements import (
     rarity_badge,
     score_suffix,
 )
-from bot.services.message_log import stats_category
-from bot.services.naming import (
-    person_name,
-    person_name_of,
-    subscriber_names,
-    xbox_nickname,
-)
-from bot.services.online_view import render_online_table
-from bot.services.single_message import send_replacing
-from bot.services.stats import counters_for, local_now
-from bot.services.tables import blockquote, truncate_name
-from bot.util import humanize_ago, thousands, utcnow
+from bot.views.tables import blockquote, truncate_name
 
 log = logging.getLogger(__name__)
 
@@ -474,7 +474,7 @@ async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> N
 
     # Follow-up 2026-09-05: /online now keeps itself fresh for a while
     # instead of being a one-off snapshot — skipped entirely when the admin
-    # has turned the interval down to 0 (services/online_view.py's own
+    # has turned the interval down to 0 (views/online.py's own
     # render is still exactly what a manual re-run would produce). The old
     # row is dropped either way (not just left stale) so a later interval
     # change doesn't suddenly revive a pointer to a message this deleted.

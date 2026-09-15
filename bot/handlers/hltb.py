@@ -31,8 +31,8 @@ from aiogram_i18n import I18nContext
 from bot.db.repo import Repo
 from bot.services.hltb import HltbError, HltbResult, resolve, search
 from bot.services.message_log import stats_category
-from bot.services.tables import blockquote
 from bot.services.translate.auth import AnthropicAuth
+from bot.views.tables import blockquote
 
 log = logging.getLogger(__name__)
 

@@ -5,13 +5,9 @@ from __future__ import annotations
 import pytest
 
 from bot.db.repo import AchievementRow, ChatTarget
-from bot.services.achievements import (
-    format_digest,
-    format_single,
-    passes_filters,
-    rarity_badge,
-    trophy_tier_badge,
-)
+from bot.services.achievements import passes_filters
+from bot.views.notification import format_digest, format_single
+from bot.views.parts import rarity_badge, trophy_tier_badge
 
 
 def test_rarity_badge_is_always_one_of_two_icons() -> None:

@@ -14,8 +14,8 @@ from bot.db.repo import (
     TopGame,
 )
 from bot.handlers.chat import _build_stats_text, _games_list, _send_stats_card, _who_label
-from bot.services.achievements import COMPLETED_BADGE
 from bot.util import utcnow
+from bot.views.parts import COMPLETED_BADGE
 
 CHAT_ID = -100500
 

@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from bot.db.repo import AchievementRow, AdminUserRow, Repo
 from bot.handlers.admin import _icon
-from bot.services.admin_view import render_admin_home
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.util import utcnow
+from bot.views.admin_home import render_admin_home
 
 XUID = "xuid-a"
 STEAM_ID = "76561197960287930"

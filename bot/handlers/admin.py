@@ -64,13 +64,6 @@ from bot.poller.service_health import (
     KEY_CHECK_INTERVAL_KEY,
 )
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services.achievements import (
-    COMPLETED_BADGE,
-    plural_achievements,
-    plural_trophies,
-    visibility_status_text,
-)
-from bot.services.admin_view import render_admin_home
 from bot.services.naming import (
     account_nickname,
     person_name,
@@ -91,7 +84,6 @@ from bot.services.steam.auth import (
     SteamAuth,
     SteamKeyInvalidError,
 )
-from bot.services.tables import truncate_name
 from bot.services.translate.auth import (
     STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED,
 )
@@ -100,6 +92,14 @@ from bot.services.translate.auth import (
     AnthropicKeyInvalidError,
 )
 from bot.util import humanize_ago, parse_iso, parse_utc_offset, utcnow
+from bot.views.admin_home import render_admin_home
+from bot.views.parts import (
+    COMPLETED_BADGE,
+    plural_achievements,
+    plural_trophies,
+    visibility_status_text,
+)
+from bot.views.tables import truncate_name
 
 log = logging.getLogger(__name__)
 

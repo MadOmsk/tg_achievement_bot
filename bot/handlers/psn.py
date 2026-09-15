@@ -39,7 +39,6 @@ from bot.handlers.keyboards import (
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.services import relink
-from bot.services.achievements import platform_label
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
@@ -47,6 +46,7 @@ from bot.services.psn.client import (
     is_trophy_visible,
     resolve_profile,
 )
+from bot.views.parts import platform_label
 
 log = logging.getLogger(__name__)
 

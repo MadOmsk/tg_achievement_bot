@@ -51,7 +51,6 @@ from bot.handlers.keyboards import (
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import relink
-from bot.services.achievements import platform_label
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import (
     SteamApiError,
@@ -59,6 +58,7 @@ from bot.services.steam.client import (
     get_profile,
     resolve_steam_id,
 )
+from bot.views.parts import platform_label
 
 log = logging.getLogger(__name__)
 

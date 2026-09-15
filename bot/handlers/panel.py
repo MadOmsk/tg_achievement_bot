@@ -34,15 +34,11 @@ from bot.handlers.keyboards import (
 )
 from bot.i18n import StaticI18nContext, build_i18n_context, static_i18n
 from bot.poller.fetcher import Fetcher
-from bot.services.achievements import (
-    platform_header_lines,
-    platform_tag,
-    visibility_status_text,
-)
 from bot.services.naming import person_name_of
 from bot.services.presence_view import pick_presence
 from bot.services.single_message import send_replacing
 from bot.util import cooldown_minutes_left, humanize_ago, parse_iso
+from bot.views.parts import platform_header_lines, platform_tag, visibility_status_text
 
 log = logging.getLogger(__name__)
 

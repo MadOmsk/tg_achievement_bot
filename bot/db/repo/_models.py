@@ -384,7 +384,7 @@ class ChatPresenceRow:
     platform: str  # whichever platform state/title_id/title_name came from
     # Xbox's ModernGamertag, the first step of the Xbox chain (#51).
     gamertag_modern: str | None = None
-    # Follow-up 2026-09-08 — services/online_view.py's row label: the
+    # Follow-up 2026-09-08 — views/online.py's row label: the
     # platform-specific nickname of `platform` above, or (platform == "none")
     # the Telegram name/username fallback. See chat_member_presence()'s
     # docstring for why gamertag alone stopped being enough.

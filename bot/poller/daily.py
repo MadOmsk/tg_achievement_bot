@@ -19,7 +19,11 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.constants import AchievementBadge, Platform, PsnTrophyTier
 from bot.db.repo import ChatMemberStat, ChatTopGame, Repo
 from bot.i18n import translator
-from bot.services.achievements import (
+from bot.services.message_log import stats_category
+from bot.services.naming import person_name, xbox_nickname
+from bot.services.stats import local_now, month_cutoff_utc
+from bot.util import thousands, utcnow
+from bot.views.parts import (
     PLATFORM_ICON,
     TROPHY_TIER_BADGE,
     platform_breakdown_suffix,
@@ -27,11 +31,7 @@ from bot.services.achievements import (
     plural_trophies,
     score_suffix,
 )
-from bot.services.message_log import stats_category
-from bot.services.naming import person_name, xbox_nickname
-from bot.services.stats import local_now, month_cutoff_utc
-from bot.services.tables import blockquote, total_line, truncate_name
-from bot.util import thousands, utcnow
+from bot.views.tables import blockquote, total_line, truncate_name
 
 log = logging.getLogger(__name__)
 

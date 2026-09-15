@@ -46,7 +46,7 @@ from bot.util import parse_iso, utcnow
 log = logging.getLogger(__name__)
 
 # Re-exported from services/steam/auth.py (their owner as of #17) — kept
-# here too so existing importers (services/admin_view.py, tests) don't move.
+# here too so existing importers (views/admin_home.py, tests) don't move.
 __all__ = ["STEAM_CHECKED_AT_KEY", "STEAM_STATUS_KEY"]
 
 # Shared with the /admin panel's own auto-refresh cadence (handlers/admin.py's

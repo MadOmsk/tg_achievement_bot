@@ -11,8 +11,8 @@ from bot.db.repo import (
     TitleHistoryRow,
     TitleProgress,
 )
-from bot.services.achievements import format_digest, format_single
 from bot.util import utcnow
+from bot.views.notification import format_digest, format_single
 
 TG_ID = 1
 XUID = "2533274829605736"

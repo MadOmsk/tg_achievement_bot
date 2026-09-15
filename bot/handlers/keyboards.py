@@ -22,14 +22,14 @@ from aiogram_i18n import I18nContext
 
 from bot.constants import RarityMode
 from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
+from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
+from bot.services.relink import LinkPreview
 
 # Re-exported (not redefined) — services/profile_links.py is the one place
 # that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
 # need the exact same builders), this module just re-uses them for panel.py's
 # own profile buttons below.
-from bot.services.achievements import platform_label
-from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
-from bot.services.relink import LinkPreview
+from bot.views.parts import platform_label
 
 
 async def safe_edit(

@@ -11,8 +11,8 @@ from __future__ import annotations
 from bot.constants import Platform, PresenceState
 from bot.db.repo import ChatPresenceRow
 from bot.i18n import translator
-from bot.services.achievements import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
 from bot.services.naming import person_name, xbox_nickname
+from bot.views.parts import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
 
 # The chat's own locale travels in (#48) — the auto-refresh poller renders
 # this table for every chat in one loop, so it cannot live in module state.

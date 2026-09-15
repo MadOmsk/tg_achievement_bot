@@ -18,8 +18,8 @@ from datetime import date
 
 from bot.db.repo import AchievementRow, Repo
 from bot.poller.daily import build_summary
-from bot.services.achievements import format_digest, format_single
-from bot.services.online_view import render_online_table
+from bot.views.notification import format_digest, format_single
+from bot.views.online import render_online_table
 
 CHAT_ID = -100700
 TG_ID = 7007

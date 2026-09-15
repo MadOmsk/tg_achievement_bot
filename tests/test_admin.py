@@ -16,7 +16,7 @@ from bot.handlers.admin import (
     _new_user_defaults,
     unlimited_label,
 )
-from bot.services.admin_view import _format_api_usage
+from bot.views.admin_home import _format_api_usage
 
 
 def test_api_usage_formats_seconds_and_minutes() -> None:
