@@ -476,15 +476,25 @@ async def trophies_for_title(
 class TrophyGroup:
     """One section of a title's trophy list: the base game ('default'), then
     one per DLC ('001'...). #46's second notification line names it and says
-    how far through it the person is."""
+    how far through it the person is.
+
+    Sony localizes these names, unlike the game's own title (#61, verified
+    live) — `name` is whichever locale the caller asked for, `name_ru` and
+    `name_en` are filled when both were fetched."""
 
     group_id: str
     name: str | None
     total: int
+    name_ru: str | None = None
+    name_en: str | None = None
 
 
 async def trophy_groups_for_title(
-    client: PSNAWP, account_id: str, title: TrophyTitle
+    client: PSNAWP,
+    account_id: str,
+    title: TrophyTitle,
+    *,
+    translation_client: PSNAWP | None = None,
 ) -> list[TrophyGroup]:
     """The groups a game's trophy list is split into — id, name and size.
 
@@ -494,10 +504,45 @@ async def trophy_groups_for_title(
     already knows. What comes back here is a fact about the game, so it is
     cached forever in `title_groups` and fetched once per game, ever.
 
+    `translation_client` asks the same question a second time in Russian
+    (#61). Sony localizes group names — "CTNS: The Heist" comes back as
+    "Город, который никогда не спит: Ограбление" — and that name is the whole
+    second line of a PSN card, so in a Russian chat it was the one English
+    thing left on it. Still once per game, ever, because the answer is a fact
+    about the game and is cached; a second client that cannot answer simply
+    leaves the Russian side empty.
+
     Returns [] instead of raising on every expected failure: the group line
     is cosmetic, and a missing one must never be the reason a title's
     trophies go unstored.
     """
+    english = await _groups_from(client, account_id, title)
+    if english is None:
+        return []
+    russian = (
+        await _groups_from(translation_client, account_id, title)
+        if translation_client is not None
+        else None
+    ) or {}
+
+    groups: list[TrophyGroup] = []
+    for group_id, (name, total) in english.items():
+        groups.append(
+            TrophyGroup(
+                group_id=group_id,
+                name=name,
+                total=total,
+                name_en=name,
+                name_ru=russian.get(group_id, (None, 0))[0],
+            )
+        )
+    return groups
+
+
+async def _groups_from(
+    client: PSNAWP, account_id: str, title: TrophyTitle
+) -> dict[str, tuple[str | None, int]] | None:
+    """One client's answer, or None when it could not give one."""
     try:
         user = await _call(client.user, account_id=account_id)
         platform = next(iter(title.title_platform), PlatformType.PS4)
@@ -512,21 +557,18 @@ async def trophy_groups_for_title(
         log.info(
             "psn trophy groups for title %s unavailable", title.np_communication_id, exc_info=True
         )
-        return []
+        return None
 
-    groups: list[TrophyGroup] = []
+    result: dict[str, tuple[str | None, int]] = {}
     for group in summary.trophy_groups:
         if group.trophy_group_id is None:
             continue
         defined = group.defined_trophies
-        groups.append(
-            TrophyGroup(
-                group_id=group.trophy_group_id,
-                name=group.trophy_group_name,
-                total=defined.bronze + defined.silver + defined.gold + defined.platinum,
-            )
+        result[group.trophy_group_id] = (
+            group.trophy_group_name,
+            defined.bronze + defined.silver + defined.gold + defined.platinum,
         )
-    return groups
+    return result
 
 
 async def recent_earned_trophies(client: PSNAWP, account_id: str, limit: int) -> list[EarnedTrophy]:

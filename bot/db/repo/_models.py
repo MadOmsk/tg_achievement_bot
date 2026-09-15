@@ -186,6 +186,10 @@ class TitleProgress:
     group_unlocked: int = 0
     group_total: int = 0
     group_is_default: bool = False
+    # Sony localizes a group's name (#61) — the renderer picks by the chat's
+    # language and falls back to `group_name`, whichever locale that was.
+    group_name_ru: str | None = None
+    group_name_en: str | None = None
 
 
 @dataclass(slots=True)

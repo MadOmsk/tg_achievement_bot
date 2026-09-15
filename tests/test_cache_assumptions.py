@@ -201,9 +201,9 @@ async def _spider_man(repo: Repo) -> None:
     await repo.save_title_groups(
         "NPWR00001_00",
         [
-            ("default", "Marvel's Spider-Man", 51),
-            ("001", "The Heist", 7),
-            ("002", "Turf Wars", 8),
+            ("default", "Marvel's Spider-Man", 51, None, "Marvel's Spider-Man"),
+            ("001", "The Heist", 7, "Ограбление", "The Heist"),
+            ("002", "Turf Wars", 8, None, "Turf Wars"),
         ],
     )
 
@@ -235,7 +235,7 @@ async def test_a_single_group_title_reports_no_group_at_all(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
     await repo.link_platform_account(TG_ID, "psn", "acc-1", "Someone")
     await repo.upsert_title("NPWR00002_00", "Stray", "psn", achievements_total=25)
-    await repo.save_title_groups("NPWR00002_00", [("default", "Stray", 25)])
+    await repo.save_title_groups("NPWR00002_00", [("default", "Stray", 25, None, "Stray")])
 
     progress = await repo.title_progress(AccountPlatform.PSN, "acc-1", "NPWR00002_00", "default")
     assert progress is not None
@@ -437,3 +437,37 @@ async def test_a_known_titlehub_total_still_wins(repo: Repo) -> None:
     await repo.set_title_total("550", 4)  # a partial page, say
 
     assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == TitleProgress(47, 50)
+
+
+def test_the_group_line_follows_the_chats_language(i18n) -> None:
+    """Sony localizes group names, unlike a game's own title (#61, verified
+    live: "CTNS: The Heist" comes back as "Город, который никогда не спит:
+    Ограбление"). That name is the whole second line of a PSN card, so in a
+    Russian chat it was the one English thing left on it."""
+    trophy = _achievement("t2", "psn", title_id="NPWR00001_00", trophy_group_id="001")
+    progress = TitleProgress(
+        unlocked=31,
+        total=74,
+        group_name="The Heist",
+        group_unlocked=3,
+        group_total=7,
+        group_name_ru="Ограбление",
+        group_name_en="The Heist",
+    )
+
+    russian = format_single("Igor", trophy, "Spider-Man", locale="ru", progress=progress)
+    english = format_single("Igor", trophy, "Spider-Man", locale="en", progress=progress)
+
+    assert "Ограбление · 3/7" in russian
+    assert "The Heist · 3/7" in english
+
+
+def test_a_group_with_no_localized_name_keeps_the_stored_one(i18n) -> None:
+    trophy = _achievement("t2", "psn", title_id="NPWR00001_00", trophy_group_id="001")
+    progress = TitleProgress(
+        unlocked=31, total=74, group_name="New Game+", group_unlocked=3, group_total=7
+    )
+
+    assert "New Game+ · 3/7" in format_single(
+        "Igor", trophy, "Spider-Man", locale="ru", progress=progress
+    )

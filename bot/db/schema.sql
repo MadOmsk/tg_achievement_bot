@@ -369,7 +369,14 @@ CREATE TABLE IF NOT EXISTS hltb_cache (
 CREATE TABLE IF NOT EXISTS title_groups (
     title_id   TEXT NOT NULL,     -- np_communication_id
     group_id   TEXT NOT NULL,     -- 'default' for the base game, then '001'...
-    name       TEXT,
+    name       TEXT,              -- whatever was stored first; the fallback
+    -- Sony localizes these, unlike the game's own title (#61, verified live:
+    -- "CTNS: The Heist" / "Город, который никогда не спит: Ограбление") — and
+    -- the group name is the second line of every PSN card, so in a Russian
+    -- chat it was the one English thing left on it. Both sides come from the
+    -- same once-per-game call, made twice.
+    name_ru    TEXT,
+    name_en    TEXT,
     total      INTEGER NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (title_id, group_id)

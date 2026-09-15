@@ -317,9 +317,14 @@ def _group_label(progress: TitleProgress, title: str, locale: str) -> str:
     name that survives both is printed as Sony wrote it — and never with a
     "DLC" prefix, since a group is not always one (Spider-Man's `001` is New
     Game+, a mode).
+
+    In the chat's own language where Sony has one (#61): unlike a game's
+    title, group names *are* localized — "CTNS: The Heist" comes back as
+    "Город, который никогда не спит: Ограбление".
     """
     _ = translator("achievements", locale)
-    name = (progress.group_name or "").strip()
+    localized = progress.group_name_en if locale == "en" else progress.group_name_ru
+    name = (localized or progress.group_name or "").strip()
     bare_title = title.strip()
     if not name or name.casefold() == bare_title.casefold():
         return _("achievement-group-main")

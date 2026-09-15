@@ -307,20 +307,28 @@ class _PlatformLinksRepo:
         return int(row[0]) if row else 0
 
     async def save_title_groups(
-        self, title_id: str, groups: list[tuple[str, str | None, int]]
+        self, title_id: str, groups: list[tuple[str, str | None, int, str | None, str | None]]
     ) -> None:
         """The base game plus one row per DLC (#46) — cached forever, like
-        every other "the game's own shape" fact here, because it only
-        changes when the publisher ships new trophies."""
+        every other "the game's own shape" fact here, because it only changes
+        when the publisher ships new trophies.
+
+        `(group_id, name, total, name_ru, name_en)`. Sony localizes these
+        names (#61), so both sides are stored when both were fetched; a side
+        that came back empty leaves what is already there alone.
+        """
         now = utcnow_iso()
-        for group_id, name, total in groups:
+        for group_id, name, total, name_ru, name_en in groups:
             await self._conn.execute(
-                "INSERT INTO title_groups (title_id, group_id, name, total, updated_at) "
-                "VALUES (?, ?, ?, ?, ?) "
+                "INSERT INTO title_groups"
+                " (title_id, group_id, name, total, name_ru, name_en, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(title_id, group_id) DO UPDATE SET "
                 "  name = excluded.name, total = excluded.total,"
+                "  name_ru = COALESCE(excluded.name_ru, title_groups.name_ru),"
+                "  name_en = COALESCE(excluded.name_en, title_groups.name_en),"
                 "  updated_at = excluded.updated_at",
-                (title_id, group_id, name, total, now),
+                (title_id, group_id, name, total, name_ru, name_en, now),
             )
         await self._conn.commit()
 
@@ -455,7 +463,8 @@ class _PlatformLinksRepo:
             return progress
 
         cursor = await self._conn.execute(
-            "SELECT name, total FROM title_groups WHERE title_id = ? AND group_id = ?",
+            "SELECT name, total, name_ru, name_en FROM title_groups "
+            "WHERE title_id = ? AND group_id = ?",
             (title_id, group_id),
         )
         group = await cursor.fetchone()
@@ -468,7 +477,11 @@ class _PlatformLinksRepo:
             (account_platform, external_id, title_id, group_id),
         )
         earned = await cursor.fetchone()
+        # Both sides where Sony gave them (#61); the caller picks by the
+        # chat's language and falls back to whatever was stored first.
         progress.group_name = group["name"]
+        progress.group_name_ru = group["name_ru"]
+        progress.group_name_en = group["name_en"]
         progress.group_total = int(group["total"])
         progress.group_unlocked = int(earned[0]) if earned else 0
         progress.group_is_default = group_id == "default"

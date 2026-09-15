@@ -192,11 +192,16 @@ async def sync_account(
         # game's own shape only changes when its publisher ships new
         # trophies.
         if not await repo.has_title_groups(title.np_communication_id):
-            groups = await trophy_groups_for_title(client, account_id, title)
+            groups = await trophy_groups_for_title(
+                client, account_id, title, translation_client=translation_client
+            )
             if groups:
                 await repo.save_title_groups(
                     title.np_communication_id,
-                    [(group.group_id, group.name, group.total) for group in groups],
+                    [
+                        (group.group_id, group.name, group.total, group.name_ru, group.name_en)
+                        for group in groups
+                    ],
                 )
         # Does this pass widen a game the bot only ever knew the base group
         # of? (see repo.psn_title_needs_widening) Asked before the insert,

@@ -398,7 +398,14 @@ every column.
   tick). PSN trophy groups: `title_groups (title_id, group_id, name, total)` —
   the base game plus one row per DLC, fetched once per game and kept forever
   (#46), since a game's own shape only changes when its publisher ships new
-  trophies. Per-account progress inside a group is *not* cached with it: the
+  trophies. `name_ru`/`name_en` beside it (#61): Sony **does** localize a
+  group's name — verified live, "CTNS: The Heist" comes back as "Город,
+  который никогда не спит: Ограбление" — while it does *not* localize the
+  game's own title, and neither does Steam (`gameName` is identical under
+  `l=english` and `l=russian`). So there is no per-language store for game
+  titles and there is no point building one; the group name, which is the
+  whole second line of a PSN card, is fetched in both languages by the same
+  once-per-game call, made twice. Per-account progress inside a group is *not* cached with it: the
   bot counts its own `seen_achievements` rows, so asking Sony for it would pay
   a second request for something already known.
   HowLongToBeat cache: `hltb_cache` — completion times, platforms,

@@ -83,6 +83,14 @@ Platform names are the platform's own label (`🔵 PlayStation`, not "PSN";
 `🟢 XBOX`; `⚫ Steam`), and the rarity carries the word "редкость" before
 the number, both from the `.ftl`.
 
+**The achievement's own name follows the chat's language too** (#61): it is
+the platform's own string in both languages, cached beside the description and
+swapped the same way. Never a translation — where a platform has only one
+name, that one is shown. The *game's* name is not localized by anyone (Steam
+returns the same `gameName` in either locale, Sony the same title), so it is
+whatever the platform calls it. A PSN group name, on the other hand, is
+localized, and the second line follows the chat.
+
 **The description is the one line on this card that does not come from a
 `.ftl`**, and it has its own translation rule that must not be bypassed: the
 text is the platform's own, and what actually renders is

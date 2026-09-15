@@ -63,7 +63,7 @@ def _install_fakes(monkeypatch, titles, trophies_by_title, groups_by_title=None)
             raise result
         return result or []
 
-    async def fake_groups(client, account_id, title):
+    async def fake_groups(client, account_id, title, *, translation_client=None):
         return groups_by_title.get(title.np_communication_id, []) if groups_by_title else []
 
     monkeypatch.setattr(psn_achievements_module, "trophy_titles_for_account", fake_titles)
@@ -303,13 +303,18 @@ async def test_a_games_groups_are_fetched_once_and_cached(repo: Repo, monkeypatc
         monkeypatch,
         [title],
         {"NPWR00001_00": [_trophy(1)]},
-        {"NPWR00001_00": [TrophyGroup("default", "Spider-Man", 51), TrophyGroup("001", "DLC", 7)]},
+        {
+            "NPWR00001_00": [
+                TrophyGroup("default", "Spider-Man", 51),
+                TrophyGroup("001", "DLC", 7, name_ru="ДЛС", name_en="DLC"),
+            ]
+        },
     )
     real = psn_achievements_module.trophy_groups_for_title
 
-    async def counting(client, account_id, group_title):
+    async def counting(client, account_id, group_title, *, translation_client=None):
         calls.append(group_title.np_communication_id)
-        return await real(client, account_id, group_title)
+        return await real(client, account_id, group_title, translation_client=translation_client)
 
     monkeypatch.setattr(psn_achievements_module, "trophy_groups_for_title", counting)
 
