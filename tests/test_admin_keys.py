@@ -7,17 +7,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from bot.db.repo import Repo
-from bot.handlers.admin import (
-    STEAM_KEY_KEY,
-    _awaiting_input,
-    _keys_screen,
-    admin_text_input,
-)
+from bot.handlers.admin import STEAM_KEY_KEY, _awaiting_input, admin_text_input
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam import auth as steam_auth_module
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
+from bot.views.admin import _keys_screen
 
 KEY = "0123456789ABCDEF0123456789ABCDEF"
 ADMIN_ID = 1

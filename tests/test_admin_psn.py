@@ -4,7 +4,7 @@ for a linked PSN account, mirroring the Xbox/Steam ones it already had."""
 from __future__ import annotations
 
 from bot.db.repo import Repo
-from bot.handlers.admin import _card
+from bot.views.admin import _card
 
 ACCOUNT_ID = "psn-acc-1"
 

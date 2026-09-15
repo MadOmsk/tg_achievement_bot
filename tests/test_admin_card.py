@@ -6,9 +6,9 @@ today's count [+ completions/level] + admin-only diagnostics), and a
 from __future__ import annotations
 
 from bot.db.repo import AchievementRow, Repo
-from bot.handlers.admin import _card
 from bot.i18n import static_i18n
 from bot.util import utcnow
+from bot.views.admin import _card
 
 XUID = "xuid-admin-card"
 

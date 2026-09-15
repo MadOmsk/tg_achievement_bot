@@ -12,9 +12,10 @@ from __future__ import annotations
 from aiogram_i18n import I18nContext
 
 from bot.db.repo import Repo
-from bot.handlers.admin import _chat, chat_locale_toggle
+from bot.handlers.admin import chat_locale_toggle
 from bot.handlers.panel import panel_toggle_locale
 from bot.i18n import AVAILABLE_LOCALES, build_i18n_context
+from bot.views.admin import _chat
 from bot.views.keyboards import locale_name, next_locale, panel_keyboard
 
 CHAT_ID = -100800

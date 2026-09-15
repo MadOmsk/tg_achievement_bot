@@ -6,16 +6,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from bot.db.repo import Repo
-from bot.handlers.admin import (
+from bot.handlers.admin import chat_flood_toggle
+from bot.i18n import AVAILABLE_LOCALES, gettext
+from bot.services.admin_settings import (
     FLOOD_LIMIT_DEFAULT,
     FLOOD_LIMIT_MAX,
     FLOOD_LIMIT_MIN,
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
-    _chat,
-    chat_flood_toggle,
 )
-from bot.i18n import AVAILABLE_LOCALES, gettext
+from bot.views.admin import _chat
 
 CHAT_ID = -100999
 

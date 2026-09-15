@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 from bot.db.repo import Repo
-from bot.handlers.admin import (
+from bot.poller.message_cleanup import TTL_SETTING_KEY as SYSTEM_MESSAGE_TTL_KEY
+from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
+from bot.services.admin_settings import (
     DEFAULT_SHOW_LINKS_KEY,
     LIMIT_MAX,
     LIMIT_MIN,
     NUMERIC_SETTINGS,
-    ONLINE_REFRESH_INTERVAL_KEY,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
-    SYSTEM_MESSAGE_TTL_KEY,
-    _format_limit,
-    _new_user_defaults,
     unlimited_label,
 )
+from bot.views.admin import _format_limit, _new_user_defaults
 from bot.views.admin_home import _format_api_usage
 
 

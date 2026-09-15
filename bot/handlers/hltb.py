@@ -29,6 +29,12 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from aiogram_i18n import I18nContext
 
 from bot.db.repo import Repo
+from bot.services.admin_settings import (
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_RESULTS_LIMIT,
+    PAGE_SIZE_KEY,
+    RESULTS_LIMIT_KEY,
+)
 from bot.services.hltb import HltbError, HltbResult, resolve, search
 from bot.services.message_log import stats_category
 from bot.services.translate.auth import AnthropicAuth
@@ -38,10 +44,6 @@ log = logging.getLogger(__name__)
 
 router = Router(name="hltb")
 
-RESULTS_LIMIT_KEY = "hltb_results_limit"
-PAGE_SIZE_KEY = "hltb_page_size"
-DEFAULT_RESULTS_LIMIT = 20
-DEFAULT_PAGE_SIZE = 5
 # The rest of the card runs to roughly 300 characters at its longest (a long
 # title, every platform HLTB lists, three genres, the link), so this leaves
 # comfortable room under Telegram's own 1024-character caption cap — see

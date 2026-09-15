@@ -18,6 +18,7 @@ from datetime import date
 
 from bot.db.repo import AchievementRow, Repo
 from bot.poller.daily import build_summary
+from bot.views.admin import _chat
 from bot.views.notification import format_digest, format_single
 from bot.views.online import render_online_table
 
@@ -145,8 +146,6 @@ async def test_the_same_summary_in_russian_keeps_its_own_word_order(repo: Repo) 
 async def test_the_super_admin_panel_renders_in_english(repo: Repo) -> None:
     """The super-admin's own screens follow their `user_settings.locale`,
     same as any other DM — the panel is not a special case (#48)."""
-    from bot.handlers.admin import _chat
-
     await repo.upsert_chat(CHAT_ID, "Gaming chat", TG_ID)
 
     text, _markup = await _chat(repo, CHAT_ID, locale="en")
@@ -157,8 +156,6 @@ async def test_the_super_admin_panel_renders_in_english(repo: Repo) -> None:
 
 
 async def test_the_same_super_admin_screen_in_russian(repo: Repo) -> None:
-    from bot.handlers.admin import _chat
-
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
 
     text, _markup = await _chat(repo, CHAT_ID, locale="ru")

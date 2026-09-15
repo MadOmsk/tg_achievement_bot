@@ -9,7 +9,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from bot.db.repo import Repo
-from bot.handlers.admin import TOAST_PREVIEW_MAX_CHARS, _chat, _toast_preview, chat_delete_last
+from bot.handlers.admin import chat_delete_last
+from bot.services.admin_settings import TOAST_PREVIEW_MAX_CHARS
+from bot.views.admin import _chat, _toast_preview
 
 CHAT_ID = -100888
 
