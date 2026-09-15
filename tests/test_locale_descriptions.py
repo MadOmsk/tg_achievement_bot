@@ -10,8 +10,11 @@ answer.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from bot.db.repo import AchievementRow, Repo
 from bot.services.descriptions_view import localize_descriptions
+from bot.util import utcnow
 
 PLATFORM = "xbox_modern"
 TITLE_ID = "t1"
@@ -212,3 +215,53 @@ async def test_a_title_with_no_localized_name_is_left_alone(repo: Repo) -> None:
     [row] = await localize_descriptions(repo, [_row()], "ru")
 
     assert row.title_name is None  # whatever the caller had; nothing invented
+
+
+# ------------------------------------------------ the lists beside them (#61)
+
+
+async def test_recent_and_the_game_lists_follow_the_chats_language(repo: Repo) -> None:
+    """A notification was localized while the list right under it was not:
+    /recent, /stats' games and the month's top games all render straight from
+    SQL, so they showed whatever language the platform had answered in."""
+    await repo.ensure_user(1, "igor")
+    await repo.link_xbox_account(1, "xuid-1", "Someone", 0)
+    await repo.upsert_chat(-100500, "Chat", 1)
+    await repo.subscribe(-100500, 1)
+    await repo.upsert_title("t-halo", "Halo: The Master Chief Collection", "xbox_modern")
+    await repo.set_title_names(
+        "t-halo", "Halo: Коллекция Мастер Чифа", "Halo: The Master Chief Collection"
+    )
+    await repo.cache_names(
+        "xbox_modern", "t-halo", {"a1": ("Да мы только начали", "Just Getting Started")}
+    )
+    await repo.insert_new_achievements(
+        "xuid-1",
+        [
+            AchievementRow(
+                title_id="t-halo",
+                achievement_id="a1",
+                name="Just Getting Started",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+                title_name="Halo: The Master Chief Collection",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    [ru] = await repo.chat_recent(-100500, 5, locale="ru")
+    [en] = await repo.chat_recent(-100500, 5, locale="en")
+    assert (ru.name, ru.game) == ("Да мы только начали", "Halo: Коллекция Мастер Чифа")
+    assert (en.name, en.game) == ("Just Getting Started", "Halo: The Master Chief Collection")
+
+    since = utcnow() - timedelta(days=30)
+    [game_ru] = await repo.recent_games("xuid-1", since, locale="ru")
+    assert game_ru.name == "Halo: Коллекция Мастер Чифа"
+
+    [top_ru] = await repo.chat_top_games(-100500, since, locale="ru")
+    assert top_ru.name == "Halo: Коллекция Мастер Чифа"

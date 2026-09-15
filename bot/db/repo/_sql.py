@@ -81,3 +81,40 @@ XBOX_COLUMNS = (
     "xb.external_id AS xuid, xb.display_name AS gamertag_modern,"
     "       xb.secondary_name AS gamertag, xb.gamerscore "
 )
+
+
+# --------------------------------------------------------------- names (#61)
+
+# The caches that hold a name in both languages, joined to a `seen_achievements
+# s` (and its `titles t`). A list renders from SQL rather than through the
+# publisher's own localization pass, so without these joins /recent, /stats'
+# game list and the monthly "Игры за месяц" showed the language the platform
+# happened to answer in while the notification beside them showed the chat's.
+NAME_CACHE_JOIN = (
+    "LEFT JOIN achievement_name_cache nc ON nc.platform = s.platform"
+    "   AND nc.title_id = s.title_id AND nc.achievement_id = s.achievement_id "
+)
+
+# Selected rather than resolved in SQL: picking with a CASE would mean
+# threading the locale through as a bound parameter in the middle of every
+# query's own parameter list, which is exactly the sort of thing that breaks
+# silently when somebody adds a WHERE clause. The choice is one function,
+# below.
+LOCALIZED_NAME_COLUMNS = "nc.name_ru AS name_ru, nc.name_en AS name_en"
+LOCALIZED_TITLE_COLUMNS = "t.name_ru AS game_ru, t.name_en AS game_en"
+
+
+def pick_name(
+    locale: str, name_ru: str | None, name_en: str | None, stored: str | None
+) -> str | None:
+    """The asked-for language, then the other one, then whatever was stored.
+
+    Same order as the render path uses for a published card
+    (services/descriptions_view.py) — a name is never translated, so "the
+    other language" is the platform's own string too, and better than nothing.
+    """
+    wanted, other = (name_en, name_ru) if locale == "en" else (name_ru, name_en)
+    for candidate in (wanted, other, stored):
+        if candidate and candidate.strip():
+            return candidate
+    return stored

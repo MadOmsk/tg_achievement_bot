@@ -15,7 +15,14 @@ from bot.db.repo._models import (
     OnlineAutoRefreshRow,
     _iso,
 )
-from bot.db.repo._sql import OWNED_BY_PERSON, XBOX_ACCOUNT, XBOX_COLUMNS, active_account
+from bot.db.repo._sql import (
+    LOCALIZED_TITLE_COLUMNS,
+    OWNED_BY_PERSON,
+    XBOX_ACCOUNT,
+    XBOX_COLUMNS,
+    active_account,
+    pick_name,
+)
 from bot.util import utcnow_iso
 
 
@@ -110,7 +117,7 @@ class _ChatStatsRepo:
         ]
 
     async def chat_top_games(
-        self, chat_id: int, since: datetime, limit: int = 15
+        self, chat_id: int, since: datetime, limit: int = 15, *, locale: str = "ru"
     ) -> list[ChatTopGame]:
         """Games the chat's subscribed members played this window, ranked by
         total achievements/trophies earned across all of them combined (#7,
@@ -132,7 +139,7 @@ class _ChatStatsRepo:
         so grouping by title_id only could in principle fold two unrelated
         games from different platforms into one row."""
         query = (
-            "SELECT s.title_id, s.platform, t.name,"
+            "SELECT s.title_id, s.platform, t.name, " + LOCALIZED_TITLE_COLUMNS + ","
             "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
             "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze,"
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
@@ -155,7 +162,9 @@ class _ChatStatsRepo:
             ChatTopGame(
                 title_id=row["title_id"],
                 platform=row["platform"],
-                name=row["name"],
+                # The chat's own language where the platform has a second
+                # name (#61) — this block sits under a localized leaderboard.
+                name=pick_name(locale, row["game_ru"], row["game_en"], row["name"]),
                 count=int(row["cnt"]),
                 score=int(row["score"] or 0),
                 bronze=int(row["bronze"] or 0),

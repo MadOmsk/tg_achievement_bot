@@ -368,7 +368,10 @@ async def _build_stats_text(
         limit = await _stats_games_limit(repo)
         since = utcnow() - timedelta(days=RECENT_GAMES_DAYS)
         per_source = await asyncio.gather(
-            *(repo.recent_games(external_id, since, limit=limit) for external_id in external_ids)
+            *(
+                repo.recent_games(external_id, since, limit=limit, locale=locale)
+                for external_id in external_ids
+            )
         )
         games = sorted(
             (game for source in per_source for game in source),
@@ -655,7 +658,7 @@ async def recent(
     if command.args and command.args.strip().isdigit():
         limit = max(1, min(int(command.args.strip()), RECENT_MAX))
 
-    rows = await repo.chat_recent(message.chat.id, limit)
+    rows = await repo.chat_recent(message.chat.id, limit, locale=i18n.locale)
     if not rows:
         with stats_category():
             await message.answer(i18n.get("chat-recent-empty"))

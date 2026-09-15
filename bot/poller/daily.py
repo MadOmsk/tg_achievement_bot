@@ -193,7 +193,7 @@ async def build_summary(
             # #7: which games the chat actually played this month, not just
             # who — its own block, only when there's something to show (a
             # month of zero-scorers has nothing to rank).
-            games = await repo.chat_top_games(chat_id, month_cutoff, top_limit)
+            games = await repo.chat_top_games(chat_id, month_cutoff, top_limit, locale=locale)
             if games:
                 blocks.append(("games", _games_section(games, locale), False))
 
