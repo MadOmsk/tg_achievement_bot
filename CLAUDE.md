@@ -203,6 +203,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   └── ...                        one file per module/behavior area; see the test files
 │                                   themselves for what each one covers
 │
+├── backups/                     database copies, dumps, and the one-off scripts that
+│                                make them; gitignored — see Operations' own "Backups"
+│                                entry for the rule a dump must never break
 ├── data/                        bot.db; gitignored
 └── logs/                        bot.log, bot.err.log; gitignored
 ```
@@ -1198,6 +1201,33 @@ nginx on 443 (Let's Encrypt, auto-renewed via the certbot timer) proxies to
 never exposed externally (`OAUTH_LISTEN_HOST=127.0.0.1` in the server's `.env`). Git
 on the server uses a read-only deploy key (GitHub → Settings → Deploy keys), not an
 account token.
+
+### Backups, and where anything taken out of a database may live
+
+**`backups/` — that directory and nowhere else** (2026-09-14 incident,
+2026-09-15 rule). Database copies, table dumps, and the one-off scripts that
+produce them go there; it is gitignored, together with defensive
+`*backup*.json` / `*dump*.json` / `*tokens*.json` patterns for the day
+somebody writes one into the repository root instead. On the servers the same
+role is played by `data/backups/`, which is inside the already-ignored
+`data/`.
+
+**A dump may never hold a decrypted secret.** Copy a database, or copy the
+encrypted column — never `refresh_token_plain`. What happened once: a
+migration-rollback session wrote every user's Xbox refresh token to
+`tokens_backup_*.json` in plaintext, in the repository root, untracked and
+not ignored — one `git add -A` away from being published, on both the
+development machine and both servers. The encrypted originals were in the
+database the whole time, so the plaintext copies bought nothing at all.
+
+If a task genuinely needs a decrypted value (re-encrypting after a
+`FERNET_KEY` change is the real case), keep it in memory for the length of
+that one process. If it must touch disk, it goes in `backups/`, and it gets
+deleted — overwritten, then unlinked — as the last step of the same task.
+
+Back up with `sqlite3`'s own `backup()`, never `cp`: these databases run in
+WAL mode and a plain copy of one can come back malformed. Name the file for
+what it is and when: `bot-pre042-20260915-084500.db`.
 
 Deploy is currently manual: `git pull --ff-only`, reinstall dependencies if they
 changed, `systemctl restart xbox-bot`. Back up `bot.db` first whenever the deploy

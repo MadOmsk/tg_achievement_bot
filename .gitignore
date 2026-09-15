@@ -9,6 +9,16 @@ data/
 *.db-wal
 *.db-shm
 
+# Anything taken out of a database, and the one-off scripts that take it.
+# `backups/` is the only place such a file may live (see CLAUDE.md, Backups);
+# the loose patterns below are the second line of defence, for the day
+# somebody writes a dump into the repository root by accident — which is
+# exactly what happened on 2026-09-14, with decrypted Xbox refresh tokens.
+backups/
+*backup*.json
+*dump*.json
+*tokens*.json
+
 # Python
 .venv/
 venv/
