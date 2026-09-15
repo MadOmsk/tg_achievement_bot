@@ -225,6 +225,17 @@ class _AdminRepo:
             )
         await self._conn.commit()
 
+    async def titles_missing_localized_name(self, platform: str, limit: int) -> list[str]:
+        """A few games at a time whose name is stored in one language only
+        (#61) — poller/steam_localization.py's own small bite. Oldest first,
+        so a backlog drains in order rather than by chance."""
+        cursor = await self._conn.execute(
+            "SELECT title_id FROM titles WHERE platform = ? AND name_ru IS NULL "
+            "ORDER BY updated_at LIMIT ?",
+            (platform, limit),
+        )
+        return [row["title_id"] for row in await cursor.fetchall()]
+
     async def has_localized_title(self, title_id: str) -> bool:
         """Whether this game's name is already stored in both languages —
         what keeps the one storefront request per game (#61) from becoming one

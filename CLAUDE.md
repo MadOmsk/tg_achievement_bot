@@ -144,6 +144,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
 │   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
+│   │   ├── steam_localization.py   walks the Steam library a couple of games a tick for
+│   │   │                           the storefront's Russian title — the one name no
+│   │   │                           response the bot already makes ever carries (#61)
 │   │   ├── flood_flush.py          the anti-flood filter's read/flush side — buffered
 │   │   │                           achievements once a throttled window closes (2026-09-09)
 │   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
@@ -420,7 +423,22 @@ every column.
   `gameName` ignore `l=` entirely ("G.O.P.O.T.A" from each, while the store
   page reads "Г.О.П.О.Т.А"). That is the one storefront call this project
   makes, for one field; the store *description* remains rejected
-  (see the appendix). Per-account progress inside a group is *not* cached with it: the
+  (see the appendix).
+
+  **Each of the three fills in on the next poll of the game — which a game
+  nobody plays any more never gets.** For PSN the fix is free and needed no
+  job: the structure fetch sits *above* `sync_account`'s progress gate now
+  (it used to sit under it, which is the same reason a stale game's trophy
+  total was missing, #60), so every scanned title gets its groups and both
+  titles whether or not anyone advanced in it. Xbox has always had
+  `poller/description_backfill.py` walking its own library, and that now
+  carries the names along with the descriptions. Steam is the one that
+  needed a walker of its own, `poller/steam_localization.py`, because its
+  name comes from a *different service* than the poll does — two games a
+  minute, two storefront requests each, an appid it cannot answer for
+  dropped for the life of the process.
+
+  Per-account progress inside a group is *not* cached with it: the
   bot counts its own `seen_achievements` rows, so asking Sony for it would pay
   a second request for something already known.
   HowLongToBeat cache: `hltb_cache` — completion times, platforms,

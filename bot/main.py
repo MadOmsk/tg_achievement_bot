@@ -51,6 +51,7 @@ from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
 from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -180,6 +181,7 @@ async def run(settings: Settings) -> None:
         psn_presence,
         flood_flush,
         DescriptionBackfill(repo, client, anthropic_auth),
+        SteamLocalization(repo),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

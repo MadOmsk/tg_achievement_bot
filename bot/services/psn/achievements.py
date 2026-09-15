@@ -138,6 +138,31 @@ async def sync_account(
                 achievements_total=defined_total,
             )
 
+        # The name and size of each group this game's trophy list is split
+        # into (#46), and the game's own name in both languages (#61) — one
+        # call, once per game, then cached forever: a game's shape only
+        # changes when its publisher ships new trophies.
+        #
+        # Above the progress gate below on purpose. It used to sit under it,
+        # so a game nobody had advanced lately never got either — which is the
+        # same reason its trophy *total* was missing (#60). The DB check is
+        # what keeps this to one call per game rather than one per tick.
+        if not await repo.has_title_groups(title.np_communication_id):
+            structure = await trophy_groups_for_title(
+                client, account_id, title, translation_client=translation_client
+            )
+            if structure.groups:
+                await repo.save_title_groups(
+                    title.np_communication_id,
+                    [
+                        (group.group_id, group.name, group.total, group.name_ru, group.name_en)
+                        for group in structure.groups
+                    ],
+                )
+            await repo.set_title_names(
+                title.np_communication_id, structure.title_name_ru, structure.title_name_en
+            )
+
         progress = title.progress or 0
         previous = await repo.get_psn_title_progress(account_id, title.np_communication_id)
         if previous is not None and progress <= previous:
@@ -186,27 +211,6 @@ async def sync_account(
         if translation_client is not None:
             await _bilingual_descriptions(
                 repo, anthropic_auth, translation_client, account_id, title, earned
-            )
-        # The name and size of each group this game's trophy list is split
-        # into (#46) — one request, once per game, then cached forever: a
-        # game's own shape only changes when its publisher ships new
-        # trophies.
-        if not await repo.has_title_groups(title.np_communication_id):
-            structure = await trophy_groups_for_title(
-                client, account_id, title, translation_client=translation_client
-            )
-            if structure.groups:
-                await repo.save_title_groups(
-                    title.np_communication_id,
-                    [
-                        (group.group_id, group.name, group.total, group.name_ru, group.name_en)
-                        for group in structure.groups
-                    ],
-                )
-            # Sony is the one platform that localizes a game's own title, and
-            # it rides in this same call (#61).
-            await repo.set_title_names(
-                title.np_communication_id, structure.title_name_ru, structure.title_name_en
             )
         # Does this pass widen a game the bot only ever knew the base group
         # of? (see repo.psn_title_needs_widening) Asked before the insert,
