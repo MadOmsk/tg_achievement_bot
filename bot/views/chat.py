@@ -35,6 +35,7 @@ from bot.services.naming import (
 from bot.services.stats import counters_for
 from bot.util import humanize_ago, thousands, utcnow
 from bot.version import version
+from bot.views.lists import GameRow, Listing, game_rows, truncate_name
 from bot.views.parts import (
     PLATFORM_ICON,
     PLATFORM_ICON_UNKNOWN,
@@ -44,7 +45,6 @@ from bot.views.parts import (
     rarity_badge,
     score_suffix,
 )
-from bot.views.tables import blockquote, truncate_name
 
 # /stats' own games table is a rolling window and says so on screen
 # ("за 30 дней", #14) — deliberately not the calendar month the counters
@@ -74,24 +74,24 @@ def _locale_of(i18n: I18nContext | None) -> str:
 
 
 def _games_list(games: list[TopGame], i18n: I18nContext | None = None) -> str:
-    rows = []
-    for place, game in enumerate(games, start=1):
-        untitled = _hub_text(i18n, "chat-untitled")
-        tail = _hub_text(
-            i18n,
-            "chat-stats-game-row-tail",
-            count=game.unlocked or 0,
-            score_suffix=score_suffix(game.gamerscore or 0),
-        )
-        # Not truncated (2026-09-08, user request) — unlike /recent's row
-        # below, this list already lives inside its own collapsible quote,
-        # so a long title wrapping onto a second line costs nothing a
-        # scrollable phone screen can't handle.
-        rows.append(
-            f"{place}. {PLATFORM_ICON.get(game.platform, '')} "
-            f"{html_escape(game.name or untitled)} — {tail}"
-        )
-    return blockquote(rows)
+    """One person's own recent games (/stats). The row itself is the shared
+    one — the monthly summary's games block renders the identical line from
+    its own chat-wide aggregate (#64)."""
+    locale = _locale_of(i18n)
+    rows = game_rows(
+        [
+            GameRow(
+                platform=game.platform,
+                name=game.name,
+                count=game.unlocked or 0,
+                score=game.gamerscore or 0,
+            )
+            for game in games
+        ],
+        _hub_text(i18n, "chat-untitled"),
+        locale,
+    )
+    return Listing(rows=rows).render()
 
 
 def display_name(target: User, links: list[PlatformLink]) -> str:
@@ -224,7 +224,7 @@ async def build_stats_text(repo: Repo, target: User, i18n: I18nContext | None = 
 
 
 def recent_list(rows: list[RecentAchievement], i18n: I18nContext | None = None) -> str:
-    return blockquote([_recent_row(row, i18n) for row in rows])
+    return Listing(rows=[_recent_row(row, i18n) for row in rows]).render()
 
 
 def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:

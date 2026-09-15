@@ -13,7 +13,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram_i18n import I18nContext
 
 from bot.services.hltb import HltbResult
-from bot.views.tables import blockquote
+from bot.views.lists import blockquote
 
 # The rest of the card runs to roughly 300 characters at its longest (a
 # long title, every platform HLTB lists, three genres, the link), so this

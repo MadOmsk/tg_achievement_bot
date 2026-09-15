@@ -58,13 +58,13 @@ from bot.views.keyboards import (
     format_rarity,
     locale_name,
 )
+from bot.views.lists import truncate_name
 from bot.views.parts import (
     COMPLETED_BADGE,
     plural_achievements,
     plural_trophies,
     visibility_status_text,
 )
-from bot.views.tables import truncate_name
 
 
 async def find_chat(repo: Repo, chat_id: int) -> ChatTarget | None:

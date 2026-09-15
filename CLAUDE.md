@@ -105,7 +105,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── keyboards.py            every inline keyboard + format_* helpers
 │   │   ├── parts.py                the vocabulary screens share: badges, the platform
 │   │   │                           palette, counted nouns, per-platform header rows
-│   │   └── tables.py               the shared blockquote-list renderer
+│   │   └── lists.py                what every list shares — the wrapper (usually a
+│   │                               collapsible quote, not always), the total line, the
+│   │                               name cap, and the one games row two screens draw (#64)
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py         whether an achievement may be published (the wording
@@ -1222,6 +1224,14 @@ Every list the bot renders, with where its rows come from, who appears in it,
 how it is sorted and what caps it (kept from `docs/ui/tables.md` when that
 file went away, #63 — the *queries* are visible in the code, but "who is in
 scope" and "what the cap is for" are decisions and are not).
+
+Every one of them renders through `views/lists.py::Listing` — header, rows,
+an optional total line, and a wrapper that is a collapsible quote by default
+and plain text for `/online`, which redraws itself every few minutes and has
+to read at a glance. The *rows* are deliberately not shared: a list of games
+and a list of people are different things. The one exception is the games
+row itself, which two screens draw identically and which lived in two copies
+until #64.
 
 | List | Source | Who appears | Sort | Cap |
 |---|---|---|---|---|
