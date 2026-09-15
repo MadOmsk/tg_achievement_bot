@@ -10,6 +10,8 @@ achievement-word = достижение
 achievement-word-trophy = трофей
 
 # Message headers and item lines
+achievement-word-secret = секретное достижение
+achievement-word-secret-trophy = секретный трофей
 achievement-single-header = <b>{ $gamertag }</b> получает { $word }
 achievement-digest-header = <b>{ $gamertag }</b> получает { $phrase }
 achievement-game-line = { $title } (<i>{ $platform }</i>)

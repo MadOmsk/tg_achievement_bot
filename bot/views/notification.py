@@ -147,13 +147,22 @@ def _group_label(progress: TitleProgress, title: str, locale: str) -> str:
     return html_escape(name)
 
 
-def _achievement_word(platform: str, locale: str) -> str:
+def _achievement_word(platform: str, locale: str, *, secret: bool = False) -> str:
     """PSN calls them trophies, everyone else achievements (Follow-up
     2026-09-06, user request — this is the "трофей" wording M-Steam-2e's
     original standardization explicitly left for later, once PSN trophies
-    were real data and not just a reserved word)."""
+    were real data and not just a reserved word).
+
+    A secret one says so in the header (#16, owner decision 2026-09-16):
+    "получает секретное достижение". The name below it is behind a real
+    Telegram spoiler, and a blurred word with nothing explaining it reads
+    as a rendering glitch rather than as a deliberate secret — the header
+    is where that belongs, because it is the one line that is never hidden.
+    """
     _ = translator("achievements", locale)
-    return _("achievement-word-trophy") if platform == Platform.PSN else _("achievement-word")
+    if platform == Platform.PSN:
+        return _("achievement-word-secret-trophy") if secret else _("achievement-word-trophy")
+    return _("achievement-word-secret") if secret else _("achievement-word")
 
 
 def format_single(
@@ -175,7 +184,7 @@ def format_single(
     header = _(
         "achievement-single-header",
         gamertag=html_escape(gamertag),
-        word=_achievement_word(achievement.platform, locale),
+        word=_achievement_word(achievement.platform, locale, secret=achievement.is_secret),
     )
     game_line = _game_line(title, achievement.platform, locale, progress)
     text = f"{header}\n\n{game_line}\n{_rarity_line(achievement, locale)}"

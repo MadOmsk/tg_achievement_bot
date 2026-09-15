@@ -1153,6 +1153,14 @@ Xbox and Steam have no notion of groups and stay at one line. In a digest,
 one block is one game and the group line appears only when every trophy in
 that block shares one group.
 
+**A secret achievement says so in the header** (#16, 2026-09-16, owner
+decision): "получает секретное достижение" / "получает секретный трофей".
+The name and description below it are behind a real Telegram spoiler, and a
+blurred word with nothing explaining it reads as a rendering glitch rather
+than as a deliberate secret — the header is the one line that is never
+hidden, so that is where the word goes. Lists are unchanged: `/recent`'s row
+keeps the spoiler with no label, since a line there is already long.
+
 The badge is `rarity_badge()` (💎 at or below the rare threshold, 🏆 otherwise,
 including when rarity is simply unknown) for every platform except PSN, which shows
 its own tier icon instead (🥉🥈🥇🏆) — see the PSN section above for why.

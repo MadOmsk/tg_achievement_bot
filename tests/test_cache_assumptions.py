@@ -3,7 +3,7 @@ per-game progress counter that rides on the same data (#46)."""
 
 from __future__ import annotations
 
-from bot.constants import AccountPlatform, account_platform_of
+from bot.constants import AccountPlatform, Platform, account_platform_of
 from bot.db.repo import (
     AchievementRow,
     Repo,
@@ -471,3 +471,66 @@ def test_a_group_with_no_localized_name_keeps_the_stored_one(i18n) -> None:
     assert "New Game+ · 3/7" in format_single(
         "Igor", trophy, "Spider-Man", locale="ru", progress=progress
     )
+
+
+def test_a_secret_achievement_says_so_in_the_header() -> None:
+    """#16: the name is behind a real Telegram spoiler, and a blurred word
+    with nothing explaining it reads as a rendering glitch. The header is
+    the one line that is never hidden, so that is where it says so."""
+    row = AchievementRow(
+        title_id="t1",
+        achievement_id="a1",
+        name="Финальный босс",
+        description="Спойлер",
+        icon_url=None,
+        unlocked_at="2026-09-16T10:00:00",
+        gamerscore=50,
+        rarity_percent=4.2,
+        platform=Platform.XBOX_MODERN,
+        title_name="Halo",
+        is_secret=True,
+    )
+
+    text = format_single("RideTheSun", row, "Halo", locale="ru")
+
+    assert "получает секретное достижение" in text
+    assert 'class="tg-spoiler"' in text
+
+
+def test_a_secret_psn_trophy_keeps_the_trophy_wording() -> None:
+    row = AchievementRow(
+        title_id="NPWR1",
+        achievement_id="1",
+        name="Платина",
+        description=None,
+        icon_url=None,
+        unlocked_at="2026-09-16T10:00:00",
+        gamerscore=0,
+        rarity_percent=1.0,
+        platform=Platform.PSN,
+        title_name="Spider-Man",
+        is_secret=True,
+        trophy_type="gold",
+    )
+
+    assert "получает секретный трофей" in format_single("drunkzero", row, "Spider-Man", locale="ru")
+
+
+def test_an_ordinary_achievement_is_not_called_secret() -> None:
+    row = AchievementRow(
+        title_id="t1",
+        achievement_id="a2",
+        name="Первый шаг",
+        description=None,
+        icon_url=None,
+        unlocked_at="2026-09-16T10:00:00",
+        gamerscore=10,
+        rarity_percent=60.0,
+        platform=Platform.XBOX_MODERN,
+        title_name="Halo",
+    )
+
+    text = format_single("RideTheSun", row, "Halo", locale="ru")
+
+    assert "получает достижение" in text
+    assert "секретное" not in text
