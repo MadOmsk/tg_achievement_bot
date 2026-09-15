@@ -63,6 +63,7 @@ from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.util import parse_iso
+from bot.version import version
 from bot.web.oauth import OAuthServer
 
 log = logging.getLogger(__name__)
@@ -330,7 +331,7 @@ async def run(settings: Settings) -> None:
     await _publish_command_menu(bot)
 
     me = await bot.me()
-    log.info("bot @%s is up", me.username)
+    log.info("bot @%s is up (v%s)", me.username, version())
     try:
         await dispatcher.start_polling(bot, handle_signals=False)
     finally:

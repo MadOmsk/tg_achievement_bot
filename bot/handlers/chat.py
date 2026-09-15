@@ -65,6 +65,7 @@ from bot.services.single_message import send_replacing
 from bot.services.stats import counters_for, local_now
 from bot.services.tables import blockquote, truncate_name
 from bot.util import cooldown_minutes_left, humanize_ago, thousands, utcnow
+from bot.version import version
 
 log = logging.getLogger(__name__)
 
@@ -823,21 +824,36 @@ def hub_keyboard(
     )
 
 
+def help_text(i18n: I18nContext) -> str:
+    """What the bot is for, its commands, and — last line — which build is
+    answering (#56, owner request). The version belongs here rather than in
+    /admin alone: the question it answers is "is this the test bot or the
+    real one", and anyone in the chat can have it."""
+    return i18n.get("chat-help-text") + "\n\n" + i18n.get("chat-help-version", version=version())
+
+
 async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
     names = subscriber_names(await repo.chat_subscribers(chat_id))
-    if not names:
-        return i18n.get("chat-help-text") + "\n\n" + i18n.get("chat-hub-nobody")
+    who = (
+        i18n.get("chat-hub-nobody")
+        if not names
+        else i18n.get("chat-hub-publishing", names=", ".join(names))
+    )
+    # The version stays the last line of the whole message — under the
+    # subscriber list, not buried above it.
     return (
         i18n.get("chat-help-text")
         + "\n\n"
-        + i18n.get("chat-hub-publishing", names=", ".join(names))
+        + who
+        + "\n\n"
+        + i18n.get("chat-help-version", version=version())
     )
 
 
 @router.message(Command("help"))
 async def help_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
-        await message.answer(i18n.get("chat-help-text"))
+        await message.answer(help_text(i18n))
         return
     me = await bot.me()
     await message.answer(

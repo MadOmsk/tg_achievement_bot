@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from bot.db.repo import AchievementRow, Repo
@@ -42,7 +42,13 @@ class FakeHistoryEntry:
     max_gamerscore: int | None = 1000
     achievements_unlocked: int | None = 5
     achievements_total: int | None = 50
-    last_played_at: str | None = "2026-09-01T10:00:00+00:00"
+    # Relative, not a fixed date: the catch-up tests ask for "played inside
+    # the last N days", and a hardcoded 2026-09-01 quietly stopped satisfying
+    # that on 2026-09-16 — the test began failing on its own, with nothing
+    # having changed in the code.
+    last_played_at: str | None = field(
+        default_factory=lambda: (utcnow() - timedelta(hours=1)).isoformat(timespec="seconds")
+    )
     icon_url: str | None = None
 
 

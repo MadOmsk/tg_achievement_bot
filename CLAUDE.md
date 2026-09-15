@@ -955,6 +955,28 @@ and the HLTB link (`docs/ui/ui_screens_users.md`), capped at
 the game has cover art, and Telegram caps those at 1024 characters, so an
 overlong summary would cost the whole card rather than just its own tail.
 
+## Versioning
+
+**`A.B.C.D`** (#56, 2026-09-16), resolved in `bot/version.py`, shown as the
+last line of `/help` and the group hub, and logged at startup.
+
+- **A** — the architecture. By hand, on a rewrite. `1`.
+- **B** — which line of work this build is. `0` on `main`; a working branch
+  takes the next number and `main` inherits it on merge, so "is this the
+  test bot" is answerable from the version alone.
+- **C** — the commit, read from git at startup (`nogit` without a checkout).
+  Deliberately not stored: a number you must remember to bump is wrong
+  exactly when it matters, and one edited per commit is a merge conflict per
+  commit.
+- **D** — the newest migration this code ships. Not what the database has.
+
+**A database ahead of the code refuses to start** (`Database.connect` →
+`SchemaTooNewError`). That is the 2026-09-14 outage in one check: a script
+run from another worktree opened production's `bot.db`, `connect()` applied
+that branch's migrations to it, and the production bot crashed on tables it
+had never heard of. Behind stays normal — that is what an upgrade looks
+like.
+
 ## Security and privacy
 
 - Never commit `.env`, database files, logs, PID files, or runtime data.

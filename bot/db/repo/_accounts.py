@@ -82,9 +82,7 @@ class _AccountsRepo:
         )
         return [row["tg_id"] for row in await cursor.fetchall()]
 
-    async def set_user_photo(
-        self, tg_id: int, file_id: str | None, unique_id: str | None
-    ) -> None:
+    async def set_user_photo(self, tg_id: int, file_id: str | None, unique_id: str | None) -> None:
         """The result of one look, including "this person has no photo we can
         see" — `photo_checked_at` is stamped either way, or a private profile
         would be asked about again every single tick."""

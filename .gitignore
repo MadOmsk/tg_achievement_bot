@@ -1,5 +1,10 @@
-# Secrets and local state — never commit
-.env
+# Secrets and local state — never commit.
+# Every .env variant, not just the bare one: .env.test and the .bak copies
+# taken off the servers hold real tokens and real FERNET_KEYs, and a
+# `git add -A` will happily stage them (it did, 2026-09-16, caught before
+# the push). The example file is the one deliberate exception.
+.env*
+!.env.example
 data/
 *.db
 *.db-journal
@@ -28,3 +33,12 @@ history.md
 # Runtime artefacts
 logs/
 *.pid
+
+# Database copies, dumps, and the one-off scripts that make them (2026-09-14
+# incident): they belong in backups/ and nowhere else, and none of it is ever
+# committed. The three defensive patterns below are for the day somebody
+# writes a dump into the repository root instead.
+backups/
+*backup*.json
+*dump*.json
+*tokens*.json

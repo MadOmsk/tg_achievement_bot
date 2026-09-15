@@ -55,6 +55,7 @@ chat-help-text = 🎮 I watch the achievements of everyone playing on XBOX and S
     /hltb — a game's HowLongToBeat summary
 
     Settings are in a DM, /panel.
+chat-help-version = <i>Version { $version }</i>
 chat-hub-nobody = Nobody is publishing here yet.
 chat-hub-publishing = Publishing: { $names }
 chat-hub-publish-button = ✅ Publish my achievements
