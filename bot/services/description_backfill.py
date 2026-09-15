@@ -59,6 +59,25 @@ async def fill_xbox_title(
     russian = await client.title_achievements(tg_id, title_id, xbox_platform, language="ru-RU")
     english = await client.title_achievements(tg_id, title_id, xbox_platform, language="en-US")
 
+    # Names and the game's own title ride along (#61) — this job walks every
+    # title a few per tick, which makes it the one thing that reaches a game
+    # nobody plays any more. Without this the localized name would only ever
+    # arrive for games somebody is still unlocking things in.
+    english_names = {item.achievement_id: item.name for item in english}
+    await repo.cache_names(
+        platform,
+        title_id,
+        {
+            item.achievement_id: (item.name, english_names.get(item.achievement_id))
+            for item in russian
+        },
+    )
+    await repo.set_title_names(
+        title_id,
+        next((item.title_name for item in russian if item.title_name), None),
+        next((item.title_name for item in english if item.title_name), None),
+    )
+
     english_by_id = {item.achievement_id: item.description for item in english}
     native = {
         item.achievement_id: (item.description, english_by_id.get(item.achievement_id))

@@ -24,6 +24,7 @@ from bot.services.steam.client import (
     get_global_percentages,
     get_player_achievements,
     get_schema,
+    store_name,
 )
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
@@ -144,6 +145,15 @@ async def _bilingual_descriptions(
     # Steam is the mirror image of Xbox here: its *primary* call already asks
     # for Russian, so `unlocked` holds the Russian names and this second
     # response the English ones. Both are Steam's own strings (#61).
+    # Steam's own Web API never localizes a game's name — both endpoints that
+    # carry `gameName` ignore `l=` — but the store page does (#61:
+    # "G.O.P.O.T.A" / "Г.О.П.О.Т.А"). One storefront request per game, asked
+    # only while the Russian side is missing, and a failure changes nothing.
+    if not await repo.has_localized_title(appid):
+        await repo.set_title_names(
+            appid, await store_name(appid, "russian"), await store_name(appid, "english")
+        )
+
     russian_names = {item.apiname: item.name for item in unlocked}
     await repo.cache_names(
         Platform.STEAM,

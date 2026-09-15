@@ -402,15 +402,25 @@ every column.
   name — "CTNS: The Heist" comes back as "Город, который никогда не спит:
   Ограбление" — and it arrives in the same once-per-game call, made twice.
 
-  **Sony localizes the game's own title too**, and that call carries it:
-  `titles.name_ru`/`name_en` (#61). Checked against the owner's own
-  counterexample, "Marvel's Wolverine" / "Marvel: Росомаха" — an earlier
-  sample (Spider-Man) had happened to be identical in both languages, which
-  is exactly how a one-sample check lies. Xbox and Steam do **not** localize
-  a title: Xbox returns the same `titleAssociations` name under `en-US` and
-  `ru-RU` while localizing the achievement names in that same response, and
-  Steam's `gameName` is identical under `l=english` and `l=russian`. So those
-  two columns are PlayStation's in practice. Per-account progress inside a group is *not* cached with it: the
+  **All three platforms localize a game's own title** — `titles.name_ru` /
+  `name_en` (#61). This took three tries and two wrong rules, each from a
+  sample that happened to have one name: Spider-Man reads the same in both
+  languages, so PSN "did not localize" until "Marvel's Wolverine" / "Marvel:
+  Росомаха"; ABZU and Black Ops Cold War read the same, so Xbox "did not"
+  until "Halo: The Master Chief Collection" / "Halo: Коллекция Мастер Чифа".
+  The lesson is in the method, not the platforms: to ask whether something is
+  localized, pick a title that *has* a localized name.
+
+  Where each one comes from, all of them free or once-per-game: PSN's in the
+  same call the trophy groups ride on; Xbox's on every achievement of the
+  `ru-RU` contract-4 response already fetched for descriptions (contract 1
+  carries none, so x360 keeps the titlehub name); Steam's from the
+  **storefront** — `store.steampowered.com/api/appdetails?l=russian`, one
+  request per game, ever — because both Web API endpoints that carry
+  `gameName` ignore `l=` entirely ("G.O.P.O.T.A" from each, while the store
+  page reads "Г.О.П.О.Т.А"). That is the one storefront call this project
+  makes, for one field; the store *description* remains rejected
+  (see the appendix). Per-account progress inside a group is *not* cached with it: the
   bot counts its own `seen_achievements` rows, so asking Sony for it would pay
   a second request for something already known.
   HowLongToBeat cache: `hltb_cache` — completion times, platforms,

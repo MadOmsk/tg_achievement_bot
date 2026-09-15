@@ -211,25 +211,47 @@ async def test_reminder_respects_the_interval(repo: Repo, cipher) -> None:
     assert await repo.tokens_needing_reminder(MAX_REMINDERS, REMINDER_INTERVAL_HOURS) == []
 
 
-async def test_title_name_is_resolved_once_when_presence_has_none(repo: Repo, cipher) -> None:
+async def test_an_x360_title_name_is_resolved_because_contract_1_has_none(
+    repo: Repo, cipher
+) -> None:
     """Presence returns an empty name for PC titles; a published message must
-    not say "неизвестная игра" because of it."""
+    not say "неизвестная игра" because of it.
+
+    Contract 4 carries the title on every achievement, so for a modern title
+    the achievements response itself is the answer (and since #61 it is
+    stored, in both languages, as the poll goes past — see the test below).
+    Contract 1 carries no name at all, so an x360 title still has to be
+    resolved from titlehub, and the resolved name is what gets stored.
+    """
+    await _connected_user(repo, cipher)
+    x360 = parsed("a1", title_id="360", platform="xbox_360")
+    x360.title_name = None  # contract 1 does not carry it
+    client = FakeClient(by_title={"360": [x360]})
+    client.resolvable["360"] = FakeHistoryEntry("360", "Gears of War 3", "xbox_360")
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", None)
+
+    assert client.resolved, "contract 1 gives no name, so titlehub had to be asked"
+    assert await repo.title_name("360") == "Gears of War 3"
+
+
+async def test_a_modern_title_needs_no_separate_name_lookup(repo: Repo, cipher) -> None:
+    """Contract 4 hands the game's name over with the achievements, in both
+    languages (#61) — so the extra titlehub round-trip that used to resolve it
+    is not made at all."""
     await _connected_user(repo, cipher)
     client = FakeClient(by_title={"85494077": [parsed("a1", title_id="85494077")]})
     client.resolvable["85494077"] = FakeHistoryEntry(
         "85494077", "Microsoft Solitaire Collection", "xbox_modern"
     )
-    publisher = FakePublisher()
-    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "85494077", "xbox_modern", None)
-    assert client.resolved == ["85494077"]
-    assert await repo.title_name("85494077") == "Microsoft Solitaire Collection"
 
-    # Second time the name comes from the cache, not from Xbox Live.
-    client.by_title["85494077"].append(parsed("a2", title_id="85494077"))
-    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "85494077", "xbox_modern", None)
-    assert client.resolved == ["85494077"]
+    assert client.resolved == []
+    assert await repo.title_name("85494077") == "Gears of War"  # what the response said
 
 
 async def test_x360_achievements_get_the_games_box_art_as_their_icon(repo: Repo, cipher) -> None:

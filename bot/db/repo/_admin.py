@@ -206,12 +206,34 @@ class _AdminRepo:
         """
         if name_ru is None and name_en is None:
             return
-        await self._conn.execute(
+        now = utcnow_iso()
+        cursor = await self._conn.execute(
             "UPDATE titles SET name_ru = COALESCE(?, name_ru), name_en = COALESCE(?, name_en),"
             "  updated_at = ? WHERE title_id = ?",
-            (name_ru, name_en, utcnow_iso(), title_id),
+            (name_ru, name_en, now, title_id),
         )
+        if not cursor.rowcount:
+            # The game is not in `titles` yet — the first poll of it learns
+            # the localized names before anything stores the achievements that
+            # would create the row. One of the two names it just fetched is a
+            # perfectly good `name`, and waiting for the next poll would mean
+            # asking the platform for the same thing twice.
+            await self._conn.execute(
+                "INSERT INTO titles (title_id, name, name_ru, name_en, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(title_id) DO NOTHING",
+                (title_id, name_en or name_ru, name_ru, name_en, now),
+            )
         await self._conn.commit()
+
+    async def has_localized_title(self, title_id: str) -> bool:
+        """Whether this game's name is already stored in both languages —
+        what keeps the one storefront request per game (#61) from becoming one
+        per poll."""
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM titles WHERE title_id = ? AND name_ru IS NOT NULL LIMIT 1",
+            (title_id,),
+        )
+        return await cursor.fetchone() is not None
 
     async def title_names(self, title_ids: list[str]) -> dict[str, tuple[str | None, str | None]]:
         """`{title_id: (name_ru, name_en)}` for the render path — one query

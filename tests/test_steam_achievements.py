@@ -412,3 +412,46 @@ async def test_fetch_unlocked_asks_the_llm_when_both_locales_match(
     cached = await repo.get_cached_description("steam", APPID, "WIN")
     assert cached is not None
     assert cached.source == "llm"
+
+
+async def test_the_store_page_supplies_the_russian_game_name_once(
+    repo: Repo, cipher: TokenCipher, monkeypatch
+) -> None:
+    """Steam's Web API never localizes a game's name — both endpoints that
+    carry `gameName` ignore `l=`, verified on a Russian game: "G.O.P.O.T.A"
+    from each, while its store page reads "Г.О.П.О.Т.А" (#61). The storefront
+    is asked once per game and never again."""
+    calls: list[tuple[str, str]] = []
+
+    async def fake_store_name(appid: str, language: str) -> str:
+        calls.append((appid, language))
+        return "Г.О.П.О.Т.А" if language == "russian" else "G.O.P.O.T.A"
+
+    async def fake_player(
+        api_key: str, steam_id: str, appid: str, *, language: str = "russian"
+    ) -> list[RawAchievement]:
+        return [
+            RawAchievement(
+                apiname="WIN", achieved=True, unlocktime=0, name="Мафиозник", description="Победи"
+            )
+        ]
+
+    async def fake_schema(api_key: str, appid: str) -> list[RawSchemaAchievement]:
+        return []
+
+    async def fake_percentages(appid: str) -> dict[str, float]:
+        return {}
+
+    monkeypatch.setattr(steam_achievements, "store_name", fake_store_name)
+    monkeypatch.setattr(steam_achievements, "get_player_achievements", fake_player)
+    monkeypatch.setattr(steam_achievements, "get_schema", fake_schema)
+    monkeypatch.setattr(steam_achievements, "get_global_percentages", fake_percentages)
+    auth = _unconfigured_anthropic_auth(repo, cipher)
+
+    await fetch_unlocked(repo, auth, "key", STEAM_ID, APPID)
+    assert calls == [(APPID, "russian"), (APPID, "english")]
+
+    await fetch_unlocked(repo, auth, "key", STEAM_ID, APPID)
+    assert len(calls) == 2, "the store is asked once per game, not once per poll"
+
+    assert await repo.title_names([APPID]) == {APPID: ("Г.О.П.О.Т.А", "G.O.P.O.T.A")}

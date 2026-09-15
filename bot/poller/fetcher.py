@@ -195,6 +195,16 @@ class Fetcher:
                     for item in russian_parsed
                 },
             )
+            # Xbox localizes a game's own title too, for games that have a
+            # Russian name — "Halo: The Master Chief Collection" comes back as
+            # "Halo: Коллекция Мастер Чифа" (#61). Contract 4 carries it on
+            # every achievement; contract 1 (x360) carries none, and then
+            # there is simply nothing to store.
+            await self._repo.set_title_names(
+                title_id,
+                next((item.title_name for item in russian_parsed if item.title_name), None),
+                next((item.title_name for item in parsed if item.title_name), None),
+            )
             russian_by_id = {item.achievement_id: item.description for item in russian_parsed}
             native = {
                 achievement_id: (russian_text, english_text)
