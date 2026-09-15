@@ -129,6 +129,9 @@ async def run(settings: Settings) -> None:
     # shared credential rather than one person's own.
     psn_auth = PsnAuth(repo, cipher)
     psn_auth.on_dead = lambda: notifier.service_key_dead(Platform.PSN)
+    # …and its counterpart (#62): a credential that comes back says so,
+    # or the admin is left holding an alarm with no end to it.
+    psn_auth.on_alive = lambda: notifier.service_key_alive(Platform.PSN)
 
     # The Steam key now lives encrypted in app_settings, admin-settable
     # without a restart (#17); the .env value is only a first-run seed
@@ -136,6 +139,7 @@ async def run(settings: Settings) -> None:
     steam_env_key = settings.steam_api_key.get_secret_value() if settings.steam_api_key else None
     steam_auth = SteamAuth(repo, cipher, env_key=steam_env_key)
     steam_auth.on_dead = lambda: notifier.service_key_dead(Platform.STEAM)
+    steam_auth.on_alive = lambda: notifier.service_key_alive(Platform.STEAM)
 
     # Anthropic (2026-09-09) — achievement-description translation only,
     # same admin-panel-managed shared-credential shape as Steam/PSN above.
@@ -144,6 +148,7 @@ async def run(settings: Settings) -> None:
     )
     anthropic_auth = AnthropicAuth(repo, cipher, env_key=anthropic_env_key)
     anthropic_auth.on_dead = notifier.translation_key_dead
+    anthropic_auth.on_alive = notifier.translation_key_alive
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo)

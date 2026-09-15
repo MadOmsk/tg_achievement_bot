@@ -103,6 +103,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
 │   │   ├── notify.py               notifications to the admin
 │   │   ├── crypto.py               refresh-token encryption (Fernet)
+│   │   ├── credential_health.py    what one failed liveness check means for a shared
+│   │   │                           credential — confirm before declaring death,
+│   │   │                           announce recovery; all three wrappers share it (#62)
 │   │   ├── rate_limiter.py         shared sliding-window limiter (Xbox and Steam clients)
 │   │   ├── xbox/                   everything about Xbox Live; nothing about Telegram
 │   │   │   ├── auth.py              wrapper over xbox-webapi-python: token storage, refresh
@@ -657,6 +660,23 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   shared PSN token or the Steam key stops working — exactly once per "alive → dead"
   transition, not every tick. Unlike Xbox, where one dead token affects only one
   person, a dead PSN token silently stops polling *everyone* linked to PSN.
+
+  **A death has to be confirmed, and a recovery is announced** (#62,
+  2026-09-15, both rules shared by all three credentials in
+  `services/credential_health.py`). A failed check no longer moves the
+  stored status or notifies anyone on its own: these services fail one
+  request at a time for their own reasons — a 401 on a routine check at
+  02:42, `Expired token` twice and a 503 on production in the same two days
+  — and the one that was reported cost the admin a night's alarm over a
+  credential that was working a minute later. It takes
+  `FAILURES_BEFORE_DEAD` consecutive failures now, re-checked on the next
+  scheduler tick rather than after another full interval: an unconfirmed
+  failure deliberately leaves `checked_at` alone, which is the gate
+  `service_health.py` reads, so a genuinely dead credential still surfaces
+  within minutes while a hiccup never surfaces at all. And `on_alive` exists
+  beside `on_dead`, because an alarm with no end to it reads as permanent —
+  the admin could previously only learn a credential recovered by opening
+  /admin.
 - Trophy polling itself has no presence hook at all, unlike Xbox/Steam — a
   permanent design decision, not a gap: PSN trophies may only sync to Sony's
   servers when a player opens trophy data on the console, not at the moment

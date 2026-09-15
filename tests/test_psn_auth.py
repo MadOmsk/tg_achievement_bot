@@ -8,6 +8,7 @@ import pytest
 from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 
 from bot.db.repo import Repo
+from bot.services.credential_health import FAILURES_BEFORE_DEAD
 from bot.services.crypto import TokenCipher
 from bot.services.psn import auth as psn_auth_module
 from bot.services.psn.auth import (
@@ -170,7 +171,7 @@ async def test_check_health_before_setup_is_a_noop(repo: Repo, cipher: TokenCiph
     assert fired is False  # nothing was ever configured — not a failure to report
 
 
-async def test_check_health_notifies_once_on_active_to_invalid_transition(
+async def test_check_health_notifies_once_the_failure_is_confirmed(
     repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_client = _FakeClient()
@@ -192,13 +193,19 @@ async def test_check_health_notifies_once_on_active_to_invalid_transition(
 
     auth.on_dead = _on_dead
 
+    # One bad answer from Sony is not news (#62) — the status stays put and
+    # nobody is woken up.
     assert await auth.check_health() is False
+    assert await auth.status() == STATUS_ACTIVE
+    assert fired == 0
+
+    for _ in range(FAILURES_BEFORE_DEAD - 1):
+        await auth.check_health()
     assert await auth.status() == STATUS_INVALID
     assert fired == 1
 
-    # A second consecutive failed check must not notify again — only the
-    # active->invalid transition is newsworthy (poller/service_health.py's
-    # own docstring), not "still dead".
+    # Still dead — only the active->invalid transition is newsworthy
+    # (poller/service_health.py's own docstring), not "still dead".
     assert await auth.check_health() is False
     assert fired == 1
 
@@ -322,11 +329,12 @@ async def test_check_health_death_invalidates_the_translation_client_too(
     assert build_calls == 1
 
 
-async def test_check_health_recovers_silently(
+async def test_check_health_announces_recovery(
     repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Coming back to life just flips the status back — no notify for
-    recovery, only for death (scope explicitly kept narrow)."""
+    """Recovery used to be silent, which left a false alarm looking
+    permanent: the admin was told the token died and had no way to learn it
+    came back except opening /admin (#62)."""
 
     fake_client = _FakeClient()
 
@@ -345,7 +353,73 @@ async def test_check_health_recovers_silently(
         calls += 1
 
     auth.on_dead = _on_dead
+    recovered = 0
+
+    async def _on_alive() -> None:
+        nonlocal recovered
+        recovered += 1
+
+    auth.on_alive = _on_alive
 
     assert await auth.check_health() is True
     assert await auth.status() == STATUS_ACTIVE
     assert calls == 0
+    assert recovered == 1
+
+    # Still alive — not news a second time, same rule as death's own.
+    assert await auth.check_health() is True
+    assert recovered == 1
+
+
+async def test_a_run_of_failures_is_broken_by_one_good_answer(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The count is of *consecutive* failures. A service that answers badly
+    now and then, minutes apart, is exactly the case this must not report —
+    it is the shape of every 401/503 seen live so far."""
+    fake_client = _FakeClient()
+
+    async def _build(npsso: str) -> _FakeClient:
+        return fake_client
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)
+    fired = 0
+
+    async def _on_dead() -> None:
+        nonlocal fired
+        fired += 1
+
+    auth.on_dead = _on_dead
+
+    for _ in range(FAILURES_BEFORE_DEAD * 2):
+        fake_client.alive = False
+        await auth.check_health()
+        fake_client.alive = True
+        await auth.check_health()
+
+    assert fired == 0
+    assert await auth.status() == STATUS_ACTIVE
+
+
+async def test_an_unconfirmed_failure_leaves_checked_at_alone(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """That is what makes poller/service_health.py re-check on the next
+    tick (a minute) instead of waiting out its whole interval (thirty) —
+    the retry is the whole point of not reporting the first failure."""
+    fake_client = _FakeClient()
+
+    async def _build(npsso: str) -> _FakeClient:
+        return fake_client
+
+    monkeypatch.setattr(psn_auth_module, "build_client", _build)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)
+    before = await auth.checked_at()
+
+    fake_client.alive = False
+    await auth.check_health()
+
+    assert await auth.checked_at() == before

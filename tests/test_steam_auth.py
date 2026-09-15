@@ -5,6 +5,7 @@ call in tests)."""
 from __future__ import annotations
 
 from bot.db.repo import Repo
+from bot.services.credential_health import FAILURES_BEFORE_DEAD
 from bot.services.crypto import TokenCipher
 from bot.services.steam import auth as steam_auth_module
 from bot.services.steam.auth import (
@@ -106,7 +107,7 @@ async def test_clear_removes_the_key_and_disables_the_env_seed(
         pass
 
 
-async def test_check_health_notifies_once_on_active_to_invalid(
+async def test_check_health_notifies_once_the_failure_is_confirmed(
     repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
     _alive_ok(monkeypatch)
@@ -125,7 +126,14 @@ async def test_check_health_notifies_once_on_active_to_invalid(
 
     auth.on_dead = _on_dead
 
+    # Steam's key gets the same benefit of the doubt PSN's NPSSO does
+    # (#62) — one failed call is a hiccup, not an event.
     assert await auth.check_health() is False
+    assert await auth.status() == STATUS_ACTIVE
+    assert fired == 0
+
+    for _ in range(FAILURES_BEFORE_DEAD - 1):
+        await auth.check_health()
     assert await auth.status() == STATUS_INVALID
     assert fired == 1
 
