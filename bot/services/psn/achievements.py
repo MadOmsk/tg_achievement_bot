@@ -265,7 +265,12 @@ async def _bilingual_descriptions(
     for the service NPSSO itself being dead.
     """
     candidates = {item.trophy_id: item.trophy_detail for item in earned if item.trophy_detail}
-    if not candidates:
+    # A name earns the second request on its own (#61) — see the Xbox version
+    # of this in poller/fetcher.py for why.
+    nameless = await repo.names_missing(
+        Platform.PSN, title.np_communication_id, [str(item.trophy_id) for item in earned]
+    )
+    if not candidates and not nameless:
         return
 
     to_fetch: dict[int, str] = {}
@@ -279,7 +284,7 @@ async def _bilingual_descriptions(
                 cached[trophy_id] = row.description_ru
         else:
             to_fetch[trophy_id] = english_text
-    if not to_fetch:
+    if not to_fetch and not nameless:
         _apply(earned, cached)
         return
 
@@ -312,6 +317,18 @@ async def _bilingual_descriptions(
         _apply(earned, cached)
         return
 
+    # The same response carries the trophy names, and they cost nothing more
+    # (#61): `earned` came from the en-US client, `russian_earned` from the
+    # ru-RU one, so this is Sony's own pair — never a translation.
+    english_names = {item.trophy_id: item.trophy_name for item in earned}
+    await repo.cache_names(
+        Platform.PSN,
+        title.np_communication_id,
+        {
+            str(item.trophy_id): (item.trophy_name, english_names.get(item.trophy_id))
+            for item in russian_earned
+        },
+    )
     russian_by_id = {item.trophy_id: item.trophy_detail for item in russian_earned}
     # A trophy present in English and absent from Russian is precisely "Sony
     # has no Russian text for this one" — the case the LLM exists for (#50).

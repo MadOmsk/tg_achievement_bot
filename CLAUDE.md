@@ -430,6 +430,24 @@ every column.
   ever consults this cache and, when needed, the Anthropic API — it never
   talks to a platform itself. Steam, Xbox, and (2026-09-09) PSN all call it
   now (see their own sections under Platform integrations).
+- **Achievement names, in both languages** (#61, 2026-09-15):
+  `achievement_name_cache (platform, title_id, achievement_id, name_ru,
+  name_en, cached_at)`. Its own table rather than two more columns on the
+  description cache: `source` there is about where a *description* came from
+  and a name has no such story, and plenty of achievements have a name and no
+  description, which would otherwise need a description row invented to hold
+  the name. **A name is still never translated** — both sides are the
+  platform's own strings, filled from the same two locale requests the
+  descriptions already ride on, so this costs no new API call. It exists
+  because each platform's *main* call fixes one language for everybody: Xbox
+  and PSN answer in English, Steam in Russian, so a chat used to see one
+  platform in its own language and the others in the platform's, whatever the
+  chat had chosen. A second-locale request is now worth making for a missing
+  *name* alone, which is what fills this in for everything cached before the
+  table existed; once both are cached for a game it is never requested again.
+  Rendered by the same per-chat swap as descriptions
+  (`services/descriptions_view.py`), falling back to the other language rather
+  than leaving a line blank.
   **This cache is what a published message actually renders from**
   (2026-09-11, #48, `services/descriptions_view.py::localize_descriptions`,
   applied per chat in `poller/publisher.py`) — `seen_achievements.description`

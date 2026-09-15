@@ -540,6 +540,22 @@ CREATE TABLE IF NOT EXISTS achievement_description_cache (
     PRIMARY KEY (platform, title_id, achievement_id)
 );
 
+-- An achievement's own name in both languages (#61). Separate from the
+-- description cache above on purpose: `source` there is about where a
+-- *description* came from, and a name has no such story — it is only ever the
+-- platform's own string, never translated by anything (CLAUDE.md). Plenty of
+-- achievements also have a name and no description, and would otherwise need
+-- a description row invented to hold the name.
+CREATE TABLE IF NOT EXISTS achievement_name_cache (
+    platform        TEXT NOT NULL,
+    title_id        TEXT NOT NULL,
+    achievement_id  TEXT NOT NULL,
+    name_ru         TEXT,
+    name_en         TEXT,
+    cached_at       TEXT NOT NULL,
+    PRIMARY KEY (platform, title_id, achievement_id)
+);
+
 -- The single live copy of a self-deduplicating message kind (Follow-up
 -- 2026-09-06) — /panel, /summary, /recent and a specific person's /stats
 -- card each replace their own previous copy in the same scope instead of

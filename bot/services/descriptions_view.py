@@ -58,15 +58,40 @@ async def localize_descriptions(
     # row written before this existed, but not necessarily what it holds for
     # a row whose platform only ever returned English — so the lookup runs
     # for every locale, not just the non-default ones.
-    cached = await repo.cached_descriptions(
-        [(row.platform, row.title_id, row.achievement_id) for row in rows]
-    )
-    if not cached:
+    keys = [(row.platform, row.title_id, row.achievement_id) for row in rows]
+    cached = await repo.cached_descriptions(keys)
+    # The name is the platform's own in both languages, cached beside the
+    # description and swapped the same way (#61). Stored names were whatever
+    # language that platform's main call happens to use — English for Xbox and
+    # PSN, Russian for Steam — so a chat saw one platform in its own language
+    # and the others in the platform's, whatever the chat had chosen.
+    names = await repo.cached_names(keys)
+    if not cached and not names:
         return rows
 
     localized = []
     for row in rows:
-        entry = cached.get((row.platform, row.title_id, row.achievement_id))
+        key = (row.platform, row.title_id, row.achievement_id)
+        entry = cached.get(key)
         text = _for_locale(entry, locale) if entry is not None else None
-        localized.append(replace(row, description=text) if text is not None else row)
+        name_pair = names.get(key)
+        name = _name_for_locale(name_pair, locale) if name_pair is not None else None
+        changes = {}
+        if text is not None:
+            changes["description"] = text
+        if name is not None:
+            changes["name"] = name
+        localized.append(replace(row, **changes) if changes else row)
     return localized
+
+
+def _name_for_locale(pair: tuple[str | None, str | None], locale: str) -> str | None:
+    """The asked-for language, or the other one — same order as descriptions.
+
+    A name is never translated (CLAUDE.md): both sides here are the
+    platform's own strings, and where a platform has no name in one language
+    the other stands rather than the line going blank.
+    """
+    name_ru, name_en = pair
+    wanted, other = (name_en, name_ru) if locale == "en" else (name_ru, name_en)
+    return _usable(wanted) or _usable(other)

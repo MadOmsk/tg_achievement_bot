@@ -123,7 +123,10 @@ async def _bilingual_descriptions(
     out — nothing to translate.
     """
     candidates = {item.apiname: item.description for item in unlocked if item.description}
-    if not candidates:
+    # A name earns the second request on its own (#61) — see the Xbox version
+    # of this in poller/fetcher.py for why.
+    nameless = await repo.names_missing(Platform.STEAM, appid, [item.apiname for item in unlocked])
+    if not candidates and not nameless:
         return {}
 
     result: dict[str, tuple[str | None, str | None]] = {}
@@ -134,12 +137,22 @@ async def _bilingual_descriptions(
             result[apiname] = (cached.description_ru, cached.description_en)
         else:
             uncached[apiname] = russian_text
-    if not uncached:
+    if not uncached and not nameless:
         return result
 
+    english_items = await get_player_achievements(api_key, steam_id, appid, language="english")
+    # Steam is the mirror image of Xbox here: its *primary* call already asks
+    # for Russian, so `unlocked` holds the Russian names and this second
+    # response the English ones. Both are Steam's own strings (#61).
+    russian_names = {item.apiname: item.name for item in unlocked}
+    await repo.cache_names(
+        Platform.STEAM,
+        appid,
+        {item.apiname: (russian_names.get(item.apiname), item.name) for item in english_items},
+    )
     english = {
         item.apiname: item.description
-        for item in await get_player_achievements(api_key, steam_id, appid, language="english")
+        for item in english_items
         if item.apiname in uncached and item.description
     }
     native = {

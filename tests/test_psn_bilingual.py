@@ -278,6 +278,15 @@ async def test_trophies_with_no_detail_text_are_left_alone(
     outcome = await _run(repo, anthropic_auth, translation_client=TRANSLATION_CLIENT)
 
     assert outcome.new_rows[0].description is None
-    # No detail text at all for this trophy — nothing to translate, so the
-    # second client is never even asked.
+    # Nothing to translate — but the trophy's *name* is still worth one
+    # request (#61), and this is where it gets cached. The detail text stays
+    # untouched: a missing description is not something a second locale can
+    # fix.
+    assert TRANSLATION_CLIENT in calls
+    assert await repo.cached_names([("psn", "NPWR00001_00", "1")]) != {}
+
+    # ...and once the name is cached, that request is not made again.
+    calls.clear()
+    await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR00001_00", 0)
+    await _run(repo, anthropic_auth, translation_client=TRANSLATION_CLIENT)
     assert TRANSLATION_CLIENT not in calls

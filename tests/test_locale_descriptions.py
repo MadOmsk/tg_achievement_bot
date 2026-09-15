@@ -152,3 +152,36 @@ async def test_uncached_descriptions_carries_the_owner(repo: Repo) -> None:
     [(_platform, _title, _achievement, tg_id, external_id)] = await repo.uncached_descriptions()
 
     assert (tg_id, external_id) == (42, "xuid-42")
+
+
+# ------------------------------------------- the achievement's own name (#61)
+
+
+async def test_the_name_follows_the_chats_language(repo: Repo) -> None:
+    """Xbox and PSN store English names (their main call is en-US), Steam
+    stores Russian ones (its main call is l=russian) — so before this a
+    Russian chat showed Steam in Russian and the rest in English, whatever the
+    chat had chosen."""
+    await repo.cache_names(PLATFORM, TITLE_ID, {"a1": ("Сжечь всех врагов", "Burn every enemy")})
+
+    [ru] = await localize_descriptions(repo, [_row()], "ru")
+    [en] = await localize_descriptions(repo, [_row()], "en")
+
+    assert ru.name == "Сжечь всех врагов"
+    assert en.name == "Burn every enemy"
+
+
+async def test_a_name_missing_in_one_language_falls_back_to_the_other(repo: Repo) -> None:
+    """Never a blank line, and never a translated name: where the platform
+    has only one, that one is shown."""
+    await repo.cache_names(PLATFORM, TITLE_ID, {"a1": (None, "Burn every enemy")})
+
+    [ru] = await localize_descriptions(repo, [_row()], "ru")
+
+    assert ru.name == "Burn every enemy"
+
+
+async def test_an_uncached_name_keeps_whatever_was_stored(repo: Repo) -> None:
+    [row] = await localize_descriptions(repo, [_row()], "ru")
+
+    assert row.name == _row().name

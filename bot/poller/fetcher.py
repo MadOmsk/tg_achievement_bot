@@ -156,7 +156,14 @@ class Fetcher:
         version of this uses.
         """
         candidates = {item.achievement_id: item.description for item in parsed if item.description}
-        if not candidates:
+        # A name is worth the second request on its own (#61): a game whose
+        # descriptions were all cached before names existed would otherwise
+        # never ask for Russian again, and would keep showing English names in
+        # a Russian chat forever.
+        nameless = await self._repo.names_missing(
+            platform, title_id, [item.achievement_id for item in parsed]
+        )
+        if not candidates and not nameless:
             return
 
         result: dict[str, tuple[str | None, str | None]] = {}
@@ -168,7 +175,7 @@ class Fetcher:
             else:
                 uncached[achievement_id] = english_text
 
-        if uncached:
+        if uncached or nameless:
             try:
                 russian_parsed = await self._client.title_achievements(
                     tg_id, title_id, platform, language="ru-RU"
@@ -176,6 +183,18 @@ class Fetcher:
             except XboxApiError as exc:
                 log.info("bilingual fetch for title %s skipped: %s", title_id, exc)
                 russian_parsed = []
+            # The same response carries the names, and they cost nothing more
+            # (#61). `parsed` is the en-US answer, `russian_parsed` the ru-RU
+            # one, so this is the platform's own pair — never a translation.
+            english_names = {item.achievement_id: item.name for item in parsed}
+            await self._repo.cache_names(
+                platform,
+                title_id,
+                {
+                    item.achievement_id: (item.name, english_names.get(item.achievement_id))
+                    for item in russian_parsed
+                },
+            )
             russian_by_id = {item.achievement_id: item.description for item in russian_parsed}
             native = {
                 achievement_id: (russian_text, english_text)
