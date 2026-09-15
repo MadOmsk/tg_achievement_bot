@@ -15,7 +15,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
-from bot.constants import Platform, PresenceState, RarityMode, TokenStatus
+from bot.constants import Platform, RarityMode, TokenStatus
 from bot.db.repo import PlatformLink, Repo, User, UserChatRow
 from bot.handlers.keyboards import (
     DIGEST_NEVER,
@@ -36,9 +36,11 @@ from bot.i18n import StaticI18nContext, build_i18n_context, static_i18n
 from bot.poller.fetcher import Fetcher
 from bot.services.achievements import (
     platform_header_lines,
+    platform_tag,
     visibility_status_text,
 )
 from bot.services.naming import person_name_of
+from bot.services.presence_view import pick_presence
 from bot.services.single_message import send_replacing
 from bot.util import cooldown_minutes_left, humanize_ago, parse_iso
 
@@ -618,13 +620,12 @@ async def render_panel(
             status=await _publication_status(repo, user.tg_id, user.is_excluded, i18n),
         )
     )
-    if user.xuid:
-        # Presence stays Xbox-only for now (issue #1's own follow-up note,
-        # CLAUDE.md) — Steam/PSN both have presence data now too, just not
-        # wired into this one row yet. Omitted rather than shown as "нет
-        # данных" for a Steam/PSN-only person: unlike the login rows above,
-        # there is no per-platform variant of this row to fall back to yet.
-        playing = await _now_playing(repo, user.xuid, i18n)
+    if user.xuid or steam_link is not None or psn_link is not None:
+        # Every connected platform competes for this row now (issue #1's own
+        # tail, closed 2026-09-15) — it used to be gated on `user.xuid` and so
+        # was missing entirely from a Steam/PSN-only person's panel, the last
+        # row here that still assumed Xbox.
+        playing = await _now_playing(repo, user, steam_link, psn_link, i18n)
         lines.append(i18n.get("panel-now-playing-row", playing=playing))
     lines += [
         "",
@@ -637,18 +638,39 @@ async def render_panel(
     return "\n".join(lines), keyboard
 
 
-async def _now_playing(repo: Repo, xuid: str, i18n: I18nContext) -> str:
-    presence = await repo.presence_of(xuid)
+async def _now_playing(
+    repo: Repo,
+    user: User,
+    steam_link: PlatformLink | None,
+    psn_link: PlatformLink | None,
+    i18n: I18nContext,
+) -> str:
+    """One row for every platform at once, not one row each: the question
+    ("where is this person right now") has a single answer, and two of the
+    three platforms would only ever be able to say "offline" alongside it.
+    Which platform wins is `services/presence_view.pick_presence`, the same
+    playing > online > offline rule /online settled on.
+
+    The platform is named only while the person is actually online — an
+    offline row has no "where" left to answer, so naming the platform there
+    just picks one arbitrarily (the same call `/online`'s own rows make,
+    #51)."""
+    presence = pick_presence(
+        xbox=await repo.presence_of(user.xuid) if user.xuid else None,
+        steam=await repo.steam_presence_of(steam_link.external_id) if steam_link else None,
+        psn=await repo.psn_presence_of(psn_link.external_id) if psn_link else None,
+    )
     if presence is None:
         return i18n.get("panel-no-presence-data")
-    if presence.state != PresenceState.ONLINE:
+    if not presence.online:
         return i18n.get("panel-offline", ago=humanize_ago(presence.updated_at, i18n.locale))
+    tag = platform_tag(presence.platform, i18n.locale)
     if not presence.title_id:
-        return i18n.get("panel-online-idle")
+        return f"{tag}  ·  " + i18n.get("panel-online-idle")
     # Presence gives no name for PC titles — fall back to the cache the
     # poller fills (SPEC 4), same as the admin card.
-    game = presence.title_name or await repo.title_name(presence.title_id) or presence.title_id
-    return i18n.get("panel-playing", game=game)
+    game = presence.game or await repo.title_name(presence.title_id) or presence.title_id
+    return f"{tag}  ·  " + i18n.get("panel-playing", game=game)
 
 
 async def _publication_status(repo: Repo, tg_id: int, is_excluded: bool, i18n: I18nContext) -> str:

@@ -556,9 +556,7 @@ async def trophy_groups_for_title(
     return TrophyGroups(
         title_name=english.title_name,
         title_name_en=english.title_name,
-        title_name_ru=(
-            (russian.title_name or english.title_name) if russian is not None else None
-        ),
+        title_name_ru=((russian.title_name or english.title_name) if russian is not None else None),
         groups=groups,
     )
 
@@ -569,9 +567,7 @@ class _Summary:
     groups: dict[str, tuple[str | None, int]]
 
 
-async def _groups_from(
-    client: PSNAWP, account_id: str, title: TrophyTitle
-) -> _Summary | None:
+async def _groups_from(client: PSNAWP, account_id: str, title: TrophyTitle) -> _Summary | None:
     """One client's answer, or None when it could not give one."""
     try:
         user = await _call(client.user, account_id=account_id)

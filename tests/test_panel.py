@@ -168,3 +168,47 @@ async def test_header_lists_every_connected_platform(repo: Repo) -> None:
     # the same function (#5).
     assert "🔵 PlayStation: PsnNick" in text
     assert "уровень 42" in text
+
+
+async def test_now_row_names_the_platform_the_person_is_actually_playing_on(
+    repo: Repo,
+) -> None:
+    """Issue #1's tail: the row used to read Xbox's presence only, so
+    somebody playing on PlayStation looked offline on their own panel."""
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "PsnOnly")
+    await repo.save_presence_state("xuid-1", "Online", None, None, changed=True)
+    await repo.save_psn_presence_state(
+        "acc-1", "Online", "CUSA00001", "Ghost of Tsushima", changed=True
+    )
+
+    text, _markup = await render_panel(repo, TG_ID)
+
+    assert "Сейчас:      🔵 PlayStation  ·  играет — Ghost of Tsushima" in text
+
+
+async def test_a_steam_only_person_gets_a_now_row_at_all(repo: Repo) -> None:
+    """It was gated on `user.xuid`, so this row was simply absent for
+    anyone without an Xbox account — the last Xbox-gated row on the panel."""
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.save_steam_presence_state("76561197960287930", 1, "570", "Dota 2", changed=True)
+
+    text, _markup = await render_panel(repo, TG_ID)
+
+    assert "Сейчас:      ⚫ Steam  ·  играет — Dota 2" in text
+
+
+async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
+    """Same call /online's own rows make (#51): once the answer is
+    "offline", there is no "where" left for a platform name to answer, and
+    picking one of three equally-offline platforms says nothing."""
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.save_steam_presence_state("76561197960287930", 0, None, None, changed=True)
+
+    text, _markup = await render_panel(repo, TG_ID)
+
+    assert "Сейчас:      не в сети" in text
+    assert "Steam  ·  не в сети" not in text

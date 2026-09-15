@@ -97,6 +97,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── hltb.py                 wrapper over howlongtobeatpy, cached in hltb_cache
 │   │   ├── message_log.py          request middleware: logs outgoing group messages
 │   │   ├── online_view.py          renders the /online table, shared by the command and auto-refresh
+│   │   ├── presence_view.py        which platform answers "where is this person right
+│   │   │                           now" — /online's own rule, for one person (#1)
 │   │   ├── admin_view.py           renders /admin, shared by the command and auto-refresh
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
 │   │   ├── notify.py               notifications to the admin
@@ -738,13 +740,6 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
 
 Open work (see the linked issues, not this file, for scope/status):
 
-- Full PSN integration the way Steam already has it — issue #1, mostly done: `/stats`
-  already shows a PSN person's achievement count and cached account level;
-  `/summary`'s combined total already includes PSN rows for free (it has grouped by
-  `tg_id`, not by a platform-specific id, since before PSN existed); `/online` and
-  the admin user card both now show real PSN presence too (`poller/psn_presence.py`,
-  2026-09-09). What's left: `/panel`'s own "Сейчас" row is still Xbox-only — PSN
-  presence data exists now, that row just hasn't been made multi-platform-aware yet.
 - Linking more than one PSN account per person — issue #10. `platform_links`
   currently allows exactly one row per `(tg_id, platform)`.
 
@@ -926,7 +921,15 @@ inline hyperlinks, its own "Profile" buttons already cover that). The body below
 carries login status per platform (Xbox: token status; Steam/PSN: achievement/
 trophy *visibility* as of the last actual check — connect time, or any backfill/
 resync since, `platform_links.achievements_visible`), publication destinations,
-current presence, and the timezone; the 24h/30d counters and "recent achievements"
+current presence, and the timezone. The presence row is **one row for every
+platform at once** (issue #1's tail, 2026-09-15) — "where is this person" has a
+single answer, and the two platforms they are not on could only repeat
+"offline" beside it. Which platform it names is
+`services/presence_view.py::pick_presence`, the same *playing > online >
+offline, freshness only as a tie-break* rule `/online` settled on, shared so
+the two screens can never disagree about where somebody is; it names the
+platform only while they are actually online, exactly as `/online`'s rows do
+(#51). The 24h/30d counters and "recent achievements"
 list it used to show are gone (the header covers achievements). Every row and
 button here is per-platform, not Xbox-gated (found live, 2026-09-09: a
 Steam/PSN-only person used to get an entirely different, stripped-down body
