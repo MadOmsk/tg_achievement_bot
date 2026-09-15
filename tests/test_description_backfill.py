@@ -64,10 +64,28 @@ class _FakeClient:
         self.calls.append((tg_id, title_id, language))
         return self.by_locale[language]
 
+    async def title_achievements_with_total(
+        self, tg_id, title_id, platform, *, language: str = "en-US"
+    ):
+        """The real client reports the size of the set too (#46). These fakes
+        answer with only the unlocked ones, so the total is their length —
+        which is also what a game everybody has 100%ed would really return."""
+        unlocked = await self.title_achievements(tg_id, title_id, platform, language=language)
+        return unlocked, len(unlocked)
+
 
 class _DeadClient:
     async def title_achievements(self, *_args, **_kwargs):
         raise XboxApiError("token is dead")
+
+    async def title_achievements_with_total(
+        self, tg_id, title_id, platform, *, language: str = "en-US"
+    ):
+        """The real client reports the size of the set too (#46). These fakes
+        answer with only the unlocked ones, so the total is their length —
+        which is also what a game everybody has 100%ed would really return."""
+        unlocked = await self.title_achievements(tg_id, title_id, platform, language=language)
+        return unlocked, len(unlocked)
 
 
 async def _seed(repo: Repo, *achievement_ids: str) -> None:

@@ -51,7 +51,21 @@ class Fetcher:
         title_name: str | None,
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
-        parsed = await self._client.title_achievements(tg_id, title_id, platform)
+        parsed, total = await self._client.title_achievements_with_total(tg_id, title_id, platform)
+        # The size of the set those unlocks came from — the "47/50" counter's
+        # own denominator (#46). titlehub reports it for Xbox 360 and returns
+        # 0 for most modern titles, so for those this response is the only
+        # place it exists; `upsert_title` never blanks a total it already
+        # knows, so a reply that does not say leaves the stored one alone.
+        if total:
+            if title_name:
+                await self._repo.upsert_title(
+                    title_id, title_name, platform, achievements_total=total
+                )
+            else:
+                # Presence gives no name for a PC title; the name is resolved
+                # further down, and the total must not wait for it.
+                await self._repo.set_title_total(title_id, total)
         await self._fill_x360_icon(tg_id, title_id, platform, parsed)
         await self._bilingual_descriptions(tg_id, title_id, platform, parsed)
         rows = [to_achievement_row(item) for item in parsed]

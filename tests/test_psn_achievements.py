@@ -9,10 +9,12 @@ are exercised."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 
-from bot.db.repo import Repo
+from bot.constants import AccountPlatform
+from bot.db.repo import Repo, TitleProgress
 from bot.services.psn import achievements as psn_achievements_module
 from bot.services.psn.achievements import sync_account
 from bot.services.psn.client import (
@@ -395,3 +397,24 @@ async def test_backfill_never_splits_off_catch_up(repo: Repo, monkeypatch) -> No
 
     assert [row.achievement_id for row in outcome.new_rows] == ["2"]
     assert outcome.catch_up_rows == []
+
+
+async def test_every_scanned_title_gets_its_total_not_only_the_ones_that_moved(
+    repo: Repo, monkeypatch
+) -> None:
+    """The counter's denominator used to be written only inside the branch
+    that runs when a title's progress grew, so a game nobody had advanced
+    lately had no total at all — 0 of 10 titles on the test bot (#60). It is
+    one number already sitting in the listing the scan walks."""
+    await _linked(repo)
+    flat = _FakeTitle("NPWR00002_00", "Stray", progress=40)
+    flat.defined_trophies = SimpleNamespace(bronze=20, silver=3, gold=1, platinum=1)
+    await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR00002_00", 40)  # unchanged since last time
+    _install_fakes(monkeypatch, [flat], {"NPWR00002_00": Exception("must not be fetched")})
+
+    outcome = await _run(repo)
+
+    assert outcome.new_rows == []  # nothing was fetched, as before
+    assert await repo.title_progress(AccountPlatform.PSN, ACCOUNT_ID, "NPWR00002_00") == (
+        TitleProgress(unlocked=0, total=25)
+    )

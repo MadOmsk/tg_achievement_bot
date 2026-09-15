@@ -194,6 +194,23 @@ class _AdminRepo:
         )
         await self._conn.commit()
 
+    async def set_title_total(self, title_id: str, total: int) -> None:
+        """How many achievements a game has, without touching anything else
+        about it (#46).
+
+        Not `upsert_title`: that one needs a name, and the poller learns the
+        total from the achievements response *before* it resolves a name —
+        presence gives none at all for PC titles. So this updates the row when
+        there is one and does nothing when there is not; the name arrives
+        moments later through `ensure_title_name`, and the next poll stores
+        the total against it.
+        """
+        await self._conn.execute(
+            "UPDATE titles SET achievements_total = ?, updated_at = ? WHERE title_id = ?",
+            (total, utcnow_iso(), title_id),
+        )
+        await self._conn.commit()
+
     async def upsert_title(
         self,
         title_id: str,

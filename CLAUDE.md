@@ -984,9 +984,18 @@ exists.
 A single achievement/trophy post: bold name + "gets an achievement" (or, for PSN,
 "gets a trophy"), a blank line, the game name and platform in italics — with
 this person's progress through that game beside it when the total is known
-("47/50", #46). Xbox states the total in `title_history`, Steam's is the
+("47/50", #46). Xbox states the total in `title_history` — for Xbox 360.
+For most modern titles titlehub returns `totalAchievements = 0` (151 of 555
+on a real account, #60), so the number comes from the per-title achievements
+response instead, which lists the whole set: `poll_title` stores its size in
+`titles.achievements_total` and `title_progress` falls back to it, while
+Microsoft's own count still wins wherever it exists — it knows about
+achievements earned before this bot did. Steam's total is the
 length of its cached schema, and PSN's comes from `defined_trophies` on the
-trophy-title list the poller already walks, kept on `titles.achievements_total`
+trophy-title list the poller already walks, stored for **every** title that
+listing carries rather than only the ones whose progress grew (#60: it used
+to be the latter, so a game nobody had advanced lately had no counter),
+kept on `titles.achievements_total`
 — a count on every platform rather than a percentage on one. PSN's total
 **includes DLC groups** (verified: Marvel's Spider-Man reports 74 = 51 base +
 23 across four DLC groups), so a base-game platinum reads 51/74, exactly as

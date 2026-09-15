@@ -386,12 +386,33 @@ class _PlatformLinksRepo:
                 (external_id, title_id),
             )
             row = await cursor.fetchone()
-            if row is None or not row["achievements_total"]:
+            total = int(row["achievements_total"] or 0) if row else 0
+            if not total:
+                # titlehub reports a total for Xbox 360 and returns 0 for most
+                # modern titles (151 of 555 on a real account), which left the
+                # counter off nearly every Xbox One/Series card. The per-title
+                # achievements response says how many the game has, and
+                # poller/fetcher.py stores that in `titles` as it polls (#46).
+                cursor = await self._conn.execute(
+                    "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
+                )
+                fallback = await cursor.fetchone()
+                total = int(fallback["achievements_total"] or 0) if fallback else 0
+            if not total:
                 return None
-            return TitleProgress(
-                unlocked=int(row["achievements_unlocked"] or 0),
-                total=int(row["achievements_total"]),
-            )
+            if row is not None and row["achievements_unlocked"] is not None:
+                # Microsoft's own count when it has one: it knows about
+                # achievements earned before this bot existed.
+                unlocked = int(row["achievements_unlocked"])
+            else:
+                cursor = await self._conn.execute(
+                    "SELECT COUNT(*) FROM seen_achievements "
+                    "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+                    (account_platform, external_id, title_id),
+                )
+                counted = await cursor.fetchone()
+                unlocked = int(counted[0]) if counted else 0
+            return TitleProgress(unlocked=unlocked, total=total)
 
         if account_platform == AccountPlatform.STEAM:
             cached = await self.steam_schema_get_cached(title_id)

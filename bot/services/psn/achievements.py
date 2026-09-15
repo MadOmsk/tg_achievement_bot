@@ -114,6 +114,30 @@ async def sync_account(
     outcome = PsnSyncOutcome(scanned=len(titles))
 
     for title in titles:
+        # The denominator of the "24/74" beside a notification's game line
+        # (#46), stored for every title this scan walks — not only for the
+        # ones that moved, which is what it used to be and why a game nobody
+        # had advanced lately had no counter at all (0 of 10 titles on the
+        # test bot). It is one number already in the listing; `upsert_title`
+        # never blanks a total it already knows.
+        #
+        # getattr, not attribute access: `title` is psnawp's own object and
+        # this field is not part of any contract we control — the same
+        # defensiveness services/psn/client.py already applies to its types.
+        defined = getattr(title, "defined_trophies", None)
+        defined_total = (
+            (defined.bronze + defined.silver + defined.gold + defined.platinum)
+            if defined is not None
+            else 0
+        )
+        if defined_total:
+            await repo.upsert_title(
+                title.np_communication_id,
+                title.title_name,
+                Platform.PSN,
+                achievements_total=defined_total,
+            )
+
         progress = title.progress or 0
         previous = await repo.get_psn_title_progress(account_id, title.np_communication_id)
         if previous is not None and progress <= previous:
@@ -181,27 +205,6 @@ async def sync_account(
         widened = not is_backfill and await repo.psn_title_needs_widening(
             account_id, title.np_communication_id
         )
-        # The denominator of the "47/50" beside a notification's game line
-        # (#46). PSN never reports a count for a person, but the title list
-        # this poll already walked carries how many trophies the game has —
-        # the one number Xbox's title_history and Steam's cached schema
-        # supply for themselves.
-        # getattr, not attribute access: `title` is psnawp's own object and
-        # this field is not part of any contract we control — the same
-        # defensiveness services/psn/client.py already applies to its types.
-        defined = getattr(title, "defined_trophies", None)
-        total = (
-            (defined.bronze + defined.silver + defined.gold + defined.platinum)
-            if defined is not None
-            else 0
-        )
-        if total:
-            await repo.upsert_title(
-                title.np_communication_id,
-                title.title_name,
-                Platform.PSN,
-                achievements_total=total,
-            )
         rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
         inserted = await repo.insert_new_achievements_psn(
             tg_id, account_id, rows, is_backfill=is_backfill

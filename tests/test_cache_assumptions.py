@@ -378,3 +378,62 @@ async def test_the_counter_survives_the_real_publish_path(repo: Repo) -> None:
 
     job = publisher._queue.get_nowait()
     assert "47/50" in job.text
+
+
+async def test_a_modern_xbox_total_comes_from_the_achievements_response(repo: Repo) -> None:
+    """titlehub reports `totalAchievements` for Xbox 360 and returns 0 for
+    most modern titles — 151 of 555 on a real account, which is why the
+    counter was missing from nearly every Xbox One/Series card (#60).
+
+    The per-title achievements response lists the whole set, so the poller
+    stores its size; `title_progress` falls back to it when title_history has
+    nothing to say.
+    """
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    await repo.save_title_history(
+        XUID,
+        [
+            TitleHistoryRow(
+                title_id="550",
+                name="Left 4 Dead 2",
+                platform="xbox_modern",
+                current_gamerscore=470,
+                max_gamerscore=500,
+                achievements_unlocked=19,
+                achievements_total=0,  # what Microsoft actually sends
+                last_played_at=utcnow().isoformat(timespec="seconds"),
+            )
+        ],
+    )
+
+    assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") is None
+
+    await repo.set_title_total("550", 50)
+
+    assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == TitleProgress(19, 50)
+
+
+async def test_a_known_titlehub_total_still_wins(repo: Repo) -> None:
+    """Microsoft's own number is the better one where it exists: it counts
+    achievements earned long before this bot did."""
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    await repo.save_title_history(
+        XUID,
+        [
+            TitleHistoryRow(
+                title_id="550",
+                name="Left 4 Dead 2",
+                platform="xbox_modern",
+                current_gamerscore=470,
+                max_gamerscore=500,
+                achievements_unlocked=47,
+                achievements_total=50,
+                last_played_at=utcnow().isoformat(timespec="seconds"),
+            )
+        ],
+    )
+    await repo.set_title_total("550", 4)  # a partial page, say
+
+    assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == TitleProgress(47, 50)
