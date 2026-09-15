@@ -326,7 +326,8 @@ Buttons:
 Вход PSN:    <nick>  ·  <trophy visibility>                   [rule B]
 Вход Steam:  <nick>  ·  <achievement visibility>              [rule B]
 Публикация:  <chats>
-Сейчас:      <online/offline, what they are playing>
+Сейчас:      🔵 PlayStation  ·  играет — <game>
+             (⚫ Steam  ·  в сети, не играет / не в сети (N ч назад) / нет данных)
 
 Часовой пояс: UTC±N
 ```
@@ -343,6 +344,16 @@ Buttons:
 [ 👤 Профиль | 🔕 Отключить Steam ]  (or [ 🎮 Подключить Steam ])
 [ Обновить ]
 ```
+
+**«Сейчас» is one row for all three platforms**, not one row each: the
+question has a single answer, and the platforms the person is *not* on could
+only repeat "не в сети" beside it. The platform named is the one they are
+actually on — playing beats merely online beats offline, and how recently a
+platform was polled only decides between two of them at the same level (the
+rule `/online` uses, shared as `services/presence_view.py::pick_presence`).
+The platform's name and colour appear **only while they are online**: an
+offline row has no "where" left to answer, so it reads a bare "не в сети (N ч
+назад)", exactly as an offline `/online` row drops the nickname.
 
 **Language** here is personal and applies to DMs only (#48) — a group follows
 its own setting, which no individual member can move (see
