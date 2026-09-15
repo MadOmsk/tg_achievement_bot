@@ -14,7 +14,13 @@ all.
 
 Nothing here writes: it reads the database the .env points at and, with
 --send, posts to the first id in ADMIN_TG_IDS. Point DB_PATH at a copy when
-rendering against production data.
+rendering against production data — and keep that copy in backups/, which is
+the one place a database copy may live (see CLAUDE.md's Operations).
+
+A copy rendered with a *different* FERNET_KEY than the one that filled it
+degrades honestly rather than failing: the shared credentials come back as
+"not configured", because that is exactly what the bot itself would conclude
+about a secret it cannot open.
 """
 
 from __future__ import annotations
@@ -240,14 +246,25 @@ async def _digest(ctx: Context) -> Screen:
 # ----------------------------------------------------------------- the admin panel
 
 
+class _NoUsage:
+    """The card's API-usage line reads a rate limiter's in-memory counters,
+    which belong to the running bot's own process — this script has none.
+    Rendering it as "нет данных" is what the real card shows right after a
+    restart, and is honest; inventing numbers for a mockup would not be."""
+
+    @staticmethod
+    def api_usage() -> list[tuple[int, int, float]]:
+        return []
+
+
 @screen("admin-home")
 async def _admin_home(ctx: Context) -> Screen:
     cipher = TokenCipher(ctx.settings.fernet_key.get_secret_value())
     steam_key = ctx.settings.steam_api_key
     text, markup = await render_admin_home(
         ctx.repo,
-        None,  # the two fetchers are only read for their API-usage snapshots
-        None,
+        _NoUsage(),
+        _NoUsage(),
         PsnAuth(ctx.repo, cipher),
         SteamAuth(ctx.repo, cipher, env_key=steam_key.get_secret_value() if steam_key else None),
         locale=ctx.locale,
