@@ -98,10 +98,10 @@ async def main() -> None:
     repo = Repo(database)
 
     from bot.i18n import build_i18n_middleware
-    from bot.poller.daily import build_summary
     from bot.poller.publisher import Publisher
     from bot.poller.reminders import ReminderJob
     from bot.services.notify import AdminNotifier
+    from bot.views.summary import build_summary
 
     await build_i18n_middleware().core.startup()
 

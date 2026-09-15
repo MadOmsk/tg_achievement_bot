@@ -33,7 +33,6 @@ from bot.db.repo import (
     User,
 )
 from bot.handlers.admin import IsAdmin
-from bot.poller.daily import build_summary, full_leaderboard
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.message_log import stats_category
 from bot.services.naming import (
@@ -49,6 +48,7 @@ from bot.views.chat import (
     who_label,
 )
 from bot.views.online import render_online_table
+from bot.views.summary import build_summary, full_leaderboard
 
 log = logging.getLogger(__name__)
 

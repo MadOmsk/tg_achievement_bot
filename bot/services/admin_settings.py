@@ -13,7 +13,6 @@ from dataclasses import dataclass
 
 from bot.constants import RarityMode, SettingKey, TokenStatus
 from bot.i18n import gettext
-from bot.poller.daily import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.poller.message_cleanup import DEFAULT_TTL_MINUTES as DEFAULT_SYSTEM_MESSAGE_TTL_MIN
 from bot.poller.message_cleanup import TTL_SETTING_KEY as SYSTEM_MESSAGE_TTL_KEY
 from bot.poller.online_refresh import DEFAULT_REFRESH_INTERVAL_MIN as DEFAULT_ONLINE_REFRESH_MIN
@@ -24,6 +23,7 @@ from bot.poller.service_health import (
     DEFAULT_KEY_CHECK_INTERVAL_MIN,
     KEY_CHECK_INTERVAL_KEY,
 )
+from bot.views.summary import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 
 # /hltb's own two limits, admin-set like every other number here — the
 # command reads them from this module rather than owning them, so nothing

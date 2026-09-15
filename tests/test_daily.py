@@ -7,15 +7,10 @@ from datetime import date as date_type
 
 from bot.constants import AchievementBadge
 from bot.db.repo import AchievementRow, Repo
-from bot.poller.daily import (
-    DailySummary,
-    _is_last_day_of_month,
-    _monthly_key,
-    build_summary,
-    full_leaderboard,
-)
+from bot.poller.daily import DailySummary, _is_last_day_of_month, _monthly_key
 from bot.util import start_of_month_utc, utcnow
 from bot.views.parts import platform_breakdown_suffix
+from bot.views.summary import build_summary, full_leaderboard
 
 CHAT_ID = -100500
 XUID_A = "xuid-a"

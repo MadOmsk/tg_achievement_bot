@@ -17,10 +17,10 @@ from __future__ import annotations
 from datetime import date
 
 from bot.db.repo import AchievementRow, Repo
-from bot.poller.daily import build_summary
 from bot.views.admin import _chat
 from bot.views.notification import format_digest, format_single
 from bot.views.online import render_online_table
+from bot.views.summary import build_summary
 
 CHAT_ID = -100700
 TG_ID = 7007
