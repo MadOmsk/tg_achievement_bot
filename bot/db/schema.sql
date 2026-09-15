@@ -319,7 +319,16 @@ CREATE TABLE IF NOT EXISTS title_history (
 
 CREATE TABLE IF NOT EXISTS titles (
     title_id   TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
+    name       TEXT NOT NULL,     -- whatever the platform called it first
+    -- Only PlayStation localizes a game's title (#61, verified live:
+    -- "Marvel's Wolverine" / "Marvel: Росомаха"), and it arrives in the same
+    -- once-per-game call the trophy groups do. Xbox returns the same title in
+    -- both locales while localizing the achievement names in that response,
+    -- and Steam's gameName is identical under l=english and l=russian — so
+    -- these two columns are PSN's in practice, and somewhere to put it if
+    -- another platform ever changes its mind.
+    name_ru    TEXT,
+    name_en    TEXT,
     platform   TEXT,               -- xbox_360 / xbox_modern
     -- The game's own box art (titlehub's display_image), not an achievement
     -- icon — used as a stand-in icon for Xbox 360 achievement messages

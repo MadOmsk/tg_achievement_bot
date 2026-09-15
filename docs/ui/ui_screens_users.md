@@ -86,10 +86,11 @@ the number, both from the `.ftl`.
 **The achievement's own name follows the chat's language too** (#61): it is
 the platform's own string in both languages, cached beside the description and
 swapped the same way. Never a translation — where a platform has only one
-name, that one is shown. The *game's* name is not localized by anyone (Steam
-returns the same `gameName` in either locale, Sony the same title), so it is
-whatever the platform calls it. A PSN group name, on the other hand, is
-localized, and the second line follows the chat.
+name, that one is shown. The *game's* name follows the chat too, for the one
+platform that has two: PlayStation ("Marvel's Wolverine" / "Marvel:
+Росомаха"). Xbox and Steam answer with the same title in either language, so
+there it is simply whatever the platform calls it. A PSN group name on the
+second line is localized as well.
 
 **The description is the one line on this card that does not come from a
 `.ftl`**, and it has its own translation rule that must not be bypassed: the

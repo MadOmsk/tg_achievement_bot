@@ -23,6 +23,7 @@ from bot.services.psn.client import (
     PsnTitleUnavailableError,
     PsnTokenDeadError,
     TrophyGroup,
+    TrophyGroups,
 )
 
 TG_ID = 42
@@ -64,7 +65,13 @@ def _install_fakes(monkeypatch, titles, trophies_by_title, groups_by_title=None)
         return result or []
 
     async def fake_groups(client, account_id, title, *, translation_client=None):
-        return groups_by_title.get(title.np_communication_id, []) if groups_by_title else []
+        groups = groups_by_title.get(title.np_communication_id, []) if groups_by_title else []
+        return TrophyGroups(
+            title_name=title.title_name,
+            title_name_ru=None,
+            title_name_en=title.title_name,
+            groups=groups,
+        )
 
     monkeypatch.setattr(psn_achievements_module, "trophy_titles_for_account", fake_titles)
     monkeypatch.setattr(psn_achievements_module, "trophies_for_title", fake_trophies)

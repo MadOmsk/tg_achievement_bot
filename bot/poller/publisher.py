@@ -194,7 +194,12 @@ class Publisher:
                         text=format_single(
                             gamertag,
                             item,
-                            title_name,
+                            # The row's own name wins when it has one: the
+                            # localization pass above put the chat's language
+                            # there (#61), while `title_name` is whatever the
+                            # caller resolved once, in one language, for every
+                            # chat at once.
+                            item.title_name or title_name,
                             locale=chat.locale,
                             progress=progress.get(
                                 (item.platform, item.title_id, item.trophy_group_id)

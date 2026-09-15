@@ -489,13 +489,24 @@ class TrophyGroup:
     name_en: str | None = None
 
 
+@dataclass(slots=True)
+class TrophyGroups:
+    """One game's trophy structure: what the game is called, and the sections
+    its trophy list is split into. Both in whatever languages Sony gave."""
+
+    title_name: str | None
+    title_name_ru: str | None
+    title_name_en: str | None
+    groups: list[TrophyGroup]
+
+
 async def trophy_groups_for_title(
     client: PSNAWP,
     account_id: str,
     title: TrophyTitle,
     *,
     translation_client: PSNAWP | None = None,
-) -> list[TrophyGroup]:
+) -> TrophyGroups:
     """The groups a game's trophy list is split into — id, name and size.
 
     Deliberately `include_progress=False`: how many of them *this* person
@@ -518,30 +529,42 @@ async def trophy_groups_for_title(
     """
     english = await _groups_from(client, account_id, title)
     if english is None:
-        return []
+        return TrophyGroups(None, None, None, [])
     russian = (
         await _groups_from(translation_client, account_id, title)
         if translation_client is not None
         else None
-    ) or {}
+    )
 
     groups: list[TrophyGroup] = []
-    for group_id, (name, total) in english.items():
+    russian_groups = russian.groups if russian is not None else {}
+    for group_id, (name, total) in english.groups.items():
         groups.append(
             TrophyGroup(
                 group_id=group_id,
                 name=name,
                 total=total,
                 name_en=name,
-                name_ru=russian.get(group_id, (None, 0))[0],
+                name_ru=russian_groups.get(group_id, (None, 0))[0],
             )
         )
-    return groups
+    return TrophyGroups(
+        title_name=english.title_name,
+        title_name_en=english.title_name,
+        title_name_ru=russian.title_name if russian is not None else None,
+        groups=groups,
+    )
+
+
+@dataclass(slots=True)
+class _Summary:
+    title_name: str | None
+    groups: dict[str, tuple[str | None, int]]
 
 
 async def _groups_from(
     client: PSNAWP, account_id: str, title: TrophyTitle
-) -> dict[str, tuple[str | None, int]] | None:
+) -> _Summary | None:
     """One client's answer, or None when it could not give one."""
     try:
         user = await _call(client.user, account_id=account_id)
@@ -568,7 +591,7 @@ async def _groups_from(
             group.trophy_group_name,
             defined.bronze + defined.silver + defined.gold + defined.platinum,
         )
-    return result
+    return _Summary(title_name=summary.trophy_title_name, groups=result)
 
 
 async def recent_earned_trophies(client: PSNAWP, account_id: str, limit: int) -> list[EarnedTrophy]:

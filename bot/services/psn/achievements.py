@@ -192,17 +192,22 @@ async def sync_account(
         # game's own shape only changes when its publisher ships new
         # trophies.
         if not await repo.has_title_groups(title.np_communication_id):
-            groups = await trophy_groups_for_title(
+            structure = await trophy_groups_for_title(
                 client, account_id, title, translation_client=translation_client
             )
-            if groups:
+            if structure.groups:
                 await repo.save_title_groups(
                     title.np_communication_id,
                     [
                         (group.group_id, group.name, group.total, group.name_ru, group.name_en)
-                        for group in groups
+                        for group in structure.groups
                     ],
                 )
+            # Sony is the one platform that localizes a game's own title, and
+            # it rides in this same call (#61).
+            await repo.set_title_names(
+                title.np_communication_id, structure.title_name_ru, structure.title_name_en
+            )
         # Does this pass widen a game the bot only ever knew the base group
         # of? (see repo.psn_title_needs_widening) Asked before the insert,
         # because the insert is what stops it being true. Backfill publishes

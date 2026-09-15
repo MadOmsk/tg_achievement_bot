@@ -194,6 +194,39 @@ class _AdminRepo:
         )
         await self._conn.commit()
 
+    async def set_title_names(
+        self, title_id: str, name_ru: str | None, name_en: str | None
+    ) -> None:
+        """A game's own name in both languages, where a platform has two (#61
+        — PlayStation does, verified on "Marvel's Wolverine" / "Marvel:
+        Росомаха"; Xbox and Steam return one string for both locales).
+
+        Updates only: the row is created by whoever learned the game exists,
+        and a side the platform did not give leaves what is stored alone.
+        """
+        if name_ru is None and name_en is None:
+            return
+        await self._conn.execute(
+            "UPDATE titles SET name_ru = COALESCE(?, name_ru), name_en = COALESCE(?, name_en),"
+            "  updated_at = ? WHERE title_id = ?",
+            (name_ru, name_en, utcnow_iso(), title_id),
+        )
+        await self._conn.commit()
+
+    async def title_names(self, title_ids: list[str]) -> dict[str, tuple[str | None, str | None]]:
+        """`{title_id: (name_ru, name_en)}` for the render path — one query
+        for a whole digest, same reasoning as `cached_descriptions`."""
+        if not title_ids:
+            return {}
+        placeholders = ", ".join("?" * len(title_ids))
+        cursor = await self._conn.execute(
+            f"SELECT title_id, name_ru, name_en FROM titles WHERE title_id IN ({placeholders})",
+            title_ids,
+        )
+        return {
+            row["title_id"]: (row["name_ru"], row["name_en"]) for row in await cursor.fetchall()
+        }
+
     async def set_title_total(self, title_id: str, total: int) -> None:
         """How many achievements a game has, without touching anything else
         about it (#46).

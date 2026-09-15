@@ -185,3 +185,30 @@ async def test_an_uncached_name_keeps_whatever_was_stored(repo: Repo) -> None:
     [row] = await localize_descriptions(repo, [_row()], "ru")
 
     assert row.name == _row().name
+
+
+async def test_a_psn_game_title_follows_the_chats_language(repo: Repo) -> None:
+    """The owner's own counterexample: presence showed "Marvel's Росомаха"
+    while the trophies arrived from "Marvel's Wolverine". Verified live —
+    Sony answers the same once-per-game call with "Marvel's Wolverine" in
+    English and "Marvel: Росомаха" in Russian (#61). Xbox and Steam return
+    one title for both locales, which is why only this one is localized."""
+    await repo.upsert_title("NPWR57054_00", "Marvel's Wolverine", "psn")
+    await repo.set_title_names("NPWR57054_00", "Marvel: Росомаха", "Marvel's Wolverine")
+    row = _row()
+    row.title_id = "NPWR57054_00"
+    row.platform = "psn"
+
+    [ru] = await localize_descriptions(repo, [row], "ru")
+    [en] = await localize_descriptions(repo, [row], "en")
+
+    assert ru.title_name == "Marvel: Росомаха"
+    assert en.title_name == "Marvel's Wolverine"
+
+
+async def test_a_title_with_no_localized_name_is_left_alone(repo: Repo) -> None:
+    await repo.upsert_title(TITLE_ID, "Left 4 Dead 2", PLATFORM)
+
+    [row] = await localize_descriptions(repo, [_row()], "ru")
+
+    assert row.title_name is None  # whatever the caller had; nothing invented
