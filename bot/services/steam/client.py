@@ -413,3 +413,16 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
                 raise SteamApiError(f"Steam returned {response.status_code}")
 
     raise SteamApiError("Steam request gave up")  # pragma: no cover — loop always returns/raises
+
+
+async def avatar_url(api_key: str, steam_id: str) -> str | None:
+    """The account's own picture (#55) — `avatarfull`, the 184px one, which
+    is the largest Steam publishes in this response. Same call presence
+    already makes; this one is its own request because the avatar sweep runs
+    on its own slow cadence and has no batch of ids to ride along with."""
+    payload = await _get("/ISteamUser/GetPlayerSummaries/v2/", api_key, {"steamids": steam_id})
+    for player in payload.get("players") or []:
+        url = player.get("avatarfull") or player.get("avatarmedium") or player.get("avatar")
+        if url:
+            return str(url)
+    return None

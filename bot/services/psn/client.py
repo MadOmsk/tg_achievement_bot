@@ -703,3 +703,28 @@ async def account_trophy_overview(client: PSNAWP, account_id: str) -> AccountTro
         earned_platinum=summary.earned_trophies.platinum,
         games=games,
     )
+
+
+async def profile_avatar_url(client: PSNAWP, account_id: str) -> str | None:
+    """The account's own picture (#55). Sony returns a list of sizes under
+    `avatars`, largest first in practice but not by contract — `xl` is asked
+    for by name, with whatever else is there as the fallback.
+
+    A private profile has none to give, which is an answer and not an error:
+    the caller stamps the check and moves on."""
+    try:
+        user = await _call(client.user, account_id=account_id)
+        profile = await _call(user.profile)
+    except PSNAWPNotFoundError:
+        raise PsnApiError(f"PSN profile {account_id!r} not found") from None
+    except PSNAWPForbiddenError:
+        raise PsnPrivateProfileError(account_id) from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+
+    avatars = profile.get("avatars") or []
+    by_size = {str(entry.get("size") or ""): entry.get("url") for entry in avatars}
+    for size in ("xl", "l", "m", "s"):
+        if by_size.get(size):
+            return str(by_size[size])
+    return next((str(entry["url"]) for entry in avatars if entry.get("url")), None)

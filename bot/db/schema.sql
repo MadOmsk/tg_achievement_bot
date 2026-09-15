@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS users (
     photo_file_id   TEXT,
     photo_unique_id TEXT,
     photo_checked_at TEXT,
+    -- The downloaded copy, relative to data/avatars/ (#55): the mini-app
+    -- serves an image rather than round-tripping getFile with the bot token
+    -- on every render, and a face outlives whatever Telegram does with its
+    -- own file ids.
+    photo_path      TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
@@ -480,6 +485,16 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- settings, which is why it lives here and not on the link.
     achievements_visible INTEGER,
     achievements_visible_checked_at TEXT,
+    -- The account's own picture (#55): Xbox's GameDisplayPicRaw, Steam's
+    -- avatarfull, PSN's own avatars list — all three ride along in a
+    -- response the bot already makes. `avatar_url` is what the platform
+    -- says now, `avatar_path` the copy on disk (relative to data/avatars/),
+    -- `avatar_hash` the bytes, so "same picture, new URL" costs one
+    -- comparison and no write.
+    avatar_url   TEXT,
+    avatar_path  TEXT,
+    avatar_hash  TEXT,
+    avatar_checked_at TEXT,
     first_seen_at TEXT NOT NULL,
     updated_at   TEXT NOT NULL,
     PRIMARY KEY (platform, external_id)

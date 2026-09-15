@@ -189,7 +189,7 @@ async def run(settings: Settings) -> None:
         flood_flush,
         DescriptionBackfill(repo, client, anthropic_auth),
         SteamLocalization(repo),
-        AvatarRefresh(bot, repo),
+        AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

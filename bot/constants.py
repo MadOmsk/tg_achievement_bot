@@ -111,6 +111,9 @@ class XboxApiValue(StrEnum):
     # in the profile response read for GAMERSCORE, no extra request.
     GAMERTAG = "Gamertag"
     MODERN_GAMERTAG = "ModernGamertag"
+    # The account picture (#55), in the same fixed settings list as the
+    # names above — one more field off a response already being made.
+    GAME_DISPLAY_PIC = "GameDisplayPicRaw"
     FULL = "Full"
     ACTIVE = "Active"
     INVALID_GRANT = "invalid_grant"

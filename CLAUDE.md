@@ -127,6 +127,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           now" — /online's own rule, for one person (#1)
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
 │   │   ├── notify.py               notifications to the admin
+│   │   ├── avatars.py              where a downloaded profile picture goes: one file per
+│   │   │                           subject under data/avatars/, hashed (#55)
 │   │   ├── crypto.py               refresh-token encryption (Fernet)
 │   │   ├── credential_health.py    what one failed liveness check means for a shared
 │   │   │                           credential — confirm before declaring death,
@@ -351,6 +353,23 @@ every column.
   shared credential see this account's achievements/trophies" — `NULL` until
   checked once, then `1`/`0`; set at connect time and refreshed by every
   backfill/resync (`SteamFetcher`/`PsnFetcher`), not read live from a UI path.
+- **Profile pictures** (#55, 2026-09-16). A person's Telegram photo
+  (`users.photo_file_id` / `photo_unique_id` / `photo_path`) and each
+  platform account's own (`accounts.avatar_url` / `avatar_path` /
+  `avatar_hash`). Both are **downloaded**, into `data/avatars/`, one file per
+  subject, overwritten in place: a Telegram `file_id` is useless without the
+  bot token, and a platform URL is a promise somebody else can break. The row
+  keeps the path, relative — the same database is copied between machines
+  whose absolute paths differ. Nothing renders them yet; the mini-app will.
+
+  Where each URL comes from, all of them inside a response the bot already
+  makes: Xbox's `GameDisplayPicRaw` in the profile call read for gamerscore
+  (written by `poller/fetcher.py`, since only that person's own token can
+  read it), Steam's `avatarfull`, PSN's own `avatars` list.
+  `poller/avatars.py` is the one place that downloads, on a slow sweep —
+  a few subjects a tick, each looked at weekly — and it skips the download
+  entirely when the photo id or the URL says nothing changed.
+
 - **Secrets and tokens.** `tokens` stores encrypted Xbox refresh tokens only; access
   and XSTS tokens stay in memory. Shared service credentials (the PSN NPSSO, and as
   of #17 the Steam API key too) are encrypted in `app_settings`. Token status

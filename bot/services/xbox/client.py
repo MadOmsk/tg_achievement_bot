@@ -97,6 +97,10 @@ class XboxProfileSnapshot:
     gamerscore: int | None
     gamertag: str | None
     gamertag_modern: str | None
+    #: The account's own picture (#55) — `GameDisplayPicRaw`, in the same
+    #: fixed settings list this request already asks for, so it costs
+    #: nothing and was simply being thrown away like the gamertags were.
+    avatar_url: str | None = None
 
 
 class XboxClient:
@@ -291,6 +295,7 @@ class XboxClient:
             XboxApiValue.GAMERSCORE: None,
             XboxApiValue.GAMERTAG: None,
             XboxApiValue.MODERN_GAMERTAG: None,
+            XboxApiValue.GAME_DISPLAY_PIC: None,
         }
         for user in getattr(response, "profile_users", None) or []:
             for setting in getattr(user, "settings", None) or []:
@@ -306,6 +311,7 @@ class XboxClient:
             gamerscore=gamerscore,
             gamertag=wanted[XboxApiValue.GAMERTAG],
             gamertag_modern=wanted[XboxApiValue.MODERN_GAMERTAG],
+            avatar_url=wanted[XboxApiValue.GAME_DISPLAY_PIC],
         )
 
     async def resolve_title(self, tg_id: int, title_id: str) -> TitleHistoryEntry | None:

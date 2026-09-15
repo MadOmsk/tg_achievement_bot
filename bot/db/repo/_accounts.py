@@ -84,15 +84,90 @@ class _AccountsRepo:
         return [row["tg_id"] for row in await cursor.fetchall()]
 
     async def set_user_photo(
-        self, tg_id: int, file_id: str | None, unique_id: str | None
+        self,
+        tg_id: int,
+        file_id: str | None,
+        unique_id: str | None,
+        path: str | None = None,
     ) -> None:
         """The result of one look, including "this person has no photo we can
         see" — `photo_checked_at` is stamped either way, or a private profile
-        would be asked about again every single tick."""
+        would be asked about again every single tick.
+
+        `path` is the downloaded copy (#55). It is only written when one was
+        actually saved: a look that found the same picture as last time keeps
+        the file it already has rather than clearing the column."""
         await self._conn.execute(
-            "UPDATE users SET photo_file_id = ?, photo_unique_id = ?, photo_checked_at = ? "
+            "UPDATE users SET photo_file_id = ?, photo_unique_id = ?, "
+            "  photo_path = COALESCE(?, photo_path), photo_checked_at = ? "
             "WHERE tg_id = ?",
-            (file_id, unique_id, utcnow_iso(), tg_id),
+            (file_id, unique_id, path, utcnow_iso(), tg_id),
+        )
+        await self._conn.commit()
+
+    async def user_photo(self, tg_id: int) -> tuple[str | None, str | None]:
+        """`(unique_id, path)` — what the last look found, for deciding
+        whether this one has anything to download."""
+        cursor = await self._conn.execute(
+            "SELECT photo_unique_id, photo_path FROM users WHERE tg_id = ?", (tg_id,)
+        )
+        row = await cursor.fetchone()
+        return (row["photo_unique_id"], row["photo_path"]) if row else (None, None)
+
+    async def accounts_needing_avatar(self, before: str, limit: int) -> list[tuple[str, str]]:
+        """A few platform accounts whose picture has not been looked at since
+        `before`, oldest first — the account half of poller/avatars.py's own
+        sweep (#55). Only accounts somebody currently holds: an account
+        nobody is linked to is invisible everywhere else too (#52)."""
+        cursor = await self._conn.execute(
+            "SELECT a.platform, a.external_id FROM accounts a "
+            "JOIN account_links al ON al.platform = a.platform "
+            "  AND al.external_id = a.external_id AND al.is_active = 1 "
+            "WHERE a.avatar_checked_at IS NULL OR a.avatar_checked_at < ? "
+            "ORDER BY a.avatar_checked_at IS NOT NULL, a.avatar_checked_at LIMIT ?",
+            (before, limit),
+        )
+        return [(row["platform"], row["external_id"]) for row in await cursor.fetchall()]
+
+    async def set_account_avatar_url(self, external_id: str, url: str) -> None:
+        """Xbox's own picture URL, learned from the profile call the fetcher
+        makes with that person's token (#55). Deliberately does *not* stamp
+        `avatar_checked_at`: the check that matters is "has it been
+        downloaded", which is poller/avatars.py's to make."""
+        await self._conn.execute(
+            "UPDATE accounts SET avatar_url = ? WHERE platform = 'xbox' AND external_id = ?",
+            (url, external_id),
+        )
+        await self._conn.commit()
+
+    async def account_avatar(
+        self, platform: str, external_id: str
+    ) -> tuple[str | None, str | None]:
+        """`(url, hash)` as last stored — the url answers "has the platform
+        changed its mind", the hash answers "are these the same bytes"."""
+        cursor = await self._conn.execute(
+            "SELECT avatar_url, avatar_hash FROM accounts WHERE platform = ? AND external_id = ?",
+            (platform, external_id),
+        )
+        row = await cursor.fetchone()
+        return (row["avatar_url"], row["avatar_hash"]) if row else (None, None)
+
+    async def set_account_avatar(
+        self,
+        platform: str,
+        external_id: str,
+        url: str | None,
+        path: str | None = None,
+        avatar_hash: str | None = None,
+    ) -> None:
+        """Same shape as set_user_photo above: the timestamp is always
+        stamped, the file and its hash only when something was downloaded."""
+        await self._conn.execute(
+            "UPDATE accounts SET avatar_url = ?, "
+            "  avatar_path = COALESCE(?, avatar_path), avatar_hash = COALESCE(?, avatar_hash), "
+            "  avatar_checked_at = ? "
+            "WHERE platform = ? AND external_id = ?",
+            (url, path, avatar_hash, utcnow_iso(), platform, external_id),
         )
         await self._conn.commit()
 

@@ -373,6 +373,13 @@ class Fetcher:
             await self._repo.update_xbox_names(
                 tg_id, gamertag=snapshot.gamertag, gamertag_modern=snapshot.gamertag_modern
             )
+        # And the picture (#55), from the same response. Only the URL is
+        # written here: downloading it belongs to poller/avatars.py, which
+        # does that for every platform on one slow cadence — this is the one
+        # platform whose URL can only be read with the person's own token,
+        # which is why it is written from here at all.
+        if snapshot.avatar_url:
+            await self._repo.set_account_avatar_url(xuid, snapshot.avatar_url)
 
 
 def _played_since(
