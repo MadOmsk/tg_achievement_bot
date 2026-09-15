@@ -430,3 +430,43 @@ async def test_every_scanned_title_gets_its_total_not_only_the_ones_that_moved(
     assert await repo.title_progress(AccountPlatform.PSN, ACCOUNT_ID, "NPWR00002_00") == (
         TitleProgress(unlocked=0, total=25)
     )
+
+
+async def test_a_game_cached_before_localization_is_looked_at_once_more(
+    repo: Repo, monkeypatch
+) -> None:
+    """Every game scanned between #46 and #61 has English group names and no
+    Russian ones. Asking the old question — "are there rows?" — would leave
+    those English in a Russian chat forever, which is the trap the description
+    cache already walked into once.
+
+    One more look per such game, and then never again: the Russian side is
+    written as soon as the second client answers, so the next scan is quiet.
+    """
+    await _linked(repo)
+    await repo.save_title_groups("NPWR00001_00", [("default", "Spider-Man", 51, None, None)])
+    title = _FakeTitle("NPWR00001_00", "Spider-Man", progress=10)
+    calls: list[str] = []
+
+    async def counting(client, account_id, group_title, *, translation_client=None):
+        calls.append(group_title.np_communication_id)
+        return TrophyGroups(
+            title_name="Spider-Man",
+            title_name_ru="Человек-Паук",
+            title_name_en="Spider-Man",
+            groups=[
+                TrophyGroup(
+                    "default", "Spider-Man", 51, name_ru="Человек-Паук", name_en="Spider-Man"
+                )
+            ],
+        )
+
+    _install_fakes(monkeypatch, [title], {"NPWR00001_00": [_trophy(1)]})
+    monkeypatch.setattr(psn_achievements_module, "trophy_groups_for_title", counting)
+
+    await _run(repo)
+    assert calls == ["NPWR00001_00"], "a game with no Russian side is asked once more"
+
+    title.progress = 20
+    await _run(repo)
+    assert calls == ["NPWR00001_00"], "and never again once both languages are stored"

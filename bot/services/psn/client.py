@@ -539,19 +539,26 @@ async def trophy_groups_for_title(
     groups: list[TrophyGroup] = []
     russian_groups = russian.groups if russian is not None else {}
     for group_id, (name, total) in english.groups.items():
+        # Once the Russian client has answered, every group gets a Russian
+        # side — the English name where Sony has no Russian one. That is what
+        # makes a NULL mean "never asked in Russian" rather than "Sony has
+        # nothing", so `has_title_groups` can stop asking for good (#61).
+        russian_name = russian_groups.get(group_id, (None, 0))[0] if russian is not None else None
         groups.append(
             TrophyGroup(
                 group_id=group_id,
                 name=name,
                 total=total,
                 name_en=name,
-                name_ru=russian_groups.get(group_id, (None, 0))[0],
+                name_ru=(russian_name or name) if russian is not None else None,
             )
         )
     return TrophyGroups(
         title_name=english.title_name,
         title_name_en=english.title_name,
-        title_name_ru=russian.title_name if russian is not None else None,
+        title_name_ru=(
+            (russian.title_name or english.title_name) if russian is not None else None
+        ),
         groups=groups,
     )
 

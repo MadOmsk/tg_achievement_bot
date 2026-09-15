@@ -333,8 +333,20 @@ class _PlatformLinksRepo:
         await self._conn.commit()
 
     async def has_title_groups(self, title_id: str) -> bool:
+        """Whether this game's trophy structure is stored **in both
+        languages** (#46 for the structure, #61 for the languages).
+
+        Not simply "is there a row": every game scanned between the two
+        shipped with English group names only, and asking the older question
+        would leave those in English in a Russian chat forever — the same trap
+        the description cache walked into. A Russian side is written as soon as
+        the second client answers at all (falling back to the English name for
+        a group Sony has no Russian name for), so a NULL here means "never
+        asked in Russian", not "Sony has nothing".
+        """
         cursor = await self._conn.execute(
-            "SELECT 1 FROM title_groups WHERE title_id = ? LIMIT 1", (title_id,)
+            "SELECT 1 FROM title_groups WHERE title_id = ? AND name_ru IS NOT NULL LIMIT 1",
+            (title_id,),
         )
         return await cursor.fetchone() is not None
 
