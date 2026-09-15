@@ -96,7 +96,6 @@ panel-publication-row = Publishing:   { $status }
 panel-now-playing-row = Now:          { $playing }
 panel-timezone-row = Timezone:     { $offset }
 panel-reconnect-hint = Your XBOX access has expired — press “Connect again” below.
-panel-unknown-game = unknown game
 panel-no-presence-data = no data
 panel-offline = offline ({ $ago })
 panel-online-idle = online, not playing

@@ -1,8 +1,6 @@
 # /start, /connect_xbox, /disconnect_xbox and the timezone picker
 # (bot/handlers/connect.py).
 # Connection flow
-connect-greeting =
-    Hi! I post XBOX achievements to your chat — yours and everyone else's.
 
     What I do:
     • catch new achievements and announce them in the chat;

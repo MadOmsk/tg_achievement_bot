@@ -2,7 +2,6 @@
 chat-subscribe-groups-only = This command is for a group chat — that's where publishing happens.
 chat-subscribe-connect-first = Connect at least one platform first — buttons below.
 chat-subscribe-already = You're already publishing here.
-chat-subscribe-your-achievements = your
 chat-subscribe-done = Done. { $gamertag }'s achievements will land here.
     Rarity and XBOX 360 settings are in a DM, /panel.
 chat-unsubscribe-not-subscribed = You weren't publishing here anyway.
@@ -13,7 +12,6 @@ chat-not-your-button = That's not your button.
 chat-unsubscribe-done = I'll stop publishing your achievements in this chat.
 
 # Statistics and presence
-chat-stats-game-row-tail = { $count } ach.{ $score_suffix }
 chat-stats-no-gamertag = no gamertag
 # No leading spaces here (2026-09-08 fix) — Fluent's own whitespace handling
 # on a single-line value is not reliable enough to lean on for a "  ·  "
@@ -27,7 +25,6 @@ chat-stats-games-header = <b>Games in the last { $days } days</b>
 chat-stats-nothing-connected = This person hasn't connected anything yet.
 chat-group-command-only = The player list is per chat — run the command in a group.
 chat-online-empty = I haven't seen anyone connected in this chat yet.
-chat-who-fallback-id = id{ $tg_id }
 chat-who-prompt = Whose stats do you want?
 chat-user-not-found = I couldn't find that user.
 
@@ -37,7 +34,6 @@ chat-summary-empty = Nobody in this chat has connected an account yet — there'
 chat-recent-group-only = The feed is per chat — run the command in a group.
 chat-recent-empty = Nothing here yet.
 chat-recent-header = 🕘 <b>Latest achievements</b>
-chat-recent-someone = someone
 chat-untitled = untitled
 chat-recent-row = { $badge } { $gamertag } — { $icon } { $game }, { $name }{ $tail } · { $ago }
 

@@ -181,15 +181,8 @@ admin-default-links = Профиль виден другим: { $visible } ▸
 admin-users-empty = 👥 Пока никто не подключился.
 admin-users-header = 👥 Пользователи  ({ $page }/{ $pages })
 admin-users-columns = Колонки: когда был в сети · достижений сегодня / за месяц
-admin-id = id{ $tg_id }
 admin-users-row = { $icon } { $name } · { $ago } · { $today} / { $month }{ $note }
 admin-user-not-found = Пользователь не найден.
-admin-no-name = без имени
-# The card's own top line — every known bit of Telegram identity at once
-# (2026-09-08 user request), unlike /stats' header which picks one best
-# name. { $identity } is already the fully composed "Имя Фамилия, @username,
-# tg_id N" string (admin.py::_admin_tg_header) — never "@" + a bare id, only
-# a real username earns the "@".
 admin-user-header = 👤 { $identity }
 # $tg_id arrives as a string on purpose — as a number Fluent groups the
 # digits, and an identifier is not a quantity.

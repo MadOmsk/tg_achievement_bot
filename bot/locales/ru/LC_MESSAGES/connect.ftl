@@ -1,8 +1,6 @@
 # /start, /connect_xbox, /disconnect_xbox and the timezone picker
 # (bot/handlers/connect.py).
 # Connection flow
-connect-greeting =
-    Привет! Я публикую в чат достижения XBOX — свои и других участников.
 
     Что умею:
     • ловлю новые достижения и пишу о них в чат;
