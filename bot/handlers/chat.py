@@ -25,7 +25,6 @@ from aiogram.types import (
     Message,
     TelegramObject,
 )
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.db.repo import (
@@ -45,7 +44,7 @@ from bot.views.chat import (
     hub_keyboard,
     hub_text,
     recent_list,
-    who_label,
+    render_who_picker,
 )
 from bot.views.online import render_online_table
 from bot.views.summary import build_summary, full_leaderboard
@@ -306,19 +305,10 @@ async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
         await message.answer(i18n.get("chat-online-empty"))
         return
 
-    builder = InlineKeyboardBuilder()
-    for row in rows:
-        builder.button(
-            text=who_label(row),
-            callback_data=f"who:stats:{row.tg_id}",
-        )
-    builder.adjust(3)
-    # Found live: no way out except picking someone, and the prompt itself
-    # never went away after a pick — just sat there stale.
-    builder.row(
-        InlineKeyboardButton(text=i18n.get("chat-cancel-button"), callback_data="who:cancel")
+    await message.answer(
+        i18n.get("chat-who-prompt"),
+        reply_markup=render_who_picker(rows, i18n),
     )
-    await message.answer(i18n.get("chat-who-prompt"), reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data == "who:cancel")

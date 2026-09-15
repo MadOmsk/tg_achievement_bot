@@ -16,12 +16,10 @@ from aiogram.enums import ChatType
 from aiogram.filters import BaseFilter, Command
 from aiogram.types import (
     CallbackQuery,
-    InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
     TelegramObject,
 )
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
@@ -77,10 +75,19 @@ from bot.views.admin import (
     find_chat,
     render_chat_card,
     render_chat_list,
+    render_flood_limit_prompt,
+    render_flood_window_prompt,
     render_keys,
+    render_limit,
+    render_limits,
     render_new_user_defaults,
+    render_rare_prompt,
+    render_reset_confirm,
+    render_system_wipe_prompt,
     render_user_card,
     render_user_list,
+    render_wipe_prompt,
+    render_zone_manual_prompt,
 )
 from bot.views.admin_home import render_admin_home
 from bot.views.keyboards import (
@@ -411,54 +418,15 @@ _awaiting_input: dict[int, tuple[str, int | None]] = {}
 
 @router.callback_query(F.data == "a:limits")
 async def limits_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    builder = InlineKeyboardBuilder()
-    for key, spec in NUMERIC_SETTINGS.items():
-        current = await repo.get_app_setting(key, str(spec.default))
-        builder.row(
-            InlineKeyboardButton(
-                text=(
-                    f"{_setting_label(spec, locale=i18n.locale)}: "
-                    f"{_format_limit(key, current, locale=i18n.locale)} ▸"
-                ),
-                callback_data=f"a:limit:{key}",
-            )
-        )
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-    await _redraw(
-        callback,
-        _("admin-limits-screen"),
-        builder.as_markup(),
-    )
+    await _redraw(callback, *(await render_limits(repo, locale=i18n.locale)).as_pair())
 
 
 @router.callback_query(F.data.startswith("a:limit:"))
 async def limit_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     key = callback.data.rsplit(":", 1)[1]
-    spec = NUMERIC_SETTINGS[key]
-    current = await repo.get_app_setting(key, str(spec.default))
     _awaiting_input[callback.from_user.id] = (key, None)
-    zero_hint = (
-        f" (0 — {_format_limit(key, '0')}, locale=i18n.locale, locale=i18n.locale)"
-        if spec.min == 0
-        else ""
-    )
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
-    await _redraw(
-        callback,
-        _(
-            "admin-limit-prompt",
-            label=_setting_label(spec, locale=i18n.locale),
-            current=_format_limit(key, current, locale=i18n.locale),
-            minimum=spec.min,
-            maximum=spec.max,
-            zero_hint=zero_hint,
-        ),
-        builder.as_markup(),
-    )
+    await _redraw(callback, *(await render_limit(repo, key, locale=i18n.locale)).as_pair())
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, F.text.regexp(r"^\d+([.,]\d+)?$"))
@@ -573,17 +541,7 @@ async def chat_rare_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext)
         await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     _awaiting_input[callback.from_user.id] = ("rare_threshold_percent", chat_id)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
-    await _redraw(
-        callback,
-        _(
-            "admin-chat-threshold-prompt",
-            title=chat.title or chat_id,
-            value=f"{chat.rare_threshold_percent:g}",
-        ),
-        builder.as_markup(),
-    )
+    await _redraw(callback, *render_rare_prompt(chat, locale=i18n.locale).as_pair())
 
 
 @router.callback_query(F.data.startswith("a:cfltoggle:"))
@@ -679,19 +637,7 @@ async def chat_flood_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext
         await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     _awaiting_input[callback.from_user.id] = ("flood_limit", chat_id)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
-    await _redraw(
-        callback,
-        _(
-            "admin-chat-flood-prompt",
-            title=chat.title or chat_id,
-            value=chat.flood_limit,
-            minimum=FLOOD_LIMIT_MIN,
-            maximum=FLOOD_LIMIT_MAX,
-        ),
-        builder.as_markup(),
-    )
+    await _redraw(callback, *render_flood_limit_prompt(chat, locale=i18n.locale).as_pair())
 
 
 @router.callback_query(F.data.startswith("a:cflw:"))
@@ -704,19 +650,7 @@ async def chat_flood_window_menu(callback: CallbackQuery, repo: Repo, i18n: I18n
         await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     _awaiting_input[callback.from_user.id] = ("flood_window_minutes", chat_id)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
-    await _redraw(
-        callback,
-        _(
-            "admin-chat-flood-window-prompt",
-            title=chat.title or chat_id,
-            value=chat.flood_window_minutes,
-            minimum=FLOOD_WINDOW_MIN,
-            maximum=FLOOD_WINDOW_MAX,
-        ),
-        builder.as_markup(),
-    )
+    await _redraw(callback, *render_flood_window_prompt(chat, locale=i18n.locale).as_pair())
 
 
 @router.callback_query(F.data.startswith("a:ctime:"))
@@ -802,17 +736,7 @@ async def chat_zone_manual_prompt(callback: CallbackQuery, repo: Repo, i18n: I18
         await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
     _awaiting_input[callback.from_user.id] = ("tz_offset_min", chat_id)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:ctz:{chat_id}"))
-    await _redraw(
-        callback,
-        _(
-            "admin-chat-zone-manual-prompt",
-            title=chat.title or chat_id,
-            offset=format_offset(chat.tz_offset_min),
-        ),
-        builder.as_markup(),
-    )
+    await _redraw(callback, *render_zone_manual_prompt(chat, locale=i18n.locale).as_pair())
 
 
 @router.message(
@@ -1116,21 +1040,8 @@ async def chat_wipe_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContex
     if not ids:
         await callback.answer(_("admin-no-bot-messages-24h"), show_alert=True)
         return
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text=_("admin-confirm-delete"), callback_data=f"a:cwipey:{chat_id}")
-    )
-    builder.row(InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat_id}"))
-    await _redraw(
-        callback,
-        _(
-            "admin-wipe-prompt",
-            count=len(ids),
-            title=chat.title or chat_id,
-            hours=WIPE_WINDOW_HOURS,
-        ),
-        builder.as_markup(),
-    )
+    screen = render_wipe_prompt(chat, len(ids), WIPE_WINDOW_HOURS, locale=i18n.locale)
+    await _redraw(callback, *screen.as_pair())
 
 
 async def _bulk_delete_messages(bot: Bot, chat_id: int, ids: list[int]) -> bool:
@@ -1212,29 +1123,15 @@ async def chat_system_wipe_all_confirm(
 
 # ------------------------------------------------------------------- screens
 
-_RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
-
 
 @router.callback_query(F.data.startswith("a:reset:"))
 async def reset_platform_confirm(callback: CallbackQuery, i18n: I18nContext) -> None:
     """ "Сброс базы" is destructive and not undoable (user request 2026-09-08)
     — same one-tap-confirm shape as /disconnect_steam's own prompt, not an
     instant action behind a single tap."""
-    _ = translator("admin", i18n.locale)
     assert callback.data is not None
     _prefix, _action, platform, tg_id_s = callback.data.split(":")  # not `_`, see user_refresh
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{tg_id_s}"
-        ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id_s}"),
-    )
-    await _redraw(
-        callback,
-        _("admin-reset-confirm-prompt", platform=_RESET_PLATFORM_NAMES[platform]),
-        builder.as_markup(),
-    )
+    await _redraw(callback, *render_reset_confirm(platform, tg_id_s, locale=i18n.locale).as_pair())
 
 
 @router.callback_query(F.data.startswith("a:resetok:"))
@@ -1315,20 +1212,8 @@ async def _system_wipe_prompt(
     if not ids:
         await callback.answer(_("admin-no-system-messages"), show_alert=True)
         return
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text=_("admin-confirm-delete"), callback_data=confirm_callback)
-    )
-    builder.row(InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat_id}"))
-    await _redraw(
-        callback,
-        _(
-            "admin-system-wipe-prompt",
-            count=len(ids),
-            title=chat.title or chat_id,
-        ),
-        builder.as_markup(),
-    )
+    screen = render_system_wipe_prompt(chat, len(ids), confirm_callback, locale=locale)
+    await _redraw(callback, *screen.as_pair())
 
 
 async def _redraw(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup) -> None:

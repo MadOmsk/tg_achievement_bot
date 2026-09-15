@@ -10,8 +10,7 @@ import time
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import CallbackQuery, Message
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
@@ -31,7 +30,14 @@ from bot.views.keyboards import (
     next_rarity_mode,
     timezone_keyboard,
 )
-from bot.views.panel import find_user_chat, render_chat_card, render_chat_list, render_panel
+from bot.views.panel import (
+    find_user_chat,
+    render_chat_card,
+    render_chat_delete_prompt,
+    render_chat_list,
+    render_panel,
+    render_unsub_prompt,
+)
 
 log = logging.getLogger(__name__)
 
@@ -341,23 +347,11 @@ async def panel_chat_unsub_prompt(callback: CallbackQuery, repo: Repo, i18n: I18
     action (SPEC 6.3): losing a feed in a chat deserves a second tap."""
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_user_chat(repo, callback.from_user.id, chat_id)
-    if chat is None:
+    screen = await render_unsub_prompt(repo, callback.from_user.id, chat_id, locale=i18n.locale)
+    if screen is None:
         await _redraw_chat_list(callback, repo, i18n)
         return
-    title = chat.title or chat.chat_id
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=i18n.get("panel-unsub-yes"), callback_data=f"panel:chatunsuby:{chat_id}"
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=i18n.get("panel-unsub-cancel"), callback_data=f"panel:chat:{chat_id}"
-        )
-    )
-    await safe_edit(callback, i18n.get("panel-unsub-prompt", title=title), builder.as_markup())
+    await safe_edit(callback, screen.text, screen.keyboard)
     await callback.answer()
 
 
@@ -374,27 +368,13 @@ async def panel_chat_unsub_confirm(callback: CallbackQuery, repo: Repo, i18n: I1
 async def panel_chat_delete_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_user_chat(repo, callback.from_user.id, chat_id)
-    if chat is None:
+    screen = await render_chat_delete_prompt(
+        repo, callback.from_user.id, chat_id, locale=i18n.locale
+    )
+    if screen is None:
         await _redraw_chat_list(callback, repo, i18n)
         return
-    title = chat.title or chat.chat_id
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=i18n.get("panel-delete-yes"), callback_data=f"panel:chatdely:{chat_id}"
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=i18n.get("panel-unsub-cancel"), callback_data=f"panel:chat:{chat_id}"
-        )
-    )
-    await safe_edit(
-        callback,
-        i18n.get("panel-delete-prompt", title=title),
-        builder.as_markup(),
-    )
+    await safe_edit(callback, screen.text, screen.keyboard)
     await callback.answer()
 
 

@@ -19,6 +19,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.constants import AchievementBadge, Platform, PsnTrophyTier
 from bot.db.repo import ChatMemberStat, ChatTopGame, Repo
 from bot.i18n import translator
+from bot.services.admin_settings import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import local_now, month_cutoff_utc
 from bot.util import thousands, utcnow
@@ -34,8 +35,6 @@ from bot.views.tables import blockquote, total_line, truncate_name
 
 DAY_WINDOW_HOURS = 24  # rolling — everyone's "today" is the same 24 hours
 
-TOP_LIMIT_KEY = "summary_top_limit"
-DEFAULT_TABLE_TOP = 15
 
 _MONTH_KEYS = (
     "daily-month-01",

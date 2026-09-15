@@ -298,3 +298,63 @@ async def _publication_status(repo: Repo, tg_id: int, is_excluded: bool, i18n: I
     if not chats:
         return i18n.get("panel-not-subscribed-anywhere")
     return i18n.get("panel-subscribed-in", chats=", ".join(f"«{title}»" for title in chats))
+
+
+async def render_unsub_prompt(
+    repo: Repo, tg_id: int, chat_id: int, *, locale: str
+) -> Screen | None:
+    """Same weight as the standalone /unsubscribe — a confirm, not an instant
+    action (SPEC 6.3): losing a feed in a chat deserves a second tap."""
+    return await _chat_confirm(
+        repo,
+        tg_id,
+        chat_id,
+        locale=locale,
+        prompt="panel-unsub-prompt",
+        confirm="panel-unsub-yes",
+        callback=f"panel:chatunsuby:{chat_id}",
+    )
+
+
+async def render_chat_delete_prompt(
+    repo: Repo, tg_id: int, chat_id: int, *, locale: str
+) -> Screen | None:
+    """Leaving a chat's card behind entirely — same shape as the unsubscribe
+    confirmation above, which is the point: two destructive taps that look
+    alike are two taps nobody misreads."""
+    return await _chat_confirm(
+        repo,
+        tg_id,
+        chat_id,
+        locale=locale,
+        prompt="panel-delete-prompt",
+        confirm="panel-delete-yes",
+        callback=f"panel:chatdely:{chat_id}",
+    )
+
+
+async def _chat_confirm(
+    repo: Repo,
+    tg_id: int,
+    chat_id: int,
+    *,
+    locale: str,
+    prompt: str,
+    confirm: str,
+    callback: str,
+) -> Screen | None:
+    """Both keys are passed whole rather than assembled from pieces: a key
+    built with an f-string is one `tests/test_locale_parity.py` cannot see
+    and one nobody can grep for."""
+    chat = await find_user_chat(repo, tg_id, chat_id)
+    if chat is None:
+        return None
+    i18n = await i18n_for(locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=i18n.get(confirm), callback_data=callback))
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-unsub-cancel"), callback_data=f"panel:chat:{chat_id}"
+        )
+    )
+    return Screen(i18n.get(prompt, title=chat.title or chat.chat_id), builder.as_markup())

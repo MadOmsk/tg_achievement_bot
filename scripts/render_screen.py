@@ -44,6 +44,7 @@ from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Database, Repo, TitleProgress
 from bot.i18n import i18n_for
+from bot.services.admin_settings import TOP_LIMIT_KEY
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
@@ -57,6 +58,8 @@ from bot.views.admin import (
 )
 from bot.views.admin import (
     render_keys,
+    render_limit,
+    render_limits,
     render_new_user_defaults,
     render_user_card,
     render_user_list,
@@ -307,6 +310,18 @@ async def _admin_chats(ctx: Context) -> Screen:
 async def _admin_chat_card(ctx: Context) -> Screen | None:
     built = await render_admin_chat_card(ctx.repo, ctx.chat_id, locale=ctx.locale)
     return Screen(*built) if built else None
+
+
+@screen("admin-limits")
+async def _admin_limits(ctx: Context) -> Screen:
+    return await render_limits(ctx.repo, locale=ctx.locale)
+
+
+@screen("admin-limit")
+async def _admin_limit(ctx: Context) -> Screen:
+    """One setting's own input screen. Any of them would do — this one
+    allows 0, which is the branch that was broken for four days."""
+    return await render_limit(ctx.repo, TOP_LIMIT_KEY, locale=ctx.locale)
 
 
 @screen("admin-defaults")

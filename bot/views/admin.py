@@ -27,6 +27,10 @@ from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_KEY,
     DEFAULT_SHOW_LINKS_DEFAULT,
     DEFAULT_SHOW_LINKS_KEY,
+    FLOOD_LIMIT_MAX,
+    FLOOD_LIMIT_MIN,
+    FLOOD_WINDOW_MAX,
+    FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
     PAGE_SIZE,
     STATUS_ICON,
@@ -47,6 +51,7 @@ from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED
 from bot.services.translate.auth import AnthropicAuth
 from bot.util import humanize_ago
+from bot.views import Screen
 from bot.views.keyboards import (
     COMMON_OFFSETS_HOURS,
     format_offset,
@@ -776,3 +781,172 @@ def _note(user: AdminUserRow, *, locale: str) -> str:
     if user.token_status == TokenStatus.REVOKED:
         return _("admin-note-revoked")
     return ""
+
+
+# ---- the screens that ask for one typed value, and the confirmations ----
+#
+# Each of these used to be built inside its own handler (#63's last
+# leftovers). They are one shape: a prompt saying what is set now and what
+# is allowed, and a single way back — the flow's state ("who is typing
+# what") stays with the handler, because it is not layout.
+
+
+async def render_limits(repo: Repo, *, locale: str) -> Screen:
+    """Every global numeric setting with its current value, each row opening
+    its own input — a settings list rather than a menu you have to walk to
+    find out what is set."""
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    for key, spec in NUMERIC_SETTINGS.items():
+        current = await repo.get_app_setting(key, str(spec.default))
+        builder.row(
+            InlineKeyboardButton(
+                text=(
+                    f"{_setting_label(spec, locale=locale)}: "
+                    f"{_format_limit(key, current, locale=locale)} ▸"
+                ),
+                callback_data=f"a:limit:{key}",
+            )
+        )
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
+    return Screen(_("admin-limits-screen"), builder.as_markup())
+
+
+async def render_limit(repo: Repo, key: str, *, locale: str) -> Screen:
+    _ = translator("admin", locale)
+    spec = NUMERIC_SETTINGS[key]
+    current = await repo.get_app_setting(key, str(spec.default))
+    # What a 0 means for *this* setting, spelled out only where 0 is allowed
+    # at all. This line raised TypeError from 2026-09-11 until #63's own
+    # audit found it: the locale ended up inside the f-string instead of in
+    # the call, so every limit whose minimum is 0 — the two list caps — blew
+    # up the moment the screen was opened.
+    zero_hint = f" (0 — {_format_limit(key, '0', locale=locale)})" if spec.min == 0 else ""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
+    return Screen(
+        _(
+            "admin-limit-prompt",
+            label=_setting_label(spec, locale=locale),
+            current=_format_limit(key, current, locale=locale),
+            minimum=spec.min,
+            maximum=spec.max,
+            zero_hint=zero_hint,
+        ),
+        builder.as_markup(),
+    )
+
+
+def _chat_input_screen(key: str, chat_id: int, *, locale: str, **fields: object) -> Screen:
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
+    return Screen(_(key, **fields), builder.as_markup())
+
+
+def render_rare_prompt(chat: ChatTarget, *, locale: str) -> Screen:
+    return _chat_input_screen(
+        "admin-chat-threshold-prompt",
+        chat.chat_id,
+        locale=locale,
+        title=chat.title or chat.chat_id,
+        value=f"{chat.rare_threshold_percent:g}",
+    )
+
+
+def render_flood_limit_prompt(chat: ChatTarget, *, locale: str) -> Screen:
+    return _chat_input_screen(
+        "admin-chat-flood-prompt",
+        chat.chat_id,
+        locale=locale,
+        title=chat.title or chat.chat_id,
+        value=chat.flood_limit,
+        minimum=FLOOD_LIMIT_MIN,
+        maximum=FLOOD_LIMIT_MAX,
+    )
+
+
+def render_flood_window_prompt(chat: ChatTarget, *, locale: str) -> Screen:
+    return _chat_input_screen(
+        "admin-chat-flood-window-prompt",
+        chat.chat_id,
+        locale=locale,
+        title=chat.title or chat.chat_id,
+        value=chat.flood_window_minutes,
+        minimum=FLOOD_WINDOW_MIN,
+        maximum=FLOOD_WINDOW_MAX,
+    )
+
+
+def render_zone_manual_prompt(chat: ChatTarget, *, locale: str) -> Screen:
+    """Back goes to the zone grid this was opened from, not to the card."""
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:ctz:{chat.chat_id}"))
+    return Screen(
+        _(
+            "admin-chat-zone-manual-prompt",
+            title=chat.title or chat.chat_id,
+            offset=format_offset(chat.tz_offset_min),
+        ),
+        builder.as_markup(),
+    )
+
+
+def render_wipe_prompt(chat: ChatTarget, count: int, hours: int, *, locale: str) -> Screen:
+    """The prompt says how many messages it is about to take — a destructive
+    action states its own size before it happens."""
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-confirm-delete"), callback_data=f"a:cwipey:{chat.chat_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat.chat_id}")
+    )
+    return Screen(
+        _("admin-wipe-prompt", count=count, title=chat.title or chat.chat_id, hours=hours),
+        builder.as_markup(),
+    )
+
+
+RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
+
+
+def render_reset_confirm(platform: str, tg_id: str, *, locale: str) -> Screen:
+    """ "Сброс базы" is destructive and not undoable (2026-09-08 user
+    request) — same one-tap-confirm shape as /disconnect_steam's own
+    prompt, not an instant action behind a single tap."""
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{tg_id}"
+        ),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
+    )
+    return Screen(
+        _("admin-reset-confirm-prompt", platform=RESET_PLATFORM_NAMES[platform]),
+        builder.as_markup(),
+    )
+
+
+def render_system_wipe_prompt(
+    chat: ChatTarget, count: int, confirm_callback: str, *, locale: str
+) -> Screen:
+    """Same shape as the 24-hour wipe above, for the "system messages only"
+    pair — the confirm target differs, the prompt does not."""
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text=_("admin-confirm-delete"), callback_data=confirm_callback)
+    )
+    builder.row(
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat.chat_id}")
+    )
+    return Screen(
+        _("admin-system-wipe-prompt", count=count, title=chat.title or chat.chat_id),
+        builder.as_markup(),
+    )

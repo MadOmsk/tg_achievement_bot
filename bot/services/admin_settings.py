@@ -23,7 +23,6 @@ from bot.poller.service_health import (
     DEFAULT_KEY_CHECK_INTERVAL_MIN,
     KEY_CHECK_INTERVAL_KEY,
 )
-from bot.views.summary import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 
 # /hltb's own two limits, admin-set like every other number here — the
 # command reads them from this module rather than owning them, so nothing
@@ -34,7 +33,16 @@ DEFAULT_RESULTS_LIMIT = 20
 DEFAULT_PAGE_SIZE = 5
 
 
+# How many rows a summary leaderboard shows before its "show everyone"
+# button appears; 0 means uncapped.
+TOP_LIMIT_KEY = "summary_top_limit"
+DEFAULT_TABLE_TOP = 15
+
+
 def unlimited_label(locale: str) -> str:
+    """What a 0 renders as in the numeric-settings screens. Was a
+    module-level constant, which froze whichever locale loaded first (#48) —
+    the same trap PLATFORM_LABEL and HELP_TEXT had."""
     return gettext("admin", "admin-unlimited", locale=locale)
 
 

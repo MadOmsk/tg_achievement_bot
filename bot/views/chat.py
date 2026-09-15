@@ -13,6 +13,7 @@ from datetime import timedelta
 from html import escape as html_escape
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.constants import SettingKey
@@ -342,3 +343,17 @@ async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
         + "\n\n"
         + i18n.get("chat-hub-publishing", names=", ".join(names))
     )
+
+
+def render_who_picker(rows: list[ChatPresenceRow], i18n: I18nContext) -> InlineKeyboardMarkup:
+    """Everyone the chat has seen write, three to a row. The cancel button is
+    not decoration: found live, there was no way out of this prompt except
+    picking somebody, and it never went away after a pick either."""
+    builder = InlineKeyboardBuilder()
+    for row in rows:
+        builder.button(text=who_label(row), callback_data=f"who:stats:{row.tg_id}")
+    builder.adjust(3)
+    builder.row(
+        InlineKeyboardButton(text=i18n.get("chat-cancel-button"), callback_data="who:cancel")
+    )
+    return builder.as_markup()
