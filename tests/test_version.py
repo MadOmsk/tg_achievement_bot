@@ -14,9 +14,38 @@ def test_the_version_names_the_branch_and_the_schema_it_expects() -> None:
 
     assert parts[0] == str(MAJOR)
     assert parts[1] == str(BRANCH)
-    assert parts[2]  # a commit hash, or "nogit" outside a checkout
+    # Commits since this branch left main — a number, or "?" where git
+    # cannot answer at all (a tarball, a container with no .git).
+    assert parts[2].isdigit() or parts[2] == "?"
     assert parts[3] == expected_schema()
     assert parts[3].isdigit() and len(parts[3]) == 3
+
+
+def test_the_revision_counts_from_the_fork_point_not_from_main_s_tip() -> None:
+    """Measured against the merge base, so somebody else merging into main
+    does not renumber this branch's builds."""
+    import subprocess
+
+    from bot.version import REPO, revision
+
+    base = subprocess.run(
+        ["git", "merge-base", "origin/main", "HEAD"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if not base:
+        return  # no origin/main here (a shallow CI checkout) — nothing to compare
+    expected = subprocess.run(
+        ["git", "rev-list", "--count", f"{base}..HEAD"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+
+    assert revision() == expected
 
 
 def test_a_database_behind_the_code_is_normal() -> None:

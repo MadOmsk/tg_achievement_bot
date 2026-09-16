@@ -1367,16 +1367,20 @@ overlong summary would cost the whole card rather than just its own tail.
 
 **`A.B.C.D`** (#56, 2026-09-16), one line in `bot/version.py`, rendered as
 the last line of `/help` and the group hub, and logged at startup —
-`bot @tg_achievement_bot is up (v1.1.1928dc3.045)`.
+`bot @tg_achievement_bot is up (v1.1.53.046)`.
 
 - **A** — the architecture. By hand, on a rewrite. `1`.
 - **B** — which line of work this build is. `0` on `main`; a working branch
   takes the next number and `main` inherits it on merge, so "is this the
   test bot" is answerable from the version alone. `accounts-52` is `1`.
-- **C** — the commit, read from git at startup (`nogit` where there is no
-  checkout). Deliberately not stored in a file: a number you have to
-  remember to bump is wrong exactly when it matters, and one edited per
-  commit is a merge conflict per commit.
+- **C** — commits made on this branch since it left `main`, counted at
+  startup from the *merge base* (owner's call, 2026-09-16: a short number
+  that grows by one per commit beats a hash nobody can order at a glance).
+  From the merge base rather than from `main`'s tip, so somebody else
+  merging into the trunk does not renumber this branch's builds; `0` on
+  `main` itself, `?` where git cannot answer at all. Deliberately not stored
+  in a file: a number you must remember to bump is wrong exactly when it
+  matters, and one edited per commit is a merge conflict per commit.
 - **D** — the newest migration this code ships. Not what the database has.
 
 **A database ahead of the code refuses to start** (`Database.connect` →
