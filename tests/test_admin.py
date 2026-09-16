@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 from bot.db.repo import Repo
-from bot.handlers.admin import (
+from bot.poller.message_cleanup import TTL_SETTING_KEY as SYSTEM_MESSAGE_TTL_KEY
+from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
+from bot.services.admin_settings import (
     DEFAULT_SHOW_LINKS_KEY,
     LIMIT_MAX,
     LIMIT_MIN,
     NUMERIC_SETTINGS,
-    ONLINE_REFRESH_INTERVAL_KEY,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
-    SYSTEM_MESSAGE_TTL_KEY,
-    _format_limit,
-    _new_user_defaults,
+    TOP_LIMIT_KEY,
     unlimited_label,
 )
-from bot.services.admin_view import _format_api_usage
+from bot.views.admin import _format_limit, render_limit, render_new_user_defaults
+from bot.views.admin_home import _format_api_usage
 
 
 def test_api_usage_formats_seconds_and_minutes() -> None:
@@ -44,11 +44,11 @@ def test_row_limit_bounds_reject_zero_and_absurdly_large() -> None:
 async def test_new_user_defaults_shows_links_off_until_set(repo: Repo) -> None:
     """Follow-up 2026-09-06 — same admin-configurable-default shape as
     default_rarity_mode, just a plain on/off (Repo.ensure_user)."""
-    text, markup = await _new_user_defaults(repo, locale="ru")
+    text, markup = await render_new_user_defaults(repo, locale="ru")
     assert "нет" in text or any("нет" in b.text for row in markup.inline_keyboard for b in row)
 
     await repo.set_app_setting(DEFAULT_SHOW_LINKS_KEY, "1")
-    _text, markup = await _new_user_defaults(repo, locale="ru")
+    _text, markup = await render_new_user_defaults(repo, locale="ru")
     assert any("да" in b.text for row in markup.inline_keyboard for b in row)
 
 
@@ -86,3 +86,22 @@ def test_format_limit_shows_off_for_zero_ttl() -> None:
     "без ограничения" — 0 minutes isn't an unlimited TTL, it disables
     the auto-delete entirely (2026-09-05 follow-up)."""
     assert _format_limit(SYSTEM_MESSAGE_TTL_KEY, "0", locale="ru") == "выключено"
+
+
+async def test_a_limit_whose_minimum_is_zero_renders_its_own_zero_hint(repo: Repo) -> None:
+    """This screen raised `TypeError: _format_limit() missing 1 required
+    keyword-only argument: 'locale'` from 2026-09-11 until #63's audit found
+    it — the locale had ended up *inside* the f-string instead of in the
+    call. Both list caps allow 0, so both were unopenable, and no test
+    touched the screen: they all stopped at the keyboard.
+    """
+    screen = await render_limit(repo, TOP_LIMIT_KEY, locale="ru")
+
+    assert "без ограничения" in screen.text
+    assert screen.keyboard is not None
+
+
+async def test_a_limit_with_a_real_minimum_has_no_zero_hint(repo: Repo) -> None:
+    screen = await render_limit(repo, SYSTEM_MESSAGE_TTL_KEY, locale="ru")
+
+    assert "без ограничения" not in screen.text

@@ -11,8 +11,9 @@ from __future__ import annotations
 from bot.constants import Platform, PresenceState
 from bot.db.repo import ChatPresenceRow
 from bot.i18n import translator
-from bot.services.achievements import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
 from bot.services.naming import person_name, xbox_nickname
+from bot.views.lists import Listing
+from bot.views.parts import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
 
 # The chat's own locale travels in (#48) — the auto-refresh poller renders
 # this table for every chat in one loop, so it cannot live in module state.
@@ -77,19 +78,29 @@ def _row_name(row: ChatPresenceRow) -> str:
 
 def render_online_table(rows: list[ChatPresenceRow], updated_label: str, locale: str) -> str:
     """`updated_label` is a ready-made "HH:MM" in the chat's own timezone
-    (Follow-up 2026-09-05, the "Обновлено: …" line) — this module has no
-    idea what timezone a chat is in, that's services/stats.py's
-    local_now()'s job, done by the caller (handlers/chat.py,
-    poller/online_refresh.py alike)."""
+    (Follow-up 2026-09-05, the "Обновлено: …" line) — this module has no idea
+    what timezone a chat is in, that is services/stats.py's local_now()'s
+    job, done by the caller (handlers/chat.py, poller/online_refresh.py
+    alike).
+
+    A list like any other (#64), and the one that is **not** wrapped in a
+    collapsible quote: it redraws itself every few minutes and has to be
+    readable at a glance, not after a tap.
+    """
     _ = translator("onlineview", locale)
-    lines = [_("onlineview-header"), _("onlineview-updated", updated=updated_label), ""]
-    for row in rows:
-        lines.append(
+    return Listing(
+        header=_("onlineview-header")
+        + "\n"
+        + _("onlineview-updated", updated=updated_label)
+        + "\n",
+        rows=[
             _(
                 "onlineview-row",
                 icon=presence_icon(row),
                 name=_row_name(row),
                 status=presence_text(row, locale),
             )
-        )
-    return "\n".join(lines)
+            for row in rows
+        ],
+        quoted=False,
+    ).render()

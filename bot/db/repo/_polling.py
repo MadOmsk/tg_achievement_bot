@@ -19,6 +19,7 @@ from bot.db.repo._models import (
     SteamPollTarget,
     SteamPresenceRow,
 )
+from bot.db.repo._sql import XBOX_ACCOUNT
 from bot.util import utcnow_iso
 
 
@@ -32,12 +33,11 @@ class _PollingRepo:
         poller: every tick for them would be a guaranteed failure.
         """
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.xuid, p.state, p.title_id, p.title_name,"
+            "SELECT u.tg_id, xb.external_id AS xuid, p.state, p.title_id, p.title_name,"
             "       p.changed_at, p.last_ach_poll_at, p.updated_at "
-            "FROM users u "
-            "JOIN tokens t ON t.tg_id = u.tg_id "
-            "LEFT JOIN presence_state p ON p.xuid = u.xuid "
-            "WHERE u.xuid IS NOT NULL AND u.is_excluded = 0 AND t.status = 'active'"
+            "FROM users u " + XBOX_ACCOUNT + "JOIN tokens t ON t.tg_id = u.tg_id "
+            "LEFT JOIN presence_state p ON p.xuid = xb.external_id "
+            "WHERE xb.external_id IS NOT NULL AND u.is_excluded = 0 AND t.status = 'active'"
         )
         return [
             PollTarget(
@@ -137,10 +137,12 @@ class _PollingRepo:
             "SELECT u.tg_id, pl.external_id AS steam_id, p.persona_state, p.gameid,"
             "       p.game_name, p.changed_at, p.last_ach_poll_at, p.updated_at,"
             "       p.last_active_gameid, p.last_active_game_name, p.last_active_at "
-            "FROM platform_links pl "
+            # Active links only (#52) — an account somebody used to hold is
+            # not polled, and its stored presence is nobody's.
+            "FROM account_links pl "
             "JOIN users u ON u.tg_id = pl.tg_id "
             "LEFT JOIN steam_presence_state p ON p.steam_id = pl.external_id "
-            "WHERE pl.platform = 'steam' AND u.is_excluded = 0"
+            "WHERE pl.platform = 'steam' AND pl.is_active = 1 AND u.is_excluded = 0"
         )
         return [
             SteamPollTarget(
@@ -228,12 +230,13 @@ class _PollingRepo:
         shared service credential for the whole bot (M-PSN-1), not
         per-user OAuth."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, pl.external_id AS account_id, pl.display_name AS online_id,"
+            "SELECT u.tg_id, pl.external_id AS account_id, a.display_name AS online_id,"
             "       ps.last_polled_at, COALESCE(ps.backfill_done, 0) AS backfill_done "
-            "FROM platform_links pl "
+            "FROM account_links pl "
             "JOIN users u ON u.tg_id = pl.tg_id "
+            "JOIN accounts a ON a.platform = pl.platform AND a.external_id = pl.external_id "
             "LEFT JOIN psn_poll_state ps ON ps.account_id = pl.external_id "
-            "WHERE pl.platform = 'psn' AND u.is_excluded = 0"
+            "WHERE pl.platform = 'psn' AND pl.is_active = 1 AND u.is_excluded = 0"
         )
         return [
             PsnPollTarget(
@@ -270,10 +273,6 @@ class _PollingRepo:
         )
         await self._conn.commit()
 
-    async def delete_psn_poll_state(self, account_id: str) -> None:
-        await self._conn.execute("DELETE FROM psn_poll_state WHERE account_id = ?", (account_id,))
-        await self._conn.commit()
-
     async def psn_backfill_done(self, account_id: str) -> bool:
         """Whether this account's first-ever backfill has finished (#21/#27).
         No psn_poll_state row yet (backfill still running, or crashed before
@@ -303,13 +302,14 @@ class _PollingRepo:
 
     async def psn_presence_pollable_accounts(self) -> list[PsnPresenceTarget]:
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, pl.external_id AS account_id, pl.display_name AS online_id,"
+            "SELECT u.tg_id, pl.external_id AS account_id, a.display_name AS online_id,"
             "       pp.state, pp.title_id,"
             "       pp.title_name, pp.changed_at, pp.updated_at "
-            "FROM platform_links pl "
+            "FROM account_links pl "
             "JOIN users u ON u.tg_id = pl.tg_id "
+            "JOIN accounts a ON a.platform = pl.platform AND a.external_id = pl.external_id "
             "LEFT JOIN psn_presence_state pp ON pp.account_id = pl.external_id "
-            "WHERE pl.platform = 'psn' AND u.is_excluded = 0"
+            "WHERE pl.platform = 'psn' AND pl.is_active = 1 AND u.is_excluded = 0"
         )
         return [
             PsnPresenceTarget(

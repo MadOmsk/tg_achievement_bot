@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bot.services.tables import blockquote, total_line, truncate_name
+from bot.views.lists import blockquote, total_line, truncate_name
 
 
 def test_blockquote_wraps_rows_expandable_by_default() -> None:

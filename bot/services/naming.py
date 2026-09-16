@@ -43,8 +43,13 @@ def person_name(
     psn: str | None = None,
 ) -> str:
     """Who this person is: `Имя Фамилия` → `username` → any connected
-    platform's nickname (Xbox → Steam → PSN) → `id<tg_id>`. Digits last, the
-    most human form first.
+    platform's nickname (Xbox → PlayStation → Steam) → `id<tg_id>`. Digits
+    last, the most human form first.
+
+    The platform part follows the one display order every screen uses for a
+    platform list (`constants.platform_display_rank`, owner decision
+    2026-09-13). It was Xbox → Steam → PSN when this chain was first agreed;
+    two orders to remember is one too many.
 
     The username is returned bare, without an `@` — deliberately, everywhere
     (user request, 2026-09-12). A live mention pings its target, which is
@@ -56,7 +61,7 @@ def person_name(
     for anyone who has ever written a message or connected anything.
     """
     full_name = " ".join(part for part in (first_name, last_name) if part)
-    return full_name or username or _first_real(xbox, steam, psn) or f"id{tg_id}"
+    return full_name or username or _first_real(xbox, psn, steam) or f"id{tg_id}"
 
 
 def _first_real(*names: str | None) -> str | None:

@@ -25,9 +25,9 @@ from aiogram.enums import ParseMode
 
 from bot.db.repo import OnlineAutoRefreshRow, Repo
 from bot.services.message_log import stats_category
-from bot.services.online_view import render_online_table
 from bot.services.stats import local_now
 from bot.util import utcnow
+from bot.views.online import render_online_table
 
 log = logging.getLogger(__name__)
 

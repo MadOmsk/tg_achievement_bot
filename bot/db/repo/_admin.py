@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from bot.db.repo._models import AdminPanelRefreshRow, AdminUserRow, ChatTarget, HltbCacheRow
+from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS, active_account
 from bot.util import utcnow_iso
 
 
@@ -84,16 +85,18 @@ class _AdminRepo:
         `WHERE u.xuid IS NOT NULL`, which hid every Steam-only person from
         the admin panel entirely."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
-            "       u.last_name, u.xuid, u.gamerscore, u.is_excluded,"
+            "SELECT u.tg_id, u.username, u.first_name,"
+            "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
             "       pp.external_id AS psn_account_id, pp.display_name AS psn_online_id "
             "FROM users u "
-            "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
-            "LEFT JOIN platform_links ps ON ps.tg_id = u.tg_id AND ps.platform = 'steam' "
-            "LEFT JOIN platform_links pp ON pp.tg_id = u.tg_id AND pp.platform = 'psn' "
-            "WHERE u.xuid IS NOT NULL OR ps.external_id IS NOT NULL OR pp.external_id IS NOT NULL "
+            + XBOX_ACCOUNT
+            + "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
+            + active_account("ps", "steam")
+            + active_account("pp", "psn")
+            + "WHERE xb.external_id IS NOT NULL OR ps.external_id IS NOT NULL"
+            "   OR pp.external_id IS NOT NULL "
             "ORDER BY u.is_excluded, u.last_online_at DESC"
         )
         return [
@@ -191,20 +194,114 @@ class _AdminRepo:
         )
         await self._conn.commit()
 
+    async def set_title_names(
+        self, title_id: str, name_ru: str | None, name_en: str | None
+    ) -> None:
+        """A game's own name in both languages, where a platform has two (#61
+        — PlayStation does, verified on "Marvel's Wolverine" / "Marvel:
+        Росомаха"; Xbox and Steam return one string for both locales).
+
+        Updates only: the row is created by whoever learned the game exists,
+        and a side the platform did not give leaves what is stored alone.
+        """
+        if name_ru is None and name_en is None:
+            return
+        now = utcnow_iso()
+        cursor = await self._conn.execute(
+            "UPDATE titles SET name_ru = COALESCE(?, name_ru), name_en = COALESCE(?, name_en),"
+            "  updated_at = ? WHERE title_id = ?",
+            (name_ru, name_en, now, title_id),
+        )
+        if not cursor.rowcount:
+            # The game is not in `titles` yet — the first poll of it learns
+            # the localized names before anything stores the achievements that
+            # would create the row. One of the two names it just fetched is a
+            # perfectly good `name`, and waiting for the next poll would mean
+            # asking the platform for the same thing twice.
+            await self._conn.execute(
+                "INSERT INTO titles (title_id, name, name_ru, name_en, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(title_id) DO NOTHING",
+                (title_id, name_en or name_ru, name_ru, name_en, now),
+            )
+        await self._conn.commit()
+
+    async def titles_missing_localized_name(self, platform: str, limit: int) -> list[str]:
+        """A few games at a time whose name is stored in one language only
+        (#61) — poller/steam_localization.py's own small bite. Oldest first,
+        so a backlog drains in order rather than by chance."""
+        cursor = await self._conn.execute(
+            "SELECT title_id FROM titles WHERE platform = ? AND name_ru IS NULL "
+            "ORDER BY updated_at LIMIT ?",
+            (platform, limit),
+        )
+        return [row["title_id"] for row in await cursor.fetchall()]
+
+    async def has_localized_title(self, title_id: str) -> bool:
+        """Whether this game's name is already stored in both languages —
+        what keeps the one storefront request per game (#61) from becoming one
+        per poll."""
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM titles WHERE title_id = ? AND name_ru IS NOT NULL LIMIT 1",
+            (title_id,),
+        )
+        return await cursor.fetchone() is not None
+
+    async def title_names(self, title_ids: list[str]) -> dict[str, tuple[str | None, str | None]]:
+        """`{title_id: (name_ru, name_en)}` for the render path — one query
+        for a whole digest, same reasoning as `cached_descriptions`."""
+        if not title_ids:
+            return {}
+        placeholders = ", ".join("?" * len(title_ids))
+        cursor = await self._conn.execute(
+            f"SELECT title_id, name_ru, name_en FROM titles WHERE title_id IN ({placeholders})",
+            title_ids,
+        )
+        return {
+            row["title_id"]: (row["name_ru"], row["name_en"]) for row in await cursor.fetchall()
+        }
+
+    async def set_title_total(self, title_id: str, total: int) -> None:
+        """How many achievements a game has, without touching anything else
+        about it (#46).
+
+        Not `upsert_title`: that one needs a name, and the poller learns the
+        total from the achievements response *before* it resolves a name —
+        presence gives none at all for PC titles. So this updates the row when
+        there is one and does nothing when there is not; the name arrives
+        moments later through `ensure_title_name`, and the next poll stores
+        the total against it.
+        """
+        await self._conn.execute(
+            "UPDATE titles SET achievements_total = ?, updated_at = ? WHERE title_id = ?",
+            (total, utcnow_iso(), title_id),
+        )
+        await self._conn.commit()
+
     async def upsert_title(
-        self, title_id: str, name: str, platform: str | None, icon_url: str | None = None
+        self,
+        title_id: str,
+        name: str,
+        platform: str | None,
+        icon_url: str | None = None,
+        achievements_total: int | None = None,
     ) -> None:
         # icon_url only overwrites when this call actually has one —
         # ensure_title_name() (fetcher.py) upserts just the name/platform on
         # every new title it resolves, and must not blank out an icon_url a
         # separate ensure_title_icon() call already cached here.
         await self._conn.execute(
-            "INSERT INTO titles (title_id, name, platform, icon_url, updated_at) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO titles"
+            " (title_id, name, platform, icon_url, achievements_total, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
             " platform = excluded.platform, updated_at = excluded.updated_at,"
-            " icon_url = COALESCE(excluded.icon_url, titles.icon_url)",
-            (title_id, name, platform, icon_url, utcnow_iso()),
+            " icon_url = COALESCE(excluded.icon_url, titles.icon_url),"
+            # Same "only overwrite when this call actually has one" rule as
+            # icon_url above (#46): most upserts here know the name and
+            # nothing else, and must not blank a total somebody else cached.
+            " achievements_total = COALESCE(excluded.achievements_total,"
+            "                               titles.achievements_total)",
+            (title_id, name, platform, icon_url, achievements_total, utcnow_iso()),
         )
         await self._conn.commit()
 

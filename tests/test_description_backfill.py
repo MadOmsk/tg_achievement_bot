@@ -64,10 +64,28 @@ class _FakeClient:
         self.calls.append((tg_id, title_id, language))
         return self.by_locale[language]
 
+    async def title_achievements_with_total(
+        self, tg_id, title_id, platform, *, language: str = "en-US"
+    ):
+        """The real client reports the size of the set too (#46). These fakes
+        answer with only the unlocked ones, so the total is their length —
+        which is also what a game everybody has 100%ed would really return."""
+        unlocked = await self.title_achievements(tg_id, title_id, platform, language=language)
+        return unlocked, len(unlocked)
+
 
 class _DeadClient:
     async def title_achievements(self, *_args, **_kwargs):
         raise XboxApiError("token is dead")
+
+    async def title_achievements_with_total(
+        self, tg_id, title_id, platform, *, language: str = "en-US"
+    ):
+        """The real client reports the size of the set too (#46). These fakes
+        answer with only the unlocked ones, so the total is their length —
+        which is also what a game everybody has 100%ed would really return."""
+        unlocked = await self.title_achievements(tg_id, title_id, platform, language=language)
+        return unlocked, len(unlocked)
 
 
 async def _seed(repo: Repo, *achievement_ids: str) -> None:
@@ -163,3 +181,59 @@ async def test_nothing_to_do_is_a_cheap_no_op(repo: Repo) -> None:
     await DescriptionBackfill(repo, client, object()).tick()  # type: ignore[arg-type]
 
     assert client.calls == []
+
+
+class _NoAnthropic:
+    """What the test bot actually has: no Anthropic key at all."""
+
+    async def require_key(self) -> str:
+        from bot.services.translate.auth import AnthropicNotConfiguredError
+
+        raise AnthropicNotConfiguredError
+
+
+async def test_a_title_that_cannot_be_cached_is_not_refetched_every_tick(repo: Repo) -> None:
+    """Found live on the test bot (2026-09-13): the same ten titles were
+    re-fetched every single minute, forever, two Xbox requests each, and the
+    log cheerfully reported "cached 24 descriptions" each time.
+
+    Xbox 360 answers both locale requests with the same English text — that
+    means "no native translation", so those achievements are handed to the
+    LLM, and with no Anthropic key `bilingual_descriptions` deliberately
+    leaves them uncached so a later attempt can still do better. The poller
+    was told they were cached anyway, while its own selection query kept
+    finding them.
+    """
+    await _seed(repo, "a1")
+    identical = "Complete Zillo Beast"
+    client = _FakeClient(
+        {
+            "ru-RU": [_parsed("a1", identical)],
+            "en-US": [_parsed("a1", identical)],
+        }
+    )
+    job = DescriptionBackfill(repo, client, _NoAnthropic())  # type: ignore[arg-type]
+
+    await job.tick()
+    # Stored untranslated, not dropped (user request, 2026-09-13) — and
+    # marked `fallback`, so the translator is offered it again once a key
+    # exists.
+    cached = await repo.get_cached_description(Platform.XBOX_MODERN, TITLE_ID, "a1")
+    assert cached is not None
+    assert (cached.description_ru, cached.description_en, cached.source) == (
+        None,
+        identical,
+        "fallback",
+    )
+    assert len(client.calls) == 2  # one request per locale
+
+    # The second tick finds the fallback row, re-offers it, caches nothing new
+    # — and that is what takes the title out of the rotation for the rest of
+    # the process. Before this the same title was re-fetched every minute.
+    await job.tick()
+    after_second = len(client.calls)
+    assert after_second == 4
+
+    await job.tick()
+    await job.tick()
+    assert len(client.calls) == after_second, "the title was asked for again"

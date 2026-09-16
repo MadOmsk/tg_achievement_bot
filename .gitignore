@@ -1,15 +1,23 @@
-# Secrets and local state — never commit.
-# Every .env variant, not just the bare one: .env.test and the .bak copies
-# taken off the servers hold real tokens and real FERNET_KEYs, and a
-# `git add -A` will happily stage them (it did, 2026-09-16, caught before
-# the push). The example file is the one deliberate exception.
-.env*
+# Secrets and local state — never commit
+.env
+.env.*
 !.env.example
+!.env.test.example
 data/
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Anything taken out of a database, and the one-off scripts that take it.
+# `backups/` is the only place such a file may live (see CLAUDE.md, Backups);
+# the loose patterns below are the second line of defence, for the day
+# somebody writes a dump into the repository root by accident — which is
+# exactly what happened on 2026-09-14, with decrypted Xbox refresh tokens.
+backups/
+*backup*.json
+*dump*.json
+*tokens*.json
 
 # Python
 .venv/

@@ -13,35 +13,19 @@ same way hltb.py got its own.
 
 from __future__ import annotations
 
-import contextlib
-
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.constants import RarityMode
 from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
+from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
+from bot.services.relink import LinkPreview
 
 # Re-exported (not redefined) — services/profile_links.py is the one place
 # that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
 # need the exact same builders), this module just re-uses them for panel.py's
 # own profile buttons below.
-from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
-
-
-async def safe_edit(
-    callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup | None = None, **kwargs: object
-) -> None:
-    """Edit the callback's own message in place, tolerating the two routine
-    failures every caller already needs to: the message isn't a real,
-    editable Message (gone, or not accessible), or Telegram refuses an
-    edit that changes nothing. Never calls callback.answer() itself —
-    callers keep picking their own toast text, or none at all, same as
-    before this existed."""
-    if isinstance(callback.message, Message):
-        with contextlib.suppress(Exception):
-            await callback.message.edit_text(text, reply_markup=markup, **kwargs)
-
 
 # Offsets, not zone names: MSK and CST are ambiguous, +03:00 is not (SPEC 6.1.1).
 COMMON_OFFSETS_HOURS: tuple[int, ...] = (2, 3, 4, 5, 6, 7, 9, 10)
@@ -95,6 +79,32 @@ def timezone_keyboard(
 def connect_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)]]
+    )
+
+
+def onboarding_keyboard(url: str, i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarkup:
+    """All three platforms, one row each, in the same fixed order /panel
+    uses (#53, #33). /start used to offer the Microsoft sign-in and nothing
+    else, so Steam and PSN existed only for whoever already knew the
+    commands.
+
+    Xbox is a URL button because its flow leaves Telegram for Microsoft;
+    the other two are callbacks — they only need a nickname typed back.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("kb-panel-connect-psn"), callback_data="psn:connect"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("kb-panel-connect-steam"), callback_data="steam:connect"
+                )
+            ],
+        ]
     )
 
 
@@ -227,10 +237,11 @@ def panel_keyboard(
 ) -> InlineKeyboardMarkup:
     i18n = i18n or static_i18n("keyboards")
 
-    # One row per platform, xbox -> steam -> psn, in the same shape and
-    # position whether or not the person has that platform connected (#33) —
-    # no more connect buttons at the top and profile/disconnect rows at the
-    # bottom for the same platform.
+    # One row per platform, Xbox -> PlayStation -> Steam (the one display
+    # order, constants.platform_display_rank), in the same shape and position
+    # whether or not the person has that platform connected (#33) — no more
+    # connect buttons at the top and profile/disconnect rows at the bottom for
+    # the same platform.
     platform_rows = [
         _platform_row(
             i18n,
@@ -244,19 +255,19 @@ def panel_keyboard(
         ),
         _platform_row(
             i18n,
-            connected=steam_connected,
-            connect_key="kb-panel-connect-steam",
-            connect_cb="steam:connect",
-            profile_url=steam_profile_url(steam_id) if steam_id else None,
-            disconnect_btn=steam_disconnect_button(i18n),
-        ),
-        _platform_row(
-            i18n,
             connected=psn_connected,
             connect_key="kb-panel-connect-psn",
             connect_cb="psn:connect",
             profile_url=psn_profile_url(psn_id) if psn_id else None,
             disconnect_btn=psn_disconnect_button(i18n),
+        ),
+        _platform_row(
+            i18n,
+            connected=steam_connected,
+            connect_key="kb-panel-connect-steam",
+            connect_cb="steam:connect",
+            profile_url=steam_profile_url(steam_id) if steam_id else None,
+            disconnect_btn=steam_disconnect_button(i18n),
         ),
     ]
 
@@ -339,3 +350,67 @@ def deep_link_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=i18n.get("kb-open"), url=url)]]
     )
+
+
+def switch_keyboard(platform: str, i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarkup:
+    """Yes/no for "you already have a different account linked" (#52).
+    One shape for every platform: the question is the same everywhere, only
+    the callback prefix differs."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("connect-switch-yes"),
+                    callback_data=f"{platform}:switch:yes",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("connect-switch-cancel"),
+                    callback_data=f"{platform}:switch:no",
+                )
+            ],
+        ]
+    )
+
+
+def switch_prompt(
+    preview: LinkPreview,
+    platform_name: str,
+    incoming_name: str,
+    i18n: I18nContext | StaticI18nContext,
+) -> str:
+    """What changes, in numbers, before anything changes (#52).
+
+    Built from independent paragraphs because the two reasons to ask are
+    independent: this person is replacing their own account, and/or the
+    incoming one belongs to somebody else. Either can happen alone, and
+    when both do, both are worth saying.
+
+    The "already known" line appears only when it is true — it is the
+    difference between "this will take a while" and "this is instant", and
+    staying quiet about it would make a cheap operation look expensive.
+    """
+    parts = []
+    if preview.is_switch and preview.current is not None:
+        parts.append(
+            i18n.get(
+                "connect-switch-confirm",
+                platform=platform_name,
+                current=preview.current.display_name or preview.current.external_id,
+                incoming=incoming_name,
+                current_count=preview.current_achievements,
+            )
+        )
+    if preview.taken_from is not None:
+        parts.append(i18n.get("connect-switch-taken", incoming=incoming_name))
+    if preview.incoming_achievements:
+        parts.append(
+            i18n.get(
+                "connect-switch-incoming-known",
+                incoming=incoming_name,
+                incoming_count=preview.incoming_achievements,
+            )
+        )
+    parts.append(i18n.get("connect-switch-question", incoming=incoming_name))
+    return "\n\n".join(parts)

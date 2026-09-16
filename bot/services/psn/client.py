@@ -118,6 +118,10 @@ class EarnedTrophy:
     trophy_rarity: TrophyRarity | None
     trophy_earn_rate: float | None
     earned_date_time: str | None
+    # Which group of the title's trophy list this belongs to — 'default' for
+    # the base game, '001'... per DLC (#46). psnawp reports it on the trophy
+    # itself, so it costs no extra request.
+    trophy_group_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -422,6 +426,15 @@ async def trophies_for_title(
                 user.trophies(
                     np_communication_id=title.np_communication_id,
                     platform=platform,
+                    # 'all', not psnawp's own default of 'default' (#46,
+                    # found while adding the per-group line): a PlayStation
+                    # trophy list is split into the base game plus one group
+                    # per DLC, and 'default' is *only the base game* — so
+                    # every DLC trophy anyone ever earned was invisible to
+                    # this bot: never published, never counted in /stats,
+                    # while the game's own total (titles.achievements_total)
+                    # has always included them. One request either way.
+                    trophy_group_id="all",
                     include_progress=True,
                 )
             )
@@ -447,6 +460,7 @@ async def trophies_for_title(
             trophy_icon_url=trophy.trophy_icon_url,
             trophy_type=trophy.trophy_type,
             trophy_hidden=bool(trophy.trophy_hidden),
+            trophy_group_id=getattr(trophy, "trophy_group_id", None),
             trophy_rarity=trophy.trophy_rarity,
             trophy_earn_rate=_as_float(trophy.trophy_earn_rate),
             earned_date_time=(
@@ -456,6 +470,131 @@ async def trophies_for_title(
         for trophy in trophies
         if trophy.earned
     ]
+
+
+@dataclass(slots=True)
+class TrophyGroup:
+    """One section of a title's trophy list: the base game ('default'), then
+    one per DLC ('001'...). #46's second notification line names it and says
+    how far through it the person is.
+
+    Sony localizes these names, unlike the game's own title (#61, verified
+    live) — `name` is whichever locale the caller asked for, `name_ru` and
+    `name_en` are filled when both were fetched."""
+
+    group_id: str
+    name: str | None
+    total: int
+    name_ru: str | None = None
+    name_en: str | None = None
+
+
+@dataclass(slots=True)
+class TrophyGroups:
+    """One game's trophy structure: what the game is called, and the sections
+    its trophy list is split into. Both in whatever languages Sony gave."""
+
+    title_name: str | None
+    title_name_ru: str | None
+    title_name_en: str | None
+    groups: list[TrophyGroup]
+
+
+async def trophy_groups_for_title(
+    client: PSNAWP,
+    account_id: str,
+    title: TrophyTitle,
+    *,
+    translation_client: PSNAWP | None = None,
+) -> TrophyGroups:
+    """The groups a game's trophy list is split into — id, name and size.
+
+    Deliberately `include_progress=False`: how many of them *this* person
+    has is already in `seen_achievements`, and asking Sony for it would cost
+    a second request (psnawp's own warning) to learn something the bot
+    already knows. What comes back here is a fact about the game, so it is
+    cached forever in `title_groups` and fetched once per game, ever.
+
+    `translation_client` asks the same question a second time in Russian
+    (#61). Sony localizes group names — "CTNS: The Heist" comes back as
+    "Город, который никогда не спит: Ограбление" — and that name is the whole
+    second line of a PSN card, so in a Russian chat it was the one English
+    thing left on it. Still once per game, ever, because the answer is a fact
+    about the game and is cached; a second client that cannot answer simply
+    leaves the Russian side empty.
+
+    Returns [] instead of raising on every expected failure: the group line
+    is cosmetic, and a missing one must never be the reason a title's
+    trophies go unstored.
+    """
+    english = await _groups_from(client, account_id, title)
+    if english is None:
+        return TrophyGroups(None, None, None, [])
+    russian = (
+        await _groups_from(translation_client, account_id, title)
+        if translation_client is not None
+        else None
+    )
+
+    groups: list[TrophyGroup] = []
+    russian_groups = russian.groups if russian is not None else {}
+    for group_id, (name, total) in english.groups.items():
+        # Once the Russian client has answered, every group gets a Russian
+        # side — the English name where Sony has no Russian one. That is what
+        # makes a NULL mean "never asked in Russian" rather than "Sony has
+        # nothing", so `has_title_groups` can stop asking for good (#61).
+        russian_name = russian_groups.get(group_id, (None, 0))[0] if russian is not None else None
+        groups.append(
+            TrophyGroup(
+                group_id=group_id,
+                name=name,
+                total=total,
+                name_en=name,
+                name_ru=(russian_name or name) if russian is not None else None,
+            )
+        )
+    return TrophyGroups(
+        title_name=english.title_name,
+        title_name_en=english.title_name,
+        title_name_ru=((russian.title_name or english.title_name) if russian is not None else None),
+        groups=groups,
+    )
+
+
+@dataclass(slots=True)
+class _Summary:
+    title_name: str | None
+    groups: dict[str, tuple[str | None, int]]
+
+
+async def _groups_from(client: PSNAWP, account_id: str, title: TrophyTitle) -> _Summary | None:
+    """One client's answer, or None when it could not give one."""
+    try:
+        user = await _call(client.user, account_id=account_id)
+        platform = next(iter(title.title_platform), PlatformType.PS4)
+        summary = await _call(
+            lambda: user.trophy_groups_summary(
+                np_communication_id=title.np_communication_id,
+                platform=platform,
+                include_progress=False,
+            )
+        )
+    except Exception:
+        log.info(
+            "psn trophy groups for title %s unavailable", title.np_communication_id, exc_info=True
+        )
+        return None
+
+    result: dict[str, tuple[str | None, int]] = {}
+    for group in summary.trophy_groups:
+        if group.trophy_group_id is None:
+            continue
+        defined = group.defined_trophies
+        result[group.trophy_group_id] = (
+            group.trophy_group_name,
+            defined.bronze + defined.silver + defined.gold + defined.platinum,
+        )
+    return _Summary(title_name=summary.trophy_title_name, groups=result)
 
 
 async def recent_earned_trophies(client: PSNAWP, account_id: str, limit: int) -> list[EarnedTrophy]:
@@ -564,3 +703,28 @@ async def account_trophy_overview(client: PSNAWP, account_id: str) -> AccountTro
         earned_platinum=summary.earned_trophies.platinum,
         games=games,
     )
+
+
+async def profile_avatar_url(client: PSNAWP, account_id: str) -> str | None:
+    """The account's own picture (#55). Sony returns a list of sizes under
+    `avatars`, largest first in practice but not by contract — `xl` is asked
+    for by name, with whatever else is there as the fallback.
+
+    A private profile has none to give, which is an answer and not an error:
+    the caller stamps the check and moves on."""
+    try:
+        user = await _call(client.user, account_id=account_id)
+        profile = await _call(user.profile)
+    except PSNAWPNotFoundError:
+        raise PsnApiError(f"PSN profile {account_id!r} not found") from None
+    except PSNAWPForbiddenError:
+        raise PsnPrivateProfileError(account_id) from None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+
+    avatars = profile.get("avatars") or []
+    by_size = {str(entry.get("size") or ""): entry.get("url") for entry in avatars}
+    for size in ("xl", "l", "m", "s"):
+        if by_size.get(size):
+            return str(by_size[size])
+    return next((str(entry["url"]) for entry in avatars if entry.get("url")), None)

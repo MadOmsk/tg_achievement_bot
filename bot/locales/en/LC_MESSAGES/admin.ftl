@@ -26,8 +26,8 @@ admin-setting-key-check = Key check / /admin auto-refresh (min)
 admin-keys-screen =
     🔑 Platform keys
 
-    Steam: { $steam }
     PSN: { $psn }
+    Steam: { $steam }
     Anthropic: { $anthropic }
 admin-keys-set = ✅ configured
 admin-keys-unset = ⚠️ not configured
@@ -133,6 +133,15 @@ admin-user-restored = Restored
 admin-user-not-connected = Not connected
 admin-refreshing = Refreshing…
 admin-refresh-failed = Couldn't refresh
+# The second line of "🔄 Обновить"'s answer: what turned up since the newest
+# achievement already stored. Only what falls inside the usual catch-up window
+# is announced; the rest is stored quietly.
+admin-sync-delta =
+    { $titles ->
+        [0] Nothing new since last time.
+       *[other] Checked { $titles } game(s), posted { $published }.
+    }
+admin-sync-delta-steam = Posted since last time: { $published }.
 admin-steam-not-connected = Steam isn't connected
 admin-psn-not-connected = PSN isn't connected
 
@@ -172,16 +181,11 @@ admin-default-links = Profile visible to others: { $visible } ▸
 admin-users-empty = 👥 Nobody has connected yet.
 admin-users-header = 👥 Users  ({ $page }/{ $pages })
 admin-users-columns = Columns: last seen · achievements today / this month
-admin-id = id{ $tg_id }
 admin-users-row = { $icon } { $name } · { $ago } · { $today} / { $month }{ $note }
 admin-user-not-found = User not found.
-admin-no-name = no name
-# The card's own top line — every known bit of Telegram identity at once
-# (2026-09-08 user request), unlike /stats' header which picks one best
-# name. { $identity } is already the fully composed "First Last, @username,
-# tg_id N" string (admin.py::_admin_tg_header) — never "@" + a bare id, only
-# a real username earns the "@".
 admin-user-header = 👤 { $identity }
+# $tg_id arrives as a string on purpose — as a number Fluent groups the
+# digits, and an identifier is not a quantity.
 admin-user-tgid = tg_id { $tg_id }
 admin-login-not-connected = not connected
 admin-login-active = ✅ active, refreshed { $ago }

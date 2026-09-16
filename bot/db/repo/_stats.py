@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from bot.db.repo._models import TitleHistoryRow, _iso
+from bot.db.repo._sql import OWNED_BY_PERSON, OWNED_BY_PERSON_EXISTS
 from bot.util import utcnow_iso
 
 
@@ -51,8 +52,13 @@ class _StatsRepo:
         await self._conn.commit()
 
     async def update_gamerscore(self, tg_id: int, gamerscore: int) -> None:
+        """On the account, not the person (#52) — a gamerscore is a fact
+        about an Xbox account and travels with it."""
         await self._conn.execute(
-            "UPDATE users SET gamerscore = ?, updated_at = ? WHERE tg_id = ?",
+            "UPDATE accounts SET gamerscore = ?, updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)",
             (gamerscore, utcnow_iso(), tg_id),
         )
         await self._conn.commit()
@@ -70,12 +76,14 @@ class _StatsRepo:
         the bot already knows.
         """
         cursor = await self._conn.execute(
-            "UPDATE users SET gamertag = COALESCE(?, gamertag),"
-            "                 gamertag_modern = COALESCE(?, gamertag_modern),"
-            "                 updated_at = ? "
-            "WHERE tg_id = ?"
-            "  AND ((? IS NOT NULL AND gamertag IS NOT ?)"
-            "    OR (? IS NOT NULL AND gamertag_modern IS NOT ?))",
+            "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
+            "                    display_name = COALESCE(?, display_name),"
+            "                    updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)"
+            "  AND ((? IS NOT NULL AND secondary_name IS NOT ?)"
+            "    OR (? IS NOT NULL AND display_name IS NOT ?))",
             (
                 gamertag,
                 gamertag_modern,
@@ -92,23 +100,24 @@ class _StatsRepo:
 
     # ------------------------------------------------------------ aggregates
 
-    async def _achievement_counts_by(
-        self, column: str, value: object, since: datetime | None
-    ) -> tuple[int, int]:
-        """Shared shape behind `achievement_counts` (by xuid) and
-        `achievement_counts_for_person` (by tg_id) below (2026-09-05
-        refactor) — identical query, just which column identifies the rows.
-        `column` is always one of the two literal strings those two pass,
-        never anything derived from a request, so interpolating it here
-        carries no injection risk despite not being a bound parameter."""
+    async def _counts(self, where: str, params: list[object], since: datetime | None):
+        """Shared shape behind the two counters below — same aggregate, one
+        by account and one by person. They no longer share a column, only a
+        query: since #52 a row belongs to an account, so "this person's
+        achievements" is a join away rather than a different WHERE."""
         query = (
-            "SELECT COUNT(*), COALESCE(SUM(gamerscore), 0) "
-            f"FROM seen_achievements WHERE {column} = ?"
+            f"SELECT COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements WHERE {where}"
         )
-        params: list[object] = [value]
         if since is not None:
-            query += " AND unlocked_at >= ?"
-            params.append(_iso(since))
+            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder date for
+            # some Xbox 360 achievements (0001-01-01, or 1753-01-01 — the old SQL
+            # Server minimum; 84 of 5239 rows on one real account), which the
+            # parser discards rather than record an unlock in the year 1753. Those
+            # rows still count (owner decision, 2026-09-13): when the platform
+            # gives no usable time, the time the bot first saw the achievement is
+            # the honest stand-in. The stored column keeps the NULL.
+            query += " AND COALESCE(unlocked_at, created_at) >= ?"
+            params = [*params, _iso(since)]
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
         return (int(row[0]), int(row[1])) if row else (0, 0)
@@ -120,7 +129,7 @@ class _StatsRepo:
         as UTC ISO strings of one shape, so a string comparison is a time
         comparison here.
         """
-        return await self._achievement_counts_by("xuid", xuid, since)
+        return await self._counts("xuid = ?", [xuid], since)
 
     async def achievement_counts_for_person(
         self, tg_id: int, since: datetime | None
@@ -135,7 +144,7 @@ class _StatsRepo:
         Steam row's gamerscore is always 0 (services/steam/achievements.py),
         so it never contributes to the sum, by construction, not by a check
         here."""
-        return await self._achievement_counts_by("tg_id", tg_id, since)
+        return await self._counts(OWNED_BY_PERSON_EXISTS, [tg_id], since)
 
     async def achievement_platform_breakdown(
         self, tg_id: int, since: datetime | None
@@ -158,11 +167,18 @@ class _StatsRepo:
             "SELECT SUM(CASE WHEN platform IN ('xbox_modern', 'xbox_360') THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN platform = 'steam' THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN platform = 'psn' THEN 1 ELSE 0 END) "
-            "FROM seen_achievements WHERE tg_id = ?"
+            "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS
         )
         params: list[object] = [tg_id]
         if since is not None:
-            query += " AND unlocked_at >= ?"
+            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder date for
+            # some Xbox 360 achievements (0001-01-01, or 1753-01-01 — the old SQL
+            # Server minimum; 84 of 5239 rows on one real account), which the
+            # parser discards rather than record an unlock in the year 1753. Those
+            # rows still count (owner decision, 2026-09-13): when the platform
+            # gives no usable time, the time the bot first saw the achievement is
+            # the honest stand-in. The stored column keeps the NULL.
+            query += " AND COALESCE(unlocked_at, created_at) >= ?"
             params.append(_iso(since))
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
@@ -176,7 +192,8 @@ class _StatsRepo:
         (backfill walks the whole owned-games library via GetOwnedGames),
         so it doesn't carry the same "could quietly undercount" risk."""
         cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM seen_achievements WHERE tg_id = ? AND platform = ?",
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = ?",
             (tg_id, platform),
         )
         row = await cursor.fetchone()
@@ -195,7 +212,7 @@ class _StatsRepo:
         — accepted as the one remaining soft spot, not fixed by this."""
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM seen_achievements "
-            "WHERE tg_id = ? AND platform IN ('xbox_modern', 'xbox_360')",
+            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform IN ('xbox_modern', 'xbox_360')",
             (tg_id,),
         )
         row = await cursor.fetchone()
@@ -219,7 +236,7 @@ class _StatsRepo:
         already *is* a 100%-completed-games count, no extra tracking."""
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM seen_achievements "
-            "WHERE tg_id = ? AND platform = 'psn' AND trophy_type = 'platinum'",
+            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = 'psn' AND trophy_type = 'platinum'",
             (tg_id,),
         )
         row = await cursor.fetchone()
@@ -235,7 +252,7 @@ class _StatsRepo:
         already `json.loads()` the blob in Python."""
         cursor = await self._conn.execute(
             "SELECT title_id, COUNT(*) FROM seen_achievements "
-            "WHERE tg_id = ? AND platform = 'steam' GROUP BY title_id",
+            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = 'steam' GROUP BY title_id",
             (tg_id,),
         )
         achieved_by_app = {row[0]: row[1] for row in await cursor.fetchall()}
@@ -260,7 +277,7 @@ class _StatsRepo:
         query = "SELECT xuid, COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements"
         params: list[object] = []
         if since is not None:
-            query += " WHERE unlocked_at >= ?"
+            query += " WHERE COALESCE(unlocked_at, created_at) >= ?"
             params.append(_iso(since))
         cursor = await self._conn.execute(query + " GROUP BY xuid", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
@@ -273,10 +290,13 @@ class _StatsRepo:
         users list's own combined counters (2026-09-05 follow-up): the list
         used to show `achievement_counts_by_xuid`'s Xbox-only numbers even
         for someone with Steam achievements too."""
-        query = "SELECT tg_id, COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements"
+        query = (
+            "SELECT al.tg_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
+            "FROM seen_achievements s " + OWNED_BY_PERSON
+        )
         params: list[object] = []
         if since is not None:
-            query += " WHERE unlocked_at >= ?"
+            query += "WHERE COALESCE(s.unlocked_at, s.created_at) >= ?"
             params.append(_iso(since))
-        cursor = await self._conn.execute(query + " GROUP BY tg_id", params)
+        cursor = await self._conn.execute(query + " GROUP BY al.tg_id", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}

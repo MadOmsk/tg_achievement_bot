@@ -17,6 +17,17 @@ from bot.constants import RarityMode
 
 @dataclass(slots=True)
 class User:
+    """A person, plus their Xbox account's own fields alongside.
+
+    `users` itself holds only the Telegram identity since #52 — `xuid`,
+    `gamertag`, `gamertag_modern` and `gamerscore` are read from the
+    `accounts` row the person currently has linked (db/repo/_sql.py's
+    XBOX_ACCOUNT join), and are None for anyone with no Xbox. They keep
+    their old names here so the many Xbox paths that read them did not all
+    have to change at once; what changed is that there is now one place
+    those facts live.
+    """
+
     tg_id: int
     username: str | None
     xuid: str | None
@@ -157,6 +168,32 @@ class AchievementRow:
     # codebase does (2026-09-09, anti-flood filter spans every platform a
     # person has, not just one).
     xuid: str | None = None
+    # Which trophy group this came from — PSN only, where a title's list is
+    # split into the base game plus one per DLC (#46). None everywhere else:
+    # Xbox and Steam have no notion of groups.
+    trophy_group_id: str | None = None
+
+
+@dataclass(slots=True)
+class TitleProgress:
+    """How far through a game somebody is, for the line beside its name (#46).
+
+    `group_*` is filled only when the platform has groups and the one this
+    achievement belongs to is known — PSN. The base game is a group like any
+    other there, so it gets a name too; Sony calls it after the game itself,
+    which says nothing twice, so the renderer substitutes its own wording.
+    """
+
+    unlocked: int
+    total: int
+    group_name: str | None = None
+    group_unlocked: int = 0
+    group_total: int = 0
+    group_is_default: bool = False
+    # Sony localizes a group's name (#61) — the renderer picks by the chat's
+    # language and falls back to `group_name`, whichever locale that was.
+    group_name_ru: str | None = None
+    group_name_en: str | None = None
 
 
 @dataclass(slots=True)
@@ -351,7 +388,7 @@ class ChatPresenceRow:
     platform: str  # whichever platform state/title_id/title_name came from
     # Xbox's ModernGamertag, the first step of the Xbox chain (#51).
     gamertag_modern: str | None = None
-    # Follow-up 2026-09-08 — services/online_view.py's row label: the
+    # Follow-up 2026-09-08 — views/online.py's row label: the
     # platform-specific nickname of `platform` above, or (platform == "none")
     # the Telegram name/username fallback. See chat_member_presence()'s
     # docstring for why gamertag alone stopped being enough.

@@ -12,10 +12,11 @@ from __future__ import annotations
 from aiogram_i18n import I18nContext
 
 from bot.db.repo import Repo
-from bot.handlers.admin import _chat, chat_locale_toggle
-from bot.handlers.keyboards import locale_name, next_locale, panel_keyboard
+from bot.handlers.admin import chat_locale_toggle
 from bot.handlers.panel import panel_toggle_locale
 from bot.i18n import AVAILABLE_LOCALES, build_i18n_context
+from bot.views.admin import render_chat_card
+from bot.views.keyboards import locale_name, next_locale, panel_keyboard
 
 CHAT_ID = -100800
 TG_ID = 8008
@@ -113,7 +114,7 @@ async def test_the_panel_toggle_leaves_every_chat_alone(repo: Repo, i18n: I18nCo
 async def test_the_chat_card_shows_the_language_and_its_button(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
 
-    text, markup = await _chat(repo, CHAT_ID, locale="ru")
+    text, markup = await render_chat_card(repo, CHAT_ID, locale="ru")
 
     assert "Язык:         Русский" in text
     labels = [button.text for row in markup.inline_keyboard for button in row]
@@ -128,7 +129,7 @@ async def test_the_chat_toggle_flips_the_chats_locale(repo: Repo, i18n: I18nCont
 
     assert await repo.chat_locale(CHAT_ID) == "en"
 
-    text, _markup = await _chat(repo, CHAT_ID, locale="ru")
+    text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     # The card itself still renders in the super-admin's language; only the
     # value it reports has changed.
     assert "Язык:         English" in text
@@ -160,7 +161,7 @@ async def test_the_card_opens_three_submenus_instead_of_crowded_rows(repo: Repo)
     buttons side by side are entries now, each opening its own screen."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
 
-    _text, markup = await _chat(repo, CHAT_ID, locale="ru")
+    _text, markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     datas = [button.callback_data for row in markup.inline_keyboard for button in row]
 
     assert f"a:msum:{CHAT_ID}" in datas
@@ -175,7 +176,7 @@ async def test_every_submenu_leads_back_to_the_card(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
 
     for section in ("summary", "flood", "messages"):
-        text, markup = await _chat(repo, CHAT_ID, locale="ru", section=section)
+        text, markup = await render_chat_card(repo, CHAT_ID, locale="ru", section=section)
         datas = [button.callback_data for row in markup.inline_keyboard for button in row]
         assert f"a:chat:{CHAT_ID}" in datas, section
         # The card's own text stays put on every sub-screen, so the chat's
@@ -186,7 +187,7 @@ async def test_every_submenu_leads_back_to_the_card(repo: Repo) -> None:
 async def test_the_messages_submenu_holds_every_wipe_action(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
 
-    _text, markup = await _chat(repo, CHAT_ID, locale="ru", section="messages")
+    _text, markup = await render_chat_card(repo, CHAT_ID, locale="ru", section="messages")
     datas = [button.callback_data for row in markup.inline_keyboard for button in row]
 
     for action in ("cdellast", "cwipe", "cswipe", "cswipeall"):

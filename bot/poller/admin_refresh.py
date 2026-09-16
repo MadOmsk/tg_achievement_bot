@@ -26,10 +26,10 @@ from bot.db.repo import AdminPanelRefreshRow, Repo
 from bot.poller.fetcher import Fetcher
 from bot.poller.service_health import DEFAULT_KEY_CHECK_INTERVAL_MIN, KEY_CHECK_INTERVAL_KEY
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services.admin_view import render_admin_home
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.util import parse_iso, utcnow
+from bot.views.admin_home import render_admin_home
 
 log = logging.getLogger(__name__)
 

@@ -10,6 +10,8 @@ achievement-word = достижение
 achievement-word-trophy = трофей
 
 # Message headers and item lines
+achievement-word-secret = секретное достижение
+achievement-word-secret-trophy = секретный трофей
 achievement-single-header = <b>{ $gamertag }</b> получает { $word }
 achievement-digest-header = <b>{ $gamertag }</b> получает { $phrase }
 achievement-game-line = { $title } (<i>{ $platform }</i>)
@@ -33,3 +35,16 @@ achievement-trophy-plural =
         [few] { $pretty } трофея
        *[many] { $pretty } трофеев
     }
+
+# Прогресс по игре рядом с её названием (#46). Появляется только когда итог
+# действительно известен: у PSN прогресс хранится процентом, а не счётом.
+achievement-game-progress = { " " }· { $unlocked }/{ $total }
+
+# Вторая строка карточки — только у PSN, где список трофеев разбит на группы:
+# основная игра плюс по одной на каждое дополнение (#46). Тоже в штуках, а не
+# в процентах Sony: проценты взвешены по типу трофея и не сходятся со строкой
+# выше.
+achievement-group-line = { $group } · { $unlocked }/{ $total }
+# Sony называет основную группу так же, как саму игру — писать название
+# дважды бессмысленно, поэтому здесь своё слово.
+achievement-group-main = Основная игра

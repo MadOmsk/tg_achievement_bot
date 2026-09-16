@@ -18,6 +18,7 @@ from psnawp_api import PSNAWP
 
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
+from bot.services.credential_health import CredentialHealth
 from bot.services.crypto import TokenCipher
 from bot.services.psn.client import (
     TRANSLATION_HEADERS,
@@ -66,9 +67,11 @@ class PsnAuth:
         # instance rather than a per-request parameter.
         self._client_ru: PSNAWP | None = None
         # Set from main.py, same pattern as XboxAuthService.on_token_dead —
-        # fired at most once per active->invalid transition
-        # (poller/service_health.py owns not spamming this every tick).
+        # fired at most once per transition, and only once a failure has
+        # been confirmed (#62, services/credential_health.py).
         self.on_dead: Callable[[], Awaitable[None]] | None = None
+        self.on_alive: Callable[[], Awaitable[None]] | None = None
+        self._health = CredentialHealth(repo, STATUS_KEY, CHECKED_AT_KEY, label="psn")
 
     async def status(self) -> str:
         return await self._repo.get_app_setting(STATUS_KEY, STATUS_NOT_CONFIGURED) or (
@@ -109,13 +112,28 @@ class PsnAuth:
         self._client = None
         self._client_ru = None
 
+    def _stored_npsso(self, encrypted: str) -> str:
+        """The stored NPSSO, or "not configured" when this FERNET_KEY cannot
+        open it — rotated, or copied in from another instance. Every caller
+        already handles PsnNotConfiguredError; a raw ValueError from here
+        would instead surface as an unexplained poller failure (found live on
+        the test bot, 2026-09-13, with a key copied from production)."""
+        try:
+            return self._cipher.decrypt(encrypted.encode("ascii"))
+        except ValueError as exc:
+            log.warning(
+                "psn npsso in app_settings cannot be decrypted with this FERNET_KEY"
+                " — treating it as not configured; set it again in the admin panel"
+            )
+            raise PsnNotConfiguredError from exc
+
     async def get_client(self) -> PSNAWP:
         if self._client is not None:
             return self._client
         encrypted = await self._repo.get_app_setting(NPSSO_KEY)
         if encrypted is None:
             raise PsnNotConfiguredError
-        npsso = self._cipher.decrypt(encrypted.encode("ascii"))
+        npsso = self._stored_npsso(encrypted)
         self._client = await build_client(npsso)
         return self._client
 
@@ -133,7 +151,7 @@ class PsnAuth:
         encrypted = await self._repo.get_app_setting(NPSSO_KEY)
         if encrypted is None:
             raise PsnNotConfiguredError
-        npsso = self._cipher.decrypt(encrypted.encode("ascii"))
+        npsso = self._stored_npsso(encrypted)
         self._client_ru = await build_client(npsso, headers=TRANSLATION_HEADERS)
         return self._client_ru
 
@@ -146,7 +164,6 @@ class PsnAuth:
         if await self.status() == STATUS_NOT_CONFIGURED:
             return False  # nothing set up yet — not a failure, nothing to notify about
 
-        was_active = await self.status() == TokenStatus.ACTIVE
         try:
             client = await self.get_client()
             alive = await check_alive(client)
@@ -156,16 +173,14 @@ class PsnAuth:
             # found live 2026-09-06) — either way, not alive right now.
             alive = False
 
-        await self._repo.set_app_setting(
-            STATUS_KEY, TokenStatus.ACTIVE if alive else TokenStatus.INVALID
-        )
-        await self._repo.set_app_setting(CHECKED_AT_KEY, utcnow().isoformat(timespec="seconds"))
         if not alive:
-            # Force a fresh exchange for both clients once a new NPSSO is
-            # set — the translation client shares the same NPSSO, so a dead
-            # primary means it's equally dead.
+            # Drop both clients — the translation client shares the same
+            # NPSSO, so whatever is wrong with the primary is wrong with it
+            # too, and the next call rebuilds from storage. Done on every
+            # failed check, confirmed or not: a rebuild is cheap (PSNAWP's
+            # constructor makes no request at all) and it is the one thing
+            # that can turn an unconfirmed failure back into a working
+            # client on the retry a minute later.
             self._client = None
             self._client_ru = None
-        if was_active and not alive and self.on_dead is not None:
-            await self.on_dead()
-        return alive
+        return await self._health.record(alive, on_dead=self.on_dead, on_alive=self.on_alive)

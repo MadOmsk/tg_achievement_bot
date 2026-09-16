@@ -1,5 +1,6 @@
 """Application settings, read once from the environment (SPEC section 10)."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -10,7 +11,13 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # `.env` unless BOT_ENV_FILE says otherwise (#52, 2026-09-12) — a
+        # second instance for testing account takeover and relinking needs
+        # its own token, its own database and its own chat, and must never
+        # share a BOT_TOKEN with the live bot (two pollers on one token steal
+        # each other's updates; see bot/lock.py). The lock itself already
+        # follows `db_path`, so distinct env files are enough to run both.
+        env_file=os.getenv("BOT_ENV_FILE", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

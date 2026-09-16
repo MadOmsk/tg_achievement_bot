@@ -69,11 +69,14 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── config.py                 settings loaded from the environment (pydantic-settings)
 │   ├── lock.py                   "one process per .env" guard (single instance)
 │   ├── util.py                   small shared helpers (UTC time, secret masking)
+│   ├── version.py                A.B.C.D and the "database is newer than this code"
+│   │                             check that refuses to start (#56)
 │   ├── i18n.py                   Fluent/aiogram_i18n wiring; Russian locale is the default
 │   ├── locales/                  user-facing translations: ru/ (the default and the
 │   │                             per-key fallback) and en/, both complete (#48)
 │   │
-│   ├── handlers/                 aiogram routers — UI layer only, no SQL, no platform API calls
+│   ├── handlers/                 aiogram routers — routing and actions only: no SQL, no
+│   │   │                          platform API calls, and since #63 no layout either
 │   │   ├── connect.py             /start, /connect_xbox, /disconnect_xbox
 │   │   ├── panel.py               the personal panel, "My chats"
 │   │   ├── admin.py               the admin panel (/admin, self-refreshing), bulk message wipe
@@ -82,25 +85,54 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── hltb.py                /hltb, HowLongToBeat lookup
 │   │   ├── steam.py               /connect_steam, /disconnect_steam
 │   │   ├── psn.py                 /connect_psn, /disconnect_psn
-│   │   └── keyboards.py           inline keyboards + small shared helpers (format_*, safe_edit)
+│   │   └── delivery.py            safe_edit + the notice to an account's previous owner —
+│   │                              the two things in the old keyboards.py that send
+│   │
+│   ├── views/                     every screen's layout, one module per screen (#63).
+│   │   │                          A view renders and never sends: it may read the database,
+│   │   │                          but knows nothing of Message/CallbackQuery and decides
+│   │   │                          nothing about when it is shown. `Screen` (text, keyboard,
+│   │   │                          photo/gallery) is what comes back. See scripts/render_screen.py
+│   │   ├── panel.py                /panel, "Мои чаты", one chat's card
+│   │   ├── chat.py                 /stats, /recent, /who's labels, the group hub
+│   │   ├── admin.py                the admin panel's screens
+│   │   ├── admin_home.py           /admin's own card — its own file because admin_refresh
+│   │   │                           redraws it on a timer
+│   │   ├── online.py               the /online table, redrawn by its own poller too
+│   │   ├── summary.py              the day/month blocks the three summary shapes compose
+│   │   ├── notification.py         the achievement/trophy card and the digest
+│   │   ├── hltb.py                 the /hltb card and the screens around it
+│   │   ├── keyboards.py            every inline keyboard + format_* helpers
+│   │   ├── parts.py                the vocabulary screens share: badges, the platform
+│   │   │                           palette, counted nouns, per-platform header rows
+│   │   └── lists.py                what every list shares — the wrapper (usually a
+│   │                               collapsible quote, not always), the total line, the
+│   │                               name cap, and the one games row two screens draw (#64)
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
-│   │   ├── achievements.py         achievement filtering, message formatting, platform_tag
+│   │   ├── achievements.py         whether an achievement may be published (the wording
+│   │   │                           moved to views/ in #63)
+│   │   ├── admin_settings.py       what the admin panel's settings *are*: bounds, labels,
+│   │   │                           defaults — read by the view and the handler alike
 │   │   ├── connect.py              one-time OAuth state, finishing a login
 │   │   ├── stats.py                aggregates for the panels, /stats, the daily summary
 │   │   ├── models.py               ParsedAchievement/Platform, shared by Xbox/Steam/PSN
-│   │   ├── tables.py               shared blockquote-list table renderer
 │   │   ├── naming.py               the naming chains (#51) — the only place that answers
 │   │   │                           "what is this person called" / "what is this account called"
 │   │   ├── profile_links.py        one profile-URL builder per platform, gated by
 │   │   │                           user_settings.show_profile_links
 │   │   ├── hltb.py                 wrapper over howlongtobeatpy, cached in hltb_cache
 │   │   ├── message_log.py          request middleware: logs outgoing group messages
-│   │   ├── online_view.py          renders the /online table, shared by the command and auto-refresh
-│   │   ├── admin_view.py           renders /admin, shared by the command and auto-refresh
+│   │   ├── presence_view.py        which platform answers "where is this person right
+│   │   │                           now" — /online's own rule, for one person (#1)
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
 │   │   ├── notify.py               notifications to the admin
+│   │   ├── avatars.py              where a downloaded profile picture goes: one file per
+│   │   │                           subject under data/avatars/, hashed (#55)
 │   │   ├── crypto.py               refresh-token encryption (Fernet)
+│   │   ├── credential_health.py    what one failed liveness check means for a shared
+│   │   │                           credential — confirm before declaring death,
+│   │   │                           announce recovery; all three wrappers share it (#62)
 │   │   ├── rate_limiter.py         shared sliding-window limiter (Xbox and Steam clients)
 │   │   ├── xbox/                   everything about Xbox Live; nothing about Telegram
 │   │   │   ├── auth.py              wrapper over xbox-webapi-python: token storage, refresh
@@ -142,10 +174,13 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           backfill, admin resync (#27)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
-│   │   ├── avatars.py             each person's Telegram profile photo, a few per tick (see
-│   │   │                          Data model: a file_id, never an image or a URL)
+│   │   ├── avatars.py             profile photos: each person's Telegram one, and each
+│   │   │                          platform account's own, a few per tick (#55)
 │   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
+│   │   ├── steam_localization.py   walks the Steam library a couple of games a tick for
+│   │   │                           the storefront's Russian title — the one name no
+│   │   │                           response the bot already makes ever carries (#61)
 │   │   ├── flood_flush.py          the anti-flood filter's read/flush side — buffered
 │   │   │                           achievements once a throttled window closes (2026-09-09)
 │   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
@@ -161,12 +196,16 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   └── db/
 │       ├── schema.sql               full DDL for a brand-new database
 │       ├── repo/                    every piece of data access; the only place with SQL —
+│       │                            `_sql.py` there holds the one join that resolves
+│       │                            "whose achievement is this row" (#52)
 │       │                            one Repo class assembled from mixins (2026-09-09 split,
 │       │                            one file per related group of the old repo.py's own
 │       │                            section markers); `from bot.db.repo import Repo, User,
 │       │                            PlatformLink, ...` still works unchanged, see the
 │       │                            package's own __init__.py for the full file-by-file map
-│       └── migrations/              one file per schema change, applied in order
+│       └── migrations/              one file per schema change, applied in order — but only
+│                                    to an existing database; a brand-new one is baselined
+│                                    (see Data model's own note)
 │
 ├── scripts/                     operational one-off helpers, outside the running application
 │   ├── db_status.py               summary for `manage.ps1 status` (no dependencies)
@@ -178,22 +217,20 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
 │   ├── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
 │   │                               account linked before that column meant anything (#5)
-│   └── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
-│                                   before the description cache existed (#48) — per title,
-│                                   two locales, then the shared bilingual_descriptions()
-│
-├── docs/                        design references, not code — see Engineering rules' own
-│   │                             "UI design lives in docs/ui/" entry before editing anything here
-│   └── ui/                        every screen's own design: layout, buttons, and which table
-│       ├── ui_screens_users.md      user-facing screens (mockups) — grows as coverage grows
-│       ├── ui_screens_admin.md      admin panel screens (mockups) — same idea, admin-only
-│       └── tables.md                how each named table/list is built + the nickname rules
-│                                   ui_screens_*.md reference by letter (A/B/C/D/E)
+│   ├── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
+│   │                               before the description cache existed (#48) — per title,
+│   │                               two locales, then the shared bilingual_descriptions()
+│   └── render_screen.py           draws any screen in bot/views/ on demand and prints it,
+│                                   or sends it to the owner's DM as a real message (#63) —
+│                                   what replaced the hand-kept mockups in docs/ui/
 │
 ├── tests/                       pytest + pytest-asyncio; real platform/Telegram calls forbidden
 │   └── ...                        one file per module/behavior area; see the test files
 │                                   themselves for what each one covers
 │
+├── backups/                     database copies, dumps, and the one-off scripts that
+│                                make them; gitignored — see Operations' own "Backups"
+│                                entry for the rule a dump must never break
 ├── data/                        bot.db; gitignored
 └── logs/                        bot.log, bot.err.log; gitignored
 ```
@@ -278,35 +315,104 @@ can't resurrect it.
 The canonical schema is `bot/db/schema.sql`. This section describes the model, not
 every column.
 
-- **Profile photos** (2026-09-13, owner request — the mini-app shows people).
-  `users.photo_file_id` / `photo_unique_id` / `photo_checked_at` hold
-  Telegram's own `file_id` for the largest size of a person's current profile
-  photo: **never an image, never a URL**. A file_id is only usable together
-  with the bot token (getFile, then a download URL that carries the token), so
-  the token never leaves the server and the column is not a secret on its own
-  — whoever renders a face calls getFile at that moment.
-  `poller/avatars.py` refreshes a few people per tick, each looked at once a
-  week, oldest check first; a photo changes a few times a year, so this is
-  about noticing eventually, not promptly. Deliberately not the message
-  middleware: that runs on every message and refreshes names from what the
-  update already carries, for free, while a photo needs a request of its own.
-  Somebody with no visible photo (never set one, or a privacy setting) still
-  gets `photo_checked_at` stamped, or they would be asked about again forever.
-- **Identity.** `users` is keyed by Telegram `tg_id`. Xbox identity stays on
-  `users.xuid` (it was the first platform, and Xbox-specific paths still use it
-  directly). Steam and PSN accounts live in `platform_links (tg_id, platform,
-  external_id, display_name, psn_trophy_level, achievements_visible, ...)`. `tg_id`
-  is the cross-platform owner key — never aggregate cross-platform data by `xuid`.
+- **Schema bring-up.** `schema.sql` is the current shape and runs on every
+  start; migrations then bring an *existing* database up to it. A brand-new
+  database is **baselined** instead (2026-09-12) — its migrations are recorded
+  as applied without being run, because schema.sql already produced the result.
+  Running them on a fresh database was the older behaviour and it silently
+  constrained every migration ever written: each had to stay executable against
+  the finished schema as well as the older one it was written for, which is
+  impossible as soon as one migration reads a column a later one removes. That
+  trap was hit three times in two days during #52. The deciding question is
+  "was the file empty before schema.sql ran", not "does schema_migrations
+  exist" — a database old enough to predate that table still needs its
+  migrations.
+
+  **A migration that adds a column schema.sql already created is not an
+  error** (2026-09-16). A database skipping several versions at once meets
+  both halves of the bring-up: schema.sql creates every missing table in its
+  *finished* shape, and only then do the migrations run — so a migration that
+  creates a table and a later one that adds a column to it collide on exactly
+  that column. `_apply_one` swallows `duplicate column name` and nothing else,
+  and logs it. Found by rehearsing the accounts-52 merge against a copy of
+  production, where `title_groups` did not exist and 044 died on it.
+
+  **Bring-up failing must stop the process, not hang it.** `connect()` closes
+  the connection before re-raising: aiosqlite runs its own worker thread, and
+  a connection left open keeps a non-daemon thread alive after the exception
+  has unwound everything else — the bot then neither serves nor exits. Found
+  the same afternoon, testing the fail-fast path #56 added.
+
+  **Rehearse a migration against a copy of production before a deploy that
+  carries one.** Copy the file with `sqlite3`'s own `backup()`, run the real
+  `Database.connect()` against it, and count the rows on both sides. That one
+  afternoon caught three deploy-breaking faults, two of which no test could
+  have: they only exist on a database with production's particular history.
+
+- **Identity: a person and an account are separate things** (#52, 2026-09-12).
+  `users` is keyed by Telegram `tg_id` and holds only the Telegram identity.
+  `accounts (platform, external_id, display_name, secondary_name, gamerscore,
+  psn_trophy_level, achievements_visible, ...)` is a platform account on its own
+  terms — `platform` there is `xbox`/`steam`/`psn`, one value for Xbox because
+  both generations are one account and one platform to a person.
+  `account_links (tg_id, platform, external_id, is_active, linked_at,
+  unlinked_at)` says who has it now and who had it before.
+
+  **Unlinking never deletes.** A link is deactivated, the account and everything
+  it earned stay, so relinking finds its history waiting. Two partial unique
+  indexes carry the current rules: `idx_links_one_active_per_platform` (one
+  account per platform per person — **dropping this single index is all that
+  multi-account support, #10, needs**) and `idx_links_one_owner` (an account has
+  one current owner, which is what makes a takeover a defined event).
+
+  **`users` holds only the Telegram identity.** Xbox's own fields moved onto
+  the account with everything else (migration 038); `User` still exposes
+  `xuid`/`gamertag`/`gamerscore` under their old names, read through the
+  `XBOX_ACCOUNT` join in `db/repo/_sql.py`, so the ~70 Xbox call sites kept
+  working — what changed is that those facts have one home.
   `achievements_visible` (#5) is the last actually-checked answer to "can the
   shared credential see this account's achievements/trophies" — `NULL` until
   checked once, then `1`/`0`; set at connect time and refreshed by every
   backfill/resync (`SteamFetcher`/`PsnFetcher`), not read live from a UI path.
+- **Profile pictures** (#55, 2026-09-16). A person's Telegram photo
+  (`users.photo_file_id` / `photo_unique_id` / `photo_path`) and each
+  platform account's own (`accounts.avatar_url` / `avatar_path` /
+  `avatar_hash`). Both are **downloaded**, into `data/avatars/`, one file per
+  subject, overwritten in place: a Telegram `file_id` is useless without the
+  bot token, and a platform URL is a promise somebody else can break. The row
+  keeps the path, relative — the same database is copied between machines
+  whose absolute paths differ. Nothing renders them yet; the mini-app will.
+
+  Where each URL comes from, all of them inside a response the bot already
+  makes: Xbox's `GameDisplayPicRaw` in the profile call read for gamerscore
+  (written by `poller/fetcher.py`, since only that person's own token can
+  read it), Steam's `avatarfull`, PSN's own `avatars` list.
+  `poller/avatars.py` is the one place that downloads, on a slow sweep —
+  a few subjects a tick, each looked at weekly — and it skips the download
+  entirely when the photo id or the URL says nothing changed.
+
 - **Secrets and tokens.** `tokens` stores encrypted Xbox refresh tokens only; access
   and XSTS tokens stay in memory. Shared service credentials (the PSN NPSSO, and as
   of #17 the Steam API key too) are encrypted in `app_settings`. Token status
   distinguishes active, invalid, and intentionally revoked.
-- **Achievements and publications.** `seen_achievements` is the dedup table, primary
-  key `(tg_id, platform, title_id, achievement_id)`; `platform` is `xbox_modern`
+- **Achievements and publications.** `seen_achievements` is the dedup table,
+  keyed by **the account that earned the row** (#52): `(platform, xuid,
+  title_id, achievement_id)`. It used to lead with `tg_id`, which is #29's bug —
+  `title_id`/`achievement_id` are not account-specific, so a person swapping
+  accounts on one platform inherited the old account's rows and kept losing the
+  new account's genuinely new unlocks to `INSERT OR IGNORE` forever.
+
+  A person's achievements are therefore *the rows of the accounts they hold
+  right now*, resolved through `account_links` — `db/repo/_sql.py` holds the one
+  join that answers it, written once because twenty copies of an answer
+  eventually disagree (the naming chains, #51, had exactly that failure).
+  Two consequences, both intended: an account nobody holds is invisible
+  everywhere, and an account that changes hands takes its history with it,
+  retroactively — a summary already posted will recompute differently.
+
+  `account_platform` is a GENERATED column mapping both Xbox generations onto
+  the single `xbox` account, so the pair can never drift and none of the ~60
+  places that branch on the generation had to change. `platform` is `xbox_modern`
   (Xbox One, Series and the PC Microsoft Store — one achievement service, one
   contract; renamed from plain `modern` in migration 034, 2026-09-11, because
   the bare word had an obvious subject only while Xbox was the only platform
@@ -316,7 +422,12 @@ every column.
   publication paths (holding a SteamID64 or PSN account_id on non-Xbox rows).
   `is_backfill` marks history that must never publish. `is_secret` marks
   spoiler-rendered achievements. `trophy_type` holds the PSN trophy tier, `NULL`
-  everywhere else. `publications` records what was actually posted to each chat.
+  everywhere else, and `trophy_group_id` (#46, 2026-09-13) which section of that
+  title's trophy list it came from — `default` for the base game, `001`… per DLC,
+  `NULL` on every non-PSN row *and* on every PSN row stored before that date,
+  which is exactly what tells the poller a game's DLC trophies have never been
+  fetched for that account (see the PSN section). `publications` records what was
+  actually posted to each chat.
 - **Chats and settings.** `chats` + `subscriptions` (who publishes where;
   `subscriptions.rarity_mode` and `subscriptions.digest_threshold` are per
   person-per-chat, not per person). `chat_settings` holds each chat's own rarity
@@ -347,7 +458,50 @@ every column.
   PSN's own cached account level: `platform_links.psn_trophy_level` (refreshed by
   the poller after backfill and after any tick that finds new trophies — the level
   only changes when a trophy is earned, so there's no reason to touch it every
-  tick). HowLongToBeat cache: `hltb_cache` — completion times, platforms,
+  tick). PSN trophy groups: `title_groups (title_id, group_id, name, total)` —
+  the base game plus one row per DLC, fetched once per game and kept forever
+  (#46), since a game's own shape only changes when its publisher ships new
+  trophies. `name_ru`/`name_en` beside it (#61): Sony localizes a group's
+  name — "CTNS: The Heist" comes back as "Город, который никогда не спит:
+  Ограбление" — and it arrives in the same once-per-game call, made twice.
+
+  **All three platforms localize a game's own title** — `titles.name_ru` /
+  `name_en` (#61). This took three tries and two wrong rules, each from a
+  sample that happened to have one name: Spider-Man reads the same in both
+  languages, so PSN "did not localize" until "Marvel's Wolverine" / "Marvel:
+  Росомаха"; ABZU and Black Ops Cold War read the same, so Xbox "did not"
+  until "Halo: The Master Chief Collection" / "Halo: Коллекция Мастер Чифа".
+  The lesson is in the method, not the platforms: to ask whether something is
+  localized, pick a title that *has* a localized name.
+
+  Where each one comes from, all of them free or once-per-game: PSN's in the
+  same call the trophy groups ride on; Xbox's on every achievement of the
+  `ru-RU` contract-4 response already fetched for descriptions (contract 1
+  carries none, so x360 keeps the titlehub name); Steam's from the
+  **storefront** — `store.steampowered.com/api/appdetails?l=russian`, one
+  request per game, ever — because both Web API endpoints that carry
+  `gameName` ignore `l=` entirely ("G.O.P.O.T.A" from each, while the store
+  page reads "Г.О.П.О.Т.А"). That is the one storefront call this project
+  makes, for one field; the store *description* remains rejected
+  (see the appendix).
+
+  **Each of the three fills in on the next poll of the game — which a game
+  nobody plays any more never gets.** For PSN the fix is free and needed no
+  job: the structure fetch sits *above* `sync_account`'s progress gate now
+  (it used to sit under it, which is the same reason a stale game's trophy
+  total was missing, #60), so every scanned title gets its groups and both
+  titles whether or not anyone advanced in it. Xbox has always had
+  `poller/description_backfill.py` walking its own library, and that now
+  carries the names along with the descriptions. Steam is the one that
+  needed a walker of its own, `poller/steam_localization.py`, because its
+  name comes from a *different service* than the poll does — two games a
+  minute, two storefront requests each, an appid it cannot answer for
+  dropped for the life of the process.
+
+  Per-account progress inside a group is *not* cached with it: the
+  bot counts its own `seen_achievements` rows, so asking Sony for it would pay
+  a second request for something already known.
+  HowLongToBeat cache: `hltb_cache` — completion times, platforms,
   genre, and (#2) the game's own description in both languages. Telegram
   message bookkeeping:
   `bot_messages`, `tracked_messages`, `online_auto_refresh`, `admin_panel_refresh`.
@@ -358,13 +512,42 @@ every column.
   (which is per-person by design), so the same achievement's translation is
   never paid for twice. Names are never translated, only descriptions.
   `source` is `native` (the platform itself returned two genuinely different
-  strings for the two locales requested) or `llm` (both locale requests came
+  strings for the two locales requested), `llm` (both locale requests came
   back identical — the platform has no real translation, only a silent
-  fallback — so `services/translate` filled the gap). Orchestrated by
+  fallback — so `services/translate` filled the gap), or `fallback`
+  (2026-09-13, user request: "with no Anthropic key, do not silently ignore
+  it — show the untranslated version"). A `fallback` row stores the
+  platform's own text with `description_ru` left NULL, so "we have no
+  Russian" is recorded as a fact rather than as a translation; the render
+  path falls back across languages and shows the untranslated text, which is
+  what the platform itself would have shown. It is the one `source` value
+  that is **re-offered to the translator**: `uncached_description_titles`
+  still counts it as unfinished, so the moment a key exists it becomes a real
+  `llm` row. Rows used to be left uncached in this case instead, which kept
+  that door open but left the render path with nothing to read and had every
+  caller re-fetch the same title forever. Orchestrated by
   `services/translate/descriptions.py::bilingual_descriptions`, which only
   ever consults this cache and, when needed, the Anthropic API — it never
   talks to a platform itself. Steam, Xbox, and (2026-09-09) PSN all call it
   now (see their own sections under Platform integrations).
+- **Achievement names, in both languages** (#61, 2026-09-15):
+  `achievement_name_cache (platform, title_id, achievement_id, name_ru,
+  name_en, cached_at)`. Its own table rather than two more columns on the
+  description cache: `source` there is about where a *description* came from
+  and a name has no such story, and plenty of achievements have a name and no
+  description, which would otherwise need a description row invented to hold
+  the name. **A name is still never translated** — both sides are the
+  platform's own strings, filled from the same two locale requests the
+  descriptions already ride on, so this costs no new API call. It exists
+  because each platform's *main* call fixes one language for everybody: Xbox
+  and PSN answer in English, Steam in Russian, so a chat used to see one
+  platform in its own language and the others in the platform's, whatever the
+  chat had chosen. A second-locale request is now worth making for a missing
+  *name* alone, which is what fills this in for everything cached before the
+  table existed; once both are cached for a game it is never requested again.
+  Rendered by the same per-chat swap as descriptions
+  (`services/descriptions_view.py`), falling back to the other language rather
+  than leaving a line blank.
   **This cache is what a published message actually renders from**
   (2026-09-11, #48, `services/descriptions_view.py::localize_descriptions`,
   applied per chat in `poller/publisher.py`) — `seen_achievements.description`
@@ -485,8 +668,14 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
 - Profiles and game stats must be public enough for the API to expose them — not
   fixable on our end, only by the person changing their own Steam privacy settings.
 - Presence is fetched in batches of up to 100 SteamIDs via `GetPlayerSummaries`.
-- Achievement schema is cached forever per app; global rarity is cached with an
-  expiry (it drifts over time, unlike the schema).
+- Achievement schema is cached per app; global rarity is cached with an expiry
+  (it drifts over time). The schema has no expiry but is **re-fetched the
+  moment an unlocked achievement is missing from it** (#49) — games add
+  achievements after release, and a cached-forever schema meant a DLC
+  achievement published with no icon and, worse, `is_secret = False`: a secret
+  one would never be spoilered. One extra call in exactly the broken case and
+  none otherwise; one retry per game per process, so an `apiname` Steam
+  genuinely does not publish cannot drive a refetch on every poll.
 - Backfill scans owned games with nonzero playtime and inserts unlocked achievements
   as backfill rows — expensive by nature (one call per played game, not one call for
   the whole library like Xbox), so it runs with a two-level concurrency limit
@@ -526,6 +715,23 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   shared PSN token or the Steam key stops working — exactly once per "alive → dead"
   transition, not every tick. Unlike Xbox, where one dead token affects only one
   person, a dead PSN token silently stops polling *everyone* linked to PSN.
+
+  **A death has to be confirmed, and a recovery is announced** (#62,
+  2026-09-15, both rules shared by all three credentials in
+  `services/credential_health.py`). A failed check no longer moves the
+  stored status or notifies anyone on its own: these services fail one
+  request at a time for their own reasons — a 401 on a routine check at
+  02:42, `Expired token` twice and a 503 on production in the same two days
+  — and the one that was reported cost the admin a night's alarm over a
+  credential that was working a minute later. It takes
+  `FAILURES_BEFORE_DEAD` consecutive failures now, re-checked on the next
+  scheduler tick rather than after another full interval: an unconfirmed
+  failure deliberately leaves `checked_at` alone, which is the gate
+  `service_health.py` reads, so a genuinely dead credential still surfaces
+  within minutes while a hiccup never surfaces at all. And `on_alive` exists
+  beside `on_dead`, because an alarm with no end to it reads as permanent —
+  the admin could previously only learn a credential recovered by opening
+  /admin.
 - Trophy polling itself has no presence hook at all, unlike Xbox/Steam — a
   permanent design decision, not a gap: PSN trophies may only sync to Sony's
   servers when a player opens trophy data on the console, not at the moment
@@ -550,6 +756,26 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   running fetches trophies backfill hasn't inserted yet and publishes the account's
   whole history at once. A stuck account (backfill crashed, flag never set) is
   recovered by an admin resync, not by the poller.
+- **Every trophy request must ask for `trophy_group_id="all"`** (#46,
+  2026-09-13). A PlayStation title's trophy list is split into groups — the
+  base game (`default`) plus one per DLC (`001`…) — and psnawp's `trophies()`
+  defaults that argument to `"default"`, i.e. the base game *only*. The bot
+  passed nothing and so had never once fetched a DLC trophy: never published,
+  never counted in `/stats`, while the game's own total
+  (`titles.achievements_total`, from `defined_trophies`) has always included
+  them, so a completed DLC could only ever make someone's counter look worse.
+  Costs nothing extra — one request either way. Found while adding the
+  per-group notification line, not by anyone noticing the gap.
+  - The pass that widens a game the bot knew only the base group of therefore
+    digs up years of DLC trophies at once. Those publish under the same
+    24-hour cap a relink gets (#52's "only the last day" rule) instead of as
+    fresh unlocks — `PsnSyncOutcome.catch_up_rows`, decided per account and
+    per game by `repo.psn_title_needs_widening` (rows stored, none of them
+    carrying a `trophy_group_id`). The condition stops being true the moment
+    that pass commits, so it costs no flag and no migration, and it is
+    deliberately *not* `title_groups`: that table is shared by everyone who
+    owns the game, so the second person to unlock something there would look
+    "already widened" while their own DLC trophies had never been fetched.
 - `Trophy.trophy_earn_rate` is typed `float | None` by `psnawp_api`, but the library
   hands it back as a numeric *string* with no cast — coerce it explicitly
   (`services/psn/client.py::_as_float`) rather than trusting the type annotation.
@@ -589,13 +815,6 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
 
 Open work (see the linked issues, not this file, for scope/status):
 
-- Full PSN integration the way Steam already has it — issue #1, mostly done: `/stats`
-  already shows a PSN person's achievement count and cached account level;
-  `/summary`'s combined total already includes PSN rows for free (it has grouped by
-  `tg_id`, not by a platform-specific id, since before PSN existed); `/online` and
-  the admin user card both now show real PSN presence too (`poller/psn_presence.py`,
-  2026-09-09). What's left: `/panel`'s own "Сейчас" row is still Xbox-only — PSN
-  presence data exists now, that row just hasn't been made multi-platform-aware yet.
 - Linking more than one PSN account per person — issue #10. `platform_links`
   currently allows exactly one row per `(tg_id, platform)`.
 
@@ -696,7 +915,8 @@ his username and his PSN nickname all along.
 Two questions, and only two:
 
 1. **Who is this person?** → `Имя Фамилия` → `username` → nickname of any
-   connected platform (Xbox → Steam → PSN) → `id<tg_id>`. Digits last, the
+   connected platform (Xbox → PlayStation → Steam, the same order platform
+   lists use) → `id<tg_id>`. Digits last, the
    most human form first.
 2. **Which account is this?** → that platform's own chain (below). Used
    *only* where the line is genuinely about one platform: the per-platform
@@ -750,10 +970,40 @@ PSN nicknames used to be stored once at connect and never again, so a rename
 left the bot calling someone by an old name and pointing at a dead profile
 link (both links are built from the nickname, not the id).
 
+**One platform order for every platform *list*** (2026-09-13, user request):
+**Xbox, PlayStation, Steam** — `constants.platform_display_rank` is the
+single source of it, and anything that renders a list of platforms (a
+header, a keyboard, an admin block) sorts by that rather than listing them
+by hand. The naming chain's own platform fallback (see "Naming people and
+accounts" below) follows the same order — it was Xbox → Steam → PSN when that
+chain was agreed, and keeping two orders was judged not worth remembering. It had already drifted: `/panel` listed Xbox → Steam → PSN while
+`/stats`, ordering by the column name in SQL, listed Xbox → PSN → Steam —
+both describing themselves as "a fixed order", just not the same one. Found
+by capturing the real screens, back when that took a capture harness (#63
+replaced it with `scripts/render_screen.py`).
+
 **Private commands**: `/start`, `/connect_xbox`, `/disconnect_xbox`,
 `/connect_steam`, `/disconnect_steam`, `/connect_psn`, `/disconnect_psn`, `/panel`.
 A private flow started from a group must redirect the person to a DM, never fail
 silently in the group.
+
+**`/start` greets, then offers all three platforms** — one row each, the one
+display order (#53). Somebody who already has *any* platform linked gets their
+panel instead of the greeting: this used to branch on `user.xuid` alone, so a
+PSN-only person was greeted as a stranger and pushed back into a Microsoft
+sign-in. Disconnecting any platform is one shape too — a one-tap confirmation,
+never a typed word.
+
+**The timezone picker** offers the eight offsets this community actually lives
+in, then "Другой ▸" for the full −12…+14 grid and "✏️ Ввести вручную" for one
+typed message (`+3`, `-5`, `+5:30`) — a half-hour zone is not worth paging a
+keyboard for. Offsets, never zone names: MSK and CST are ambiguous, +03:00 is
+not.
+
+**The stale-login reminder is the only DM the bot starts on its own** (besides
+the connect flow's own progress messages), and it says outright that
+reconnecting will not replay a year of history into the chat — that fear is
+what makes people ignore a re-login prompt.
 
 **The personal panel** (`/panel`, one self-editing message): the header is the
 person's own Telegram identity (same priority as `/stats`' header) followed by one
@@ -765,14 +1015,23 @@ inline hyperlinks, its own "Profile" buttons already cover that). The body below
 carries login status per platform (Xbox: token status; Steam/PSN: achievement/
 trophy *visibility* as of the last actual check — connect time, or any backfill/
 resync since, `platform_links.achievements_visible`), publication destinations,
-current presence, and the timezone; the 24h/30d counters and "recent achievements"
+current presence, and the timezone. The presence row is **one row for every
+platform at once** (issue #1's tail, 2026-09-15) — "where is this person" has a
+single answer, and the two platforms they are not on could only repeat
+"offline" beside it. Which platform it names is
+`services/presence_view.py::pick_presence`, the same *playing > online >
+offline, freshness only as a tie-break* rule `/online` settled on, shared so
+the two screens can never disagree about where somebody is; it names the
+platform only while they are actually online, exactly as `/online`'s rows do
+(#51). The 24h/30d counters and "recent achievements"
 list it used to show are gone (the header covers achievements). Every row and
 button here is per-platform, not Xbox-gated (found live, 2026-09-09: a
 Steam/PSN-only person used to get an entirely different, stripped-down body
 and keyboard — no timezone/chats/sync/toggle at all — because both the text
 and the keyboard hard-gated the whole screen on Xbox specifically, a
 leftover from before Steam/PSN existed). The keyboard is one row per
-platform (Xbox → Steam → PSN) in a fixed position — `[Profile, Disconnect]`
+platform (Xbox → PlayStation → Steam, the one display order above) in a
+fixed position — `[Profile, Disconnect]`
 when connected, one wide "🎮 Подключить X" when not (#33) — plus timezone / My
 chats / sync / `show_profile_links` toggle, a **language toggle** (#48 — this
 person's own `user_settings.locale`, one tap, applying to DMs only), and the
@@ -790,7 +1049,13 @@ platform gamertag, since every connected platform already gets its own line belo
 person the same way `/stats`' header does — `@username` > name > gamertag > platform
 name, never a bare id — #40), `/online` (cached presence,
 optionally auto-refreshing), `/recent [N]`, `/summary`, `/hltb`, `/delete_last`
-(deletes the chat's own latest non-system bot message). `/summary_day` and
+(deletes the chat's own latest non-system bot message). When a leaderboard is
+capped by `summary_top_limit`, one button appears under it: it replaces the
+message with the same block uncapped, in a plain (not expandable) blockquote —
+the cap exists for the chat's scrollback, and asking for everything is an
+explicit act. `/delete_last` quotes the first two lines of what it deleted, so
+the deletion is auditable rather than silent, and that confirmation is itself a
+system message the cleanup job takes away later. `/summary_day` and
 `/summary_month` (2026-09-08) ask `build_summary` for one block only — deliberately
 left out of the help text and `chat-help-text`, a diagnostic pair for the #14 block
 split rather than commands meant for everyday use alongside `/summary` itself.
@@ -820,7 +1085,13 @@ exclusion/restore; per-chat settings (rarity threshold, summary time, timezone,
 mutes, minimum gamerscore, daily-summary switch, anti-flood limit/window, and
 the chat's own **language** — #48, one shared value per chat since Telegram
 cannot render one group message differently per viewer); bot-message
-cleanup actions. The per-chat card keeps its settings in **three sub-screens**
+cleanup actions. A key is **never shown back after it is saved** — only the
+fact that it is set; setting one puts the panel into a wait-for-one-message
+state whose screen says where to find the value and offers nothing but a way
+out. Every numeric limit shows its current value on its own row and opens its
+own one-message input, so the screen reads as a settings list rather than a
+menu you have to walk to find out what is set; `0` renders as "без
+ограничения" wherever zero means off. The per-chat card keeps its settings in **three sub-screens**
 (2026-09-11, user request) — daily summary, anti-flood, message cleanup —
 rather than rows of two to four buttons crammed side by side; the card's own
 text stays on screen in all of them, and each control redraws the section it
@@ -836,31 +1107,112 @@ instead of that needing a manual DB script on the server.
 
 The **per-user card** (2026-09-08 rework, user request) shows the Telegram
 identity in full (name, `@username`, and a plain `tg_id N` — never `@N`, since a
-bare id isn't a real, resolvable username the way a genuine `user.username` is),
-then one block per connected platform in a fixed order (Xbox → Steam → PSN):
+bare id isn't a real, resolvable username the way a genuine `user.username` is;
+and passed to Fluent as a *string*, or it comes out thousands-separated like a
+quantity, which it was until 2026-09-13),
+then one block per connected platform in the one display order (Xbox →
+PlayStation → Steam):
 nickname/id, lifetime achievement/trophy count with the same 🏆-completions/level
 suffixes `/stats`' own line has, today's count for that platform
 (`achievement_platform_breakdown`), and whatever admin-only diagnostics apply
 (Xbox: login/token status; Steam/PSN: current presence where it exists). Next to
 each platform's "🔄 Обновить" button sits a "🗑 Сброс" button (one-tap confirm
-first, same shape as `/disconnect_steam`'s own prompt): deletes that platform's
-`seen_achievements` rows for this person (plus Xbox's own `title_history` and
+first, same shape as `/disconnect_steam`'s own prompt): deletes that *account's*
+`seen_achievements` rows (plus Xbox's own `title_history` and
 PSN's `psn_title_progress`/`backfill_done`), then re-runs that platform's own
 `backfill()` — the same "wipe and resync from nothing" recovery #27 already gave
 PSN's stuck-account case, generalized to every platform and reachable without a
-manual DB script.
+manual DB script. Since #52 that history belongs to the account rather than to
+whoever holds it, which is why the Steam path had to be handed the account's
+own id: it was being passed `tg_id`, matched no row, and so deleted nothing
+before re-running backfill over data that was still there.
+
+**"🔄 Обновить" is a delta, not just a glance** (2026-09-13, user request):
+after the platform's own out-of-turn look (presence + the game being played
+right now) it catches up everything since the newest unlock already stored —
+`Fetcher.catch_up` for Xbox, `SteamFetcher.catch_up` for Steam, nothing extra
+for PSN whose ordinary scan is already a delta by construction. Publication
+stays inside `catchup_publish_window_hours`; the rest is stored silently, the
+same rule every other catch-up path follows. Before this the button only ever
+looked at the current moment, so for anybody offline it did nothing at all.
+
+**All three of these handlers were dead on arrival** and nobody noticed until
+the interface was captured screen by screen (2026-09-13, by a harness #63
+later replaced with scripts/render_screen.py):
+`a:sync:`, `a:reset:` and `a:resetok:` each unpacked `callback.data.split(":")`
+into `_`, two lines after `_` was bound to the translator, so the next
+`_("key")` raised `TypeError: 'str' object is not callable`. Tests asserted the
+buttons were *drawn*, which they were. The lesson is in
+`tests/test_admin_card.py::test_the_reset_prompt_builds_instead_of_raising`:
+a keyboard test that never invokes the handler proves only that the keyboard
+exists.
 
 ## Message formats
 
 A single achievement/trophy post: bold name + "gets an achievement" (or, for PSN,
-"gets a trophy"), a blank line, the game name and platform in italics, a badge
+"gets a trophy"), a blank line, the game name and platform in italics — with
+this person's progress through that game beside it when the total is known
+("47/50", #46). Xbox states the total in `title_history` — for Xbox 360.
+For most modern titles titlehub returns `totalAchievements = 0` (151 of 555
+on a real account, #60), so the number comes from the per-title achievements
+response instead, which lists the whole set: `poll_title` stores its size in
+`titles.achievements_total` and `title_progress` falls back to it, while
+Microsoft's own count still wins wherever it exists — it knows about
+achievements earned before this bot did. Steam's total is the
+length of its cached schema, and PSN's comes from `defined_trophies` on the
+trophy-title list the poller already walks, stored for **every** title that
+listing carries rather than only the ones whose progress grew (#60: it used
+to be the latter, so a game nobody had advanced lately had no counter),
+kept on `titles.achievements_total`
+— a count on every platform rather than a percentage on one. PSN's total
+**includes DLC groups** (verified: Marvel's Spider-Man reports 74 = 51 base +
+23 across four DLC groups), so a base-game platinum reads 51/74, exactly as
+Sony's own trophy list and every PSN tracker show it. Sony's own `progress`
+percentage is deliberately not used: it weights trophies by tier, so 17 of 47
+reports as 25%, not 36%. A game whose total is not known yet simply renders
+without the counter — a badge
 before the achievement's name in quotes, then gamerscore (if nonzero) and rarity
 percent (if known) separated by a period, then the description if present (behind a
 spoiler if secret/hidden).
 
+**A PSN post carries a second line** (#46, 2026-09-13, user request), between
+the game and the trophy: the trophy list of a PlayStation game is split into
+groups — the base game plus one per DLC — and the trophy itself says which
+one it came from, so the message names that group and how far through *it*
+the person is ("CTNS: The Heist · 3/7"). A count again, never Sony's
+tier-weighted percentage, which would disagree with the line above it. The
+group name never repeats the game's own name (user decision): Sony names the
+base group after the game exactly, and sometimes a DLC group after the game
+*plus* the add-on, while the title is already on the line above — so a name
+equal to the game's renders as "Основная игра" / "Main Game", a name that
+starts with the game's keeps only the add-on part, and anything else is
+printed as Sony wrote it (`services/achievements.py::_group_label`). Nothing
+is ever prefixed with "DLC", because a group is not always one (Spider-Man's
+`001` is *New Game+*, a mode). A game whose trophy
+list is a single group has no second line at all — Sony gives every title a
+`default` group, so "has groups" is never the question, "more than one" is.
+Xbox and Steam have no notion of groups and stay at one line. In a digest,
+one block is one game and the group line appears only when every trophy in
+that block shares one group.
+
+**A secret achievement says so in the header** (#16, 2026-09-16, owner
+decision): "получает секретное достижение" / "получает секретный трофей".
+The name and description below it are behind a real Telegram spoiler, and a
+blurred word with nothing explaining it reads as a rendering glitch rather
+than as a deliberate secret — the header is the one line that is never
+hidden, so that is where the word goes. Lists are unchanged: `/recent`'s row
+keeps the spoiler with no label, since a line there is already long.
+
 The badge is `rarity_badge()` (💎 at or below the rare threshold, 🏆 otherwise,
 including when rarity is simply unknown) for every platform except PSN, which shows
 its own tier icon instead (🥉🥈🥇🏆) — see the PSN section above for why.
+
+**A single post is a photo message**, not a text one: the achievement's own
+icon is the photo and everything above is its *caption*, so the whole card
+lives under Telegram's 1024-character caption cap. Xbox 360 is the exception —
+contract 1 gives a bare image id with no documented way to build a URL, so
+those cards use the game's box art, which means every achievement in an x360
+game carries the same picture.
 
 A digest groups several achievements under one header ("gets N achievements" / "gets
 N trophies" for an all-PSN batch), one block per game, same per-line format as a
@@ -868,6 +1220,20 @@ single post, every item listed. `plural_achievements()` itself is never
 platform-specific — it also serves combined cross-platform totals (e.g. `/stats`'
 "Today: N achievements"), which are correctly "achievements" regardless of how many
 of them came from PSN.
+
+**The ordinary digest and the anti-flood digest are one form**
+(2026-09-13, user request) — same layout, same per-game counter, same
+gallery. The only difference is the header's name: the anti-flood one can
+genuinely mix platforms, so it uses the person's Telegram identity rather
+than one platform's nickname. A digest is a `sendMediaGroup` with the
+caption on the first image, deduped by image URL.
+
+**A digest never names a trophy group**, even when every trophy in a game's
+block came from the same one (2026-09-13, user request). One block is one
+*game*: its line carries the game's name and the game's own overall count.
+The group line belongs to a single card, where there is exactly one trophy
+to attribute — in a digest it would add a second subject to a message whose
+whole job is grouping.
 
 Lists (`/stats`, `/recent`, `/summary`, the daily summary) render as sentence-lines
 inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table
@@ -902,10 +1268,73 @@ it combined across everyone and every platform, not who earned them
 rare pull separately (#9, user request) — the month block's rows still do, a
 longer window being more worth it in.
 
+## Lists and tables
+
+Every list the bot renders, with where its rows come from, who appears in it,
+how it is sorted and what caps it (kept from `docs/ui/tables.md` when that
+file went away, #63 — the *queries* are visible in the code, but "who is in
+scope" and "what the cap is for" are decisions and are not).
+
+Every one of them renders through `views/lists.py::Listing` — header, rows,
+an optional total line, and a wrapper that is a collapsible quote by default
+and plain text for `/online`, which redraws itself every few minutes and has
+to read at a glance. The *rows* are deliberately not shared: a list of games
+and a list of people are different things. The one exception is the games
+row itself, which two screens draw identically and which lived in two copies
+until #64.
+
+| List | Source | Who appears | Sort | Cap |
+|---|---|---|---|---|
+| `/stats`' recent games | `repo.recent_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
+| `/recent` | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
+| `/online` | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
+| summary leaderboards (day/month) | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
+| "Игры за месяц" | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
+| the admin's user list | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page |
+| the admin's chat list | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
+| a chat's subscribers | `repo.chat_subscribers()` | that chat's subscribers | by the rendered name ↑ | — |
+| `/hltb` suggestions | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit` |
+| `/hltb` results | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page |
+
+- **`/stats`' games** are a rolling 30 days (`RECENT_GAMES_DAYS`), labelled as
+  such, deliberately not the calendar month its counters use. One game on two
+  platforms is two rows.
+- **`/recent`** is subscribers only — not `/online`'s broader "known member"
+  set; excluded people never appear; a secret achievement's name stays behind
+  a spoiler.
+- **`/online`**: activity beats freshness (see the naming rules above and
+  `presence_view.pick_presence`).
+- **Summary leaderboards** keep zero rows: this is a report, not a live feed
+  (#34). The `💎N` rare badge is in the month block only (#9); the platform
+  breakdown is always there.
+- **"Игры за месяц"** groups by `(title_id, platform)`, never `title_id`
+  alone — a Steam appid and an Xbox title id are both bare numbers and can
+  collide by accident.
+- **The admin's user list** is printed twice on purpose: as text, where the
+  columns line up and can be read at a glance, and as one button per row,
+  because a row has to be tappable.
+- **`/hltb`'s suggestions** use `/online`'s "known member" scope, but their
+  source (`title_history`) is **Xbox-only** — Steam and PSN games never reach
+  it. Same class of gap the naming chains had before #51, one layer over; not
+  fixed.
+
 ## Statistics rules
 
 Normal stats read only from `seen_achievements`, `title_history`, platform links,
-and cached presence/level tables — never a live platform call. `/stats`' lifetime
+and cached presence/level tables — never a live platform call.
+
+**An achievement with no usable unlock time still counts** (2026-09-13, user
+request). Microsoft sends a placeholder date for some Xbox 360 achievements —
+`0001-01-01`, or `1753-01-01`, the old SQL Server minimum; 84 of 5239 rows on
+one real account — and `services/xbox/models.py::parse_timestamp` discards it
+rather than record an unlock in the year 1753. Every windowed read therefore
+uses `COALESCE(unlocked_at, created_at)`: when the platform gives no usable
+time, when the bot first saw the achievement is the honest stand-in, and the
+two readers that build an `AchievementRow` hand that stand-in to the caller so
+the publisher's own age cap agrees with the statistics. The stored column keeps
+its NULL — it records what the platform actually said. Before this, such rows
+were published normally and then silently absent from `/recent`, from both
+counters, and from every catch-up window, which is the worst of both. `/stats`' lifetime
 achievement count (`repo.xbox_achievement_count`/`platform_achievement_count`)
 always counts `seen_achievements` rows directly, never sums `title_history` —
 modern Xbox's broad history-endpoint backfill and Steam's full-library backfill
@@ -950,34 +1379,38 @@ A row cached before this existed tops its Russian side up on the next lookup;
 English side too. With no Anthropic key the card just shows HLTB's English text.
 
 The card renders it as a collapsed `<blockquote expandable>` between the genres
-and the HLTB link (`docs/ui/ui_screens_users.md`), capped at
+and the HLTB link, capped at
 `handlers/hltb.py::DESCRIPTION_LIMIT` — the card is a photo *caption* whenever
 the game has cover art, and Telegram caps those at 1024 characters, so an
 overlong summary would cost the whole card rather than just its own tail.
 
 ## Versioning
 
-**`A.B.C.D`** (#56, 2026-09-16), resolved in `bot/version.py`, shown as the
-last line of `/help` and the group hub, and logged at startup.
+**`A.B.C.D`** (#56, 2026-09-16), one line in `bot/version.py`, rendered as
+the last line of `/help` and the group hub, and logged at startup —
+`bot @tg_achievement_bot is up (v1.1.53.046)`.
 
 - **A** — the architecture. By hand, on a rewrite. `1`.
 - **B** — which line of work this build is. `0` on `main`; a working branch
   takes the next number and `main` inherits it on merge, so "is this the
-  test bot" is answerable from the version alone.
+  test bot" is answerable from the version alone. `accounts-52` is `1`.
 - **C** — commits made on this branch since it left `main`, counted at
-  startup from the merge base (owner's call, 2026-09-16): a short number
-  that grows by one per commit, rather than a hash nobody can order at a
-  glance. `0` on `main` itself, `?` where git cannot answer. Deliberately
-  not stored: a number you must remember to bump is wrong exactly when it
+  startup from the *merge base* (owner's call, 2026-09-16: a short number
+  that grows by one per commit beats a hash nobody can order at a glance).
+  From the merge base rather than from `main`'s tip, so somebody else
+  merging into the trunk does not renumber this branch's builds; `0` on
+  `main` itself, `?` where git cannot answer at all. Deliberately not stored
+  in a file: a number you must remember to bump is wrong exactly when it
   matters, and one edited per commit is a merge conflict per commit.
 - **D** — the newest migration this code ships. Not what the database has.
 
 **A database ahead of the code refuses to start** (`Database.connect` →
 `SchemaTooNewError`). That is the 2026-09-14 outage in one check: a script
-run from another worktree opened production's `bot.db`, `connect()` applied
-that branch's migrations to it, and the production bot crashed on tables it
-had never heard of. Behind stays normal — that is what an upgrade looks
-like.
+run from the `accounts-52` worktree opened production's `bot.db`,
+`connect()` applied that branch's migrations to it, and the production bot
+— older code on `main` — crashed on tables it had never heard of. Every
+step was reasonable alone; nothing compared the two. Behind is not an error
+and never will be: that is what an upgrade looks like.
 
 ## Security and privacy
 
@@ -996,6 +1429,16 @@ like.
 - A person can disconnect locally at any time, but revoking Microsoft's own consent
   has to happen in the user's own Microsoft account settings — the bot can only link
   to that page, not do it for them.
+- **PSN's profile link points at PSNProfiles** (#30, 2026-09-16), not at
+  Sony: `my.playstation.com` has been dead since June 2021, when MyPlayStation
+  was shut down — the PlayStation App shows the last three games played and
+  the website shows no trophies at all, so there is no official page left to
+  link to (re-checked before switching, not assumed). A profile PSNProfiles
+  has not indexed yet answers "not tracked" on the first visit and is the real
+  profile on every visit after: that first visit is how the site learns about
+  somebody, so it is a feature of the link rather than a failure of it. The
+  bot never checks the link — PSNProfiles answers automated requests with 403,
+  so a liveness check would buy nothing and cost the address a ban.
 - Profile links in `/stats`/`/who` are gated by the profile's own owner's
   `user_settings.show_profile_links` (off by default) — see "User interface" above.
 
@@ -1032,6 +1475,33 @@ never exposed externally (`OAUTH_LISTEN_HOST=127.0.0.1` in the server's `.env`).
 on the server uses a read-only deploy key (GitHub → Settings → Deploy keys), not an
 account token.
 
+### Backups, and where anything taken out of a database may live
+
+**`backups/` — that directory and nowhere else** (2026-09-14 incident,
+2026-09-15 rule). Database copies, table dumps, and the one-off scripts that
+produce them go there; it is gitignored, together with defensive
+`*backup*.json` / `*dump*.json` / `*tokens*.json` patterns for the day
+somebody writes one into the repository root instead. On the servers the same
+role is played by `data/backups/`, which is inside the already-ignored
+`data/`.
+
+**A dump may never hold a decrypted secret.** Copy a database, or copy the
+encrypted column — never `refresh_token_plain`. What happened once: a
+migration-rollback session wrote every user's Xbox refresh token to
+`tokens_backup_*.json` in plaintext, in the repository root, untracked and
+not ignored — one `git add -A` away from being published, on both the
+development machine and both servers. The encrypted originals were in the
+database the whole time, so the plaintext copies bought nothing at all.
+
+If a task genuinely needs a decrypted value (re-encrypting after a
+`FERNET_KEY` change is the real case), keep it in memory for the length of
+that one process. If it must touch disk, it goes in `backups/`, and it gets
+deleted — overwritten, then unlinked — as the last step of the same task.
+
+Back up with `sqlite3`'s own `backup()`, never `cp`: these databases run in
+WAL mode and a plain copy of one can come back malformed. Name the file for
+what it is and when: `bot-pre042-20260915-084500.db`.
+
 Deploy is currently manual: `git pull --ff-only`, reinstall dependencies if they
 changed, `systemctl restart xbox-bot`. Back up `bot.db` first whenever the deploy
 includes a new migration — migrations here are forward-only, and a destructive one
@@ -1067,21 +1537,30 @@ repository — issue #4.
   go in the chat reply that accompanies the preview, never inside the previewed
   message itself, since anything inside it reads back as leftover clutter once the
   format ships for real.
-- **UI design lives in `docs/ui/`** (2026-09-09 user request) —
-  `ui_screens_users.md`, `ui_screens_admin.md`, `tables.md` today, and the list
-  grows as more of the interface gets documented there; new screens go in
-  whichever existing file they logically belong with (user-facing vs. admin), or
-  a new file alongside them if neither fits. These files are the project owner's
-  own design decisions, written down — not generated from the code, and not
-  regenerated on every build. **Never edit a file under `docs/ui/` on your own
-  initiative** — deciding to change a screen is not itself permission to go
-  rewrite its design file unreviewed; that needs its own explicit go-ahead. The
-  order, once a change is actually agreed: (1) agree
-  the design first — show the proposed result before writing anything down, same
-  preview discipline as the rule above; (2) update the relevant `docs/ui/`
-  file(s) to match what was agreed; (3) refresh only the screen(s) that actually
-  changed (never a blanket re-render of every screen the touched file happens to
-  also describe); (4) then everything else — tests, unrelated code, other docs.
+- **A screen's layout lives in `bot/views/`, and its mockup is rendered, not
+  written down** (#63, 2026-09-15, owner decision — this replaced `docs/ui/`,
+  which was three hand-kept mockup files plus a capture script to catch them
+  drifting). One module per screen; a view renders and never sends. To look at
+  a screen, draw it:
+
+  ```bash
+  python scripts/render_screen.py --list
+  python scripts/render_screen.py panel --locale en
+  python scripts/render_screen.py admin-user-card --send
+  ```
+
+  `--send` puts it in the owner's DM as a real message, keyboard and all —
+  which is the only form a layout decision can actually be judged in, and the
+  same preview discipline the rule above asks for. Point `DB_PATH` at a copy
+  of production to render against real data.
+
+  **Changing a screen is still not the same as deciding to change it.** The
+  order stays what it was: agree the design first — render the proposed result
+  and show it — then write the code, then everything else. What is gone is the
+  step that kept a second, hand-maintained description of the same screen in
+  sync; the design *decisions* (this file's "Message formats", "User
+  interface", "Lists and tables") are what survive in writing, because a rule
+  is not visible in a rendered screenshot.
 
 ## Tests
 

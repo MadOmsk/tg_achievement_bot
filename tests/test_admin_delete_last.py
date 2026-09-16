@@ -9,7 +9,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from bot.db.repo import Repo
-from bot.handlers.admin import TOAST_PREVIEW_MAX_CHARS, _chat, _toast_preview, chat_delete_last
+from bot.handlers.admin import chat_delete_last
+from bot.services.admin_settings import TOAST_PREVIEW_MAX_CHARS
+from bot.views.admin import _toast_preview, render_chat_card
 
 CHAT_ID = -100888
 
@@ -70,7 +72,7 @@ async def test_chat_delete_last_toast_names_the_preview_and_leaves_card_body_alo
     toast_args, _kwargs = callback.answers[0]
     assert "Иван получает достижение" in toast_args[0]
 
-    card_text, _markup = await _chat(repo, CHAT_ID, locale="ru")
+    card_text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     assert "Иван получает достижение" not in card_text
 
 

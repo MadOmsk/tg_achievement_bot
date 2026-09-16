@@ -9,10 +9,82 @@ achievement itself, not by who unlocked it.
 from __future__ import annotations
 
 from bot.db.repo._models import CachedDescription
+from bot.db.repo._sql import OWNED_BY_PERSON
 from bot.util import utcnow_iso
 
 
 class _DescriptionsRepo:
+    # ------------------------------------------------- achievement names (#61)
+
+    async def cache_names(
+        self, platform: str, title_id: str, names: dict[str, tuple[str | None, str | None]]
+    ) -> None:
+        """One game's achievement names in both languages, as the platform
+        itself wrote them (#61) — `{achievement_id: (name_ru, name_en)}`.
+
+        Never a translation: a name is only ever the platform's own string
+        (CLAUDE.md), so there is nothing here about where it came from, and a
+        side the platform did not give stays NULL. Rewriting the same pair is
+        free and happens whenever a second-locale response passes by.
+        """
+        if not names:
+            return
+        now = utcnow_iso()
+        for achievement_id, (name_ru, name_en) in names.items():
+            await self._conn.execute(
+                "INSERT INTO achievement_name_cache"
+                " (platform, title_id, achievement_id, name_ru, name_en, cached_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(platform, title_id, achievement_id) DO UPDATE SET "
+                "  name_ru = COALESCE(excluded.name_ru, achievement_name_cache.name_ru),"
+                "  name_en = COALESCE(excluded.name_en, achievement_name_cache.name_en),"
+                "  cached_at = excluded.cached_at",
+                (platform, title_id, achievement_id, name_ru, name_en, now),
+            )
+        await self._conn.commit()
+
+    async def cached_names(
+        self, keys: list[tuple[str, str, str]]
+    ) -> dict[tuple[str, str, str], tuple[str | None, str | None]]:
+        """The bulk read the render path needs — same shape and the same
+        reasoning as `cached_descriptions` below: a digest can carry a whole
+        game's worth of achievements, and the anti-flood one can mix games and
+        platforms, so one query per line would be one query per line."""
+        if not keys:
+            return {}
+        clause = " OR ".join(["(platform = ? AND title_id = ? AND achievement_id = ?)"] * len(keys))
+        parameters = [value for key in keys for value in key]
+        cursor = await self._conn.execute(
+            "SELECT platform, title_id, achievement_id, name_ru, name_en "
+            f"FROM achievement_name_cache WHERE {clause}",
+            parameters,
+        )
+        return {
+            (row["platform"], row["title_id"], row["achievement_id"]): (
+                row["name_ru"],
+                row["name_en"],
+            )
+            for row in await cursor.fetchall()
+        }
+
+    async def names_missing(self, platform: str, title_id: str, ids: list[str]) -> set[str]:
+        """Which of these achievements have no cached name yet — the other
+        half of "is this game's bilingual fetch still worth making" (#61).
+        Without it, a game whose descriptions were all cached before names
+        existed would never fetch the second locale again, and would keep
+        showing English names in a Russian chat forever."""
+        if not ids:
+            return set()
+        placeholders = ", ".join("?" * len(ids))
+        cursor = await self._conn.execute(
+            "SELECT achievement_id FROM achievement_name_cache "
+            f"WHERE platform = ? AND title_id = ? AND achievement_id IN ({placeholders}) "
+            "  AND name_ru IS NOT NULL AND name_en IS NOT NULL",
+            (platform, title_id, *ids),
+        )
+        cached = {row["achievement_id"] for row in await cursor.fetchall()}
+        return set(ids) - cached
+
     async def get_cached_description(
         self, platform: str, title_id: str, achievement_id: str
     ) -> CachedDescription | None:
@@ -39,15 +111,18 @@ class _DescriptionsRepo:
         the caller can group by title and still know whose credentials can be
         used to ask for it: Xbox needs a token-bearing owner, Steam a
         SteamID64, PSN an account_id — all of which live in `xuid` for their
-        own platform's rows.
+        own platform's rows. The owner comes from the account's *current*
+        link (#52), so an account nobody holds any more contributes nothing
+        here either: there would be no credentials to ask with.
 
         Rows with no description are excluded here rather than by the caller:
         there is nothing to translate, so they are not a gap.
         """
         cursor = await self._conn.execute(
-            "SELECT s.platform, s.title_id, s.achievement_id, s.tg_id, s.xuid "
+            "SELECT s.platform, s.title_id, s.achievement_id, al.tg_id, s.xuid "
             "FROM seen_achievements s "
-            "LEFT JOIN achievement_description_cache d "
+            + OWNED_BY_PERSON
+            + "LEFT JOIN achievement_description_cache d "
             "       ON d.platform = s.platform AND d.title_id = s.title_id "
             "      AND d.achievement_id = s.achievement_id "
             "WHERE d.achievement_id IS NULL "
@@ -77,12 +152,19 @@ class _DescriptionsRepo:
         """
         placeholders = ", ".join("?" * len(platforms))
         cursor = await self._conn.execute(
-            "SELECT s.platform, s.title_id, MIN(s.tg_id) AS tg_id "
+            "SELECT s.platform, s.title_id, MIN(al.tg_id) AS tg_id "
             "FROM seen_achievements s "
-            "LEFT JOIN achievement_description_cache d "
+            + OWNED_BY_PERSON
+            + "LEFT JOIN achievement_description_cache d "
             "       ON d.platform = s.platform AND d.title_id = s.title_id "
             "      AND d.achievement_id = s.achievement_id "
-            f"WHERE d.achievement_id IS NULL AND s.platform IN ({placeholders}) "
+            # A `fallback` row counts as unfinished: the text is stored and
+            # on screen, but nothing has translated it yet, so the next pass
+            # offers it to the translator again. Without a key that pass
+            # rewrites the same row, caches nothing new, and the poller drops
+            # the title for the rest of the process.
+            f"WHERE (d.achievement_id IS NULL OR d.source = 'fallback') "
+            f"  AND s.platform IN ({placeholders}) "
             "  AND s.description IS NOT NULL AND TRIM(s.description) <> '' "
             "GROUP BY s.platform, s.title_id "
             "LIMIT ?",

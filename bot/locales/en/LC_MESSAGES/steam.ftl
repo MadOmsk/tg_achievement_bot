@@ -2,7 +2,7 @@
 steam-not-configured = Steam linking isn't set up yet — ask the administrator.
 steam-connect-group-redirect = Message me privately — we'll connect Steam there.
 steam-private-only = This command works in a DM.
-steam-already-connected = Steam is already connected: { $name }.
+steam-already-connected = Steam is currently linked to { $name }. Send another profile and I will switch; to just unlink, use /disconnect_steam.
 steam-link-prompt = Send me a link to your Steam profile (steamcommunity.com/id/...) or just the vanity name — I'll link it.
 
     ⚠️ Your game details have to be public, or I can't read achievements: { $privacy_url } → “Game details” → “Public”.
@@ -27,3 +27,7 @@ steam-cancel-button = Cancel
 steam-already-disconnected = Steam isn't connected anyway.
 steam-disconnect-prompt = Disconnect Steam ({ $name })?
 steam-disconnected = Steam disconnected. You can come back any time.
+
+# Relinking an account the bot already knows (#52): its history is already
+# stored, so only what appeared since last time needs fetching.
+steam-catch-up-started = I know this account already — its achievements are still here. Fetching only what is new.

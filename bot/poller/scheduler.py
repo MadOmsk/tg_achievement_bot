@@ -26,6 +26,7 @@ from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
 from bot.poller.reminders import ReminderJob
 from bot.poller.service_health import ServiceHealth
+from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 
 log = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class PollerScheduler:
         psn_presence: PsnPresencePoller,
         flood_flush: FloodFlush,
         description_backfill: DescriptionBackfill,
+        steam_localization: SteamLocalization,
         avatar_refresh: AvatarRefresh,
     ) -> None:
         self._poller = poller
@@ -66,6 +68,7 @@ class PollerScheduler:
         self._psn_presence = psn_presence
         self._flood_flush = flood_flush
         self._description_backfill = description_backfill
+        self._steam_localization = steam_localization
         self._avatar_refresh = avatar_refresh
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -163,6 +166,16 @@ class PollerScheduler:
             self._psn_fetcher.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="psn_fetcher",
+            coalesce=True,
+            max_instances=1,
+        )
+        # Two games a minute against a storefront that owes us nothing
+        # (poller/steam_localization.py) — the slowest job here, and the only
+        # one that reaches a game nobody plays any more.
+        self._scheduler.add_job(
+            self._steam_localization.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="steam_localization",
             coalesce=True,
             max_instances=1,
         )

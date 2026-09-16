@@ -10,9 +10,9 @@ from bot.constants import RarityMode
 from bot.db.repo import AchievementRow, Repo
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.publisher import Publisher
-from bot.services.achievements import format_digest
 from bot.services.stats import local_now
 from bot.util import utcnow
+from bot.views.notification import format_digest
 
 CHAT_ID = -100777
 TG_ID = 1

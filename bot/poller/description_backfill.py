@@ -108,8 +108,11 @@ class DescriptionBackfill:
                 self._unanswerable.add((platform, title_id))
                 continue
             if cached:
-                log.info("cached %s descriptions for %s/%s", cached, platform, title_id)
+                log.info("newly cached %s descriptions for %s/%s", cached, platform, title_id)
             else:
-                # The platform answered, but had nothing with a description
-                # for us. Nothing will change on a retry either.
+                # The platform answered and nothing was cached: either it had
+                # no descriptions for us, or the ones it had could not be
+                # stored (identical in both locales and no Anthropic key to
+                # translate them — see services/description_backfill.py).
+                # Neither changes on a retry inside this process.
                 self._unanswerable.add((platform, title_id))

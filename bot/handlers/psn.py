@@ -25,11 +25,14 @@ from aiogram.types import (
 )
 from aiogram_i18n import I18nContext
 
+from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Repo
-from bot.handlers.keyboards import deep_link_keyboard, safe_edit
+from bot.handlers import awaiting
+from bot.handlers.delivery import notify_previous_owner, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.psn_fetcher import PsnFetcher
+from bot.services import relink
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
@@ -37,6 +40,8 @@ from bot.services.psn.client import (
     is_trophy_visible,
     resolve_profile,
 )
+from bot.views.keyboards import deep_link_keyboard, switch_keyboard, switch_prompt
+from bot.views.parts import platform_label
 
 log = logging.getLogger(__name__)
 
@@ -46,14 +51,18 @@ NOT_CONFIGURED_KEY = "psn-not-configured"
 GROUP_HINT_TTL = 30
 
 # Same in-memory "next plain message is the answer" pattern as steam.py's own
-# _awaiting_link — nothing here needs to survive a restart.
-_awaiting_link: set[int] = set()
+
+# tg_id -> the Online ID waiting on a "yes, switch accounts" tap (#52).
+# Same in-memory, dies-with-the-process treatment as handlers/awaiting.py.
+_pending_switch: dict[int, str] = {}
 
 
 class AwaitingPsnLink(BaseFilter):
     async def __call__(self, event: TelegramObject) -> bool:
         user = getattr(event, "from_user", None)
-        return user is not None and user.id in _awaiting_link
+        return user is not None and awaiting.is_expecting(
+            user.id, "psn", getattr(event, "text", None)
+        )
 
 
 async def _redirect_to_dm(
@@ -96,11 +105,12 @@ async def prompt_for_link(
     if await psn_auth.status() == STATUS_NOT_CONFIGURED:
         await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
         return
+    # Same as Steam's own (#52, user report) — a linked account is not a
+    # reason to refuse; switching is guarded by its own confirmation later.
     link = await repo.get_platform_link(tg_id, Platform.PSN)
+    awaiting.expect(tg_id, "psn")
     if link is not None:
         await bot.send_message(tg_id, i18n.get("psn-already-connected", name=link.display_name))
-        return
-    _awaiting_link.add(tg_id)
     await bot.send_message(tg_id, i18n.get("psn-link-prompt"))
 
 
@@ -139,7 +149,7 @@ async def psn_link_provided(
     bot: Bot,
     i18n: I18nContext,
 ) -> None:
-    _awaiting_link.discard(message.from_user.id)
+    awaiting.clear(message.from_user.id)
     username = message.from_user.username if message.from_user else None
     await _connect(
         bot,
@@ -162,6 +172,8 @@ async def _connect(
     username: str | None,
     raw: str,
     i18n: I18nContext | StaticI18nContext | None = None,
+    *,
+    confirmed: bool = False,
 ) -> None:
     i18n = i18n or static_i18n("psn")
     if await psn_auth.status() == STATUS_NOT_CONFIGURED:
@@ -194,23 +206,100 @@ async def _connect(
         return
 
     await repo.ensure_user(tg_id, username)
-    await repo.link_platform_account(tg_id, Platform.PSN, profile.account_id, profile.online_id)
+
+    # Same as Steam's own switch guard (#52): trading one PSN account for
+    # another leaves the first one's trophies behind, so ask before doing it
+    # — but never for relinking the same account.
+    preview = await relink.preview(repo, tg_id, Platform.PSN, profile.account_id)
+    if preview.needs_confirmation and not confirmed:
+        _pending_switch[tg_id] = raw
+        await bot.send_message(
+            tg_id,
+            switch_prompt(
+                preview, platform_label(Platform.PSN, i18n.locale), profile.online_id, i18n
+            ),
+            reply_markup=switch_keyboard("psn", i18n),
+        )
+        return
+
+    taken_from = await relink.perform(
+        repo, tg_id, Platform.PSN, profile.account_id, profile.online_id
+    )
     # Already verified True right above (#5) — recorded so /panel's login
     # row has a real answer from the moment someone links, not just after
     # the first backfill/resync gets around to setting it.
     await repo.set_achievements_visible(tg_id, Platform.PSN, True)
     log.info("connect_psn: tg_id=%s linked account_id=%s", tg_id, profile.account_id)
     await bot.send_message(tg_id, i18n.get("psn-connected", name=profile.online_id))
+    if taken_from is not None:
+        await notify_previous_owner(
+            bot,
+            taken_from,
+            Platform.PSN,
+            profile.online_id,
+            locale=await repo.user_locale(taken_from),
+        )
 
     # Backgrounded (SPEC 9, M-Steam-2d's own reasoning applies here too) —
     # the reply above must not wait for it. Run on every link, not just the
     # first (link_platform_account already replaces an existing one) —
     # idempotent (INSERT OR IGNORE) and safe, same as Xbox/Steam's own
     # reconnect handling.
+    # Known account -> no backfill (#52). Its trophies are already stored,
+    # and the regular tick is itself a delta; all a relink has to arrange is
+    # that the catch-up does not arrive as a month of trophies at once.
+    if await repo.account_latest_unlock(Platform.PSN, profile.account_id) is not None:
+        # This account's history is already stored, so #21's gate is satisfied
+        # by definition — say so explicitly rather than relying on the row
+        # having survived, which is exactly what used to fail (see
+        # disconnect_psn_confirm below).
+        await repo.mark_psn_backfill_done(profile.account_id)
+        psn_fetcher.expect_relink_catch_up(
+            profile.account_id, get_settings().catchup_publish_window_hours
+        )
+        await bot.send_message(tg_id, i18n.get("psn-catch-up-started"))
+        return
+
     await bot.send_message(tg_id, i18n.get("psn-backfill-started"))
     asyncio.create_task(  # noqa: RUF006
         _backfill_and_notify(bot, psn_fetcher, tg_id, profile.account_id, i18n)
     )
+
+
+@router.callback_query(F.data == "psn:switch:yes")
+async def psn_switch_confirmed(
+    callback: CallbackQuery,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
+    bot: Bot,
+    i18n: I18nContext,
+) -> None:
+    raw = _pending_switch.pop(callback.from_user.id, None)
+    await callback.answer()
+    if raw is None:
+        return  # the prompt outlived a restart, or was answered twice
+    with contextlib.suppress(Exception):
+        await callback.message.delete()
+    await _connect(
+        bot,
+        repo,
+        psn_auth,
+        psn_fetcher,
+        callback.from_user.id,
+        callback.from_user.username,
+        raw,
+        i18n,
+        confirmed=True,
+    )
+
+
+@router.callback_query(F.data == "psn:switch:no")
+async def psn_switch_cancelled(callback: CallbackQuery, i18n: I18nContext) -> None:
+    _pending_switch.pop(callback.from_user.id, None)
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_text(i18n.get("connect-switch-cancelled"))
 
 
 async def _backfill_and_notify(
@@ -283,13 +372,16 @@ async def disconnect_psn_cancel(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "psn:disconnect:yes")
 async def disconnect_psn_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    link = await repo.get_platform_link(callback.from_user.id, Platform.PSN)
     await repo.unlink_platform_account(callback.from_user.id, Platform.PSN)
-    if link is not None:
-        # Symmetric with Steam's own disconnect (steam.py's
-        # delete_steam_presence_state) — a stale poll-state row would
-        # otherwise sit there forever for an account no longer linked to
-        # anyone (SPEC 9, M-PSN-2).
-        await repo.delete_psn_poll_state(link.external_id)
+    # The `psn_poll_state` row stays. It used to be deleted here, by symmetry
+    # with Steam's own presence-cache cleanup — but this row is not a cache,
+    # it is #21's gate, and deleting it broke every reconnect: a relink skips
+    # backfill by design (#52 — the trophies are already stored and the
+    # ordinary tick is a delta), so nothing ever set `backfill_done` again,
+    # and `psn_pollable_users` reads a missing row as "not done" and skips the
+    # account forever. Found live on the test bot, 2026-09-13: an account
+    # earned two trophies and the bot never looked. An inactive link is
+    # already filtered out of every poller by `is_active`, so the row costs
+    # nothing where it is.
     await safe_edit(callback, i18n.get("psn-disconnected"))
     await callback.answer()

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from bot.db.repo import Repo
-from bot.handlers.chat import hub_keyboard
 from bot.i18n import AVAILABLE_LOCALES, gettext
+from bot.views.chat import hub_keyboard
 
 XUID_A = "xuid-a"
 XUID_B = "xuid-b"

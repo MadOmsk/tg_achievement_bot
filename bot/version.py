@@ -32,9 +32,8 @@ from functools import cache
 from pathlib import Path
 
 MAJOR = 1
-# 0 on main; a working branch takes the next number and main inherits it
-# when that branch merges (#56's own numbering).
-BRANCH = 0
+# 0 on main; accounts-52 is the first working branch (#56's own numbering).
+BRANCH = 1
 
 MIGRATIONS = Path(__file__).resolve().parent / "db" / "migrations"
 REPO = Path(__file__).resolve().parents[1]

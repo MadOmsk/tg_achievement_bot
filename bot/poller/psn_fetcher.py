@@ -33,6 +33,12 @@ from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
 
+# How far back a first group-aware scan of a game may still announce
+# something (#46, reusing #52's own "only the last day" rule). Before that
+# change only the base game's trophies were ever fetched, so the pass that
+# widens a game to all of its groups finds every DLC trophy at once.
+GROUP_WIDENING_WINDOW_HOURS = 24
+
 
 @dataclass(slots=True)
 class PsnBackfillResult:
@@ -59,6 +65,9 @@ class PsnFetcher:
         self._psn_auth = psn_auth
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
+        # account_id -> the window its next publish is capped to, set by a
+        # relink (see expect_relink_catch_up) and consumed once.
+        self._relink_window: dict[str, int] = {}
 
     async def tick(self) -> None:
         if await self._psn_auth.status() == STATUS_NOT_CONFIGURED:
@@ -122,8 +131,30 @@ class PsnFetcher:
                 account_id,
                 outcome.unmapped_errors,
             )
+        if outcome.catch_up_rows:
+            # A game looked at group-by-group for the first time (#46): its
+            # DLC trophies were never fetched before, so most of what just
+            # arrived is history. Same 24-hour cap a relink gets (#52) — a
+            # DLC trophy actually earned today still lands, the rest are
+            # recorded and stay quiet.
+            log.info(
+                "tg_id=%s: %s psn trophies from a first group-aware scan, capped to %sh",
+                tg_id,
+                len(outcome.catch_up_rows),
+                GROUP_WIDENING_WINDOW_HOURS,
+            )
+            await self._publisher.publish(
+                tg_id,
+                account_id,
+                online_id,
+                outcome.catch_up_rows,
+                None,
+                window_hours=GROUP_WIDENING_WINDOW_HOURS,
+            )
         if not outcome.new_rows:
-            return 0
+            if outcome.catch_up_rows:
+                await self._refresh_level(client, tg_id, account_id)
+            return len(outcome.catch_up_rows)
 
         log.info("tg_id=%s unlocked %s new psn trophies", tg_id, len(outcome.new_rows))
         # No game_name here (unlike Xbox/Steam's own poll_title): a single
@@ -131,12 +162,36 @@ class PsnFetcher:
         # multi-achievement paragraph) — format_digest/_group_by_title
         # (services/achievements.py) already handle that by grouping on
         # each row's own title_name, same as a Xbox/Steam catch-up burst.
-        await self._publisher.publish(tg_id, account_id, online_id, outcome.new_rows, None)
+        await self._publisher.publish(
+            tg_id,
+            account_id,
+            online_id,
+            outcome.new_rows,
+            None,
+            window_hours=self._relink_window.pop(account_id, None),
+        )
         # Level only ever changes when a trophy is earned (Follow-up
         # 2026-09-06, /stats' own PSN line) — refreshed here, not on every
         # tick.
         await self._refresh_level(client, tg_id, account_id)
         return len(outcome.new_rows)
+
+    def expect_relink_catch_up(self, account_id: str, window_hours: int) -> None:
+        """Relinking an account the bot already knows needs no backfill at
+        all (#52): PSN's ordinary tick *is* a delta — one paginated call
+        lists every trophy title with its progress, and detail is fetched
+        only where the progress grew, against `psn_title_progress`, which
+        survives an unlink along with everything else.
+
+        So the only thing a relink has to arrange is that the catch-up this
+        produces does not arrive as a month of trophies at once. The next
+        publish for this account is capped to `window_hours`; after that it
+        is an ordinary live poll again.
+
+        In-memory and single-use, like every other "must not survive a
+        restart" flag here — losing it costs at most one unwindowed catch-up.
+        """
+        self._relink_window[account_id] = window_hours
 
     async def backfill(self, tg_id: int, account_id: str) -> PsnBackfillResult:
         """Mark everything already earned as seen, publishing nothing — same

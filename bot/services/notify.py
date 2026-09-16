@@ -90,6 +90,25 @@ class AdminNotifier:
 
         await self._send(build)
 
+    async def service_key_alive(self, platform: str) -> None:
+        """The counterpart of service_key_dead (#62). Without it a false
+        alarm — one bad answer from Sony, which is what prompted this —
+        reads as permanent: the admin is told the credential died and has
+        no way to learn it came back except opening /admin."""
+
+        async def build(locale: str) -> str:
+            _ = translator("notify", locale)
+            label = _(
+                {
+                    Platform.STEAM: "notify-platform-steam",
+                    Platform.PSN: "notify-platform-psn",
+                }.get(platform, "notify-platform-unknown"),
+                platform=platform,
+            )
+            return _("notify-service-key-alive", label=label)
+
+        await self._send(build)
+
     async def translation_key_dead(self) -> None:
         """The Anthropic key died (2026-09-09) — a much milder event than
         service_key_dead above: nothing stops working, achievement
@@ -101,6 +120,15 @@ class AdminNotifier:
 
         async def build(locale: str) -> str:
             return translator("notify", locale)("notify-translation-key-dead")
+
+        await self._send(build)
+
+    async def translation_key_alive(self) -> None:
+        """Same "the alarm is over" note as service_key_alive, in the
+        milder wording translation_key_dead uses (#62)."""
+
+        async def build(locale: str) -> str:
+            return translator("notify", locale)("notify-translation-key-alive")
 
         await self._send(build)
 

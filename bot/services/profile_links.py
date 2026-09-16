@@ -30,7 +30,23 @@ def steam_profile_url(steam_id64: str) -> str:
 
 
 def psn_profile_url(online_id: str) -> str:
-    return f"https://my.playstation.com/profile/{quote(online_id)}"
+    """PSNProfiles, because Sony has nothing of its own to link to (#30).
+
+    `my.playstation.com/profile/<id>` was the link here until 2026-09-16. It
+    has been dead since June 2021, when Sony shut MyPlayStation down: the
+    PlayStation App shows the last three games played and the website shows
+    no trophies at all, so there is no official public profile page left to
+    point at — checked again before switching, not assumed.
+
+    **A profile PSNProfiles has never seen is not there yet**, and that is
+    expected rather than broken: the site indexes an account the first time
+    somebody opens its page, so the first visit may answer "not tracked" and
+    offer to add it, and every visit after that is the real profile. Which is
+    exactly why this is a plain link and the bot never checks it — PSNProfiles
+    answers an automated request with 403 (verified), so a liveness check here
+    would buy nothing and cost the address a ban.
+    """
+    return f"https://psnprofiles.com/{quote(online_id)}"
 
 
 def platform_profile_url(
@@ -44,7 +60,7 @@ def platform_profile_url(
     `external_id` (SteamID64 — steam_profile_url's own reasoning: always
     present, unlike a vanity name); PSN wants `display_name` instead
     (`link_platform_account` stores the onlineId there, `external_id` is
-    PSN's internal account_id, meaningless in a my.playstation.com URL)."""
+    PSN's internal account_id, which no trophy site addresses by)."""
     if platform == Platform.STEAM:
         return steam_profile_url(external_id)
     if platform == Platform.PSN:

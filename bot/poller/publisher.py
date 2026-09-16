@@ -17,16 +17,14 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InputMediaPhoto
 
-from bot.db.repo import AchievementRow, ChatTarget, Repo
-from bot.services.achievements import (
-    format_digest,
-    format_single,
-    passes_filters,
-)
+from bot.constants import account_platform_of
+from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
+from bot.services.achievements import passes_filters
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import stats_category
 from bot.services.naming import person_name_of
-from bot.util import utcnow
+from bot.util import parse_iso, utcnow
+from bot.views.notification import format_digest, format_single
 
 log = logging.getLogger(__name__)
 
@@ -104,10 +102,34 @@ class Publisher:
         gamertag: str,
         achievements: list[AchievementRow],
         title_name: str | None = None,
+        *,
+        window_hours: int | None = None,
     ) -> None:
-        """Decide per chat what to send, then hand it to the queue."""
+        """Decide per chat what to send, then hand it to the queue.
+
+        `window_hours` caps how old an achievement may be and still be
+        *announced* (#52, user rule: "only the last day"). Everything is
+        recorded either way — the caller already stored these rows; this
+        only decides what reaches a chat.
+
+        Passed by the paths that are not live: catching up after downtime,
+        and relinking an account whose history the bot already had. Left
+        None on the ordinary poll, and that is deliberate — PSN trophies
+        sync to Sony only when a player opens trophy data on the console,
+        sometimes days after the unlock, so a blanket age cap on the normal
+        path would silently swallow genuinely new trophies.
+        """
         if not achievements:
             return
+        if window_hours is not None:
+            cutoff = utcnow() - timedelta(hours=window_hours)
+            achievements = [
+                item
+                for item in achievements
+                if item.unlocked_at and parse_iso(item.unlocked_at) >= cutoff
+            ]
+            if not achievements:
+                return
 
         for chat in await self._repo.publication_targets(tg_id):
             allowed = [
@@ -144,11 +166,14 @@ class Publisher:
             # (digest_threshold lives on the subscription now, not on
             # user_settings — Follow-up, 2026-09-05, same move as
             # rarity_mode before it).
+            progress = await self._progress_for(allowed, xuid)
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        text=format_digest(gamertag, title_name, allowed, locale=chat.locale),
+                        text=format_digest(
+                            gamertag, title_name, allowed, locale=chat.locale, progress=progress
+                        ),
                         gallery=_gallery(allowed),
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
                     )
@@ -163,7 +188,20 @@ class Publisher:
                 await self._queue.put(
                     PublishJob(
                         chat_id=chat.chat_id,
-                        text=format_single(gamertag, item, title_name, locale=chat.locale),
+                        text=format_single(
+                            gamertag,
+                            item,
+                            # The row's own name wins when it has one: the
+                            # localization pass above put the chat's language
+                            # there (#61), while `title_name` is whatever the
+                            # caller resolved once, in one language, for every
+                            # chat at once.
+                            item.title_name or title_name,
+                            locale=chat.locale,
+                            progress=progress.get(
+                                (item.platform, item.title_id, item.trophy_group_id)
+                            ),
+                        ),
                         gallery=_gallery([item]),
                         items=[(xuid, item.title_id, item.achievement_id)],
                     )
@@ -224,6 +262,48 @@ class Publisher:
         )
         return to_send
 
+    async def _progress_for(
+        self, achievements: list[AchievementRow], account_id: str | None = None
+    ) -> dict[tuple[str, str, str | None], TitleProgress]:
+        """ "47/50" per game, for whichever games have a known total (#46).
+
+        Looked up once per batch rather than per achievement: a digest of
+        ten unlocks in one game is one query, not ten. Games whose total the
+        bot does not know (a Steam game with no cached schema yet, a PSN
+        game last polled before totals were stored) simply have no entry,
+        and their line renders without a counter.
+
+        Keyed by group as well as game: a PSN trophy also says which part
+        of the game it came from, and the same game can appear twice in one
+        batch under two different groups. A `None` group is the game-only
+        answer — every Xbox and Steam row, and a digest block whose trophies
+        do not share one group.
+
+        `account_id` is whose achievements these are, for the ordinary path
+        where every row in the batch belongs to the one account `publish()`
+        was called for. Rows only carry an `xuid` of their own on the
+        anti-flood path, which reads them back out of the database precisely
+        because it can mix accounts — and relying on that field alone is why
+        the counter never appeared in a real message at all: the poller
+        builds its rows from the platform response (`to_achievement_row`),
+        which has no `xuid` to put there, so every lookup was skipped.
+        """
+        result: dict[tuple[str, str, str | None], TitleProgress] = {}
+        for item in achievements:
+            external_id = item.xuid or account_id
+            if not external_id:
+                continue
+            for group_id in {item.trophy_group_id, None}:
+                key = (item.platform, item.title_id, group_id)
+                if key in result:
+                    continue
+                found = await self._repo.title_progress(
+                    account_platform_of(item.platform), external_id, item.title_id, group_id
+                )
+                if found is not None:
+                    result[key] = found
+        return result
+
     async def publish_flood_digest(
         self, tg_id: int, chat_id: int, achievements: list[AchievementRow]
     ) -> None:
@@ -250,7 +330,16 @@ class Publisher:
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,
-                text=format_digest(name, None, achievements, locale=locale),
+                text=format_digest(
+                    name,
+                    None,
+                    achievements,
+                    locale=locale,
+                    # Same counters as every other game line (#46) — a
+                    # flushed backlog is still one block per game, and the
+                    # figure is as true here as it is live.
+                    progress=await self._progress_for(achievements),
+                ),
                 gallery=_gallery(achievements),
                 items=[
                     (item.xuid, item.title_id, item.achievement_id)

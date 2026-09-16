@@ -51,7 +51,21 @@ class Fetcher:
         title_name: str | None,
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
-        parsed = await self._client.title_achievements(tg_id, title_id, platform)
+        parsed, total = await self._client.title_achievements_with_total(tg_id, title_id, platform)
+        # The size of the set those unlocks came from — the "47/50" counter's
+        # own denominator (#46). titlehub reports it for Xbox 360 and returns
+        # 0 for most modern titles, so for those this response is the only
+        # place it exists; `upsert_title` never blanks a total it already
+        # knows, so a reply that does not say leaves the stored one alone.
+        if total:
+            if title_name:
+                await self._repo.upsert_title(
+                    title_id, title_name, platform, achievements_total=total
+                )
+            else:
+                # Presence gives no name for a PC title; the name is resolved
+                # further down, and the total must not wait for it.
+                await self._repo.set_title_total(title_id, total)
         await self._fill_x360_icon(tg_id, title_id, platform, parsed)
         await self._bilingual_descriptions(tg_id, title_id, platform, parsed)
         rows = [to_achievement_row(item) for item in parsed]
@@ -142,7 +156,14 @@ class Fetcher:
         version of this uses.
         """
         candidates = {item.achievement_id: item.description for item in parsed if item.description}
-        if not candidates:
+        # A name is worth the second request on its own (#61): a game whose
+        # descriptions were all cached before names existed would otherwise
+        # never ask for Russian again, and would keep showing English names in
+        # a Russian chat forever.
+        nameless = await self._repo.names_missing(
+            platform, title_id, [item.achievement_id for item in parsed]
+        )
+        if not candidates and not nameless:
             return
 
         result: dict[str, tuple[str | None, str | None]] = {}
@@ -154,7 +175,7 @@ class Fetcher:
             else:
                 uncached[achievement_id] = english_text
 
-        if uncached:
+        if uncached or nameless:
             try:
                 russian_parsed = await self._client.title_achievements(
                     tg_id, title_id, platform, language="ru-RU"
@@ -162,6 +183,28 @@ class Fetcher:
             except XboxApiError as exc:
                 log.info("bilingual fetch for title %s skipped: %s", title_id, exc)
                 russian_parsed = []
+            # The same response carries the names, and they cost nothing more
+            # (#61). `parsed` is the en-US answer, `russian_parsed` the ru-RU
+            # one, so this is the platform's own pair — never a translation.
+            english_names = {item.achievement_id: item.name for item in parsed}
+            await self._repo.cache_names(
+                platform,
+                title_id,
+                {
+                    item.achievement_id: (item.name, english_names.get(item.achievement_id))
+                    for item in russian_parsed
+                },
+            )
+            # Xbox localizes a game's own title too, for games that have a
+            # Russian name — "Halo: The Master Chief Collection" comes back as
+            # "Halo: Коллекция Мастер Чифа" (#61). Contract 4 carries it on
+            # every achievement; contract 1 (x360) carries none, and then
+            # there is simply nothing to store.
+            await self._repo.set_title_names(
+                title_id,
+                next((item.title_name for item in russian_parsed if item.title_name), None),
+                next((item.title_name for item in parsed if item.title_name), None),
+            )
             russian_by_id = {item.achievement_id: item.description for item in russian_parsed}
             native = {
                 achievement_id: (russian_text, english_text)
@@ -330,6 +373,13 @@ class Fetcher:
             await self._repo.update_xbox_names(
                 tg_id, gamertag=snapshot.gamertag, gamertag_modern=snapshot.gamertag_modern
             )
+        # And the picture (#55), from the same response. Only the URL is
+        # written here: downloading it belongs to poller/avatars.py, which
+        # does that for every platform on one slow cadence — this is the one
+        # platform whose URL can only be read with the person's own token,
+        # which is why it is written from here at all.
+        if snapshot.avatar_url:
+            await self._repo.set_account_avatar_url(xuid, snapshot.avatar_url)
 
 
 def _played_since(

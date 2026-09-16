@@ -1,6 +1,6 @@
 """The /admin home screen's own render (Follow-up 2026-09-06) — split out of
 handlers/admin.py so poller/admin_refresh.py can reuse the exact same
-rendering the manual command uses, same relationship services/online_view.py
+rendering the manual command uses, same relationship views/online.py
 already has with handlers/chat.py's /online and poller/online_refresh.py.
 
 Only the *home* screen lives here — /admin's sub-screens (users list, a

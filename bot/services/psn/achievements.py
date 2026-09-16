@@ -36,6 +36,7 @@ from bot.services.psn.client import (
     PsnPrivateProfileError,
     PsnTitleUnavailableError,
     trophies_for_title,
+    trophy_groups_for_title,
     trophy_titles_for_account,
 )
 from bot.services.rows import to_achievement_row
@@ -61,6 +62,13 @@ class PsnSyncOutcome:
     `unmapped_errors` at the account level."""
 
     new_rows: list[AchievementRow] = field(default_factory=list)
+    # Rows from a game this bot had never looked at group-by-group before
+    # (#46). Until this shipped only the base game's trophies were ever
+    # fetched, so the first such pass surfaces every DLC trophy the person
+    # earned — years of them, all at once. Kept apart from `new_rows` so the
+    # poller can publish them under the same 24-hour cap a relink uses
+    # (#52's own rule) instead of announcing a history nobody asked for.
+    catch_up_rows: list[AchievementRow] = field(default_factory=list)
     scanned: int = 0
     # Games whose trophy detail is hidden by that game's own privacy setting
     # (PsnPrivateProfileError) — the account as a whole passed the connect-
@@ -106,6 +114,55 @@ async def sync_account(
     outcome = PsnSyncOutcome(scanned=len(titles))
 
     for title in titles:
+        # The denominator of the "24/74" beside a notification's game line
+        # (#46), stored for every title this scan walks — not only for the
+        # ones that moved, which is what it used to be and why a game nobody
+        # had advanced lately had no counter at all (0 of 10 titles on the
+        # test bot). It is one number already in the listing; `upsert_title`
+        # never blanks a total it already knows.
+        #
+        # getattr, not attribute access: `title` is psnawp's own object and
+        # this field is not part of any contract we control — the same
+        # defensiveness services/psn/client.py already applies to its types.
+        defined = getattr(title, "defined_trophies", None)
+        defined_total = (
+            (defined.bronze + defined.silver + defined.gold + defined.platinum)
+            if defined is not None
+            else 0
+        )
+        if defined_total:
+            await repo.upsert_title(
+                title.np_communication_id,
+                title.title_name,
+                Platform.PSN,
+                achievements_total=defined_total,
+            )
+
+        # The name and size of each group this game's trophy list is split
+        # into (#46), and the game's own name in both languages (#61) — one
+        # call, once per game, then cached forever: a game's shape only
+        # changes when its publisher ships new trophies.
+        #
+        # Above the progress gate below on purpose. It used to sit under it,
+        # so a game nobody had advanced lately never got either — which is the
+        # same reason its trophy *total* was missing (#60). The DB check is
+        # what keeps this to one call per game rather than one per tick.
+        if not await repo.has_title_groups(title.np_communication_id):
+            structure = await trophy_groups_for_title(
+                client, account_id, title, translation_client=translation_client
+            )
+            if structure.groups:
+                await repo.save_title_groups(
+                    title.np_communication_id,
+                    [
+                        (group.group_id, group.name, group.total, group.name_ru, group.name_en)
+                        for group in structure.groups
+                    ],
+                )
+            await repo.set_title_names(
+                title.np_communication_id, structure.title_name_ru, structure.title_name_en
+            )
+
         progress = title.progress or 0
         previous = await repo.get_psn_title_progress(account_id, title.np_communication_id)
         if previous is not None and progress <= previous:
@@ -155,6 +212,13 @@ async def sync_account(
             await _bilingual_descriptions(
                 repo, anthropic_auth, translation_client, account_id, title, earned
             )
+        # Does this pass widen a game the bot only ever knew the base group
+        # of? (see repo.psn_title_needs_widening) Asked before the insert,
+        # because the insert is what stops it being true. Backfill publishes
+        # nothing at all, so it never needs the split.
+        widened = not is_backfill and await repo.psn_title_needs_widening(
+            account_id, title.np_communication_id
+        )
         rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
         inserted = await repo.insert_new_achievements_psn(
             tg_id, account_id, rows, is_backfill=is_backfill
@@ -165,7 +229,10 @@ async def sync_account(
         # (INSERT OR IGNORE), so the cost is one redundant fetch, never a
         # silently dropped trophy (#26).
         await repo.set_psn_title_progress(account_id, title.np_communication_id, progress)
-        outcome.new_rows.extend(inserted)
+        if widened:
+            outcome.catch_up_rows.extend(inserted)
+        else:
+            outcome.new_rows.extend(inserted)
 
     return outcome
 
@@ -184,6 +251,7 @@ def _to_parsed(np_communication_id: str, item: EarnedTrophy) -> ParsedAchievemen
         platform=Platform.PSN,
         is_secret=item.trophy_hidden,
         trophy_type=item.trophy_type.value if item.trophy_type else None,
+        trophy_group_id=item.trophy_group_id,
     )
 
 
@@ -211,7 +279,12 @@ async def _bilingual_descriptions(
     for the service NPSSO itself being dead.
     """
     candidates = {item.trophy_id: item.trophy_detail for item in earned if item.trophy_detail}
-    if not candidates:
+    # A name earns the second request on its own (#61) — see the Xbox version
+    # of this in poller/fetcher.py for why.
+    nameless = await repo.names_missing(
+        Platform.PSN, title.np_communication_id, [str(item.trophy_id) for item in earned]
+    )
+    if not candidates and not nameless:
         return
 
     to_fetch: dict[int, str] = {}
@@ -225,12 +298,32 @@ async def _bilingual_descriptions(
                 cached[trophy_id] = row.description_ru
         else:
             to_fetch[trophy_id] = english_text
-    if not to_fetch:
+    if not to_fetch and not nameless:
         _apply(earned, cached)
         return
 
+    # A trophy missing from the response is a fact about the trophy; a
+    # failed request is a fact about the client (#50). The two deserve
+    # opposite answers, and conflating them is what lost descriptions:
+    #
+    # - a transient failure (rate limit, half-dead session) says nothing
+    #   about whether Russian text exists, so skip and let a later pass get
+    #   it natively rather than paying the LLM for something that will
+    #   arrive free;
+    # - a permanent one — Sony 404ing the title for this client — is never
+    #   going to improve. Verified against production on NPWR23378_00,
+    #   which 404s from *both* the US and RU clients, so it is not a
+    #   regional gap either. Those trophies fall through to the LLM.
+    permanently_unavailable = False
     try:
         russian_earned = await trophies_for_title(translation_client, account_id, title)
+    except PsnTitleUnavailableError:
+        log.info(
+            "psn title %s unavailable to the translation client — translating from English",
+            title.np_communication_id,
+        )
+        russian_earned = []
+        permanently_unavailable = True
     except Exception:
         log.info(
             "psn bilingual fetch for title %s skipped", title.np_communication_id, exc_info=True
@@ -238,12 +331,31 @@ async def _bilingual_descriptions(
         _apply(earned, cached)
         return
 
+    # The same response carries the trophy names, and they cost nothing more
+    # (#61): `earned` came from the en-US client, `russian_earned` from the
+    # ru-RU one, so this is Sony's own pair — never a translation.
+    english_names = {item.trophy_id: item.trophy_name for item in earned}
+    await repo.cache_names(
+        Platform.PSN,
+        title.np_communication_id,
+        {
+            str(item.trophy_id): (item.trophy_name, english_names.get(item.trophy_id))
+            for item in russian_earned
+        },
+    )
     russian_by_id = {item.trophy_id: item.trophy_detail for item in russian_earned}
+    # A trophy present in English and absent from Russian is precisely "Sony
+    # has no Russian text for this one" — the case the LLM exists for (#50).
+    # It used to be filtered out here and never reached the translator at
+    # all: not cached, not translated, uncached again on every future pass.
+    # Handing the English text as both halves is how the shared
+    # bilingual_descriptions() already spells "no native translation".
     native = {
-        str(trophy_id): (russian_text, english_text)
+        str(trophy_id): (russian_by_id.get(trophy_id) or english_text, english_text)
         for trophy_id, english_text in to_fetch.items()
-        if (russian_text := russian_by_id.get(trophy_id)) is not None
     }
+    if permanently_unavailable:
+        native = {key: (english, english) for key, (_ru, english) in native.items()}
     if native:
         resolved = await bilingual_descriptions(
             repo, anthropic_auth, Platform.PSN, title.np_communication_id, native
