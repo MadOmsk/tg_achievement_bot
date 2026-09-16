@@ -79,3 +79,55 @@ async def test_connecting_to_a_newer_database_aborts_instead_of_migrating(tmp_pa
 
     with pytest.raises(SchemaTooNewError):
         await Database(tmp_path / "bot.db").connect()
+
+
+async def test_a_migration_whose_column_schema_sql_already_added_is_not_fatal(tmp_path) -> None:
+    """The collision a big version jump causes, found by rehearsing the
+    accounts-52 merge against a copy of production (2026-09-16).
+
+    schema.sql runs first and creates missing tables in their *finished*
+    shape; the migrations then run. A table that did not exist yet is
+    therefore born with the columns a later migration meant to add — and
+    that migration used to die on "duplicate column name", which on the
+    production deploy would not have been a rehearsal.
+    """
+    database = await Database(tmp_path / "bot.db").connect()
+    await database.conn.execute("CREATE TABLE later (id TEXT PRIMARY KEY, name_ru TEXT)")
+    await database.conn.commit()
+    await database.close()
+
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    (migrations / "900_add_name_ru.sql").write_text(
+        "ALTER TABLE later ADD COLUMN name_ru TEXT;", encoding="utf-8"
+    )
+
+    import bot.db.repo._database as database_module
+
+    original = database_module.MIGRATIONS_DIR
+    database_module.MIGRATIONS_DIR = migrations
+    try:
+        reopened = await Database(tmp_path / "bot.db").connect()  # must not raise
+        await reopened.close()
+    finally:
+        database_module.MIGRATIONS_DIR = original
+
+
+async def test_a_migration_that_fails_for_any_other_reason_still_stops_startup(tmp_path) -> None:
+    """The swallow above is exactly one error wide."""
+    database = await Database(tmp_path / "bot.db").connect()
+    await database.close()
+
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    (migrations / "901_broken.sql").write_text("SELECT * FROM nothing_at_all;", encoding="utf-8")
+
+    import bot.db.repo._database as database_module
+
+    original = database_module.MIGRATIONS_DIR
+    database_module.MIGRATIONS_DIR = migrations
+    try:
+        with pytest.raises(Exception, match="nothing_at_all"):
+            await Database(tmp_path / "bot.db").connect()
+    finally:
+        database_module.MIGRATIONS_DIR = original

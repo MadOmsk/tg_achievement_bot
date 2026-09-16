@@ -328,6 +328,27 @@ every column.
   exist" — a database old enough to predate that table still needs its
   migrations.
 
+  **A migration that adds a column schema.sql already created is not an
+  error** (2026-09-16). A database skipping several versions at once meets
+  both halves of the bring-up: schema.sql creates every missing table in its
+  *finished* shape, and only then do the migrations run — so a migration that
+  creates a table and a later one that adds a column to it collide on exactly
+  that column. `_apply_one` swallows `duplicate column name` and nothing else,
+  and logs it. Found by rehearsing the accounts-52 merge against a copy of
+  production, where `title_groups` did not exist and 044 died on it.
+
+  **Bring-up failing must stop the process, not hang it.** `connect()` closes
+  the connection before re-raising: aiosqlite runs its own worker thread, and
+  a connection left open keeps a non-daemon thread alive after the exception
+  has unwound everything else — the bot then neither serves nor exits. Found
+  the same afternoon, testing the fail-fast path #56 added.
+
+  **Rehearse a migration against a copy of production before a deploy that
+  carries one.** Copy the file with `sqlite3`'s own `backup()`, run the real
+  `Database.connect()` against it, and count the rows on both sides. That one
+  afternoon caught three deploy-breaking faults, two of which no test could
+  have: they only exist on a database with production's particular history.
+
 - **Identity: a person and an account are separate things** (#52, 2026-09-12).
   `users` is keyed by Telegram `tg_id` and holds only the Telegram identity.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
