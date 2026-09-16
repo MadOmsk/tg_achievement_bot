@@ -1275,13 +1275,18 @@ how it is sorted and what caps it (kept from `docs/ui/tables.md` when that
 file went away, #63 — the *queries* are visible in the code, but "who is in
 scope" and "what the cap is for" are decisions and are not).
 
-Every one of them renders through `views/lists.py::Listing` — header, rows,
+Seven of these ten render through `views/lists.py::Listing` — header, rows,
 an optional total line, and a wrapper that is a collapsible quote by default
-and plain text for `/online`, which redraws itself every few minutes and has
-to read at a glance. The *rows* are deliberately not shared: a list of games
-and a list of people are different things. The one exception is the games
-row itself, which two screens draw identically and which lived in two copies
-until #64.
+and plain text where a list is read at a glance rather than tapped open
+(`/online`, and the two admin rosters below). The *rows* are deliberately not
+shared: a list of games and a list of people are different things. The one
+exception is the games row itself, which two screens draw identically and
+which lived in two copies until #64. The admin's chat list goes through
+`Listing` with an empty row list — it is buttons-only by design (see its own
+note below) — so the day it grows a text row, the machinery is already there.
+The three still outside it — `/hltb`'s two lists and a chat's inline
+subscriber string — are either sourced from outside the database or are a
+single joined line rather than a real list.
 
 | List | Source | Who appears | Sort | Cap |
 |---|---|---|---|---|

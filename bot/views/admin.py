@@ -58,7 +58,7 @@ from bot.views.keyboards import (
     format_rarity,
     locale_name,
 )
-from bot.views.lists import truncate_name
+from bot.views.lists import Listing, truncate_name
 from bot.views.parts import (
     COMPLETED_BADGE,
     plural_achievements,
@@ -256,7 +256,7 @@ async def render_user_list(
     page = max(0, min(page, pages - 1))
     chunk = users[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
 
-    lines = [_("admin-users-header", page=page + 1, pages=pages), ""]
+    rows = []
     builder = InlineKeyboardBuilder()
     for user in chunk:
         # The person chain (#51), not "whichever platform answered first" —
@@ -272,7 +272,7 @@ async def render_user_list(
             steam=user.steam_name,
             psn=user.psn_online_id,
         )
-        lines.append(
+        rows.append(
             _(
                 "admin-users-row",
                 icon=_icon(user),
@@ -296,8 +296,16 @@ async def render_user_list(
         builder.row(*navigation)
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
 
-    lines += ["", _("admin-users-columns")]
-    return "\n".join(lines), builder.as_markup()
+    # A roster, not a report section, so it is never quoted (#64) — the whole
+    # point is to skim it at a glance, same reasoning /online has. The rows
+    # and their wrapper are Listing's own job; the header (with its page
+    # count) and the trailing column hint stay outside it, exactly as the
+    # blank-line spacing between them always looked.
+    body = Listing(rows=rows, quoted=False).body()
+    text = "\n\n".join(
+        [_("admin-users-header", page=page + 1, pages=pages), body, _("admin-users-columns")]
+    )
+    return text, builder.as_markup()
 
 
 def _admin_tg_header(user: User, *, locale: str) -> str:
@@ -571,6 +579,12 @@ async def render_user_card(
 
 
 async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Unlike the user list above, this one is buttons only — a chat row is
+    two facts wide, and both fit on the button, so there is no separate text
+    row to write (#64's own doc note on this screen). Still built through
+    `Listing`, with an empty row list, so the rendering path is the same one
+    every other list here uses and stays that way if a text row is ever
+    added — today it is a no-op, `Listing(rows=[]).body()` is always ""."""
     _ = translator("admin", locale)
     chats = await repo.admin_chats()
     if not chats:
@@ -591,7 +605,11 @@ async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeybo
             )
         )
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-    return _("admin-chats-header"), builder.as_markup()
+
+    header = _("admin-chats-header")
+    body = Listing(rows=[], quoted=False).body()
+    text = f"{header}\n\n{body}" if body else header
+    return text, builder.as_markup()
 
 
 async def render_chat_card(
