@@ -964,10 +964,12 @@ last line of `/help` and the group hub, and logged at startup.
 - **B** — which line of work this build is. `0` on `main`; a working branch
   takes the next number and `main` inherits it on merge, so "is this the
   test bot" is answerable from the version alone.
-- **C** — the commit, read from git at startup (`nogit` without a checkout).
-  Deliberately not stored: a number you must remember to bump is wrong
-  exactly when it matters, and one edited per commit is a merge conflict per
-  commit.
+- **C** — commits made on this branch since it left `main`, counted at
+  startup from the merge base (owner's call, 2026-09-16): a short number
+  that grows by one per commit, rather than a hash nobody can order at a
+  glance. `0` on `main` itself, `?` where git cannot answer. Deliberately
+  not stored: a number you must remember to bump is wrong exactly when it
+  matters, and one edited per commit is a merge conflict per commit.
 - **D** — the newest migration this code ships. Not what the database has.
 
 **A database ahead of the code refuses to start** (`Database.connect` →

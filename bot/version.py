@@ -7,8 +7,11 @@ an outage:
 - **B** — which line of work this build comes from. `0` on `main`; a working
   branch takes the next number, and `main` inherits it when that branch
   merges. This is the part that says "you are looking at the test bot".
-- **C** — the exact commit, resolved from git at startup rather than typed
-  into a file. A version you have to remember to bump is a version that is
+- **C** — how many commits this branch has made since it left `main`,
+  counted from git at startup rather than typed into a file (owner's call,
+  2026-09-16: a short number that grows by one per commit reads better than
+  a hash nobody can order at a glance). It is `0` on `main` itself, so a
+  build from the trunk says so. A version you have to remember to bump is
   wrong precisely when it matters, and one edited per commit is a merge
   conflict per commit.
 - **D** — the database schema this code expects: the highest migration file
@@ -34,28 +37,48 @@ MAJOR = 1
 BRANCH = 0
 
 MIGRATIONS = Path(__file__).resolve().parent / "db" / "migrations"
-UNKNOWN_REVISION = "nogit"
+REPO = Path(__file__).resolve().parents[1]
+UNKNOWN_REVISION = "?"
+
+#: Where this branch is measured from. `origin/main` first: a deployment's
+#: own local `main` is usually stale (nothing checks it out there), and a
+#: stale baseline would quietly give the same commit two different numbers
+#: on two machines.
+BASE_REFS = ("origin/main", "main")
+
+
+def _git(*args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args], cwd=REPO, capture_output=True, text=True, timeout=5, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    output = result.stdout.strip()
+    return output if result.returncode == 0 and output else None
 
 
 @cache
 def revision() -> str:
-    """The short commit hash, or `nogit` when git cannot answer — a release
-    tarball, a container without the .git directory. Never fatal: a version
-    is a label, and refusing to start because one is incomplete would be the
-    opposite of what this file is for."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=Path(__file__).resolve().parents[1],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
+    """Commits made on this branch since it left `main`.
+
+    Counted from the *merge base*, not from the tip of `main`: the question
+    is "how far has this branch come", and measuring against a trunk that
+    has moved on since would answer a different one — and a different number
+    every time somebody else merges something.
+
+    `?` when git cannot answer at all (a release tarball, a container with
+    no .git). Never fatal: a version is a label, and refusing to start
+    because one is incomplete would be the opposite of what this file is
+    for.
+    """
+    base = next((ref for ref in BASE_REFS if _git("rev-parse", "--verify", "--quiet", ref)), None)
+    if base is None:
         return UNKNOWN_REVISION
-    revision = result.stdout.strip()
-    return revision if result.returncode == 0 and revision else UNKNOWN_REVISION
+    fork_point = _git("merge-base", base, "HEAD")
+    if fork_point is None:
+        return UNKNOWN_REVISION
+    return _git("rev-list", "--count", f"{fork_point}..HEAD") or "0"
 
 
 @cache
