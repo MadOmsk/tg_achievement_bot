@@ -13,7 +13,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram_i18n import I18nContext
 
 from bot.services.hltb import HltbResult
-from bot.views.inline_lists import InlineListing, button_rows, counted_nav, paginate
+from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.lists import blockquote
 
 # The rest of the card runs to roughly 300 characters at its longest (a
@@ -38,7 +38,7 @@ def _recent_keyboard(
     shown = paginate(list(enumerate(names)), page, page_size)
     return InlineListing(
         rows=button_rows(shown.items, lambda item: item[1], lambda item: f"hltb:qr:{item[0]}"),
-        nav=counted_nav(shown, "hltb:rpage:"),
+        nav=page_nav(shown, "hltb:rpage:", noop="hltb:noop"),
         tail=_cancel_row(i18n),
     ).markup()
 
@@ -49,7 +49,7 @@ def _results_keyboard(
     shown = paginate(results, page, page_size)
     return InlineListing(
         rows=button_rows(shown.items, _label, lambda r: f"hltb:pick:{r.hltb_id}"),
-        nav=counted_nav(shown, "hltb:page:"),
+        nav=page_nav(shown, "hltb:page:", noop="hltb:noop"),
         tail=_cancel_row(i18n),
     ).markup()
 

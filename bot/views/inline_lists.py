@@ -87,35 +87,27 @@ def paginate[T](items: Sequence[T], page: int, size: int) -> Page[T]:
     return Page(list(items[start : start + size]), number, count)
 
 
-# The two navigation rows below are the same job wearing two looks — found
-# while cataloguing these lists (#64's own sweep): /hltb has always shown the
-# page number between its arrows, the admin's roster never has. They sit side
-# by side here rather than being quietly unified, because which one wins is a
-# visible change and so the owner's to make, not a refactor's to smuggle in.
+def page_nav[T](page: Page[T], prefix: str, *, noop: str) -> list[InlineKeyboardButton] | None:
+    """`◀️ 2/5 ▶️` — where you are and how much is left, next to the arrows
+    that act on it.
 
+    One shape for every paginated list (2026-09-16, owner decision). There
+    were two: this one, and the admin roster's bare `‹ ›` with its page count
+    in the header text. Same job, two looks — the count moved here, where it
+    is read in the same glance as the arrow it decides to press.
 
-def counted_nav[T](page: Page[T], prefix: str) -> list[InlineKeyboardButton] | None:
-    """`◀️ 2/5 ▶️` — /hltb's shape. The counter is itself a button because a
-    keyboard has nowhere else to put a label; it answers nothing."""
+    `noop` is the counter's own callback, which does nothing but stop
+    Telegram's spinner. It is per-screen rather than one shared value because
+    every callback here lives in its screen's own namespace (`a:`, `hltb:`),
+    and a counter answering another screen's router is exactly the kind of
+    cross-wiring that namespace prevents.
+    """
     if not page.has_pages:
         return None
     row = []
     if page.number > 0:
         row.append(InlineKeyboardButton(text="◀️", callback_data=f"{prefix}{page.number - 1}"))
-    row.append(
-        InlineKeyboardButton(text=f"{page.number + 1}/{page.count}", callback_data="hltb:noop")
-    )
+    row.append(InlineKeyboardButton(text=f"{page.number + 1}/{page.count}", callback_data=noop))
     if page.number < page.count - 1:
         row.append(InlineKeyboardButton(text="▶️", callback_data=f"{prefix}{page.number + 1}"))
     return row
-
-
-def arrow_nav[T](page: Page[T], prefix: str) -> list[InlineKeyboardButton] | None:
-    """`‹ ›` — the admin roster's shape, with the page count carried by the
-    header text above it instead."""
-    row = []
-    if page.number > 0:
-        row.append(InlineKeyboardButton(text="‹", callback_data=f"{prefix}{page.number - 1}"))
-    if page.number < page.count - 1:
-        row.append(InlineKeyboardButton(text="›", callback_data=f"{prefix}{page.number + 1}"))
-    return row or None

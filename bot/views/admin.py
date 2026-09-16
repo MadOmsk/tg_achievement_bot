@@ -52,7 +52,7 @@ from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_C
 from bot.services.translate.auth import AnthropicAuth
 from bot.util import humanize_ago
 from bot.views import Screen
-from bot.views.inline_lists import InlineListing, arrow_nav, button_rows, paginate
+from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
     COMMON_OFFSETS_HOURS,
     format_offset,
@@ -291,7 +291,7 @@ async def render_user_list(
     # `InlineListing` the tappable one, off the same people in the same order.
     keyboard = InlineListing(
         rows=buttons,
-        nav=arrow_nav(shown, "a:users:"),
+        nav=page_nav(shown, "a:users:", noop="a:noop"),
         tail=_back_row(locale=locale),
     ).markup()
 
@@ -300,14 +300,10 @@ async def render_user_list(
     # and their wrapper are Listing's own job; the header (with its page
     # count) and the trailing column hint stay outside it, exactly as the
     # blank-line spacing between them always looked.
+    # The header no longer repeats the page count: it now sits on the
+    # navigation row right below, between the arrows that act on it.
     body = Listing(rows=rows, quoted=False).body()
-    text = "\n\n".join(
-        [
-            _("admin-users-header", page=shown.number + 1, pages=shown.count),
-            body,
-            _("admin-users-columns"),
-        ]
-    )
+    text = "\n\n".join([_("admin-users-header"), body, _("admin-users-columns")])
     return text, keyboard
 
 

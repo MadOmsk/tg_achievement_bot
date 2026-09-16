@@ -109,8 +109,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           collapsible quote, not always), the total line, the
 │   │   │                           name cap, and the one games row two screens draw (#64)
 │   │   └── inline_lists.py         the same for a list rendered as a *keyboard*: the
-│   │                               button rows, the page arithmetic, the two navigation
-│   │                               shapes, the way out
+│   │                               button rows, the page arithmetic, the one navigation
+│   │                               shape, the way out
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py         whether an achievement may be published (the wording
@@ -1308,12 +1308,19 @@ In both files the *rows* are deliberately not shared: a list of games and a
 list of people are different things. The one exception is the games row,
 which two screens draw identically and which lived in two copies until #64.
 
-**Two navigation shapes exist on purpose, for now**: `/hltb` puts the page
-number between its arrows (`◀️ 2/5 ▶️`), the admin's roster carries the count
-in its header text and shows bare `‹ ›`. They are the same job wearing two
-looks — found while cataloguing these lists — and they sit side by side in
-`inline_lists.py` rather than being quietly unified, because which one wins
-is a visible change and so the owner's to make.
+**One navigation shape, everywhere**: `◀️ 2/5 ▶️` — where you are and how
+much is left, next to the arrows that act on it (2026-09-16, owner decision).
+There were two, found while cataloguing these lists: this one on `/hltb`, and
+the admin roster's bare `‹ ›` with its page count in the header text. Same job,
+two looks. The count moved onto the row, so `admin-users-header` no longer
+repeats it — a header and a keyboard two lines apart are read in one glance,
+and saying it twice there was the only thing unification could have cost.
+
+The counter is a button because a keyboard row has nowhere else to put a
+label; `page_nav`'s `noop` argument is the callback that answers it and does
+nothing else. It is per-screen (`a:noop`, `hltb:noop`) rather than one shared
+value, because every callback here lives in its own screen's namespace and a
+counter answering another screen's router is exactly what that prevents.
 
 A screen that is genuinely both kinds at once builds both: the admin's user
 list fills a text row and a button row from one loop over one page of people
@@ -1326,7 +1333,7 @@ list fills a text row and a button row from one loop over one page of people
 | summary leaderboards (day/month) | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
 | "Игры за месяц" | listing, quoted | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
 | `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
-| the admin's user list | listing (plain) **and** inline listing | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page, `‹ ›` |
+| the admin's user list | listing (plain) **and** inline listing | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page, `◀️ N/M ▶️` |
 | the admin's chat list | inline listing | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
 | `/who`'s picker | inline listing | `repo.chat_member_presence()` | subscribers ∪ `chat_seen`, same as `/online` | the query's own playing → online → offline | — (three per row is layout) |
 | `/panel`'s "Мои чаты" | inline listing | `repo.user_chats()` | every active chat this person subscribed to or was seen writing in | title ↑ | — |

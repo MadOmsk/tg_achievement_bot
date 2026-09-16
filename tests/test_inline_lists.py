@@ -10,9 +10,8 @@ from __future__ import annotations
 
 from bot.views.inline_lists import (
     InlineListing,
-    arrow_nav,
     button_rows,
-    counted_nav,
+    page_nav,
     paginate,
 )
 
@@ -42,10 +41,10 @@ def test_per_row_packs_the_grid_and_allows_a_short_last_row() -> None:
 def test_listing_puts_navigation_above_the_way_out() -> None:
     listing = InlineListing(
         rows=button_rows(["a"], str, lambda item: f"pick:{item}"),
-        nav=[*arrow_nav(paginate(["a", "b"], 0, 1), "a:users:")],
+        nav=page_nav(paginate(["a", "b"], 0, 1), "a:users:", noop="a:noop"),
         tail=[button for button in button_rows([BACK], lambda _: "Назад", str)[0]],
     )
-    assert _callbacks(listing.markup()) == [["pick:a"], ["a:users:1"], [BACK]]
+    assert _callbacks(listing.markup()) == [["pick:a"], ["a:noop", "a:users:1"], [BACK]]
 
 
 def test_listing_without_navigation_or_tail_is_just_its_rows() -> None:
@@ -81,28 +80,26 @@ def test_an_empty_list_is_one_empty_page_not_zero_pages() -> None:
     assert not page.has_pages
 
 
-def test_neither_navigation_shape_appears_on_a_single_page() -> None:
-    page = paginate(list(range(3)), 0, 5)
-    assert counted_nav(page, "hltb:page:") is None
-    assert arrow_nav(page, "a:users:") is None
+def test_navigation_does_not_appear_on_a_single_page() -> None:
+    assert page_nav(paginate(list(range(3)), 0, 5), "hltb:page:", noop="hltb:noop") is None
 
 
-def test_counted_navigation_carries_the_page_number_between_its_arrows() -> None:
+def test_navigation_carries_the_page_number_between_its_arrows() -> None:
+    """One shape for every paginated list (2026-09-16) — the admin's roster
+    used to show bare `‹ ›` and keep its count in the header text."""
     first, middle, last = (paginate(list(range(12)), n, 5) for n in (0, 1, 2))
-    assert [b.text for b in counted_nav(first, "hltb:page:")] == ["1/3", "▶️"]
-    assert [b.text for b in counted_nav(middle, "hltb:page:")] == ["◀️", "2/3", "▶️"]
-    assert [b.text for b in counted_nav(last, "hltb:page:")] == ["◀️", "3/3"]
+    assert [b.text for b in page_nav(first, "p:", noop="n")] == ["1/3", "▶️"]
+    assert [b.text for b in page_nav(middle, "p:", noop="n")] == ["◀️", "2/3", "▶️"]
+    assert [b.text for b in page_nav(last, "p:", noop="n")] == ["◀️", "3/3"]
 
 
-def test_counted_navigation_points_at_the_neighbouring_pages() -> None:
-    nav = counted_nav(paginate(list(range(12)), 1, 5), "hltb:rpage:")
+def test_navigation_points_at_the_neighbouring_pages() -> None:
+    nav = page_nav(paginate(list(range(12)), 1, 5), "hltb:rpage:", noop="hltb:noop")
     assert [b.callback_data for b in nav] == ["hltb:rpage:0", "hltb:noop", "hltb:rpage:2"]
 
 
-def test_arrow_navigation_drops_the_arrow_it_has_nowhere_to_point() -> None:
-    """The admin's roster carries its page count in the header text instead,
-    so its row is arrows only — and only the ones that lead somewhere."""
-    first, middle, last = (paginate(list(range(12)), n, 5) for n in (0, 1, 2))
-    assert [b.text for b in arrow_nav(first, "a:users:")] == ["›"]
-    assert [b.text for b in arrow_nav(middle, "a:users:")] == ["‹", "›"]
-    assert [b.text for b in arrow_nav(last, "a:users:")] == ["‹"]
+def test_the_counter_answers_its_own_screen_not_another_ones() -> None:
+    """Every callback here lives in its screen's own namespace; a counter
+    wired to `hltb:noop` on an admin screen would answer /hltb's router."""
+    nav = page_nav(paginate(list(range(12)), 1, 5), "a:users:", noop="a:noop")
+    assert [b.callback_data for b in nav] == ["a:users:0", "a:noop", "a:users:2"]
