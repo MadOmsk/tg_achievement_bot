@@ -13,6 +13,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram_i18n import I18nContext
 
 from bot.services.hltb import HltbResult
+from bot.views.inline_lists import InlineListing, button_rows, counted_nav, paginate
 from bot.views.lists import blockquote
 
 # The rest of the card runs to roughly 300 characters at its longest (a
@@ -20,16 +21,6 @@ from bot.views.lists import blockquote
 # leaves comfortable room under Telegram's own 1024-character caption cap
 # — see _shorten() below for why the cap is what binds here.
 DESCRIPTION_LIMIT = 600
-
-
-def _nav_row(page: int, pages: int, page_prefix: str) -> list[InlineKeyboardButton]:
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"{page_prefix}{page - 1}"))
-    nav.append(InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="hltb:noop"))
-    if page < pages - 1:
-        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"{page_prefix}{page + 1}"))
-    return nav
 
 
 def _cancel_row(i18n: I18nContext) -> list[InlineKeyboardButton]:
@@ -41,34 +32,26 @@ def _cancel_row(i18n: I18nContext) -> list[InlineKeyboardButton]:
 def _recent_keyboard(
     names: list[str], page: int, page_size: int, i18n: I18nContext
 ) -> InlineKeyboardMarkup:
-    start = page * page_size
-    chunk = names[start : start + page_size]
-    rows = [
-        [InlineKeyboardButton(text=name, callback_data=f"hltb:qr:{start + i}")]
-        for i, name in enumerate(chunk)
-    ]
-    pages = -(-len(names) // page_size)
-    if pages > 1:
-        rows.append(_nav_row(page, pages, "hltb:rpage:"))
-    rows.append(_cancel_row(i18n))
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    # Paginated over `enumerate(names)`, not the names alone: the callback
+    # carries each suggestion's index in the *whole* list, which is what the
+    # handler looks it up by, so a page's own 0..N offsets would pick wrong.
+    shown = paginate(list(enumerate(names)), page, page_size)
+    return InlineListing(
+        rows=button_rows(shown.items, lambda item: item[1], lambda item: f"hltb:qr:{item[0]}"),
+        nav=counted_nav(shown, "hltb:rpage:"),
+        tail=_cancel_row(i18n),
+    ).markup()
 
 
 def _results_keyboard(
     results: list[HltbResult], page: int, page_size: int, i18n: I18nContext
 ) -> InlineKeyboardMarkup:
-    start = page * page_size
-    chunk = results[start : start + page_size]
-    rows = [
-        [InlineKeyboardButton(text=_label(r), callback_data=f"hltb:pick:{r.hltb_id}")]
-        for r in chunk
-    ]
-
-    pages = -(-len(results) // page_size)
-    if pages > 1:
-        rows.append(_nav_row(page, pages, "hltb:page:"))
-    rows.append(_cancel_row(i18n))
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    shown = paginate(results, page, page_size)
+    return InlineListing(
+        rows=button_rows(shown.items, _label, lambda r: f"hltb:pick:{r.hltb_id}"),
+        nav=counted_nav(shown, "hltb:page:"),
+        tail=_cancel_row(i18n),
+    ).markup()
 
 
 def _label(result: HltbResult) -> str:

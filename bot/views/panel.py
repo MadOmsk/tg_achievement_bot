@@ -18,6 +18,7 @@ from bot.services.naming import person_name_of
 from bot.services.presence_view import pick_presence
 from bot.util import humanize_ago
 from bot.views import Screen
+from bot.views.inline_lists import InlineListing, button_rows
 from bot.views.keyboards import (
     format_digest,
     format_offset,
@@ -41,17 +42,18 @@ async def render_chat_list(repo: Repo, tg_id: int, *, locale: str) -> Screen:
     text = i18n.get("panel-my-chats-title")
     if not chats:
         text += i18n.get("panel-my-chats-empty")
-    builder = InlineKeyboardBuilder()
-    for chat in chats:
-        mark = "✅" if chat.is_subscribed else "⚪"
-        builder.row(
-            InlineKeyboardButton(
-                text=f"{mark} {chat.title or chat.chat_id}",
-                callback_data=f"panel:chat:{chat.chat_id}",
-            )
-        )
-    builder.row(InlineKeyboardButton(text=i18n.get("panel-back"), callback_data="panel:refresh"))
-    return Screen(text, builder.as_markup())
+    listing = InlineListing(
+        rows=button_rows(chats, _my_chat_label, lambda chat: f"panel:chat:{chat.chat_id}"),
+        tail=[InlineKeyboardButton(text=i18n.get("panel-back"), callback_data="panel:refresh")],
+    )
+    return Screen(text, listing.markup())
+
+
+def _my_chat_label(chat: UserChatRow) -> str:
+    # The mark is the whole point of the row: this list shows chats this
+    # person is *not* subscribed to as well, and subscribing is what the
+    # screen is for.
+    return f"{'✅' if chat.is_subscribed else '⚪'} {chat.title or chat.chat_id}"
 
 
 async def find_user_chat(repo: Repo, tg_id: int, chat_id: int) -> UserChatRow | None:

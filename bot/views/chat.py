@@ -12,7 +12,6 @@ import asyncio
 from html import escape as html_escape
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
 from bot.constants import SettingKey
@@ -34,6 +33,7 @@ from bot.services.naming import (
 from bot.services.stats import counters_for, month_cutoff_utc
 from bot.util import humanize_ago, thousands
 from bot.version import version
+from bot.views.inline_lists import InlineListing, button_rows
 from bot.views.lists import GameRow, Listing, game_rows, truncate_name
 from bot.views.parts import (
     PLATFORM_ICON,
@@ -366,11 +366,9 @@ def render_who_picker(rows: list[ChatPresenceRow], i18n: I18nContext) -> InlineK
     """Everyone the chat has seen write, three to a row. The cancel button is
     not decoration: found live, there was no way out of this prompt except
     picking somebody, and it never went away after a pick either."""
-    builder = InlineKeyboardBuilder()
-    for row in rows:
-        builder.button(text=who_label(row), callback_data=f"who:stats:{row.tg_id}")
-    builder.adjust(3)
-    builder.row(
-        InlineKeyboardButton(text=i18n.get("chat-cancel-button"), callback_data="who:cancel")
-    )
-    return builder.as_markup()
+    return InlineListing(
+        rows=button_rows(rows, who_label, lambda row: f"who:stats:{row.tg_id}", per_row=3),
+        tail=[
+            InlineKeyboardButton(text=i18n.get("chat-cancel-button"), callback_data="who:cancel")
+        ],
+    ).markup()

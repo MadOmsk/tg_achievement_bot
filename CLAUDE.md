@@ -105,9 +105,12 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── keyboards.py            every inline keyboard + format_* helpers
 │   │   ├── parts.py                the vocabulary screens share: badges, the platform
 │   │   │                           palette, counted nouns, per-platform header rows
-│   │   └── lists.py                what every list shares — the wrapper (usually a
-│   │                               collapsible quote, not always), the total line, the
-│   │                               name cap, and the one games row two screens draw (#64)
+│   │   ├── lists.py                what every *text* list shares — the wrapper (usually a
+│   │   │                           collapsible quote, not always), the total line, the
+│   │   │                           name cap, and the one games row two screens draw (#64)
+│   │   └── inline_lists.py         the same for a list rendered as a *keyboard*: the
+│   │                               button rows, the page arithmetic, the two navigation
+│   │                               shapes, the way out
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py         whether an achievement may be published (the wording
@@ -1280,44 +1283,56 @@ how it is sorted and what caps it (kept from `docs/ui/tables.md` when that
 file went away, #63 — the *queries* are visible in the code, but "who is in
 scope" and "what the cap is for" are decisions and are not).
 
-**A list is one of three kinds, and the kind is a rendering decision, not a
-data one** (2026-09-16, owner's taxonomy): a **quoted** list (rows inside a
-collapsible blockquote — a report section somebody taps open), a grid of
-**inline buttons** (a list whose rows have to be tappable, so they are the
-keyboard rather than the text), or **other** (everything that is a repeated
-render without being either — a single joined line, a caption's own rows).
-The same rows could be any of the three; naming the kind is what stops a
-screen from drifting into a fourth one nobody decided on.
+**A list is either text or a keyboard, and that is a rendering decision, not
+a data one** (2026-09-16, owner's taxonomy). The same rows could be either;
+naming the kind is what keeps a screen from drifting into a third shape
+nobody decided on.
 
-Only the first two kinds have *text rows*, and only text rows go through
-`views/lists.py::Listing` — header, rows, an optional total line, and a
-wrapper that is a collapsible quote by default and plain text where a list is
-read at a glance rather than tapped open (`/online`, the admin's roster).
-Six entries below render their rows through it. The *rows* themselves are deliberately
-not shared: a list of games and a list of people are different things. The one
-exception is the games row, which two screens draw identically and which lived
-in two copies until #64.
+A **listing** is a list made of text — `views/lists.py::Listing`: header,
+rows, an optional total line, and a wrapper. The wrapper is the sub-kind:
+**quoted** (a collapsible blockquote — a report section somebody taps open,
+the default), **plain** (read at a glance rather than tapped open: `/online`,
+the admin's roster), or **code** (a monospace `<pre>` table — the shape all
+of these started as, wrong register for a leaderboard, gone since #64 and
+kept here only so nobody reintroduces it as if it were new).
 
-**A buttons-only list gets no `Listing` call.** There is nothing for it to
-render — `Listing(rows=[]).body()` is always `""` — so a call there is a no-op
-that only looks like shared machinery. The admin's chat list has exactly such
-a call, left from #64's sweep; it is the one place that does this and it is
-not a pattern to copy.
+An **inline listing** is a list made of buttons — `views/inline_lists.py`,
+for the lists whose rows have to be tappable, so the rows *are* the keyboard.
+It owns the same kind of shared vocabulary its text counterpart does: the
+button rows (`button_rows`, one per row by default, three across for
+`/who`'s picker), the page arithmetic (`paginate`, which was written three
+times over before this, each with its own idea of what an out-of-range page
+should do), and the trailing row that is the way out — "назад" or "отмена".
+
+In both files the *rows* are deliberately not shared: a list of games and a
+list of people are different things. The one exception is the games row,
+which two screens draw identically and which lived in two copies until #64.
+
+**Two navigation shapes exist on purpose, for now**: `/hltb` puts the page
+number between its arrows (`◀️ 2/5 ▶️`), the admin's roster carries the count
+in its header text and shows bare `‹ ›`. They are the same job wearing two
+looks — found while cataloguing these lists — and they sit side by side in
+`inline_lists.py` rather than being quietly unified, because which one wins
+is a visible change and so the owner's to make.
+
+A screen that is genuinely both kinds at once builds both: the admin's user
+list fills a text row and a button row from one loop over one page of people
+(see its own note below).
 
 | List | Kind | Source | Who appears | Sort | Cap |
 |---|---|---|---|---|---|
-| `/stats`' `user_games` | quoted | `repo.user_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
-| `/recent` | quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
-| summary leaderboards (day/month) | quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
-| "Игры за месяц" | quoted | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
-| `/online` | plain rows (`Listing`, unquoted) | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
-| the admin's user list | plain rows **and** buttons | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page |
-| the admin's chat list | buttons | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
-| `/who`'s picker | buttons | `repo.chat_member_presence()` | subscribers ∪ `chat_seen`, same as `/online` | the query's own playing → online → offline | — (three per row is layout) |
-| `/panel`'s "Мои чаты" | buttons | `repo.user_chats()` | every active chat this person subscribed to or was seen writing in | title ↑ | — |
-| the admin's limits screen | buttons | `NUMERIC_SETTINGS` + `repo.get_app_setting()` | the global numeric settings, not rows of data | `NUMERIC_SETTINGS`' own order | — |
-| `/hltb` suggestions | buttons | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit` |
-| `/hltb` results | buttons | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page |
+| `/stats`' `user_games` | listing, quoted | `repo.user_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
+| `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
+| summary leaderboards (day/month) | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
+| "Игры за месяц" | listing, quoted | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
+| `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
+| the admin's user list | listing (plain) **and** inline listing | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page, `‹ ›` |
+| the admin's chat list | inline listing | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
+| `/who`'s picker | inline listing | `repo.chat_member_presence()` | subscribers ∪ `chat_seen`, same as `/online` | the query's own playing → online → offline | — (three per row is layout) |
+| `/panel`'s "Мои чаты" | inline listing | `repo.user_chats()` | every active chat this person subscribed to or was seen writing in | title ↑ | — |
+| the admin's limits screen | inline listing | `NUMERIC_SETTINGS` + `repo.get_app_setting()` | the global numeric settings, not rows of data | `NUMERIC_SETTINGS`' own order | — |
+| `/hltb` suggestions | inline listing | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit`, `◀️ N/M ▶️` |
+| `/hltb` results | inline listing | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page, `◀️ N/M ▶️` |
 | a chat's subscribers | other (one joined line) | `repo.chat_subscribers()` | that chat's subscribers | by the rendered name ↑ | — |
 | a digest's per-game block | other (a caption's rows) | the publish batch itself | the achievements being published | grouped by `(platform, title_id)` | none — every item is listed |
 | the admin home's API usage | other (one joined line) | the rate limiter in memory | its own windows, not data rows | as the limiter reports them | — |
@@ -1357,7 +1372,9 @@ no answer to record.
   once, which is why it has a row's worth of both.
 - **The admin's chat list** is buttons only because a chat row is two facts
   wide and both fit on the button, so there is no separate text row left to
-  write.
+  write. It used to call `Listing` with an empty row list to look like it
+  shared the text machinery — a no-op, `Listing(rows=[]).body()` is always
+  `""` — which is what an inline listing of its own replaced.
 - **`/who`'s picker** reads exactly what `/online` reads and shows the same
   people — it was split out of `/online` so that one can stay a glance and
   this one a grid of buttons. Its labels name the *person* (#40), never a bare
