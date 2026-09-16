@@ -1280,31 +1280,52 @@ how it is sorted and what caps it (kept from `docs/ui/tables.md` when that
 file went away, #63 — the *queries* are visible in the code, but "who is in
 scope" and "what the cap is for" are decisions and are not).
 
-Seven of these ten render through `views/lists.py::Listing` — header, rows,
-an optional total line, and a wrapper that is a collapsible quote by default
-and plain text where a list is read at a glance rather than tapped open
-(`/online`, and the two admin rosters below). The *rows* are deliberately not
-shared: a list of games and a list of people are different things. The one
-exception is the games row itself, which two screens draw identically and
-which lived in two copies until #64. The admin's chat list goes through
-`Listing` with an empty row list — it is buttons-only by design (see its own
-note below) — so the day it grows a text row, the machinery is already there.
-The three still outside it — `/hltb`'s two lists and a chat's inline
-subscriber string — are either sourced from outside the database or are a
-single joined line rather than a real list.
+**A list is one of three kinds, and the kind is a rendering decision, not a
+data one** (2026-09-16, owner's taxonomy): a **quoted** list (rows inside a
+collapsible blockquote — a report section somebody taps open), a grid of
+**inline buttons** (a list whose rows have to be tappable, so they are the
+keyboard rather than the text), or **other** (everything that is a repeated
+render without being either — a single joined line, a caption's own rows).
+The same rows could be any of the three; naming the kind is what stops a
+screen from drifting into a fourth one nobody decided on.
 
-| List | Source | Who appears | Sort | Cap |
-|---|---|---|---|---|
-| `/stats`' `user_games` | `repo.user_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
-| `/recent` | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
-| `/online` | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
-| summary leaderboards (day/month) | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
-| "Игры за месяц" | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
-| the admin's user list | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page |
-| the admin's chat list | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
-| a chat's subscribers | `repo.chat_subscribers()` | that chat's subscribers | by the rendered name ↑ | — |
-| `/hltb` suggestions | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit` |
-| `/hltb` results | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page |
+Only the first two kinds have *text rows*, and only text rows go through
+`views/lists.py::Listing` — header, rows, an optional total line, and a
+wrapper that is a collapsible quote by default and plain text where a list is
+read at a glance rather than tapped open (`/online`, the admin's roster).
+Six entries below render their rows through it. The *rows* themselves are deliberately
+not shared: a list of games and a list of people are different things. The one
+exception is the games row, which two screens draw identically and which lived
+in two copies until #64.
+
+**A buttons-only list gets no `Listing` call.** There is nothing for it to
+render — `Listing(rows=[]).body()` is always `""` — so a call there is a no-op
+that only looks like shared machinery. The admin's chat list has exactly such
+a call, left from #64's sweep; it is the one place that does this and it is
+not a pattern to copy.
+
+| List | Kind | Source | Who appears | Sort | Cap |
+|---|---|---|---|---|---|
+| `/stats`' `user_games` | quoted | `repo.user_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
+| `/recent` | quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
+| summary leaderboards (day/month) | quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
+| "Игры за месяц" | quoted | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
+| `/online` | plain rows (`Listing`, unquoted) | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
+| the admin's user list | plain rows **and** buttons | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page |
+| the admin's chat list | buttons | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
+| `/who`'s picker | buttons | `repo.chat_member_presence()` | subscribers ∪ `chat_seen`, same as `/online` | the query's own playing → online → offline | — (three per row is layout) |
+| `/panel`'s "Мои чаты" | buttons | `repo.user_chats()` | every active chat this person subscribed to or was seen writing in | title ↑ | — |
+| the admin's limits screen | buttons | `NUMERIC_SETTINGS` + `repo.get_app_setting()` | the global numeric settings, not rows of data | `NUMERIC_SETTINGS`' own order | — |
+| `/hltb` suggestions | buttons | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit` |
+| `/hltb` results | buttons | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page |
+| a chat's subscribers | other (one joined line) | `repo.chat_subscribers()` | that chat's subscribers | by the rendered name ↑ | — |
+| a digest's per-game block | other (a caption's rows) | the publish batch itself | the achievements being published | grouped by `(platform, title_id)` | none — every item is listed |
+| the admin home's API usage | other (one joined line) | the rate limiter in memory | its own windows, not data rows | as the limiter reports them | — |
+
+A picker built from a *fixed* set of controls — the timezone grids, the digest
+thresholds, the admin's hour picker — is not in this table: its rows are the
+options themselves, decided in code, so "who appears" and "what caps it" have
+no answer to record.
 
 - **`user_games`** (2026-09-16, user request, #69) is the calendar month
   (same cutoff as the counters above it — no rolling window left in the
@@ -1332,11 +1353,35 @@ single joined line rather than a real list.
   collide by accident.
 - **The admin's user list** is printed twice on purpose: as text, where the
   columns line up and can be read at a glance, and as one button per row,
-  because a row has to be tappable.
+  because a row has to be tappable. It is the only screen that is two kinds at
+  once, which is why it has a row's worth of both.
+- **The admin's chat list** is buttons only because a chat row is two facts
+  wide and both fit on the button, so there is no separate text row left to
+  write.
+- **`/who`'s picker** reads exactly what `/online` reads and shows the same
+  people — it was split out of `/online` so that one can stay a glance and
+  this one a grid of buttons. Its labels name the *person* (#40), never a bare
+  id, and the cancel button is not decoration: without it there was no way out
+  of the prompt except picking somebody.
+- **`/panel`'s "Мои чаты"** deliberately lists chats this person is *not*
+  subscribed to as well — subscribing is what the screen is for, so hiding the
+  unsubscribed ones would hide the only row worth tapping. A chat the bot was
+  removed from is left out: there is nothing left to manage there.
+- **The admin's limits screen** is the one list whose rows are settings rather
+  than data; each carries its current value so the screen reads as a settings
+  list rather than a menu you have to walk to find out what is set (see the
+  super-admin panel above, including `0` rendering as "без ограничения").
 - **`/hltb`'s suggestions** use `/online`'s "known member" scope, but their
   source (`title_history`) is **Xbox-only** — Steam and PSN games never reach
   it. Same class of gap the naming chains had before #51, one layer over; not
   fixed.
+- **A digest's per-game block** is a list living inside a photo caption, which
+  is why it is neither quoted nor tappable: it has to read like the single
+  card it is a batch of (see Message formats). It is the one list here that is
+  never capped — trimming it to "и ещё N" would defeat what a digest is for.
+- **The admin home's API usage** is a diagnostic against a bug in the poller,
+  not a persisted budget — the rate limiter's own in-memory windows, joined
+  onto one line because three numbers are not worth a list's shape.
 
 ## Statistics rules
 
