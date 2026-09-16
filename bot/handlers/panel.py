@@ -72,7 +72,7 @@ async def send_panel(bot: Bot, repo: Repo, tg_id: int, i18n: I18nContext) -> Non
 
 @router.message(Command("panel"), F.chat.type == ChatType.PRIVATE)
 async def panel_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    await repo.ensure_user(message.chat.id, _username(message))
+    await repo.ensure_user(_person_id(message), _username(message))
     await send_panel(bot, repo, message.chat.id, i18n)
 
 
@@ -665,6 +665,17 @@ async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:
     await asyncio.sleep(GROUP_HINT_TTL)
     with contextlib.suppress(Exception):
         await bot.delete_message(chat_id, message_id)
+
+
+def _person_id(message: Message) -> int:
+    """Whose row this is — the person's id, never the chat's (#66).
+
+    These handlers used to pass `message.chat.id`, which is the same number
+    in a DM and a completely different one in a group: `/start` is
+    answerable there, so one person running it created a `users` row for the
+    *group*. Found on production as tg_id -5246175458.
+    """
+    return message.from_user.id if message.from_user else message.chat.id
 
 
 def _username(message: Message) -> str | None:

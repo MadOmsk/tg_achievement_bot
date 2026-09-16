@@ -26,6 +26,7 @@ import logging
 from datetime import timedelta
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 
 from bot.db.repo import Repo
 from bot.util import utcnow
@@ -53,10 +54,20 @@ class AvatarRefresh:
         for tg_id in await self._repo.users_needing_avatar(cutoff, self._users_per_tick):
             try:
                 photos = await self._bot.get_user_profile_photos(tg_id, limit=1)
+            except TelegramBadRequest:
+                # Telegram says there is no such user. Found live (#66): a
+                # chat id had ended up in `users`, and an unstamped failure
+                # left that row permanently first in line — one of the five
+                # slots every tick, and a traceback a minute, forever. A
+                # "no such user" is an answer, so it is recorded like one.
+                log.info("telegram has no user %s — stamping the check anyway", tg_id)
+                await self._repo.set_user_photo(tg_id, None, None)
+                continue
             except Exception:
-                # One person must never end a tick — the same rule every
-                # other poller here follows. Nothing is stamped, so this one
-                # is simply first in line again next time.
+                # Anything that might pass later leaves the check unstamped
+                # on purpose: this person is simply first in line again next
+                # time. One person must never end a tick — the same rule
+                # every other poller here follows.
                 log.info("could not read the profile photo of tg_id=%s", tg_id, exc_info=True)
                 continue
 
