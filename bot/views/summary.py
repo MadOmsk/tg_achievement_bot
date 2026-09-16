@@ -99,7 +99,7 @@ async def build_summary(
             blocks.append(
                 (
                     "month",
-                    *_section(_month_window_label(tz_offset_min, locale), rows, top_limit, locale),
+                    *_section(month_window_label(tz_offset_min, locale), rows, top_limit, locale),
                 )
             )
             # #7: which games the chat actually played this month, not just
@@ -165,11 +165,11 @@ async def full_leaderboard(
         expandable=False,
         show_rare=window != "day",
     )
-    label = _("daily-window-day") if window == "day" else _month_window_label(tz_offset_min, locale)
+    label = _("daily-window-day") if window == "day" else month_window_label(tz_offset_min, locale)
     return "\n".join([_("daily-leaderboard-full-header", label=label), "", *section_lines])
 
 
-def _month_window_label(tz_offset_min: int | None, locale: str) -> str:
+def month_window_label(tz_offset_min: int | None, locale: str) -> str:
     """ "С 1 июня" (#6, user request) instead of a static "этот месяц" —
     names the actual calendar month the window covers, in the same
     genitive-case month names "{day} {month}" (daily-header) already uses.
@@ -177,7 +177,12 @@ def _month_window_label(tz_offset_min: int | None, locale: str) -> str:
     the 1st" points at, so no need to re-derive it from the cutoff itself.
 
     English puts the day after the month ("since June 1"), Russian before it
-    — that ordering lives in each locale's own daily-window-month, not here."""
+    — that ordering lives in each locale's own daily-window-month, not here.
+
+    Public: also used by views/chat.py's own games list (`user_games`),
+    which needs the same "с 1 { month }" label /summary's month block uses —
+    one label for "calendar month since the 1st" everywhere, not a second
+    hand-rolled copy."""
     _ = translator("daily", locale)
     month = local_now(tz_offset_min).month
     return _("daily-window-month", month=_(_MONTH_KEYS[month - 1]))

@@ -28,7 +28,7 @@ MIGRATIONS_DIR = _DB_DIR / "migrations"
 DEFAULT_APP_SETTINGS: dict[str, str] = {
     # Row caps for the game/player tables (SPEC 6.3, 6.6, 7.2) — separate
     # settings because they cap different things: players in /summary's
-    # leaderboard, games in /stats' "Игры за 30 дней".
+    # leaderboard, games in /stats' `user_games` list.
     SettingKey.SUMMARY_TOP_LIMIT: "15",
     SettingKey.STATS_GAMES_LIMIT: "15",
     # /hltb's own two: how many candidates search() and the recent-games

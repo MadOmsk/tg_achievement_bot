@@ -167,12 +167,25 @@ class _MessagesRepo:
             for row in await cursor.fetchall()
         ]
 
-    async def recent_games(
+    async def user_games(
         self, external_id: str, since: datetime, limit: int = 15, *, locale: str = "ru"
     ) -> list[TopGame]:
-        """Games actually played recently, not the biggest lifetime scores —
-        a person's five favourite old games would otherwise crowd out
-        whatever they are playing this month, every time.
+        """Games this account's own person actually earned achievements in
+        since `since`, not the biggest lifetime scores — a person's five
+        favourite old games would otherwise crowd out whatever they are
+        playing this month, every time.
+
+        `s.is_backfill = 0` (2026-09-16): a backfill row's `created_at` is
+        when the one-off history scan ran, not when the achievement was
+        actually earned, so `COALESCE(unlocked_at, created_at)` alone quietly
+        counted a whole imported library as "played this window" (#69's
+        mechanism) — a person's card showing 15 games and hundreds of
+        achievements for a month they touched none of them. Excluding
+        backfill rows outright is exactly "games where the person themselves
+        earned the achievement", which is what this list is for; a live-polled
+        row with no usable platform timestamp still falls back to its own
+        `created_at` (that *is* roughly when it was earned) via the same
+        COALESCE the rest of the stats machinery uses.
 
         `external_id` despite the historical name isn't Xbox-specific:
         `seen_achievements.xuid` is the generic per-platform external id
@@ -188,7 +201,8 @@ class _MessagesRepo:
             " COALESCE(SUM(s.gamerscore), 0) AS score, COUNT(*) AS unlocked,"
             " MAX(s.platform) AS platform "
             "FROM seen_achievements s LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.xuid = ? AND COALESCE(s.unlocked_at, s.created_at) >= ? "
+            "WHERE s.xuid = ? AND s.is_backfill = 0"
+            " AND COALESCE(s.unlocked_at, s.created_at) >= ? "
             # Score ties on every Steam game (no gamerscore there at all) —
             # unlocked count as the tiebreaker instead of SQLite's undefined
             # order among equal scores.

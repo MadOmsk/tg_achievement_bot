@@ -260,7 +260,7 @@ async def test_recent_and_the_game_lists_follow_the_chats_language(repo: Repo) -
     assert (en.name, en.game) == ("Just Getting Started", "Halo: The Master Chief Collection")
 
     since = utcnow() - timedelta(days=30)
-    [game_ru] = await repo.recent_games("xuid-1", since, locale="ru")
+    [game_ru] = await repo.user_games("xuid-1", since, locale="ru")
     assert game_ru.name == "Halo: Коллекция Мастер Чифа"
 
     [top_ru] = await repo.chat_top_games(-100500, since, locale="ru")

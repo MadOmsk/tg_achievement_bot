@@ -1246,9 +1246,14 @@ month** — since midnight on the 1st, in the person's / chat's own timezone
 1st. Its label names the actual month ("с 1 июня", #6, user request) rather than a
 static "этот месяц" — the *current* local month is always the one the cutoff
 points at, no need to re-derive it from the cutoff itself
-(`daily.py::_month_window_label`). `/stats`' recent-games table stays a rolling 30
-days and is labelled as such ("за 30 дней"), so it no longer silently disagrees
-with the month window.
+(`views/summary.py::month_window_label`, shared — `/stats`' own games list
+uses it too, see #69's own note in "Lists and tables" below). **No list in
+the project uses a rolling N-day window any more** (2026-09-16, user
+request, #69's own trigger) — `/stats`' games list used to be the one
+exception (a rolling 30 days, labelled "за 30 дней" so it wouldn't be read
+as agreeing with the counters above it); it is now `user_games`, on the same
+calendar-month cutoff as everything else, which is what let it drop its own
+label entirely and share this one.
 
 **Three summary shapes**, composed by `daily.build_summary` from independent window
 blocks so their style can't drift apart (#14): the scheduled **daily** job sends
@@ -1290,7 +1295,7 @@ single joined line rather than a real list.
 
 | List | Source | Who appears | Sort | Cap |
 |---|---|---|---|---|
-| `/stats`' recent games | `repo.recent_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
+| `/stats`' `user_games` | `repo.user_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
 | `/recent` | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
 | `/online` | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
 | summary leaderboards (day/month) | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
@@ -1301,8 +1306,18 @@ single joined line rather than a real list.
 | `/hltb` suggestions | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit` |
 | `/hltb` results | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page |
 
-- **`/stats`' games** are a rolling 30 days (`RECENT_GAMES_DAYS`), labelled as
-  such, deliberately not the calendar month its counters use. One game on two
+- **`user_games`** (2026-09-16, user request, #69) is the calendar month
+  (same cutoff as the counters above it — no rolling window left in the
+  project) and `s.is_backfill = 0`: a backfill row's timestamp is when the
+  one-off history scan ran, not when the achievement was actually earned, so
+  the plain `COALESCE(unlocked_at, created_at)` every other window here uses
+  was counting a whole imported library as "played this month" — real
+  production data showed 15 games and 767 achievements for someone who had
+  earned none of it that month. `user_games` is deliberately its own name
+  and its own repo method rather than a filter bolted onto the old
+  `recent_games` — the same shared `Listing`/`GameRow` machinery, a
+  different, narrower question ("did this person actually earn something
+  recently", not "what does their history contain"). One game on two
   platforms is two rows.
 - **`/recent`** is subscribers only — not `/online`'s broader "known member"
   set; excluded people never appear; a secret achievement's name stays behind

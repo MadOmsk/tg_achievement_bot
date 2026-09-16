@@ -350,7 +350,7 @@ async def test_counters_hide_breakdown_for_a_single_platform(repo: Repo) -> None
 
 async def test_games_list_includes_steam_games(repo: Repo) -> None:
     """Found live: the games table used to be `if target.xuid:` only (SPEC
-    9, M-Steam-2c's own scoping note) — recent_games() itself was never
+    9, M-Steam-2c's own scoping note) — user_games() itself was never
     Xbox-specific, just never called for a Steam link. Now merged into one
     combined ranked list, same "one number, not one per platform" spirit
     as the counters above."""

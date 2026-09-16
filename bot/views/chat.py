@@ -9,7 +9,6 @@ and reads once.
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 from html import escape as html_escape
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -32,8 +31,8 @@ from bot.services.naming import (
     subscriber_names,
     xbox_nickname,
 )
-from bot.services.stats import counters_for
-from bot.util import humanize_ago, thousands, utcnow
+from bot.services.stats import counters_for, month_cutoff_utc
+from bot.util import humanize_ago, thousands
 from bot.version import version
 from bot.views.lists import GameRow, Listing, game_rows, truncate_name
 from bot.views.parts import (
@@ -45,11 +44,8 @@ from bot.views.parts import (
     rarity_badge,
     score_suffix,
 )
+from bot.views.summary import month_window_label
 
-# /stats' own games table is a rolling window and says so on screen
-# ("за 30 дней", #14) — deliberately not the calendar month the counters
-# above it use, and labelled so the two cannot be read as the same thing.
-RECENT_GAMES_DAYS = 30
 DEFAULT_STATS_GAMES_LIMIT = 15
 
 
@@ -193,7 +189,7 @@ async def build_stats_text(repo: Repo, target: User, i18n: I18nContext | None = 
 
     # Found live, long-standing gap: this used to be Xbox-only (SPEC 9,
     # M-Steam-2c scoped it out for lack of a Steam recently-played source —
-    # recent_games() itself was never Xbox-specific, just never called for
+    # user_games() itself was never Xbox-specific, just never called for
     # anything else). One combined ranked list, not a section per platform —
     # same "one number, not one per platform" spirit as the counters above.
     external_ids = [target.xuid] if target.xuid else []
@@ -202,10 +198,11 @@ async def build_stats_text(repo: Repo, target: User, i18n: I18nContext | None = 
         # 0 = no cap (SPEC 6.4) — the list lives in a collapsible quote
         # either way, no separate "показать все игры" tap needed any more.
         limit = await _stats_games_limit(repo)
-        since = utcnow() - timedelta(days=RECENT_GAMES_DAYS)
+        tz_offset_min = settings_row.tz_offset_min if settings_row else None
+        since = month_cutoff_utc(tz_offset_min)
         per_source = await asyncio.gather(
             *(
-                repo.recent_games(external_id, since, limit=limit, locale=locale)
+                repo.user_games(external_id, since, limit=limit, locale=locale)
                 for external_id in external_ids
             )
         )
@@ -217,7 +214,11 @@ async def build_stats_text(repo: Repo, target: User, i18n: I18nContext | None = 
         if games:
             lines += [
                 "",
-                _hub_text(i18n, "chat-stats-games-header", days=RECENT_GAMES_DAYS),
+                _hub_text(
+                    i18n,
+                    "chat-stats-games-header",
+                    window=month_window_label(tz_offset_min, locale),
+                ),
                 _games_list(games, i18n),
             ]
     return "\n".join(lines)
