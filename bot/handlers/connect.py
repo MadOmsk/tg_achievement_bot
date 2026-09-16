@@ -52,7 +52,7 @@ async def start_with_payload(
     i18n: I18nContext,
 ) -> None:
     """Deep link from a group chat: its buttons send people here (SPEC 6.3)."""
-    await repo.ensure_user(message.chat.id, _username(message))
+    await repo.ensure_user(_person_id(message), _username(message))
     if command.args == "panel":
         await send_panel(bot, repo, message.chat.id, i18n)
         return
@@ -86,7 +86,7 @@ async def start_with_payload(
 async def start(
     message: Message, repo: Repo, connect: ConnectService, bot: Bot, i18n: I18nContext
 ) -> None:
-    await repo.ensure_user(message.chat.id, _username(message))
+    await repo.ensure_user(_person_id(message), _username(message))
     await _greet(message, repo, connect, bot, i18n)
 
 
@@ -94,7 +94,7 @@ async def start(
 async def connect_command(
     message: Message, repo: Repo, connect: ConnectService, i18n: I18nContext
 ) -> None:
-    await repo.ensure_user(message.chat.id, _username(message))
+    await repo.ensure_user(_person_id(message), _username(message))
     user = await repo.get_user(message.chat.id)
     if user is not None and user.xuid:
         await message.answer(i18n.get("connect-xbox-already-connected-relogin"))
@@ -305,6 +305,18 @@ def _parse_connect_payload(args: str) -> tuple[bool, int | None]:
         except ValueError:
             return False, None
     return False, None
+
+
+def _person_id(message: Message) -> int:
+    """Whose row this is — the person's id, never the chat's (#66).
+
+    These handlers used to pass `message.chat.id`, which is the same number
+    in a DM and a completely different one in a group: `/start` is
+    answerable there, so one person running it created a `users` row for the
+    *group*. Found on production as tg_id -5246175458, a person who does not
+    exist sitting in the table every "who are our people" query reads.
+    """
+    return message.from_user.id if message.from_user else message.chat.id
 
 
 def _username(message: Message) -> str | None:

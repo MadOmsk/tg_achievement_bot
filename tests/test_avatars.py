@@ -8,6 +8,8 @@ from __future__ import annotations
 import io
 from types import SimpleNamespace
 
+from aiogram.exceptions import TelegramBadRequest
+
 from bot.db.repo import Repo
 from bot.poller import avatars as avatars_poller
 from bot.poller.avatars import AvatarRefresh
@@ -187,3 +189,41 @@ def _returning(value):
         return value
 
     return answer
+
+
+async def test_a_user_telegram_has_never_heard_of_is_not_retried_forever(repo: Repo) -> None:
+    """#66, found on production: a chat id had ended up in `users`, and
+    since a failed look left `photo_checked_at` unstamped, that row stayed
+    permanently first in line — one of the five slots every tick, and a
+    traceback a minute. "No such user" is an answer, so it is recorded."""
+
+    class _NoSuchUser(_FakeBot):
+        async def get_user_profile_photos(self, tg_id: int, limit: int = 1):
+            self.asked.append(tg_id)
+            raise TelegramBadRequest(method=SimpleNamespace(), message="user not found")
+
+    await repo.ensure_user(-5246175458, "a group, not a person")
+    bot = _NoSuchUser()
+
+    await AvatarRefresh(bot, repo).tick()  # type: ignore[arg-type]
+    await AvatarRefresh(bot, repo).tick()  # type: ignore[arg-type]
+
+    assert bot.asked == [-5246175458]  # asked once, then stamped and skipped
+
+
+async def test_a_network_blip_leaves_the_person_first_in_line(repo: Repo) -> None:
+    """The other half of the same decision: a failure that might pass later
+    must not cost this person a week."""
+
+    class _Flaky(_FakeBot):
+        async def get_user_profile_photos(self, tg_id: int, limit: int = 1):
+            self.asked.append(tg_id)
+            raise TimeoutError("telegram is having a moment")
+
+    await repo.ensure_user(1, "someone")
+    bot = _Flaky()
+
+    await AvatarRefresh(bot, repo).tick()  # type: ignore[arg-type]
+    await AvatarRefresh(bot, repo).tick()  # type: ignore[arg-type]
+
+    assert bot.asked == [1, 1]
