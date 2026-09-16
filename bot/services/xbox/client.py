@@ -97,6 +97,10 @@ class XboxProfileSnapshot:
     gamerscore: int | None
     gamertag: str | None
     gamertag_modern: str | None
+    #: The account's own picture (#55) — `GameDisplayPicRaw`, in the same
+    #: fixed settings list this request already asks for, so it costs
+    #: nothing and was simply being thrown away like the gamertags were.
+    avatar_url: str | None = None
 
 
 class XboxClient:
@@ -161,24 +165,40 @@ class XboxClient:
         Live localization apart from its documented fallback to the title's
         own default strings when no match exists for the requested locale.
         """
+        unlocked, _total = await self.title_achievements_with_total(
+            tg_id, title_id, platform, language=language
+        )
+        return unlocked
+
+    async def title_achievements_with_total(
+        self, tg_id: int, title_id: str, platform: Platform, *, language: str = "en-US"
+    ) -> tuple[list[ParsedAchievement], int]:
+        """The same call, also reporting **how many achievements the game
+        has** — the unlocked ones and the size of the set they came from.
+
+        The response lists every achievement of the title, locked ones
+        included; `parse_achievements` keeps only the earned ones, so that
+        count was being thrown away at the door. It is the one place the true
+        total exists for a modern Xbox title: titlehub reports
+        `totalAchievements = 0` for most of them (151 of 555 on a real
+        account), which is why the "47/50" counter (#46) was missing from
+        nearly every Xbox One/Series card.
+
+        0 means "this answer does not say" — an empty contract-4 reply for a
+        back-compat title, say — never "the game has no achievements".
+        """
         params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         if platform == Platform.XBOX_360:
-            return parse_achievements(
-                await self._get_achievements(tg_id, "1", params, language=language),
-                Platform.XBOX_360,
-                title_id,
-            )
+            payload = await self._get_achievements(tg_id, "1", params, language=language)
+            return parse_achievements(payload, Platform.XBOX_360, title_id), _total_in(payload)
 
         payload = await self._get_achievements(tg_id, "4", params, language=language)
         if payload.get("achievements"):
-            return parse_achievements(payload, Platform.XBOX_MODERN, title_id)
+            return parse_achievements(payload, Platform.XBOX_MODERN, title_id), _total_in(payload)
 
         log.info("title %s looks like Xbox 360, retrying on contract 1", title_id)
-        return parse_achievements(
-            await self._get_achievements(tg_id, "1", params, language=language),
-            Platform.XBOX_360,
-            title_id,
-        )
+        payload = await self._get_achievements(tg_id, "1", params, language=language)
+        return parse_achievements(payload, Platform.XBOX_360, title_id), _total_in(payload)
 
     async def all_achievements(self, tg_id: int) -> list[ParsedAchievement]:
         """Every achievement of the player, for backfill only (SPEC 5.6).
@@ -275,6 +295,7 @@ class XboxClient:
             XboxApiValue.GAMERSCORE: None,
             XboxApiValue.GAMERTAG: None,
             XboxApiValue.MODERN_GAMERTAG: None,
+            XboxApiValue.GAME_DISPLAY_PIC: None,
         }
         for user in getattr(response, "profile_users", None) or []:
             for setting in getattr(user, "settings", None) or []:
@@ -290,6 +311,7 @@ class XboxClient:
             gamerscore=gamerscore,
             gamertag=wanted[XboxApiValue.GAMERTAG],
             gamertag_modern=wanted[XboxApiValue.MODERN_GAMERTAG],
+            avatar_url=wanted[XboxApiValue.GAME_DISPLAY_PIC],
         )
 
     async def resolve_title(self, tg_id: int, title_id: str) -> TitleHistoryEntry | None:
@@ -358,6 +380,12 @@ class XboxClient:
             raise XboxApiError(f"title history request failed: {exc!r}") from None
 
         return [_as_entry(title) for title in response.titles or []]
+
+
+def _total_in(payload: dict[str, object]) -> int:
+    """How many achievements the response listed, earned or not."""
+    achievements = payload.get("achievements")
+    return len(achievements) if isinstance(achievements, list) else 0
 
 
 def _as_entry(title: object) -> TitleHistoryEntry:

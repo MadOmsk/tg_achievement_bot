@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bot.db.repo import AchievementRow, RecentAchievement, Repo
-from bot.handlers.chat import _recent_list, _recent_row
+from bot.views.chat import _recent_row, recent_list
 
 CHAT_ID = -100777
 
@@ -115,7 +115,7 @@ def test_recent_row_text_is_html_escaped() -> None:
 
 
 def test_recent_list_is_a_collapsible_blockquote() -> None:
-    text = _recent_list([row(), row(gamertag="Alex", rarity_percent=None)])
+    text = recent_list([row(), row(gamertag="Alex", rarity_percent=None)])
     assert text.startswith("<blockquote expandable>")
     assert text.endswith("</blockquote>")
     assert "Igor" in text and "Alex" in text

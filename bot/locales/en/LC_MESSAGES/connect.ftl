@@ -1,8 +1,6 @@
 # /start, /connect_xbox, /disconnect_xbox and the timezone picker
 # (bot/handlers/connect.py).
 # Connection flow
-connect-greeting =
-    Hi! I post XBOX achievements to your chat — yours and everyone else's.
 
     What I do:
     • catch new achievements and announce them in the chat;
@@ -38,3 +36,37 @@ connect-timezone-manual-hint =
 connect-timezone-manual-invalid = That doesn't look like a real timezone. { $hint }
 connect-login-button-hint =
     Press the button and sign in with your Microsoft account. I never see your password — Microsoft asks for it, not me.
+
+# Switching and taking over an account (#52). Shared by every platform: the
+# wording does not depend on whether this is Steam, PSN or Xbox — only the
+# platform name and the nickname change.
+connect-switch-confirm =
+    You currently have { $current } linked on { $platform }.
+
+    Linking { $incoming } means the old account's achievements ({ $current_count }) stop counting towards your stats and summaries. Nothing is deleted — link it back and they come back with it.
+connect-switch-taken =
+    ⚠️ { $incoming } is already linked to a different user of this bot. Continuing takes it from them, and the account's achievements become yours.
+connect-switch-question = Link { $incoming }?
+connect-switch-incoming-known =
+    I already know { $incoming }: { $incoming_count } achievements. No need to fetch them again.
+connect-switch-yes = Yes, link it
+connect-switch-cancel = Cancel
+connect-switch-cancelled = Left as it was.
+connect-account-taken =
+    ⚠️ Your { $platform } account "{ $name }" is now linked to a different user of this bot.
+
+    Its achievements no longer count towards your stats. If that was a mistake, just link the account again.
+
+# Onboarding (#53, 2026-09-12): /start no longer leads with one platform.
+# The greeting used to promise "XBOX achievements" and hand over a Microsoft
+# sign-in link, leaving Steam and PSN to whoever already knew the commands.
+connect-greeting-multi =
+    Hi! I follow achievements on Xbox, Steam and PlayStation and post the new ones to your chat.
+
+    What I do:
+    • catch new achievements and trophies and publish them;
+    • filter by rarity, if you would rather not see everything;
+    • keep personal stats and a daily summary.
+
+    Start with a profile — connect at least one platform.
+connect-pick-platform = Where do we start?

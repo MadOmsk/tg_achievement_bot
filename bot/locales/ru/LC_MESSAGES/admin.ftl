@@ -26,8 +26,8 @@ admin-setting-key-check = Проверка ключей / автообновле
 admin-keys-screen =
     🔑 Ключи платформ
 
-    Steam: { $steam }
     PSN: { $psn }
+    Steam: { $steam }
     Anthropic: { $anthropic }
 admin-keys-set = ✅ настроен
 admin-keys-unset = ⚠️ не настроен
@@ -133,6 +133,15 @@ admin-user-restored = Возвращён
 admin-user-not-connected = Не подключён
 admin-refreshing = Обновляю…
 admin-refresh-failed = Не получилось обновить
+# Вторая строка ответа «🔄 Обновить»: что нашлось с момента последнего
+# известного достижения. Публикуется только то, что попадает в обычное окно
+# догона, остальное молча сохраняется.
+admin-sync-delta =
+    { $titles ->
+        [0] Новых игр с прошлого раза нет.
+       *[other] Просмотрено игр: { $titles }, опубликовано: { $published }.
+    }
+admin-sync-delta-steam = Опубликовано с прошлого раза: { $published }.
 admin-steam-not-connected = Steam не подключён
 admin-psn-not-connected = PSN не подключён
 
@@ -172,16 +181,11 @@ admin-default-links = Профиль виден другим: { $visible } ▸
 admin-users-empty = 👥 Пока никто не подключился.
 admin-users-header = 👥 Пользователи  ({ $page }/{ $pages })
 admin-users-columns = Колонки: когда был в сети · достижений сегодня / за месяц
-admin-id = id{ $tg_id }
 admin-users-row = { $icon } { $name } · { $ago } · { $today} / { $month }{ $note }
 admin-user-not-found = Пользователь не найден.
-admin-no-name = без имени
-# The card's own top line — every known bit of Telegram identity at once
-# (2026-09-08 user request), unlike /stats' header which picks one best
-# name. { $identity } is already the fully composed "Имя Фамилия, @username,
-# tg_id N" string (admin.py::_admin_tg_header) — never "@" + a bare id, only
-# a real username earns the "@".
 admin-user-header = 👤 { $identity }
+# $tg_id arrives as a string on purpose — as a number Fluent groups the
+# digits, and an identifier is not a quantity.
 admin-user-tgid = tg_id { $tg_id }
 admin-login-not-connected = не подключён
 admin-login-active = ✅ активен, обновлён { $ago }

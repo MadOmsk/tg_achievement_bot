@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
+from bot.services.credential_health import CredentialHealth
 from bot.services.crypto import TokenCipher
 from bot.services.translate.client import check_alive
 from bot.util import utcnow
@@ -51,6 +52,8 @@ class AnthropicAuth:
         self._env_key = env_key or None
         self._key: str | None = None
         self._seeded = False
+        self._health = CredentialHealth(repo, STATUS_KEY, CHECKED_AT_KEY, label="anthropic")
+        self.on_alive: Callable[[], Awaitable[None]] | None = None
         # Set from main.py, same pattern as SteamAuth.on_dead / PsnAuth.on_dead
         # — fired at most once per active->invalid transition
         # (poller/service_health.py owns the "not every tick" gating).
@@ -78,7 +81,20 @@ class AnthropicAuth:
         encrypted = await self._repo.get_app_setting(KEY_ENC_KEY)
         if encrypted is None:
             return None
-        self._key = self._cipher.decrypt(encrypted.encode("ascii"))
+        try:
+            self._key = self._cipher.decrypt(encrypted.encode("ascii"))
+        except ValueError:
+            # A stored key this FERNET_KEY cannot open — a rotated key, or a
+            # value copied in from another instance (found live on the test bot,
+            # 2026-09-13: a ciphertext copied from production, which uses its
+            # own key). That is "no usable key", not a reason to take a poller
+            # down: translation is optional everywhere it is used, and raising
+            # here killed the whole description backfill for every title.
+            log.warning(
+                "anthropic api key in app_settings cannot be decrypted with this FERNET_KEY"
+                " — treating it as not configured; set it again in the admin panel"
+            )
+            return None
         return self._key
 
     async def require_key(self) -> str:
@@ -123,19 +139,11 @@ class AnthropicAuth:
 
     async def check_health(self) -> bool:
         """Active liveness check (poller/service_health.py calls it on a
-        timer). Mirrors SteamAuth.check_health: updates the stored status
-        and fires on_dead exactly once per active->invalid transition."""
+        timer). Mirrors SteamAuth.check_health: updates the stored status,
+        fires on_dead once a failure has been confirmed, and on_alive when
+        the key starts working again (#62)."""
         key = await self.get_key()
         if key is None:
             return False  # nothing configured — not a failure, nothing to notify
-        was_active = (
-            await self._repo.get_app_setting(STATUS_KEY, TokenStatus.ACTIVE)
-        ) == TokenStatus.ACTIVE
         alive = await check_alive(key)
-        await self._repo.set_app_setting(
-            STATUS_KEY, TokenStatus.ACTIVE if alive else TokenStatus.INVALID
-        )
-        await self._repo.set_app_setting(CHECKED_AT_KEY, utcnow().isoformat(timespec="seconds"))
-        if was_active and not alive and self.on_dead is not None:
-            await self.on_dead()
-        return alive
+        return await self._health.record(alive, on_dead=self.on_dead, on_alive=self.on_alive)

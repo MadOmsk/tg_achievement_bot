@@ -7,14 +7,6 @@ from __future__ import annotations
 import json
 
 from bot.db.repo import HltbCacheRow, Repo, TitleHistoryRow
-from bot.handlers.hltb import (
-    DESCRIPTION_LIMIT,
-    _card,
-    _label,
-    _recent_keyboard,
-    _results_keyboard,
-    _shorten,
-)
 from bot.services.hltb import (
     HltbResult,
     _clean,
@@ -22,6 +14,14 @@ from bot.services.hltb import (
     _extract_details,
     _from_cache_row,
     _pick_fallback_word,
+)
+from bot.views.hltb import (
+    DESCRIPTION_LIMIT,
+    _card,
+    _label,
+    _recent_keyboard,
+    _results_keyboard,
+    _shorten,
 )
 
 CHAT_ID = -100777

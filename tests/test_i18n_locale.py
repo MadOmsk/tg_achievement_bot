@@ -19,8 +19,8 @@ from bot.i18n import (
     static_i18n,
     translator,
 )
-from bot.services.achievements import plural_achievements, plural_trophies
 from bot.util import thousands
+from bot.views.parts import plural_achievements, plural_trophies
 
 CHAT_ID = -100500
 TG_ID = 4242

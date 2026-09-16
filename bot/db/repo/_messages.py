@@ -20,7 +20,15 @@ from bot.db.repo._models import (
     _as_user,
     _iso,
 )
-from bot.db.repo._sql import active_account
+from bot.db.repo._sql import (
+    LOCALIZED_NAME_COLUMNS,
+    LOCALIZED_TITLE_COLUMNS,
+    NAME_CACHE_JOIN,
+    XBOX_ACCOUNT,
+    XBOX_COLUMNS,
+    active_account,
+    pick_name,
+)
 from bot.util import utcnow_iso
 
 
@@ -78,11 +86,13 @@ class _MessagesRepo:
         renders and sorts.
         """
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
-            "       u.last_name, steam.display_name AS steam_name,"
+            "SELECT u.tg_id, u.username, u.first_name,"
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name "
             "FROM subscriptions s "
             "JOIN users u ON u.tg_id = s.tg_id "
+            + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
             + "WHERE s.chat_id = ? AND u.is_excluded = 0",
@@ -102,18 +112,25 @@ class _MessagesRepo:
             for row in await cursor.fetchall()
         ]
 
-    async def chat_recent(self, chat_id: int, limit: int) -> list[RecentAchievement]:
+    async def chat_recent(
+        self, chat_id: int, limit: int, *, locale: str = "ru"
+    ) -> list[RecentAchievement]:
         cursor = await self._conn.execute(
             # Every field the person chain needs (#51) — this used to select
             # `u.gamertag` alone, so a member with no Xbox account was
             # rendered as the literal word "кто-то".
-            "SELECT u.tg_id, u.gamertag, u.gamertag_modern, u.username, u.first_name,"
-            "       u.last_name, steam.display_name AS steam_name,"
+            "SELECT u.tg_id, u.username, u.first_name,"
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
-            "       s.name, t.name AS game, s.gamerscore, s.rarity_percent,"
-            "       s.platform, s.unlocked_at, s.is_secret "
+            "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
+            "       " + LOCALIZED_TITLE_COLUMNS + ","
+            "       s.gamerscore, s.rarity_percent,"
+            "       s.platform, COALESCE(s.unlocked_at, s.created_at) AS unlocked_at,"
+            "       s.is_secret "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
+            + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
             # Through the accounts this person holds right now (#52, _sql.py).
@@ -124,8 +141,9 @@ class _MessagesRepo:
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE sub.chat_id = ? AND u.is_excluded = 0 AND s.unlocked_at IS NOT NULL "
-            "ORDER BY s.unlocked_at DESC LIMIT ?",
+            + NAME_CACHE_JOIN
+            + "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
+            "ORDER BY COALESCE(s.unlocked_at, s.created_at) DESC LIMIT ?",
             (chat_id, limit),
         )
         return [
@@ -138,8 +156,8 @@ class _MessagesRepo:
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
-                name=row["name"],
-                game=row["game"],
+                name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
+                game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
                 gamerscore=int(row["gamerscore"] or 0),
                 rarity_percent=row["rarity_percent"],
                 platform=row["platform"],
@@ -150,7 +168,7 @@ class _MessagesRepo:
         ]
 
     async def recent_games(
-        self, external_id: str, since: datetime, limit: int = 15
+        self, external_id: str, since: datetime, limit: int = 15, *, locale: str = "ru"
     ) -> list[TopGame]:
         """Games actually played recently, not the biggest lifetime scores —
         a person's five favourite old games would otherwise crowd out
@@ -166,10 +184,11 @@ class _MessagesRepo:
         rather than branching the query string for one case.
         """
         cursor = await self._conn.execute(
-            "SELECT t.name, COALESCE(SUM(s.gamerscore), 0) AS score, COUNT(*) AS unlocked,"
+            "SELECT t.name, " + LOCALIZED_TITLE_COLUMNS + ","
+            " COALESCE(SUM(s.gamerscore), 0) AS score, COUNT(*) AS unlocked,"
             " MAX(s.platform) AS platform "
             "FROM seen_achievements s LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.xuid = ? AND s.unlocked_at >= ? "
+            "WHERE s.xuid = ? AND COALESCE(s.unlocked_at, s.created_at) >= ? "
             # Score ties on every Steam game (no gamerscore there at all) —
             # unlocked count as the tiebreaker instead of SQLite's undefined
             # order among equal scores.
@@ -178,7 +197,10 @@ class _MessagesRepo:
         )
         return [
             TopGame(
-                name=row["name"],
+                # The chat's language, where the platform gave a second name
+                # (#61) — a list beside a localized notification must not be
+                # the one thing still in the platform's own language.
+                name=pick_name(locale, row["game_ru"], row["game_en"], row["name"]),
                 gamerscore=row["score"],
                 unlocked=row["unlocked"],
                 platform=row["platform"],
@@ -198,8 +220,9 @@ class _MessagesRepo:
             "FROM title_history th "
             "JOIN titles t ON t.title_id = th.title_id "
             "WHERE th.xuid IN ("
-            "  SELECT u.xuid FROM users u "
-            "  WHERE u.xuid IS NOT NULL AND u.tg_id IN ("
+            "  SELECT xb.external_id FROM users u "
+            + XBOX_ACCOUNT
+            + "  WHERE xb.external_id IS NOT NULL AND u.tg_id IN ("
             "    SELECT tg_id FROM subscriptions WHERE chat_id = ? "
             "    UNION "
             "    SELECT tg_id FROM chat_seen WHERE chat_id = ?"

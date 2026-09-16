@@ -152,7 +152,7 @@ def build_i18n_middleware() -> I18nMiddleware:
 
 async def build_i18n_context(locale: str = DEFAULT_LOCALE) -> I18nContext:
     """A standalone I18nContext for the rare bit of non-handler code (e.g.
-    main.py's on_linked callback) that calls into bot/handlers/keyboards.py
+    main.py's on_linked callback) that calls into bot/views/keyboards.py
     — those functions expect a real I18nContext (they call i18n.get(...)
     same as any handler), not the plain-string gettext() below. The caller
     passes the locale it already resolved for its own target; ConstManager
@@ -162,6 +162,29 @@ async def build_i18n_context(locale: str = DEFAULT_LOCALE) -> I18nContext:
     core = _core()
     await core.startup()
     return I18nContext(locale=locale, core=core, manager=ConstManager(locale), data={})
+
+
+_contexts: dict[str, I18nContext] = {}
+
+
+async def i18n_for(locale: str = DEFAULT_LOCALE) -> I18nContext:
+    """`build_i18n_context`, kept per locale (#63).
+
+    This is what a view uses when it has a locale and needs the real thing:
+    a screen's keyboard reaches for keys from several `.ftl` files at once
+    (`kb-*` and `connect-*` in the same function), and only an I18nContext
+    resolves across all of them — `StaticI18nContext` is bound to one
+    module by construction.
+
+    Caching is safe precisely because the context carries nothing about a
+    request: a locale, the shared core, and a `ConstManager` pinned to that
+    same locale. There are two locales, so this is two objects for the life
+    of the process rather than one per rendered screen.
+    """
+    locale = normalize_locale(locale)
+    if locale not in _contexts:
+        _contexts[locale] = await build_i18n_context(locale)
+    return _contexts[locale]
 
 
 @cache

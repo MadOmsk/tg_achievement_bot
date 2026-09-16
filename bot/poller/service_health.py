@@ -20,7 +20,13 @@ Each credential's own liveness (and the transition-based admin notify) lives
 in its auth wrapper — PsnAuth.check_health / SteamAuth.check_health (#17
 gave Steam the same stateful wrapper PSN already had). This module only
 decides *when* to call them and gates on `_due`; the wrappers fire their
-own `on_dead` callbacks, wired in main.py.
+own `on_dead`/`on_alive` callbacks, wired in main.py.
+
+That `_due` gate is also how a failed check gets retried quickly (#62): a
+wrapper leaves `checked_at` untouched while a failure is still unconfirmed,
+so the next tick a minute later finds the check due again instead of
+waiting out another full interval. Nothing here needs to know that — it is
+the whole reason the timestamp is written by the wrapper and not here.
 """
 
 from __future__ import annotations
@@ -40,7 +46,7 @@ from bot.util import parse_iso, utcnow
 log = logging.getLogger(__name__)
 
 # Re-exported from services/steam/auth.py (their owner as of #17) — kept
-# here too so existing importers (services/admin_view.py, tests) don't move.
+# here too so existing importers (views/admin_home.py, tests) don't move.
 __all__ = ["STEAM_CHECKED_AT_KEY", "STEAM_STATUS_KEY"]
 
 # Shared with the /admin panel's own auto-refresh cadence (handlers/admin.py's

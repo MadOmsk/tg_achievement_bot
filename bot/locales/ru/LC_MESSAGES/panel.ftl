@@ -93,7 +93,6 @@ panel-publication-row = Публикация:  { $status }
 panel-now-playing-row = Сейчас:      { $playing }
 panel-timezone-row = Часовой пояс: { $offset }
 panel-reconnect-hint = Доступ к XBOX истёк — жми «Подключить заново» ниже.
-panel-unknown-game = неизвестная игра
 panel-no-presence-data = нет данных
 panel-offline = не в сети ({ $ago })
 panel-online-idle = в сети, не играет

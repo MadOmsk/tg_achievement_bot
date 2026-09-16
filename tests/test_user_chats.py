@@ -10,13 +10,13 @@ CHAT_A = -100501
 CHAT_B = -100502
 
 
-async def _chat(repo: Repo, chat_id: int, title: str) -> None:
+async def render_chat_card(repo: Repo, chat_id: int, title: str) -> None:
     await repo.upsert_chat(chat_id, title, TG_ID)
 
 
 async def test_subscribed_chat_is_listed_as_subscribed(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
 
     chats = await repo.user_chats(TG_ID)
@@ -30,7 +30,7 @@ async def test_only_seen_chat_is_listed_as_not_subscribed(repo: Repo) -> None:
     """chat_seen alone (never subscribed) still counts as "known" (SPEC 6.3's
     membership definition), just not publishing there."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.record_chat_seen(CHAT_A, TG_ID)
 
     chats = await repo.user_chats(TG_ID)
@@ -41,7 +41,7 @@ async def test_only_seen_chat_is_listed_as_not_subscribed(repo: Repo) -> None:
 
 async def test_untouched_chat_does_not_appear(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     # Neither subscribed nor seen — must not show up.
     assert await repo.user_chats(TG_ID) == []
 
@@ -49,7 +49,7 @@ async def test_untouched_chat_does_not_appear(repo: Repo) -> None:
 async def test_inactive_chat_is_excluded(repo: Repo) -> None:
     """A chat the bot got kicked from — nothing left to manage there."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.set_chat_active(CHAT_A, False)
 
@@ -60,7 +60,7 @@ async def test_unsubscribe_keeps_the_chat_listed(repo: Repo) -> None:
     """Unsubscribing only removes the publishing row — chat_seen (and so the
     chat's place in this list) stays, one tap away from re-subscribing."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.record_chat_seen(CHAT_A, TG_ID)
 
@@ -75,7 +75,7 @@ async def test_forget_chat_membership_removes_it_from_the_list(repo: Repo) -> No
     """ "Delete" (SPEC 6.2) clears both subscriptions and chat_seen — the
     chat vanishes from the list entirely, as if never touched."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.record_chat_seen(CHAT_A, TG_ID)
 
@@ -89,7 +89,7 @@ async def test_forget_chat_membership_is_not_a_ban(repo: Repo) -> None:
     """Re-subscribing (or being seen writing again) after "delete" brings the
     chat right back — no third, blocked state (SPEC 6.2: "банов тут нету")."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.forget_chat_membership(CHAT_A, TG_ID)
 
@@ -104,7 +104,7 @@ async def test_new_subscription_defaults_to_all(repo: Repo) -> None:
     """SPEC 9, M-Steam-2e's follow-up: rarity_mode lives per subscription
     now, defaulting to 'all' the same way the old personal setting used to."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
 
     chats = await repo.user_chats(TG_ID)
@@ -117,7 +117,7 @@ async def test_new_subscription_follows_the_admin_default(repo: Repo) -> None:
     (app_settings['default_rarity_mode'], handlers/admin.py), not a value
     baked into the schema — new subscriptions must pick it up."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.set_app_setting("default_rarity_mode", "rare")
 
     await repo.subscribe(CHAT_A, TG_ID)
@@ -128,7 +128,7 @@ async def test_new_subscription_follows_the_admin_default(repo: Repo) -> None:
 
 async def test_rarity_mode_is_none_while_not_subscribed(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.record_chat_seen(CHAT_A, TG_ID)
 
     chats = await repo.user_chats(TG_ID)
@@ -140,8 +140,8 @@ async def test_update_subscription_rarity_mode_is_scoped_to_one_chat(repo: Repo)
     """The whole point of moving this per chat — the same person can have a
     different answer in each one (SPEC 9, M-Steam-2e's follow-up)."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Чат А")
-    await _chat(repo, CHAT_B, "Чат Б")
+    await render_chat_card(repo, CHAT_A, "Чат А")
+    await render_chat_card(repo, CHAT_B, "Чат Б")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.subscribe(CHAT_B, TG_ID)
 
@@ -157,7 +157,7 @@ async def test_publication_targets_carries_the_subscriptions_own_rarity_mode(
     """passes_filters() (services/achievements.py) reads ChatTarget.rarity_mode
     now, not a personal setting — publication_targets() is what feeds it."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.update_subscription_rarity_mode(CHAT_A, TG_ID, "hidden")
 
@@ -170,7 +170,7 @@ async def test_new_subscription_defaults_to_3_for_digest_threshold(repo: Repo) -
     """Follow-up, 2026-09-05: digest_threshold lives per subscription now,
     the same move rarity_mode got — defaults to the schema's own 3."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
 
     chats = await repo.user_chats(TG_ID)
@@ -180,7 +180,7 @@ async def test_new_subscription_defaults_to_3_for_digest_threshold(repo: Repo) -
 
 async def test_digest_threshold_is_none_while_not_subscribed(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.record_chat_seen(CHAT_A, TG_ID)
 
     chats = await repo.user_chats(TG_ID)
@@ -192,8 +192,8 @@ async def test_update_subscription_digest_threshold_is_scoped_to_one_chat(repo: 
     """The whole point of moving this per chat — the same person can have a
     different answer in each one (Follow-up, 2026-09-05)."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Чат А")
-    await _chat(repo, CHAT_B, "Чат Б")
+    await render_chat_card(repo, CHAT_A, "Чат А")
+    await render_chat_card(repo, CHAT_B, "Чат Б")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.subscribe(CHAT_B, TG_ID)
 
@@ -209,7 +209,7 @@ async def test_publication_targets_carries_the_subscriptions_own_digest_threshol
     """Publisher.publish() reads ChatTarget.digest_threshold now, not a
     personal setting — publication_targets() is what feeds it."""
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Гейминг-чат")
+    await render_chat_card(repo, CHAT_A, "Гейминг-чат")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.update_subscription_digest_threshold(CHAT_A, TG_ID, 10)
 
@@ -220,8 +220,8 @@ async def test_publication_targets_carries_the_subscriptions_own_digest_threshol
 
 async def test_multiple_chats_are_all_listed(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await _chat(repo, CHAT_A, "Чат А")
-    await _chat(repo, CHAT_B, "Чат Б")
+    await render_chat_card(repo, CHAT_A, "Чат А")
+    await render_chat_card(repo, CHAT_B, "Чат Б")
     await repo.subscribe(CHAT_A, TG_ID)
     await repo.record_chat_seen(CHAT_B, TG_ID)
 

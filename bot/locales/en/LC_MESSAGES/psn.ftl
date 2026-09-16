@@ -2,7 +2,7 @@
 psn-not-configured = PSN linking isn't set up yet — ask the administrator.
 psn-connect-group-redirect = Message me privately — we'll connect PSN there.
 psn-private-only = This command works in a DM.
-psn-already-connected = PSN is already connected: { $name }.
+psn-already-connected = PSN is currently linked to { $name }. Send another Online ID and I will switch; to just unlink, use /disconnect_psn.
 psn-link-prompt = Send me your PSN Online ID — I'll link it.
 
     ⚠️ Your trophy privacy has to be open, or I can't read them: in the PS App → Settings → Privacy → “Trophy level and game collection” → “Anyone”.
@@ -21,3 +21,7 @@ psn-cancel-button = Cancel
 psn-already-disconnected = PSN isn't connected anyway.
 psn-disconnect-prompt = Disconnect PSN ({ $name })?
 psn-disconnected = PSN disconnected. You can come back any time.
+
+# Relinking a known account (#52) — the trophies are already stored, and the
+# ordinary poll tick picks up whatever appeared since last time.
+psn-catch-up-started = I know this account already — its trophies are still here. I will pick up what is new on my own.

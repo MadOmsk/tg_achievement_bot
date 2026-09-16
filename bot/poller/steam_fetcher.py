@@ -31,6 +31,7 @@ from bot.services.steam.client import (
     rate_limit_usage,
 )
 from bot.services.translate.auth import AnthropicAuth
+from bot.util import parse_iso
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,8 @@ class SteamFetcher:
         persona_name: str,
         appid: str,
         game_name: str | None,
+        *,
+        window_hours: int | None = None,
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
         api_key = await self._steam_auth.require_key()
@@ -85,7 +88,9 @@ class SteamFetcher:
             return 0
 
         log.info("tg_id=%s unlocked %s new steam achievements in %s", tg_id, len(new_rows), appid)
-        await self._publisher.publish(tg_id, steam_id, persona_name, new_rows, game_name)
+        await self._publisher.publish(
+            tg_id, steam_id, persona_name, new_rows, game_name, window_hours=window_hours
+        )
         return len(new_rows)
 
     async def refresh_user(self, tg_id: int, steam_id: str, persona_name: str, locale: str) -> str:
@@ -138,6 +143,54 @@ class SteamFetcher:
             else _("steamfetcher-offline")
         )
         return _("steamfetcher-refreshed", state=state, published=published)
+
+    async def catch_up(
+        self, tg_id: int, steam_id: str, persona_name: str, since: str, window_hours: int
+    ) -> int:
+        """Relinking an account the bot already knows (#52).
+
+        A full backfill here would be waste: the history is already stored,
+        and Steam hands us `rtime_last_played` for every owned game in the
+        one call that lists them — so only games touched since our newest
+        stored unlock can hold anything new. Measured against a real
+        account: 301 requests for the backfill, 2 for this.
+
+        What it does find *is* announced, but only inside `window_hours` —
+        someone who unlinked a month ago should not have a month of
+        achievements land in the chat at once.
+        """
+        api_key = await self._steam_auth.require_key()
+        cutoff = parse_iso(since).timestamp()
+        async with self._backfill_slots:
+            try:
+                games = await get_owned_games(api_key, steam_id)
+            except SteamGameDetailsPrivateError:
+                await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+                raise
+            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
+            candidates = [game for game in games if game.last_played > cutoff]
+            log.info(
+                "steam catch-up for tg_id=%s: %s of %s games played since %s",
+                tg_id,
+                len(candidates),
+                len(games),
+                since,
+            )
+            found = 0
+            for game in candidates:
+                async with self._game_slots:
+                    try:
+                        found += await self.poll_title(
+                            tg_id,
+                            steam_id,
+                            persona_name,
+                            game.appid,
+                            game.name,
+                            window_hours=window_hours,
+                        )
+                    except SteamApiError as exc:
+                        log.info("steam catch-up of appid=%s skipped: %s", game.appid, exc)
+            return found
 
     async def backfill(self, tg_id: int, steam_id: str) -> int:
         """Mark everything already unlocked as seen, publishing nothing —

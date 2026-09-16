@@ -14,16 +14,7 @@ from aiogram_i18n import I18nContext
 from bot.config import Settings
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
-from bot.handlers.keyboards import (
-    TZ_MANUAL,
-    TZ_MORE,
-    TZ_SET,
-    TZ_SKIP,
-    connect_keyboard,
-    format_offset,
-    safe_edit,
-    timezone_keyboard,
-)
+from bot.handlers.delivery import safe_edit
 from bot.handlers.panel import send_panel
 from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
@@ -31,6 +22,16 @@ from bot.services.connect import ConnectService
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.util import parse_utc_offset
+from bot.views.keyboards import (
+    TZ_MANUAL,
+    TZ_MORE,
+    TZ_SET,
+    TZ_SKIP,
+    connect_keyboard,
+    format_offset,
+    onboarding_keyboard,
+    timezone_keyboard,
+)
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ async def start_with_payload(
     i18n: I18nContext,
 ) -> None:
     """Deep link from a group chat: its buttons send people here (SPEC 6.3)."""
-    await repo.ensure_user(message.chat.id, _username(message))
+    await repo.ensure_user(_person_id(message), _username(message))
     if command.args == "panel":
         await send_panel(bot, repo, message.chat.id, i18n)
         return
@@ -85,7 +86,7 @@ async def start_with_payload(
 async def start(
     message: Message, repo: Repo, connect: ConnectService, bot: Bot, i18n: I18nContext
 ) -> None:
-    await repo.ensure_user(message.chat.id, _username(message))
+    await repo.ensure_user(_person_id(message), _username(message))
     await _greet(message, repo, connect, bot, i18n)
 
 
@@ -93,7 +94,7 @@ async def start(
 async def connect_command(
     message: Message, repo: Repo, connect: ConnectService, i18n: I18nContext
 ) -> None:
-    await repo.ensure_user(message.chat.id, _username(message))
+    await repo.ensure_user(_person_id(message), _username(message))
     user = await repo.get_user(message.chat.id)
     if user is not None and user.xuid:
         await message.answer(i18n.get("connect-xbox-already-connected-relogin"))
@@ -258,12 +259,24 @@ async def timezone_manual_input(message: Message, repo: Repo, i18n: I18nContext)
 async def _greet(
     message: Message, repo: Repo, connect: ConnectService, bot: Bot, i18n: I18nContext
 ) -> None:
+    """Already connected on *any* platform -> straight to the panel;
+    otherwise greet and offer all three (#53).
+
+    This used to decide on `user.xuid` alone, so someone with only PSN
+    linked was greeted as a stranger and pushed back into the Microsoft
+    sign-in — the same Xbox-shaped gate /panel itself had before 2026-09-09,
+    one screen earlier.
+    """
     user = await repo.get_user(message.chat.id)
-    if user is not None and user.xuid:
+    links = await repo.platform_links_of(message.chat.id)
+    if (user is not None and user.xuid) or links:
         await send_panel(bot, repo, message.chat.id, i18n)
         return
-    await message.answer(i18n.get("connect-greeting"))
-    await _send_login_link(message, connect, i18n)
+    await message.answer(i18n.get("connect-greeting-multi"))
+    await message.answer(
+        i18n.get("connect-pick-platform"),
+        reply_markup=onboarding_keyboard(connect.start_login(message.chat.id), i18n),
+    )
 
 
 async def _send_login_link(
@@ -292,6 +305,18 @@ def _parse_connect_payload(args: str) -> tuple[bool, int | None]:
         except ValueError:
             return False, None
     return False, None
+
+
+def _person_id(message: Message) -> int:
+    """Whose row this is — the person's id, never the chat's (#66).
+
+    These handlers used to pass `message.chat.id`, which is the same number
+    in a DM and a completely different one in a group: `/start` is
+    answerable there, so one person running it created a `users` row for the
+    *group*. Found on production as tg_id -5246175458, a person who does not
+    exist sitting in the table every "who are our people" query reads.
+    """
+    return message.from_user.id if message.from_user else message.chat.id
 
 
 def _username(message: Message) -> str | None:

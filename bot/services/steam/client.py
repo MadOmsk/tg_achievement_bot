@@ -16,6 +16,7 @@ the genuine endpoint, not just parsed against a guessed shape.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 
@@ -25,6 +26,15 @@ from bot.constants import SteamCommunityVisibility
 from bot.services.rate_limiter import RateLimiter
 
 BASE_URL = "https://api.steampowered.com"
+# The storefront, not the Web API — a different host, no key, and the only
+# place Steam gives a game's *localized* name (#61). Both Web API endpoints
+# that carry `gameName` ignore `l=` entirely: G.O.P.O.T.A comes back as
+# "G.O.P.O.T.A" from each, while its store page is "Г.О.П.О.Т.А". Asked once
+# per game, ever, and for exactly one field — this is not the store
+# *description* source that was tried and rejected (CLAUDE.md's appendix).
+STORE_URL = "https://store.steampowered.com"
+
+log = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
 REQUEST_TIMEOUT = 10.0
 
@@ -124,6 +134,30 @@ class RawSchemaAchievement:
 # (poller/service_health.py). A 200 with "not found" still proves the key
 # is fine; only a 401/403 (SteamKeyDeadError) means it is not.
 _HEALTH_CHECK_VANITY = "gabelogannewell"
+
+
+async def store_name(appid: str, language: str) -> str | None:
+    """A game's name as its store page spells it in `language`, or None.
+
+    Best-effort by design: the one call here that talks to the storefront
+    rather than the Web API, it needs no key, and a failure costs nothing but
+    a name that stays in whatever language the API already gave.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            response = await client.get(
+                f"{STORE_URL}/api/appdetails",
+                params={"appids": appid, "l": language, "filters": "basic"},
+            )
+            response.raise_for_status()
+            body = response.json().get(appid) or {}
+    except Exception:
+        log.info("steam store name for appid=%s unavailable", appid, exc_info=True)
+        return None
+    if not body.get("success"):
+        return None
+    name = (body.get("data") or {}).get("name")
+    return str(name) if name else None
 
 
 async def check_alive(api_key: str) -> bool:
@@ -232,6 +266,11 @@ class OwnedGame:
     appid: str
     name: str
     playtime_forever: int
+    # Unix seconds of the last session, straight from GetOwnedGames — Steam
+    # has returned it all along and the bot discarded it (#52). It is what
+    # makes a relink cost two requests instead of three hundred: only games
+    # touched since the newest unlock we already hold can have anything new.
+    last_played: int = 0
 
 
 async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
@@ -258,6 +297,7 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
             appid=str(item["appid"]),
             name=item.get("name") or str(item["appid"]),
             playtime_forever=int(item.get("playtime_forever") or 0),
+            last_played=int(item.get("rtime_last_played") or 0),
         )
         for item in games
         if item.get("appid") and int(item.get("playtime_forever") or 0) > 0
@@ -373,3 +413,16 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
                 raise SteamApiError(f"Steam returned {response.status_code}")
 
     raise SteamApiError("Steam request gave up")  # pragma: no cover — loop always returns/raises
+
+
+async def avatar_url(api_key: str, steam_id: str) -> str | None:
+    """The account's own picture (#55) — `avatarfull`, the 184px one, which
+    is the largest Steam publishes in this response. Same call presence
+    already makes; this one is its own request because the avatar sweep runs
+    on its own slow cadence and has no batch of ids to ride along with."""
+    payload = await _get("/ISteamUser/GetPlayerSummaries/v2/", api_key, {"steamids": steam_id})
+    for player in payload.get("players") or []:
+        url = player.get("avatarfull") or player.get("avatarmedium") or player.get("avatar")
+        if url:
+            return str(url)
+    return None

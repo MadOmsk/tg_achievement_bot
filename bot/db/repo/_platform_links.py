@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import json
 
-from bot.db.repo._models import PlatformLink, SteamSchemaAchievement
+from bot.constants import AccountPlatform
+from bot.db.repo._models import PlatformLink, SteamSchemaAchievement, TitleProgress
 from bot.util import utcnow_iso
 
 
@@ -229,7 +230,13 @@ class _PlatformLinksRepo:
         if not include_xbox:
             clause += "AND al.platform != 'xbox' "
         cursor = await self._conn.execute(
-            self._LINK_COLUMNS + clause + "ORDER BY al.platform",
+            # Xbox, PlayStation, Steam — the one display order
+            # (constants.platform_display_rank). Plain ORDER BY al.platform
+            # is alphabetical, which is a different order by coincidence
+            # rather than by decision.
+            self._LINK_COLUMNS
+            + clause
+            + "ORDER BY CASE al.platform WHEN 'xbox' THEN 0 WHEN 'psn' THEN 1 ELSE 2 END",
             (tg_id,),
         )
         return [_as_platform_link(row) for row in await cursor.fetchall()]
@@ -287,6 +294,222 @@ class _PlatformLinksRepo:
         )
         row = await cursor.fetchone()
         return row["tg_id"] if row else None
+
+    async def account_achievement_count(self, platform: str, external_id: str) -> int:
+        """How much this account has earned, regardless of who holds it —
+        what a person is about to gain or stop seeing when a link changes
+        (#52, services/relink.py)."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements WHERE account_platform = ? AND xuid = ?",
+            (platform, external_id),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def save_title_groups(
+        self, title_id: str, groups: list[tuple[str, str | None, int, str | None, str | None]]
+    ) -> None:
+        """The base game plus one row per DLC (#46) — cached forever, like
+        every other "the game's own shape" fact here, because it only changes
+        when the publisher ships new trophies.
+
+        `(group_id, name, total, name_ru, name_en)`. Sony localizes these
+        names (#61), so both sides are stored when both were fetched; a side
+        that came back empty leaves what is already there alone.
+        """
+        now = utcnow_iso()
+        for group_id, name, total, name_ru, name_en in groups:
+            await self._conn.execute(
+                "INSERT INTO title_groups"
+                " (title_id, group_id, name, total, name_ru, name_en, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(title_id, group_id) DO UPDATE SET "
+                "  name = excluded.name, total = excluded.total,"
+                "  name_ru = COALESCE(excluded.name_ru, title_groups.name_ru),"
+                "  name_en = COALESCE(excluded.name_en, title_groups.name_en),"
+                "  updated_at = excluded.updated_at",
+                (title_id, group_id, name, total, name_ru, name_en, now),
+            )
+        await self._conn.commit()
+
+    async def has_title_groups(self, title_id: str) -> bool:
+        """Whether this game's trophy structure is stored **in both
+        languages** (#46 for the structure, #61 for the languages).
+
+        Not simply "is there a row": every game scanned between the two
+        shipped with English group names only, and asking the older question
+        would leave those in English in a Russian chat forever — the same trap
+        the description cache walked into. A Russian side is written as soon as
+        the second client answers at all (falling back to the English name for
+        a group Sony has no Russian name for), so a NULL here means "never
+        asked in Russian", not "Sony has nothing".
+        """
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM title_groups WHERE title_id = ? AND name_ru IS NOT NULL LIMIT 1",
+            (title_id,),
+        )
+        return await cursor.fetchone() is not None
+
+    async def psn_title_needs_widening(self, external_id: str, title_id: str) -> bool:
+        """Does this account already hold trophies for this game that were
+        stored back when only the base group was ever fetched? (#46)
+
+        Every row written before that carries a NULL `trophy_group_id` and
+        every row written since carries one, so "has rows, none of them
+        grouped" is an exact, self-clearing description of a game whose DLC
+        trophies are about to be discovered all at once. `title_groups`
+        could not answer this — it is shared by everyone who owns the game,
+        so the second person to unlock something there would look "already
+        widened" while their own DLC trophies had never been fetched.
+
+        No rows at all is *not* widening: that is simply a game this person
+        has just started, and its trophies are as new as they look.
+        """
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*), COUNT(trophy_group_id) FROM seen_achievements "
+            "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+            (AccountPlatform.PSN, external_id, title_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return False
+        stored, grouped = int(row[0]), int(row[1])
+        return stored > 0 and grouped == 0
+
+    async def title_progress(
+        self, account_platform: str, external_id: str, title_id: str, group_id: str | None = None
+    ) -> TitleProgress | None:
+        """(unlocked, total) for one game on one account, or None when the
+        total is not something the bot knows (#46).
+
+        Where the total comes from differs per platform, and only two of
+        three have one at all:
+
+        - Xbox states it directly in `title_history`, which the poller
+          refreshes anyway;
+        - Steam has no per-user total, but `steam_schema_cache` holds the
+          game's whole achievement list, so its length is the total;
+        - PSN reports progress as a percentage and never a count, but the
+          trophy-title list it already fetches carries `defined_trophies`;
+          that sum is kept on `titles.achievements_total`, so the counter
+          reads the same on all three platforms (#46, owner decision:
+          a count everywhere rather than a percentage on one).
+
+        None only when the total genuinely is not known yet — a game polled
+        before this shipped, or a Steam schema not cached. The counter is
+        then left off that line rather than invented.
+        """
+        if account_platform == AccountPlatform.XBOX:
+            cursor = await self._conn.execute(
+                "SELECT achievements_unlocked, achievements_total FROM title_history "
+                "WHERE xuid = ? AND title_id = ?",
+                (external_id, title_id),
+            )
+            row = await cursor.fetchone()
+            total = int(row["achievements_total"] or 0) if row else 0
+            if not total:
+                # titlehub reports a total for Xbox 360 and returns 0 for most
+                # modern titles (151 of 555 on a real account), which left the
+                # counter off nearly every Xbox One/Series card. The per-title
+                # achievements response says how many the game has, and
+                # poller/fetcher.py stores that in `titles` as it polls (#46).
+                cursor = await self._conn.execute(
+                    "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
+                )
+                fallback = await cursor.fetchone()
+                total = int(fallback["achievements_total"] or 0) if fallback else 0
+            if not total:
+                return None
+            if row is not None and row["achievements_unlocked"] is not None:
+                # Microsoft's own count when it has one: it knows about
+                # achievements earned before this bot existed.
+                unlocked = int(row["achievements_unlocked"])
+            else:
+                cursor = await self._conn.execute(
+                    "SELECT COUNT(*) FROM seen_achievements "
+                    "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+                    (account_platform, external_id, title_id),
+                )
+                counted = await cursor.fetchone()
+                unlocked = int(counted[0]) if counted else 0
+            return TitleProgress(unlocked=unlocked, total=total)
+
+        if account_platform == AccountPlatform.STEAM:
+            cached = await self.steam_schema_get_cached(title_id)
+            if cached is None or not cached[1]:
+                return None
+            cursor = await self._conn.execute(
+                "SELECT COUNT(*) FROM seen_achievements "
+                "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+                (account_platform, external_id, title_id),
+            )
+            row = await cursor.fetchone()
+            return TitleProgress(unlocked=int(row[0]) if row else 0, total=len(cached[1]))
+
+        cursor = await self._conn.execute(
+            "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None or not row["achievements_total"]:
+            return None
+        total = int(row["achievements_total"])
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+            (account_platform, external_id, title_id),
+        )
+        row = await cursor.fetchone()
+        progress = TitleProgress(unlocked=int(row[0]) if row else 0, total=total)
+        if group_id is None:
+            return progress
+
+        # Sony gives every title at least a 'default' group, so "has groups"
+        # is not the question — "is it split into more than one" is. A game
+        # with a single group would render a second line saying exactly what
+        # the first one already said.
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM title_groups WHERE title_id = ?", (title_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None or int(row[0]) < 2:
+            return progress
+
+        cursor = await self._conn.execute(
+            "SELECT name, total, name_ru, name_en FROM title_groups "
+            "WHERE title_id = ? AND group_id = ?",
+            (title_id, group_id),
+        )
+        group = await cursor.fetchone()
+        if group is None:
+            return progress
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE account_platform = ? AND xuid = ? AND title_id = ?"
+            "  AND trophy_group_id = ?",
+            (account_platform, external_id, title_id, group_id),
+        )
+        earned = await cursor.fetchone()
+        # Both sides where Sony gave them (#61); the caller picks by the
+        # chat's language and falls back to whatever was stored first.
+        progress.group_name = group["name"]
+        progress.group_name_ru = group["name_ru"]
+        progress.group_name_en = group["name_en"]
+        progress.group_total = int(group["total"])
+        progress.group_unlocked = int(earned[0]) if earned else 0
+        progress.group_is_default = group_id == "default"
+        return progress
+
+    async def account_latest_unlock(self, platform: str, external_id: str) -> str | None:
+        """The newest unlock we already hold for this account — where a
+        relink's delta starts (#52). None when the account is new to us, and
+        then only a full backfill will do."""
+        cursor = await self._conn.execute(
+            "SELECT MAX(COALESCE(unlocked_at, created_at)) FROM seen_achievements "
+            "WHERE account_platform = ? AND xuid = ?",
+            (platform, external_id),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
 
     async def account_has_history(self, platform: str, external_id: str) -> bool:
         """Whether anything was ever recorded for this account — the signal

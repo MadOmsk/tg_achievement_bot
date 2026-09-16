@@ -20,6 +20,10 @@ from bot.services.translate.client import translate_descriptions
 
 log = logging.getLogger(__name__)
 
+# Stored, shown, and still waiting for a translation — see schema.sql's own
+# comment on `achievement_description_cache.source`.
+FALLBACK = "fallback"
+
 
 async def bilingual_descriptions(
     repo: Repo,
@@ -51,6 +55,13 @@ async def bilingual_descriptions(
 
     for achievement_id, (description_ru, description_en) in native.items():
         cached = await repo.get_cached_description(platform, title_id, achievement_id)
+        if cached is not None and cached.source == FALLBACK:
+            # Stored untranslated last time because nothing could translate it
+            # (no key, or a failed call). The text is already on screen; this
+            # is the upgrade attempt, and it costs nothing when there is still
+            # no key — the same fallback row is simply written again.
+            needs_translation[achievement_id] = cached.description_en or description_en or ""
+            continue
         if cached is not None:
             result[achievement_id] = (cached.description_ru, cached.description_en)
             continue
@@ -77,12 +88,25 @@ async def bilingual_descriptions(
     try:
         api_key = await anthropic_auth.require_key()
     except AnthropicNotConfiguredError:
-        # No key at all — every one of these just keeps its (identical)
-        # fallback text for now, uncached, so a future attempt (once a key
-        # exists, or just the next person to unlock the same achievement)
-        # gets a real shot at it instead of being stuck with a bad cache
-        # entry forever.
+        # No key at all. The text is still stored — untranslated, marked
+        # `fallback`, `description_ru` left NULL (user request, 2026-09-13:
+        # "don't silently ignore it, show the untranslated version"). It used
+        # to be returned and not cached, which kept the door open for a later
+        # translation but also meant every caller re-fetched the same title
+        # forever and the render path had nothing to read.
+        #
+        # `fallback` is what keeps that door open instead: the row is offered
+        # to the translator again on the next pass, and the moment a key
+        # exists it becomes a real `llm` row.
         for achievement_id, text in needs_translation.items():
+            await repo.cache_description(
+                platform,
+                title_id,
+                achievement_id,
+                description_ru=None,
+                description_en=text,
+                source=FALLBACK,
+            )
             result[achievement_id] = (text, text)
         return result
 
@@ -90,11 +114,22 @@ async def bilingual_descriptions(
     for achievement_id, english_text in needs_translation.items():
         russian_text = translated.get(achievement_id)
         if russian_text is None:
+            # The key exists but this one came back without a translation.
+            # Same treatment as having no key: stored untranslated, marked
+            # `fallback`, offered again next pass.
             log.info(
-                "no translation for %s/%s/%s — left untranslated, will retry later",
+                "no translation for %s/%s/%s — stored untranslated, will retry later",
                 platform,
                 title_id,
                 achievement_id,
+            )
+            await repo.cache_description(
+                platform,
+                title_id,
+                achievement_id,
+                description_ru=None,
+                description_en=english_text,
+                source=FALLBACK,
             )
             result[achievement_id] = (english_text, english_text)
             continue

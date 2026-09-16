@@ -52,8 +52,13 @@ class _StatsRepo:
         await self._conn.commit()
 
     async def update_gamerscore(self, tg_id: int, gamerscore: int) -> None:
+        """On the account, not the person (#52) — a gamerscore is a fact
+        about an Xbox account and travels with it."""
         await self._conn.execute(
-            "UPDATE users SET gamerscore = ?, updated_at = ? WHERE tg_id = ?",
+            "UPDATE accounts SET gamerscore = ?, updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)",
             (gamerscore, utcnow_iso(), tg_id),
         )
         await self._conn.commit()
@@ -71,12 +76,14 @@ class _StatsRepo:
         the bot already knows.
         """
         cursor = await self._conn.execute(
-            "UPDATE users SET gamertag = COALESCE(?, gamertag),"
-            "                 gamertag_modern = COALESCE(?, gamertag_modern),"
-            "                 updated_at = ? "
-            "WHERE tg_id = ?"
-            "  AND ((? IS NOT NULL AND gamertag IS NOT ?)"
-            "    OR (? IS NOT NULL AND gamertag_modern IS NOT ?))",
+            "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
+            "                    display_name = COALESCE(?, display_name),"
+            "                    updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)"
+            "  AND ((? IS NOT NULL AND secondary_name IS NOT ?)"
+            "    OR (? IS NOT NULL AND display_name IS NOT ?))",
             (
                 gamertag,
                 gamertag_modern,
@@ -102,7 +109,14 @@ class _StatsRepo:
             f"SELECT COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements WHERE {where}"
         )
         if since is not None:
-            query += " AND unlocked_at >= ?"
+            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder date for
+            # some Xbox 360 achievements (0001-01-01, or 1753-01-01 — the old SQL
+            # Server minimum; 84 of 5239 rows on one real account), which the
+            # parser discards rather than record an unlock in the year 1753. Those
+            # rows still count (owner decision, 2026-09-13): when the platform
+            # gives no usable time, the time the bot first saw the achievement is
+            # the honest stand-in. The stored column keeps the NULL.
+            query += " AND COALESCE(unlocked_at, created_at) >= ?"
             params = [*params, _iso(since)]
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
@@ -157,7 +171,14 @@ class _StatsRepo:
         )
         params: list[object] = [tg_id]
         if since is not None:
-            query += " AND unlocked_at >= ?"
+            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder date for
+            # some Xbox 360 achievements (0001-01-01, or 1753-01-01 — the old SQL
+            # Server minimum; 84 of 5239 rows on one real account), which the
+            # parser discards rather than record an unlock in the year 1753. Those
+            # rows still count (owner decision, 2026-09-13): when the platform
+            # gives no usable time, the time the bot first saw the achievement is
+            # the honest stand-in. The stored column keeps the NULL.
+            query += " AND COALESCE(unlocked_at, created_at) >= ?"
             params.append(_iso(since))
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
@@ -256,7 +277,7 @@ class _StatsRepo:
         query = "SELECT xuid, COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements"
         params: list[object] = []
         if since is not None:
-            query += " WHERE unlocked_at >= ?"
+            query += " WHERE COALESCE(unlocked_at, created_at) >= ?"
             params.append(_iso(since))
         cursor = await self._conn.execute(query + " GROUP BY xuid", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
@@ -275,7 +296,7 @@ class _StatsRepo:
         )
         params: list[object] = []
         if since is not None:
-            query += "WHERE s.unlocked_at >= ?"
+            query += "WHERE COALESCE(s.unlocked_at, s.created_at) >= ?"
             params.append(_iso(since))
         cursor = await self._conn.execute(query + " GROUP BY al.tg_id", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}

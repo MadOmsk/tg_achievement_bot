@@ -13,9 +13,10 @@ from bot.db.repo import (
     SteamSchemaAchievement,
     TopGame,
 )
-from bot.handlers.chat import _build_stats_text, _games_list, _send_stats_card, _who_label
-from bot.services.achievements import COMPLETED_BADGE
+from bot.handlers.chat import _send_stats_card
 from bot.util import utcnow
+from bot.views.chat import _games_list, build_stats_text, who_label
+from bot.views.parts import COMPLETED_BADGE
 
 CHAT_ID = -100500
 
@@ -83,7 +84,7 @@ async def test_header_gamerscore_is_the_profile_value_not_a_sum(repo: Repo) -> N
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     # Line 0 is just the display name now (SPEC 9, M-Steam-2e); the Xbox
@@ -102,7 +103,7 @@ async def test_header_shows_the_telegram_username_not_the_gamertag(repo: Repo) -
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     header = text.split("\n")[0]
@@ -119,7 +120,7 @@ async def test_header_falls_back_to_full_name_with_no_username(repo: Repo) -> No
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     header = text.split("\n")[0]
@@ -132,7 +133,7 @@ async def test_header_falls_back_to_first_name_alone_with_no_last_name(repo: Rep
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     header = text.split("\n")[0]
@@ -148,7 +149,7 @@ async def test_header_falls_back_to_gamertag_with_nothing_from_telegram_yet(repo
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     assert "GamerTag" in text.split("\n")[0]
@@ -206,7 +207,7 @@ async def test_steam_line_shows_its_own_lifetime_achievement_count(repo: Repo) -
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
@@ -235,7 +236,7 @@ async def test_games_list_is_capped_by_the_configured_limit(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     # 3 distinct games exist, but only 2 (the limit) render as list rows.
@@ -271,7 +272,7 @@ async def test_counters_show_platform_breakdown_only_with_two_platforms(repo: Re
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
@@ -326,11 +327,11 @@ async def test_counters_show_psn_in_the_platform_breakdown(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
-    assert "(🟢 1 · ⚫ 1 · 🔵 1)" in today_line
+    assert "(🟢 1 · 🔵 1 · ⚫ 1)" in today_line  # Xbox, PlayStation, Steam (2026-09-13)
 
 
 async def test_counters_hide_breakdown_for_a_single_platform(repo: Repo) -> None:
@@ -340,7 +341,7 @@ async def test_counters_hide_breakdown_for_a_single_platform(repo: Repo) -> None
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
@@ -377,7 +378,7 @@ async def test_games_list_includes_steam_games(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     assert "Left 4 Dead 2" in text
@@ -392,7 +393,7 @@ async def test_nicknames_are_plain_text_by_default(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     assert "<a href" not in text
@@ -406,7 +407,7 @@ async def test_nicknames_link_out_once_the_person_opts_in(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
@@ -429,7 +430,7 @@ async def test_opted_in_but_no_gamertag_yet_stays_plain(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     assert "<a href" not in text
@@ -446,7 +447,7 @@ async def test_zero_limit_shows_every_game_uncapped(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     assert text.count("без названия") == 5
@@ -479,7 +480,7 @@ async def test_psn_line_says_trophies_not_achievements(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
@@ -499,7 +500,7 @@ async def test_psn_level_suffix_has_a_space_on_both_sides_of_the_dot(repo: Repo)
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
@@ -532,7 +533,7 @@ async def test_today_and_month_lines_omit_a_zero_score(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
@@ -564,7 +565,7 @@ async def test_game_row_tail_omits_a_zero_score_too(repo: Repo) -> None:
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     # The games list is one blockquote-wrapped block, no newline between the
@@ -582,7 +583,7 @@ async def test_xbox_line_shows_the_achievement_count_before_gamerscore(repo: Rep
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
@@ -602,7 +603,7 @@ async def test_xbox_line_shows_completed_games_when_there_are_any(repo: Repo) ->
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
@@ -634,7 +635,7 @@ async def test_psn_line_shows_platinum_count_when_there_are_any(repo: Repo) -> N
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
@@ -670,7 +671,7 @@ async def test_steam_line_shows_completed_games_when_there_are_any(repo: Repo) -
 
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
 
     assert text is not None
     steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
@@ -830,7 +831,7 @@ async def test_send_stats_card_disables_the_link_preview(repo: Repo) -> None:
     await repo.update_user_settings(1, show_profile_links=1)
     user = await repo.get_user(1)
     assert user is not None
-    text = await _build_stats_text(repo, user)
+    text = await build_stats_text(repo, user)
     assert text is not None
 
     bot = FakeBot()
@@ -860,31 +861,31 @@ def test_who_label_prefers_the_name_then_username_then_gamertag() -> None:
     platform nickname. A Telegram name now outranks a username — it is the
     more human form — and the username carries no "@"."""
     assert (
-        _who_label(_presence_row(first_name="Igor", last_name="Petrov", username="mad"))
+        who_label(_presence_row(first_name="Igor", last_name="Petrov", username="mad"))
         == "Igor Petrov"
     )
-    assert _who_label(_presence_row(first_name="Igor")) == "Igor"
-    assert _who_label(_presence_row(username="mad", gamertag="MadXbox")) == "mad"
-    assert _who_label(_presence_row(gamertag="MadXbox")) == "MadXbox"
+    assert who_label(_presence_row(first_name="Igor")) == "Igor"
+    assert who_label(_presence_row(username="mad", gamertag="MadXbox")) == "mad"
+    assert who_label(_presence_row(gamertag="MadXbox")) == "MadXbox"
 
 
 def test_who_label_prefers_the_modern_gamertag_over_the_classic_one() -> None:
     row = _presence_row(gamertag="MadOmsk", gamertag_modern="Mad Omsk")
-    assert _who_label(row) == "Mad Omsk"
+    assert who_label(row) == "Mad Omsk"
 
 
 def test_who_label_falls_back_to_a_platform_name_not_a_bare_id() -> None:
     # A Steam/PSN-only member with no Telegram identity — used to render "idNNNN".
-    assert _who_label(_presence_row(steam_display_name="SteamNick")) == "SteamNick"
-    assert _who_label(_presence_row(psn_display_name="PsnNick")) == "PsnNick"
+    assert who_label(_presence_row(steam_display_name="SteamNick")) == "SteamNick"
+    assert who_label(_presence_row(psn_display_name="PsnNick")) == "PsnNick"
 
 
 def test_who_label_never_stops_at_the_empty_xbox_dash() -> None:
     """The account chains end at a dash so their own line renders something;
     inside the person chain that dash is an absence, and stopping on it
     would show "—" while a real PSN nickname sat one step further down."""
-    assert _who_label(_presence_row(psn_display_name="PsnNick")) != "—"
+    assert who_label(_presence_row(psn_display_name="PsnNick")) != "—"
 
 
 def test_who_label_last_resort_is_the_id_when_nothing_else_exists() -> None:
-    assert "1" in _who_label(_presence_row(tg_id=1))
+    assert "1" in who_label(_presence_row(tg_id=1))

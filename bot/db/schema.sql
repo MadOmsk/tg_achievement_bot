@@ -1,25 +1,20 @@
 -- Full schema, SPEC section 3. Applied once to an empty database; later changes
 -- go to db/migrations/ so an existing bot.db is never recreated from scratch.
 
--- Telegram users linked to an Xbox account
+-- Telegram users. Only the Telegram identity lives here (#52): an Xbox
+-- account is an `accounts` row like any other, reached through the active
+-- link in `account_links`, and used to be cached in xuid/gamertag/gamerscore
+-- columns beside these. A second copy of a fact is a second version of it
+-- waiting to happen.
 CREATE TABLE IF NOT EXISTS users (
     tg_id           INTEGER PRIMARY KEY,
-    username        TEXT,                 -- for /compare @user, refreshed on every message
+    username        TEXT,                 -- for /stats @user, refreshed on every message
     -- /stats' header identity (Follow-up 2026-09-06) — refreshed the same
     -- way username is, on every message (handlers/chat.py's message
     -- middleware). first_name always exists for a real Telegram account;
     -- last_name doesn't.
     first_name      TEXT,
     last_name       TEXT,
-    xuid            TEXT UNIQUE,          -- identity key, NOT the gamertag
-    gamertag        TEXT,                 -- classic gamertag: display cache, can change
-    -- Xbox's own ModernGamertag, the first step of the Xbox naming chain
-    -- (#51) — the pretty current form ("Mad Omsk") next to the classic ASCII
-    -- one ("MadOmsk"). Both arrive in the profile response already read for
-    -- gamerscore. NULL until that call runs once; the `#1234` suffix beside
-    -- it in that response is deliberately not stored, it is never shown.
-    gamertag_modern TEXT,
-    gamerscore      INTEGER,              -- cache, refreshed together with titleHistory
     is_excluded     INTEGER NOT NULL DEFAULT 0,
     excluded_by     INTEGER,
     excluded_at     TEXT,
@@ -35,6 +30,11 @@ CREATE TABLE IF NOT EXISTS users (
     photo_file_id   TEXT,
     photo_unique_id TEXT,
     photo_checked_at TEXT,
+    -- The downloaded copy, relative to data/avatars/ (#55): the mini-app
+    -- serves an image rather than round-tripping getFile with the bot token
+    -- on every render, and a face outlives whatever Telegram does with its
+    -- own file ids.
+    photo_path      TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
@@ -201,6 +201,11 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     is_backfill     INTEGER NOT NULL DEFAULT 0,  -- arrived via backfill, never published
     is_secret       INTEGER NOT NULL DEFAULT 0,  -- Xbox's own isSecret; name/description are
                                                   -- real either way, we're the ones who spoiler it
+    -- Which trophy group this came from — 'default' for the base game, then
+    -- '001'... per DLC (#46). PSN only; NULL everywhere else, the same way
+    -- trophy_type below is. The trophy itself reports it, so it costs
+    -- nothing to keep and is what makes "3/7 in this DLC" answerable.
+    trophy_group_id TEXT,
     trophy_type     TEXT,                -- PSN's tier (bronze/silver/gold/platinum), NULL
                                           -- elsewhere — new dimension, no analogue on any other
                                           -- platform (M-PSN-1's design notes), M-PSN-2
@@ -330,7 +335,16 @@ CREATE TABLE IF NOT EXISTS title_history (
 
 CREATE TABLE IF NOT EXISTS titles (
     title_id   TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
+    name       TEXT NOT NULL,     -- whatever the platform called it first
+    -- Only PlayStation localizes a game's title (#61, verified live:
+    -- "Marvel's Wolverine" / "Marvel: Росомаха"), and it arrives in the same
+    -- once-per-game call the trophy groups do. Xbox returns the same title in
+    -- both locales while localizing the achievement names in that response,
+    -- and Steam's gameName is identical under l=english and l=russian — so
+    -- these two columns are PSN's in practice, and somewhere to put it if
+    -- another platform ever changes its mind.
+    name_ru    TEXT,
+    name_en    TEXT,
     platform   TEXT,               -- xbox_360 / xbox_modern
     -- The game's own box art (titlehub's display_image), not an achievement
     -- icon — used as a stand-in icon for Xbox 360 achievement messages
@@ -338,6 +352,12 @@ CREATE TABLE IF NOT EXISTS titles (
     -- imageId int for an achievement, no documented way to turn it into a
     -- URL (verified live against the real API).
     icon_url   TEXT,
+    -- How many achievements/trophies the game has in total (#46) — the
+    -- denominator of the "47/50" beside a notification's game line. Only
+    -- PSN fills it: Xbox states its own total per account in title_history,
+    -- and Steam's is the length of its cached schema, so those two have an
+    -- answer already. NULL until a platform that needs this one says so.
+    achievements_total INTEGER,
     updated_at TEXT NOT NULL
 );
 
@@ -362,6 +382,29 @@ CREATE TABLE IF NOT EXISTS hltb_cache (
     description_en      TEXT,
     description_ru      TEXT,
     cached_at           TEXT NOT NULL
+);
+
+-- A PlayStation trophy list is split into groups: the base game plus one per
+-- DLC (#46). A trophy says which group it came from, so a notification can
+-- say which part of the game somebody is progressing through — but the
+-- group's own name and size come from a separate call, made once per game
+-- and cached here forever, the same way steam_schema_cache works.
+--
+-- PSN only: Xbox and Steam have no notion of groups.
+CREATE TABLE IF NOT EXISTS title_groups (
+    title_id   TEXT NOT NULL,     -- np_communication_id
+    group_id   TEXT NOT NULL,     -- 'default' for the base game, then '001'...
+    name       TEXT,              -- whatever was stored first; the fallback
+    -- Sony localizes these, unlike the game's own title (#61, verified live:
+    -- "CTNS: The Heist" / "Город, который никогда не спит: Ограбление") — and
+    -- the group name is the second line of every PSN card, so in a Russian
+    -- chat it was the one English thing left on it. Both sides come from the
+    -- same once-per-game call, made twice.
+    name_ru    TEXT,
+    name_en    TEXT,
+    total      INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (title_id, group_id)
 );
 
 -- Which chats already got their summary for a given day: the job wakes up every
@@ -442,6 +485,16 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- settings, which is why it lives here and not on the link.
     achievements_visible INTEGER,
     achievements_visible_checked_at TEXT,
+    -- The account's own picture (#55): Xbox's GameDisplayPicRaw, Steam's
+    -- avatarfull, PSN's own avatars list — all three ride along in a
+    -- response the bot already makes. `avatar_url` is what the platform
+    -- says now, `avatar_path` the copy on disk (relative to data/avatars/),
+    -- `avatar_hash` the bytes, so "same picture, new URL" costs one
+    -- comparison and no write.
+    avatar_url   TEXT,
+    avatar_path  TEXT,
+    avatar_hash  TEXT,
+    avatar_checked_at TEXT,
     first_seen_at TEXT NOT NULL,
     updated_at   TEXT NOT NULL,
     PRIMARY KEY (platform, external_id)
@@ -515,8 +568,33 @@ CREATE TABLE IF NOT EXISTS achievement_description_cache (
     achievement_id   TEXT NOT NULL,
     description_ru   TEXT,
     description_en   TEXT,
-    source           TEXT NOT NULL CHECK (source IN ('native', 'llm')),
+    -- native: the platform returned two genuinely different strings.
+    -- llm: it returned the same one twice (no translation exists there), so
+    --   services/translate filled the gap.
+    -- fallback: same as llm's case, but nothing could translate it yet — no
+    --   Anthropic key, or the call failed. The text is stored and shown
+    --   untranslated rather than dropped (user request, 2026-09-13), and
+    --   `description_ru` stays NULL so "no Russian" is a fact rather than a
+    --   lie. A fallback row is offered to the translator again; the other two
+    --   never are.
+    source           TEXT NOT NULL CHECK (source IN ('native', 'llm', 'fallback')),
     cached_at        TEXT NOT NULL,
+    PRIMARY KEY (platform, title_id, achievement_id)
+);
+
+-- An achievement's own name in both languages (#61). Separate from the
+-- description cache above on purpose: `source` there is about where a
+-- *description* came from, and a name has no such story — it is only ever the
+-- platform's own string, never translated by anything (CLAUDE.md). Plenty of
+-- achievements also have a name and no description, and would otherwise need
+-- a description row invented to hold the name.
+CREATE TABLE IF NOT EXISTS achievement_name_cache (
+    platform        TEXT NOT NULL,
+    title_id        TEXT NOT NULL,
+    achievement_id  TEXT NOT NULL,
+    name_ru         TEXT,
+    name_en         TEXT,
+    cached_at       TEXT NOT NULL,
     PRIMARY KEY (platform, title_id, achievement_id)
 );
 

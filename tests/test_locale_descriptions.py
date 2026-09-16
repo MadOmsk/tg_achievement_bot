@@ -10,8 +10,11 @@ answer.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from bot.db.repo import AchievementRow, Repo
 from bot.services.descriptions_view import localize_descriptions
+from bot.util import utcnow
 
 PLATFORM = "xbox_modern"
 TITLE_ID = "t1"
@@ -57,18 +60,28 @@ async def test_an_uncached_achievement_keeps_its_stored_snapshot(repo: Repo) -> 
     assert row.description == "снимок"
 
 
-async def test_a_half_filled_cache_entry_keeps_the_snapshot(repo: Repo) -> None:
-    # The translation genuinely never arrived (no Anthropic key, say);
-    # falling through to the snapshot beats rendering an empty description.
+async def test_a_half_filled_cache_entry_falls_back_to_the_other_language(repo: Repo) -> None:
+    """The translation genuinely never arrived (no Anthropic key, say), so
+    the cache holds one language only. Showing that one untranslated is what
+    the owner asked for (2026-09-13) — the platform itself would have shown
+    the reader the same text."""
     await _cache(repo, "a1", "Сжечь всех врагов", None)
     [row] = await localize_descriptions(repo, [_row()], "en")
-    assert row.description == "снимок"
+    assert row.description == "Сжечь всех врагов"
 
 
 async def test_a_blank_cached_translation_is_treated_as_missing(repo: Repo) -> None:
-    await _cache(repo, "a1", "Сжечь всех врагов", "   ")
+    """Blank on one side, nothing on the other: there is nothing to show from
+    the cache at all, so the row's own snapshot stands."""
+    await _cache(repo, "a1", None, "   ")
     [row] = await localize_descriptions(repo, [_row()], "en")
     assert row.description == "снимок"
+
+
+async def test_a_blank_side_falls_back_to_the_filled_one(repo: Repo) -> None:
+    await _cache(repo, "a1", "Сжечь всех врагов", "   ")
+    [row] = await localize_descriptions(repo, [_row()], "en")
+    assert row.description == "Сжечь всех врагов"
 
 
 async def test_the_original_rows_are_never_mutated(repo: Repo) -> None:
@@ -142,3 +155,113 @@ async def test_uncached_descriptions_carries_the_owner(repo: Repo) -> None:
     [(_platform, _title, _achievement, tg_id, external_id)] = await repo.uncached_descriptions()
 
     assert (tg_id, external_id) == (42, "xuid-42")
+
+
+# ------------------------------------------- the achievement's own name (#61)
+
+
+async def test_the_name_follows_the_chats_language(repo: Repo) -> None:
+    """Xbox and PSN store English names (their main call is en-US), Steam
+    stores Russian ones (its main call is l=russian) — so before this a
+    Russian chat showed Steam in Russian and the rest in English, whatever the
+    chat had chosen."""
+    await repo.cache_names(PLATFORM, TITLE_ID, {"a1": ("Сжечь всех врагов", "Burn every enemy")})
+
+    [ru] = await localize_descriptions(repo, [_row()], "ru")
+    [en] = await localize_descriptions(repo, [_row()], "en")
+
+    assert ru.name == "Сжечь всех врагов"
+    assert en.name == "Burn every enemy"
+
+
+async def test_a_name_missing_in_one_language_falls_back_to_the_other(repo: Repo) -> None:
+    """Never a blank line, and never a translated name: where the platform
+    has only one, that one is shown."""
+    await repo.cache_names(PLATFORM, TITLE_ID, {"a1": (None, "Burn every enemy")})
+
+    [ru] = await localize_descriptions(repo, [_row()], "ru")
+
+    assert ru.name == "Burn every enemy"
+
+
+async def test_an_uncached_name_keeps_whatever_was_stored(repo: Repo) -> None:
+    [row] = await localize_descriptions(repo, [_row()], "ru")
+
+    assert row.name == _row().name
+
+
+async def test_a_psn_game_title_follows_the_chats_language(repo: Repo) -> None:
+    """The owner's own counterexample: presence showed "Marvel's Росомаха"
+    while the trophies arrived from "Marvel's Wolverine". Verified live —
+    Sony answers the same once-per-game call with "Marvel's Wolverine" in
+    English and "Marvel: Росомаха" in Russian (#61). Xbox and Steam return
+    one title for both locales, which is why only this one is localized."""
+    await repo.upsert_title("NPWR57054_00", "Marvel's Wolverine", "psn")
+    await repo.set_title_names("NPWR57054_00", "Marvel: Росомаха", "Marvel's Wolverine")
+    row = _row()
+    row.title_id = "NPWR57054_00"
+    row.platform = "psn"
+
+    [ru] = await localize_descriptions(repo, [row], "ru")
+    [en] = await localize_descriptions(repo, [row], "en")
+
+    assert ru.title_name == "Marvel: Росомаха"
+    assert en.title_name == "Marvel's Wolverine"
+
+
+async def test_a_title_with_no_localized_name_is_left_alone(repo: Repo) -> None:
+    await repo.upsert_title(TITLE_ID, "Left 4 Dead 2", PLATFORM)
+
+    [row] = await localize_descriptions(repo, [_row()], "ru")
+
+    assert row.title_name is None  # whatever the caller had; nothing invented
+
+
+# ------------------------------------------------ the lists beside them (#61)
+
+
+async def test_recent_and_the_game_lists_follow_the_chats_language(repo: Repo) -> None:
+    """A notification was localized while the list right under it was not:
+    /recent, /stats' games and the month's top games all render straight from
+    SQL, so they showed whatever language the platform had answered in."""
+    await repo.ensure_user(1, "igor")
+    await repo.link_xbox_account(1, "xuid-1", "Someone", 0)
+    await repo.upsert_chat(-100500, "Chat", 1)
+    await repo.subscribe(-100500, 1)
+    await repo.upsert_title("t-halo", "Halo: The Master Chief Collection", "xbox_modern")
+    await repo.set_title_names(
+        "t-halo", "Halo: Коллекция Мастер Чифа", "Halo: The Master Chief Collection"
+    )
+    await repo.cache_names(
+        "xbox_modern", "t-halo", {"a1": ("Да мы только начали", "Just Getting Started")}
+    )
+    await repo.insert_new_achievements(
+        "xuid-1",
+        [
+            AchievementRow(
+                title_id="t-halo",
+                achievement_id="a1",
+                name="Just Getting Started",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+                title_name="Halo: The Master Chief Collection",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    [ru] = await repo.chat_recent(-100500, 5, locale="ru")
+    [en] = await repo.chat_recent(-100500, 5, locale="en")
+    assert (ru.name, ru.game) == ("Да мы только начали", "Halo: Коллекция Мастер Чифа")
+    assert (en.name, en.game) == ("Just Getting Started", "Halo: The Master Chief Collection")
+
+    since = utcnow() - timedelta(days=30)
+    [game_ru] = await repo.recent_games("xuid-1", since, locale="ru")
+    assert game_ru.name == "Halo: Коллекция Мастер Чифа"
+
+    [top_ru] = await repo.chat_top_games(-100500, since, locale="ru")
+    assert top_ru.name == "Halo: Коллекция Мастер Чифа"

@@ -34,6 +34,36 @@ class AccountPlatform(StrEnum):
     PSN = "psn"
 
 
+def account_platform_of(platform: str) -> str:
+    """Which account a `seen_achievements.platform` value belongs to — the
+    Python twin of the GENERATED `account_platform` column (#52). Both Xbox
+    generations are one account and one platform to a person."""
+    if platform in (Platform.XBOX_MODERN, Platform.XBOX_360):
+        return AccountPlatform.XBOX
+    return platform
+
+
+# One display order for every screen that lists platforms: Xbox, then
+# PlayStation, then Steam (owner decision, 2026-09-13). It had drifted —
+# /panel listed Xbox → Steam → PSN while /stats, ordering by the column name
+# in SQL, listed Xbox → PSN → Steam. Both are "a fixed order"; they were just
+# not the same one. Anything that renders a list of platforms sorts by this,
+# so a new screen is right without having to remember.
+_DISPLAY_RANK = {
+    Platform.XBOX_MODERN: 0,
+    Platform.XBOX_360: 0,
+    AccountPlatform.XBOX: 0,
+    Platform.PSN: 1,
+    Platform.STEAM: 2,
+}
+
+
+def platform_display_rank(platform: str) -> int:
+    """Sort key for the order above. An unknown value sorts last rather than
+    raising — a screen with one odd row beats a screen that will not render."""
+    return _DISPLAY_RANK.get(platform, len(_DISPLAY_RANK))
+
+
 class PresenceState(StrEnum):
     ONLINE = "Online"
     OFFLINE = "Offline"
@@ -81,6 +111,9 @@ class XboxApiValue(StrEnum):
     # in the profile response read for GAMERSCORE, no extra request.
     GAMERTAG = "Gamertag"
     MODERN_GAMERTAG = "ModernGamertag"
+    # The account picture (#55), in the same fixed settings list as the
+    # names above — one more field off a response already being made.
+    GAME_DISPLAY_PIC = "GameDisplayPicRaw"
     FULL = "Full"
     ACTIVE = "Active"
     INVALID_GRANT = "invalid_grant"

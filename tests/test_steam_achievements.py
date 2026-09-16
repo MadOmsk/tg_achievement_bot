@@ -294,6 +294,10 @@ async def test_fetch_unlocked_skips_the_english_request_once_cached(
         description_en="Win the game (cached)",
         source="native",
     )
+    # The name has to be cached too, or the second request is still worth
+    # making for it alone (#61) — which is exactly what fills this gap once
+    # for every achievement cached before names existed.
+    await repo.cache_names("steam", APPID, {"WIN": ("Победи", "Win")})
     calls = {"russian": 0, "english": 0}
 
     async def fake_player(
@@ -321,6 +325,46 @@ async def test_fetch_unlocked_skips_the_english_request_once_cached(
 
     assert calls == {"russian": 1, "english": 0}
     assert result[0].description == "Победи в игре (кэш)"
+
+
+async def test_a_cached_description_still_earns_one_request_for_a_missing_name(
+    repo: Repo, cipher: TokenCipher, monkeypatch
+) -> None:
+    """Every achievement cached before #61 has a description and no name. If
+    a cached description alone were enough to skip the second locale, those
+    would show an English name in a Russian chat forever."""
+    await repo.cache_description(
+        "steam", APPID, "WIN", description_ru="Победи", description_en="Win", source="native"
+    )
+    calls = {"russian": 0, "english": 0}
+
+    async def fake_player(
+        api_key: str, steam_id: str, appid: str, *, language: str = "russian"
+    ) -> list[RawAchievement]:
+        calls[language] += 1
+        name = "Победи в игре" if language == "russian" else "Win the game"
+        return [
+            RawAchievement(
+                apiname="WIN", achieved=True, unlocktime=0, name=name, description="Победи"
+            )
+        ]
+
+    async def fake_schema(api_key: str, appid: str) -> list[RawSchemaAchievement]:
+        return []
+
+    async def fake_percentages(appid: str) -> dict[str, float]:
+        return {}
+
+    monkeypatch.setattr(steam_achievements, "get_player_achievements", fake_player)
+    monkeypatch.setattr(steam_achievements, "get_schema", fake_schema)
+    monkeypatch.setattr(steam_achievements, "get_global_percentages", fake_percentages)
+
+    await fetch_unlocked(repo, _unconfigured_anthropic_auth(repo, cipher), "key", STEAM_ID, APPID)
+
+    assert calls == {"russian": 1, "english": 1}
+    assert await repo.cached_names([("steam", APPID, "WIN")]) == {
+        ("steam", APPID, "WIN"): ("Победи в игре", "Win the game")
+    }
 
 
 async def test_fetch_unlocked_asks_the_llm_when_both_locales_match(
@@ -368,3 +412,46 @@ async def test_fetch_unlocked_asks_the_llm_when_both_locales_match(
     cached = await repo.get_cached_description("steam", APPID, "WIN")
     assert cached is not None
     assert cached.source == "llm"
+
+
+async def test_the_store_page_supplies_the_russian_game_name_once(
+    repo: Repo, cipher: TokenCipher, monkeypatch
+) -> None:
+    """Steam's Web API never localizes a game's name — both endpoints that
+    carry `gameName` ignore `l=`, verified on a Russian game: "G.O.P.O.T.A"
+    from each, while its store page reads "Г.О.П.О.Т.А" (#61). The storefront
+    is asked once per game and never again."""
+    calls: list[tuple[str, str]] = []
+
+    async def fake_store_name(appid: str, language: str) -> str:
+        calls.append((appid, language))
+        return "Г.О.П.О.Т.А" if language == "russian" else "G.O.P.O.T.A"
+
+    async def fake_player(
+        api_key: str, steam_id: str, appid: str, *, language: str = "russian"
+    ) -> list[RawAchievement]:
+        return [
+            RawAchievement(
+                apiname="WIN", achieved=True, unlocktime=0, name="Мафиозник", description="Победи"
+            )
+        ]
+
+    async def fake_schema(api_key: str, appid: str) -> list[RawSchemaAchievement]:
+        return []
+
+    async def fake_percentages(appid: str) -> dict[str, float]:
+        return {}
+
+    monkeypatch.setattr(steam_achievements, "store_name", fake_store_name)
+    monkeypatch.setattr(steam_achievements, "get_player_achievements", fake_player)
+    monkeypatch.setattr(steam_achievements, "get_schema", fake_schema)
+    monkeypatch.setattr(steam_achievements, "get_global_percentages", fake_percentages)
+    auth = _unconfigured_anthropic_auth(repo, cipher)
+
+    await fetch_unlocked(repo, auth, "key", STEAM_ID, APPID)
+    assert calls == [(APPID, "russian"), (APPID, "english")]
+
+    await fetch_unlocked(repo, auth, "key", STEAM_ID, APPID)
+    assert len(calls) == 2, "the store is asked once per game, not once per poll"
+
+    assert await repo.title_names([APPID]) == {APPID: ("Г.О.П.О.Т.А", "G.O.P.O.T.A")}

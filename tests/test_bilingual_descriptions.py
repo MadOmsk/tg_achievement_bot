@@ -99,9 +99,14 @@ async def test_already_cached_achievement_never_touches_the_llm_or_the_input(
     assert result == {"WIN": ("уже переведено", "already translated")}
 
 
-async def test_no_anthropic_key_leaves_text_untranslated_and_uncached(
+async def test_no_anthropic_key_stores_the_text_untranslated(
     repo: Repo, cipher, monkeypatch
 ) -> None:
+    """User request, 2026-09-13: with no key the text must still be stored and
+    shown, untranslated — not silently dropped. It is marked `fallback` with
+    no Russian side, which is both the honest record and what gets it offered
+    to the translator again once a key exists."""
+
     async def _boom(*args: object, **kwargs: object) -> None:
         raise AssertionError("no key configured — must never even try to call the API")
 
@@ -117,10 +122,13 @@ async def test_no_anthropic_key_leaves_text_untranslated_and_uncached(
     )
 
     assert result == {"WIN": ("Win the game", "Win the game")}
-    assert await repo.get_cached_description(PLATFORM, TITLE_ID, "WIN") is None
+    cached = await repo.get_cached_description(PLATFORM, TITLE_ID, "WIN")
+    assert cached is not None
+    assert (cached.description_ru, cached.description_en) == (None, "Win the game")
+    assert cached.source == "fallback"
 
 
-async def test_a_partial_llm_response_leaves_the_missing_one_uncached(
+async def test_a_partial_llm_response_stores_the_missing_one_as_fallback(
     repo: Repo, cipher, monkeypatch
 ) -> None:
     async def _partial(api_key, texts, *, target_language):
@@ -146,5 +154,7 @@ async def test_a_partial_llm_response_leaves_the_missing_one_uncached(
     untranslated = [aid for aid, (ru, en) in result.items() if ru == en]
     assert len(translated) == 1
     assert len(untranslated) == 1
-    assert await repo.get_cached_description(PLATFORM, TITLE_ID, translated[0]) is not None
-    assert await repo.get_cached_description(PLATFORM, TITLE_ID, untranslated[0]) is None
+    assert (await repo.get_cached_description(PLATFORM, TITLE_ID, translated[0])).source == "llm"
+    missed = await repo.get_cached_description(PLATFORM, TITLE_ID, untranslated[0])
+    assert missed is not None
+    assert (missed.description_ru, missed.source) == (None, "fallback")

@@ -26,7 +26,6 @@ from bot.handlers import panel as panel_handlers
 from bot.handlers import psn as psn_handlers
 from bot.handlers import steam as steam_handlers
 from bot.handlers.chat import UsernameMiddleware
-from bot.handlers.keyboards import timezone_keyboard
 from bot.i18n import (
     AVAILABLE_LOCALES,
     DEFAULT_LOCALE,
@@ -52,6 +51,7 @@ from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
 from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -63,6 +63,8 @@ from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.util import parse_iso
+from bot.version import version
+from bot.views.keyboards import timezone_keyboard
 from bot.web.oauth import OAuthServer
 
 log = logging.getLogger(__name__)
@@ -129,6 +131,9 @@ async def run(settings: Settings) -> None:
     # shared credential rather than one person's own.
     psn_auth = PsnAuth(repo, cipher)
     psn_auth.on_dead = lambda: notifier.service_key_dead(Platform.PSN)
+    # …and its counterpart (#62): a credential that comes back says so,
+    # or the admin is left holding an alarm with no end to it.
+    psn_auth.on_alive = lambda: notifier.service_key_alive(Platform.PSN)
 
     # The Steam key now lives encrypted in app_settings, admin-settable
     # without a restart (#17); the .env value is only a first-run seed
@@ -136,6 +141,7 @@ async def run(settings: Settings) -> None:
     steam_env_key = settings.steam_api_key.get_secret_value() if settings.steam_api_key else None
     steam_auth = SteamAuth(repo, cipher, env_key=steam_env_key)
     steam_auth.on_dead = lambda: notifier.service_key_dead(Platform.STEAM)
+    steam_auth.on_alive = lambda: notifier.service_key_alive(Platform.STEAM)
 
     # Anthropic (2026-09-09) — achievement-description translation only,
     # same admin-panel-managed shared-credential shape as Steam/PSN above.
@@ -144,6 +150,7 @@ async def run(settings: Settings) -> None:
     )
     anthropic_auth = AnthropicAuth(repo, cipher, env_key=anthropic_env_key)
     anthropic_auth.on_dead = notifier.translation_key_dead
+    anthropic_auth.on_alive = notifier.translation_key_alive
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo)
@@ -181,7 +188,8 @@ async def run(settings: Settings) -> None:
         psn_presence,
         flood_flush,
         DescriptionBackfill(repo, client, anthropic_auth),
-        AvatarRefresh(bot, repo),
+        SteamLocalization(repo),
+        AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -330,7 +338,7 @@ async def run(settings: Settings) -> None:
     await _publish_command_menu(bot)
 
     me = await bot.me()
-    log.info("bot @%s is up", me.username)
+    log.info("bot @%s is up (v%s)", me.username, version())
     try:
         await dispatcher.start_polling(bot, handle_signals=False)
     finally:
