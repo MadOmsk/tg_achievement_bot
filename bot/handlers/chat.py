@@ -239,7 +239,7 @@ async def stats(
         with stats_category():
             await message.answer(i18n.get("chat-unknown-user"))
         return
-    text = await build_stats_text(repo, target, i18n)
+    text = await build_stats_text(repo, target, message.chat.id, i18n)
     if text is None:
         with stats_category():
             await message.answer(i18n.get("chat-stats-nothing-connected"))
@@ -330,9 +330,12 @@ async def who_stats_button(
     if target is None:
         await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
         return
-    text = await build_stats_text(repo, target, i18n)
+    # The card is built inside the isinstance guard now: it needs the chat
+    # this was pressed in (the rarity threshold is per chat), and
+    # `callback.message` is only guaranteed to carry one here.
     await callback.answer()
     if isinstance(callback.message, Message):
+        text = await build_stats_text(repo, target, callback.message.chat.id, i18n)
         if text is not None:
             await _send_stats_card(bot, repo, callback.message.chat.id, target, text)
         # The picker's own job is done either way — drop it instead of

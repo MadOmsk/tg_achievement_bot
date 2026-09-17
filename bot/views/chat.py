@@ -8,7 +8,6 @@ and reads once.
 
 from __future__ import annotations
 
-import asyncio
 from html import escape as html_escape
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -17,10 +16,10 @@ from aiogram_i18n import I18nContext
 from bot.constants import SettingKey
 from bot.db.repo import (
     ChatPresenceRow,
+    GameAchievements,
     PlatformLink,
     RecentAchievement,
     Repo,
-    TopGame,
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
@@ -69,18 +68,21 @@ def _locale_of(i18n: I18nContext | None) -> str:
     return i18n.locale if i18n is not None else DEFAULT_LOCALE
 
 
-def _games_list(games: list[TopGame], i18n: I18nContext | None = None) -> str:
-    """One person's own recent games (/stats). The row itself is the shared
-    one — the monthly summary's games block renders the identical line from
-    its own chat-wide aggregate (#64)."""
+def _games_list(games: list[GameAchievements], i18n: I18nContext | None = None) -> str:
+    """One person's own games (/stats). Both the row and the query behind it
+    are shared with the monthly summary's games block, which renders the
+    identical line from the same call over every subscriber instead of one
+    person (#64, then 2026-09-17)."""
     locale = _locale_of(i18n)
     rows = game_rows(
         [
             GameRow(
                 platform=game.platform,
                 name=game.name,
-                count=game.unlocked or 0,
-                score=game.gamerscore or 0,
+                count=game.count,
+                score=game.score,
+                rare=game.rare,
+                tiers=(game.platinum, game.gold, game.silver, game.bronze),
             )
             for game in games
         ],
@@ -122,9 +124,16 @@ def who_label(row: ChatPresenceRow) -> str:
     )
 
 
-async def build_stats_text(repo: Repo, target: User, i18n: I18nContext | None = None) -> str | None:
+async def build_stats_text(
+    repo: Repo, target: User, chat_id: int, i18n: I18nContext | None = None
+) -> str | None:
     """Shared by /stats and /who's buttons (SPEC 6.3) — one implementation,
     so a player's card looks the same no matter how it was opened.
+
+    `chat_id` is what the games list counts rare achievements against: the
+    threshold is per chat and admin-set, never a number hardcoded here
+    (CLAUDE.md's own publication rule), so the same person's card can
+    legitimately mark a different number of games as rare in two chats.
 
     Works for a Steam-only person too (SPEC 9, M-Steam-2e) — used to bail
     out on `not target.xuid` alone, which meant no card at all for anyone
@@ -144,6 +153,7 @@ async def build_stats_text(repo: Repo, target: User, i18n: I18nContext | None = 
     show_links = bool(settings_row and settings_row.show_profile_links)
 
     locale = _locale_of(i18n)
+    rare_threshold = (await repo.get_chat_daily_settings(chat_id)).rare_threshold_percent
     counters = await counters_for(repo, target.tg_id)
     lines = [f"📊 <b>{html_escape(display_name(target, platform_links))}</b>"]
     # Shared with /panel's own header (2026-09-08, user request: "пусть одни
@@ -187,40 +197,35 @@ async def build_stats_text(repo: Repo, target: User, i18n: I18nContext | None = 
         # date-bounded one can — better absent than quietly wrong (SPEC 5.4).
     ]
 
-    # Found live, long-standing gap: this used to be Xbox-only (SPEC 9,
-    # M-Steam-2c scoped it out for lack of a Steam recently-played source —
-    # user_games() itself was never Xbox-specific, just never called for
-    # anything else). One combined ranked list, not a section per platform —
-    # same "one number, not one per platform" spirit as the counters above.
-    external_ids = [target.xuid] if target.xuid else []
-    external_ids += [link.external_id for link in platform_links]
-    if external_ids:
-        # 0 = no cap (SPEC 6.4) — the list lives in a collapsible quote
-        # either way, no separate "показать все игры" tap needed any more.
-        limit = await _stats_games_limit(repo)
-        tz_offset_min = settings_row.tz_offset_min if settings_row else None
-        since = month_cutoff_utc(tz_offset_min)
-        per_source = await asyncio.gather(
-            *(
-                repo.user_games(external_id, since, limit=limit, locale=locale)
-                for external_id in external_ids
-            )
-        )
-        games = sorted(
-            (game for source in per_source for game in source),
-            key=lambda g: (g.gamerscore or 0, g.unlocked or 0),
-            reverse=True,
-        )[: limit or None]
-        if games:
-            lines += [
-                "",
-                _hub_text(
-                    i18n,
-                    "chat-stats-games-header",
-                    window=month_window_label(tz_offset_min, locale),
-                ),
-                _games_list(games, i18n),
-            ]
+    # One combined ranked list across every platform, not a section per
+    # platform — same "one number, not one per platform" spirit as the
+    # counters above. One query too, since 2026-09-17: this used to fire one
+    # per linked account and merge them in Python, which applied the cap
+    # twice (once per platform, once after the merge) and ranked by
+    # gamerscore, so PSN and Steam — where gamerscore is always 0 — sank
+    # below every Xbox game no matter what was actually played.
+    # 0 = no cap (SPEC 6.4) — the list lives in a collapsible quote either
+    # way, no separate "показать все игры" tap needed any more.
+    limit = await _stats_games_limit(repo)
+    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    since = month_cutoff_utc(tz_offset_min)
+    games = await repo.users_games_achievements(
+        [target.tg_id],
+        since,
+        rare_threshold=rare_threshold,
+        limit=limit,
+        locale=locale,
+    )
+    if games:
+        lines += [
+            "",
+            _hub_text(
+                i18n,
+                "chat-stats-games-header",
+                window=month_window_label(tz_offset_min, locale),
+            ),
+            _games_list(games, i18n),
+        ]
     return "\n".join(lines)
 
 

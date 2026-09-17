@@ -1328,10 +1328,10 @@ list fills a text row and a button row from one loop over one page of people
 
 | List | Kind | Source | Who appears | Sort | Cap |
 |---|---|---|---|---|---|
-| `/stats`' `user_games` | listing, quoted | `repo.user_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
+| `/stats`' games | listing, quoted | `repo.users_games_achievements()` | the card's owner | count ↓, then last unlock ↓ | `stats_games_limit` (0 = uncapped) |
 | `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
 | summary leaderboards (day/month) | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
-| "Игры за месяц" | listing, quoted | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
+| "Игры за месяц" | listing, quoted | `repo.users_games_achievements()`, same call | every subscriber's games, summed | count ↓, then last unlock ↓ | `summary_top_limit` |
 | `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
 | the admin's user list | listing (plain) **and** inline listing | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page, `◀️ N/M ▶️` |
 | the admin's chat list | inline listing | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
@@ -1349,19 +1349,40 @@ thresholds, the admin's hour picker — is not in this table: its rows are the
 options themselves, decided in code, so "who appears" and "what caps it" have
 no answer to record.
 
-- **`user_games`** (2026-09-16, user request, #69) is the calendar month
-  (same cutoff as the counters above it — no rolling window left in the
-  project) and `s.is_backfill = 0`: a backfill row's timestamp is when the
-  one-off history scan ran, not when the achievement was actually earned, so
-  the plain `COALESCE(unlocked_at, created_at)` every other window here uses
-  was counting a whole imported library as "played this month" — real
-  production data showed 15 games and 767 achievements for someone who had
-  earned none of it that month. `user_games` is deliberately its own name
-  and its own repo method rather than a filter bolted onto the old
-  `recent_games` — the same shared `Listing`/`GameRow` machinery, a
-  different, narrower question ("did this person actually earn something
-  recently", not "what does their history contain"). One game on two
-  platforms is two rows.
+- **The games listing is one query with two scopes** (2026-09-17, owner
+  decision): `repo.users_games_achievements(tg_ids, since, ...)`. `/stats`
+  passes one person, the monthly summary's own games block passes every
+  subscriber; overlap adds up, because that block counts what the *chat*
+  did, not distinct achievements. It replaced `user_games` and
+  `chat_top_games`, two near-identical queries that had already drifted
+  apart on both grouping and ordering, the way two copies of one answer
+  always do. Grouped by `(title_id, platform)` — a Steam appid and an Xbox
+  title id are both bare numbers and can collide by accident, which
+  `user_games` (grouping by `title_id` alone) was quietly exposed to.
+  Ranked by **achievements earned, then by the most recent unlock**, with
+  gamerscore taking no part at all: it is always 0 on Steam and PSN, so
+  ranking by it sank every game on those platforms below every Xbox one no
+  matter what was actually played. `/stats` also stopped firing one query
+  per linked account and merging in Python, which applied the cap twice.
+
+- **Which rows fall inside a window** (2026-09-17, owner decision, replacing
+  the 2026-09-16 rule that briefly excluded backfill outright). A real
+  platform timestamp is authoritative whatever the row's origin;
+  `created_at` stands in for it **only** on a live-polled row, where "when
+  the bot saw it" genuinely is about when it was earned. A backfill row with
+  no timestamp is ancient by definition — its `created_at` is when the
+  import ran, which is the whole of #69's mechanism (real production data:
+  15 games and 767 achievements for a month somebody had earned none of).
+
+  `is_backfill` is **not** a filter here, and this is the invariant the
+  short-lived `s.is_backfill = 0` broke: the flag means "do not publish",
+  not "did not happen" (it has said so at the top of `services/stats.py` all
+  along). Filtering on it hid achievements the platform itself had dated
+  inside the window — on the test bot, one person's Steam and Xbox games
+  vanished entirely, leaving a single PSN row, and another's PSN trophies
+  vanished, leaving two Xbox games. A freshly connected account must show
+  its real recent games immediately, whether or not any of it was ever
+  announced in chat.
 - **`/recent`** is subscribers only — not `/online`'s broader "known member"
   set; excluded people never appear; a secret achievement's name stays behind
   a spoiler.
@@ -1370,9 +1391,25 @@ no answer to record.
 - **Summary leaderboards** keep zero rows: this is a report, not a live feed
   (#34). The `💎N` rare badge is in the month block only (#9); the platform
   breakdown is always there.
-- **"Игры за месяц"** groups by `(title_id, platform)`, never `title_id`
-  alone — a Steam appid and an Xbox title id are both bare numbers and can
-  collide by accident.
+- **A game's row reads "what was earned, then what it was worth, in
+  brackets"** (owner, 2026-09-17): `🟢 Halo — 12 достижений (+240 G · 💎3)`,
+  `🔵 God of War — 31 трофей (🏆1 · 🥇3 · 🥈7 · 🥉20)`. PSN breaks its
+  trophies down by tier instead of showing a rarity count — the tier already
+  answers "how rare" on Sony's own scale (the same reason a PSN notification
+  shows its tier badge in place of the usual rarity diamond). Every part is
+  dropped when zero, which is not a rare case: a Steam row's gamerscore
+  always is, and an Xbox 360 row's rare count always is.
+
+- **Rarity is whatever the row was stored with**, which can be old — "better
+  year-old data than none" (owner, 2026-09-17). It is worth knowing how
+  patchy it is on Xbox: rarity only ever arrives on **contract 4**, the
+  per-title call a live poll makes, and backfill uses contract 2 for the
+  whole library, which omits it. On the test bot that is 51 rows with rarity
+  against 14866 without, split exactly along that line. Xbox 360 (contract 1)
+  has none at all and never will, so a 💎 never appears on an x360 row —
+  those achievements publish under the `rare` filter today without actually
+  being known to be rare, and that stays open until there is somewhere to
+  fetch it from.
 - **The admin's user list** is printed twice on purpose: as text, where the
   columns line up and can be read at a glance, and as one button per row,
   because a row has to be tappable. It is the only screen that is two kinds at

@@ -18,13 +18,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape as html_escape
 
-from bot.constants import Platform, PsnTrophyTier
+from bot.constants import AchievementBadge, Platform, PsnTrophyTier
+from bot.util import thousands
 from bot.views.parts import (
     PLATFORM_ICON,
     TROPHY_TIER_BADGE,
     plural_achievements,
     plural_trophies,
-    score_suffix,
 )
 
 # A long name does not get cut off gracefully — it wraps the whole line onto
@@ -95,16 +95,19 @@ def total_line(label: str, text: str) -> str:
 class GameRow:
     """One game in a games list, whichever list it came from.
 
-    `/stats` ranks one person's own recent games (`TopGame`) and the monthly
-    summary ranks the whole chat's (`ChatTopGame`); the row on screen is the
-    same row, which is why both now arrive here as this. `tiers` is PSN's
-    bronze/silver/gold/platinum, all zero elsewhere.
+    `/stats` ranks one person's own games and the monthly summary ranks the
+    whole chat's; the row on screen is the same row, and since 2026-09-17 so
+    is the query behind it (`repo.users_games_achievements`). `tiers` is PSN's
+    platinum/gold/silver/bronze, all zero elsewhere; `rare` is how many
+    achievements cleared the chat's rarity threshold, which PSN rows never
+    show — their tier already answers "how rare" on Sony's own scale.
     """
 
     platform: str | None
     name: str | None
     count: int
     score: int = 0
+    rare: int = 0
     tiers: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
@@ -126,14 +129,20 @@ def game_rows(games: list[GameRow], untitled: str, locale: str) -> list[str]:
 
 
 def _game_tail(game: GameRow, locale: str) -> str:
-    """PSN games show a trophy-tier breakdown instead of gamerscore (owner
-    request, 2026-09-08) — the same per-tier icons every other screen uses.
-    Xbox and Steam show the "(+N G)" tail, skipped for a zero score, which a
-    Steam row's always is."""
+    """What was earned, then what it was worth, in brackets (owner, 2026-09-17).
+
+    PSN breaks its trophies down by tier instead of showing a rarity count
+    (owner request, 2026-09-08) — the tier already answers "how rare" on
+    Sony's own scale, and its own badge is the same icon every other screen
+    uses for it. Xbox and Steam show gamerscore and how many were rare, each
+    skipped when zero: a Steam row's gamerscore always is, an Xbox 360 row's
+    rare count always is (contract 1 carries no rarity at all), and "(+0 G)"
+    on every line reads as noise.
+    """
     if game.platform == Platform.PSN:
         platinum, gold, silver, bronze = game.tiers
-        tail = "".join(
-            f" {badge}{count}"
+        parts = [
+            f"{badge}{count}"
             for count, badge in (
                 (platinum, TROPHY_TIER_BADGE[PsnTrophyTier.PLATINUM]),
                 (gold, TROPHY_TIER_BADGE[PsnTrophyTier.GOLD]),
@@ -141,6 +150,20 @@ def _game_tail(game: GameRow, locale: str) -> str:
                 (bronze, TROPHY_TIER_BADGE[PsnTrophyTier.BRONZE]),
             )
             if count
+        ]
+        return plural_trophies(game.count, locale) + _bracketed(parts)
+    parts = [
+        part
+        for part in (
+            f"+{thousands(game.score)} G" if game.score else "",
+            f"{AchievementBadge.DIAMOND}{game.rare}" if game.rare else "",
         )
-        return f"{plural_trophies(game.count, locale)}{tail}"
-    return f"{plural_achievements(game.count, locale)}{score_suffix(game.score)}"
+        if part
+    ]
+    return plural_achievements(game.count, locale) + _bracketed(parts)
+
+
+def _bracketed(parts: list[str]) -> str:
+    """The same separator every multi-part line in this bot uses, and nothing
+    at all when there is no part worth showing."""
+    return f" ({' · '.join(parts)})" if parts else ""

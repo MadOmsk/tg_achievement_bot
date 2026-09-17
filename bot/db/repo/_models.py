@@ -485,36 +485,32 @@ class RecentAchievement:
 
 
 @dataclass(slots=True)
-class TopGame:
-    name: str | None
-    gamerscore: int | None
-    unlocked: int | None
-    platform: str | None = None
+class GameAchievements:
+    """One game in a games list, and what was earned in it this window.
 
+    One row per `(title_id, platform)` — a title_id is always in that
+    platform's own id format (an Xbox numeric id, a Steam appid, a PSN
+    "NPWR..." string), and two of those namespaces are bare numbers that can
+    collide by accident.
 
-@dataclass(slots=True)
-class ChatTopGame:
-    """One row of the monthly summary's own games block (#7) — a game
-    someone in the chat played this window, and how many achievements/
-    trophies the chat's subscribed members earned in it combined, across
-    everyone who played it. Unlike `TopGame` (one *person's* own recent
-    games), this is a chat-wide aggregate — but still one platform per row:
-    a title_id is always in that platform's own id format (an Xbox numeric
-    id, a Steam appid, or a PSN "NPWR..." string), so it can never actually
-    span two platforms in practice, unlike the union `seen_achievements`
-    itself is queried from.
+    The same row serves both scopes the one listing has (2026-09-17): one
+    person's own games in `/stats`, and the whole chat's in the monthly
+    summary, where `count` sums across everyone who played the game. It used
+    to be two near-identical dataclasses, `TopGame` and `ChatTopGame`.
 
     `bronze`/`silver`/`gold`/`platinum` are PSN's own trophy tiers (#5, user
-    request) — always 0 for a non-PSN row, no separate NULL handling needed
-    since a tier count of 0 already renders as "nothing to show" the same
-    way `score == 0` does for gamerscore.
+    request) and `rare` is how many of the achievements cleared the chat's
+    rarity threshold — both always 0 where the platform has no such notion,
+    which needs no NULL handling: a count of 0 already renders as "nothing to
+    show", the same way `score == 0` does for gamerscore.
     """
 
     title_id: str
-    platform: str
+    platform: str | None
     name: str | None
     count: int
     score: int = 0
+    rare: int = 0
     bronze: int = 0
     silver: int = 0
     gold: int = 0

@@ -17,7 +17,7 @@ from html import escape as html_escape
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import AchievementBadge
-from bot.db.repo import ChatMemberStat, ChatTopGame, Repo
+from bot.db.repo import ChatMemberStat, GameAchievements, Repo
 from bot.i18n import translator
 from bot.services.admin_settings import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.services.naming import person_name, xbox_nickname
@@ -105,7 +105,18 @@ async def build_summary(
             # #7: which games the chat actually played this month, not just
             # who — its own block, only when there's something to show (a
             # month of zero-scorers has nothing to rank).
-            games = await repo.chat_top_games(chat_id, month_cutoff, top_limit, locale=locale)
+            #
+            # The same call /stats' own games list makes, over every
+            # subscriber instead of one person (2026-09-17). `rows` is
+            # already the roster of subscribers, zeroes included, so the
+            # scope needs no second query of its own.
+            games = await repo.users_games_achievements(
+                [row.tg_id for row in rows],
+                month_cutoff,
+                rare_threshold=threshold,
+                limit=top_limit,
+                locale=locale,
+            )
             if games:
                 blocks.append(("games", _games_section(games, locale), False))
 
@@ -179,7 +190,7 @@ def month_window_label(tz_offset_min: int | None, locale: str) -> str:
     English puts the day after the month ("since June 1"), Russian before it
     — that ordering lives in each locale's own daily-window-month, not here.
 
-    Public: also used by views/chat.py's own games list (`user_games`),
+    Public: also used by views/chat.py's own games list,
     which needs the same "с 1 { month }" label /summary's month block uses —
     one label for "calendar month since the 1st" everywhere, not a second
     hand-rolled copy."""
@@ -253,15 +264,15 @@ def _leader_row(place: int, row: ChatMemberStat, locale: str, *, show_rare: bool
     )
 
 
-def _games_section(games: list[ChatTopGame], locale: str) -> list[str]:
+def _games_section(games: list[GameAchievements], locale: str) -> list[str]:
     """Which games the chat actually played this month, ranked by what was
     earned in each — not by who earned it, which is `_section`'s job (#7).
 
-    No "show all" button of its own, unlike that people list: `chat_top_games`
-    is already capped by the same admin-set `summary_top_limit` (SPEC 6.4),
-    and a second uncapped view for this one block was not asked for. The row
-    itself is the shared games row (#64) — /stats renders the identical line
-    from one person's own games.
+    No "show all" button of its own, unlike that people list: the query is
+    already capped by the same admin-set `summary_top_limit` (SPEC 6.4), and
+    a second uncapped view for this one block was not asked for. The row and
+    the query are both the shared ones (#64, then 2026-09-17) — /stats
+    renders the identical line from the same call over one person.
     """
     _ = translator("daily", locale)
     rows = game_rows(
@@ -271,6 +282,7 @@ def _games_section(games: list[ChatTopGame], locale: str) -> list[str]:
                 name=game.name,
                 count=game.count,
                 score=game.score,
+                rare=game.rare,
                 tiers=(game.platinum, game.gold, game.silver, game.bronze),
             )
             for game in games

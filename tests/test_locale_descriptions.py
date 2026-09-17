@@ -259,9 +259,12 @@ async def test_recent_and_the_game_lists_follow_the_chats_language(repo: Repo) -
     assert (ru.name, ru.game) == ("Да мы только начали", "Halo: Коллекция Мастер Чифа")
     assert (en.name, en.game) == ("Just Getting Started", "Halo: The Master Chief Collection")
 
+    # One listing, both scopes (2026-09-17): the person's own games in
+    # /stats and the chat-wide block in the monthly summary are the same
+    # call, so the localized title has to survive either way in.
     since = utcnow() - timedelta(days=30)
-    [game_ru] = await repo.user_games("xuid-1", since, locale="ru")
+    [game_ru] = await repo.users_games_achievements([1], since, rare_threshold=10.0, locale="ru")
     assert game_ru.name == "Halo: Коллекция Мастер Чифа"
 
-    [top_ru] = await repo.chat_top_games(-100500, since, locale="ru")
-    assert top_ru.name == "Halo: Коллекция Мастер Чифа"
+    [game_en] = await repo.users_games_achievements([1], since, rare_threshold=10.0, locale="en")
+    assert game_en.name == "Halo: The Master Chief Collection"

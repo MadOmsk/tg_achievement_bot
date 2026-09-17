@@ -11,17 +11,13 @@ from datetime import datetime
 from bot.db.repo._models import (
     ChatMemberStat,
     ChatPresenceRow,
-    ChatTopGame,
     OnlineAutoRefreshRow,
     _iso,
 )
 from bot.db.repo._sql import (
-    LOCALIZED_TITLE_COLUMNS,
-    OWNED_BY_PERSON,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
-    pick_name,
 )
 from bot.util import utcnow_iso
 
@@ -112,65 +108,6 @@ class _ChatStatsRepo:
                 xbox_count=int(row["xbox_count"] or 0),
                 steam_count=int(row["steam_count"] or 0),
                 psn_count=int(row["psn_count"] or 0),
-            )
-            for row in await cursor.fetchall()
-        ]
-
-    async def chat_top_games(
-        self, chat_id: int, since: datetime, limit: int = 15, *, locale: str = "ru"
-    ) -> list[ChatTopGame]:
-        """Games the chat's subscribed members played this window, ranked by
-        total achievements/trophies earned across all of them combined (#7,
-        monthly summary's own new block) — same "report, not the feed"
-        subscribers-only scope `chat_member_stats` above uses, joined by
-        title instead of by person. `titles` already covers every platform
-        (Xbox, Steam, and PSN all upsert into it on their own achievement
-        inserts), so one COALESCE covers "no cached name yet" for all three
-        the same way /stats' own games list does.
-
-        `limit == 0` means "no cap" (same convention as the admin's own
-        summary_top_limit setting, SPEC 6.4) — SQLite's own `LIMIT 0` would
-        instead mean "zero rows", so that case skips the clause entirely
-        rather than passing 0 through literally.
-
-        Grouped by `(title_id, platform)`, not `title_id` alone — two
-        different platforms' own id namespaces are not guaranteed disjoint
-        (a Steam appid and an Xbox title_id are both bare numeric strings),
-        so grouping by title_id only could in principle fold two unrelated
-        games from different platforms into one row."""
-        query = (
-            "SELECT s.title_id, s.platform, t.name, " + LOCALIZED_TITLE_COLUMNS + ","
-            "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
-            "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze,"
-            "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
-            "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
-            "       SUM(CASE WHEN s.trophy_type = 'platinum' THEN 1 ELSE 0 END) AS platinum "
-            "FROM seen_achievements s "
-            + OWNED_BY_PERSON
-            + "JOIN subscriptions sub ON sub.tg_id = al.tg_id AND sub.chat_id = ? "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE COALESCE(s.unlocked_at, s.created_at) >= ? "
-            "GROUP BY s.title_id, s.platform "
-            "ORDER BY cnt DESC"
-        )
-        params: list[object] = [chat_id, _iso(since)]
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
-        cursor = await self._conn.execute(query, params)
-        return [
-            ChatTopGame(
-                title_id=row["title_id"],
-                platform=row["platform"],
-                # The chat's own language where the platform has a second
-                # name (#61) — this block sits under a localized leaderboard.
-                name=pick_name(locale, row["game_ru"], row["game_en"], row["name"]),
-                count=int(row["cnt"]),
-                score=int(row["score"] or 0),
-                bronze=int(row["bronze"] or 0),
-                silver=int(row["silver"] or 0),
-                gold=int(row["gold"] or 0),
-                platinum=int(row["platinum"] or 0),
             )
             for row in await cursor.fetchall()
         ]
