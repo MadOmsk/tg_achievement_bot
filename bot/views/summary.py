@@ -245,9 +245,11 @@ def _section(
         expandable=expandable,
     )
     has_more = limit != 0 and len(rows) > limit
-    # Three lines, because build_summary stitches blocks together with blank
-    # lines of its own and needs them separable.
-    return [listing.total or "", listing.header or "", listing.body()], has_more
+    # Separate lines, because build_summary stitches blocks together with
+    # blank lines of its own and needs them separable. The blank one between
+    # the total and the roster is the owner's (2026-09-17): the total is the
+    # headline, and it reads as one when the list does not start against it.
+    return [listing.total or "", "", listing.header or "", listing.body()], has_more
 
 
 def _member_name(row: ChatMemberStat) -> str:
