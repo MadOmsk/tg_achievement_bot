@@ -215,9 +215,10 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │                                    to an existing database; a brand-new one is baselined
 │                                    (see Data model's own note)
 │
-├── changelog/                   user-facing release notes, one file per version per
-│                                language (ru/en) — what a member of the chat would
-│                                notice, not the commit log
+├── changelog/                   release notes, one file per version: `<v>.ru.md` and
+│                                `<v>.en.md` say what a member of the chat would notice,
+│                                `<v>.contributors.md` says what changed about working
+│                                here — both are curated, neither is the commit log
 │
 ├── scripts/                     operational one-off helpers, outside the running application
 │   ├── db_status.py               summary for `manage.ps1 status` (no dependencies)
