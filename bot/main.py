@@ -55,6 +55,7 @@ from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
+from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
@@ -121,6 +122,9 @@ async def run(settings: Settings) -> None:
     # Every group message the bot sends, logged for the admin panel's
     # "стереть сообщения бота" (SPEC 6.4) — see the module docstring for why
     # this is one request middleware and not a call in every handler.
+    # Outermost, so nothing downstream ever hands Telegram an oversized
+    # message — including the log middleware's own view of what was sent.
+    bot.session.middleware(MessageLimitMiddleware())
     bot.session.middleware(MessageLogMiddleware(repo))
 
     notifier = AdminNotifier(bot, repo, settings.admin_tg_ids)

@@ -126,6 +126,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           user_settings.show_profile_links
 │   │   ├── hltb.py                 wrapper over howlongtobeatpy, cached in hltb_cache
 │   │   ├── message_log.py          request middleware: logs outgoing group messages
+│   │   ├── message_limits.py       request middleware: nothing goes out over Telegram's
+│   │   │                           own length limit, cut HTML-safely (#68)
 │   │   ├── presence_view.py        which platform answers "where is this person right
 │   │   │                           now" — /online's own rule, for one person (#1)
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
@@ -885,6 +887,27 @@ instead of several — grouped by platform and title. Every achievement in a dig
 listed, never truncated with "and N more". A media gallery dedupes by image URL, so
 several achievements sharing one icon (all of Xbox 360's own achievements share the
 game's box art) don't repeat the same picture.
+
+**Nothing the bot sends may fail for being too long** (#68, 2026-09-17,
+owner decision). Telegram rejects an oversized message outright, after the
+handler has already done all its work, so the command simply looks dead —
+that is how `/summary` answered three presses with nothing on production and
+took the 1.1 deploy down with it. `services/message_limits.py` is a request
+middleware on the Bot's own pipeline (the same seam `message_log.py` uses,
+for the same reason) that cuts any outgoing text to its own maximum: 4096
+for a message, 1024 for a caption, 200 for a callback answer. It keys off
+which fields a method *has* rather than a list of method names, so a send
+this bot does not make yet is covered the day it is added.
+
+**Truncating HTML naively only trades one Telegram error for another** — a
+cut landing inside `<blockquote expandable>` or leaving `<b>` unclosed earns
+`can't parse entities` instead. So the cut lands only where it is safe,
+never inside a tag or an `&entity;`, prefers a word boundary, and closes
+whatever was open. Every truncation is logged as a warning: the net exists
+so a screen never dies, not so an overlong screen goes unnoticed. Capping
+each list by *rows* is not a substitute and was rejected: the limit is in
+characters, and fifteen rows fit or do not depending on how long that
+month's game titles happen to be.
 
 Delivery goes through a send queue to stay under Telegram's group rate limit. A
 Telegram 403 means the bot was removed from that chat — deactivate it, don't keep
