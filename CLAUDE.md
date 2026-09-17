@@ -877,9 +877,10 @@ due.
   configured recent window — older rows are stored for stats/dedup but never
   flooded into chat. **A row with no unlock date is placed by when its game
   was last played** (`title_history.last_played_at`), not dropped
-  (2026-09-17, owner report): Xbox 360 achievements are dateless by design,
-  so the old "an unknown date is not proof of freshness" meant an x360
-  achievement could never be announced through catch-up on any account —
+  (2026-09-17, owner report). Most rows are dated — 2331 of production's 2982
+  x360 rows are — but Microsoft's placeholder costs the other 651 their date,
+  and the old "an unknown date is not proof of freshness" made every one of
+  those unannounceable through catch-up, on any account, forever. Found when
   two people finished a session in Gears of War 3 and the log read
   `catch-up for tg_id=…: 10 titles, 0 published`. The live poll path never
   had this problem, which is why it went unnoticed: `poll_title` publishes a
