@@ -300,11 +300,7 @@ class Fetcher:
                 new_rows = await self._repo.insert_new_achievements(
                     xuid, [to_achievement_row(item) for item in parsed], is_backfill=False
                 )
-                fresh = [
-                    row
-                    for row in new_rows
-                    if _publishable(row, publish_after, entry.last_played_at)
-                ]
+                fresh = [row for row in new_rows if _unlocked_after(row, publish_after)]
                 if fresh:
                     await self._publisher.publish(tg_id, xuid, gamertag, fresh, entry.name)
                     published += len(fresh)
@@ -407,31 +403,7 @@ def _played_since(
     return [entry for _, entry in fresh]
 
 
-def _publishable(row: AchievementRow, moment: datetime, played_at: str | None) -> bool:
-    """Whether a row catch-up just stored is recent enough to announce.
-
-    A dated row is placed by its own date. A row with no date falls back to
-    **when the game was last played**, which is a real timestamp titlehub
-    gives us for the title this row came from — not a guess.
-
-    That fallback is the whole fix (owner report, 2026-09-17). Xbox 360
-    achievements are dateless by design: Microsoft sends a placeholder
-    (`0001-01-01`, or `1753-01-01`) which `parse_timestamp` discards rather
-    than record an unlock in the year 1753. The old rule here was
-    `unlocked is not None and unlocked >= moment` — "an unknown date is not
-    proof of freshness" — which is true of a backfilled row and false of
-    this one: everything reaching this function was just inserted, so the bot
-    has never seen it before. The result was that an Xbox 360 achievement
-    could never be announced through catch-up at all, on any account, ever.
-    Two people finished a session in Gears of War 3 and the log read
-    `catch-up for tg_id=…: 10 titles, 0 published`.
-
-    Still a real check, not `True`: the point of the window is that after a
-    fortnight of downtime a chat does not want the archive, and a game last
-    played a fortnight ago stays silent on exactly that ground.
-    """
+def _unlocked_after(row: AchievementRow, moment: datetime) -> bool:
     unlocked = parse_iso(row.unlocked_at)
-    if unlocked is not None:
-        return unlocked >= moment
-    played = parse_iso(played_at)
-    return played is not None and played >= moment
+    # An unknown date is not proof of freshness — those stay unpublished.
+    return unlocked is not None and unlocked >= moment
