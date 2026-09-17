@@ -18,6 +18,8 @@ from bot.db.repo._sql import (
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
+    earned_at,
+    earned_since,
 )
 from bot.util import utcnow_iso
 
@@ -47,10 +49,12 @@ class _ChatStatsRepo:
         included PSN rows (plain `tg_id` sum), the per-platform split next
         to it silently didn't.
         """
-        date_bound = "AND COALESCE(s.unlocked_at, s.created_at) >= ?"
+        # The window rule, shared (#69): an undated backfill row is ancient
+        # rather than earned the moment its import ran.
+        date_bound = f"AND {earned_since()}"
         date_params: list[object] = [_iso(since)]
         if until is not None:
-            date_bound += " AND COALESCE(s.unlocked_at, s.created_at) < ?"
+            date_bound += f" AND {earned_at()} < ?"
             date_params.append(_iso(until))
 
         cursor = await self._conn.execute(

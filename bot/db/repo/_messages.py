@@ -28,6 +28,9 @@ from bot.db.repo._sql import (
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
+    earned_at,
+    earned_date_is_real,
+    earned_since,
     pick_name,
 )
 from bot.util import utcnow_iso
@@ -127,7 +130,7 @@ class _MessagesRepo:
             "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
             "       " + LOCALIZED_TITLE_COLUMNS + ","
             "       s.gamerscore, s.rarity_percent,"
-            "       s.platform, COALESCE(s.unlocked_at, s.created_at) AS unlocked_at,"
+            "       s.platform, " + earned_at() + " AS unlocked_at,"
             "       s.is_secret "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
@@ -143,8 +146,12 @@ class _MessagesRepo:
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             + NAME_CACHE_JOIN
-            + "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
-            "ORDER BY COALESCE(s.unlocked_at, s.created_at) DESC LIMIT ?",
+            # An undated backfill row is not "recent" (#69): its created_at is
+            # when the import ran, so right after somebody connects their whole
+            # imported history would sort to the top of this list — in the one
+            # window where the first link is supposed to be silent.
+            + f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            f"ORDER BY {earned_at()} DESC LIMIT ?",
             (chat_id, limit),
         )
         return [
@@ -227,16 +234,14 @@ class _MessagesRepo:
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
             "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
             "       SUM(CASE WHEN s.trophy_type = 'platinum' THEN 1 ELSE 0 END) AS platinum,"
-            "       MAX(COALESCE(s.unlocked_at, s.created_at)) AS last_earned "
+            "       MAX(" + earned_at() + ") AS last_earned "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
-            f"WHERE al.tg_id IN ({owners}) AND ("
-            "      (s.unlocked_at IS NOT NULL AND s.unlocked_at >= ?)"
-            "   OR (s.unlocked_at IS NULL AND s.is_backfill = 0 AND s.created_at >= ?)) "
+            f"WHERE al.tg_id IN ({owners}) AND {earned_since()} "
             "GROUP BY s.title_id, s.platform "
             "ORDER BY cnt DESC, last_earned DESC LIMIT ?",
-            (rare_threshold, *tg_ids, _iso(since), _iso(since), limit or -1),
+            (rare_threshold, *tg_ids, _iso(since), limit or -1),
         )
         return [
             GameAchievements(

@@ -1488,18 +1488,51 @@ no answer to record.
 Normal stats read only from `seen_achievements`, `title_history`, platform links,
 and cached presence/level tables — never a live platform call.
 
-**An achievement with no usable unlock time still counts** (2026-09-13, user
-request). Microsoft sends a placeholder date for some Xbox 360 achievements —
-`0001-01-01`, or `1753-01-01`, the old SQL Server minimum; 84 of 5239 rows on
-one real account — and `services/xbox/models.py::parse_timestamp` discards it
-rather than record an unlock in the year 1753. Every windowed read therefore
-uses `COALESCE(unlocked_at, created_at)`: when the platform gives no usable
-time, when the bot first saw the achievement is the honest stand-in, and the
-two readers that build an `AchievementRow` hand that stand-in to the caller so
-the publisher's own age cap agrees with the statistics. The stored column keeps
-its NULL — it records what the platform actually said. Before this, such rows
-were published normally and then silently absent from `/recent`, from both
-counters, and from every catch-up window, which is the worst of both. `/stats`' lifetime
+**An achievement with no usable unlock time still counts — unless nobody
+can say when it happened** (2026-09-13, extended 2026-09-17, both owner
+decisions; #69). Microsoft sends a placeholder date for some Xbox 360
+achievements — `0001-01-01`, or `1753-01-01`, the old SQL Server minimum; 84
+of 5239 rows on one real account — and
+`services/xbox/models.py::parse_timestamp` discards it rather than record an
+unlock in the year 1753. `COALESCE(unlocked_at, created_at)` stands in for
+those: when the platform gives no usable time, when the bot first saw the
+achievement is the honest stand-in, and the two readers that build an
+`AchievementRow` hand that stand-in to the caller so the publisher's own age
+cap agrees with the statistics. The stored column keeps its NULL — it records
+what the platform actually said.
+
+**That fallback is honest for a live poll and a lie for an import.** A
+poller sees an unlock within minutes to hours; a backfill row's `created_at`
+is simply when the one-off import ran, which has no relationship to when
+anything was earned. So every windowed read asks two things, written once in
+`db/repo/_sql.py` (`earned_at`, `earned_date_is_real`, `earned_since`) for
+the same reason `OWNED_BY_PERSON` is written once:
+
+- a row the platform dated is placed by that date;
+- an undated row a **live poll** found is placed by when the bot saw it;
+- an undated row an **import** brought in is ancient, and falls outside
+  every window.
+
+Two wrong versions preceded it, in opposite directions, and both shipped.
+Plain `COALESCE` everywhere was too generous — a freshly linked library read
+as this month's play, 767 achievements across 15 games for somebody who had
+earned none of it, which is #69. Filtering on `s.is_backfill = 0` instead was
+too harsh — it also threw away imports the platform *had* dated, and one
+person's Steam and Xbox games vanished from `/stats` entirely, leaving a
+single PSN row. The flag means "do not publish", not "did not happen"
+(`services/stats.py`); it gets a say only where there is no date to believe
+instead.
+
+`/recent` has no window of its own, so the rule applies there as an
+exclusion: an import's timestamp is "now" at connect time, which would put
+somebody's whole imported history at the top of the list in the one window
+where a first link is meant to be silent.
+
+Three readers keep plain `COALESCE` on purpose and say so in place:
+`unpublished_achievements` (its `is_backfill = 0` already excludes the only
+rows the fallback lies about), `account_latest_unlock` (it asks "since when
+do we hold data", where the import's own timestamp is the right answer), and
+`recent_achievements` (no caller left since `/panel` dropped its recent list). `/stats`' lifetime
 achievement count (`repo.xbox_achievement_count`/`platform_achievement_count`)
 always counts `seen_achievements` rows directly, never sums `title_history` —
 modern Xbox's broad history-endpoint backfill and Steam's full-library backfill
