@@ -340,7 +340,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
     completed = await repo.xbox_completed_games_count(user.xuid)
     parts = [plural_achievements(count, locale)]
     if completed:
-        parts.append(f"{COMPLETED_BADGE} {completed}")
+        parts.append(f"{completed} {COMPLETED_BADGE}")
     parts.append(_("admin-today-tag", count=today_count))
     parts.append(_("admin-gamerscore-tag", score=user.gamerscore or 0))
 
@@ -399,7 +399,7 @@ async def _steam_admin_block(
     completed = await repo.steam_completed_games_count(link.tg_id)
     parts = [plural_achievements(count, locale)]
     if completed:
-        parts.append(f"{COMPLETED_BADGE} {completed}")
+        parts.append(f"{completed} {COMPLETED_BADGE}")
     parts.append(_("admin-today-tag", count=today_count))
 
     steam_presence = await repo.steam_presence_of(link.external_id)
@@ -451,7 +451,7 @@ async def _psn_admin_block(
     platinum = await repo.psn_platinum_count(link.tg_id)
     parts = [plural_trophies(count, locale)]
     if platinum:
-        parts.append(f"{COMPLETED_BADGE} {platinum}")
+        parts.append(f"{platinum} {COMPLETED_BADGE}")
     parts.append(_("admin-today-tag", count=today_count))
     if link.psn_trophy_level is not None:
         parts.append(_("admin-psn-level-tag", level=link.psn_trophy_level))

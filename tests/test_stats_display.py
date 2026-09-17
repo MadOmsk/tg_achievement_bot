@@ -610,7 +610,7 @@ async def test_xbox_line_shows_completed_games_when_there_are_any(repo: Repo) ->
 
     assert text is not None
     xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
-    assert f"{COMPLETED_BADGE} 1" in xbox_line
+    assert f"1 {COMPLETED_BADGE}" in xbox_line
 
 
 async def test_psn_line_shows_platinum_count_when_there_are_any(repo: Repo) -> None:
@@ -642,7 +642,7 @@ async def test_psn_line_shows_platinum_count_when_there_are_any(repo: Repo) -> N
 
     assert text is not None
     psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
-    assert f"{COMPLETED_BADGE} 1" in psn_line
+    assert f"1 {COMPLETED_BADGE}" in psn_line
 
 
 async def test_steam_line_shows_completed_games_when_there_are_any(repo: Repo) -> None:
@@ -678,7 +678,7 @@ async def test_steam_line_shows_completed_games_when_there_are_any(repo: Repo) -
 
     assert text is not None
     steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
-    assert f"{COMPLETED_BADGE} 1" in steam_line
+    assert f"1 {COMPLETED_BADGE}" in steam_line
 
 
 async def test_games_list_does_not_truncate_long_names() -> None:

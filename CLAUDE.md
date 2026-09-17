@@ -805,10 +805,11 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   with no visible error anywhere, until it was hit by an actual test send.
 - PSN achievements are called "trophies" in every user-facing message, not
   "achievements" — the header reads "gets a trophy", and PSN's badge is its own
-  tier icon (🥉🥈🥇🏆) in place of the usual rarity diamond/cup, since the tier
+  tier icon (🥉🥈🥇💠) in place of the usual rarity diamond/cup, since the tier
   already answers the same "how rare" question on Sony's own scale (showing both
-  used to be possible to collide visually: a platinum trophy and an "ordinary"
-  rarity badge are the same emoji).
+  would repeat itself). Platinum was 🏆 until 2026-09-17, which is also the
+  badge an *ordinary* achievement leads with — so the rarest thing in a game
+  and the most ordinary one rendered identically, in `/recent` most visibly.
 - PS3, PS4, PS5, and PS Vita share the same trophy service and fields — no separate
   parsing branch, unlike Xbox 360.
 - **Bilingual descriptions** (2026-09-09, third and last platform wired to
@@ -1247,7 +1248,7 @@ keeps the spoiler with no label, since a line there is already long.
 
 The badge is `rarity_badge()` (💎 at or below the rare threshold, 🏆 otherwise,
 including when rarity is simply unknown) for every platform except PSN, which shows
-its own tier icon instead (🥉🥈🥇🏆) — see the PSN section above for why.
+its own tier icon instead (🥉🥈🥇💠) — see the PSN section above for why.
 
 **A single post is a photo message**, not a text one: the achievement's own
 icon is the photo and everything above is its *caption*, so the whole card
@@ -1569,8 +1570,12 @@ never learned about is a silent gap there specifically). Xbox gamerscore always
 comes from the Xbox profile cache, never from summing title history. A 100%-completed
 game (Xbox/Steam) and a PSN platinum trophy answer the same question — Sony only
 awards a platinum once every other trophy in that game is earned — so both render as
-the same 🏆 symbol + count next to the platform's achievement/trophy count, never a
-word, and only when nonzero. Cross-platform "today" (24h rolling) and "month"
+the same **💠** + count next to the platform's achievement/trophy count, never a
+word, and only when nonzero. The count comes first there ("1 💠"), unlike the badges
+inside a value bracket ("💎10"): one reads as a quantity of a thing, the other as a
+label on a number. It was 🏆 until 2026-09-17 (owner) — which is also what an
+*ordinary* achievement leads with, so the rarest thing in a game and the most
+ordinary one shared a glyph. Cross-platform "today" (24h rolling) and "month"
 (calendar month, #14) counters aggregate by `tg_id`.
 Platform breakdowns (e.g. "(🟢 3 · ⚫ 5)") show only where they clarify genuinely
 mixed-platform activity. Excluded users are never polled, published, or

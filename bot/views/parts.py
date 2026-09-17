@@ -52,7 +52,7 @@ def rarity_badge(rarity_percent: float | None) -> str:
 # instead of it: rarity says how many players got it, tier says how much
 # Sony itself weighted it — two different questions about the same trophy.
 TROPHY_TIER_BADGE = {
-    PsnTrophyTier.PLATINUM: AchievementBadge.CUP,
+    PsnTrophyTier.PLATINUM: AchievementBadge.PLATINUM,
     PsnTrophyTier.GOLD: AchievementBadge.GOLD,
     PsnTrophyTier.SILVER: AchievementBadge.SILVER,
     PsnTrophyTier.BRONZE: AchievementBadge.BRONZE,
@@ -239,9 +239,15 @@ def plural_trophies(count: int, locale: str) -> str:
 #  user request, reversing an initial "комплитов"/"платин" text attempt) —
 #  a 100%-completed game and a PSN platinum answer the same question, so
 #  one symbol answers it for every platform. The same icon PSN's own trophy
-#  tier badge already uses for a platinum (services/achievements.py's own
-#  TROPHY_TIER_BADGE above).
-COMPLETED_BADGE = AchievementBadge.CUP
+#  tier badge uses for a platinum (TROPHY_TIER_BADGE above), which is the
+#  point of it: one glyph for "you finished the thing", wherever it appears.
+#
+#  💠 since 2026-09-17, not 🏆 — the cup is what an *ordinary* achievement
+#  leads with, so the rarest thing in a game and the most ordinary one used
+#  to share a glyph. The count comes first here ("1 💠"), unlike the badges
+#  inside a value bracket ("💎10"): this one reads as a quantity of a thing,
+#  those read as a label on a number.
+COMPLETED_BADGE = AchievementBadge.PLATINUM
 
 
 def visibility_status_text(link: PlatformLink, locale: str) -> str:
@@ -305,7 +311,7 @@ async def platform_header_lines(
         xbox_completed = await repo.xbox_completed_games_count(xuid)
         parts = [plural_achievements(xbox_count, locale)]
         if xbox_completed:
-            parts.append(f"{COMPLETED_BADGE} {xbox_completed}")
+            parts.append(f"{xbox_completed} {COMPLETED_BADGE}")
         parts.append(f"gamerscore {thousands(gamerscore or 0)}")
         lines.append(
             f"{PLATFORM_ICON[Platform.XBOX_MODERN]} XBOX: {gamertag_html}  ·  "
@@ -342,7 +348,7 @@ async def platform_header_lines(
             # is earned, so this count already *is* that.
             platinum = await repo.psn_platinum_count(tg_id)
             if platinum:
-                link_parts.append(f"{COMPLETED_BADGE} {platinum}")
+                link_parts.append(f"{platinum} {COMPLETED_BADGE}")
             # PSN's own account-wide level (Follow-up 2026-09-06) — cached
             # by poller/psn_fetcher.py, never fetched here (SPEC 1.5's
             # cache-only rule); absent until the poller has had a chance to
@@ -358,7 +364,7 @@ async def platform_header_lines(
         elif link.platform == Platform.STEAM:
             completed = await repo.steam_completed_games_count(tg_id)
             if completed:
-                link_parts.append(f"{COMPLETED_BADGE} {completed}")
+                link_parts.append(f"{completed} {COMPLETED_BADGE}")
         lines.append(f"{icon} {label}: {name_html}  ·  " + "  ·  ".join(link_parts))
 
     return lines
