@@ -1,9 +1,10 @@
 """The daily and month-end summaries (#63).
 
-Three shapes out of two independent window blocks (#14): the scheduled
-daily job sends the day block, the month-end job the month block under its
-own header, and /summary on demand sends both. Composed rather than written
-three times, so their style cannot drift apart.
+One form, two cutoffs (#14, narrowed by the owner 2026-09-17): a header, the
+chat's combined total, its players, and the games they played. The scheduled
+daily job and /summary_day send the 24-hour one; the month-end job and
+/summary_month send the calendar month. Composed rather than written twice,
+so their style cannot drift apart.
 
 poller/daily.py keeps the schedule — whose summary is due, in which chat,
 at which local hour — and the sending.
@@ -22,7 +23,7 @@ from bot.services.admin_settings import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import local_now, month_cutoff_utc
 from bot.util import utcnow
-from bot.views.lists import GameRow, Listing, game_rows, total_line, truncate_name
+from bot.views.lists import Listing, games_listing, total_line, truncate_name
 from bot.views.parts import (
     bracketed,
     platform_breakdown_suffix,
@@ -72,8 +73,8 @@ async def build_summary(
 
     The two shapes are the same message with a different cutoff (owner,
     2026-09-17): a header, the chat's combined total, the players ranked by
-    what they earned, and — for the month — which games they earned it in.
-    Each is sent by its own scheduled job and its own command.
+    what they earned, and which games they earned it in. Each is sent by its
+    own scheduled job and its own command.
 
     It was two booleans until the combined form went away with `/summary`,
     and a string is what stops "both" from being expressible at all: with one
@@ -99,22 +100,24 @@ async def build_summary(
         (window, *_section(_("daily-total-label"), rows, top_limit, locale))
     ]
 
-    if not is_day:
-        # #7: which games the chat actually played this month, not just who —
-        # its own block, only when there is something to rank.
-        #
-        # The same call /stats' own games list makes, over every subscriber
-        # instead of one person (2026-09-17). `rows` is already the roster of
-        # subscribers, so the scope needs no second query of its own.
-        games = await repo.users_games_achievements(
-            [row.tg_id for row in rows],
-            cutoff,
-            rare_threshold=threshold,
-            limit=top_limit,
-            locale=locale,
-        )
-        if games:
-            blocks.append(("games", _games_section(games, locale), False))
+    # #7: which games the chat actually played, not just who. Both windows
+    # get it (owner, 2026-09-17) — the day report is the same form with a
+    # different cutoff, and it was month-only while the month was the only
+    # report that had a games block at all. Left out when there is nothing
+    # to rank, which a quiet day often is.
+    #
+    # The same call /stats' own games list makes, over every subscriber
+    # instead of one person. `rows` is already the roster of subscribers, so
+    # the scope needs no second query of its own.
+    games = await repo.users_games_achievements(
+        [row.tg_id for row in rows],
+        cutoff,
+        rare_threshold=threshold,
+        limit=top_limit,
+        locale=locale,
+    )
+    if games:
+        blocks.append(("games", _games_section(games, locale), False))
 
     if not blocks:
         return None
@@ -277,8 +280,8 @@ def _leader_row(place: int, row: ChatMemberStat, locale: str) -> str:
 
 
 def _games_section(games: list[GameAchievements], locale: str) -> list[str]:
-    """Which games the chat actually played this month, ranked by what was
-    earned in each — not by who earned it, which is `_section`'s job (#7).
+    """Which games the chat actually played in this window, ranked by what
+    was earned in each — not by who earned it, which is `_section`'s job (#7).
 
     No "show all" button of its own, unlike that people list: the query is
     already capped by the same admin-set `summary_top_limit` (SPEC 6.4), and
@@ -287,19 +290,5 @@ def _games_section(games: list[GameAchievements], locale: str) -> list[str]:
     renders the identical line from the same call over one person.
     """
     _ = translator("daily", locale)
-    rows = game_rows(
-        [
-            GameRow(
-                platform=game.platform,
-                name=game.name,
-                count=game.count,
-                score=game.score,
-                rare=game.rare,
-                tiers=(game.platinum, game.gold, game.silver, game.bronze),
-            )
-            for game in games
-        ],
-        _("daily-unknown-game"),
-        locale,
-    )
-    return [_("daily-games-header"), Listing(rows=rows).body()]
+    listing = games_listing(games, _("daily-unknown-game"), locale)
+    return [_("daily-games-header"), listing.body()]

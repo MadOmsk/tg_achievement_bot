@@ -15,10 +15,12 @@ visible.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from html import escape as html_escape
 
 from bot.constants import Platform
+from bot.db.repo import GameAchievements
 from bot.views.parts import (
     PLATFORM_ICON,
     bracketed,
@@ -126,6 +128,39 @@ def game_rows(games: list[GameRow], untitled: str, locale: str) -> list[str]:
         f"{html_escape(game.name or untitled)} — {_game_tail(game, locale)}"
         for place, game in enumerate(games, start=1)
     ]
+
+
+def games_listing(games: Sequence[GameAchievements], untitled: str, locale: str) -> Listing:
+    """The one games list this bot has (owner, 2026-09-17).
+
+    Three screens draw it and they differ only in *which people* and *which
+    window* were asked for: `/stats` passes one person and the calendar
+    month, each summary passes every subscriber and its own cutoff. The query
+    behind them is one too (`repo.users_games_achievements`), so what is left
+    here is the mapping onto a row — which lived in two copies until this
+    function, and is the sort of duplicate that quietly grows a difference.
+
+    Returns the `Listing` rather than rendered text: the summary stitches its
+    blocks together itself and needs the body and its header separable, while
+    /stats just calls `.render()`.
+    """
+    return Listing(
+        rows=game_rows(
+            [
+                GameRow(
+                    platform=game.platform,
+                    name=game.name,
+                    count=game.count,
+                    score=game.score,
+                    rare=game.rare,
+                    tiers=(game.platinum, game.gold, game.silver, game.bronze),
+                )
+                for game in games
+            ],
+            untitled,
+            locale,
+        )
+    )
 
 
 def _game_tail(game: GameRow, locale: str) -> str:

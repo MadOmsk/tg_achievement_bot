@@ -33,7 +33,7 @@ from bot.services.stats import counters_for, month_cutoff_utc
 from bot.util import humanize_ago, thousands
 from bot.version import version
 from bot.views.inline_lists import InlineListing, button_rows
-from bot.views.lists import GameRow, Listing, game_rows, truncate_name
+from bot.views.lists import Listing, games_listing, truncate_name
 from bot.views.parts import (
     PLATFORM_ICON,
     PLATFORM_ICON_UNKNOWN,
@@ -71,27 +71,9 @@ def _locale_of(i18n: I18nContext | None) -> str:
 
 
 def _games_list(games: list[GameAchievements], i18n: I18nContext | None = None) -> str:
-    """One person's own games (/stats). Both the row and the query behind it
-    are shared with the monthly summary's games block, which renders the
-    identical line from the same call over every subscriber instead of one
-    person (#64, then 2026-09-17)."""
+    """/stats' own games list — the shared template over one person (2026-09-17)."""
     locale = _locale_of(i18n)
-    rows = game_rows(
-        [
-            GameRow(
-                platform=game.platform,
-                name=game.name,
-                count=game.count,
-                score=game.score,
-                rare=game.rare,
-                tiers=(game.platinum, game.gold, game.silver, game.bronze),
-            )
-            for game in games
-        ],
-        _hub_text(i18n, "chat-untitled"),
-        locale,
-    )
-    return Listing(rows=rows).render()
+    return games_listing(games, _hub_text(i18n, "chat-untitled"), locale).render()
 
 
 def display_name(target: User, links: list[PlatformLink]) -> str:

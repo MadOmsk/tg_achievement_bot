@@ -582,7 +582,10 @@ async def test_games_block_shows_psn_tier_breakdown_not_gamerscore(repo: Repo) -
     assert " G)" not in games_section
 
 
-async def test_games_block_is_absent_from_a_day_only_report(repo: Repo) -> None:
+async def test_the_day_report_has_a_games_block_too(repo: Repo) -> None:
+    """Owner, 2026-09-17: the day report is the same form with a different
+    cutoff, games block included. It was month-only while the month was the
+    only report that had one at all (#7)."""
     await _chat_with_two_players(repo)
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
 
@@ -590,4 +593,20 @@ async def test_games_block_is_absent_from_a_day_only_report(repo: Repo) -> None:
 
     assert built is not None
     text, _markup = built
+    assert "<b>Игры:</b>" in text
+
+
+async def test_a_quiet_day_has_no_games_block(repo: Repo) -> None:
+    """Nothing earned in the window, so nothing to rank — the roster still
+    sends (#34), it just has no games under it."""
+    await _chat_with_two_players(repo)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("old", utcnow() - timedelta(hours=30))], is_backfill=False
+    )
+
+    built = await build_summary(repo, CHAT_ID, 10.0, utcnow().date(), locale="ru", window=DAY)
+
+    assert built is not None
+    text, _markup = built
+    assert "<b>Игроки:</b>" in text
     assert "<b>Игры:</b>" not in text

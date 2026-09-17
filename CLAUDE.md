@@ -1339,9 +1339,10 @@ line per report and no window in its label, a message carrying both would say
 **Both reports are one form with a different cutoff** (owner, 2026-09-17), which
 reverses #9's "the day block drops the 💎": a header (📅 Итоги дня / 🗓 Итоги
 месяца), the chat's combined **Всего** with the same two brackets a `/stats`
-counter line uses, **Игроки:** ranked by what they earned, and — month only —
-**Игры:**. The date left the day header: the message arrives on the day it is
-about. A day on which nobody unlocked
+counter line uses, **Игроки:** ranked by what they earned, and **Игры:** — in
+both, where the games block used to be month-only because the month was the
+only report that had one. The date left the day header: the message arrives on
+the day it is about. A day on which nobody unlocked
 anything still sends — the roster with everyone at 0 (#34); `build_summary`
 returns `None`, and the chat gets nothing, only when there are no subscribed
 members at all. The month block (only) is followed by its own "Игры за месяц"
@@ -1405,7 +1406,7 @@ list fills a text row and a button row from one loop over one page of people
 | `/stats`' games | listing, quoted | `repo.users_games_achievements()` | the card's owner | count ↓, then last unlock ↓ | `stats_games_limit` (0 = uncapped) |
 | `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | `recent_limit`, or the command's own `N` |
 | summary leaderboards (day/month) | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
-| "Игры за месяц" | listing, quoted | `repo.users_games_achievements()`, same call | every subscriber's games, summed | count ↓, then last unlock ↓ | `summary_top_limit` |
+| "Игры:" in a summary | listing, quoted | `repo.users_games_achievements()`, same call | every subscriber's games, summed | count ↓, then last unlock ↓ | `summary_top_limit` |
 | `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
 | the admin's user list | listing (plain) **and** inline listing | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page, `◀️ N/M ▶️` |
 | the admin's chat list | inline listing | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
