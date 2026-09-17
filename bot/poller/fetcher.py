@@ -414,15 +414,14 @@ def _publishable(row: AchievementRow, moment: datetime, played_at: str | None) -
     **when the game was last played**, which is a real timestamp titlehub
     gives us for the title this row came from — not a guess.
 
-    That fallback is the fix (owner report, 2026-09-17). Most achievements
-    are dated, Xbox 360's included — 2331 of production's 2982 x360 rows —
-    but Microsoft sends a placeholder (`0001-01-01`, or `1753-01-01`) often
-    enough to cost the other 651 theirs, and `parse_timestamp` discards it
-    rather than record an unlock in the year 1753. The old rule here was
+    That fallback is the whole fix (owner report, 2026-09-17). Xbox 360
+    achievements are dateless by design: Microsoft sends a placeholder
+    (`0001-01-01`, or `1753-01-01`) which `parse_timestamp` discards rather
+    than record an unlock in the year 1753. The old rule here was
     `unlocked is not None and unlocked >= moment` — "an unknown date is not
     proof of freshness" — which is true of a backfilled row and false of
     this one: everything reaching this function was just inserted, so the bot
-    has never seen it before. The result was that an undated achievement
+    has never seen it before. The result was that an Xbox 360 achievement
     could never be announced through catch-up at all, on any account, ever.
     Two people finished a session in Gears of War 3 and the log read
     `catch-up for tg_id=…: 10 titles, 0 published`.
