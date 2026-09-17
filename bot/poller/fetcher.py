@@ -68,6 +68,13 @@ class Fetcher:
                 await self._repo.set_title_total(title_id, total)
         await self._fill_x360_icon(tg_id, title_id, platform, parsed)
         await self._bilingual_descriptions(tg_id, title_id, platform, parsed)
+        # Free: this response carried the percentages, and the shared cache is
+        # what an older row without one reads instead (poller/rarity_backfill.py).
+        await self._repo.cache_rarity(
+            platform,
+            title_id,
+            {a.achievement_id: a.rarity_percent for a in parsed if a.rarity_percent is not None},
+        )
         rows = [to_achievement_row(item) for item in parsed]
         new_rows = await self._repo.insert_new_achievements(xuid, rows, is_backfill=False)
         await self._repo.mark_achievements_polled(xuid)

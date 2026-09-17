@@ -163,3 +163,29 @@ def pick_name(
         if candidate and candidate.strip():
             return candidate
     return stored
+
+
+# --------------------------------------------------------------- rarity (#69's tail)
+
+
+# The shared cache joined to a `seen_achievements s`. Same shape and the same
+# reasoning as NAME_CACHE_JOIN above: the row carries whatever the platform
+# said the first time somebody here earned the achievement, which on Xbox is
+# usually nothing at all — rarity rides only on contract 4, and backfill uses
+# contract 2. The cache is a fact about the achievement and is refreshed;
+# the row is a snapshot and is not.
+def rarity_cache_join(prefix: str = "s.") -> str:
+    """Takes the table's alias because one caller has none: the value
+    breakdown reaches its person through OWNED_BY_PERSON_EXISTS, which names
+    `seen_achievements` in full and stops resolving the moment the table is
+    aliased."""
+    return (
+        f"LEFT JOIN achievement_rarity_cache rc ON rc.platform = {prefix}platform"
+        f"   AND rc.title_id = {prefix}title_id"
+        f"   AND rc.achievement_id = {prefix}achievement_id "
+    )
+
+
+def rarity(prefix: str = "s.") -> str:
+    """The percentage to believe: the cache first, the row as the fallback."""
+    return f"COALESCE(rc.rarity_percent, {prefix}rarity_percent)"

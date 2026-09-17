@@ -32,6 +32,8 @@ from bot.db.repo._sql import (
     earned_date_is_real,
     earned_since,
     pick_name,
+    rarity,
+    rarity_cache_join,
 )
 from bot.util import utcnow_iso
 
@@ -235,7 +237,7 @@ class _MessagesRepo:
         cursor = await self._conn.execute(
             "SELECT s.title_id, s.platform, t.name, " + LOCALIZED_TITLE_COLUMNS + ","
             "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
-            "       SUM(CASE WHEN s.rarity_percent IS NOT NULL AND s.rarity_percent <= ?"
+            f"       SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= ?"
             "                THEN 1 ELSE 0 END) AS rare,"
             "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze,"
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
@@ -245,7 +247,8 @@ class _MessagesRepo:
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
-            f"WHERE al.tg_id IN ({owners}) AND {earned_since()} "
+            + rarity_cache_join()
+            + f"WHERE al.tg_id IN ({owners}) AND {earned_since()} "
             "GROUP BY s.title_id, s.platform "
             "ORDER BY cnt DESC, last_earned DESC LIMIT ?",
             (rare_threshold, *tg_ids, _iso(since), limit or -1),

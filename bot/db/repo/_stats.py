@@ -11,7 +11,13 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from bot.db.repo._models import TitleHistoryRow, _iso
-from bot.db.repo._sql import OWNED_BY_PERSON, OWNED_BY_PERSON_EXISTS, earned_since
+from bot.db.repo._sql import (
+    OWNED_BY_PERSON,
+    OWNED_BY_PERSON_EXISTS,
+    earned_since,
+    rarity,
+    rarity_cache_join,
+)
 from bot.util import utcnow_iso
 
 
@@ -188,14 +194,20 @@ class _StatsRepo:
         at all, and only PSN has tiers — which needs no special handling: a
         zero simply renders as nothing, the same way a zero gamerscore does.
         """
+        # Joined to the rarity cache, unlike its neighbours here: the cache is
+        # what makes an Xbox row rare at all, most of them having been stored
+        # by a backfill that carries no percentage. The table stays unaliased
+        # because OWNED_BY_PERSON_EXISTS below names it in full.
+        table = "seen_achievements."
+        value = rarity(table)
         query = (
-            "SELECT SUM(CASE WHEN rarity_percent IS NOT NULL AND rarity_percent <= ?"
+            f"SELECT SUM(CASE WHEN {value} IS NOT NULL AND {value} <= ?"
             "                THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN trophy_type = 'platinum' THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN trophy_type = 'gold' THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN trophy_type = 'silver' THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN trophy_type = 'bronze' THEN 1 ELSE 0 END) "
-            "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS
+            "FROM seen_achievements " + rarity_cache_join(table) + "WHERE " + OWNED_BY_PERSON_EXISTS
         )
         params: list[object] = [rare_threshold, tg_id]
         if since is not None:

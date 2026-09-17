@@ -183,6 +183,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                          platform account's own, a few per tick (#55)
 │   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
+│   │   ├── rarity_backfill.py     fills achievement_rarity_cache for the Xbox history
+│   │   │                          contract 2 brought in without any percentages
 │   │   ├── steam_localization.py   walks the Steam library a couple of games a tick for
 │   │   │                           the storefront's Russian title — the one name no
 │   │   │                           response the bot already makes ever carries (#61)
@@ -1475,16 +1477,35 @@ no answer to record.
   dropped when zero, which is not a rare case: a Steam row's gamerscore
   always is, and an Xbox 360 row's rare count always is.
 
-- **Rarity is whatever the row was stored with**, which can be old — "better
-  year-old data than none" (owner, 2026-09-17). It is worth knowing how
-  patchy it is on Xbox: rarity only ever arrives on **contract 4**, the
-  per-title call a live poll makes, and backfill uses contract 2 for the
-  whole library, which omits it. On the test bot that is 51 rows with rarity
-  against 14866 without, split exactly along that line. Xbox 360 (contract 1)
-  has none at all and never will, so a 💎 never appears on an x360 row —
-  those achievements publish under the `rare` filter today without actually
-  being known to be rare, and that stays open until there is somewhere to
-  fetch it from.
+- **Rarity is read from a shared cache, with the row as the fallback**
+  (owner, 2026-09-17): `achievement_rarity_cache`, keyed
+  `(platform, title_id, achievement_id)` like the name and description caches
+  beside it, and reached through `db/repo/_sql.py`'s own `rarity()` /
+  `rarity_cache_join()`. How rare an achievement is, is a fact about the
+  achievement; `seen_achievements.rarity_percent` is a snapshot of whatever
+  the platform said the first time somebody here earned it, written with
+  `INSERT OR IGNORE` and never updated.
+
+  On Xbox that snapshot is usually empty. Rarity arrives only on **contract
+  4**, the per-title call a live poll makes; backfill reads the whole library
+  with contract 2, which omits it — 25 692 rows of 25 825 on production,
+  split exactly along that line. `poller/rarity_backfill.py` walks those
+  titles a few a minute and fills the cache; `scripts/backfill_rarity.py` is
+  the same walk for an operator who wants it finished in one sitting, and
+  requires the bot stopped for the usual Xbox token reason. Every platform's
+  ordinary poll writes to the cache too, which costs nothing — each already
+  had the percentages in hand.
+
+  **One request per title, not per person:** a contract-4 reply lists every
+  achievement of the game, the caller's own or not, so whichever owner is
+  asked fills the cache for everybody. 963 distinct titles on production
+  against 1 704 person-title pairs.
+
+  `checked_at` orders the refresh queue and is **not** an expiry — nothing is
+  hidden for being stale, because a year-old percentage is worth more than
+  none. Xbox 360 (contract 1) has no rarity at all and never will, so a 💎
+  never appears on an x360 row; those achievements publish under the `rare`
+  filter without being known to be rare, and that stays open.
 - **The admin's user list** is printed twice on purpose: as text, where the
   columns line up and can be read at a glance, and as one button per row,
   because a row has to be tappable. It is the only screen that is two kinds at

@@ -20,6 +20,8 @@ from bot.db.repo._sql import (
     active_account,
     earned_at,
     earned_since,
+    rarity,
+    rarity_cache_join,
 )
 from bot.util import utcnow_iso
 
@@ -67,7 +69,7 @@ class _ChatStatsRepo:
             "       steam.display_name AS steam_name, psn.display_name AS psn_name,"
             "       COUNT(s.achievement_id) AS cnt,"
             "       COALESCE(SUM(s.gamerscore), 0) AS score,"
-            "       SUM(CASE WHEN s.rarity_percent IS NOT NULL AND s.rarity_percent <= ?"
+            f"       SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= ?"
             "                THEN 1 ELSE 0 END) AS rare,"
             "       SUM(CASE WHEN s.platform IN ('xbox_modern', 'xbox_360') THEN 1 ELSE 0 END)"
             "           AS xbox_count,"
@@ -93,6 +95,7 @@ class _ChatStatsRepo:
             "   AND s.xuid = al.external_id "
             + date_bound
             + " "
+            + rarity_cache_join()
             + active_account("steam", "steam")
             + active_account("psn", "psn")
             + "WHERE sub.chat_id = ? AND u.is_excluded = 0 "

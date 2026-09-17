@@ -91,6 +91,10 @@ async def fetch_unlocked(
         if refreshed:
             schema_by_id = {a.apiname: a for a in refreshed}
     percentages = await _percentages(repo, appid)
+    # Also into the shared per-achievement cache (2026-09-17), so every
+    # platform's rarity is read the same way — steam_rarity_cache stays what
+    # it is, the per-appid blob this call is served from.
+    await repo.cache_rarity(Platform.STEAM, appid, percentages)
     descriptions = await _bilingual_descriptions(
         repo, anthropic_auth, api_key, steam_id, appid, unlocked
     )

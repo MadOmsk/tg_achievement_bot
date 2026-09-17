@@ -47,6 +47,7 @@ from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
 from bot.poller.publisher import Publisher
+from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
 from bot.poller.service_health import ServiceHealth
@@ -192,6 +193,7 @@ async def run(settings: Settings) -> None:
         psn_presence,
         flood_flush,
         DescriptionBackfill(repo, client, anthropic_auth),
+        RarityBackfill(repo, client),
         SteamLocalization(repo),
         AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
     )

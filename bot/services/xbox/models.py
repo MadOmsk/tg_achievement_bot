@@ -206,6 +206,29 @@ def parse_achievements(
     return result
 
 
+def parse_rarity(payload: dict[str, Any]) -> dict[str, float]:
+    """Every achievement's rarity in one title's response, earned or not.
+
+    The one thing in a contract-4 reply that is about the *achievement*
+    rather than about the caller — the share of all players who have it — so
+    unlike `parse_achievements` above this keeps the locked ones too. One
+    person's request therefore fills the shared cache for everybody who owns
+    the game (see db/repo/_descriptions.py::cache_rarity).
+
+    Contract 2 and contract 1 carry no rarity at all, which needs no check
+    here: their achievements simply have no `rarity` block and fall out.
+    """
+    result: dict[str, float] = {}
+    for item in payload.get("achievements") or []:
+        try:
+            achievement = ModernAchievement.model_validate(item)
+        except Exception:
+            continue
+        if achievement.rarity is not None and achievement.rarity.current_percentage is not None:
+            result[str(achievement.id)] = float(achievement.rarity.current_percentage)
+    return result
+
+
 def continuation_token(payload: dict[str, Any]) -> str | None:
     paging = payload.get("pagingInfo") or {}
     token = paging.get("continuationToken")
