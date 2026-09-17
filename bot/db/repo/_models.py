@@ -66,6 +66,9 @@ class UserSettings:
     tg_id: int
     tz_offset_min: int | None
     show_profile_links: bool
+    # Mini App: unspoiler secret achievements. Defaulted so hand-built
+    # UserSettings in tests keep working.
+    show_secrets: bool = False
     # This person's own language for DMs (#48); a group follows its own
     # chat_settings.locale instead. Defaulted rather than required so the
     # many test/call sites that build a UserSettings by hand keep working.
@@ -490,6 +493,15 @@ class RecentAchievement:
     #: rarity badge — a platinum trophy and an "ordinary" achievement are
     #: otherwise the same 🏆 (2026-09-17). NULL on every other platform.
     trophy_type: str | None = None
+    # Mini App feed fields — unused by /recent's text listing.
+    title_id: str = ""
+    achievement_id: str = ""
+    icon_url: str | None = None
+    game_icon_url: str | None = None
+    description: str | None = None
+    # External account id + PSN group — progress "47/50" on the Mini card.
+    xuid: str = ""
+    trophy_group_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -523,6 +535,8 @@ class GameAchievements:
     silver: int = 0
     gold: int = 0
     platinum: int = 0
+    # Cached box art from `titles` — Mini App games rows; unused by chat text.
+    icon_url: str | None = None
 
 
 @dataclass(slots=True)
@@ -615,10 +629,12 @@ def _as_token(row: aiosqlite.Row) -> TokenRecord:
 
 
 def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
+    keys = row.keys()
     return UserSettings(
         tg_id=row["tg_id"],
         tz_offset_min=row["tz_offset_min"],
         show_profile_links=bool(row["show_profile_links"]),
+        show_secrets=bool(row["show_secrets"]) if "show_secrets" in keys else False,
         locale=row["locale"],
     )
 

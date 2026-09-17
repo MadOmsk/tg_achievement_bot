@@ -1,21 +1,26 @@
-"""Microsoft OAuth callback (SPEC 6.1.1). The only web surface in the project.
+"""HTTP surface: Microsoft OAuth callback + Mini App JSON API.
 
-No UI beyond a "you can close this tab" page: everything else happens in
-Telegram, and the browser is here only because Microsoft insists on a redirect.
+OAuth still has no UI beyond a "you can close this tab" page — Microsoft
+insists on a browser redirect. The Mini App SPA is separate (Vite / nginx);
+this process only serves ``/api/mini/*`` next to ``/auth/callback`` so one
+listen port covers both.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 from aiohttp import web
 
 from bot.config import Settings
+from bot.db.repo import Repo
 from bot.i18n import DEFAULT_LOCALE, translator
 from bot.services.connect import ConnectError, ConnectService
 from bot.services.xbox.auth import TokenRefreshError, XboxIdentity
+from bot.web.mini_api import cors_middleware, setup_mini_api
 
 log = logging.getLogger(__name__)
 
@@ -50,10 +55,34 @@ def _page(title: str, text: str, status: int = 200) -> web.Response:
 
 
 class OAuthServer:
-    def __init__(self, settings: Settings, connect: ConnectService, on_linked: OnLinked) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        connect: ConnectService,
+        on_linked: OnLinked,
+        repo: Repo,
+        *,
+        steam_auth: Any = None,
+        steam_fetcher: Any = None,
+        psn_auth: Any = None,
+        psn_fetcher: Any = None,
+        xbox_fetcher: Any = None,
+        notifier: Any = None,
+        anthropic_auth: Any = None,
+        bot: Any = None,
+    ) -> None:
         self._settings = settings
         self._connect = connect
         self._on_linked = on_linked
+        self._repo = repo
+        self._steam_auth = steam_auth
+        self._steam_fetcher = steam_fetcher
+        self._psn_auth = psn_auth
+        self._psn_fetcher = psn_fetcher
+        self._xbox_fetcher = xbox_fetcher
+        self._notifier = notifier
+        self._anthropic_auth = anthropic_auth
+        self._bot = bot
         self._runner: web.AppRunner | None = None
 
     @property
@@ -63,8 +92,22 @@ class OAuthServer:
         return urlsplit(self._settings.oauth_redirect_url).path or "/auth/callback"
 
     async def start(self) -> None:
-        app = web.Application()
+        app = web.Application(middlewares=[cors_middleware()])
         app.router.add_get(self._callback_path, self._handle_callback)
+        setup_mini_api(
+            app,
+            self._settings,
+            self._repo,
+            connect=self._connect,
+            steam_auth=self._steam_auth,
+            steam_fetcher=self._steam_fetcher,
+            psn_auth=self._psn_auth,
+            psn_fetcher=self._psn_fetcher,
+            xbox_fetcher=self._xbox_fetcher,
+            notifier=self._notifier,
+            anthropic_auth=self._anthropic_auth,
+            bot=self._bot,
+        )
 
         self._runner = web.AppRunner(app)
         await self._runner.setup()
@@ -73,7 +116,7 @@ class OAuthServer:
         )
         await site.start()
         log.info(
-            "oauth callback listening on %s:%s%s",
+            "web listening on %s:%s (oauth %s, mini /api/mini/*)",
             self._settings.oauth_listen_host,
             self._settings.oauth_listen_port,
             self._callback_path,

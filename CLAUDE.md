@@ -34,7 +34,11 @@ database, explicit admin controls, and predictable behavior, not public SaaS sca
 
 ### Non-goals
 
-- No public web UI. The only web endpoint is the Microsoft OAuth callback.
+- No public web UI outside Telegram. The only browser surfaces are the Microsoft
+  OAuth callback and the Telegram Mini App (`webapp/`, served separately; this
+  process only answers `/api/mini/*` next to `/auth/callback`). Slash commands
+  and chat notifications stay — the Mini App is an extra door, not a
+  replacement.
 - No `/compare` or `/top`; `/stats`, the two summaries, `/recent` and `/online` cover the
   useful group views.
 - No global per-platform visibility toggles. Visibility is per user and per chat, and
@@ -61,8 +65,11 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 ├── README.ru.md                 the same overview, in Russian
 ├── CLAUDE.md                    this file
 ├── pyproject.toml               dependencies, ruff, pytest config
-├── manage.ps1                   local Windows process manager (the bot cannot start itself)
+├── manage.ps1                   local Windows process manager (the bot cannot start
+│                                itself); `start -Test -Web` also tunnels the Mini App
 ├── manage.bat                   double-click -> manage.ps1 dashboard
+├── webapp/                      Telegram Mini App SPA (Vite/React); built separately,
+│                                never served by the bot process itself
 │
 ├── bot/                         the application
 │   ├── main.py                   entry point, application assembly, router registration
@@ -78,6 +85,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── handlers/                 aiogram routers — routing and actions only: no SQL, no
 │   │   │                          platform API calls, and since #63 no layout either
 │   │   ├── connect.py             /start, /connect_xbox, /disconnect_xbox
+│   │   │                          (Mini App opens from the Telegram menu
+│   │   │                          button when MINI_APP_URL is set — no
+│   │   │                          separate chat spam)
 │   │   ├── panel.py               the personal panel, "My chats"
 │   │   ├── admin.py               the admin panel (/admin, self-refreshing), bulk message wipe
 │   │   ├── chat.py                group commands: /subscribe, /stats, /online, /who, /recent,
@@ -124,6 +134,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           "what is this person called" / "what is this account called"
 │   │   ├── profile_links.py        one profile-URL builder per platform, gated by
 │   │   │                           user_settings.show_profile_links
+│   │   ├── mini_app.py             Open-button URLs (WebApp in DM, startapp in groups)
 │   │   ├── hltb.py                 wrapper over howlongtobeatpy, cached in hltb_cache
 │   │   ├── message_log.py          request middleware: logs outgoing group messages
 │   │   ├── message_limits.py       request middleware: nothing goes out over Telegram's
@@ -199,7 +210,14 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   └── admin_refresh.py        auto-refreshes /admin, same cadence as service_health
 │   │
 │   ├── web/
-│   │   └── oauth.py                 Microsoft's aiohttp OAuth callback
+│   │   ├── oauth.py                 Microsoft's aiohttp OAuth callback + Mini API mount
+│   │   ├── mini_api.py              `/api/mini/*` JSON (Init Data auth)
+│   │   ├── mini_auth.py             Telegram WebApp Init Data validation
+│   │   ├── mini_me.py               personal panel payload
+│   │   ├── mini_chat.py             feed / online / summary / person payloads
+│   │   ├── mini_admin.py            super-admin JSON (secrets never leave here)
+│   │   ├── mini_hltb.py             HowLongToBeat search/resolve for the SPA
+│   │   └── mini_avatars.py          profile photo bytes for the SPA
 │   │
 │   └── db/
 │       ├── schema.sql               full DDL for a brand-new database
@@ -307,7 +325,9 @@ URL — Microsoft rejects plain `http://` and `localhost`), `FERNET_KEY` (encryp
 stored secrets).
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `OAUTH_LISTEN_HOST` /
-`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, and the poller interval settings
+`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (public HTTPS URL of
+the Mini App SPA — empty disables Mini App entry points; slash commands stay),
+and the poller interval settings
 (presence, achievement, token, catch-up tuning).
 
 `STEAM_API_KEY` and `ANTHROPIC_API_KEY` (2026-09-09, the latter for
@@ -449,7 +469,9 @@ every column.
   `flood_limit`/`flood_window_minutes` (see Publication rules below). `user_settings`
   holds personal, chat-independent settings: timezone offset, muted games, and
   `show_profile_links` (off by default; a new user's starting value comes from
-  `app_settings['default_show_profile_links']`). Both tables also carry a
+  `app_settings['default_show_profile_links']`) and `show_secrets` (Mini App
+  only — whether secret achievement names are shown unspoilered; off by
+  default; group posts are unchanged). Both tables also carry a
   `locale` (#48, 2026-09-11, `'ru'` by default) — the chat's own for everything
   broadcast to a group, the person's own for DMs; see Localization above.
   Neither is seeded from Telegram's `language_code`: plenty of this

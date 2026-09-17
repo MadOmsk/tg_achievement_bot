@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     tz: str = "Europe/Moscow"
 
+    # Public HTTPS URL of the Mini App SPA (BotFather Main Mini App / menu
+    # button / tunnel during local dev). Empty = Mini App entry disabled;
+    # classic slash commands and chat posts keep working either way.
+    mini_app_url: str | None = None
+
     @field_validator("admin_tg_ids", mode="before")
     @classmethod
     def _split_admin_ids(cls, value: object) -> object:

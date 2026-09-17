@@ -13,6 +13,8 @@ from aiogram.types import (
     BotCommand,
     BotCommandScopeAllGroupChats,
     BotCommandScopeAllPrivateChats,
+    MenuButtonWebApp,
+    WebAppInfo,
 )
 
 from bot.config import Settings, get_settings
@@ -265,7 +267,20 @@ async def run(settings: Settings) -> None:
             await bot.send_message(tg_id, _("main-linked-refreshing"))
             asyncio.create_task(refresh_after_reconnect(tg_id, identity.xuid))  # noqa: RUF006
 
-    web_server = OAuthServer(settings, connect_service, on_linked)
+    web_server = OAuthServer(
+        settings,
+        connect_service,
+        on_linked,
+        repo,
+        steam_auth=steam_auth,
+        steam_fetcher=steam_fetcher,
+        psn_auth=psn_auth,
+        psn_fetcher=psn_fetcher,
+        xbox_fetcher=fetcher,
+        notifier=notifier,
+        anthropic_auth=anthropic_auth,
+        bot=bot,
+    )
     await web_server.start()
 
     dispatcher = Dispatcher()
@@ -342,6 +357,7 @@ async def run(settings: Settings) -> None:
     asyncio.create_task(startup_catch_up())  # noqa: RUF006
 
     await _publish_command_menu(bot)
+    await _publish_mini_app_menu(bot, settings)
 
     me = await bot.me()
     log.info("bot @%s is up (v%s)", me.username, version())
@@ -417,6 +433,24 @@ async def _publish_command_menu(bot: Bot) -> None:
     except Exception:
         # A cosmetic menu is not worth failing the whole startup for.
         log.warning("could not publish the command menu", exc_info=True)
+
+
+async def _publish_mini_app_menu(bot: Bot, settings: Settings) -> None:
+    """Private-chat menu button → Mini App (Telegram has no group equivalent).
+    Slash commands stay published separately — the app is an extra door."""
+    url = (settings.mini_app_url or "").strip()
+    if not url:
+        return
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text=gettext("main", "main-menu-open-app", locale=DEFAULT_LOCALE),
+                web_app=WebAppInfo(url=url),
+            )
+        )
+        log.info("mini app menu button -> %s", url)
+    except Exception:
+        log.warning("could not set Mini App menu button", exc_info=True)
 
 
 def main() -> None:

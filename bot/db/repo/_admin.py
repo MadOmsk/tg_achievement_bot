@@ -121,6 +121,21 @@ class _AdminRepo:
             for row in await cursor.fetchall()
         ]
 
+    async def admin_user_chat_ids(self) -> dict[int, list[int]]:
+        """Active chat ids each person is subscribed to — Mini App admin
+        people list filters by chat, so the list endpoint needs this in
+        one round-trip rather than N chats_of_user calls."""
+        cursor = await self._conn.execute(
+            "SELECT s.tg_id, s.chat_id FROM subscriptions s "
+            "JOIN chats c ON c.chat_id = s.chat_id "
+            "WHERE c.is_active = 1 "
+            "ORDER BY s.tg_id, c.title"
+        )
+        by_user: dict[int, list[int]] = {}
+        for row in await cursor.fetchall():
+            by_user.setdefault(int(row["tg_id"]), []).append(int(row["chat_id"]))
+        return by_user
+
     async def set_excluded(self, tg_id: int, excluded: bool, by: int | None) -> None:
         """Exclusion is never silent: the person sees it in his panel (SPEC 6.4)."""
         await self._conn.execute(

@@ -39,6 +39,8 @@ main-cmd-summary-day = Сводка за сутки
 main-cmd-summary-month = Сводка с 1 числа месяца
 main-cmd-subscribe = Публиковать мои достижения здесь
 main-cmd-unsubscribe = Перестать публиковать
+main-cmd-app = Открыть приложение
+main-menu-open-app = Приложение
 
 # Second-instance guard (main())
 main-already-running =
