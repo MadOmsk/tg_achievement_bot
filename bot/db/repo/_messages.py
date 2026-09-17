@@ -129,7 +129,13 @@ class _MessagesRepo:
             "       psn.display_name AS psn_name,"
             "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
             "       " + LOCALIZED_TITLE_COLUMNS + ","
-            "       s.gamerscore, s.rarity_percent,"
+            # Aliased, and it matters: XBOX_COLUMNS above already selects
+            # `xb.gamerscore` — the person's lifetime profile score — under
+            # that same bare name, and sqlite3.Row resolves a duplicate to
+            # the *first* one. Every /recent row was showing the player's
+            # career total (249 504 G) in place of what the achievement was
+            # actually worth (15 G). Found by rendering the screen.
+            "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
             "       s.platform, " + earned_at() + " AS unlocked_at,"
             "       s.is_secret "
             "FROM subscriptions sub "
@@ -166,7 +172,7 @@ class _MessagesRepo:
                 psn_name=row["psn_name"],
                 name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
                 game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
-                gamerscore=int(row["gamerscore"] or 0),
+                gamerscore=int(row["achievement_gamerscore"] or 0),
                 rarity_percent=row["rarity_percent"],
                 platform=row["platform"],
                 unlocked_at=row["unlocked_at"],

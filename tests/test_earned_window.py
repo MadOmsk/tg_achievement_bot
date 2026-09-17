@@ -133,3 +133,21 @@ async def test_a_lifetime_count_still_includes_everything(repo: Repo) -> None:
 
     count, _score = await repo.achievement_counts(XUID, None)
     assert count == 7
+
+
+async def test_recent_shows_what_the_achievement_was_worth(repo: Repo) -> None:
+    """Not what the player's career is worth. `XBOX_COLUMNS` selects the
+    profile's own lifetime `gamerscore`, and `chat_recent` selected the
+    achievement's under the same bare name — sqlite3.Row resolves a duplicate
+    to the first, so every row showed the career total (249 504 G on the test
+    bot) instead of the 15 G the achievement actually gave. Found by
+    rendering the screen, not by any test that existed."""
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 249_504)
+    await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
+    await repo.subscribe(CHAT_ID, TG_ID)
+    now = utcnow().isoformat(timespec="seconds")
+    await repo.insert_new_achievements(XUID, [_row("a1", unlocked_at=now)], is_backfill=False)
+
+    [row] = await repo.chat_recent(CHAT_ID, 5)
+    assert row.gamerscore == 10
