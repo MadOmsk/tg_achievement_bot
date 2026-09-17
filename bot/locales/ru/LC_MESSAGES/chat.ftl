@@ -19,8 +19,8 @@ chat-stats-no-gamertag = без геймертега
 # caller builds that separator itself, in Python, like every other segment
 # joined onto this same line.
 chat-stats-psn-level = уровень { $level }
-chat-stats-today = Сегодня:   { $achievements }{ $breakdown }{ $score_suffix }
-chat-stats-month = За месяц:  { $achievements }{ $breakdown }{ $score_suffix }
+chat-stats-today = За сутки:  { $achievements }{ $breakdown }{ $value }
+chat-stats-month = С 1 { $month }:  { $achievements }{ $breakdown }{ $value }
 chat-stats-games-header = <b>Игры { $window }</b>
 chat-stats-nothing-connected = Этот человек ещё ничего не подключил.
 chat-group-command-only = Список игроков — по чату, набери команду в группе.
@@ -35,7 +35,7 @@ chat-recent-group-only = Лента считается по чату — наб�
 chat-recent-empty = Пока пусто.
 chat-recent-header = 🕘 <b>Последние достижения</b>
 chat-untitled = без названия
-chat-recent-row = { $badge } { $gamertag } — { $icon } { $game }, { $name }{ $tail } · { $ago }
+chat-recent-row = { $badge } { $gamertag } — { $icon } { $game } · { $name }{ $tail } · { $ago }
 
 # Group hub and chat actions
 chat-unknown-user = Не знаю такого. Bot API не умеет искать людей по @имени — я запоминаю тех, кто писал в чат. Можно ответить на сообщение человека командой /stats.

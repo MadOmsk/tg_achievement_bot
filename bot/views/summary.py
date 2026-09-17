@@ -180,6 +180,15 @@ async def full_leaderboard(
     return "\n".join([_("daily-leaderboard-full-header", label=label), "", *section_lines])
 
 
+def month_name(tz_offset_min: int | None, locale: str) -> str:
+    """Just the month, in the genitive the "{day} {month}" forms already use
+    — for a caller that builds its own phrase around it (/stats' counter line
+    says "С 1 сентября:", where month_window_label's own "с 1 сентября" would
+    arrive lowercase in the middle of a label)."""
+    _ = translator("daily", locale)
+    return _(_MONTH_KEYS[local_now(tz_offset_min).month - 1])
+
+
 def month_window_label(tz_offset_min: int | None, locale: str) -> str:
     """ "С 1 июня" (#6, user request) instead of a static "этот месяц" —
     names the actual calendar month the window covers, in the same

@@ -482,6 +482,10 @@ class RecentAchievement:
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
+    #: PSN's own tier, so the row can lead with it instead of the
+    #: rarity badge — a platinum trophy and an "ordinary" achievement are
+    #: otherwise the same 🏆 (2026-09-17). NULL on every other platform.
+    trophy_type: str | None = None
 
 
 @dataclass(slots=True)

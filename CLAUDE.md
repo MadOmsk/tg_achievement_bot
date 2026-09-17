@@ -1084,9 +1084,10 @@ owner. The panel must never call a platform API except the one explicit
 manual-sync button.
 
 **Group commands**: `/subscribe`, `/unsubscribe`, `/stats [@user]` (cached stats +
-recent games; the card's header shows the person's Telegram identity — `@username`,
-else first+last name, else a connected platform's own name as a last resort — not a
-platform gamertag, since every connected platform already gets its own line below),
+recent games; the card's header is `👤` and the person's Telegram identity —
+`@username`, else first+last name, else a connected platform's own name as a last
+resort — not a platform gamertag, since every connected platform already gets its
+own line below),
 `/who` (pick a known member, opens their `/stats`; the picker buttons identify the
 person the same way `/stats`' header does — `@username` > name > gamertag > platform
 name, never a bare id — #40), `/online` (cached presence,
@@ -1276,6 +1277,23 @@ block came from the same one (2026-09-13, user request). One block is one
 The group line belongs to a single card, where there is exactly one trophy
 to attribute — in a digest it would add a second subject to a message whose
 whole job is grouping.
+
+**The two counter lines say which window they mean** (owner, 2026-09-17):
+"За сутки" and "С 1 сентября", not "Сегодня"/"За месяц". Neither window
+changed — the first has always been a rolling 24 hours and the second the
+calendar month since #14 — but the games header below already read "Игры с
+1 сентября", so one card was naming one window two ways. Each line ends in
+the same bracket a games row uses: gamerscore, then how many were rare by
+this chat's own threshold, then PSN's tiers, every zero left out
+(`views/parts.py::value_parts`, shared by both). A mixed-platform person
+therefore sees `+10 G · 🥉1` in one bracket — two platforms' value systems
+side by side, which is what a combined counter is.
+
+**A `/recent` row leads with PSN's tier where the platform has one** (owner,
+2026-09-17) — the same swap the achievement card has always made. Without
+it every PSN row led with 🏆, the "ordinary" rarity badge, which is also
+what a platinum trophy's own icon is. The game and the achievement are
+separated by `·` rather than a comma, which read as part of the title.
 
 Lists (`/stats`, `/recent`, `/summary`, the daily summary) render as sentence-lines
 inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table

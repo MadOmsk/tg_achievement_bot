@@ -248,7 +248,7 @@ async def test_games_list_is_capped_by_the_configured_limit(repo: Repo) -> None:
 
 async def test_counters_show_platform_breakdown_only_with_two_platforms(repo: Repo) -> None:
     """2026-09-05 follow-up, reversal of "one combined number only" (SPEC 9,
-    M-Steam-2e): a parenthetical next to "Сегодня"/"За месяц", but only once
+    M-Steam-2e): a parenthetical next to "За сутки"/"С 1 <месяц>", but only once
     there's something to break down."""
     await repo.ensure_user(1, "both")
     await repo.link_xbox_account(1, XUID, "Both", 0)
@@ -278,12 +278,12 @@ async def test_counters_show_platform_breakdown_only_with_two_platforms(repo: Re
     text = await build_stats_text(repo, user, CHAT_ID)
 
     assert text is not None
-    today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
+    today_line = next(line for line in text.split("\n") if line.startswith("За сутки"))
     assert "(🟢 1 · ⚫ 1)" in today_line
 
 
 async def test_counters_show_psn_in_the_platform_breakdown(repo: Repo) -> None:
-    """#32: the combined "Сегодня"/"За месяц" number already included PSN
+    """#32: the combined "За сутки"/"С 1 <месяц>" number already included PSN
     (a plain tg_id sum) — only the "(🟢 N · ⚫ N)" breakdown next to it
     silently had nowhere for a psn row to land."""
     await repo.ensure_user(1, "triple")
@@ -333,7 +333,7 @@ async def test_counters_show_psn_in_the_platform_breakdown(repo: Repo) -> None:
     text = await build_stats_text(repo, user, CHAT_ID)
 
     assert text is not None
-    today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
+    today_line = next(line for line in text.split("\n") if line.startswith("За сутки"))
     assert "(🟢 1 · 🔵 1 · ⚫ 1)" in today_line  # Xbox, PlayStation, Steam (2026-09-13)
 
 
@@ -347,7 +347,7 @@ async def test_counters_hide_breakdown_for_a_single_platform(repo: Repo) -> None
     text = await build_stats_text(repo, user, CHAT_ID)
 
     assert text is not None
-    today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
+    today_line = next(line for line in text.split("\n") if line.startswith("За сутки"))
     assert "🟢" not in today_line and "⚫" not in today_line
 
 
@@ -539,8 +539,8 @@ async def test_today_and_month_lines_omit_a_zero_score(repo: Repo) -> None:
     text = await build_stats_text(repo, user, CHAT_ID)
 
     assert text is not None
-    today_line = next(line for line in text.split("\n") if line.startswith("Сегодня"))
-    month_line = next(line for line in text.split("\n") if line.startswith("За месяц"))
+    today_line = next(line for line in text.split("\n") if line.startswith("За сутки"))
+    month_line = next(line for line in text.split("\n") if line.startswith("С 1 "))
     assert "G)" not in today_line
     assert "G)" not in month_line
 

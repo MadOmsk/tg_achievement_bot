@@ -176,6 +176,42 @@ class _StatsRepo:
         row = await cursor.fetchone()
         return (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)) if row else (0, 0, 0)
 
+    async def achievement_value_breakdown(
+        self, tg_id: int, since: datetime | None, rare_threshold: float
+    ) -> tuple[int, tuple[int, int, int, int]]:
+        """What this person's achievements in the window were *worth*, beyond
+        the count and the gamerscore: how many cleared the chat's rarity
+        threshold, and PSN's own tiers (owner, 2026-09-17).
+
+        Returns `(rare, (platinum, gold, silver, bronze))`. Both are zero
+        where the platform has no such notion — Xbox 360 never reports rarity
+        at all, and only PSN has tiers — which needs no special handling: a
+        zero simply renders as nothing, the same way a zero gamerscore does.
+        """
+        query = (
+            "SELECT SUM(CASE WHEN rarity_percent IS NOT NULL AND rarity_percent <= ?"
+            "                THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'platinum' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'gold' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'silver' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'bronze' THEN 1 ELSE 0 END) "
+            "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS
+        )
+        params: list[object] = [rare_threshold, tg_id]
+        if since is not None:
+            query += f" AND {earned_since('')}"
+            params.append(_iso(since))
+        cursor = await self._conn.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return 0, (0, 0, 0, 0)
+        return int(row[0] or 0), (
+            int(row[1] or 0),
+            int(row[2] or 0),
+            int(row[3] or 0),
+            int(row[4] or 0),
+        )
+
     async def platform_achievement_count(self, tg_id: int, platform: str) -> int:
         """Lifetime count for one platform (SPEC 9, M-Steam-2e's /stats line
         next to each connected platform) — deliberately not offered for

@@ -137,7 +137,7 @@ class _MessagesRepo:
             # actually worth (15 G). Found by rendering the screen.
             "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
             "       s.platform, " + earned_at() + " AS unlocked_at,"
-            "       s.is_secret "
+            "       s.is_secret, s.trophy_type "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
@@ -177,6 +177,7 @@ class _MessagesRepo:
                 platform=row["platform"],
                 unlocked_at=row["unlocked_at"],
                 is_secret=bool(row["is_secret"]),
+                trophy_type=row["trophy_type"],
             )
             for row in await cursor.fetchall()
         ]

@@ -37,13 +37,15 @@ from bot.views.lists import GameRow, Listing, game_rows, truncate_name
 from bot.views.parts import (
     PLATFORM_ICON,
     PLATFORM_ICON_UNKNOWN,
+    bracketed,
     platform_breakdown_suffix,
     platform_header_lines,
     plural_achievements,
     rarity_badge,
-    score_suffix,
+    trophy_tier_badge,
+    value_parts,
 )
-from bot.views.summary import month_window_label
+from bot.views.summary import month_name, month_window_label
 
 DEFAULT_STATS_GAMES_LIMIT = 15
 
@@ -153,9 +155,10 @@ async def build_stats_text(
     show_links = bool(settings_row and settings_row.show_profile_links)
 
     locale = _locale_of(i18n)
+    tz_offset_min = settings_row.tz_offset_min if settings_row else None
     rare_threshold = (await repo.get_chat_daily_settings(chat_id)).rare_threshold_percent
-    counters = await counters_for(repo, target.tg_id)
-    lines = [f"📊 <b>{html_escape(display_name(target, platform_links))}</b>"]
+    counters = await counters_for(repo, target.tg_id, rare_threshold=rare_threshold)
+    lines = [f"👤 <b>{html_escape(display_name(target, platform_links))}</b>"]
     # Shared with /panel's own header (2026-09-08, user request: "пусть одни
     # одинаково формируются") — services/achievements.py::platform_header_lines.
     lines += await platform_header_lines(
@@ -175,6 +178,10 @@ async def build_stats_text(
     month_breakdown = platform_breakdown_suffix(
         counters.month_xbox, counters.month_steam, counters.month_psn
     )
+    # "За сутки" and "С 1 сентября" rather than "Сегодня"/"За месяц" (owner,
+    # 2026-09-17): the first really is a rolling 24 hours, and the second has
+    # been the calendar month since #14 — the games header below already said
+    # "с 1 сентября", so one card was naming one window two ways.
     lines += [
         "",
         _hub_text(
@@ -182,14 +189,19 @@ async def build_stats_text(
             "chat-stats-today",
             achievements=plural_achievements(counters.today, locale),
             breakdown=today_breakdown,
-            score_suffix=score_suffix(counters.today_score),
+            value=bracketed(
+                value_parts(counters.today_score, counters.today_rare, counters.today_tiers)
+            ),
         ),
         _hub_text(
             i18n,
             "chat-stats-month",
+            month=month_name(tz_offset_min, locale),
             achievements=plural_achievements(counters.month, locale),
             breakdown=month_breakdown,
-            score_suffix=score_suffix(counters.month_score),
+            value=bracketed(
+                value_parts(counters.month_score, counters.month_rare, counters.month_tiers)
+            ),
         ),
         # No lifetime "Всего" here: seen_achievements is permanently
         # best-effort (title_history's cap, achievements with no unlock
@@ -207,7 +219,6 @@ async def build_stats_text(
     # 0 = no cap (SPEC 6.4) — the list lives in a collapsible quote either
     # way, no separate "показать все игры" tap needed any more.
     limit = await _stats_games_limit(repo)
-    tz_offset_min = settings_row.tz_offset_min if settings_row else None
     since = month_cutoff_utc(tz_offset_min)
     games = await repo.users_games_achievements(
         [target.tg_id],
@@ -244,7 +255,12 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
     # rarity_badge() always returns something (diamond or cup, never
     # empty), a separate generic bullet would double up with it on every
     # "common" row: two trophies back to back on the same line.
-    badge = rarity_badge(row.rarity_percent)
+    #
+    # PSN leads with its own tier instead (owner, 2026-09-17), the same swap
+    # the achievement card has always made: the tier already answers "how
+    # rare" on Sony's scale, and a platinum trophy and an "ordinary" rarity
+    # badge are the same 🏆 — so every PSN row here read as ordinary.
+    badge = trophy_tier_badge(row.trophy_type) or rarity_badge(row.rarity_percent)
     gamertag = html_escape(
         truncate_name(
             person_name(

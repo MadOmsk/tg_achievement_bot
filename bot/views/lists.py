@@ -18,13 +18,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape as html_escape
 
-from bot.constants import AchievementBadge, Platform, PsnTrophyTier
-from bot.util import thousands
+from bot.constants import Platform
 from bot.views.parts import (
     PLATFORM_ICON,
-    TROPHY_TIER_BADGE,
+    bracketed,
     plural_achievements,
     plural_trophies,
+    value_parts,
 )
 
 # A long name does not get cut off gracefully — it wraps the whole line onto
@@ -140,30 +140,10 @@ def _game_tail(game: GameRow, locale: str) -> str:
     on every line reads as noise.
     """
     if game.platform == Platform.PSN:
-        platinum, gold, silver, bronze = game.tiers
-        parts = [
-            f"{badge}{count}"
-            for count, badge in (
-                (platinum, TROPHY_TIER_BADGE[PsnTrophyTier.PLATINUM]),
-                (gold, TROPHY_TIER_BADGE[PsnTrophyTier.GOLD]),
-                (silver, TROPHY_TIER_BADGE[PsnTrophyTier.SILVER]),
-                (bronze, TROPHY_TIER_BADGE[PsnTrophyTier.BRONZE]),
-            )
-            if count
-        ]
-        return plural_trophies(game.count, locale) + _bracketed(parts)
-    parts = [
-        part
-        for part in (
-            f"+{thousands(game.score)} G" if game.score else "",
-            f"{AchievementBadge.DIAMOND}{game.rare}" if game.rare else "",
-        )
-        if part
-    ]
-    return plural_achievements(game.count, locale) + _bracketed(parts)
-
-
-def _bracketed(parts: list[str]) -> str:
-    """The same separator every multi-part line in this bot uses, and nothing
-    at all when there is no part worth showing."""
-    return f" ({' · '.join(parts)})" if parts else ""
+        # A PSN row breaks down by tier and shows no gamerscore (it has none)
+        # and no rarity count — the tier already answers "how rare" on Sony's
+        # own scale.
+        return plural_trophies(game.count, locale) + bracketed(value_parts(0, 0, game.tiers))
+    return plural_achievements(game.count, locale) + bracketed(
+        value_parts(game.score, game.rare, (0, 0, 0, 0))
+    )

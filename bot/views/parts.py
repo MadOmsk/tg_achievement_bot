@@ -144,6 +144,37 @@ def platform_breakdown_suffix(
     return " (" + " · ".join(parts) + ")"
 
 
+def bracketed(parts: list[str]) -> str:
+    """ "(+945 G · 💎2)" — what something was worth, in one bracket, with the
+    separator every multi-part line in this bot uses. Nothing at all when no
+    part is worth showing, which is the common case: a Steam row has no
+    gamerscore, an Xbox 360 row has no rarity, and most people have no
+    trophies. Shared by a games row and /stats' own counters (2026-09-17)."""
+    return f" ({' · '.join(parts)})" if parts else ""
+
+
+def value_parts(score: int, rare: int, tiers: tuple[int, int, int, int]) -> list[str]:
+    """Gamerscore, then how many were rare, then PSN's tiers — the fixed
+    order the bot shows value in, with every zero left out."""
+    platinum, gold, silver, bronze = tiers
+    parts = []
+    if score:
+        parts.append(f"+{thousands(score)} G")
+    if rare:
+        parts.append(f"{AchievementBadge.DIAMOND}{rare}")
+    parts += [
+        f"{badge}{count}"
+        for count, badge in (
+            (platinum, TROPHY_TIER_BADGE[PsnTrophyTier.PLATINUM]),
+            (gold, TROPHY_TIER_BADGE[PsnTrophyTier.GOLD]),
+            (silver, TROPHY_TIER_BADGE[PsnTrophyTier.SILVER]),
+            (bronze, TROPHY_TIER_BADGE[PsnTrophyTier.BRONZE]),
+        )
+        if count
+    ]
+    return parts
+
+
 def score_suffix(score: int) -> str:
     """The "(+N G)" tail, or nothing at all for a zero score (2026-09-08
     preview round, user request) — a Steam row's gamerscore is always 0
