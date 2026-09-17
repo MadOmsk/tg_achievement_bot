@@ -27,12 +27,14 @@ from aiogram.types import (
 )
 from aiogram_i18n import I18nContext
 
+from bot.constants import SettingKey
 from bot.db.repo import (
     Repo,
     User,
 )
 from bot.handlers.admin import IsAdmin
 from bot.poller.online_refresh import refresh_interval_minutes
+from bot.services.admin_settings import DEFAULT_RECENT_LIMIT
 from bot.services.message_log import stats_category
 from bot.services.naming import (
     person_name_of,
@@ -70,7 +72,8 @@ def _subscription_lock(chat_id: int, tg_id: int) -> asyncio.Lock:
     return _subscription_locks.setdefault((chat_id, tg_id), asyncio.Lock())
 
 
-RECENT_DEFAULT = 5
+#: The ceiling on /recent's own `N` argument. The *default* is the admin's
+#: (SettingKey.RECENT_LIMIT) — this only stops somebody asking for 500.
 RECENT_MAX = 20
 
 
@@ -457,7 +460,7 @@ async def recent(
         await message.answer(i18n.get("chat-recent-group-only"))
         return
 
-    limit = RECENT_DEFAULT
+    limit = await repo.get_int_setting(SettingKey.RECENT_LIMIT, DEFAULT_RECENT_LIMIT)
     if command.args and command.args.strip().isdigit():
         limit = max(1, min(int(command.args.strip()), RECENT_MAX))
 

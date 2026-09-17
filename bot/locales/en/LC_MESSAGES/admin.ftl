@@ -14,6 +14,7 @@ admin-inactive = disabled
 # Runtime settings
 admin-setting-summary-rows = Rows in /summary
 admin-setting-stats-games = Games in /stats
+admin-setting-recent-rows = Achievements in /recent
 admin-setting-hltb-results = HLTB search results and suggestions
 admin-setting-hltb-page = Results per page (HLTB)
 admin-setting-system-ttl = Auto-delete system messages (min)

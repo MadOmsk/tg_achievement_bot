@@ -14,6 +14,7 @@ admin-inactive = отключён
 # Runtime settings
 admin-setting-summary-rows = Строк в /summary
 admin-setting-stats-games = Игр в /stats
+admin-setting-recent-rows = Достижений в /recent
 admin-setting-hltb-results = Результатов поиска и подсказок HLTB
 admin-setting-hltb-page = Результатов на странице (HLTB)
 admin-setting-system-ttl = Автоудаление системных сообщений (мин)

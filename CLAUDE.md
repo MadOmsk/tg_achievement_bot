@@ -1368,7 +1368,7 @@ list fills a text row and a button row from one loop over one page of people
 | List | Kind | Source | Who appears | Sort | Cap |
 |---|---|---|---|---|---|
 | `/stats`' games | listing, quoted | `repo.users_games_achievements()` | the card's owner | count ↓, then last unlock ↓ | `stats_games_limit` (0 = uncapped) |
-| `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
+| `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | `recent_limit`, or the command's own `N` |
 | summary leaderboards (day/month) | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
 | "Игры за месяц" | listing, quoted | `repo.users_games_achievements()`, same call | every subscriber's games, summed | count ↓, then last unlock ↓ | `summary_top_limit` |
 | `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
@@ -1424,7 +1424,10 @@ no answer to record.
   announced in chat.
 - **`/recent`** is subscribers only — not `/online`'s broader "known member"
   set; excluded people never appear; a secret achievement's name stays behind
-  a spoiler.
+  a spoiler. Its row count is the admin's `recent_limit` (owner, 2026-09-17)
+  — it was the one list whose size lived as a constant in its own handler.
+  The `N` argument still works, capped by `RECENT_MAX`, as a one-off "show me
+  more" rather than the only way to change it.
 - **`/online`**: activity beats freshness (see the naming rules above and
   `presence_view.pick_presence`).
 - **Summary leaderboards** keep zero rows: this is a report, not a live feed

@@ -151,3 +151,21 @@ async def test_recent_shows_what_the_achievement_was_worth(repo: Repo) -> None:
 
     [row] = await repo.chat_recent(CHAT_ID, 5)
     assert row.gamerscore == 10
+
+
+async def test_recent_row_count_is_the_admins_to_set(repo: Repo) -> None:
+    """Owner, 2026-09-17: /recent was the one list whose size lived as a
+    constant in its handler rather than in the admin panel. The `N` argument
+    stays as a one-off, but the number it falls back to is a setting now."""
+    from bot.constants import SettingKey
+    from bot.services.admin_settings import NUMERIC_SETTINGS
+
+    assert SettingKey.RECENT_LIMIT in NUMERIC_SETTINGS
+
+    await _subscribed_person(repo)
+    now = utcnow().isoformat(timespec="seconds")
+    await _store(repo, [_row(f"a{n}", unlocked_at=now) for n in range(10)], is_backfill=False)
+
+    await repo.set_app_setting(SettingKey.RECENT_LIMIT, "3")
+    assert await repo.get_int_setting(SettingKey.RECENT_LIMIT, 5) == 3
+    assert len(await repo.chat_recent(CHAT_ID, 3)) == 3

@@ -101,6 +101,7 @@ class SettingKey(StrEnum):
     STATS_GAMES_LIMIT = "stats_games_limit"
     HLTB_RESULTS_LIMIT = "hltb_results_limit"
     HLTB_PAGE_SIZE = "hltb_page_size"
+    RECENT_LIMIT = "recent_limit"
 
 
 class XboxApiValue(StrEnum):
