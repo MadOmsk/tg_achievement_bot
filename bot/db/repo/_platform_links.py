@@ -502,7 +502,13 @@ class _PlatformLinksRepo:
     async def account_latest_unlock(self, platform: str, external_id: str) -> str | None:
         """The newest unlock we already hold for this account — where a
         relink's delta starts (#52). None when the account is new to us, and
-        then only a full backfill will do."""
+        then only a full backfill will do.
+
+        Plain COALESCE on purpose, unlike every windowed read (#69): the
+        question here is "since when do we have data", not "when was this
+        earned", and for an imported row the import's own timestamp is the
+        honest answer to it — everything before that moment is already
+        stored, dated or not."""
         cursor = await self._conn.execute(
             "SELECT MAX(COALESCE(unlocked_at, created_at)) FROM seen_achievements "
             "WHERE account_platform = ? AND xuid = ?",

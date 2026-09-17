@@ -3,14 +3,14 @@
 Everything is counted from `seen_achievements.unlocked_at` regardless of
 `is_backfill`: that flag means "do not publish", not "did not happen".
 
-"today" (24h) is a rolling window — everyone's "today" is the same 24 hours,
-no timezone needed. "month" is the calendar month (#14, user request,
+Two windows exist in this project and no others (owner, 2026-09-17, #72):
+"today" (24h) is rolling — everyone's "today" is the same 24 hours, no
+timezone needed — and "month" is the calendar month (#14, user request,
 reversing an earlier "rolling" call): since midnight on the 1st, in the
 person's own timezone, so the number resets on the 1st rather than sliding.
-It is deliberately *not* the same window as /stats' recent-games table
-(still 30 rolling days) — the two now carry different labels ("этот месяц"
-vs "за 30 дней"), so the disagreement that once read as a counting bug (two
-unlabelled "month"s) no longer does.
+/stats' own games list was the last rolling 30-day window and is on the
+calendar month too now, under the same "с 1 <месяц>" label, so there is no
+longer a second window to disagree with this one.
 """
 
 from __future__ import annotations
@@ -41,6 +41,14 @@ class Counters:
     month_xbox: int = 0
     month_steam: int = 0
     month_psn: int = 0
+    # What those achievements were worth beyond their count (owner,
+    # 2026-09-17): how many were rare by the chat's own threshold, and PSN's
+    # tiers as (platinum, gold, silver, bronze). Zero everywhere the platform
+    # has no such notion, which renders as nothing at all.
+    today_rare: int = 0
+    month_rare: int = 0
+    today_tiers: tuple[int, int, int, int] = (0, 0, 0, 0)
+    month_tiers: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
 def local_now(tz_offset_min: int | None, now: datetime | None = None) -> datetime:
@@ -64,7 +72,9 @@ def month_cutoff_utc(tz_offset_min: int | None, now: datetime | None = None) -> 
     return start_of_month_utc(tz_offset_min, now)
 
 
-async def counters_for(repo: Repo, tg_id: int, now: datetime | None = None) -> Counters:
+async def counters_for(
+    repo: Repo, tg_id: int, now: datetime | None = None, *, rare_threshold: float = 10.0
+) -> Counters:
     """Summed across every platform the person has connected (SPEC 9,
     M-Steam-2e) — keyed by tg_id, not any one platform's own external id.
 
@@ -82,6 +92,12 @@ async def counters_for(repo: Repo, tg_id: int, now: datetime | None = None) -> C
     month_xbox, month_steam, month_psn = await repo.achievement_platform_breakdown(
         tg_id, month_cutoff
     )
+    today_rare, today_tiers = await repo.achievement_value_breakdown(
+        tg_id, today_cutoff, rare_threshold
+    )
+    month_rare, month_tiers = await repo.achievement_value_breakdown(
+        tg_id, month_cutoff, rare_threshold
+    )
     return Counters(
         today,
         today_score,
@@ -93,4 +109,8 @@ async def counters_for(repo: Repo, tg_id: int, now: datetime | None = None) -> C
         month_xbox,
         month_steam,
         month_psn,
+        today_rare,
+        month_rare,
+        today_tiers,
+        month_tiers,
     )

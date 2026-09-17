@@ -84,6 +84,11 @@ class RarityMode(StrEnum):
 class AchievementBadge(StrEnum):
     DIAMOND = "💎"
     CUP = "🏆"
+    # "You finished the thing" — a PSN platinum, and a 100%-completed game on
+    # Xbox/Steam (owner, 2026-09-17). It used to be CUP for both, which is
+    # also the badge an *ordinary* achievement leads with, so the rarest
+    # thing in a game and the most ordinary one shared a glyph.
+    PLATINUM = "💠"
     GOLD = "🥇"
     SILVER = "🥈"
     BRONZE = "🥉"
@@ -101,6 +106,7 @@ class SettingKey(StrEnum):
     STATS_GAMES_LIMIT = "stats_games_limit"
     HLTB_RESULTS_LIMIT = "hltb_results_limit"
     HLTB_PAGE_SIZE = "hltb_page_size"
+    RECENT_LIMIT = "recent_limit"
 
 
 class XboxApiValue(StrEnum):

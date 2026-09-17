@@ -35,7 +35,8 @@ main-cmd-stats-group = A player's stats
 main-cmd-online = Who's online right now
 main-cmd-who = Look up someone's stats
 main-cmd-recent = The chat's latest achievements
-main-cmd-summary = The day and the month in review
+main-cmd-summary-day = The last 24 hours in review
+main-cmd-summary-month = The month so far in review
 main-cmd-subscribe = Publish my achievements here
 main-cmd-unsubscribe = Stop publishing here
 

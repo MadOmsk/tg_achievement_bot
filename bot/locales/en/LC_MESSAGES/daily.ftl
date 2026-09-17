@@ -24,16 +24,18 @@ daily-window-day = 24 hours
 daily-window-month = since { $month } 1
 
 # Summary
-daily-header = 📊 <b>Daily summary</b>, { $month } { $day }
+daily-header = 📅 <b>The day in review</b>
 # The month-end wrap-up (#14) — same leaderboard as the daily, month block
 # only, no day stats. Sent on the last calendar day of the month at the
 # chat's summary time, alongside that day's own daily summary.
-daily-monthly-header = 📊 <b>The month in review</b>
+daily-monthly-header = 🗓 <b>The month in review</b>
 daily-show-all-day = Show everyone (24h)
 daily-show-all-month = Show everyone (this month)
 daily-leaderboard-total-label = Total
 daily-leaderboard-full-header = 📊 <b>{ $label }, in full</b>
 
 # Monthly summary's own games block (#7, user request)
-daily-games-header = <b>Games this month</b>
+daily-games-header = <b>Games:</b>
 daily-unknown-game = untitled
+daily-total-label = Total
+daily-players-header = <b>Players:</b>

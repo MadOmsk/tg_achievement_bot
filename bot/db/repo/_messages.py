@@ -14,8 +14,8 @@ from datetime import datetime
 from bot.db.repo._models import (
     ChatSubscriber,
     DeletableMessage,
+    GameAchievements,
     RecentAchievement,
-    TopGame,
     User,
     _as_user,
     _iso,
@@ -24,10 +24,16 @@ from bot.db.repo._sql import (
     LOCALIZED_NAME_COLUMNS,
     LOCALIZED_TITLE_COLUMNS,
     NAME_CACHE_JOIN,
+    OWNED_BY_PERSON,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
+    earned_at,
+    earned_date_is_real,
+    earned_since,
     pick_name,
+    rarity,
+    rarity_cache_join,
 )
 from bot.util import utcnow_iso
 
@@ -125,9 +131,15 @@ class _MessagesRepo:
             "       psn.display_name AS psn_name,"
             "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
             "       " + LOCALIZED_TITLE_COLUMNS + ","
-            "       s.gamerscore, s.rarity_percent,"
-            "       s.platform, COALESCE(s.unlocked_at, s.created_at) AS unlocked_at,"
-            "       s.is_secret "
+            # Aliased, and it matters: XBOX_COLUMNS above already selects
+            # `xb.gamerscore` — the person's lifetime profile score — under
+            # that same bare name, and sqlite3.Row resolves a duplicate to
+            # the *first* one. Every /recent row was showing the player's
+            # career total (249 504 G) in place of what the achievement was
+            # actually worth (15 G). Found by rendering the screen.
+            "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
+            "       s.platform, " + earned_at() + " AS unlocked_at,"
+            "       s.is_secret, s.trophy_type "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
@@ -142,8 +154,12 @@ class _MessagesRepo:
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             + NAME_CACHE_JOIN
-            + "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
-            "ORDER BY COALESCE(s.unlocked_at, s.created_at) DESC LIMIT ?",
+            # An undated backfill row is not "recent" (#69): its created_at is
+            # when the import ran, so right after somebody connects their whole
+            # imported history would sort to the top of this list — in the one
+            # window where the first link is supposed to be silent.
+            + f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            f"ORDER BY {earned_at()} DESC LIMIT ?",
             (chat_id, limit),
         )
         return [
@@ -158,52 +174,100 @@ class _MessagesRepo:
                 psn_name=row["psn_name"],
                 name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
                 game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
-                gamerscore=int(row["gamerscore"] or 0),
+                gamerscore=int(row["achievement_gamerscore"] or 0),
                 rarity_percent=row["rarity_percent"],
                 platform=row["platform"],
                 unlocked_at=row["unlocked_at"],
                 is_secret=bool(row["is_secret"]),
+                trophy_type=row["trophy_type"],
             )
             for row in await cursor.fetchall()
         ]
 
-    async def recent_games(
-        self, external_id: str, since: datetime, limit: int = 15, *, locale: str = "ru"
-    ) -> list[TopGame]:
-        """Games actually played recently, not the biggest lifetime scores —
-        a person's five favourite old games would otherwise crowd out
-        whatever they are playing this month, every time.
+    async def users_games_achievements(
+        self,
+        tg_ids: Sequence[int],
+        since: datetime,
+        *,
+        rare_threshold: float,
+        limit: int = 15,
+        locale: str = "ru",
+    ) -> list[GameAchievements]:
+        """Games these people earned achievements in since `since`, ranked by
+        how many.
 
-        `external_id` despite the historical name isn't Xbox-specific:
-        `seen_achievements.xuid` is the generic per-platform external id
-        (SPEC 9, M-Steam-2a) — a SteamID64 works here exactly as well as an
-        xuid, already scoped to that one account's own rows.
+        **One listing, two scopes** (2026-09-17, owner decision): `/stats`
+        passes one person, the monthly summary's own games block passes every
+        subscriber of the chat. They were two near-identical queries before —
+        `user_games` and `chat_top_games` — which had already drifted apart on
+        grouping and ordering, in the way two copies of one answer always do.
+        Overlap adds up: two people who earned the same achievement are two
+        achievements here, because the chat-wide block is a count of what the
+        chat did, not of distinct achievements.
 
-        `limit == 0` means "no cap" (admin-configurable, SPEC 6.4) — passed
-        to SQLite as -1, its own documented spelling of "unbounded LIMIT",
-        rather than branching the query string for one case.
+        **Which rows count as "since".** A real platform timestamp is
+        authoritative whatever the row's origin; `created_at` stands in for it
+        only on a live-polled row, where "when the bot saw it" genuinely is
+        about when it was earned. A backfill row with no timestamp is ancient
+        by definition — its `created_at` is when the import ran, which is
+        what made a whole imported library look like this month's play (#69).
+        `is_backfill` itself is *not* a filter here: that flag means "do not
+        publish", not "did not happen" (services/stats.py), so a freshly
+        connected account shows its real recent games immediately.
+
+        **Grouped by `(title_id, platform)`**, never `title_id` alone: a
+        Steam appid and an Xbox title id are both bare numbers and can
+        collide by accident. `user_games` grouped by title_id only and had
+        that latent bug; the monthly block never did.
+
+        **Ordered by count, then by the most recent unlock** (owner, 2026-09-17)
+        — gamerscore takes no part in it, having no meaning at all on two of
+        the three platforms, where it is always 0.
+
+        `rare_threshold` is the chat's own `rare_threshold_percent`; rows keep
+        whatever rarity the platform reported when they were stored, which can
+        be old but is the only figure there is.
+
+        `limit == 0` means "no cap" (admin-configurable, SPEC 6.4) — passed to
+        SQLite as -1, its own documented spelling of "unbounded LIMIT".
         """
+        if not tg_ids:
+            return []
+        owners = ",".join("?" * len(tg_ids))
         cursor = await self._conn.execute(
-            "SELECT t.name, " + LOCALIZED_TITLE_COLUMNS + ","
-            " COALESCE(SUM(s.gamerscore), 0) AS score, COUNT(*) AS unlocked,"
-            " MAX(s.platform) AS platform "
-            "FROM seen_achievements s LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.xuid = ? AND COALESCE(s.unlocked_at, s.created_at) >= ? "
-            # Score ties on every Steam game (no gamerscore there at all) —
-            # unlocked count as the tiebreaker instead of SQLite's undefined
-            # order among equal scores.
-            "GROUP BY s.title_id ORDER BY score DESC, unlocked DESC LIMIT ?",
-            (external_id, _iso(since), limit or -1),
+            "SELECT s.title_id, s.platform, t.name, " + LOCALIZED_TITLE_COLUMNS + ","
+            "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
+            f"       SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= ?"
+            "                THEN 1 ELSE 0 END) AS rare,"
+            "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze,"
+            "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
+            "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
+            "       SUM(CASE WHEN s.trophy_type = 'platinum' THEN 1 ELSE 0 END) AS platinum,"
+            "       MAX(" + earned_at() + ") AS last_earned "
+            "FROM seen_achievements s "
+            + OWNED_BY_PERSON
+            + "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + rarity_cache_join()
+            + f"WHERE al.tg_id IN ({owners}) AND {earned_since()} "
+            "GROUP BY s.title_id, s.platform "
+            "ORDER BY cnt DESC, last_earned DESC LIMIT ?",
+            (rare_threshold, *tg_ids, _iso(since), limit or -1),
         )
         return [
-            TopGame(
+            GameAchievements(
+                title_id=row["title_id"],
+                platform=row["platform"],
                 # The chat's language, where the platform gave a second name
                 # (#61) — a list beside a localized notification must not be
                 # the one thing still in the platform's own language.
                 name=pick_name(locale, row["game_ru"], row["game_en"], row["name"]),
-                gamerscore=row["score"],
-                unlocked=row["unlocked"],
-                platform=row["platform"],
+                count=int(row["cnt"]),
+                score=int(row["score"] or 0),
+                rare=int(row["rare"] or 0),
+                bronze=int(row["bronze"] or 0),
+                silver=int(row["silver"] or 0),
+                gold=int(row["gold"] or 0),
+                platinum=int(row["platinum"] or 0),
             )
             for row in await cursor.fetchall()
         ]

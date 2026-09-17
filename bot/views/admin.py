@@ -52,13 +52,14 @@ from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_C
 from bot.services.translate.auth import AnthropicAuth
 from bot.util import humanize_ago
 from bot.views import Screen
+from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
     COMMON_OFFSETS_HOURS,
     format_offset,
     format_rarity,
     locale_name,
 )
-from bot.views.lists import truncate_name
+from bot.views.lists import Listing, truncate_name
 from bot.views.parts import (
     COMPLETED_BADGE,
     plural_achievements,
@@ -252,13 +253,11 @@ async def render_user_list(
     # "updated HH:MM".
     month = await repo.achievement_counts_by_tg_id(month_cutoff_utc(180))
 
-    pages = max(1, -(-len(users) // PAGE_SIZE))
-    page = max(0, min(page, pages - 1))
-    chunk = users[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+    shown = paginate(users, page, PAGE_SIZE)
 
-    lines = [_("admin-users-header", page=page + 1, pages=pages), ""]
-    builder = InlineKeyboardBuilder()
-    for user in chunk:
+    rows = []
+    buttons = []
+    for user in shown.items:
         # The person chain (#51), not "whichever platform answered first" —
         # this list is a roster of people, and its rows are how the operator
         # finds one. The bare id stays reachable as the last step, which on
@@ -272,7 +271,7 @@ async def render_user_list(
             steam=user.steam_name,
             psn=user.psn_online_id,
         )
-        lines.append(
+        rows.append(
             _(
                 "admin-users-row",
                 icon=_icon(user),
@@ -283,21 +282,29 @@ async def render_user_list(
                 note=_note(user, locale=locale),
             )
         )
-        builder.row(
-            InlineKeyboardButton(text=f"{_icon(user)} {name}", callback_data=f"a:u:{user.tg_id}")
+        buttons.append(
+            [InlineKeyboardButton(text=f"{_icon(user)} {name}", callback_data=f"a:u:{user.tg_id}")]
         )
 
-    navigation = []
-    if page > 0:
-        navigation.append(InlineKeyboardButton(text="‹", callback_data=f"a:users:{page - 1}"))
-    if page < pages - 1:
-        navigation.append(InlineKeyboardButton(text="›", callback_data=f"a:users:{page + 1}"))
-    if navigation:
-        builder.row(*navigation)
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
+    # The one screen that is both kinds of list at once, which is why the loop
+    # above fills two collections: `Listing` renders the text half, an
+    # `InlineListing` the tappable one, off the same people in the same order.
+    keyboard = InlineListing(
+        rows=buttons,
+        nav=page_nav(shown, "a:users:", noop="a:noop"),
+        tail=_back_row(locale=locale),
+    ).markup()
 
-    lines += ["", _("admin-users-columns")]
-    return "\n".join(lines), builder.as_markup()
+    # A roster, not a report section, so it is never quoted (#64) — the whole
+    # point is to skim it at a glance, same reasoning /online has. The rows
+    # and their wrapper are Listing's own job; the header (with its page
+    # count) and the trailing column hint stay outside it, exactly as the
+    # blank-line spacing between them always looked.
+    # The header no longer repeats the page count: it now sits on the
+    # navigation row right below, between the arrows that act on it.
+    body = Listing(rows=rows, quoted=False).body()
+    text = "\n\n".join([_("admin-users-header"), body, _("admin-users-columns")])
+    return text, keyboard
 
 
 def _admin_tg_header(user: User, *, locale: str) -> str:
@@ -333,7 +340,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
     completed = await repo.xbox_completed_games_count(user.xuid)
     parts = [plural_achievements(count, locale)]
     if completed:
-        parts.append(f"{COMPLETED_BADGE} {completed}")
+        parts.append(f"{completed} {COMPLETED_BADGE}")
     parts.append(_("admin-today-tag", count=today_count))
     parts.append(_("admin-gamerscore-tag", score=user.gamerscore or 0))
 
@@ -392,7 +399,7 @@ async def _steam_admin_block(
     completed = await repo.steam_completed_games_count(link.tg_id)
     parts = [plural_achievements(count, locale)]
     if completed:
-        parts.append(f"{COMPLETED_BADGE} {completed}")
+        parts.append(f"{completed} {COMPLETED_BADGE}")
     parts.append(_("admin-today-tag", count=today_count))
 
     steam_presence = await repo.steam_presence_of(link.external_id)
@@ -444,7 +451,7 @@ async def _psn_admin_block(
     platinum = await repo.psn_platinum_count(link.tg_id)
     parts = [plural_trophies(count, locale)]
     if platinum:
-        parts.append(f"{COMPLETED_BADGE} {platinum}")
+        parts.append(f"{platinum} {COMPLETED_BADGE}")
     parts.append(_("admin-today-tag", count=today_count))
     if link.psn_trophy_level is not None:
         parts.append(_("admin-psn-level-tag", level=link.psn_trophy_level))
@@ -571,27 +578,29 @@ async def render_user_card(
 
 
 async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Unlike the user list above, this one is buttons only — a chat row is
+    two facts wide, and both fit on the button, so there is no separate text
+    row to write. It used to call `Listing` with an empty row list to look
+    like it shared the text machinery; that rendered nothing, and a keyboard
+    list now has machinery of its own to share instead."""
     _ = translator("admin", locale)
     chats = await repo.admin_chats()
     if not chats:
         return _("admin-chats-empty"), _back_home(locale=locale)
 
-    builder = InlineKeyboardBuilder()
-    for chat in chats:
-        mark = "" if chat.is_active else "⏸ "
-        builder.row(
-            InlineKeyboardButton(
-                text=_(
-                    "admin-chat-list-row",
-                    mark=mark,
-                    title=chat.title or chat.chat_id,
-                    subscribers=chat.subscribers,
-                ),
-                callback_data=f"a:chat:{chat.chat_id}",
-            )
+    def label(chat: ChatTarget) -> str:
+        return _(
+            "admin-chat-list-row",
+            mark="" if chat.is_active else "⏸ ",
+            title=chat.title or chat.chat_id,
+            subscribers=chat.subscribers,
         )
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-    return _("admin-chats-header"), builder.as_markup()
+
+    keyboard = InlineListing(
+        rows=button_rows(chats, label, lambda chat: f"a:chat:{chat.chat_id}"),
+        tail=_back_row(locale=locale),
+    ).markup()
+    return _("admin-chats-header"), keyboard
 
 
 async def render_chat_card(
@@ -748,11 +757,14 @@ async def render_chat_card(
 # ------------------------------------------------------------------- helpers
 
 
-def _back_home(*, locale: str) -> InlineKeyboardMarkup:
+def _back_row(*, locale: str) -> list[InlineKeyboardButton]:
+    """The way out, as a row — every list screen here ends in one."""
     _ = translator("admin", locale)
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")]]
-    )
+    return [InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")]
+
+
+def _back_home(*, locale: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[_back_row(locale=locale)])
 
 
 def _icon(user: AdminUserRow) -> str:
@@ -796,20 +808,25 @@ async def render_limits(repo: Repo, *, locale: str) -> Screen:
     its own input — a settings list rather than a menu you have to walk to
     find out what is set."""
     _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    for key, spec in NUMERIC_SETTINGS.items():
-        current = await repo.get_app_setting(key, str(spec.default))
-        builder.row(
-            InlineKeyboardButton(
-                text=(
-                    f"{_setting_label(spec, locale=locale)}: "
-                    f"{_format_limit(key, current, locale=locale)} ▸"
-                ),
-                callback_data=f"a:limit:{key}",
-            )
-        )
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-    return Screen(_("admin-limits-screen"), builder.as_markup())
+    # The value is read before the rows are built, not inside the loop that
+    # builds them: a label here is a setting *and* what it is currently set
+    # to, and only this screen's own rows know how to say that.
+    settings = [
+        (key, spec, await repo.get_app_setting(key, str(spec.default)))
+        for key, spec in NUMERIC_SETTINGS.items()
+    ]
+    keyboard = InlineListing(
+        rows=button_rows(
+            settings,
+            lambda item: (
+                f"{_setting_label(item[1], locale=locale)}: "
+                f"{_format_limit(item[0], item[2], locale=locale)} ▸"
+            ),
+            lambda item: f"a:limit:{item[0]}",
+        ),
+        tail=_back_row(locale=locale),
+    ).markup()
+    return Screen(_("admin-limits-screen"), keyboard)
 
 
 async def render_limit(repo: Repo, key: str, *, locale: str) -> Screen:

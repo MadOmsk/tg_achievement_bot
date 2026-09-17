@@ -43,6 +43,70 @@ class _DescriptionsRepo:
             )
         await self._conn.commit()
 
+    # --------------------------------------------------- rarity cache (#69's tail)
+
+    async def cache_rarity(self, platform: str, title_id: str, rarity: dict[str, float]) -> None:
+        """One game's rarity percentages, `{achievement_id: percent}`.
+
+        A fact about the achievement, not about anyone who earned it, which
+        is why it lives here rather than only on the `seen_achievements` rows
+        — those are written once with INSERT OR IGNORE and never updated, so
+        a row stored before its platform reported a percentage keeps none
+        forever. Rewriting the same value is free and happens on every poll
+        of a game somebody is playing.
+        """
+        if not rarity:
+            return
+        now = utcnow_iso()
+        await self._conn.executemany(
+            "INSERT INTO achievement_rarity_cache"
+            " (platform, title_id, achievement_id, rarity_percent, checked_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(platform, title_id, achievement_id) DO UPDATE SET "
+            "  rarity_percent = excluded.rarity_percent, checked_at = excluded.checked_at",
+            [
+                (platform, title_id, achievement_id, percent, now)
+                for achievement_id, percent in rarity.items()
+            ],
+        )
+        await self._conn.commit()
+
+    async def titles_missing_rarity(self, platform: str, limit: int) -> list[tuple[str, int]]:
+        """Games whose achievements have no cached rarity, rarest-known
+        first — `(title_id, tg_id)`, paired with somebody who can be asked.
+
+        Xbox needs a *person's* token to answer for a title (unlike Steam's
+        one shared key), so a walker cannot just take a title id: it needs
+        one owner. Any owner will do — contract 4 returns the whole title's
+        achievement list including the ones that caller never earned, so one
+        person's request fills the cache for everybody.
+        """
+        cursor = await self._conn.execute(
+            "SELECT s.title_id, MIN(al.tg_id) AS tg_id "
+            "FROM seen_achievements s " + OWNED_BY_PERSON + "LEFT JOIN achievement_rarity_cache rc"
+            "   ON rc.platform = s.platform AND rc.title_id = s.title_id "
+            "WHERE s.platform = ? AND rc.title_id IS NULL "
+            "GROUP BY s.title_id LIMIT ?",
+            (platform, limit),
+        )
+        return [(row["title_id"], int(row["tg_id"])) for row in await cursor.fetchall()]
+
+    async def rarity_coverage(self, platform: str) -> tuple[int, int]:
+        """(titles with cached rarity, titles seen at all) — what the walker
+        has left to do, for the admin panel and for the one-off script's own
+        progress line."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(DISTINCT s.title_id),"
+            "       COUNT(DISTINCT CASE WHEN rc.title_id IS NOT NULL THEN s.title_id END) "
+            "FROM seen_achievements s "
+            "LEFT JOIN achievement_rarity_cache rc"
+            "   ON rc.platform = s.platform AND rc.title_id = s.title_id "
+            "WHERE s.platform = ?",
+            (platform,),
+        )
+        row = await cursor.fetchone()
+        return (int(row[1]), int(row[0])) if row else (0, 0)
+
     async def cached_names(
         self, keys: list[tuple[str, str, str]]
     ) -> dict[tuple[str, str, str], tuple[str | None, str | None]]:

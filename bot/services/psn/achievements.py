@@ -219,6 +219,15 @@ async def sync_account(
         widened = not is_backfill and await repo.psn_title_needs_widening(
             account_id, title.np_communication_id
         )
+        await repo.cache_rarity(
+            Platform.PSN,
+            title.np_communication_id,
+            {
+                item.trophy_id: item.trophy_earn_rate
+                for item in earned
+                if item.trophy_earn_rate is not None
+            },
+        )
         rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
         inserted = await repo.insert_new_achievements_psn(
             tg_id, account_id, rows, is_backfill=is_backfill

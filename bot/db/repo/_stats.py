@@ -11,7 +11,13 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from bot.db.repo._models import TitleHistoryRow, _iso
-from bot.db.repo._sql import OWNED_BY_PERSON, OWNED_BY_PERSON_EXISTS
+from bot.db.repo._sql import (
+    OWNED_BY_PERSON,
+    OWNED_BY_PERSON_EXISTS,
+    earned_since,
+    rarity,
+    rarity_cache_join,
+)
 from bot.util import utcnow_iso
 
 
@@ -109,14 +115,10 @@ class _StatsRepo:
             f"SELECT COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements WHERE {where}"
         )
         if since is not None:
-            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder date for
-            # some Xbox 360 achievements (0001-01-01, or 1753-01-01 — the old SQL
-            # Server minimum; 84 of 5239 rows on one real account), which the
-            # parser discards rather than record an unlock in the year 1753. Those
-            # rows still count (owner decision, 2026-09-13): when the platform
-            # gives no usable time, the time the bot first saw the achievement is
-            # the honest stand-in. The stored column keeps the NULL.
-            query += " AND COALESCE(unlocked_at, created_at) >= ?"
+            # The window rule, written once in _sql.py (#69) — a dated row by
+            # its date, an undated live one by when the bot saw it, an undated
+            # backfill row not at all.
+            query += f" AND {earned_since('')}"
             params = [*params, _iso(since)]
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
@@ -171,18 +173,56 @@ class _StatsRepo:
         )
         params: list[object] = [tg_id]
         if since is not None:
-            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder date for
-            # some Xbox 360 achievements (0001-01-01, or 1753-01-01 — the old SQL
-            # Server minimum; 84 of 5239 rows on one real account), which the
-            # parser discards rather than record an unlock in the year 1753. Those
-            # rows still count (owner decision, 2026-09-13): when the platform
-            # gives no usable time, the time the bot first saw the achievement is
-            # the honest stand-in. The stored column keeps the NULL.
-            query += " AND COALESCE(unlocked_at, created_at) >= ?"
+            # The window rule, written once in _sql.py (#69) — a dated row by
+            # its date, an undated live one by when the bot saw it, an undated
+            # backfill row not at all.
+            query += f" AND {earned_since('')}"
             params.append(_iso(since))
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
         return (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)) if row else (0, 0, 0)
+
+    async def achievement_value_breakdown(
+        self, tg_id: int, since: datetime | None, rare_threshold: float
+    ) -> tuple[int, tuple[int, int, int, int]]:
+        """What this person's achievements in the window were *worth*, beyond
+        the count and the gamerscore: how many cleared the chat's rarity
+        threshold, and PSN's own tiers (owner, 2026-09-17).
+
+        Returns `(rare, (platinum, gold, silver, bronze))`. Both are zero
+        where the platform has no such notion — Xbox 360 never reports rarity
+        at all, and only PSN has tiers — which needs no special handling: a
+        zero simply renders as nothing, the same way a zero gamerscore does.
+        """
+        # Joined to the rarity cache, unlike its neighbours here: the cache is
+        # what makes an Xbox row rare at all, most of them having been stored
+        # by a backfill that carries no percentage. The table stays unaliased
+        # because OWNED_BY_PERSON_EXISTS below names it in full.
+        table = "seen_achievements."
+        value = rarity(table)
+        query = (
+            f"SELECT SUM(CASE WHEN {value} IS NOT NULL AND {value} <= ?"
+            "                THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'platinum' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'gold' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'silver' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'bronze' THEN 1 ELSE 0 END) "
+            "FROM seen_achievements " + rarity_cache_join(table) + "WHERE " + OWNED_BY_PERSON_EXISTS
+        )
+        params: list[object] = [rare_threshold, tg_id]
+        if since is not None:
+            query += f" AND {earned_since('')}"
+            params.append(_iso(since))
+        cursor = await self._conn.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return 0, (0, 0, 0, 0)
+        return int(row[0] or 0), (
+            int(row[1] or 0),
+            int(row[2] or 0),
+            int(row[3] or 0),
+            int(row[4] or 0),
+        )
 
     async def platform_achievement_count(self, tg_id: int, platform: str) -> int:
         """Lifetime count for one platform (SPEC 9, M-Steam-2e's /stats line
@@ -277,7 +317,7 @@ class _StatsRepo:
         query = "SELECT xuid, COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements"
         params: list[object] = []
         if since is not None:
-            query += " WHERE COALESCE(unlocked_at, created_at) >= ?"
+            query += f" WHERE {earned_since('')}"
             params.append(_iso(since))
         cursor = await self._conn.execute(query + " GROUP BY xuid", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
@@ -296,7 +336,7 @@ class _StatsRepo:
         )
         params: list[object] = []
         if since is not None:
-            query += "WHERE COALESCE(s.unlocked_at, s.created_at) >= ?"
+            query += f"WHERE {earned_since()}"
             params.append(_iso(since))
         cursor = await self._conn.execute(query + " GROUP BY al.tg_id", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}

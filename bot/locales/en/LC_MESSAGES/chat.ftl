@@ -19,9 +19,9 @@ chat-stats-no-gamertag = no gamertag
 # caller builds that separator itself, in Python, like every other segment
 # joined onto this same line.
 chat-stats-psn-level = level { $level }
-chat-stats-today = Today:      { $achievements }{ $breakdown }{ $score_suffix }
-chat-stats-month = This month: { $achievements }{ $breakdown }{ $score_suffix }
-chat-stats-games-header = <b>Games in the last { $days } days</b>
+chat-stats-today = Last 24h:  { $achievements }{ $breakdown }{ $value }
+chat-stats-month = Since { $month } 1:  { $achievements }{ $breakdown }{ $value }
+chat-stats-games-header = <b>Games { $window }</b>
 chat-stats-nothing-connected = This person hasn't connected anything yet.
 chat-group-command-only = The player list is per chat — run the command in a group.
 chat-online-empty = I haven't seen anyone connected in this chat yet.
@@ -35,7 +35,7 @@ chat-recent-group-only = The feed is per chat — run the command in a group.
 chat-recent-empty = Nothing here yet.
 chat-recent-header = 🕘 <b>Latest achievements</b>
 chat-untitled = untitled
-chat-recent-row = { $badge } { $gamertag } — { $icon } { $game }, { $name }{ $tail } · { $ago }
+chat-recent-row = { $badge } { $gamertag } — { $icon } { $game } · { $name }{ $tail } · { $ago }
 
 # Group hub and chat actions
 chat-unknown-user = I don't know them. The Bot API can't look people up by @name — I remember the ones who have written in the chat. You can also reply to their message with /stats.
@@ -46,7 +46,8 @@ chat-help-text = 🎮 I watch the achievements and trophies of everyone playing 
     /who — look up a specific player's stats
     /online — who's in a game right now
     /recent [N] — the chat's latest achievements
-    /summary — the day and the month in review
+    /summary_day — the last 24 hours in review
+    /summary_month — the month so far in review
     /hltb — a game's HowLongToBeat summary
 
     Settings are in a DM, /panel.

@@ -28,6 +28,7 @@ from bot.services.xbox.models import (
     ParsedAchievement,
     continuation_token,
     parse_achievements,
+    parse_rarity,
 )
 
 log = logging.getLogger(__name__)
@@ -199,6 +200,24 @@ class XboxClient:
         log.info("title %s looks like Xbox 360, retrying on contract 1", title_id)
         payload = await self._get_achievements(tg_id, "1", params, language=language)
         return parse_achievements(payload, Platform.XBOX_360, title_id), _total_in(payload)
+
+    async def title_rarity(self, tg_id: int, title_id: str) -> dict[str, float]:
+        """Every achievement's rarity for one modern title, earned or not.
+
+        The same contract-4 request `title_achievements` makes, kept for the
+        one field in it that belongs to the achievement rather than to the
+        caller. Any owner of the game can answer for all of them, which is
+        what makes filling the shared cache one request per *title* instead
+        of one per person per title.
+
+        Empty for an Xbox 360 title (contract 4 answers those with nothing,
+        and contract 1 has no rarity to give) — the caller treats that as
+        "asked and there is none", not as a failure to retry.
+        """
+        payload = await self._get_achievements(
+            tg_id, "4", {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
+        )
+        return parse_rarity(payload)
 
     async def all_achievements(self, tg_id: int) -> list[ParsedAchievement]:
         """Every achievement of the player, for backfill only (SPEC 5.6).

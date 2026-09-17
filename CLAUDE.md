@@ -35,7 +35,7 @@ database, explicit admin controls, and predictable behavior, not public SaaS sca
 ### Non-goals
 
 - No public web UI. The only web endpoint is the Microsoft OAuth callback.
-- No `/compare` or `/top`; `/stats`, `/summary`, `/recent`, and `/online` cover the
+- No `/compare` or `/top`; `/stats`, the two summaries, `/recent` and `/online` cover the
   useful group views.
 - No global per-platform visibility toggles. Visibility is per user and per chat, and
   applies to every platform consistently — one `rarity_mode`, not one switch per
@@ -99,15 +99,18 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── admin_home.py           /admin's own card — its own file because admin_refresh
 │   │   │                           redraws it on a timer
 │   │   ├── online.py               the /online table, redrawn by its own poller too
-│   │   ├── summary.py              the day/month blocks the three summary shapes compose
+│   │   ├── summary.py              the day and month blocks, one per message
 │   │   ├── notification.py         the achievement/trophy card and the digest
 │   │   ├── hltb.py                 the /hltb card and the screens around it
 │   │   ├── keyboards.py            every inline keyboard + format_* helpers
 │   │   ├── parts.py                the vocabulary screens share: badges, the platform
 │   │   │                           palette, counted nouns, per-platform header rows
-│   │   └── lists.py                what every list shares — the wrapper (usually a
-│   │                               collapsible quote, not always), the total line, the
-│   │                               name cap, and the one games row two screens draw (#64)
+│   │   ├── lists.py                what every *text* list shares — the wrapper (usually a
+│   │   │                           collapsible quote, not always), the total line, the
+│   │   │                           name cap, and the one games row two screens draw (#64)
+│   │   └── inline_lists.py         the same for a list rendered as a *keyboard*: the
+│   │                               button rows, the page arithmetic, the one navigation
+│   │                               shape, the way out
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py         whether an achievement may be published (the wording
@@ -123,6 +126,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           user_settings.show_profile_links
 │   │   ├── hltb.py                 wrapper over howlongtobeatpy, cached in hltb_cache
 │   │   ├── message_log.py          request middleware: logs outgoing group messages
+│   │   ├── message_limits.py       request middleware: nothing goes out over Telegram's
+│   │   │                           own length limit, cut HTML-safely (#68)
 │   │   ├── presence_view.py        which platform answers "where is this person right
 │   │   │                           now" — /online's own rule, for one person (#1)
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
@@ -178,12 +183,15 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                          platform account's own, a few per tick (#55)
 │   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
+│   │   ├── rarity_backfill.py     fills achievement_rarity_cache for the Xbox history
+│   │   │                          contract 2 brought in without any percentages
 │   │   ├── steam_localization.py   walks the Steam library a couple of games a tick for
 │   │   │                           the storefront's Russian title — the one name no
 │   │   │                           response the bot already makes ever carries (#61)
 │   │   ├── flood_flush.py          the anti-flood filter's read/flush side — buffered
 │   │   │                           achievements once a throttled window closes (2026-09-09)
-│   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
+│   │   ├── daily.py                scheduled daily + month-end summaries, and the two
+│   │   │                           on-demand commands that send the same blocks (#14)
 │   │   ├── reminders.py            reminders for a dead Xbox login
 │   │   ├── message_cleanup.py      auto-deletes system messages in groups
 │   │   ├── online_refresh.py       auto-refreshes the /online table
@@ -665,6 +673,22 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
   `service_health`) fetches it through `SteamAuth`, never a constructor copy, so
   a set/change/clear takes effect on the next call.
 - Users connect by Steam profile URL, vanity URL, or bare SteamID64.
+- **Every stored achievement carries its game's name** (#70, 2026-09-17).
+  `fetch_unlocked` takes a `title_name` and puts it on every row, so
+  `insert_new_achievements_steam`'s own `titles` upsert has something to
+  write; both callers already held the name and neither passed it —
+  `backfill` has the `OwnedGame` it is walking, `poll_title` has the
+  `game_name` parameter it was only forwarding to the publisher, after the
+  row was already stored. It was hardcoded `None` on the assumption that
+  presence had supplied the name, which is true only for a game being
+  played *right now* — so every Steam game that arrived by backfill or by a
+  catch-up poll rendered as "без названия" forever, and the upsert meant to
+  fix exactly that had never once fired. Existing rows are a one-off
+  cleanup (`scripts/backfill_steam_titles.py`, safe to run live), not a
+  standing job: there is no gap left to walk once the write side is right.
+  `poller/steam_localization.py` could never have rescued them either — it
+  looks for a `titles` row missing one language, and these had no row at
+  all.
 - Profiles and game stats must be public enough for the API to expose them — not
   fixable on our end, only by the person changing their own Steam privacy settings.
 - Presence is fetched in batches of up to 100 SteamIDs via `GetPlayerSummaries`.
@@ -783,10 +807,11 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   with no visible error anywhere, until it was hit by an actual test send.
 - PSN achievements are called "trophies" in every user-facing message, not
   "achievements" — the header reads "gets a trophy", and PSN's badge is its own
-  tier icon (🥉🥈🥇🏆) in place of the usual rarity diamond/cup, since the tier
+  tier icon (🥉🥈🥇💠) in place of the usual rarity diamond/cup, since the tier
   already answers the same "how rare" question on Sony's own scale (showing both
-  used to be possible to collide visually: a platinum trophy and an "ordinary"
-  rarity badge are the same emoji).
+  would repeat itself). Platinum was 🏆 until 2026-09-17, which is also the
+  badge an *ordinary* achievement leads with — so the rarest thing in a game
+  and the most ordinary one rendered identically, in `/recent` most visibly.
 - PS3, PS4, PS5, and PS Vita share the same trophy service and fields — no separate
   parsing branch, unlike Xbox 360.
 - **Bilingual descriptions** (2026-09-09, third and last platform wired to
@@ -866,6 +891,27 @@ instead of several — grouped by platform and title. Every achievement in a dig
 listed, never truncated with "and N more". A media gallery dedupes by image URL, so
 several achievements sharing one icon (all of Xbox 360's own achievements share the
 game's box art) don't repeat the same picture.
+
+**Nothing the bot sends may fail for being too long** (#68, 2026-09-17,
+owner decision). Telegram rejects an oversized message outright, after the
+handler has already done all its work, so the command simply looks dead —
+that is how `/summary` answered three presses with nothing on production and
+took the 1.1 deploy down with it. `services/message_limits.py` is a request
+middleware on the Bot's own pipeline (the same seam `message_log.py` uses,
+for the same reason) that cuts any outgoing text to its own maximum: 4096
+for a message, 1024 for a caption, 200 for a callback answer. It keys off
+which fields a method *has* rather than a list of method names, so a send
+this bot does not make yet is covered the day it is added.
+
+**Truncating HTML naively only trades one Telegram error for another** — a
+cut landing inside `<blockquote expandable>` or leaving `<b>` unclosed earns
+`can't parse entities` instead. So the cut lands only where it is safe,
+never inside a tag or an `&entity;`, prefers a word boundary, and closes
+whatever was open. Every truncation is logged as a warning: the net exists
+so a screen never dies, not so an overlong screen goes unnoticed. Capping
+each list by *rows* is not a substitute and was rejected: the limit is in
+characters, and fifteen rows fit or do not depending on how long that
+month's game titles happen to be.
 
 Delivery goes through a send queue to stay under Telegram's group rate limit. A
 Telegram 403 means the bot was removed from that chat — deactivate it, don't keep
@@ -1042,23 +1088,22 @@ owner. The panel must never call a platform API except the one explicit
 manual-sync button.
 
 **Group commands**: `/subscribe`, `/unsubscribe`, `/stats [@user]` (cached stats +
-recent games; the card's header shows the person's Telegram identity — `@username`,
-else first+last name, else a connected platform's own name as a last resort — not a
-platform gamertag, since every connected platform already gets its own line below),
+recent games; the card's header is `👤` and the person's Telegram identity —
+`@username`, else first+last name, else a connected platform's own name as a last
+resort — not a platform gamertag, since every connected platform already gets its
+own line below),
 `/who` (pick a known member, opens their `/stats`; the picker buttons identify the
 person the same way `/stats`' header does — `@username` > name > gamertag > platform
 name, never a bare id — #40), `/online` (cached presence,
-optionally auto-refreshing), `/recent [N]`, `/summary`, `/hltb`, `/delete_last`
+optionally auto-refreshing), `/recent [N]`, `/summary_day`, `/summary_month`,
+`/hltb`, `/delete_last`
 (deletes the chat's own latest non-system bot message). When a leaderboard is
 capped by `summary_top_limit`, one button appears under it: it replaces the
 message with the same block uncapped, in a plain (not expandable) blockquote —
 the cap exists for the chat's scrollback, and asking for everything is an
 explicit act. `/delete_last` quotes the first two lines of what it deleted, so
 the deletion is auditable rather than silent, and that confirmation is itself a
-system message the cleanup job takes away later. `/summary_day` and
-`/summary_month` (2026-09-08) ask `build_summary` for one block only — deliberately
-left out of the help text and `chat-help-text`, a diagnostic pair for the #14 block
-split rather than commands meant for everyday use alongside `/summary` itself.
+system message the cleanup job takes away later.
 `chat_seen` tracks anyone known who has written in the group, even without a
 publish subscription — `/online` and `/who` use that broader set, not just
 subscribers.
@@ -1205,7 +1250,7 @@ keeps the spoiler with no label, since a line there is already long.
 
 The badge is `rarity_badge()` (💎 at or below the rare threshold, 🏆 otherwise,
 including when rarity is simply unknown) for every platform except PSN, which shows
-its own tier icon instead (🥉🥈🥇🏆) — see the PSN section above for why.
+its own tier icon instead (🥉🥈🥇💠) — see the PSN section above for why.
 
 **A single post is a photo message**, not a text one: the achievement's own
 icon is the photo and everything above is its *caption*, so the whole card
@@ -1235,6 +1280,23 @@ The group line belongs to a single card, where there is exactly one trophy
 to attribute — in a digest it would add a second subject to a message whose
 whole job is grouping.
 
+**The two counter lines say which window they mean** (owner, 2026-09-17):
+"За сутки" and "С 1 сентября", not "Сегодня"/"За месяц". Neither window
+changed — the first has always been a rolling 24 hours and the second the
+calendar month since #14 — but the games header below already read "Игры с
+1 сентября", so one card was naming one window two ways. Each line ends in
+the same bracket a games row uses: gamerscore, then how many were rare by
+this chat's own threshold, then PSN's tiers, every zero left out
+(`views/parts.py::value_parts`, shared by both). A mixed-platform person
+therefore sees `+10 G · 🥉1` in one bracket — two platforms' value systems
+side by side, which is what a combined counter is.
+
+**A `/recent` row leads with PSN's tier where the platform has one** (owner,
+2026-09-17) — the same swap the achievement card has always made. Without
+it every PSN row led with 🏆, the "ordinary" rarity badge, which is also
+what a platinum trophy's own icon is. The game and the achievement are
+separated by `·` rather than a comma, which read as part of the title.
+
 Lists (`/stats`, `/recent`, `/summary`, the daily summary) render as sentence-lines
 inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table
 (which renders as a code block — wrong register for a leaderboard or game list).
@@ -1246,27 +1308,48 @@ month** — since midnight on the 1st, in the person's / chat's own timezone
 1st. Its label names the actual month ("с 1 июня", #6, user request) rather than a
 static "этот месяц" — the *current* local month is always the one the cutoff
 points at, no need to re-derive it from the cutoff itself
-(`daily.py::_month_window_label`). `/stats`' recent-games table stays a rolling 30
-days and is labelled as such ("за 30 дней"), so it no longer silently disagrees
-with the month window.
+(`views/summary.py::month_window_label`, shared — `/stats`' own games list
+uses it too, see #69's own note in "Lists and tables" below). **No list in
+the project uses a rolling N-day window any more** (2026-09-16, user
+request, #69's own trigger) — `/stats`' games list used to be the one
+exception (a rolling 30 days, labelled "за 30 дней" so it wouldn't be read
+as agreeing with the counters above it); it is now `user_games`, on the same
+calendar-month cutoff as everything else, which is what let it drop its own
+label entirely and share this one.
 
-**Three summary shapes**, composed by `daily.build_summary` from independent window
-blocks so their style can't drift apart (#14): the scheduled **daily** job sends
-the day block only; the **month-end** job (last calendar day of the month, same
-time, its own `daily_reports` marker `YYYY-MM-monthly`, *additional* to that day's
-daily summary) sends the month block only under an "Итоги за месяц" header;
-`/summary` on demand sends both. `/summary_day`/`/summary_month` (hidden from the
-help text) ask for one block only, on demand — a diagnostic pair for this block
-split, not commands meant for everyday use. A day on which nobody unlocked
+**Two summary blocks, never both in one message** (#14, narrowed by the owner
+2026-09-17), composed by `daily.build_summary` from independent windows so
+their style can't drift apart. The scheduled **daily** job sends the day block;
+the **month-end** job (last calendar day of the month, same time, its own
+`daily_reports` marker `YYYY-MM-monthly`, *additional* to that day's daily
+summary) sends the month block under an "Итоги за месяц" header. On demand,
+`/summary_day` and `/summary_month` send the same two — both listed in the help
+text and registered as group commands, where they used to be an undocumented
+diagnostic pair.
+
+`/summary`, which sent both blocks at once, is **gone**: it was a third shape of
+the same numbers and the longest message the bot produced, which is how it met
+Telegram's 4096-character limit on production (#68). Each command replaces its
+own previous copy rather than sharing one slot, so asking for the month does not
+wipe the day somebody just asked for. `build_summary` takes `window` — `DAY` or
+`MONTH` — rather than two booleans, so "both" is not expressible: with one total
+line per report and no window in its label, a message carrying both would say
+"Всего:" twice and leave the reader to guess which was which.
+
+**Both reports are one form with a different cutoff** (owner, 2026-09-17), which
+reverses #9's "the day block drops the 💎": a header (📅 Итоги дня / 🗓 Итоги
+месяца), the chat's combined **Всего** with the same two brackets a `/stats`
+counter line uses, **Игроки:** ranked by what they earned, and **Игры:** — in
+both, where the games block used to be month-only because the month was the
+only report that had one. The date left the day header: the message arrives on
+the day it is about. A day on which nobody unlocked
 anything still sends — the roster with everyone at 0 (#34); `build_summary`
 returns `None`, and the chat gets nothing, only when there are no subscribed
 members at all. The month block (only) is followed by its own "Игры за месяц"
 block (#7, user request, `repo.chat_top_games`) — every game the chat's
 subscribed members played that month, ranked by achievements/trophies earned in
 it combined across everyone and every platform, not who earned them
-(`_section`'s own job). The day block's own leaderboard rows no longer call out a
-rare pull separately (#9, user request) — the month block's rows still do, a
-longer window being more worth it in.
+(`_section`'s own job).
 
 ## Lists and tables
 
@@ -1275,66 +1358,238 @@ how it is sorted and what caps it (kept from `docs/ui/tables.md` when that
 file went away, #63 — the *queries* are visible in the code, but "who is in
 scope" and "what the cap is for" are decisions and are not).
 
-Every one of them renders through `views/lists.py::Listing` — header, rows,
-an optional total line, and a wrapper that is a collapsible quote by default
-and plain text for `/online`, which redraws itself every few minutes and has
-to read at a glance. The *rows* are deliberately not shared: a list of games
-and a list of people are different things. The one exception is the games
-row itself, which two screens draw identically and which lived in two copies
-until #64.
+**A list is either text or a keyboard, and that is a rendering decision, not
+a data one** (2026-09-16, owner's taxonomy). The same rows could be either;
+naming the kind is what keeps a screen from drifting into a third shape
+nobody decided on.
 
-| List | Source | Who appears | Sort | Cap |
-|---|---|---|---|---|
-| `/stats`' recent games | `repo.recent_games()` per platform, merged | the card's owner | score ↓, then count ↓ | `stats_games_limit` (0 = uncapped) |
-| `/recent` | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | the command's own `N` |
-| `/online` | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
-| summary leaderboards (day/month) | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
-| "Игры за месяц" | `repo.chat_top_games()` | games, not people | achievements/trophies ↓ | `summary_top_limit` |
-| the admin's user list | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page |
-| the admin's chat list | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
-| a chat's subscribers | `repo.chat_subscribers()` | that chat's subscribers | by the rendered name ↑ | — |
-| `/hltb` suggestions | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit` |
-| `/hltb` results | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page |
+A **listing** is a list made of text — `views/lists.py::Listing`: header,
+rows, an optional total line, and a wrapper. The wrapper is the sub-kind:
+**quoted** (a collapsible blockquote — a report section somebody taps open,
+the default), **plain** (read at a glance rather than tapped open: `/online`,
+the admin's roster), or **code** (a monospace `<pre>` table — the shape all
+of these started as, wrong register for a leaderboard, gone since #64 and
+kept here only so nobody reintroduces it as if it were new).
 
-- **`/stats`' games** are a rolling 30 days (`RECENT_GAMES_DAYS`), labelled as
-  such, deliberately not the calendar month its counters use. One game on two
-  platforms is two rows.
+An **inline listing** is a list made of buttons — `views/inline_lists.py`,
+for the lists whose rows have to be tappable, so the rows *are* the keyboard.
+It owns the same kind of shared vocabulary its text counterpart does: the
+button rows (`button_rows`, one per row by default, three across for
+`/who`'s picker), the page arithmetic (`paginate`, which was written three
+times over before this, each with its own idea of what an out-of-range page
+should do), and the trailing row that is the way out — "назад" or "отмена".
+
+In both files the *rows* are deliberately not shared: a list of games and a
+list of people are different things. The one exception is the games row,
+which two screens draw identically and which lived in two copies until #64.
+
+**One navigation shape, everywhere**: `◀️ 2/5 ▶️` — where you are and how
+much is left, next to the arrows that act on it (2026-09-16, owner decision).
+There were two, found while cataloguing these lists: this one on `/hltb`, and
+the admin roster's bare `‹ ›` with its page count in the header text. Same job,
+two looks. The count moved onto the row, so `admin-users-header` no longer
+repeats it — a header and a keyboard two lines apart are read in one glance,
+and saying it twice there was the only thing unification could have cost.
+
+The counter is a button because a keyboard row has nowhere else to put a
+label; `page_nav`'s `noop` argument is the callback that answers it and does
+nothing else. It is per-screen (`a:noop`, `hltb:noop`) rather than one shared
+value, because every callback here lives in its own screen's namespace and a
+counter answering another screen's router is exactly what that prevents.
+
+A screen that is genuinely both kinds at once builds both: the admin's user
+list fills a text row and a button row from one loop over one page of people
+(see its own note below).
+
+| List | Kind | Source | Who appears | Sort | Cap |
+|---|---|---|---|---|---|
+| the games list — **one template, three scopes**: `/stats`, `/summary_day`, `/summary_month` | listing, quoted | `repo.users_games_achievements()` | `/stats`: the card's owner. A summary: every subscriber, summed | count ↓, then last unlock ↓ | `stats_games_limit` / `summary_top_limit` (0 = uncapped) |
+| `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | `recent_limit`, or the command's own `N` |
+| summary leaderboards (day/month) | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
+| `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
+| the admin's user list | listing (plain) **and** inline listing | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page, `◀️ N/M ▶️` |
+| the admin's chat list | inline listing | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
+| `/who`'s picker | inline listing | `repo.chat_member_presence()` | subscribers ∪ `chat_seen`, same as `/online` | the query's own playing → online → offline | — (three per row is layout) |
+| `/panel`'s "Мои чаты" | inline listing | `repo.user_chats()` | every active chat this person subscribed to or was seen writing in | title ↑ | — |
+| the admin's limits screen | inline listing | `NUMERIC_SETTINGS` + `repo.get_app_setting()` | the global numeric settings, not rows of data | `NUMERIC_SETTINGS`' own order | — |
+| `/hltb` suggestions | inline listing | `repo.chat_recent_games()` | games, not people | last played ↓ | `hltb_results_limit`, `◀️ N/M ▶️` |
+| `/hltb` results | inline listing | the HowLongToBeat API, not the database | games, not people | relevance, as HLTB returned it | `hltb_results_limit`, `hltb_page_size` per page, `◀️ N/M ▶️` |
+| a chat's subscribers | other (one joined line) | `repo.chat_subscribers()` | that chat's subscribers | by the rendered name ↑ | — |
+| a digest's per-game block | other (a caption's rows) | the publish batch itself | the achievements being published | grouped by `(platform, title_id)` | none — every item is listed |
+| the admin home's API usage | other (one joined line) | the rate limiter in memory | its own windows, not data rows | as the limiter reports them | — |
+
+A picker built from a *fixed* set of controls — the timezone grids, the digest
+thresholds, the admin's hour picker — is not in this table: its rows are the
+options themselves, decided in code, so "who appears" and "what caps it" have
+no answer to record.
+
+- **The games listing is one query with two scopes** (2026-09-17, owner
+  decision): `repo.users_games_achievements(tg_ids, since, ...)`. `/stats`
+  passes one person, the monthly summary's own games block passes every
+  subscriber; overlap adds up, because that block counts what the *chat*
+  did, not distinct achievements. It replaced `user_games` and
+  `chat_top_games`, two near-identical queries that had already drifted
+  apart on both grouping and ordering, the way two copies of one answer
+  always do. Grouped by `(title_id, platform)` — a Steam appid and an Xbox
+  title id are both bare numbers and can collide by accident, which
+  `user_games` (grouping by `title_id` alone) was quietly exposed to.
+  Ranked by **achievements earned, then by the most recent unlock**, with
+  gamerscore taking no part at all: it is always 0 on Steam and PSN, so
+  ranking by it sank every game on those platforms below every Xbox one no
+  matter what was actually played. `/stats` also stopped firing one query
+  per linked account and merging in Python, which applied the cap twice.
+
+- **Which rows fall inside a window** (2026-09-17, owner decision, replacing
+  the 2026-09-16 rule that briefly excluded backfill outright). A real
+  platform timestamp is authoritative whatever the row's origin;
+  `created_at` stands in for it **only** on a live-polled row, where "when
+  the bot saw it" genuinely is about when it was earned. A backfill row with
+  no timestamp is ancient by definition — its `created_at` is when the
+  import ran, which is the whole of #69's mechanism (real production data:
+  15 games and 767 achievements for a month somebody had earned none of).
+
+  `is_backfill` is **not** a filter here, and this is the invariant the
+  short-lived `s.is_backfill = 0` broke: the flag means "do not publish",
+  not "did not happen" (it has said so at the top of `services/stats.py` all
+  along). Filtering on it hid achievements the platform itself had dated
+  inside the window — on the test bot, one person's Steam and Xbox games
+  vanished entirely, leaving a single PSN row, and another's PSN trophies
+  vanished, leaving two Xbox games. A freshly connected account must show
+  its real recent games immediately, whether or not any of it was ever
+  announced in chat.
 - **`/recent`** is subscribers only — not `/online`'s broader "known member"
   set; excluded people never appear; a secret achievement's name stays behind
-  a spoiler.
+  a spoiler. Its row count is the admin's `recent_limit` (owner, 2026-09-17)
+  — it was the one list whose size lived as a constant in its own handler.
+  The `N` argument still works, capped by `RECENT_MAX`, as a one-off "show me
+  more" rather than the only way to change it.
 - **`/online`**: activity beats freshness (see the naming rules above and
   `presence_view.pick_presence`).
 - **Summary leaderboards** keep zero rows: this is a report, not a live feed
   (#34). The `💎N` rare badge is in the month block only (#9); the platform
   breakdown is always there.
-- **"Игры за месяц"** groups by `(title_id, platform)`, never `title_id`
-  alone — a Steam appid and an Xbox title id are both bare numbers and can
-  collide by accident.
+- **A game's row reads "what was earned, then what it was worth, in
+  brackets"** (owner, 2026-09-17): `🟢 Halo — 12 достижений (+240 G · 💎3)`,
+  `🔵 God of War — 31 трофей (🏆1 · 🥇3 · 🥈7 · 🥉20)`. PSN breaks its
+  trophies down by tier instead of showing a rarity count — the tier already
+  answers "how rare" on Sony's own scale (the same reason a PSN notification
+  shows its tier badge in place of the usual rarity diamond). Every part is
+  dropped when zero, which is not a rare case: a Steam row's gamerscore
+  always is, and an Xbox 360 row's rare count always is.
+
+- **Rarity is read from a shared cache, with the row as the fallback**
+  (owner, 2026-09-17): `achievement_rarity_cache`, keyed
+  `(platform, title_id, achievement_id)` like the name and description caches
+  beside it, and reached through `db/repo/_sql.py`'s own `rarity()` /
+  `rarity_cache_join()`. How rare an achievement is, is a fact about the
+  achievement; `seen_achievements.rarity_percent` is a snapshot of whatever
+  the platform said the first time somebody here earned it, written with
+  `INSERT OR IGNORE` and never updated.
+
+  On Xbox that snapshot is usually empty. Rarity arrives only on **contract
+  4**, the per-title call a live poll makes; backfill reads the whole library
+  with contract 2, which omits it — 25 692 rows of 25 825 on production,
+  split exactly along that line. `poller/rarity_backfill.py` walks those
+  titles a few a minute and fills the cache; `scripts/backfill_rarity.py` is
+  the same walk for an operator who wants it finished in one sitting, and
+  requires the bot stopped for the usual Xbox token reason. Every platform's
+  ordinary poll writes to the cache too, which costs nothing — each already
+  had the percentages in hand.
+
+  **One request per title, not per person:** a contract-4 reply lists every
+  achievement of the game, the caller's own or not, so whichever owner is
+  asked fills the cache for everybody. 963 distinct titles on production
+  against 1 704 person-title pairs.
+
+  `checked_at` orders the refresh queue and is **not** an expiry — nothing is
+  hidden for being stale, because a year-old percentage is worth more than
+  none. Xbox 360 (contract 1) has no rarity at all and never will, so a 💎
+  never appears on an x360 row; those achievements publish under the `rare`
+  filter without being known to be rare, and that stays open.
 - **The admin's user list** is printed twice on purpose: as text, where the
   columns line up and can be read at a glance, and as one button per row,
-  because a row has to be tappable.
+  because a row has to be tappable. It is the only screen that is two kinds at
+  once, which is why it has a row's worth of both.
+- **The admin's chat list** is buttons only because a chat row is two facts
+  wide and both fit on the button, so there is no separate text row left to
+  write. It used to call `Listing` with an empty row list to look like it
+  shared the text machinery — a no-op, `Listing(rows=[]).body()` is always
+  `""` — which is what an inline listing of its own replaced.
+- **`/who`'s picker** reads exactly what `/online` reads and shows the same
+  people — it was split out of `/online` so that one can stay a glance and
+  this one a grid of buttons. Its labels name the *person* (#40), never a bare
+  id, and the cancel button is not decoration: without it there was no way out
+  of the prompt except picking somebody.
+- **`/panel`'s "Мои чаты"** deliberately lists chats this person is *not*
+  subscribed to as well — subscribing is what the screen is for, so hiding the
+  unsubscribed ones would hide the only row worth tapping. A chat the bot was
+  removed from is left out: there is nothing left to manage there.
+- **The admin's limits screen** is the one list whose rows are settings rather
+  than data; each carries its current value so the screen reads as a settings
+  list rather than a menu you have to walk to find out what is set (see the
+  super-admin panel above, including `0` rendering as "без ограничения").
 - **`/hltb`'s suggestions** use `/online`'s "known member" scope, but their
   source (`title_history`) is **Xbox-only** — Steam and PSN games never reach
   it. Same class of gap the naming chains had before #51, one layer over; not
   fixed.
+- **A digest's per-game block** is a list living inside a photo caption, which
+  is why it is neither quoted nor tappable: it has to read like the single
+  card it is a batch of (see Message formats). It is the one list here that is
+  never capped — trimming it to "и ещё N" would defeat what a digest is for.
+- **The admin home's API usage** is a diagnostic against a bug in the poller,
+  not a persisted budget — the rate limiter's own in-memory windows, joined
+  onto one line because three numbers are not worth a list's shape.
 
 ## Statistics rules
 
 Normal stats read only from `seen_achievements`, `title_history`, platform links,
 and cached presence/level tables — never a live platform call.
 
-**An achievement with no usable unlock time still counts** (2026-09-13, user
-request). Microsoft sends a placeholder date for some Xbox 360 achievements —
-`0001-01-01`, or `1753-01-01`, the old SQL Server minimum; 84 of 5239 rows on
-one real account — and `services/xbox/models.py::parse_timestamp` discards it
-rather than record an unlock in the year 1753. Every windowed read therefore
-uses `COALESCE(unlocked_at, created_at)`: when the platform gives no usable
-time, when the bot first saw the achievement is the honest stand-in, and the
-two readers that build an `AchievementRow` hand that stand-in to the caller so
-the publisher's own age cap agrees with the statistics. The stored column keeps
-its NULL — it records what the platform actually said. Before this, such rows
-were published normally and then silently absent from `/recent`, from both
-counters, and from every catch-up window, which is the worst of both. `/stats`' lifetime
+**An achievement with no usable unlock time still counts — unless nobody
+can say when it happened** (2026-09-13, extended 2026-09-17, both owner
+decisions; #69). Microsoft sends a placeholder date for some Xbox 360
+achievements — `0001-01-01`, or `1753-01-01`, the old SQL Server minimum; 84
+of 5239 rows on one real account — and
+`services/xbox/models.py::parse_timestamp` discards it rather than record an
+unlock in the year 1753. `COALESCE(unlocked_at, created_at)` stands in for
+those: when the platform gives no usable time, when the bot first saw the
+achievement is the honest stand-in, and the two readers that build an
+`AchievementRow` hand that stand-in to the caller so the publisher's own age
+cap agrees with the statistics. The stored column keeps its NULL — it records
+what the platform actually said.
+
+**That fallback is honest for a live poll and a lie for an import.** A
+poller sees an unlock within minutes to hours; a backfill row's `created_at`
+is simply when the one-off import ran, which has no relationship to when
+anything was earned. So every windowed read asks two things, written once in
+`db/repo/_sql.py` (`earned_at`, `earned_date_is_real`, `earned_since`) for
+the same reason `OWNED_BY_PERSON` is written once:
+
+- a row the platform dated is placed by that date;
+- an undated row a **live poll** found is placed by when the bot saw it;
+- an undated row an **import** brought in is ancient, and falls outside
+  every window.
+
+Two wrong versions preceded it, in opposite directions, and both shipped.
+Plain `COALESCE` everywhere was too generous — a freshly linked library read
+as this month's play, 767 achievements across 15 games for somebody who had
+earned none of it, which is #69. Filtering on `s.is_backfill = 0` instead was
+too harsh — it also threw away imports the platform *had* dated, and one
+person's Steam and Xbox games vanished from `/stats` entirely, leaving a
+single PSN row. The flag means "do not publish", not "did not happen"
+(`services/stats.py`); it gets a say only where there is no date to believe
+instead.
+
+`/recent` has no window of its own, so the rule applies there as an
+exclusion: an import's timestamp is "now" at connect time, which would put
+somebody's whole imported history at the top of the list in the one window
+where a first link is meant to be silent.
+
+Three readers keep plain `COALESCE` on purpose and say so in place:
+`unpublished_achievements` (its `is_backfill = 0` already excludes the only
+rows the fallback lies about), `account_latest_unlock` (it asks "since when
+do we hold data", where the import's own timestamp is the right answer), and
+`recent_achievements` (no caller left since `/panel` dropped its recent list). `/stats`' lifetime
 achievement count (`repo.xbox_achievement_count`/`platform_achievement_count`)
 always counts `seen_achievements` rows directly, never sums `title_history` —
 modern Xbox's broad history-endpoint backfill and Steam's full-library backfill
@@ -1344,8 +1599,12 @@ never learned about is a silent gap there specifically). Xbox gamerscore always
 comes from the Xbox profile cache, never from summing title history. A 100%-completed
 game (Xbox/Steam) and a PSN platinum trophy answer the same question — Sony only
 awards a platinum once every other trophy in that game is earned — so both render as
-the same 🏆 symbol + count next to the platform's achievement/trophy count, never a
-word, and only when nonzero. Cross-platform "today" (24h rolling) and "month"
+the same **💠** + count next to the platform's achievement/trophy count, never a
+word, and only when nonzero. The count comes first there ("1 💠"), unlike the badges
+inside a value bracket ("💎10"): one reads as a quantity of a thing, the other as a
+label on a number. It was 🏆 until 2026-09-17 (owner) — which is also what an
+*ordinary* achievement leads with, so the rarest thing in a game and the most
+ordinary one shared a glyph. Cross-platform "today" (24h rolling) and "month"
 (calendar month, #14) counters aggregate by `tg_id`.
 Platform breakdowns (e.g. "(🟢 3 · ⚫ 5)") show only where they clarify genuinely
 mixed-platform activity. Excluded users are never polled, published, or

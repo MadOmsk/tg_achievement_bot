@@ -6,25 +6,34 @@ section you tap to open, which is Telegram's own shape for it and reads far
 better than the monospace table this used to be — but that is a default, not
 the definition: `/online` is a list too and is not quoted.
 
-What is deliberately **not** shared is the row. A list of games and a list of
-people are different things, and forcing both through one template would
-make every future change to one of them a change to the other. Each kind of
-list keeps its own row renderer here, side by side, where the difference is
+**A row is shared only where it is genuinely the same row.** A list of games
+and a list of people are different things, and forcing both through one
+template would make every future change to one a change to the other — so
+each kind keeps its own renderer here, side by side, where the difference is
 visible.
+
+Games are the case where it *is* the same row, and `games_listing` below is
+the whole template rather than just the line: three screens draw it (`/stats`
+for one person, each summary for every subscriber) and differ only in which
+people and which window were asked for. The query behind them is one too
+(`repo.users_games_achievements`). It was two copies six lines apart until
+2026-09-17, which is the sort of duplicate that quietly grows a difference.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from html import escape as html_escape
 
-from bot.constants import Platform, PsnTrophyTier
+from bot.constants import Platform
+from bot.db.repo import GameAchievements
 from bot.views.parts import (
     PLATFORM_ICON,
-    TROPHY_TIER_BADGE,
+    bracketed,
     plural_achievements,
     plural_trophies,
-    score_suffix,
+    value_parts,
 )
 
 # A long name does not get cut off gracefully — it wraps the whole line onto
@@ -95,16 +104,19 @@ def total_line(label: str, text: str) -> str:
 class GameRow:
     """One game in a games list, whichever list it came from.
 
-    `/stats` ranks one person's own recent games (`TopGame`) and the monthly
-    summary ranks the whole chat's (`ChatTopGame`); the row on screen is the
-    same row, which is why both now arrive here as this. `tiers` is PSN's
-    bronze/silver/gold/platinum, all zero elsewhere.
+    `/stats` ranks one person's own games and the monthly summary ranks the
+    whole chat's; the row on screen is the same row, and since 2026-09-17 so
+    is the query behind it (`repo.users_games_achievements`). `tiers` is PSN's
+    platinum/gold/silver/bronze, all zero elsewhere; `rare` is how many
+    achievements cleared the chat's rarity threshold, which PSN rows never
+    show — their tier already answers "how rare" on Sony's own scale.
     """
 
     platform: str | None
     name: str | None
     count: int
     score: int = 0
+    rare: int = 0
     tiers: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
@@ -125,22 +137,55 @@ def game_rows(games: list[GameRow], untitled: str, locale: str) -> list[str]:
     ]
 
 
-def _game_tail(game: GameRow, locale: str) -> str:
-    """PSN games show a trophy-tier breakdown instead of gamerscore (owner
-    request, 2026-09-08) — the same per-tier icons every other screen uses.
-    Xbox and Steam show the "(+N G)" tail, skipped for a zero score, which a
-    Steam row's always is."""
-    if game.platform == Platform.PSN:
-        platinum, gold, silver, bronze = game.tiers
-        tail = "".join(
-            f" {badge}{count}"
-            for count, badge in (
-                (platinum, TROPHY_TIER_BADGE[PsnTrophyTier.PLATINUM]),
-                (gold, TROPHY_TIER_BADGE[PsnTrophyTier.GOLD]),
-                (silver, TROPHY_TIER_BADGE[PsnTrophyTier.SILVER]),
-                (bronze, TROPHY_TIER_BADGE[PsnTrophyTier.BRONZE]),
-            )
-            if count
+def games_listing(games: Sequence[GameAchievements], untitled: str, locale: str) -> Listing:
+    """The one games list this bot has (owner, 2026-09-17).
+
+    Three screens draw it and they differ only in *which people* and *which
+    window* were asked for: `/stats` passes one person and the calendar
+    month, each summary passes every subscriber and its own cutoff. The query
+    behind them is one too (`repo.users_games_achievements`), so what is left
+    here is the mapping onto a row — which lived in two copies until this
+    function, and is the sort of duplicate that quietly grows a difference.
+
+    Returns the `Listing` rather than rendered text: the summary stitches its
+    blocks together itself and needs the body and its header separable, while
+    /stats just calls `.render()`.
+    """
+    return Listing(
+        rows=game_rows(
+            [
+                GameRow(
+                    platform=game.platform,
+                    name=game.name,
+                    count=game.count,
+                    score=game.score,
+                    rare=game.rare,
+                    tiers=(game.platinum, game.gold, game.silver, game.bronze),
+                )
+                for game in games
+            ],
+            untitled,
+            locale,
         )
-        return f"{plural_trophies(game.count, locale)}{tail}"
-    return f"{plural_achievements(game.count, locale)}{score_suffix(game.score)}"
+    )
+
+
+def _game_tail(game: GameRow, locale: str) -> str:
+    """What was earned, then what it was worth, in brackets (owner, 2026-09-17).
+
+    PSN breaks its trophies down by tier instead of showing a rarity count
+    (owner request, 2026-09-08) — the tier already answers "how rare" on
+    Sony's own scale, and its own badge is the same icon every other screen
+    uses for it. Xbox and Steam show gamerscore and how many were rare, each
+    skipped when zero: a Steam row's gamerscore always is, an Xbox 360 row's
+    rare count always is (contract 1 carries no rarity at all), and "(+0 G)"
+    on every line reads as noise.
+    """
+    if game.platform == Platform.PSN:
+        # A PSN row breaks down by tier and shows no gamerscore (it has none)
+        # and no rarity count — the tier already answers "how rare" on Sony's
+        # own scale.
+        return plural_trophies(game.count, locale) + bracketed(value_parts(0, 0, game.tiers))
+    return plural_achievements(game.count, locale) + bracketed(
+        value_parts(game.score, game.rare, (0, 0, 0, 0))
+    )

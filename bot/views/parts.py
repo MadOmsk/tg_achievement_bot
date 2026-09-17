@@ -52,7 +52,7 @@ def rarity_badge(rarity_percent: float | None) -> str:
 # instead of it: rarity says how many players got it, tier says how much
 # Sony itself weighted it — two different questions about the same trophy.
 TROPHY_TIER_BADGE = {
-    PsnTrophyTier.PLATINUM: AchievementBadge.CUP,
+    PsnTrophyTier.PLATINUM: AchievementBadge.PLATINUM,
     PsnTrophyTier.GOLD: AchievementBadge.GOLD,
     PsnTrophyTier.SILVER: AchievementBadge.SILVER,
     PsnTrophyTier.BRONZE: AchievementBadge.BRONZE,
@@ -144,6 +144,37 @@ def platform_breakdown_suffix(
     return " (" + " · ".join(parts) + ")"
 
 
+def bracketed(parts: list[str]) -> str:
+    """ "(+945 G · 💎2)" — what something was worth, in one bracket, with the
+    separator every multi-part line in this bot uses. Nothing at all when no
+    part is worth showing, which is the common case: a Steam row has no
+    gamerscore, an Xbox 360 row has no rarity, and most people have no
+    trophies. Shared by a games row and /stats' own counters (2026-09-17)."""
+    return f" ({' · '.join(parts)})" if parts else ""
+
+
+def value_parts(score: int, rare: int, tiers: tuple[int, int, int, int]) -> list[str]:
+    """Gamerscore, then how many were rare, then PSN's tiers — the fixed
+    order the bot shows value in, with every zero left out."""
+    platinum, gold, silver, bronze = tiers
+    parts = []
+    if score:
+        parts.append(f"+{thousands(score)} G")
+    if rare:
+        parts.append(f"{AchievementBadge.DIAMOND}{rare}")
+    parts += [
+        f"{badge}{count}"
+        for count, badge in (
+            (platinum, TROPHY_TIER_BADGE[PsnTrophyTier.PLATINUM]),
+            (gold, TROPHY_TIER_BADGE[PsnTrophyTier.GOLD]),
+            (silver, TROPHY_TIER_BADGE[PsnTrophyTier.SILVER]),
+            (bronze, TROPHY_TIER_BADGE[PsnTrophyTier.BRONZE]),
+        )
+        if count
+    ]
+    return parts
+
+
 def score_suffix(score: int) -> str:
     """The "(+N G)" tail, or nothing at all for a zero score (2026-09-08
     preview round, user request) — a Steam row's gamerscore is always 0
@@ -208,9 +239,15 @@ def plural_trophies(count: int, locale: str) -> str:
 #  user request, reversing an initial "комплитов"/"платин" text attempt) —
 #  a 100%-completed game and a PSN platinum answer the same question, so
 #  one symbol answers it for every platform. The same icon PSN's own trophy
-#  tier badge already uses for a platinum (services/achievements.py's own
-#  TROPHY_TIER_BADGE above).
-COMPLETED_BADGE = AchievementBadge.CUP
+#  tier badge uses for a platinum (TROPHY_TIER_BADGE above), which is the
+#  point of it: one glyph for "you finished the thing", wherever it appears.
+#
+#  💠 since 2026-09-17, not 🏆 — the cup is what an *ordinary* achievement
+#  leads with, so the rarest thing in a game and the most ordinary one used
+#  to share a glyph. The count comes first here ("1 💠"), unlike the badges
+#  inside a value bracket ("💎10"): this one reads as a quantity of a thing,
+#  those read as a label on a number.
+COMPLETED_BADGE = AchievementBadge.PLATINUM
 
 
 def visibility_status_text(link: PlatformLink, locale: str) -> str:
@@ -274,7 +311,7 @@ async def platform_header_lines(
         xbox_completed = await repo.xbox_completed_games_count(xuid)
         parts = [plural_achievements(xbox_count, locale)]
         if xbox_completed:
-            parts.append(f"{COMPLETED_BADGE} {xbox_completed}")
+            parts.append(f"{xbox_completed} {COMPLETED_BADGE}")
         parts.append(f"gamerscore {thousands(gamerscore or 0)}")
         lines.append(
             f"{PLATFORM_ICON[Platform.XBOX_MODERN]} XBOX: {gamertag_html}  ·  "
@@ -311,7 +348,7 @@ async def platform_header_lines(
             # is earned, so this count already *is* that.
             platinum = await repo.psn_platinum_count(tg_id)
             if platinum:
-                link_parts.append(f"{COMPLETED_BADGE} {platinum}")
+                link_parts.append(f"{platinum} {COMPLETED_BADGE}")
             # PSN's own account-wide level (Follow-up 2026-09-06) — cached
             # by poller/psn_fetcher.py, never fetched here (SPEC 1.5's
             # cache-only rule); absent until the poller has had a chance to
@@ -327,7 +364,7 @@ async def platform_header_lines(
         elif link.platform == Platform.STEAM:
             completed = await repo.steam_completed_games_count(tg_id)
             if completed:
-                link_parts.append(f"{COMPLETED_BADGE} {completed}")
+                link_parts.append(f"{completed} {COMPLETED_BADGE}")
         lines.append(f"{icon} {label}: {name_html}  ·  " + "  ·  ".join(link_parts))
 
     return lines
