@@ -1403,10 +1403,9 @@ list fills a text row and a button row from one loop over one page of people
 
 | List | Kind | Source | Who appears | Sort | Cap |
 |---|---|---|---|---|---|
-| `/stats`' games | listing, quoted | `repo.users_games_achievements()` | the card's owner | count ↓, then last unlock ↓ | `stats_games_limit` (0 = uncapped) |
+| the games list — **one template, three scopes**: `/stats`, `/summary_day`, `/summary_month` | listing, quoted | `repo.users_games_achievements()` | `/stats`: the card's owner. A summary: every subscriber, summed | count ↓, then last unlock ↓ | `stats_games_limit` / `summary_top_limit` (0 = uncapped) |
 | `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | `recent_limit`, or the command's own `N` |
 | summary leaderboards (day/month) | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` (0 = uncapped) |
-| "Игры:" in a summary | listing, quoted | `repo.users_games_achievements()`, same call | every subscriber's games, summed | count ↓, then last unlock ↓ | `summary_top_limit` |
 | `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, `updated_at` ↓ within a level | — |
 | the admin's user list | listing (plain) **and** inline listing | `repo.admin_users()` | anyone connected on at least one platform | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE` per page, `◀️ N/M ▶️` |
 | the admin's chat list | inline listing | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |

@@ -6,11 +6,18 @@ section you tap to open, which is Telegram's own shape for it and reads far
 better than the monospace table this used to be — but that is a default, not
 the definition: `/online` is a list too and is not quoted.
 
-What is deliberately **not** shared is the row. A list of games and a list of
-people are different things, and forcing both through one template would
-make every future change to one of them a change to the other. Each kind of
-list keeps its own row renderer here, side by side, where the difference is
+**A row is shared only where it is genuinely the same row.** A list of games
+and a list of people are different things, and forcing both through one
+template would make every future change to one a change to the other — so
+each kind keeps its own renderer here, side by side, where the difference is
 visible.
+
+Games are the case where it *is* the same row, and `games_listing` below is
+the whole template rather than just the line: three screens draw it (`/stats`
+for one person, each summary for every subscriber) and differ only in which
+people and which window were asked for. The query behind them is one too
+(`repo.users_games_achievements`). It was two copies six lines apart until
+2026-09-17, which is the sort of duplicate that quietly grows a difference.
 """
 
 from __future__ import annotations
