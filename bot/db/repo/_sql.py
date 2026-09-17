@@ -83,6 +83,51 @@ XBOX_COLUMNS = (
 )
 
 
+# ------------------------------------------------------- when it was earned (#69)
+#
+# Two questions, one answer each, written once here for the same reason
+# OWNED_BY_PERSON is: sixteen copies of a date rule will eventually disagree.
+
+
+def earned_at(prefix: str = "s.") -> str:
+    """When this row was earned, as well as it can be known.
+
+    `created_at` stands in when the platform gave no usable time — Microsoft
+    sends a placeholder date for some Xbox 360 achievements, which the parser
+    discards (services/xbox/models.py). Those rows still count (owner
+    decision, 2026-09-13): the stored column keeps its NULL, only what is
+    read carries the fallback.
+    """
+    return f"COALESCE({prefix}unlocked_at, {prefix}created_at)"
+
+
+def earned_date_is_real(prefix: str = "s.") -> str:
+    """Whether `earned_at` above is worth believing for this row.
+
+    It is not, in exactly one case: a backfill row with no platform
+    timestamp. Its `created_at` is when the one-off import ran, which has no
+    relationship at all to when the achievement was earned — that is #69's
+    whole mechanism, a freshly linked library reading as "played this month"
+    (real production data: 767 achievements across 15 games for somebody who
+    had earned none of it). For a live-polled row the fallback is honest: the
+    poller sees an unlock within minutes to hours of it happening.
+
+    Deliberately **not** `is_backfill = 0` on its own, which was the first
+    attempt and failed the other way — it also threw away backfill rows the
+    platform itself had dated, and a person's Steam and Xbox games vanished
+    from /stats entirely. The flag means "do not publish", not "did not
+    happen" (services/stats.py); it earns a say here only where there is no
+    date to believe instead.
+    """
+    return f"({prefix}unlocked_at IS NOT NULL OR {prefix}is_backfill = 0)"
+
+
+def earned_since(prefix: str = "s.") -> str:
+    """The window filter both of the above compose into: one `?`, bound to
+    the start of the window."""
+    return f"{earned_date_is_real(prefix)} AND {earned_at(prefix)} >= ?"
+
+
 # --------------------------------------------------------------- names (#61)
 
 # The caches that hold a name in both languages, joined to a `seen_achievements
@@ -118,3 +163,29 @@ def pick_name(
         if candidate and candidate.strip():
             return candidate
     return stored
+
+
+# --------------------------------------------------------------- rarity (#69's tail)
+
+
+# The shared cache joined to a `seen_achievements s`. Same shape and the same
+# reasoning as NAME_CACHE_JOIN above: the row carries whatever the platform
+# said the first time somebody here earned the achievement, which on Xbox is
+# usually nothing at all — rarity rides only on contract 4, and backfill uses
+# contract 2. The cache is a fact about the achievement and is refreshed;
+# the row is a snapshot and is not.
+def rarity_cache_join(prefix: str = "s.") -> str:
+    """Takes the table's alias because one caller has none: the value
+    breakdown reaches its person through OWNED_BY_PERSON_EXISTS, which names
+    `seen_achievements` in full and stops resolving the moment the table is
+    aliased."""
+    return (
+        f"LEFT JOIN achievement_rarity_cache rc ON rc.platform = {prefix}platform"
+        f"   AND rc.title_id = {prefix}title_id"
+        f"   AND rc.achievement_id = {prefix}achievement_id "
+    )
+
+
+def rarity(prefix: str = "s.") -> str:
+    """The percentage to believe: the cache first, the row as the fallback."""
+    return f"COALESCE(rc.rarity_percent, {prefix}rarity_percent)"

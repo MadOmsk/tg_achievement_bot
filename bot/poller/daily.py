@@ -18,6 +18,8 @@ from bot.db.repo import Repo
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
 from bot.views.summary import (
+    DAY,
+    MONTH,
     build_summary,
 )
 
@@ -53,7 +55,7 @@ class DailySummary:
 
             report_date = now_local.date().isoformat()
             if not await self._repo.daily_report_sent(chat.chat_id, report_date):
-                await self._send_scheduled(chat, report_date, with_day=True, with_month=False)
+                await self._send_scheduled(chat, report_date, window=DAY)
 
             # On the last calendar day of the month, the month-end wrap-up
             # goes out too (#14) — same time, its own dedup marker, and
@@ -61,9 +63,9 @@ class DailySummary:
             if _is_last_day_of_month(now_local):
                 month_key = _monthly_key(now_local)
                 if not await self._repo.daily_report_sent(chat.chat_id, month_key):
-                    await self._send_scheduled(chat, month_key, with_day=False, with_month=True)
+                    await self._send_scheduled(chat, month_key, window=MONTH)
 
-    async def _send_scheduled(self, chat, marker: str, *, with_day: bool, with_month: bool) -> None:
+    async def _send_scheduled(self, chat, marker: str, *, window: str) -> None:
         now_local = local_now(chat.tz_offset_min)
         built = await build_summary(
             self._repo,
@@ -72,8 +74,7 @@ class DailySummary:
             now_local.date(),
             locale=chat.locale,
             tz_offset_min=chat.tz_offset_min,
-            with_day=with_day,
-            with_month=with_month,
+            window=window,
         )
         if built is None:
             # No subscribed members at all — nothing to roster (#34 made a

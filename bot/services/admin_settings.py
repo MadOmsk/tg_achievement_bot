@@ -96,6 +96,9 @@ DEFAULT_SHOW_LINKS_DEFAULT = "0"
 
 _DEFAULT_STATS_GAMES_LIMIT = 15
 
+#: What /recent shows when nobody has said otherwise.
+DEFAULT_RECENT_LIMIT = 5
+
 
 @dataclass(frozen=True, slots=True)
 class NumericSetting:
@@ -124,6 +127,11 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     SettingKey.STATS_GAMES_LIMIT: NumericSetting(
         "admin-setting-stats-games", _DEFAULT_STATS_GAMES_LIMIT, min=0
     ),
+    # /recent's own row count (owner, 2026-09-17) — it used to be a constant
+    # in the handler with an optional `N` argument on top, the one list whose
+    # size was not the admin's to set. The argument stays, bounded by
+    # RECENT_MAX, as a one-off "show me more" rather than the only way.
+    SettingKey.RECENT_LIMIT: NumericSetting("admin-setting-recent-rows", DEFAULT_RECENT_LIMIT),
     RESULTS_LIMIT_KEY: NumericSetting("admin-setting-hltb-results", DEFAULT_RESULTS_LIMIT),
     # Feeds Telegram inline-keyboard rows directly — 50 buttons on one page
     # would be unusable, unlike the two above.

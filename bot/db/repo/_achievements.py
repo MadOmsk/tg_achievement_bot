@@ -383,6 +383,9 @@ class _AchievementsRepo:
         """
         cursor = await self._conn.execute(
             "SELECT s.*, t.name AS game,"
+            # Plain COALESCE on purpose, unlike every windowed read (#69):
+            # `is_backfill = 0` below already excludes the only rows the
+            # fallback lies about, so the rule has nothing left to decide here.
             "       COALESCE(s.unlocked_at, s.created_at) AS seen_at "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON

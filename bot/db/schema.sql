@@ -598,6 +598,32 @@ CREATE TABLE IF NOT EXISTS achievement_name_cache (
     PRIMARY KEY (platform, title_id, achievement_id)
 );
 
+-- How rare an achievement is, as a fact about the achievement rather than
+-- about the person who unlocked it (owner, 2026-09-17).
+--
+-- `seen_achievements.rarity_percent` is written once per person per
+-- achievement and never updated (every insert is INSERT OR IGNORE, and
+-- nothing UPDATEs that table), so it is really "whatever the platform
+-- reported the first time somebody here earned this". On Xbox most rows
+-- carry none at all: rarity arrives only on contract 4, the per-title call a
+-- live poll makes, while backfill uses contract 2 for the whole library.
+--
+-- `checked_at` is when it was last fetched, not an expiry: a percentage
+-- drifts as more people play, but a year-old figure is worth more than none
+-- (owner), so nothing here is hidden for being stale — it only orders the
+-- refresh queue.
+CREATE TABLE IF NOT EXISTS achievement_rarity_cache (
+    platform        TEXT NOT NULL,   -- xbox_modern / xbox_360 / steam / psn
+    title_id        TEXT NOT NULL,
+    achievement_id  TEXT NOT NULL,
+    rarity_percent  REAL NOT NULL,
+    checked_at      TEXT NOT NULL,
+    PRIMARY KEY (platform, title_id, achievement_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rarity_cache_title
+    ON achievement_rarity_cache(platform, title_id, checked_at);
+
 -- The single live copy of a self-deduplicating message kind (Follow-up
 -- 2026-09-06) — /panel, /summary, /recent and a specific person's /stats
 -- card each replace their own previous copy in the same scope instead of

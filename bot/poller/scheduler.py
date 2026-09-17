@@ -24,6 +24,7 @@ from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
+from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_localization import SteamLocalization
@@ -51,6 +52,7 @@ class PollerScheduler:
         psn_presence: PsnPresencePoller,
         flood_flush: FloodFlush,
         description_backfill: DescriptionBackfill,
+        rarity_backfill: RarityBackfill,
         steam_localization: SteamLocalization,
         avatar_refresh: AvatarRefresh,
     ) -> None:
@@ -68,6 +70,7 @@ class PollerScheduler:
         self._psn_presence = psn_presence
         self._flood_flush = flood_flush
         self._description_backfill = description_backfill
+        self._rarity_backfill = rarity_backfill
         self._steam_localization = steam_localization
         self._avatar_refresh = avatar_refresh
         self._scheduler = AsyncIOScheduler(timezone="UTC")
@@ -121,6 +124,15 @@ class PollerScheduler:
             self._description_backfill.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="description_backfill",
+            coalesce=True,
+            max_instances=1,
+        )
+        # A finite backlog rather than a gap that reopens, so gentler still —
+        # see its own module docstring.
+        self._scheduler.add_job(
+            self._rarity_backfill.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="rarity_backfill",
             coalesce=True,
             max_instances=1,
         )

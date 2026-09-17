@@ -20,7 +20,7 @@ from bot.db.repo import AchievementRow, Repo
 from bot.views.admin import render_chat_card
 from bot.views.notification import format_digest, format_single
 from bot.views.online import render_online_table
-from bot.views.summary import build_summary
+from bot.views.summary import DAY, build_summary
 
 CHAT_ID = -100700
 TG_ID = 7007
@@ -118,26 +118,27 @@ async def test_daily_summary_renders_in_the_chats_language(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Gaming chat", TG_ID)
     await repo.subscribe(CHAT_ID, TG_ID)
 
-    built = await build_summary(
-        repo, CHAT_ID, 10.0, date(2026, 6, 12), locale="en", with_day=True, with_month=False
-    )
+    built = await build_summary(repo, CHAT_ID, 10.0, date(2026, 6, 12), locale="en", window=DAY)
     assert built is not None
     text, _markup = built
-    assert "<b>Daily summary</b>, June 12" in text  # month before day in English
-    assert "24 hours" in text
+    assert "<b>The day in review</b>" in text
+    assert "<b>Total:</b>" in text and "<b>Players:</b>" in text
+    assert "Итоги" not in text
 
 
-async def test_the_same_summary_in_russian_keeps_its_own_word_order(repo: Repo) -> None:
+async def test_the_same_summary_in_russian(repo: Repo) -> None:
+    """The date left the header on 2026-09-17, and with it the one case that
+    genuinely differed by word order ("June 12" against "12 июня") — what is
+    left to check is that every label follows the chat's language."""
     await repo.ensure_user(TG_ID)
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
     await repo.subscribe(CHAT_ID, TG_ID)
 
-    built = await build_summary(
-        repo, CHAT_ID, 10.0, date(2026, 6, 12), locale="ru", with_day=True, with_month=False
-    )
+    built = await build_summary(repo, CHAT_ID, 10.0, date(2026, 6, 12), locale="ru", window=DAY)
     assert built is not None
     text, _markup = built
-    assert "<b>Итог дня</b>, 12 июня" in text  # day before month, genitive
+    assert "<b>Итоги дня</b>" in text
+    assert "<b>Всего:</b>" in text and "<b>Игроки:</b>" in text
 
 
 # ------------------------------------------------------ the super-admin panel

@@ -27,12 +27,14 @@ from aiogram.types import (
 )
 from aiogram_i18n import I18nContext
 
+from bot.constants import SettingKey
 from bot.db.repo import (
     Repo,
     User,
 )
 from bot.handlers.admin import IsAdmin
 from bot.poller.online_refresh import refresh_interval_minutes
+from bot.services.admin_settings import DEFAULT_RECENT_LIMIT
 from bot.services.message_log import stats_category
 from bot.services.naming import (
     person_name_of,
@@ -48,7 +50,7 @@ from bot.views.chat import (
     render_who_picker,
 )
 from bot.views.online import render_online_table
-from bot.views.summary import build_summary, full_leaderboard
+from bot.views.summary import DAY, MONTH, build_summary, full_leaderboard
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +72,8 @@ def _subscription_lock(chat_id: int, tg_id: int) -> asyncio.Lock:
     return _subscription_locks.setdefault((chat_id, tg_id), asyncio.Lock())
 
 
-RECENT_DEFAULT = 5
+#: The ceiling on /recent's own `N` argument. The *default* is the admin's
+#: (SettingKey.RECENT_LIMIT) — this only stops somebody asking for 500.
 RECENT_MAX = 20
 
 
@@ -239,7 +242,7 @@ async def stats(
         with stats_category():
             await message.answer(i18n.get("chat-unknown-user"))
         return
-    text = await build_stats_text(repo, target, i18n)
+    text = await build_stats_text(repo, target, message.chat.id, i18n)
     if text is None:
         with stats_category():
             await message.answer(i18n.get("chat-stats-nothing-connected"))
@@ -330,9 +333,12 @@ async def who_stats_button(
     if target is None:
         await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
         return
-    text = await build_stats_text(repo, target, i18n)
+    # The card is built inside the isinstance guard now: it needs the chat
+    # this was pressed in (the rarity threshold is per chat), and
+    # `callback.message` is only guaranteed to carry one here.
     await callback.answer()
     if isinstance(callback.message, Message):
+        text = await build_stats_text(repo, target, callback.message.chat.id, i18n)
         if text is not None:
             await _send_stats_card(bot, repo, callback.message.chat.id, target, text)
         # The picker's own job is done either way — drop it instead of
@@ -345,19 +351,21 @@ async def who_stats_button(
 
 
 async def _summary(
-    repo: Repo, chat_id: int, *, with_day: bool = True, with_month: bool = True
+    repo: Repo, chat_id: int, *, window: str
 ) -> tuple[str | None, InlineKeyboardMarkup | None]:
     """The report, however it was asked for — one set of numbers no matter
     which command triggered it.
 
     There is no rate limit (2026-09-12, user request: the ten-minute one got
-    in the way more than it protected). /summary replaces the chat's own
+    in the way more than it protected). Each command replaces its own
     previous copy instead of stacking, which is what kept repeated asks from
     piling up in the first place.
 
-    `with_day`/`with_month` (2026-09-08, user request) let /summary_day and
-    /summary_month ask for one block only, from the same report /summary's
-    own "both" call builds.
+    One block per command since 2026-09-17 (owner): `/summary` used to send
+    both at once and is gone, leaving the two the scheduled jobs already
+    send separately — the daily job sends the day block, the month-end job
+    the month block. Asking for both in one message was a third shape of the
+    same numbers, and nobody wanted the long version.
     """
     settings_row = await repo.get_chat_daily_settings(chat_id)
     built = await build_summary(
@@ -367,60 +375,53 @@ async def _summary(
         local_now(settings_row.tz_offset_min).date(),
         locale=settings_row.locale,
         tz_offset_min=settings_row.tz_offset_min,
-        with_day=with_day,
-        with_month=with_month,
+        window=window,
     )
     return built if built is not None else (None, None)
 
 
 async def _run_summary_command(
-    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, *, with_day: bool, with_month: bool
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, *, window: str
 ) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-summary-group-only"))
         return
 
-    text, markup = await _summary(repo, message.chat.id, with_day=with_day, with_month=with_month)
+    text, markup = await _summary(repo, message.chat.id, window=window)
     if text is None:
         with stats_category():
             await message.answer(i18n.get("chat-summary-empty"))
         return
-    # Replaces the chat's previous /summary outright (Follow-up 2026-09-06)
-    # — an "nothing new" reply just above is left untouched on purpose:
-    # it isn't itself worth keeping around, but it also shouldn't erase a
-    # real summary from earlier that still has something to show.
+    # Replaces this command's own previous copy outright (Follow-up
+    # 2026-09-06) — an "nothing new" reply just above is left untouched on
+    # purpose: it isn't itself worth keeping around, but it also shouldn't
+    # erase a real summary from earlier that still has something to show.
+    #
+    # Keyed per command since they became two (2026-09-17): sharing one slot
+    # would have /summary_month wipe the day block somebody had just asked
+    # for, which one command replacing *itself* never did.
     with stats_category():
         await send_replacing(
             bot,
             repo,
             message.chat.id,
-            "summary",
+            f"summary_{window}",
             text,
             parse_mode=ParseMode.HTML,
             reply_markup=markup,
         )
 
 
-@router.message(Command("summary"))
-async def summary_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    """The same report the scheduled job sends, on demand."""
-    await _run_summary_command(message, repo, bot, i18n, with_day=True, with_month=True)
-
-
 @router.message(Command("summary_day"))
 async def summary_day_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    """The day block only (2026-09-08, user request) — deliberately left out
-    of /help and chat-help-text: a testing/diagnostic entry point for the
-    #14 block split, not a command meant for everyday use alongside /summary
-    itself."""
-    await _run_summary_command(message, repo, bot, i18n, with_day=True, with_month=False)
+    """The same day block the scheduled daily job sends, on demand."""
+    await _run_summary_command(message, repo, bot, i18n, window=DAY)
 
 
 @router.message(Command("summary_month"))
 async def summary_month_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    """The month block only — see summary_day_command above for why this
-    stays out of the help text."""
-    await _run_summary_command(message, repo, bot, i18n, with_day=False, with_month=True)
+    """The same month block the month-end job sends, on demand."""
+    await _run_summary_command(message, repo, bot, i18n, window=MONTH)
 
 
 @router.callback_query(F.data.startswith("summary:all:"))
@@ -454,7 +455,7 @@ async def recent(
         await message.answer(i18n.get("chat-recent-group-only"))
         return
 
-    limit = RECENT_DEFAULT
+    limit = await repo.get_int_setting(SettingKey.RECENT_LIMIT, DEFAULT_RECENT_LIMIT)
     if command.args and command.args.strip().isdigit():
         limit = max(1, min(int(command.args.strip()), RECENT_MAX))
 

@@ -161,6 +161,14 @@ async def admin_command(
     )
 
 
+@router.callback_query(F.data == "a:noop")
+async def admin_noop(callback: CallbackQuery) -> None:
+    """The page counter between a paginated list's arrows. It is a button
+    only because a keyboard row has nowhere else to put a label — answering
+    the callback is all it does, which stops Telegram's spinner."""
+    await callback.answer()
+
+
 @router.callback_query(F.data == "a:home")
 async def admin_home(
     callback: CallbackQuery,

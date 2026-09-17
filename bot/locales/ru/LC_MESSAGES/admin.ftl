@@ -14,6 +14,7 @@ admin-inactive = отключён
 # Runtime settings
 admin-setting-summary-rows = Строк в /summary
 admin-setting-stats-games = Игр в /stats
+admin-setting-recent-rows = Достижений в /recent
 admin-setting-hltb-results = Результатов поиска и подсказок HLTB
 admin-setting-hltb-page = Результатов на странице (HLTB)
 admin-setting-system-ttl = Автоудаление системных сообщений (мин)
@@ -179,7 +180,7 @@ admin-new-users-screen =
 admin-default-rarity = Ачивки по умолчанию: { $rarity } ▸
 admin-default-links = Профиль виден другим: { $visible } ▸
 admin-users-empty = 👥 Пока никто не подключился.
-admin-users-header = 👥 Пользователи  ({ $page }/{ $pages })
+admin-users-header = 👥 Пользователи
 admin-users-columns = Колонки: когда был в сети · достижений сегодня / за месяц
 admin-users-row = { $icon } { $name } · { $ago } · { $today} / { $month }{ $note }
 admin-user-not-found = Пользователь не найден.

@@ -14,6 +14,7 @@ admin-inactive = disabled
 # Runtime settings
 admin-setting-summary-rows = Rows in /summary
 admin-setting-stats-games = Games in /stats
+admin-setting-recent-rows = Achievements in /recent
 admin-setting-hltb-results = HLTB search results and suggestions
 admin-setting-hltb-page = Results per page (HLTB)
 admin-setting-system-ttl = Auto-delete system messages (min)
@@ -179,7 +180,7 @@ admin-new-users-screen =
 admin-default-rarity = Default achievements: { $rarity } ▸
 admin-default-links = Profile visible to others: { $visible } ▸
 admin-users-empty = 👥 Nobody has connected yet.
-admin-users-header = 👥 Users  ({ $page }/{ $pages })
+admin-users-header = 👥 Users
 admin-users-columns = Columns: last seen · achievements today / this month
 admin-users-row = { $icon } { $name } · { $ago } · { $today} / { $month }{ $note }
 admin-user-not-found = User not found.

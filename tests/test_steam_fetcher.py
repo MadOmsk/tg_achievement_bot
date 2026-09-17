@@ -15,11 +15,13 @@ TG_ID = 42
 STEAM_ID = "76561197960287930"
 
 
-def parsed(achievement_id: str, appid: str = "550") -> ParsedAchievement:
+def parsed(
+    achievement_id: str, appid: str = "550", title_name: str | None = None
+) -> ParsedAchievement:
     return ParsedAchievement(
         achievement_id=achievement_id,
         title_id=appid,
-        title_name=None,
+        title_name=title_name,
         name=f"Achievement {achievement_id}",
         description=None,
         icon_url=None,
@@ -51,7 +53,9 @@ async def test_poll_title_publishes_only_new_achievements(
     await _linked_user(repo)
     by_appid = {"550": [parsed("a1"), parsed("a2")]}
 
-    async def fake_fetch_unlocked(repo_, anthropic_auth_, api_key, steam_id, appid):
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
         return by_appid.get(appid, [])
 
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
@@ -85,7 +89,9 @@ async def test_refresh_user_polls_the_current_game(repo: Repo, steam_auth, monke
             )
         }
 
-    async def fake_fetch_unlocked(repo_, anthropic_auth_, api_key, steam_id, appid):
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
         return [parsed("a1", appid)]
 
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
@@ -145,7 +151,9 @@ async def test_backfill_publishes_nothing(repo: Repo, steam_auth, monkeypatch) -
     async def fake_get_owned_games(api_key, steam_id):
         return [OwnedGame(appid="550", name="L4D2", playtime_forever=100)]
 
-    async def fake_fetch_unlocked(repo_, anthropic_auth_, api_key, steam_id, appid):
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
         return [parsed("a1", appid), parsed("a2", appid)]
 
     monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
@@ -157,6 +165,55 @@ async def test_backfill_publishes_nothing(repo: Repo, steam_auth, monkeypatch) -
 
     assert stored == 2
     assert publisher.published == []
+
+
+async def test_backfill_caches_each_games_name(repo: Repo, steam_auth, monkeypatch) -> None:
+    """#70: every Steam game stored by backfill used to render as "без
+    названия" forever. `fetch_unlocked` hardcoded `title_name=None` on the
+    assumption presence had supplied it — but backfill never touches
+    presence, and it is holding the name the whole time, right there on the
+    `OwnedGame` it is walking.
+
+    Checked through `titles` rather than through a games list: a backfill
+    row with no unlock date is deliberately outside every window, so the
+    name has to be verified where it actually lands.
+    """
+    await _linked_user(repo)
+
+    async def fake_get_owned_games(api_key, steam_id):
+        return [OwnedGame(appid="550", name="Left 4 Dead 2", playtime_forever=100)]
+
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
+        return [parsed("a1", appid, title_name)]
+
+    monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
+    monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.backfill(TG_ID, STEAM_ID)
+
+    assert await repo.title_name("550") == "Left 4 Dead 2"
+
+
+async def test_poll_title_caches_the_games_name(repo: Repo, steam_auth, monkeypatch) -> None:
+    """The other half of #70 — `poll_title` took `game_name` as a parameter
+    all along and only ever forwarded it to the publisher, after the row had
+    already been stored without it."""
+    await _linked_user(repo)
+
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
+        return [parsed("a1", appid, title_name)]
+
+    monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.poll_title(TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+
+    assert await repo.title_name("550") == "Left 4 Dead 2"
 
 
 async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypatch) -> None:
@@ -171,7 +228,9 @@ async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypa
             OwnedGame(appid="2", name="Fine Game", playtime_forever=20),
         ]
 
-    async def fake_fetch_unlocked(repo_, anthropic_auth_, api_key, steam_id, appid):
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
         if appid == "1":
             raise SteamApiError("boom")
         return [parsed("a1", appid)]

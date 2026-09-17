@@ -26,7 +26,7 @@ def test_trophy_tier_badge_covers_all_four_tiers_and_nothing_else() -> None:
     assert trophy_tier_badge("bronze") == "🥉"
     assert trophy_tier_badge("silver") == "🥈"
     assert trophy_tier_badge("gold") == "🥇"
-    assert trophy_tier_badge("platinum") == "🏆"
+    assert trophy_tier_badge("platinum") == "💠"
     assert trophy_tier_badge(None) == ""
 
 
@@ -174,9 +174,9 @@ def test_single_message_shows_only_the_trophy_tier_on_psn_not_rarity_too() -> No
     """Follow-up 2026-09-06 (user request), reversing M-PSN-2's original
     "shown alongside rarity_badge(), two different questions" call — the
     tier already answers the same question for PSN, and showing both could
-    literally repeat itself (a platinum trophy and an "ordinary" rarity cup
-    are the same 🏆). Only the tier icon appears now, not a diamond/cup
-    plus it."""
+    literally repeat itself — a platinum trophy and an "ordinary" rarity cup
+    were the same 🏆 until platinum became 💠 (owner, 2026-09-17). Only the
+    tier icon appears, not a diamond/cup plus it."""
     text = format_single(
         "Igor",
         achievement(rarity=2.4, platform="psn", trophy_type="platinum"),
@@ -184,7 +184,7 @@ def test_single_message_shows_only_the_trophy_tier_on_psn_not_rarity_too() -> No
         locale="ru",
     )
     badge_line = text.split("\n")[3]  # header, blank, game line, then this one
-    assert badge_line.startswith("🏆 «")
+    assert badge_line.startswith("💠 «")
     assert "💎" not in text
 
 

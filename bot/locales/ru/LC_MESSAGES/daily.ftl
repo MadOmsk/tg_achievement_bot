@@ -19,16 +19,18 @@ daily-window-day = 24 часа
 daily-window-month = с 1 { $month }
 
 # Summary
-daily-header = 📊 <b>Итог дня</b>, { $day } { $month }
+daily-header = 📅 <b>Итоги дня</b>
 # The month-end wrap-up (#14) — same leaderboard as the daily, month block
 # only, no day stats. Sent on the last calendar day of the month at the
 # chat's summary time, alongside that day's own daily summary.
-daily-monthly-header = 📊 <b>Итоги за месяц</b>
+daily-monthly-header = 🗓 <b>Итоги месяца</b>
 daily-show-all-day = Показать всех (24ч)
 daily-show-all-month = Показать всех (за месяц)
 daily-leaderboard-total-label = Всего
 daily-leaderboard-full-header = 📊 <b>{ $label }, полностью</b>
 
 # Monthly summary's own games block (#7, user request)
-daily-games-header = <b>Игры за месяц</b>
+daily-games-header = <b>Игры:</b>
 daily-unknown-game = без названия
+daily-total-label = Всего
+daily-players-header = <b>Игроки:</b>

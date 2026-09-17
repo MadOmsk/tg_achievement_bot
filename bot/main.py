@@ -47,6 +47,7 @@ from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
 from bot.poller.publisher import Publisher
+from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
 from bot.poller.service_health import ServiceHealth
@@ -55,6 +56,7 @@ from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
+from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
@@ -121,6 +123,9 @@ async def run(settings: Settings) -> None:
     # Every group message the bot sends, logged for the admin panel's
     # "стереть сообщения бота" (SPEC 6.4) — see the module docstring for why
     # this is one request middleware and not a call in every handler.
+    # Outermost, so nothing downstream ever hands Telegram an oversized
+    # message — including the log middleware's own view of what was sent.
+    bot.session.middleware(MessageLimitMiddleware())
     bot.session.middleware(MessageLogMiddleware(repo))
 
     notifier = AdminNotifier(bot, repo, settings.admin_tg_ids)
@@ -188,6 +193,7 @@ async def run(settings: Settings) -> None:
         psn_presence,
         flood_flush,
         DescriptionBackfill(repo, client, anthropic_auth),
+        RarityBackfill(repo, client),
         SteamLocalization(repo),
         AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
     )
@@ -387,7 +393,8 @@ async def _publish_command_menu(bot: Bot) -> None:
             BotCommand(command="online", description=_("main-cmd-online")),
             BotCommand(command="who", description=_("main-cmd-who")),
             BotCommand(command="recent", description=_("main-cmd-recent")),
-            BotCommand(command="summary", description=_("main-cmd-summary")),
+            BotCommand(command="summary_day", description=_("main-cmd-summary-day")),
+            BotCommand(command="summary_month", description=_("main-cmd-summary-month")),
             BotCommand(command="hltb", description=_("main-cmd-hltb")),
             BotCommand(command="subscribe", description=_("main-cmd-subscribe")),
             BotCommand(command="unsubscribe", description=_("main-cmd-unsubscribe")),
