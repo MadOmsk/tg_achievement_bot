@@ -1329,16 +1329,24 @@ diagnostic pair.
 the same numbers and the longest message the bot produced, which is how it met
 Telegram's 4096-character limit on production (#68). Each command replaces its
 own previous copy rather than sharing one slot, so asking for the month does not
-wipe the day somebody just asked for. A day on which nobody unlocked
+wipe the day somebody just asked for. `build_summary` takes `window` — `DAY` or
+`MONTH` — rather than two booleans, so "both" is not expressible: with one total
+line per report and no window in its label, a message carrying both would say
+"Всего:" twice and leave the reader to guess which was which.
+
+**Both reports are one form with a different cutoff** (owner, 2026-09-17), which
+reverses #9's "the day block drops the 💎": a header (📅 Итоги дня / 🗓 Итоги
+месяца), the chat's combined **Всего** with the same two brackets a `/stats`
+counter line uses, **Игроки:** ranked by what they earned, and — month only —
+**Игры:**. The date left the day header: the message arrives on the day it is
+about. A day on which nobody unlocked
 anything still sends — the roster with everyone at 0 (#34); `build_summary`
 returns `None`, and the chat gets nothing, only when there are no subscribed
 members at all. The month block (only) is followed by its own "Игры за месяц"
 block (#7, user request, `repo.chat_top_games`) — every game the chat's
 subscribed members played that month, ranked by achievements/trophies earned in
 it combined across everyone and every platform, not who earned them
-(`_section`'s own job). The day block's own leaderboard rows no longer call out a
-rare pull separately (#9, user request) — the month block's rows still do, a
-longer window being more worth it in.
+(`_section`'s own job).
 
 ## Lists and tables
 

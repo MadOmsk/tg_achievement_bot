@@ -50,7 +50,7 @@ from bot.views.chat import (
     render_who_picker,
 )
 from bot.views.online import render_online_table
-from bot.views.summary import build_summary, full_leaderboard
+from bot.views.summary import DAY, MONTH, build_summary, full_leaderboard
 
 log = logging.getLogger(__name__)
 
@@ -351,7 +351,7 @@ async def who_stats_button(
 
 
 async def _summary(
-    repo: Repo, chat_id: int, *, with_day: bool, with_month: bool
+    repo: Repo, chat_id: int, *, window: str
 ) -> tuple[str | None, InlineKeyboardMarkup | None]:
     """The report, however it was asked for — one set of numbers no matter
     which command triggered it.
@@ -375,20 +375,19 @@ async def _summary(
         local_now(settings_row.tz_offset_min).date(),
         locale=settings_row.locale,
         tz_offset_min=settings_row.tz_offset_min,
-        with_day=with_day,
-        with_month=with_month,
+        window=window,
     )
     return built if built is not None else (None, None)
 
 
 async def _run_summary_command(
-    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, *, with_day: bool, with_month: bool
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, *, window: str
 ) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-summary-group-only"))
         return
 
-    text, markup = await _summary(repo, message.chat.id, with_day=with_day, with_month=with_month)
+    text, markup = await _summary(repo, message.chat.id, window=window)
     if text is None:
         with stats_category():
             await message.answer(i18n.get("chat-summary-empty"))
@@ -406,7 +405,7 @@ async def _run_summary_command(
             bot,
             repo,
             message.chat.id,
-            "summary_day" if with_day else "summary_month",
+            f"summary_{window}",
             text,
             parse_mode=ParseMode.HTML,
             reply_markup=markup,
@@ -416,13 +415,13 @@ async def _run_summary_command(
 @router.message(Command("summary_day"))
 async def summary_day_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     """The same day block the scheduled daily job sends, on demand."""
-    await _run_summary_command(message, repo, bot, i18n, with_day=True, with_month=False)
+    await _run_summary_command(message, repo, bot, i18n, window=DAY)
 
 
 @router.message(Command("summary_month"))
 async def summary_month_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     """The same month block the month-end job sends, on demand."""
-    await _run_summary_command(message, repo, bot, i18n, with_day=False, with_month=True)
+    await _run_summary_command(message, repo, bot, i18n, window=MONTH)
 
 
 @router.callback_query(F.data.startswith("summary:all:"))

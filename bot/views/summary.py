@@ -16,20 +16,26 @@ from html import escape as html_escape
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.constants import AchievementBadge
 from bot.db.repo import ChatMemberStat, GameAchievements, Repo
 from bot.i18n import translator
 from bot.services.admin_settings import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import local_now, month_cutoff_utc
-from bot.util import thousands, utcnow
+from bot.util import utcnow
 from bot.views.lists import GameRow, Listing, game_rows, total_line, truncate_name
 from bot.views.parts import (
+    bracketed,
     platform_breakdown_suffix,
     plural_achievements,
+    value_parts,
 )
 
 DAY_WINDOW_HOURS = 24  # rolling — everyone's "today" is the same 24 hours
+
+#: Which window a report covers. Two values and no third: "both at once" was
+#: /summary's own shape and went with it (owner, 2026-09-17).
+DAY = "day"
+MONTH = "month"
 
 
 _MONTH_KEYS = (
@@ -60,74 +66,62 @@ async def build_summary(
     *,
     locale: str,
     tz_offset_min: int | None = None,
-    with_day: bool = True,
-    with_month: bool = True,
+    window: str = DAY,
 ) -> tuple[str, InlineKeyboardMarkup | None] | None:
-    """The leaderboard report, composed from independent window blocks so
-    the three triggers stay in one style (#14):
+    """One window's leaderboard report — `DAY` or `MONTH`, never both.
 
-    - the scheduled daily job asks for the day block only;
-    - the month-end job (last calendar day of the month) asks for the month
-      block only, under a "Итоги за месяц" header;
-    - `/summary` on demand asks for both.
+    The two shapes are the same message with a different cutoff (owner,
+    2026-09-17): a header, the chat's combined total, the players ranked by
+    what they earned, and — for the month — which games they earned it in.
+    Each is sent by its own scheduled job and its own command.
 
-    Every block lists everyone subscribed, zero-scorers included, so it reads
-    as a roster; a day nobody unlocked anything still sends (#34). Returns
-    None only when the chat has no subscribed members at all.
+    It was two booleans until the combined form went away with `/summary`,
+    and a string is what stops "both" from being expressible at all: with one
+    total line per block and no window in its label, a message carrying both
+    would say "Всего:" twice and leave the reader to guess which was which.
+
+    Lists everyone subscribed, zero-scorers included, so it reads as a
+    roster; a day nobody unlocked anything still sends (#34). Returns None
+    only when the chat has no subscribed members at all.
     """
     _ = translator("daily", locale)
     top_limit = await current_top_limit(repo)
+    is_day = window == DAY
+    cutoff = (
+        utcnow() - timedelta(hours=DAY_WINDOW_HOURS) if is_day else month_cutoff_utc(tz_offset_min)
+    )
+    rows = await repo.chat_member_stats(chat_id, cutoff, threshold)
+    if not rows:
+        return None
+
     # (kind, section_lines, has_more) — kind drives the «показать всех» button.
-    blocks: list[tuple[str, list[str], bool]] = []
+    blocks: list[tuple[str, list[str], bool]] = [
+        (window, *_section(_("daily-total-label"), rows, top_limit, locale))
+    ]
 
-    if with_day:
-        day_cutoff = utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
-        rows = await repo.chat_member_stats(chat_id, day_cutoff, threshold)
-        if not rows:
-            return None
-        blocks.append(
-            ("day", *_section(_("daily-window-day"), rows, top_limit, locale, show_rare=False))
+    if not is_day:
+        # #7: which games the chat actually played this month, not just who —
+        # its own block, only when there is something to rank.
+        #
+        # The same call /stats' own games list makes, over every subscriber
+        # instead of one person (2026-09-17). `rows` is already the roster of
+        # subscribers, so the scope needs no second query of its own.
+        games = await repo.users_games_achievements(
+            [row.tg_id for row in rows],
+            cutoff,
+            rare_threshold=threshold,
+            limit=top_limit,
+            locale=locale,
         )
-
-    if with_month:
-        month_cutoff = month_cutoff_utc(tz_offset_min)
-        rows = await repo.chat_member_stats(chat_id, month_cutoff, threshold)
-        if not rows:
-            if not blocks:
-                return None  # month-only report for a chat with no members
-        else:
-            blocks.append(
-                (
-                    "month",
-                    *_section(month_window_label(tz_offset_min, locale), rows, top_limit, locale),
-                )
-            )
-            # #7: which games the chat actually played this month, not just
-            # who — its own block, only when there's something to show (a
-            # month of zero-scorers has nothing to rank).
-            #
-            # The same call /stats' own games list makes, over every
-            # subscriber instead of one person (2026-09-17). `rows` is
-            # already the roster of subscribers, zeroes included, so the
-            # scope needs no second query of its own.
-            games = await repo.users_games_achievements(
-                [row.tg_id for row in rows],
-                month_cutoff,
-                rare_threshold=threshold,
-                limit=top_limit,
-                locale=locale,
-            )
-            if games:
-                blocks.append(("games", _games_section(games, locale), False))
+        if games:
+            blocks.append(("games", _games_section(games, locale), False))
 
     if not blocks:
         return None
 
-    header = (
-        _("daily-header", day=today.day, month=_(_MONTH_KEYS[today.month - 1]))
-        if with_day
-        else _("daily-monthly-header")
-    )
+    # The date left the header (owner, 2026-09-17): the message arrives on
+    # the day it is about, and the total line below already names the window.
+    header = _("daily-header") if is_day else _("daily-monthly-header")
     lines = [header]
     for _kind, section_lines, _more in blocks:
         lines += ["", *section_lines]
@@ -174,7 +168,6 @@ async def full_leaderboard(
         len(rows),
         locale,
         expandable=False,
-        show_rare=window != "day",
     )
     label = _("daily-window-day") if window == "day" else month_window_label(tz_offset_min, locale)
     return "\n".join([_("daily-leaderboard-full-header", label=label), "", *section_lines])
@@ -215,7 +208,6 @@ def _section(
     locale: str,
     *,
     expandable: bool = True,
-    show_rare: bool = True,
 ) -> tuple[list[str], bool]:
     """The totals line comes first, then the list — reversed from the old
     table-then-total order, so the headline number reads before you tap the
@@ -223,26 +215,36 @@ def _section(
     6.4) — a list this long only ever lives inside a collapsible quote, so
     there is nothing left to truncate for.
 
-    `show_rare=False` (day block, #9 user request) drops the 💎N rare-count
-    tail from each row — the month block (where it still shows) is a longer
-    window a rare pull is more worth calling out in; a single day's list
-    reads better without it.
+    The day and the month render identically, differing only in the window
+    they were given (owner, 2026-09-17) — which reverses #9's own
+    "the day block drops the 💎 tail": one form is easier to read across two
+    messages than two forms that are nearly the same.
     """
+    _ = translator("daily", locale)
     total = sum(row.count for row in rows)
     score = sum(row.score for row in rows)
+    rare = sum(row.rare for row in rows)
+    tiers = tuple(sum(row.tiers[n] for row in rows) for n in range(4))
     capped = rows if limit == 0 else rows[:limit]
     listing = Listing(
-        total=total_line(label, f"{plural_achievements(total, locale)}, +{thousands(score)} G"),
-        rows=[
-            _leader_row(place, row, locale, show_rare=show_rare)
-            for place, row in enumerate(capped, start=1)
-        ],
+        total=total_line(
+            label,
+            plural_achievements(total, locale)
+            + platform_breakdown_suffix(
+                sum(row.xbox_count for row in rows),
+                sum(row.steam_count for row in rows),
+                sum(row.psn_count for row in rows),
+            )
+            + bracketed(value_parts(score, rare, tiers)),  # type: ignore[arg-type]
+        ),
+        header=_("daily-players-header"),
+        rows=[_leader_row(place, row, locale) for place, row in enumerate(capped, start=1)],
         expandable=expandable,
     )
     has_more = limit != 0 and len(rows) > limit
-    # Two lines, because build_summary stitches blocks together with blank
+    # Three lines, because build_summary stitches blocks together with blank
     # lines of its own and needs them separable.
-    return [listing.total or "", listing.body()], has_more
+    return [listing.total or "", listing.header or "", listing.body()], has_more
 
 
 def _member_name(row: ChatMemberStat) -> str:
@@ -261,15 +263,16 @@ def _member_name(row: ChatMemberStat) -> str:
     )
 
 
-def _leader_row(place: int, row: ChatMemberStat, locale: str, *, show_rare: bool = True) -> str:
+def _leader_row(place: int, row: ChatMemberStat, locale: str) -> str:
     name = html_escape(truncate_name(_member_name(row)))
-    tail = f" {AchievementBadge.DIAMOND}{row.rare}" if show_rare and row.rare else ""
     breakdown = platform_breakdown_suffix(
         row.xbox_count, row.steam_count, row.psn_count, always=True
     )
-    return (
-        f"{place}. {name} — {plural_achievements(row.count, locale)}{tail}{breakdown}"
-        f" (+{thousands(row.score)} G)"
+    # The same two brackets /stats' own counter line uses (owner, 2026-09-17)
+    # — where the achievements came from, then what they were worth. The 💎
+    # used to sit loose between the count and the breakdown.
+    return f"{place}. {name} — {plural_achievements(row.count, locale)}{breakdown}" + bracketed(
+        value_parts(row.score, row.rare, row.tiers)
     )
 
 

@@ -436,6 +436,10 @@ class ChatMemberStat:
     xbox_count: int = 0
     steam_count: int = 0
     psn_count: int = 0
+    #: PSN's own tiers, (platinum, gold, silver, bronze) — the summary row
+    #: carries them for the same reason /stats' counter line does
+    #: (2026-09-17): a count alone does not say a platinum was in it.
+    tiers: tuple[int, int, int, int] = (0, 0, 0, 0)
     # Everything services/naming.py::person_name needs (#51) — the leaderboard
     # used to carry only `gamertag`, so a member with no Xbox account had no
     # name to render and fell through to a bare "id<tg_id>".

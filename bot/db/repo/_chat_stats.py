@@ -72,7 +72,11 @@ class _ChatStatsRepo:
             "       SUM(CASE WHEN s.platform IN ('xbox_modern', 'xbox_360') THEN 1 ELSE 0 END)"
             "           AS xbox_count,"
             "       SUM(CASE WHEN s.platform = 'steam' THEN 1 ELSE 0 END) AS steam_count,"
-            "       SUM(CASE WHEN s.platform = 'psn' THEN 1 ELSE 0 END) AS psn_count "
+            "       SUM(CASE WHEN s.platform = 'psn' THEN 1 ELSE 0 END) AS psn_count,"
+            "       SUM(CASE WHEN s.trophy_type = 'platinum' THEN 1 ELSE 0 END) AS platinum,"
+            "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
+            "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
+            "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
@@ -112,6 +116,12 @@ class _ChatStatsRepo:
                 xbox_count=int(row["xbox_count"] or 0),
                 steam_count=int(row["steam_count"] or 0),
                 psn_count=int(row["psn_count"] or 0),
+                tiers=(
+                    int(row["platinum"] or 0),
+                    int(row["gold"] or 0),
+                    int(row["silver"] or 0),
+                    int(row["bronze"] or 0),
+                ),
             )
             for row in await cursor.fetchall()
         ]
