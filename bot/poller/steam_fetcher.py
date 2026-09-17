@@ -78,7 +78,9 @@ class SteamFetcher:
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
         api_key = await self._steam_auth.require_key()
-        parsed = await fetch_unlocked(self._repo, self._anthropic_auth, api_key, steam_id, appid)
+        parsed = await fetch_unlocked(
+            self._repo, self._anthropic_auth, api_key, steam_id, appid, title_name=game_name
+        )
         rows = [to_achievement_row(item) for item in parsed]
         new_rows = await self._repo.insert_new_achievements_steam(
             tg_id, steam_id, rows, is_backfill=False
@@ -218,7 +220,12 @@ class SteamFetcher:
                 async with self._game_slots:
                     try:
                         parsed = await fetch_unlocked(
-                            self._repo, self._anthropic_auth, api_key, steam_id, game.appid
+                            self._repo,
+                            self._anthropic_auth,
+                            api_key,
+                            steam_id,
+                            game.appid,
+                            title_name=game.name,
                         )
                     except SteamApiError as exc:
                         log.info("steam backfill of appid=%s skipped: %s", game.appid, exc)

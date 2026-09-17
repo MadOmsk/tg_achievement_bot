@@ -668,6 +668,22 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
   `service_health`) fetches it through `SteamAuth`, never a constructor copy, so
   a set/change/clear takes effect on the next call.
 - Users connect by Steam profile URL, vanity URL, or bare SteamID64.
+- **Every stored achievement carries its game's name** (#70, 2026-09-17).
+  `fetch_unlocked` takes a `title_name` and puts it on every row, so
+  `insert_new_achievements_steam`'s own `titles` upsert has something to
+  write; both callers already held the name and neither passed it —
+  `backfill` has the `OwnedGame` it is walking, `poll_title` has the
+  `game_name` parameter it was only forwarding to the publisher, after the
+  row was already stored. It was hardcoded `None` on the assumption that
+  presence had supplied the name, which is true only for a game being
+  played *right now* — so every Steam game that arrived by backfill or by a
+  catch-up poll rendered as "без названия" forever, and the upsert meant to
+  fix exactly that had never once fired. Existing rows are a one-off
+  cleanup (`scripts/backfill_steam_titles.py`, safe to run live), not a
+  standing job: there is no gap left to walk once the write side is right.
+  `poller/steam_localization.py` could never have rescued them either — it
+  looks for a `titles` row missing one language, and these had no row at
+  all.
 - Profiles and game stats must be public enough for the API to expose them — not
   fixable on our end, only by the person changing their own Steam privacy settings.
 - Presence is fetched in batches of up to 100 SteamIDs via `GetPlayerSummaries`.

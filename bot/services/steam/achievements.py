@@ -41,12 +41,30 @@ log = logging.getLogger(__name__)
 
 
 async def fetch_unlocked(
-    repo: Repo, anthropic_auth: AnthropicAuth, api_key: str, steam_id: str, appid: str
+    repo: Repo,
+    anthropic_auth: AnthropicAuth,
+    api_key: str,
+    steam_id: str,
+    appid: str,
+    *,
+    title_name: str | None = None,
 ) -> list[ParsedAchievement]:
     """Every currently-unlocked achievement for one Steam game. Writing to
     seen_achievements and resolving tg_id are the poller's job (SPEC 9,
     M-Steam-2c) — this only ever reads the Steam API and this module's own
-    cache tables."""
+    cache tables.
+
+    `title_name` is the game's own name, which this call never learns for
+    itself (`GetPlayerAchievements` carries a `gameName`, but the poller
+    already has a better one in hand) and which both callers do have: the
+    `OwnedGame` backfill is walking, the `game_name` polling was handed.
+    It rides on every row so that `insert_new_achievements_steam` can cache
+    it in `titles` (#70). It used to be hardcoded `None` here, on the
+    assumption that presence would have supplied the name already — true
+    only for a game being played *right now*, which is neither what backfill
+    walks nor what a catch-up poll looks at, so every Steam game either of
+    those stored rendered as "без названия" forever.
+    """
     raw = await get_player_achievements(api_key, steam_id, appid)
     unlocked = [item for item in raw if item.achieved]
     if not unlocked:
@@ -92,7 +110,7 @@ async def fetch_unlocked(
             ParsedAchievement(
                 achievement_id=item.apiname,
                 title_id=appid,
-                title_name=None,  # presence already has it fresh (SPEC 9, M-Steam-2c)
+                title_name=title_name,
                 name=item.name,
                 description=description_ru,
                 icon_url=schema_item.icon if schema_item else None,
