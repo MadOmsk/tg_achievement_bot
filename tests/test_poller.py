@@ -321,10 +321,45 @@ async def test_catch_up_publishes_only_what_is_fresh(repo: Repo, cipher) -> None
     )
 
     assert titles == 1
-    assert published == 1
-    assert [a.achievement_id for a in publisher.published[0]] == ["recent"]
+    # "undated" too: the game was last played an hour ago (FakeHistoryEntry's
+    # own default), and that is a real timestamp standing in for a date the
+    # platform never gave. Xbox 360 sends a placeholder the parser discards,
+    # so without this an x360 achievement could never be announced through
+    # catch-up at all (owner report, 2026-09-17).
+    assert published == 2
+    assert [a.achievement_id for a in publisher.published[0]] == ["recent", "undated"]
     # The old ones are still recorded, so they never surface again as "new".
     assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 0
+
+
+async def test_catch_up_keeps_an_undated_row_quiet_when_the_game_is_old(repo: Repo, cipher) -> None:
+    """The window still means something. A dateless achievement falls back to
+    when its game was last played, so a game nobody has touched in a
+    fortnight stays silent — which is the case catch-up's window exists for."""
+    await _connected_user(repo, cipher)
+    now = utcnow()
+    client = FakeClient(
+        by_title={"1": [parsed_at("undated", None)]},
+        history=[
+            FakeHistoryEntry(
+                "1",
+                "Gears of War",
+                "xbox_360",
+                last_played_at=(now - timedelta(days=9)).isoformat(timespec="seconds"),
+            )
+        ],
+    )
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    titles, published = await fetcher.catch_up(
+        TG_ID, XUID, "Mad Omsk", now - timedelta(days=14), 24, 20
+    )
+
+    assert titles == 1
+    assert published == 0
+    # Stored all the same — it must never surface again as "new".
+    assert publisher.published == []
 
 
 async def test_catch_up_also_fills_x360_box_art(repo: Repo, cipher) -> None:
