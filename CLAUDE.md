@@ -35,7 +35,7 @@ database, explicit admin controls, and predictable behavior, not public SaaS sca
 ### Non-goals
 
 - No public web UI. The only web endpoint is the Microsoft OAuth callback.
-- No `/compare` or `/top`; `/stats`, `/summary`, `/recent`, and `/online` cover the
+- No `/compare` or `/top`; `/stats`, the two summaries, `/recent` and `/online` cover the
   useful group views.
 - No global per-platform visibility toggles. Visibility is per user and per chat, and
   applies to every platform consistently — one `rarity_mode`, not one switch per
@@ -99,7 +99,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── admin_home.py           /admin's own card — its own file because admin_refresh
 │   │   │                           redraws it on a timer
 │   │   ├── online.py               the /online table, redrawn by its own poller too
-│   │   ├── summary.py              the day/month blocks the three summary shapes compose
+│   │   ├── summary.py              the day and month blocks, one per message
 │   │   ├── notification.py         the achievement/trophy card and the digest
 │   │   ├── hltb.py                 the /hltb card and the screens around it
 │   │   ├── keyboards.py            every inline keyboard + format_* helpers
@@ -188,7 +188,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           response the bot already makes ever carries (#61)
 │   │   ├── flood_flush.py          the anti-flood filter's read/flush side — buffered
 │   │   │                           achievements once a throttled window closes (2026-09-09)
-│   │   ├── daily.py                scheduled daily + month-end summaries + /summary on demand, block-composed (#14)
+│   │   ├── daily.py                scheduled daily + month-end summaries, and the two
+│   │   │                           on-demand commands that send the same blocks (#14)
 │   │   ├── reminders.py            reminders for a dead Xbox login
 │   │   ├── message_cleanup.py      auto-deletes system messages in groups
 │   │   ├── online_refresh.py       auto-refreshes the /online table
@@ -1091,17 +1092,15 @@ own line below),
 `/who` (pick a known member, opens their `/stats`; the picker buttons identify the
 person the same way `/stats`' header does — `@username` > name > gamertag > platform
 name, never a bare id — #40), `/online` (cached presence,
-optionally auto-refreshing), `/recent [N]`, `/summary`, `/hltb`, `/delete_last`
+optionally auto-refreshing), `/recent [N]`, `/summary_day`, `/summary_month`,
+`/hltb`, `/delete_last`
 (deletes the chat's own latest non-system bot message). When a leaderboard is
 capped by `summary_top_limit`, one button appears under it: it replaces the
 message with the same block uncapped, in a plain (not expandable) blockquote —
 the cap exists for the chat's scrollback, and asking for everything is an
 explicit act. `/delete_last` quotes the first two lines of what it deleted, so
 the deletion is auditable rather than silent, and that confirmation is itself a
-system message the cleanup job takes away later. `/summary_day` and
-`/summary_month` (2026-09-08) ask `build_summary` for one block only — deliberately
-left out of the help text and `chat-help-text`, a diagnostic pair for the #14 block
-split rather than commands meant for everyday use alongside `/summary` itself.
+system message the cleanup job takes away later.
 `chat_seen` tracks anyone known who has written in the group, even without a
 publish subscription — `/online` and `/who` use that broader set, not just
 subscribers.
@@ -1315,14 +1314,21 @@ as agreeing with the counters above it); it is now `user_games`, on the same
 calendar-month cutoff as everything else, which is what let it drop its own
 label entirely and share this one.
 
-**Three summary shapes**, composed by `daily.build_summary` from independent window
-blocks so their style can't drift apart (#14): the scheduled **daily** job sends
-the day block only; the **month-end** job (last calendar day of the month, same
-time, its own `daily_reports` marker `YYYY-MM-monthly`, *additional* to that day's
-daily summary) sends the month block only under an "Итоги за месяц" header;
-`/summary` on demand sends both. `/summary_day`/`/summary_month` (hidden from the
-help text) ask for one block only, on demand — a diagnostic pair for this block
-split, not commands meant for everyday use. A day on which nobody unlocked
+**Two summary blocks, never both in one message** (#14, narrowed by the owner
+2026-09-17), composed by `daily.build_summary` from independent windows so
+their style can't drift apart. The scheduled **daily** job sends the day block;
+the **month-end** job (last calendar day of the month, same time, its own
+`daily_reports` marker `YYYY-MM-monthly`, *additional* to that day's daily
+summary) sends the month block under an "Итоги за месяц" header. On demand,
+`/summary_day` and `/summary_month` send the same two — both listed in the help
+text and registered as group commands, where they used to be an undocumented
+diagnostic pair.
+
+`/summary`, which sent both blocks at once, is **gone**: it was a third shape of
+the same numbers and the longest message the bot produced, which is how it met
+Telegram's 4096-character limit on production (#68). Each command replaces its
+own previous copy rather than sharing one slot, so asking for the month does not
+wipe the day somebody just asked for. A day on which nobody unlocked
 anything still sends — the roster with everyone at 0 (#34); `build_summary`
 returns `None`, and the chat gets nothing, only when there are no subscribed
 members at all. The month block (only) is followed by its own "Игры за месяц"

@@ -35,7 +35,8 @@ main-cmd-stats-group = Статистика игрока
 main-cmd-online = Онлайн-статус игроков
 main-cmd-who = Узнать стату юзера
 main-cmd-recent = Последние достижения чата
-main-cmd-summary = Сводка за сутки и за месяц
+main-cmd-summary-day = Сводка за сутки
+main-cmd-summary-month = Сводка с 1 числа месяца
 main-cmd-subscribe = Публиковать мои достижения здесь
 main-cmd-unsubscribe = Перестать публиковать
 

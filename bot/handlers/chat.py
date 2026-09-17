@@ -351,19 +351,21 @@ async def who_stats_button(
 
 
 async def _summary(
-    repo: Repo, chat_id: int, *, with_day: bool = True, with_month: bool = True
+    repo: Repo, chat_id: int, *, with_day: bool, with_month: bool
 ) -> tuple[str | None, InlineKeyboardMarkup | None]:
     """The report, however it was asked for — one set of numbers no matter
     which command triggered it.
 
     There is no rate limit (2026-09-12, user request: the ten-minute one got
-    in the way more than it protected). /summary replaces the chat's own
+    in the way more than it protected). Each command replaces its own
     previous copy instead of stacking, which is what kept repeated asks from
     piling up in the first place.
 
-    `with_day`/`with_month` (2026-09-08, user request) let /summary_day and
-    /summary_month ask for one block only, from the same report /summary's
-    own "both" call builds.
+    One block per command since 2026-09-17 (owner): `/summary` used to send
+    both at once and is gone, leaving the two the scheduled jobs already
+    send separately — the daily job sends the day block, the month-end job
+    the month block. Asking for both in one message was a third shape of the
+    same numbers, and nobody wanted the long version.
     """
     settings_row = await repo.get_chat_daily_settings(chat_id)
     built = await build_summary(
@@ -391,41 +393,35 @@ async def _run_summary_command(
         with stats_category():
             await message.answer(i18n.get("chat-summary-empty"))
         return
-    # Replaces the chat's previous /summary outright (Follow-up 2026-09-06)
-    # — an "nothing new" reply just above is left untouched on purpose:
-    # it isn't itself worth keeping around, but it also shouldn't erase a
-    # real summary from earlier that still has something to show.
+    # Replaces this command's own previous copy outright (Follow-up
+    # 2026-09-06) — an "nothing new" reply just above is left untouched on
+    # purpose: it isn't itself worth keeping around, but it also shouldn't
+    # erase a real summary from earlier that still has something to show.
+    #
+    # Keyed per command since they became two (2026-09-17): sharing one slot
+    # would have /summary_month wipe the day block somebody had just asked
+    # for, which one command replacing *itself* never did.
     with stats_category():
         await send_replacing(
             bot,
             repo,
             message.chat.id,
-            "summary",
+            "summary_day" if with_day else "summary_month",
             text,
             parse_mode=ParseMode.HTML,
             reply_markup=markup,
         )
 
 
-@router.message(Command("summary"))
-async def summary_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    """The same report the scheduled job sends, on demand."""
-    await _run_summary_command(message, repo, bot, i18n, with_day=True, with_month=True)
-
-
 @router.message(Command("summary_day"))
 async def summary_day_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    """The day block only (2026-09-08, user request) — deliberately left out
-    of /help and chat-help-text: a testing/diagnostic entry point for the
-    #14 block split, not a command meant for everyday use alongside /summary
-    itself."""
+    """The same day block the scheduled daily job sends, on demand."""
     await _run_summary_command(message, repo, bot, i18n, with_day=True, with_month=False)
 
 
 @router.message(Command("summary_month"))
 async def summary_month_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    """The month block only — see summary_day_command above for why this
-    stays out of the help text."""
+    """The same month block the month-end job sends, on demand."""
     await _run_summary_command(message, repo, bot, i18n, with_day=False, with_month=True)
 
 

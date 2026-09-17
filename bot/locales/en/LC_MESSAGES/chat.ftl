@@ -46,7 +46,8 @@ chat-help-text = 🎮 I watch the achievements and trophies of everyone playing 
     /who — look up a specific player's stats
     /online — who's in a game right now
     /recent [N] — the chat's latest achievements
-    /summary — the day and the month in review
+    /summary_day — the last 24 hours in review
+    /summary_month — the month so far in review
     /hltb — a game's HowLongToBeat summary
 
     Settings are in a DM, /panel.
