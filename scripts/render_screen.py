@@ -134,7 +134,7 @@ async def _stats(ctx: Context) -> Screen | None:
     user = await ctx.repo.get_user(ctx.tg_id)
     if user is None:
         return None
-    text = await build_stats_text(ctx.repo, user, await i18n_for(ctx.locale))
+    text = await build_stats_text(ctx.repo, user, ctx.chat_id, await i18n_for(ctx.locale))
     return Screen(text) if text else None
 
 
