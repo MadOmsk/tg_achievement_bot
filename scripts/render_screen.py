@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -156,13 +155,15 @@ async def _hub(ctx: Context) -> Screen:
     return Screen(
         await hub_text(ctx.repo, ctx.chat_id, i18n),
         # The Mini App row only exists when there is an app to open, so the
-        # screen is drawn the way the real chat sees it: pass MINI_APP_URL
-        # in the environment to see it with the button.
+        # screen has to be drawn from the same setting the bot reads — the
+        # environment alone is not it, since MINI_APP_URL normally lives in
+        # .env and reaches the bot through Settings. `ctx.settings` is None
+        # only under the test that sweeps every screen.
         hub_keyboard(
             "tg_achievement_bot",
             ctx.chat_id,
             i18n,
-            mini_app_url=os.environ.get("MINI_APP_URL", ""),
+            mini_app_url=(ctx.settings.mini_app_url or "") if ctx.settings else "",
         ),
     )
 
