@@ -237,6 +237,30 @@ class _StatsRepo:
             int(row[4] or 0),
         )
 
+    async def psn_trophy_tier_counts(self, tg_id: int) -> tuple[int, int, int, int]:
+        """This person's PSN trophies by tier, over their whole history —
+        `(bronze, silver, gold, platinum)`, the order both callers unpack.
+
+        Deliberately not `achievement_value_breakdown(tg_id, None, …)`, which
+        answers the same question for a *window*: that one exists to say what
+        a window was worth, so it pays for the rarity-cache join and leads
+        with a rare count. A lifetime tier list has no threshold to compare
+        against, and inventing one only to reuse the query would put a
+        meaningless number in front of the answer.
+        """
+        cursor = await self._conn.execute(
+            "SELECT SUM(CASE WHEN trophy_type = 'bronze' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'silver' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'gold' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'platinum' THEN 1 ELSE 0 END) "
+            "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS,
+            (tg_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return 0, 0, 0, 0
+        return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0), int(row[3] or 0)
+
     async def platform_achievement_count(self, tg_id: int, platform: str) -> int:
         """Lifetime count for one platform (SPEC 9, M-Steam-2e's /stats line
         next to each connected platform) — deliberately not offered for

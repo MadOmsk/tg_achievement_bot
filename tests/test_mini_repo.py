@@ -1,4 +1,4 @@
-"""Mini App repo helpers: show_secrets, month windows, person feed."""
+"""Mini App repo helpers: show_secrets, month windows, person feed, PSN tiers."""
 
 from __future__ import annotations
 
@@ -81,3 +81,54 @@ async def test_person_recent_and_chat_unlock_months(repo: Repo) -> None:
     months = await repo.chat_unlock_months(-100)
     assert len(months) >= 1
     assert all(len(ym) == 7 and ym[4] == "-" for ym in months)
+
+
+def _trophy(achievement_id: str, tier: str) -> AchievementRow:
+    return AchievementRow(
+        title_id="NPWR00001_00",
+        achievement_id=achievement_id,
+        name=f"Trophy {achievement_id}",
+        description=None,
+        icon_url=None,
+        unlocked_at=utcnow().isoformat(timespec="seconds"),
+        gamerscore=0,
+        rarity_percent=None,
+        platform="psn",
+        title_name="A Game",
+        trophy_type=tier,
+    )
+
+
+async def test_psn_trophy_tier_counts(repo: Repo) -> None:
+    """The panel and the person card both open on this, and both used to
+    answer HTTP 500: the method was called in two places and defined in
+    none, which no test could notice while none of them called a handler.
+
+    The order is the one both callers unpack — bronze, silver, gold,
+    platinum — and getting it backwards would read as a pile of platinums.
+    """
+    await repo.ensure_user(20, "ada")
+    await repo.link_platform_account(20, "psn", "acc-20", "AdaPSN")
+    await repo.insert_new_achievements_psn(
+        20,
+        "acc-20",
+        [
+            _trophy("t1", "bronze"),
+            _trophy("t2", "bronze"),
+            _trophy("t3", "bronze"),
+            _trophy("t4", "silver"),
+            _trophy("t5", "silver"),
+            _trophy("t6", "gold"),
+            _trophy("t7", "platinum"),
+        ],
+        is_backfill=False,
+    )
+
+    assert await repo.psn_trophy_tier_counts(20) == (3, 2, 1, 1)
+
+
+async def test_psn_trophy_tier_counts_without_any_trophies(repo: Repo) -> None:
+    """SUM over no rows is NULL, not 0 — the caller unpacks four ints and
+    would hand `None` straight into the panel's own arithmetic."""
+    await repo.ensure_user(21, "grace")
+    assert await repo.psn_trophy_tier_counts(21) == (0, 0, 0, 0)
