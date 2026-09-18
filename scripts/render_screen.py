@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -154,7 +155,15 @@ async def _hub(ctx: Context) -> Screen:
     i18n = await i18n_for(ctx.locale)
     return Screen(
         await hub_text(ctx.repo, ctx.chat_id, i18n),
-        hub_keyboard("tg_achievement_bot", ctx.chat_id, i18n),
+        # The Mini App row only exists when there is an app to open, so the
+        # screen is drawn the way the real chat sees it: pass MINI_APP_URL
+        # in the environment to see it with the button.
+        hub_keyboard(
+            "tg_achievement_bot",
+            ctx.chat_id,
+            i18n,
+            mini_app_url=os.environ.get("MINI_APP_URL", ""),
+        ),
     )
 
 

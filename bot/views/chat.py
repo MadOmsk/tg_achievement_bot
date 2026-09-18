@@ -23,6 +23,7 @@ from bot.db.repo import (
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
+from bot.services.mini_app import mini_app_group_url
 from bot.services.naming import (
     person_name,
     person_name_of,
@@ -287,6 +288,8 @@ def hub_keyboard(
     bot_username: str,
     chat_id: int,
     i18n: I18nContext | None = None,
+    *,
+    mini_app_url: str = "",
 ) -> InlineKeyboardMarkup:
     """A short walkthrough, not a control panel: SPEC 6.3 walks through
     connect → publish in that order, so the keyboard should not offer more
@@ -337,6 +340,22 @@ def hub_keyboard(
             ),
         ],
     ]
+    if mini_app_url.strip():
+        # A plain link, not a `web_app` button: Telegram answers
+        # BUTTON_TYPE_INVALID for a WebApp button anywhere but a private
+        # chat. `?startapp=` opens the same Mini App and carries this chat's
+        # id, so it lands on the club the reader is standing in instead of a
+        # chooser. Last row on purpose — the rows above are the connect →
+        # publish walkthrough this keyboard exists for, and the app is
+        # another door onto it rather than a step inside it.
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-open-app"),
+                    url=mini_app_group_url(bot_username, chat_id=chat_id),
+                )
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

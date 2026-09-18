@@ -49,6 +49,7 @@ chat-help-text = 🎮 I watch the achievements and trophies of everyone playing 
     /summary_day — the last 24 hours in review
     /summary_month — the month so far in review
     /hltb — a game's HowLongToBeat summary
+    /app — open the app
 
     Settings are in a DM, /panel.
 chat-help-version = <i>Version { $version }</i>

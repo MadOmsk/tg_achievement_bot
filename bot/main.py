@@ -394,6 +394,7 @@ async def _publish_command_menu(bot: Bot) -> None:
         _ = translator("main", locale)
         private = [
             BotCommand(command="panel", description=_("main-cmd-panel")),
+            BotCommand(command="app", description=_("main-cmd-app")),
             BotCommand(command="stats", description=_("main-cmd-stats-private")),
             BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
             BotCommand(command="disconnect_xbox", description=_("main-cmd-disconnect-xbox")),
@@ -406,6 +407,7 @@ async def _publish_command_menu(bot: Bot) -> None:
         ]
         group = [
             BotCommand(command="stats", description=_("main-cmd-stats-group")),
+            BotCommand(command="app", description=_("main-cmd-app")),
             BotCommand(command="online", description=_("main-cmd-online")),
             BotCommand(command="who", description=_("main-cmd-who")),
             BotCommand(command="recent", description=_("main-cmd-recent")),

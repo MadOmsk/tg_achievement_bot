@@ -49,6 +49,7 @@ chat-help-text = 🎮 Слежу за достижениями и трофеям
     /summary_day — сводка за сутки
     /summary_month — сводка с 1 числа месяца
     /hltb — показать сводку игры HowLongToBeat
+    /app — открыть приложение
 
     Настройки — в личке, /panel.
 chat-help-version = <i>Версия { $version }</i>
