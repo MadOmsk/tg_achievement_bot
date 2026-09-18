@@ -1,13 +1,6 @@
 # /start, /connect_xbox, /disconnect_xbox and the timezone picker
 # (bot/handlers/connect.py).
 # Connection flow
-
-    What I do:
-    • catch new achievements and announce them in the chat;
-    • filter by rarity, if you'd rather not publish everything;
-    • keep personal stats and a daily summary.
-
-    Let's start by signing in with Microsoft.
 connect-timezone-prompt = 🕐 What's your timezone?
 connect-xbox-already-connected = XBOX is already connected. Settings are in /panel.
 connect-xbox-already-connected-relogin =
@@ -70,3 +63,5 @@ connect-greeting-multi =
 
     Start with a profile — connect at least one platform.
 connect-pick-platform = Where do we start?
+connect-open-app-hint = Or open the app:
+connect-open-app-button = Open the app

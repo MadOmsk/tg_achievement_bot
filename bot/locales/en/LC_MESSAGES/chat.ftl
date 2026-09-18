@@ -42,6 +42,7 @@ chat-unknown-user = I don't know them. The Bot API can't look people up by @name
 chat-help-text = 🎮 I watch the achievements and trophies of everyone playing on XBOX, PlayStation and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
 
     Chat commands:
+    /app — open the app
     /stats [@who] — stats: yours with no argument, someone else's with a name
     /who — look up a specific player's stats
     /online — who's in a game right now
@@ -59,6 +60,9 @@ chat-hub-xbox-button = 🔗 XBOX
 chat-hub-steam-button = 🎮 Steam
 chat-hub-psn-button = 🎮 PSN
 chat-hub-settings-button = ⚙️ Settings
+chat-hub-open-app = Open the app
+chat-app-hint = Open in the app:
+chat-app-no-url = The app is not configured yet (no MINI_APP_URL).
 chat-subscribe-button-done = Done, your achievements will land here.
 chat-delete-last-none = I found no messages of mine in this chat.
 chat-delete-last-failed = Couldn't delete it — the message may be too old.

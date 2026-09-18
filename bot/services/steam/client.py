@@ -415,6 +415,23 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
     raise SteamApiError("Steam request gave up")  # pragma: no cover — loop always returns/raises
 
 
+def cover_url(appid: str) -> str:
+    """A game's cover art, derived rather than fetched (2026-09-18).
+
+    Steam publishes every game's capsules at a fixed path under its own CDN,
+    so this costs no API call at all — unlike Xbox, where the image lives in
+    a titlehub response that has to be asked for per title.
+
+    `library_600x900` rather than `header.jpg`: the header is a 460×215
+    banner, and the Mini App crops a cover into a 42×42 square
+    (`object-fit: cover`), which throws away most of a wide image. The
+    portrait capsule survives that crop with the art still recognisable. A
+    game too old to have one simply 404s, which the caller treats as "no
+    cover", the same as any other platform having nothing to give.
+    """
+    return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg"
+
+
 async def avatar_url(api_key: str, steam_id: str) -> str | None:
     """The account's own picture (#55) — `avatarfull`, the 184px one, which
     is the largest Steam publishes in this response. Same call presence

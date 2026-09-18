@@ -67,10 +67,21 @@ class Settings(BaseSettings):
     # Catch-up after downtime (SPEC 5.8)
     catchup_publish_window_hours: int = 24
     catchup_max_titles: int = 20
+    # …and on a slow loop while the bot is up (#82): a console uploads what
+    # was earned offline when it next reaches the network, long after the
+    # presence poller took its last look at that game. Hourly because that
+    # is a delay nobody minds on an achievement they earned yesterday, and
+    # a pass where nothing was played costs one request per account.
+    catchup_interval_minutes: int = 60
 
     db_path: Path = Path("data/bot.db")
     log_level: str = "INFO"
     tz: str = "Europe/Moscow"
+
+    # Public HTTPS URL of the Mini App SPA (BotFather Main Mini App / menu
+    # button / tunnel during local dev). Empty = Mini App entry disabled;
+    # classic slash commands and chat posts keep working either way.
+    mini_app_url: str | None = None
 
     @field_validator("admin_tg_ids", mode="before")
     @classmethod

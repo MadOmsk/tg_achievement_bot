@@ -23,6 +23,7 @@ from bot.db.repo import (
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
+from bot.services.mini_app import mini_app_group_url
 from bot.services.naming import (
     person_name,
     person_name_of,
@@ -284,7 +285,11 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
 
 
 def hub_keyboard(
-    bot_username: str, chat_id: int, i18n: I18nContext | None = None
+    bot_username: str,
+    chat_id: int,
+    i18n: I18nContext | None = None,
+    *,
+    mini_app_url: str = "",
 ) -> InlineKeyboardMarkup:
     """A short walkthrough, not a control panel: SPEC 6.3 walks through
     connect → publish in that order, so the keyboard should not offer more
@@ -298,45 +303,60 @@ def hub_keyboard(
     else's* settings where any member could page through them, not a button
     that only ever touches the presser's own subscription.
     """
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=_hub_text(i18n, "chat-hub-xbox-button"),
+                # The chat id rides along in the deep-link payload so a
+                # successful login can auto-subscribe him right back here
+                # (SPEC 6.3) — see _parse_connect_payload in connect.py.
+                url=f"https://t.me/{bot_username}?start=connect{chat_id}",
+            ),
+            InlineKeyboardButton(
+                text=_hub_text(i18n, "chat-hub-psn-button"),
+                # No chat id here (unlike Xbox above) — see Steam's own
+                # button below for why (SPEC 9, M-PSN-1, handlers/psn.py,
+                # connect.py's ?start=connectpsn).
+                url=f"https://t.me/{bot_username}?start=connectpsn",
+            ),
+            InlineKeyboardButton(
+                text=_hub_text(i18n, "chat-hub-steam-button"),
+                # No chat id here (unlike Xbox above) — /connect_steam
+                # needs a profile link a button tap can't supply anyway,
+                # so this just opens the DM at the right prompt (SPEC 9,
+                # handlers/steam.py, connect.py's ?start=connectsteam).
+                url=f"https://t.me/{bot_username}?start=connectsteam",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=_hub_text(i18n, "chat-hub-settings-button"),
+                url=f"https://t.me/{bot_username}?start=panel",
+            ),
+        ],
+    ]
+    if mini_app_url.strip():
+        # A plain link, not a `web_app` button: Telegram answers
+        # BUTTON_TYPE_INVALID for a WebApp button anywhere but a private
+        # chat. `?startapp=` opens the same Mini App and carries this chat's
+        # id, so it lands on the club the reader is standing in instead of a
+        # chooser. Last row on purpose — the rows above are the connect →
+        # publish walkthrough this keyboard exists for, and the app is
+        # another door onto it rather than a step inside it.
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
+                    text=_hub_text(i18n, "chat-hub-open-app"),
+                    url=mini_app_group_url(bot_username, chat_id=chat_id),
                 )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-xbox-button"),
-                    # The chat id rides along in the deep-link payload so a
-                    # successful login can auto-subscribe him right back here
-                    # (SPEC 6.3) — see _parse_connect_payload in connect.py.
-                    url=f"https://t.me/{bot_username}?start=connect{chat_id}",
-                ),
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-psn-button"),
-                    # No chat id here (unlike Xbox above) — see Steam's own
-                    # button below for why (SPEC 9, M-PSN-1, handlers/psn.py,
-                    # connect.py's ?start=connectpsn).
-                    url=f"https://t.me/{bot_username}?start=connectpsn",
-                ),
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-steam-button"),
-                    # No chat id here (unlike Xbox above) — /connect_steam
-                    # needs a profile link a button tap can't supply anyway,
-                    # so this just opens the DM at the right prompt (SPEC 9,
-                    # handlers/steam.py, connect.py's ?start=connectsteam).
-                    url=f"https://t.me/{bot_username}?start=connectsteam",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-settings-button"),
-                    url=f"https://t.me/{bot_username}?start=panel",
-                ),
-            ],
-        ]
-    )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def help_text(i18n: I18nContext) -> str:

@@ -27,6 +27,7 @@ from aiogram.types import (
 )
 from aiogram_i18n import I18nContext
 
+from bot.config import Settings
 from bot.constants import SettingKey
 from bot.db.repo import (
     Repo,
@@ -36,6 +37,7 @@ from bot.handlers.admin import IsAdmin
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.admin_settings import DEFAULT_RECENT_LIMIT
 from bot.services.message_log import stats_category
+from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import (
     person_name_of,
 )
@@ -56,8 +58,18 @@ log = logging.getLogger(__name__)
 
 router = Router(name="chat")
 
-
 GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
+
+
+def _hub_markup(
+    bot_username: str, chat_id: int, i18n: I18nContext, settings: Settings
+) -> InlineKeyboardMarkup:
+    """The hub's keyboard, with the Mini App row when there is an app to
+    open. Every caller already holds `settings`, and the alternative — a
+    view reaching for configuration itself — is what `bot/views/` exists to
+    avoid."""
+    return hub_keyboard(bot_username, chat_id, i18n, mini_app_url=settings.mini_app_url or "")
+
 
 # subscribe/unsubscribe is a check-then-act (is_subscribed, then write) —
 # without a lock, a fast confirm-then-/subscribe (or a double-tapped button)
@@ -112,7 +124,7 @@ class UsernameMiddleware(BaseMiddleware):
 
 
 @router.message(Command("subscribe"))
-async def subscribe(message: Message, repo: Repo, i18n: I18nContext) -> None:
+async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: Settings) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-subscribe-groups-only"))
         return
@@ -130,7 +142,7 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext) -> None:
         me = await message.bot.me()  # type: ignore[union-attr]
         await message.answer(
             i18n.get("chat-subscribe-connect-first"),
-            reply_markup=hub_keyboard(me.username or "", message.chat.id, i18n),
+            reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
         )
         return
 
@@ -496,19 +508,52 @@ async def _resolve(message: Message, repo: Repo, argument: str | None) -> User |
 
 
 @router.message(Command("help"))
-async def help_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+async def help_command(
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
+) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(help_text(i18n))
         return
     me = await bot.me()
     await message.answer(
         await hub_text(repo, message.chat.id, i18n),
-        reply_markup=hub_keyboard(me.username or "", message.chat.id, i18n),
+        reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
     )
 
 
+@router.message(Command("app"))
+async def open_app(message: Message, bot: Bot, i18n: I18nContext, settings: Settings) -> None:
+    """The Mini App's own way in, typed rather than hunted for in a menu.
+
+    In a group the button can only be a link — Telegram answers
+    BUTTON_TYPE_INVALID for a `web_app` button anywhere but a private chat —
+    and `mini_app_open_markup` picks the right shape for us. Either way the
+    chat's id rides along, so the app opens on the club the command was
+    typed in; the SPA drops an id that isn't one of the reader's own chats,
+    which is what makes this safe to send from a DM too.
+    """
+    url = (settings.mini_app_url or "").strip()
+    me = await bot.me()
+    markup = mini_app_open_markup(
+        i18n.get("chat-hub-open-app"),
+        https_url=url,
+        bot_username=me.username or "",
+        chat_id=message.chat.id,
+        in_group=message.chat.type in GROUP_TYPES,
+    )
+    if markup is None:
+        # No MINI_APP_URL, or no username to build a group link from. Say so
+        # rather than answering with an empty message: the command is
+        # published in the menu, so somebody will type it either way.
+        await message.answer(i18n.get("chat-app-no-url"))
+        return
+    await message.answer(i18n.get("chat-app-hint"), reply_markup=markup)
+
+
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
-async def greet_new_chat(event: ChatMemberUpdated, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+async def greet_new_chat(
+    event: ChatMemberUpdated, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
+) -> None:
     """Say what to do the moment the bot lands in a group, not later."""
     if event.chat.type not in GROUP_TYPES:
         return
@@ -517,13 +562,13 @@ async def greet_new_chat(event: ChatMemberUpdated, repo: Repo, bot: Bot, i18n: I
     await bot.send_message(
         event.chat.id,
         await hub_text(repo, event.chat.id, i18n),
-        reply_markup=hub_keyboard(me.username or "", event.chat.id, i18n),
+        reply_markup=_hub_markup(me.username or "", event.chat.id, i18n, settings),
     )
 
 
 @router.callback_query(F.data == "sub:on")
 async def subscribe_button(
-    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
 ) -> None:
     message = callback.message
     if not isinstance(message, Message):
@@ -542,7 +587,7 @@ async def subscribe_button(
         await callback.answer(url=f"https://t.me/{me.username}?start=connect{message.chat.id}")
         await message.answer(
             i18n.get("chat-subscribe-connect-first"),
-            reply_markup=hub_keyboard(me.username or "", message.chat.id, i18n),
+            reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
         )
         return
 
@@ -553,16 +598,18 @@ async def subscribe_button(
             return
         await repo.subscribe(message.chat.id, callback.from_user.id)
     await callback.answer(i18n.get("chat-subscribe-button-done"))
-    await _refresh_hub(message, repo, bot, i18n)
+    await _refresh_hub(message, repo, bot, i18n, settings)
 
 
-async def _refresh_hub(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+async def _refresh_hub(
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
+) -> None:
     me = await bot.me()
     with contextlib.suppress(Exception):
         # Telegram refuses an edit that changes nothing — not an error.
         await message.edit_text(
             await hub_text(repo, message.chat.id, i18n),
-            reply_markup=hub_keyboard(me.username or "", message.chat.id, i18n),
+            reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
         )
 
 

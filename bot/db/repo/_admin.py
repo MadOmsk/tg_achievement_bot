@@ -10,7 +10,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from bot.db.repo._models import AdminPanelRefreshRow, AdminUserRow, ChatTarget, HltbCacheRow
+from bot.db.repo._models import (
+    AdminPanelRefreshRow,
+    AdminUserRow,
+    ChatTarget,
+    HltbCacheRow,
+    TitleCoverRow,
+)
 from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS, active_account
 from bot.util import utcnow_iso
 
@@ -120,6 +126,21 @@ class _AdminRepo:
             )
             for row in await cursor.fetchall()
         ]
+
+    async def admin_user_chat_ids(self) -> dict[int, list[int]]:
+        """Active chat ids each person is subscribed to — Mini App admin
+        people list filters by chat, so the list endpoint needs this in
+        one round-trip rather than N chats_of_user calls."""
+        cursor = await self._conn.execute(
+            "SELECT s.tg_id, s.chat_id FROM subscriptions s "
+            "JOIN chats c ON c.chat_id = s.chat_id "
+            "WHERE c.is_active = 1 "
+            "ORDER BY s.tg_id, c.title"
+        )
+        by_user: dict[int, list[int]] = {}
+        for row in await cursor.fetchall():
+            by_user.setdefault(int(row["tg_id"]), []).append(int(row["chat_id"]))
+        return by_user
 
     async def set_excluded(self, tg_id: int, excluded: bool, by: int | None) -> None:
         """Exclusion is never silent: the person sees it in his panel (SPEC 6.4)."""
@@ -316,6 +337,97 @@ class _AdminRepo:
         )
         row = await cursor.fetchone()
         return row["icon_url"] if row else None
+
+    async def titles_needing_cover(self, limit: int) -> list[TitleCoverRow]:
+        """Games whose art is missing or has never been looked at, oldest
+        check first (migration 050).
+
+        Two different gaps in one queue, because the walker handles both in
+        the same visit: a title with no `icon_url` needs the URL found, and
+        a title with a URL but no `cover_path` needs the bytes fetched. A
+        title already carrying both is never returned — the covers do not
+        expire, unlike an avatar, because the art of a released game does
+        not change.
+
+        `cover_checked_at` is what keeps a game nobody can find art for out
+        of the queue forever; it is stamped on every visit, found or not.
+        """
+        cursor = await self._conn.execute(
+            # `owner_tg_id` is somebody who has earned something in this game,
+            # because Xbox answers about a title only through a *person's*
+            # token (unlike Steam's one shared key, or PSN's). Any owner will
+            # do — the art is a fact about the game, not about them.
+            #
+            # Only an owner whose token is **active**, the same condition
+            # `pollable_users` applies: asking through a dead one buys a
+            # refusal from Microsoft and a doomed refresh attempt per visit.
+            # NULL when nobody here can be asked, which is exactly the title
+            # the walker should stamp and leave alone.
+            "SELECT t.title_id, t.name, t.platform, t.icon_url, t.cover_path, t.cover_hash,"
+            "       (SELECT MIN(al.tg_id) FROM seen_achievements s "
+            "        JOIN account_links al ON al.platform = s.account_platform"
+            "         AND al.external_id = s.xuid AND al.is_active = 1 "
+            "        JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
+            "        JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
+            "        WHERE s.title_id = t.title_id) AS owner_tg_id "
+            "FROM titles t "
+            "WHERE t.cover_path IS NULL "
+            "ORDER BY t.cover_checked_at IS NOT NULL, t.cover_checked_at, t.updated_at DESC "
+            "LIMIT ?",
+            (limit,),
+        )
+        return [
+            TitleCoverRow(
+                title_id=row["title_id"],
+                name=row["name"],
+                platform=row["platform"],
+                icon_url=row["icon_url"],
+                cover_path=row["cover_path"],
+                cover_hash=row["cover_hash"],
+                owner_tg_id=row["owner_tg_id"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def set_title_cover(
+        self,
+        title_id: str,
+        *,
+        icon_url: str | None = None,
+        cover_path: str | None = None,
+        cover_hash: str | None = None,
+    ) -> None:
+        """Record whatever this visit found, and that the visit happened.
+
+        Each of the three only overwrites when this call actually has one,
+        the same rule `upsert_title` above keeps for `icon_url`: a walker
+        that found the URL but could not download it must not blank a file
+        somebody else already fetched.
+        """
+        await self._conn.execute(
+            "UPDATE titles SET"
+            "  icon_url = COALESCE(?, icon_url),"
+            "  cover_path = COALESCE(?, cover_path),"
+            "  cover_hash = COALESCE(?, cover_hash),"
+            "  cover_checked_at = ? "
+            "WHERE title_id = ?",
+            (icon_url, cover_path, cover_hash, utcnow_iso(), title_id),
+        )
+        await self._conn.commit()
+
+    async def cover_coverage(self) -> tuple[int, int, int]:
+        """(with a file, with a URL, total) — what the admin panel and the
+        one-off script both report progress against."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*),"
+            "       SUM(CASE WHEN icon_url IS NOT NULL AND icon_url != '' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN cover_path IS NOT NULL THEN 1 ELSE 0 END) "
+            "FROM titles"
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return 0, 0, 0
+        return int(row[2] or 0), int(row[1] or 0), int(row[0] or 0)
 
     async def hltb_all_ids(self) -> list[int]:
         """For the one-off platforms backfill (scripts/backfill_hltb_platforms.py)

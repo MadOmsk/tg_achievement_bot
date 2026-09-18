@@ -14,6 +14,7 @@ from bot.db.repo._models import TitleHistoryRow, _iso
 from bot.db.repo._sql import (
     OWNED_BY_PERSON,
     OWNED_BY_PERSON_EXISTS,
+    earned_at,
     earned_since,
     rarity,
     rarity_cache_join,
@@ -106,7 +107,13 @@ class _StatsRepo:
 
     # ------------------------------------------------------------ aggregates
 
-    async def _counts(self, where: str, params: list[object], since: datetime | None):
+    async def _counts(
+        self,
+        where: str,
+        params: list[object],
+        since: datetime | None,
+        until: datetime | None = None,
+    ):
         """Shared shape behind the two counters below — same aggregate, one
         by account and one by person. They no longer share a column, only a
         query: since #52 a row belongs to an account, so "this person's
@@ -120,6 +127,9 @@ class _StatsRepo:
             # backfill row not at all.
             query += f" AND {earned_since('')}"
             params = [*params, _iso(since)]
+        if until is not None:
+            query += f" AND {earned_at('')} < ?"
+            params = [*params, _iso(until)]
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
         return (int(row[0]), int(row[1])) if row else (0, 0)
@@ -134,7 +144,7 @@ class _StatsRepo:
         return await self._counts("xuid = ?", [xuid], since)
 
     async def achievement_counts_for_person(
-        self, tg_id: int, since: datetime | None
+        self, tg_id: int, since: datetime | None, until: datetime | None = None
     ) -> tuple[int, int]:
         """Same as `achievement_counts`, but summed across every platform a
         person has connected (SPEC 9, M-Steam-2e) — `/stats`/`/summary`'s
@@ -146,10 +156,10 @@ class _StatsRepo:
         Steam row's gamerscore is always 0 (services/steam/achievements.py),
         so it never contributes to the sum, by construction, not by a check
         here."""
-        return await self._counts(OWNED_BY_PERSON_EXISTS, [tg_id], since)
+        return await self._counts(OWNED_BY_PERSON_EXISTS, [tg_id], since, until)
 
     async def achievement_platform_breakdown(
-        self, tg_id: int, since: datetime | None
+        self, tg_id: int, since: datetime | None, until: datetime | None = None
     ) -> tuple[int, int, int]:
         """The (xbox, steam, psn) counts behind `achievement_counts_for_person`'s
         single combined total (2026-09-05 follow-up, reversal of "one number
@@ -178,6 +188,9 @@ class _StatsRepo:
             # backfill row not at all.
             query += f" AND {earned_since('')}"
             params.append(_iso(since))
+        if until is not None:
+            query += f" AND {earned_at('')} < ?"
+            params.append(_iso(until))
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
         return (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)) if row else (0, 0, 0)
@@ -223,6 +236,30 @@ class _StatsRepo:
             int(row[3] or 0),
             int(row[4] or 0),
         )
+
+    async def psn_trophy_tier_counts(self, tg_id: int) -> tuple[int, int, int, int]:
+        """This person's PSN trophies by tier, over their whole history —
+        `(bronze, silver, gold, platinum)`, the order both callers unpack.
+
+        Deliberately not `achievement_value_breakdown(tg_id, None, …)`, which
+        answers the same question for a *window*: that one exists to say what
+        a window was worth, so it pays for the rarity-cache join and leads
+        with a rare count. A lifetime tier list has no threshold to compare
+        against, and inventing one only to reuse the query would put a
+        meaningless number in front of the answer.
+        """
+        cursor = await self._conn.execute(
+            "SELECT SUM(CASE WHEN trophy_type = 'bronze' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'silver' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'gold' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'platinum' THEN 1 ELSE 0 END) "
+            "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS,
+            (tg_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return 0, 0, 0, 0
+        return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0), int(row[3] or 0)
 
     async def platform_achievement_count(self, tg_id: int, platform: str) -> int:
         """Lifetime count for one platform (SPEC 9, M-Steam-2e's /stats line

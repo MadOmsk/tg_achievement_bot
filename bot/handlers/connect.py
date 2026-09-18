@@ -8,7 +8,12 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
@@ -84,7 +89,11 @@ async def start_with_payload(
 
 @router.message(CommandStart())
 async def start(
-    message: Message, repo: Repo, connect: ConnectService, bot: Bot, i18n: I18nContext
+    message: Message,
+    repo: Repo,
+    connect: ConnectService,
+    bot: Bot,
+    i18n: I18nContext,
 ) -> None:
     await repo.ensure_user(_person_id(message), _username(message))
     await _greet(message, repo, connect, bot, i18n)
@@ -257,15 +266,14 @@ async def timezone_manual_input(message: Message, repo: Repo, i18n: I18nContext)
 
 
 async def _greet(
-    message: Message, repo: Repo, connect: ConnectService, bot: Bot, i18n: I18nContext
+    message: Message,
+    repo: Repo,
+    connect: ConnectService,
+    bot: Bot,
+    i18n: I18nContext,
 ) -> None:
     """Already connected on *any* platform -> straight to the panel;
     otherwise greet and offer all three (#53).
-
-    This used to decide on `user.xuid` alone, so someone with only PSN
-    linked was greeted as a stranger and pushed back into the Microsoft
-    sign-in — the same Xbox-shaped gate /panel itself had before 2026-09-09,
-    one screen earlier.
     """
     user = await repo.get_user(message.chat.id)
     links = await repo.platform_links_of(message.chat.id)

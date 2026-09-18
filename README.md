@@ -83,8 +83,20 @@ systemctl {start|stop|restart|status} xbox-bot
 journalctl -u xbox-bot -f
 ```
 
-Deploy is `git pull` in `/opt/xbox_achievement_bot` as the service user, then
-`systemctl restart xbox-bot`. Infrastructure details are in
+Deploys are automatic (#4). Pushing to `test` deploys the test bot; merging
+`test` into `main` deploys production. GitHub Actions runs the tests, both
+ruff checks and a Mini App build first, and only then calls
+`scripts/xbox-deploy.sh` on the server, which backs up the database,
+fast-forwards, restarts and waits for the bot to report itself up.
+
+The four repository secrets it needs are `DEPLOY_SSH_KEY`, `DEPLOY_HOST`,
+`DEPLOY_USER` and `DEPLOY_KNOWN_HOSTS` — the key belongs to a dedicated
+`deploy` user whose sudoers entry permits that one script and nothing else.
+No `.env`, no `FERNET_KEY`, no database and no platform credential is ever
+stored in GitHub.
+
+One step stays manual on purpose: a migration is rehearsed against a copy of
+production **before** merging into `main`. Infrastructure details are in
 [CLAUDE.md](CLAUDE.md)'s "Operations" section.
 
 **Never run `manage.ps1` on a home PC at the same time as the production

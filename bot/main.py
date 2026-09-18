@@ -13,6 +13,8 @@ from aiogram.types import (
     BotCommand,
     BotCommandScopeAllGroupChats,
     BotCommandScopeAllPrivateChats,
+    MenuButtonWebApp,
+    WebAppInfo,
 )
 
 from bot.config import Settings, get_settings
@@ -37,9 +39,11 @@ from bot.i18n import (
 from bot.lock import AlreadyRunningError, single_instance
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.avatars import AvatarRefresh
+from bot.poller.catch_up import CatchUpPoller
+from bot.poller.covers import CoverRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
-from bot.poller.fetcher import Fetcher
+from bot.poller.fetcher import Fetcher, catch_up_since
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
@@ -64,7 +68,6 @@ from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
-from bot.util import parse_iso
 from bot.version import version
 from bot.views.keyboards import timezone_keyboard
 from bot.web.oauth import OAuthServer
@@ -196,6 +199,8 @@ async def run(settings: Settings) -> None:
         RarityBackfill(repo, client),
         SteamLocalization(repo),
         AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
+        CatchUpPoller(settings, repo, fetcher),
+        CoverRefresh(repo, client),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -265,7 +270,20 @@ async def run(settings: Settings) -> None:
             await bot.send_message(tg_id, _("main-linked-refreshing"))
             asyncio.create_task(refresh_after_reconnect(tg_id, identity.xuid))  # noqa: RUF006
 
-    web_server = OAuthServer(settings, connect_service, on_linked)
+    web_server = OAuthServer(
+        settings,
+        connect_service,
+        on_linked,
+        repo,
+        steam_auth=steam_auth,
+        steam_fetcher=steam_fetcher,
+        psn_auth=psn_auth,
+        psn_fetcher=psn_fetcher,
+        xbox_fetcher=fetcher,
+        notifier=notifier,
+        anthropic_auth=anthropic_auth,
+        bot=bot,
+    )
     await web_server.start()
 
     dispatcher = Dispatcher()
@@ -314,7 +332,9 @@ async def run(settings: Settings) -> None:
                         target.xuid,
                         (user.gamertag if user else None)
                         or gettext("main", "main-default-player-name", locale=DEFAULT_LOCALE),
-                        parse_iso(target.updated_at),
+                        await catch_up_since(
+                            repo, target.xuid, settings.catchup_publish_window_hours
+                        ),
                         settings.catchup_publish_window_hours,
                         settings.catchup_max_titles,
                     ),
@@ -342,6 +362,7 @@ async def run(settings: Settings) -> None:
     asyncio.create_task(startup_catch_up())  # noqa: RUF006
 
     await _publish_command_menu(bot)
+    await _publish_mini_app_menu(bot, settings)
 
     me = await bot.me()
     log.info("bot @%s is up (v%s)", me.username, version())
@@ -377,6 +398,7 @@ async def _publish_command_menu(bot: Bot) -> None:
     def menus(locale: str) -> tuple[list[BotCommand], list[BotCommand]]:
         _ = translator("main", locale)
         private = [
+            BotCommand(command="app", description=_("main-cmd-app")),
             BotCommand(command="panel", description=_("main-cmd-panel")),
             BotCommand(command="stats", description=_("main-cmd-stats-private")),
             BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
@@ -389,9 +411,13 @@ async def _publish_command_menu(bot: Bot) -> None:
             BotCommand(command="help", description=_("main-cmd-help")),
         ]
         group = [
+            BotCommand(command="app", description=_("main-cmd-app")),
+            # /stats and /who answer the same question — one about whoever
+            # asked, one about somebody they pick — so they sit together
+            # (owner, 2026-09-18). /online used to fall between them.
             BotCommand(command="stats", description=_("main-cmd-stats-group")),
-            BotCommand(command="online", description=_("main-cmd-online")),
             BotCommand(command="who", description=_("main-cmd-who")),
+            BotCommand(command="online", description=_("main-cmd-online")),
             BotCommand(command="recent", description=_("main-cmd-recent")),
             BotCommand(command="summary_day", description=_("main-cmd-summary-day")),
             BotCommand(command="summary_month", description=_("main-cmd-summary-month")),
@@ -417,6 +443,24 @@ async def _publish_command_menu(bot: Bot) -> None:
     except Exception:
         # A cosmetic menu is not worth failing the whole startup for.
         log.warning("could not publish the command menu", exc_info=True)
+
+
+async def _publish_mini_app_menu(bot: Bot, settings: Settings) -> None:
+    """Private-chat menu button → Mini App (Telegram has no group equivalent).
+    Slash commands stay published separately — the app is an extra door."""
+    url = (settings.mini_app_url or "").strip()
+    if not url:
+        return
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text=gettext("main", "main-menu-open-app", locale=DEFAULT_LOCALE),
+                web_app=WebAppInfo(url=url),
+            )
+        )
+        log.info("mini app menu button -> %s", url)
+    except Exception:
+        log.warning("could not set Mini App menu button", exc_info=True)
 
 
 def main() -> None:

@@ -34,7 +34,11 @@ database, explicit admin controls, and predictable behavior, not public SaaS sca
 
 ### Non-goals
 
-- No public web UI. The only web endpoint is the Microsoft OAuth callback.
+- No public web UI outside Telegram. The only browser surfaces are the Microsoft
+  OAuth callback and the Telegram Mini App (`webapp/`, served separately; this
+  process only answers `/api/mini/*` next to `/auth/callback`). Slash commands
+  and chat notifications stay — the Mini App is an extra door, not a
+  replacement.
 - No `/compare` or `/top`; `/stats`, the two summaries, `/recent` and `/online` cover the
   useful group views.
 - No global per-platform visibility toggles. Visibility is per user and per chat, and
@@ -61,8 +65,11 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 ├── README.ru.md                 the same overview, in Russian
 ├── CLAUDE.md                    this file
 ├── pyproject.toml               dependencies, ruff, pytest config
-├── manage.ps1                   local Windows process manager (the bot cannot start itself)
+├── manage.ps1                   local Windows process manager (the bot cannot start
+│                                itself); `start -Test -Web` also tunnels the Mini App
 ├── manage.bat                   double-click -> manage.ps1 dashboard
+├── webapp/                      Telegram Mini App SPA (Vite/React); built separately,
+│                                never served by the bot process itself
 │
 ├── bot/                         the application
 │   ├── main.py                   entry point, application assembly, router registration
@@ -78,6 +85,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── handlers/                 aiogram routers — routing and actions only: no SQL, no
 │   │   │                          platform API calls, and since #63 no layout either
 │   │   ├── connect.py             /start, /connect_xbox, /disconnect_xbox
+│   │   │                          (Mini App opens from the Telegram menu
+│   │   │                          button when MINI_APP_URL is set — no
+│   │   │                          separate chat spam)
 │   │   ├── panel.py               the personal panel, "My chats"
 │   │   ├── admin.py               the admin panel (/admin, self-refreshing), bulk message wipe
 │   │   ├── chat.py                group commands: /subscribe, /stats, /online, /who, /recent,
@@ -124,6 +134,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           "what is this person called" / "what is this account called"
 │   │   ├── profile_links.py        one profile-URL builder per platform, gated by
 │   │   │                           user_settings.show_profile_links
+│   │   ├── mini_app.py             Open-button URLs (WebApp in DM, startapp in groups)
 │   │   ├── hltb.py                 wrapper over howlongtobeatpy, cached in hltb_cache
 │   │   ├── message_log.py          request middleware: logs outgoing group messages
 │   │   ├── message_limits.py       request middleware: nothing goes out over Telegram's
@@ -132,8 +143,11 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           now" — /online's own rule, for one person (#1)
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
 │   │   ├── notify.py               notifications to the admin
+│   │   ├── images.py               fetching a picture, bounding it, hashing it, writing it
+│   │   │                           down — shared by avatars and covers
 │   │   ├── avatars.py              where a downloaded profile picture goes: one file per
 │   │   │                           subject under data/avatars/, hashed (#55)
+│   │   ├── covers.py               the same for a game's own art, under data/covers/
 │   │   ├── crypto.py               refresh-token encryption (Fernet)
 │   │   ├── credential_health.py    what one failed liveness check means for a shared
 │   │   │                           credential — confirm before declaring death,
@@ -177,10 +191,13 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
 │   │   ├── psn_fetcher.py          PSN trophies: no presence hook of its own, its own debounce,
 │   │   │                           backfill, admin resync (#27)
+│   │   ├── catch_up.py             the hourly Xbox delta, one account per tick — what picks
+│   │   │                           up achievements earned offline (#82)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
 │   │   ├── avatars.py             profile photos: each person's Telegram one, and each
 │   │   │                          platform account's own, a few per tick (#55)
+│   │   ├── covers.py              a game's cover art, a few titles per tick, once each
 │   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
 │   │   ├── rarity_backfill.py     fills achievement_rarity_cache for the Xbox history
@@ -199,7 +216,14 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   └── admin_refresh.py        auto-refreshes /admin, same cadence as service_health
 │   │
 │   ├── web/
-│   │   └── oauth.py                 Microsoft's aiohttp OAuth callback
+│   │   ├── oauth.py                 Microsoft's aiohttp OAuth callback + Mini API mount
+│   │   ├── mini_api.py              `/api/mini/*` JSON (Init Data auth)
+│   │   ├── mini_auth.py             Telegram WebApp Init Data validation
+│   │   ├── mini_me.py               personal panel payload
+│   │   ├── mini_chat.py             feed / online / summary / person payloads
+│   │   ├── mini_admin.py            super-admin JSON (secrets never leave here)
+│   │   ├── mini_hltb.py             HowLongToBeat search/resolve for the SPA
+│   │   └── mini_avatars.py          profile photo bytes for the SPA
 │   │
 │   └── db/
 │       ├── schema.sql               full DDL for a brand-new database
@@ -307,7 +331,9 @@ URL — Microsoft rejects plain `http://` and `localhost`), `FERNET_KEY` (encryp
 stored secrets).
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `OAUTH_LISTEN_HOST` /
-`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, and the poller interval settings
+`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (public HTTPS URL of
+the Mini App SPA — empty disables Mini App entry points; slash commands stay),
+and the poller interval settings
 (presence, achievement, token, catch-up tuning).
 
 `STEAM_API_KEY` and `ANTHROPIC_API_KEY` (2026-09-09, the latter for
@@ -387,6 +413,30 @@ every column.
   shared credential see this account's achievements/trophies" — `NULL` until
   checked once, then `1`/`0`; set at connect time and refreshed by every
   backfill/resync (`SteamFetcher`/`PsnFetcher`), not read live from a UI path.
+- **Game covers** (2026-09-18, owner request). `titles.icon_url` is the
+  platform's own URL and `titles.cover_path` / `cover_hash` /
+  `cover_checked_at` the downloaded copy under `data/covers/` — the same
+  three-column shape avatars use below, and for the same reason: a URL is a
+  promise somebody else can break. The Mini App shows a game's art beside
+  every achievement, and of 2544 stored titles exactly two had any, because
+  `icon_url` had only ever been filled for the Xbox 360 games whose
+  achievement messages borrow the box art.
+
+  What it costs differs completely per platform, which is why only one of
+  them needs a walker. **Steam** is free — the capsule is at a fixed path
+  under its CDN, derived from the appid with no request at all
+  (`library_600x900`, portrait, because the Mini App crops covers square and
+  a 460×215 banner does not survive that). **PSN** is free too —
+  `title_icon_url` already rides in the trophy-title listing the scan walks,
+  so it is written as the scan goes and existing games fill in by
+  themselves. **Xbox** costs one titlehub request per game through
+  somebody's own token, which is what `poller/covers.py` rations at three a
+  minute.
+
+  A title is visited **once**: art does not change after release, unlike a
+  face. `cover_checked_at` is stamped on every visit, found or not, so a
+  game nobody can find art for sorts behind everything never looked at
+  instead of returning to the head of the queue every minute.
 - **Profile pictures** (#55, 2026-09-16). A person's Telegram photo
   (`users.photo_file_id` / `photo_unique_id` / `photo_path`) and each
   platform account's own (`accounts.avatar_url` / `avatar_path` /
@@ -449,7 +499,9 @@ every column.
   `flood_limit`/`flood_window_minutes` (see Publication rules below). `user_settings`
   holds personal, chat-independent settings: timezone offset, muted games, and
   `show_profile_links` (off by default; a new user's starting value comes from
-  `app_settings['default_show_profile_links']`). Both tables also carry a
+  `app_settings['default_show_profile_links']`) and `show_secrets` (Mini App
+  only — whether secret achievement names are shown unspoilered; off by
+  default; group posts are unchanged). Both tables also carry a
   `locale` (#48, 2026-09-11, `'ru'` by default) — the chat's own for everything
   broadcast to a group, the person's own for DMs; see Localization above.
   Neither is seeded from Telegram's `language_code`: plenty of this
@@ -875,7 +927,36 @@ due.
   poller ignores the account until then (#21, see the PSN section above).
 - **Catch-up after downtime** may publish missed achievements only inside the
   configured recent window — older rows are stored for stats/dedup but never
-  flooded into chat.
+  flooded into chat. **A row with no unlock date is placed by when its game
+  was last played** (`title_history.last_played_at`), not dropped
+  (2026-09-17, owner report). Most rows are dated — 2331 of production's 2982
+  x360 rows are — but Microsoft's placeholder costs the other 651 their date,
+  and the old "an unknown date is not proof of freshness" made every one of
+  those unannounceable through catch-up, on any account, forever. Found when
+  two people finished a session in Gears of War 3 and the log read
+  `catch-up for tg_id=…: 10 titles, 0 published`. The live poll path never
+  had this problem, which is why it went unnoticed: `poll_title` publishes a
+  dateless row normally. The window still binds — a game last played a
+  fortnight ago stays silent, which is the case the window exists for.
+- **A catch-up window starts at the newest unlock already stored**, never at
+  presence (#82, 2026-09-18) — `poller/fetcher.py::catch_up_since`, written
+  once and used by startup, the hourly sweep and the admin panel's own
+  refresh alike. `presence_state.updated_at` is rewritten on every tick
+  whether or not anything changed, so a window measured from it is always
+  "since a minute ago": `_played_since` finds no candidate title and
+  catch-up returns having done nothing, on every account, silently. It is
+  floored at `catchup_publish_window_hours` back, because an account with
+  nothing stored (or idle for a year) would otherwise hand back the whole
+  library to publish nothing at all.
+- **Catch-up also runs while the bot is up**, hourly, one account per tick
+  (`poller/catch_up.py`, #82). The presence poller only ever asks about the
+  game somebody is in *right now*, plus one last look as they leave it — and
+  an Xbox console uploads what was earned offline when it next reaches the
+  network, normally well after that look. Nothing asked again until the next
+  restart, which is how two people lost a Gears of War 3 session. One
+  account per tick rather than all of them: `title_history` for a large
+  account is heavy (~46s for a real 1011-title one), and a pass where
+  nobody played anything costs exactly one request per account.
 
 ## Publication rules
 
@@ -1655,9 +1736,22 @@ the last line of `/help` and the group hub, and logged at startup —
 `bot @tg_achievement_bot is up (v1.1.53.046)`.
 
 - **A** — the architecture. By hand, on a rewrite. `1`.
-- **B** — which line of work this build is. `0` on `main`; a working branch
-  takes the next number and `main` inherits it on merge, so "is this the
-  test bot" is answerable from the version alone. `accounts-52` is `1`.
+- **B** — which line of work this build is, **derived from the branch at
+  startup** (2026-09-18): `TRUNK_LINE` on `main`, one above it anywhere else.
+  Production is `1.2.…`, the test bot is `1.3.…`, and "which bot am I looking
+  at" is answerable from the version alone.
+
+  It used to be a constant edited by hand, which `main` inherited whenever a
+  branch merged — and that quietly stopped working the moment a merge went
+  straight to `main` without passing through the test bot: both then reported
+  `1.2` and were indistinguishable, which is precisely the question B exists
+  to answer. Deriving it needs no bookkeeping and cannot drift.
+
+  Not written by `scripts/xbox-deploy.sh`, where it would seem to belong: a
+  deploy that rewrote `version.py` on the server would leave the checkout
+  dirty and its own `git merge --ff-only` would refuse the next one.
+  `TRUNK_LINE` is the one number a person still edits, on a rewrite or when a
+  release deserves its own.
 - **C** — commits made on this branch since it left `main`, counted at
   startup from the *merge base* (owner's call, 2026-09-16: a short number
   that grows by one per commit beats a hash nobody can order at a glance).
@@ -1766,15 +1860,86 @@ Back up with `sqlite3`'s own `backup()`, never `cp`: these databases run in
 WAL mode and a plain copy of one can come back malformed. Name the file for
 what it is and when: `bot-pre042-20260915-084500.db`.
 
-Deploy is currently manual: `git pull --ff-only`, reinstall dependencies if they
-changed, `systemctl restart xbox-bot`. Back up `bot.db` first whenever the deploy
-includes a new migration — migrations here are forward-only, and a destructive one
-(a rebuild-and-swap that drops a column) can't be undone without a kept backup and a
-matching code rollback together.
+**Two branches, two bots, and the merge is the deploy** (#4, 2026-09-18).
 
-Open work: GitHub Actions CI (pytest + ruff on every PR/push) and automated deploy
-from a protected production branch, secrets via GitHub Actions secrets, never in the
-repository — issue #4.
+```
+push to any branch   →  CI: pytest, both ruff checks, a real Mini App build
+push to `test`       →  CI, then the test bot (8081) deploys itself
+merge `test` → `main`→  CI, then production (8080) deploys itself
+```
+
+There is no branch called `production`: **`main` is it**, and merging into it
+is the release. Work happens on `test`, which is also what the test bot runs,
+so "what is on the test bot" and "what is about to become production" are the
+same question with one answer.
+
+Nothing is pushed by hand any more. `.github/workflows/ci.yml` runs on every
+branch and pull request; only `test` and `main` go on to deploy, and only
+once both CI jobs are green. The repository is public, so none of this costs
+minutes.
+
+`scripts/xbox-deploy.sh` is what actually runs on the server (installed at
+`/usr/local/bin/xbox-deploy`): back up the database **every** time, not only
+when a migration ships; `git merge --ff-only`, never a merge commit made by a
+robot; reinstall dependencies only when `pyproject.toml` changed; unpack the
+SPA the workflow built; restart; and then *verify* — `systemctl` returning 0
+means the unit was asked to start, and whether the bot came up is a different
+question that only its own `is up (v…)` line answers. That check is bounded by
+a timestamp taken before the restart, because a relative window matches the
+previous deploy's line and reports success for a restart that never happened.
+
+The CI key is a dedicated `deploy` user whose sudoers entry permits exactly
+that one script, so what it can do is "deploy what is already in the
+repository" rather than "anything, as root". `.env`, `FERNET_KEY` and the
+database never go near GitHub; the four secrets there are the SSH key, the
+host, the user and the host's own fingerprint.
+
+**What it does not do is rehearse a migration, and the merge is where that
+belongs** (owner, 2026-09-18). The backup is automatic; the rehearsal above —
+copy production's database, run the real `Database.connect()` against the
+copy, count the rows on both sides — stays a person's job, and it happens
+**before merging `test` into `main`**, not after. That is the last moment
+anything is still a decision: once the merge lands, CI deploys production
+without asking.
+
+The test bot is not a substitute for it. It migrates its own database on
+every deploy, which is a genuine rehearsal of the *code path* — but against
+`data/test.db`, half production's size and with a different history, and it
+is production's particular history that broke three migrations in one
+afternoon during #52.
+
+The Mini App is built by CI rather than on the box on purpose: `npm ci` plus
+Vite on a machine with 300 MB free is the one part of this deploy that could
+genuinely take the bots down with it.
+
+### The two bots, and the two Mini Apps
+
+One box, two instances, and since 2026-09-18 **each has a hostname of its
+own**:
+
+| | production | test |
+|---|---|---|
+| bot | `@xbox_achievement_bot` | `@tg_achievement_bot` |
+| unit / port | `xbox-bot` · 8080 | `xbox-bot-test` · 8081 |
+| checkout | `/opt/xbox_achievement_bot` | `/opt/xbox_bot_test` |
+| env / database | `.env` · `data/bot.db` | `.env.test` · `data/test.db` |
+| branch | `main` | `test` |
+| Mini App | `xbox.sultanpharm.com/app/` | `test.xbox.sultanpharm.com/app/` |
+| SPA files | `/var/www/xbox-mini` | `/var/www/xbox-mini-test` |
+
+The separate hostname is not tidiness. **The SPA calls `/api/mini/*` by
+absolute path and has no configurable base**, so whatever origin serves the
+page is the origin its API must answer on — one host cannot serve both bots,
+and while it was shared, trying the app on test meant pointing the live
+domain at the test bot. A test that requires touching production is not a
+test. A bot token is also the API key here, so a signature from one bot never
+validates against the other: the split is enforced, not merely conventional.
+
+The test bot's OAuth callback stays on the production host, at
+`/auth/callback-test` — Microsoft has that redirect URL registered and it is
+not worth re-registering. Nothing else answers on the test host at all.
+
+Both certificates are Let's Encrypt, renewed by the same certbot timer.
 
 ## Engineering rules
 

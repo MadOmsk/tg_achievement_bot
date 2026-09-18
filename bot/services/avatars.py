@@ -16,22 +16,17 @@ looks at each subject about once a week.
 
 from __future__ import annotations
 
-import hashlib
-import logging
 from pathlib import Path
 
-import httpx
-
-log = logging.getLogger(__name__)
+from bot.services import images
 
 AVATAR_DIR = Path("data/avatars")
 
-# Xbox and PSN both hand out pictures well over 1MB at their largest sizes,
-# and a face in a list is displayed at 50 pixels. This is a sanity bound
-# against a redirect to something that is not an image at all, not a quality
-# setting.
-MAX_BYTES = 4 * 1024 * 1024
-DOWNLOAD_TIMEOUT_SECONDS = 20
+#: Kept as re-exports: the poller and its tests reach for these by name, and
+#: the sizes/timeouts are one decision shared with every other picture the
+#: bot downloads (bot/services/images.py).
+MAX_BYTES = images.MAX_BYTES
+DOWNLOAD_TIMEOUT_SECONDS = images.DOWNLOAD_TIMEOUT_SECONDS
 
 
 def avatar_dir(root: Path | None = None) -> Path:
@@ -44,32 +39,13 @@ async def download(url: str, name: str, *, root: Path | None = None) -> tuple[st
     which is an ordinary outcome, not an error: a platform CDN having a bad
     minute must never fail the poll tick it rides on.
     """
-    try:
-        async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as c:
-            response = await c.get(url)
-            response.raise_for_status()
-            payload = response.content
-    except Exception as exc:
-        log.info("avatar download failed for %s: %r", name, exc)
-        return None
-
-    if not payload or len(payload) > MAX_BYTES:
-        log.info("avatar for %s ignored: %s bytes", name, len(payload))
-        return None
-
-    directory = avatar_dir(root)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / name).write_bytes(payload)
-    return name, hashlib.sha256(payload).hexdigest()
+    return await images.download(url, name, avatar_dir(root))
 
 
 def write(payload: bytes, name: str, *, root: Path | None = None) -> tuple[str, str]:
     """The same, for bytes already in hand — Telegram's photo arrives through
     the bot API rather than over plain HTTP."""
-    directory = avatar_dir(root)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / name).write_bytes(payload)
-    return name, hashlib.sha256(payload).hexdigest()
+    return images.write(payload, name, avatar_dir(root))
 
 
 def telegram_name(tg_id: int) -> str:
@@ -79,5 +55,4 @@ def telegram_name(tg_id: int) -> str:
 def account_name(platform: str, external_id: str) -> str:
     # An external id is a XUID, a SteamID64 or a PSN account_id — digits, or
     # digits and dashes. Sanitized anyway: this becomes a filename.
-    safe = "".join(char for char in external_id if char.isalnum() or char in "-_")
-    return f"{platform}-{safe}.jpg"
+    return images.safe_name(platform, external_id)

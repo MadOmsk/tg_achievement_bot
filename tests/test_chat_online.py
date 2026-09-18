@@ -26,6 +26,15 @@ def test_hub_keyboard_has_exactly_five_buttons_and_carries_the_chat_id() -> None
     assert psn_button.url == "https://t.me/mybot?start=connectpsn"
 
 
+def test_hub_keyboard_adds_open_app_when_mini_url_is_set() -> None:
+    markup = hub_keyboard("mybot", CHAT_ID, mini_app_url="https://app.example/")
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert len(buttons) == 6
+    open_app = next(b for b in buttons if b.text == "Открыть приложение")
+    assert open_app.url == f"https://t.me/mybot?startapp=c{CHAT_ID}"
+    assert markup.inline_keyboard[-1] == [open_app]
+
+
 async def test_chat_member_presence_orders_playing_first(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     for tg_id, xuid, tag in ((1, XUID_A, "Offline"), (2, XUID_B, "Playing")):

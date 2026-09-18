@@ -42,6 +42,7 @@ chat-unknown-user = Не знаю такого. Bot API не умеет иска
 chat-help-text = 🎮 Слежу за достижениями и трофеями тех, кто играет на XBOX, PlayStation и в Steam, и публикую их сюда — с фильтром по редкости, статистикой каждого и итогом дня.
 
     Команды чата:
+    /app — открыть приложение
     /stats [@кто] — статистика: без аргумента своя, с ником — чужая
     /who — узнать стату конкретного игрока
     /online — кто сейчас в игре
@@ -59,6 +60,9 @@ chat-hub-xbox-button = 🔗 XBOX
 chat-hub-steam-button = 🎮 Steam
 chat-hub-psn-button = 🎮 PSN
 chat-hub-settings-button = ⚙️ Настройки
+chat-hub-open-app = Открыть приложение
+chat-app-hint = Смотри в приложении:
+chat-app-no-url = Приложение ещё не настроено (нет MINI_APP_URL).
 chat-subscribe-button-done = Готово, твои достижения будут прилетать сюда.
 chat-delete-last-none = Не нашёл сообщений бота в этом чате.
 chat-delete-last-failed = Не смог удалить — возможно, сообщение слишком старое.

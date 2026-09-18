@@ -113,6 +113,10 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- default_rarity_mode (repo.py's ensure_user). /panel is exempt — it's
     -- only ever shown to its own owner, always shows links there.
     show_profile_links INTEGER NOT NULL DEFAULT 0,
+    -- Mini App only: whether this person sees secret achievement names
+    -- unspoilered. Off by default. Group posts are unchanged — Telegram
+    -- cannot hide a published name from one viewer only.
+    show_secrets     INTEGER NOT NULL DEFAULT 0,
     -- This person's own language, for DMs only (/panel, /stats in a DM,
     -- personal notifications) — a group always follows chat_settings.locale
     -- instead, see there (#48). Deliberately not seeded from Telegram's own
@@ -358,6 +362,14 @@ CREATE TABLE IF NOT EXISTS titles (
     -- and Steam's is the length of its cached schema, so those two have an
     -- answer already. NULL until a platform that needs this one says so.
     achievements_total INTEGER,
+    -- The downloaded copy of `icon_url` above, and what maps this row to it
+    -- (migration 050): a path relative to data/covers/, the sha256 of the
+    -- bytes, and when the title was last looked at — stamped even when the
+    -- platform offered no art, or a game without any would be asked about
+    -- on every tick forever. Filled by poller/covers.py.
+    cover_path TEXT,
+    cover_hash TEXT,
+    cover_checked_at TEXT,
     updated_at TEXT NOT NULL
 );
 

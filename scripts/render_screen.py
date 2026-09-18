@@ -154,7 +154,17 @@ async def _hub(ctx: Context) -> Screen:
     i18n = await i18n_for(ctx.locale)
     return Screen(
         await hub_text(ctx.repo, ctx.chat_id, i18n),
-        hub_keyboard("tg_achievement_bot", ctx.chat_id, i18n),
+        # The Mini App row only exists when there is an app to open, so the
+        # screen has to be drawn from the same setting the bot reads — the
+        # environment alone is not it, since MINI_APP_URL normally lives in
+        # .env and reaches the bot through Settings. `ctx.settings` is None
+        # only under the test that sweeps every screen.
+        hub_keyboard(
+            "tg_achievement_bot",
+            ctx.chat_id,
+            i18n,
+            mini_app_url=(ctx.settings.mini_app_url or "") if ctx.settings else "",
+        ),
     )
 
 

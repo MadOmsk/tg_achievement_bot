@@ -95,8 +95,12 @@ class _ChatsRepo:
             "  SELECT chat_id FROM subscriptions WHERE tg_id = ?"
             "  UNION "
             "  SELECT chat_id FROM chat_seen WHERE tg_id = ?"
-            ") ORDER BY c.title",
-            (tg_id, tg_id, tg_id),
+            ") "
+            "ORDER BY CASE WHEN s.rarity_mode IS NOT NULL THEN 0 ELSE 1 END,"
+            "  (SELECT MAX(cs.last_seen_at) FROM chat_seen cs"
+            "    WHERE cs.chat_id = c.chat_id AND cs.tg_id = ?) DESC,"
+            "  c.title",
+            (tg_id, tg_id, tg_id, tg_id),
         )
         return [
             UserChatRow(

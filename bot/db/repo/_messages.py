@@ -119,8 +119,23 @@ class _MessagesRepo:
         ]
 
     async def chat_recent(
-        self, chat_id: int, limit: int, *, locale: str = "ru"
+        self,
+        chat_id: int,
+        limit: int,
+        *,
+        locale: str = "ru",
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> list[RecentAchievement]:
+        where = f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+        params: list[object] = [chat_id]
+        if since is not None:
+            where += f"AND {earned_at()} >= ? "
+            params.append(_iso(since))
+        if until is not None:
+            where += f"AND {earned_at()} < ? "
+            params.append(_iso(until))
+        params.append(limit)
         cursor = await self._conn.execute(
             # Every field the person chain needs (#51) — this used to select
             # `u.gamertag` alone, so a member with no Xbox account was
@@ -139,7 +154,10 @@ class _MessagesRepo:
             # actually worth (15 G). Found by rendering the screen.
             "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
             "       s.platform, " + earned_at() + " AS unlocked_at,"
-            "       s.is_secret, s.trophy_type "
+            "       s.is_secret, s.trophy_type,"
+            "       s.title_id, s.achievement_id, s.icon_url,"
+            "       t.icon_url AS game_icon_url, s.description,"
+            "       s.xuid AS achievement_xuid, s.trophy_group_id "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
@@ -158,9 +176,9 @@ class _MessagesRepo:
             # when the import ran, so right after somebody connects their whole
             # imported history would sort to the top of this list — in the one
             # window where the first link is supposed to be silent.
-            + f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
-            f"ORDER BY {earned_at()} DESC LIMIT ?",
-            (chat_id, limit),
+            + where
+            + f"ORDER BY {earned_at()} DESC LIMIT ?",
+            params,
         )
         return [
             RecentAchievement(
@@ -180,6 +198,123 @@ class _MessagesRepo:
                 unlocked_at=row["unlocked_at"],
                 is_secret=bool(row["is_secret"]),
                 trophy_type=row["trophy_type"],
+                title_id=row["title_id"] or "",
+                achievement_id=row["achievement_id"] or "",
+                icon_url=row["icon_url"],
+                game_icon_url=row["game_icon_url"],
+                description=row["description"],
+                xuid=row["achievement_xuid"] or "",
+                trophy_group_id=row["trophy_group_id"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def chat_unlock_months(self, chat_id: int, limit: int = 24) -> list[str]:
+        """Distinct `YYYY-MM` prefixes of unlock timestamps in this chat.
+
+        The Mini App month picker lists these; ISO strings are UTC, so a
+        late-evening Moscow unlock on the 1st can land in the previous UTC
+        month. Close enough for a picker — the feed itself uses the chat's
+        timezone window, not this list."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
+            "FROM subscriptions sub "
+            "JOIN users u ON u.tg_id = sub.tg_id "
+            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            "ORDER BY ym DESC LIMIT ?",
+            (chat_id, limit),
+        )
+        return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
+
+    async def person_unlock_months(self, tg_id: int, limit: int = 24) -> list[str]:
+        """Distinct `YYYY-MM` of this person's unlocks (not scoped to a chat)."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
+            "FROM users u "
+            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            "ORDER BY ym DESC LIMIT ?",
+            (tg_id, limit),
+        )
+        return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
+
+    async def person_recent(
+        self,
+        tg_id: int,
+        limit: int,
+        *,
+        locale: str = "ru",
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[RecentAchievement]:
+        """One person's unlocks, newest first — the Mini App person card's
+        feed. Same columns as `chat_recent`, scoped to the account they hold
+        right now rather than to a chat's subscribers."""
+        where = f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+        params: list[object] = [tg_id]
+        if since is not None:
+            where += f"AND {earned_at()} >= ? "
+            params.append(_iso(since))
+        if until is not None:
+            where += f"AND {earned_at()} < ? "
+            params.append(_iso(until))
+        params.append(limit)
+        cursor = await self._conn.execute(
+            "SELECT u.tg_id, u.username, u.first_name,"
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
+            "       psn.display_name AS psn_name,"
+            "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
+            "       " + LOCALIZED_TITLE_COLUMNS + ","
+            "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
+            "       s.platform, " + earned_at() + " AS unlocked_at,"
+            "       s.is_secret, s.trophy_type,"
+            "       s.title_id, s.achievement_id, s.icon_url,"
+            "       t.icon_url AS game_icon_url, s.description,"
+            "       s.xuid AS achievement_xuid, s.trophy_group_id "
+            "FROM users u "
+            + XBOX_ACCOUNT
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + NAME_CACHE_JOIN
+            + where
+            + f"ORDER BY {earned_at()} DESC LIMIT ?",
+            params,
+        )
+        return [
+            RecentAchievement(
+                tg_id=row["tg_id"],
+                gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
+                name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
+                game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
+                gamerscore=int(row["achievement_gamerscore"] or 0),
+                rarity_percent=row["rarity_percent"],
+                platform=row["platform"],
+                unlocked_at=row["unlocked_at"],
+                is_secret=bool(row["is_secret"]),
+                trophy_type=row["trophy_type"],
+                title_id=row["title_id"] or "",
+                achievement_id=row["achievement_id"] or "",
+                icon_url=row["icon_url"],
+                game_icon_url=row["game_icon_url"],
+                description=row["description"],
+                xuid=row["achievement_xuid"] or "",
+                trophy_group_id=row["trophy_group_id"],
             )
             for row in await cursor.fetchall()
         ]
@@ -192,6 +327,7 @@ class _MessagesRepo:
         rare_threshold: float,
         limit: int = 15,
         locale: str = "ru",
+        until: datetime | None = None,
     ) -> list[GameAchievements]:
         """Games these people earned achievements in since `since`, ranked by
         how many.
@@ -234,8 +370,13 @@ class _MessagesRepo:
         if not tg_ids:
             return []
         owners = ",".join("?" * len(tg_ids))
+        date_bound = f"AND {earned_since()}"
+        date_params: list[object] = [_iso(since)]
+        if until is not None:
+            date_bound += f" AND {earned_at()} < ?"
+            date_params.append(_iso(until))
         cursor = await self._conn.execute(
-            "SELECT s.title_id, s.platform, t.name, " + LOCALIZED_TITLE_COLUMNS + ","
+            "SELECT s.title_id, s.platform, t.name, t.icon_url, " + LOCALIZED_TITLE_COLUMNS + ","
             "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
             f"       SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= ?"
             "                THEN 1 ELSE 0 END) AS rare,"
@@ -248,10 +389,10 @@ class _MessagesRepo:
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
             + rarity_cache_join()
-            + f"WHERE al.tg_id IN ({owners}) AND {earned_since()} "
+            + f"WHERE al.tg_id IN ({owners}) {date_bound} "
             "GROUP BY s.title_id, s.platform "
             "ORDER BY cnt DESC, last_earned DESC LIMIT ?",
-            (rare_threshold, *tg_ids, _iso(since), limit or -1),
+            (rare_threshold, *tg_ids, *date_params, limit or -1),
         )
         return [
             GameAchievements(
@@ -268,6 +409,7 @@ class _MessagesRepo:
                 silver=int(row["silver"] or 0),
                 gold=int(row["gold"] or 0),
                 platinum=int(row["platinum"] or 0),
+                icon_url=row["icon_url"],
             )
             for row in await cursor.fetchall()
         ]

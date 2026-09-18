@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from bot.constants import Platform, PresenceState
+from bot.constants import AccountPlatform, Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleHistoryRow
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
@@ -300,7 +300,11 @@ class Fetcher:
                 new_rows = await self._repo.insert_new_achievements(
                     xuid, [to_achievement_row(item) for item in parsed], is_backfill=False
                 )
-                fresh = [row for row in new_rows if _unlocked_after(row, publish_after)]
+                fresh = [
+                    row
+                    for row in new_rows
+                    if _publishable(row, publish_after, entry.last_played_at)
+                ]
                 if fresh:
                     await self._publisher.publish(tg_id, xuid, gamertag, fresh, entry.name)
                     published += len(fresh)
@@ -389,6 +393,30 @@ class Fetcher:
             await self._repo.set_account_avatar_url(xuid, snapshot.avatar_url)
 
 
+async def catch_up_since(repo: Repo, xuid: str, window_hours: int) -> datetime:
+    """Where this account's catch-up window starts (#82).
+
+    The newest unlock already stored, which only moves when an achievement
+    actually arrives. Deliberately **not** `presence_state.updated_at`: the
+    presence poller writes that on every tick whether or not anything
+    changed, so a window measured from it is always "since a minute ago" and
+    `_played_since` finds no candidate title at all. That is what made
+    startup catch-up a silent no-op on every account — the admin panel's own
+    refresh had used the right value all along.
+
+    A floor of `window_hours` back, for two different accounts that both
+    need one: an account with nothing stored answers `None`, and an account
+    idle for a year answers with a year-old date. Either would have
+    `_played_since` hand back the whole library, up to `catchup_max_titles`
+    achievement requests per account on every pass, to publish nothing —
+    nothing older than the window may be announced anyway. What is older
+    than that and still missing is backfill's job, not catch-up's.
+    """
+    floor = utcnow() - timedelta(hours=window_hours)
+    stored = parse_iso(await repo.account_latest_unlock(AccountPlatform.XBOX, xuid))
+    return max(stored, floor) if stored is not None else floor
+
+
 def _played_since(
     history: list[TitleHistoryEntry], since: datetime | None
 ) -> list[TitleHistoryEntry]:
@@ -403,7 +431,32 @@ def _played_since(
     return [entry for _, entry in fresh]
 
 
-def _unlocked_after(row: AchievementRow, moment: datetime) -> bool:
+def _publishable(row: AchievementRow, moment: datetime, played_at: str | None) -> bool:
+    """Whether a row catch-up just stored is recent enough to announce.
+
+    A dated row is placed by its own date. A row with no date falls back to
+    **when the game was last played**, which is a real timestamp titlehub
+    gives us for the title this row came from — not a guess.
+
+    That fallback is the fix (owner report, 2026-09-17). Most achievements
+    are dated, Xbox 360's included — 2331 of production's 2982 x360 rows —
+    but Microsoft sends a placeholder (`0001-01-01`, or `1753-01-01`) often
+    enough to cost the other 651 theirs, and `parse_timestamp` discards it
+    rather than record an unlock in the year 1753. The old rule here was
+    `unlocked is not None and unlocked >= moment` — "an unknown date is not
+    proof of freshness" — which is true of a backfilled row and false of
+    this one: everything reaching this function was just inserted, so the bot
+    has never seen it before. The result was that an undated achievement
+    could never be announced through catch-up at all, on any account, ever.
+    Two people finished a session in Gears of War 3 and the log read
+    `catch-up for tg_id=…: 10 titles, 0 published`.
+
+    Still a real check, not `True`: the point of the window is that after a
+    fortnight of downtime a chat does not want the archive, and a game last
+    played a fortnight ago stays silent on exactly that ground.
+    """
     unlocked = parse_iso(row.unlocked_at)
-    # An unknown date is not proof of freshness — those stay unpublished.
-    return unlocked is not None and unlocked >= moment
+    if unlocked is not None:
+        return unlocked >= moment
+    played = parse_iso(played_at)
+    return played is not None and played >= moment
