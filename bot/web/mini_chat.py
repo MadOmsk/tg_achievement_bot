@@ -100,6 +100,34 @@ async def _month_choices(repo: Repo, chat_id: int, *extra: str) -> list[str]:
     return ordered
 
 
+async def _person_month(
+    repo: Repo, tg_id: int, month: str | None
+) -> tuple[str, datetime, datetime, str, int]:
+    """Calendar month in *this person's* timezone — never a chat's.
+
+    Achievements are collected per account; the person card must not inherit
+    a club's offset or the empty-chat month list that comes with it."""
+    settings_row = await repo.get_user_settings(tg_id)
+    tz = settings_row.tz_offset_min if settings_row else None
+    current = _calendar_month_key(tz)
+    parsed = parse_month_key(month or current)
+    if parsed is None:
+        raise ValueError("bad month")
+    since, until = month_window_utc(parsed[0], parsed[1], tz)
+    key = f"{parsed[0]:04d}-{parsed[1]:02d}"
+    return key, since, until, current, parsed[1]
+
+
+async def _person_month_choices(repo: Repo, tg_id: int, *extra: str) -> list[str]:
+    months = await repo.person_unlock_months(tg_id)
+    ordered: list[str] = []
+    for ym in [*extra, *months]:
+        if ym and ym not in ordered:
+            ordered.append(ym)
+    ordered.sort(reverse=True)
+    return ordered
+
+
 async def build_feed_payload(
     repo: Repo,
     chat_id: int,
@@ -187,18 +215,13 @@ async def build_person_payload(
     week_xbox, week_steam, week_psn = await repo.achievement_platform_breakdown(
         target.tg_id, week_cutoff_utc()
     )
-    if chat_id is not None:
-        key, month_since, month_until, current, _n = await _club_month(repo, chat_id, month)
-        months = await _month_choices(repo, chat_id, current, key)
-    else:
-        settings_row = await repo.get_user_settings(target.tg_id)
-        tz = settings_row.tz_offset_min if settings_row else None
-        parsed = parse_month_key(_calendar_month_key(tz))
-        if parsed is None:
-            raise ValueError("bad month")
-        month_since, month_until = month_window_utc(parsed[0], parsed[1], tz)
-        key = current = f"{parsed[0]:04d}-{parsed[1]:02d}"
-        months = [key]
+    # Person stats are account-scoped. chat_id is only an access gate for the
+    # Mini App route ("are you in a club with them"), never a filter on which
+    # unlocks count — otherwise a second/empty chat empties somebody's card.
+    key, month_since, month_until, current, _n = await _person_month(
+        repo, target.tg_id, month
+    )
+    months = await _person_month_choices(repo, target.tg_id, current, key)
     month_count, month_score = await repo.achievement_counts_for_person(
         target.tg_id, month_since, month_until
     )
@@ -251,6 +274,9 @@ async def build_person_payload(
     games_limit = await repo.get_int_setting(
         SettingKey.STATS_GAMES_LIMIT, DEFAULT_STATS_GAMES_LIMIT
     )
+    # Rarity diamonds on the games list: use the club's threshold when the
+    # card was opened from a club (same number that chat publishes with),
+    # otherwise the global default. Still never filters which games appear.
     settings = await repo.get_chat_daily_settings(chat_id) if chat_id is not None else None
     rare_threshold = settings.rare_threshold_percent if settings else 10.0
     game_rows = await repo.users_games_achievements(
@@ -263,6 +289,7 @@ async def build_person_payload(
     )
     games = [
         {
+            "title_id": g.title_id,
             "name": g.name,
             "unlocked": g.count,
             "gamerscore": g.score,

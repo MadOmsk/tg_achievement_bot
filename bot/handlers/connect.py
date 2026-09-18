@@ -285,7 +285,11 @@ async def _greet(
     await message.answer(i18n.get("connect-greeting-multi"))
     await message.answer(
         i18n.get("connect-pick-platform"),
-        reply_markup=onboarding_keyboard(connect.start_login(message.chat.id), i18n),
+        reply_markup=onboarding_keyboard(
+            connect.start_login(message.chat.id),
+            i18n,
+            mini_app_url=settings.mini_app_url,
+        ),
     )
 
 

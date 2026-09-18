@@ -209,7 +209,7 @@ a:focus-visible {
 }
 
 .home-chrome {
-  --home-ease: 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  --home-ease: 0s;
   position: sticky;
   top: 0;
   z-index: 16;
@@ -232,10 +232,6 @@ a:focus-visible {
   background: none;
   color: inherit;
   cursor: pointer;
-  transition:
-    width var(--home-ease),
-    height var(--home-ease),
-    top var(--home-ease);
 }
 
 .home-me .avatar-wrap {
@@ -246,7 +242,7 @@ a:focus-visible {
 .home-chrome .score-cup {
   position: absolute;
   top: calc(10px + var(--safe-top));
-  right: 12px;
+  right: 18px;
   z-index: 5;
 }
 
@@ -265,11 +261,6 @@ a:focus-visible {
   padding-left: 60px;
   padding-right: 88px;
   overflow: hidden;
-  transition:
-    grid-template-rows var(--home-ease),
-    margin var(--home-ease),
-    padding var(--home-ease),
-    opacity 0.22s ease;
 }
 
 .home-hello-row > * {
@@ -289,7 +280,6 @@ a:focus-visible {
 
 .home-search-row {
   padding-left: 0;
-  transition: padding-left var(--home-ease);
 }
 
 .home-chrome .search-bar {
@@ -483,10 +473,22 @@ a:focus-visible {
   justify-content: flex-start;
   gap: 10px;
   margin: 0 0 22px;
+  padding: 0;
+  min-height: 44px;
 }
 
 .page-head.is-split {
   justify-content: space-between;
+  gap: 12px;
+}
+
+.page-head.is-split h1 {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-head.is-split .month-chip {
+  margin-left: auto;
 }
 
 .month-chip,
@@ -571,6 +573,40 @@ a:focus-visible {
 
 .picker-row.is-person {
   justify-content: flex-start;
+}
+
+.picker-row.is-game {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  justify-content: flex-start;
+  cursor: default;
+}
+
+.picker-game-art {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.picker-game-art img,
+.picker-game-art .stat-game-fallback {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.picker-game-art .plat-logo {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
+}
+
+.picker-row.is-game strong {
+  text-transform: none;
 }
 
 .picker-row strong {
@@ -1296,21 +1332,21 @@ a:focus-visible {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  /* Soft top + bottom scrims — long fades so the edge itself is quiet. */
+  /* Soft top + bottom scrims — a touch denser so names stay readable. */
   background:
     linear-gradient(
       180deg,
-      rgba(8, 10, 16, 0.5) 0%,
-      rgba(8, 10, 16, 0.22) 22%,
-      rgba(8, 10, 16, 0.06) 48%,
-      rgba(8, 10, 16, 0) 68%
+      rgba(8, 10, 16, 0.62) 0%,
+      rgba(8, 10, 16, 0.3) 24%,
+      rgba(8, 10, 16, 0.08) 48%,
+      rgba(8, 10, 16, 0) 70%
     ),
     linear-gradient(
       to top,
-      rgba(8, 10, 16, 0.55) 0%,
-      rgba(8, 10, 16, 0.24) 26%,
-      rgba(8, 10, 16, 0.06) 52%,
-      rgba(8, 10, 16, 0) 78%
+      rgba(8, 10, 16, 0.68) 0%,
+      rgba(8, 10, 16, 0.32) 28%,
+      rgba(8, 10, 16, 0.08) 54%,
+      rgba(8, 10, 16, 0) 80%
     );
 }
 
@@ -1387,8 +1423,8 @@ a:focus-visible {
   bottom: 14px;
   left: 14px;
   z-index: 4;
-  width: calc(50% - 14px);
-  max-width: calc(50% - 14px);
+  width: calc(80% - 14px);
+  max-width: calc(80% - 14px);
   pointer-events: none;
 }
 
@@ -1398,12 +1434,12 @@ a:focus-visible {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 58%;
+  height: 64%;
   pointer-events: none;
   background: linear-gradient(
     to top,
-    rgba(8, 10, 16, 0.42) 0%,
-    rgba(8, 10, 16, 0.16) 40%,
+    rgba(8, 10, 16, 0.52) 0%,
+    rgba(8, 10, 16, 0.22) 42%,
     rgba(8, 10, 16, 0) 100%
   );
 }
@@ -1457,7 +1493,9 @@ a:focus-visible {
 }
 
 .hero-game-bar {
-  flex: 1;
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 6.75rem;
   min-width: 0;
   height: 8px;
   border-radius: 999px;
@@ -2087,8 +2125,8 @@ a:focus-visible {
 .feed-posts .unlock-card-foot .hero-game {
   position: static;
   align-self: flex-start;
-  width: calc(50% - 14px);
-  max-width: calc(50% - 14px);
+  width: calc(80% - 14px);
+  max-width: calc(80% - 14px);
   margin: 0 14px;
   padding: 0;
   border-radius: 0;
@@ -2805,7 +2843,7 @@ a.btn {
   -webkit-overflow-scrolling: touch;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)),
-    rgba(14, 18, 28, 0.58);
+    rgba(14, 18, 28, 0.72);
   backdrop-filter: blur(42px) saturate(1.45);
   -webkit-backdrop-filter: blur(42px) saturate(1.45);
   border: 1px solid var(--stroke);
@@ -2813,6 +2851,20 @@ a.btn {
   padding: 0 0 calc(22px + var(--safe-bottom));
   transform-origin: 50% 100%;
   animation: sheet-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Telegram's WebView often skips backdrop-filter — without a denser fill
+   drawers look like a washed overlay instead of the frosted glass in Chrome. */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .sheet-body,
+  .glass,
+  .glass-card,
+  .dock,
+  .home-chrome {
+    background: rgba(14, 18, 28, 0.94);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .sheet-body.is-tall {
@@ -2832,9 +2884,17 @@ a.btn {
   overflow: hidden;
 }
 
+.sheet-body.is-mid .sheet-unlock {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .sheet-body.is-mid:has(.sheet-unlock) {
-  height: 72dvh;
-  max-height: 72dvh;
+  height: 64dvh;
+  max-height: 64dvh;
   padding: 0;
   background: #0a0c12;
   border-color: transparent;
@@ -2889,14 +2949,6 @@ a.btn {
   -webkit-line-clamp: 6;
 }
 
-.sheet-body.is-mid .sheet-unlock {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
 .sheet-body.is-mid .sheet-unlock .unlock-card {
   flex: 1;
   min-height: 0;
@@ -2925,8 +2977,8 @@ a.btn {
 .sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game {
   position: static;
   align-self: flex-start;
-  width: calc(50% - 14px);
-  max-width: calc(50% - 14px);
+  width: calc(80% - 14px);
+  max-width: calc(80% - 14px);
   margin: 0 14px;
   padding: 0;
   border-radius: 0;
@@ -3580,6 +3632,26 @@ a.btn {
   color: inherit;
   width: 100%;
   text-align: left;
+}
+
+.settings-hint {
+  margin: 0 4px 14px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.chat-settings-title {
+  margin: 0;
+  padding: 14px 16px 4px;
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.chat-settings-card .ios-row:first-of-type {
+  padding-top: 6px;
 }
 
 .ios-row + .ios-row {
@@ -4236,6 +4308,14 @@ a.btn {
 
 .stat-games-block {
   margin: 0 0 18px;
+}
+
+.stat-games-block .section-head {
+  margin-bottom: 10px;
+}
+
+.stat-games-block .stat-block-title {
+  margin: 0;
 }
 
 .stat-games {

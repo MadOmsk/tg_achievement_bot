@@ -593,12 +593,22 @@ export function Sheet({
 }) {
   const [leaving, setLeaving] = useState(false);
   const closed = useRef(false);
+  // Ignore backdrop taps for a beat after open — the same finger-up that
+  // opened the sheet otherwise lands on the fresh overlay and closes it.
+  const armed = useRef(false);
   const finish = () => {
     if (closed.current) return;
     closed.current = true;
     onClose();
   };
   const close = () => setLeaving(true);
+  useEffect(() => {
+    armed.current = false;
+    const id = window.setTimeout(() => {
+      armed.current = true;
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, []);
   useEffect(() => {
     // Do not set overflow:hidden / position:fixed on body — Telegram's Mini
     // App chrome collapses when the page is taken out of the document flow.
@@ -635,7 +645,10 @@ export function Sheet({
       className={["sheet", compact ? "is-compact" : "", leaving ? "is-leave" : ""]
         .filter(Boolean)
         .join(" ")}
-      onClick={close}
+      onClick={() => {
+        if (!armed.current) return;
+        close();
+      }}
       onAnimationEnd={(e) => {
         if (leaving && e.target === e.currentTarget) finish();
       }}

@@ -20,6 +20,7 @@ import { FeedList, FeedPosts, PeopleHits, PersonProfile, UnlockSlider, feedKey, 
 type ClubPane = "home" | "feed" | "summary";
 
 const FRIENDS_PREVIEW = 6;
+const GAMES_PREVIEW = 6;
 
 export function Club({
   me,
@@ -67,6 +68,7 @@ export function Club({
   const [games, setGames] = useState<SummaryGame[]>([]);
   const [monthLabel, setMonthLabel] = useState("");
   const [person, setPerson] = useState<PersonPayload | null>(null);
+  const [myPerson, setMyPerson] = useState<PersonPayload | null>(null);
   const [clubReady, setClubReady] = useState(false);
   const [personBusy, setPersonBusy] = useState(false);
   const [query, setQuery] = useState("");
@@ -87,10 +89,13 @@ export function Club({
     let cancelled = false;
     setClubReady(false);
     const load = async () => {
-      const [f, o, s] = await Promise.allSettled([
+      const [f, o, s, mine] = await Promise.allSettled([
         fetchFeed(data, activeId),
         fetchOnline(data, activeId),
         fetchSummary(data, activeId),
+        // Own unlocks from every linked platform — not the chat feed slice,
+        // which is dominated by whoever unlocked most recently in-group.
+        fetchPerson(data, activeId, me.tg_id),
       ]);
       if (cancelled) return;
       if (f.status === "fulfilled") {
@@ -111,26 +116,30 @@ export function Club({
         setGames(s.value.games);
         setMonthLabel(s.value.month_label);
       }
+      if (mine.status === "fulfilled") setMyPerson(mine.value);
       setClubReady(true);
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [activeId, data]);
+  }, [activeId, data, me.tg_id]);
 
   useEffect(() => {
-    if (!openPersonId || !activeId || openPersonId === me.tg_id) {
+    if (!openPersonId || !activeId) {
       setPerson(null);
       setPersonBusy(false);
       return;
     }
+    // Own profile uses myPerson when the month matches; still refetch when
+    // the picker moves so Steam/PSN/Xbox stay in sync with the chip.
     let cancelled = false;
     setPersonBusy(true);
     void fetchPerson(data, activeId, openPersonId, personMonth ? { month: personMonth } : undefined)
       .then((payload) => {
         if (!cancelled) {
           setPerson(payload);
+          if (openPersonId === me.tg_id) setMyPerson(payload);
           if (payload.months?.length) setMonths(payload.months);
         }
       })
@@ -197,11 +206,15 @@ export function Club({
     if (target === "home") {
       if (ym === homeMonth) return;
       setHomeBusy(true);
-      void fetchFeed(data, activeId, { month: ym })
-        .then((payload) => {
+      void Promise.all([
+        fetchFeed(data, activeId, { month: ym }),
+        fetchPerson(data, activeId, me.tg_id, { month: ym }),
+      ])
+        .then(([payload, minePayload]) => {
           setHomeFeed(payload.items);
           setHomeMonth(payload.month);
           setMonths(payload.months);
+          setMyPerson(minePayload);
         })
         .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
         .finally(() => setHomeBusy(false));
@@ -231,7 +244,9 @@ export function Club({
     setPersonMonth(ym);
   };
 
-  const mine = homeFeed.filter((row) => row.tg_id === me.tg_id);
+  const mine = myPerson?.feed?.length
+    ? myPerson.feed
+    : homeFeed.filter((row) => row.tg_id === me.tg_id);
   const monthChip = (ym: string, which: "feed" | "home" | "stats" | "person") =>
     ym ? (
       <button type="button" className="month-chip" onClick={() => setMonthPicker(which)}>
@@ -240,14 +255,14 @@ export function Club({
     ) : null;
   const mySlides = mine.slice(0, 5);
   const myRest = mine.slice(5);
-  const otherProfile = person && openPersonId && openPersonId !== me.tg_id ? person : null;
+  const openProfile = person && openPersonId ? person : null;
   const [homeCompact, setHomeCompact] = useState(false);
   const homeCompactRef = useRef(false);
   const homeLockRef = useRef(0);
   const homeFrameRef = useRef(0);
 
   useEffect(() => {
-    if (pane !== "home" || otherProfile) {
+    if (pane !== "home" || openProfile) {
       homeCompactRef.current = false;
       setHomeCompact(false);
       return;
@@ -281,13 +296,13 @@ export function Club({
       cancelAnimationFrame(homeFrameRef.current);
       window.removeEventListener("scroll", onScroll);
     };
-  }, [pane, otherProfile, query]);
+  }, [pane, openProfile, query]);
 
   if (me.chats.length === 0) {
     return <p className="empty">{t(locale, "noChats")}</p>;
   }
 
-  if (openPersonId && openPersonId !== me.tg_id && personBusy && !otherProfile) {
+  if (openPersonId && personBusy && !openProfile) {
     return (
       <div className="pane-fade person-wait">
         <GlassWait tall />
@@ -295,12 +310,12 @@ export function Club({
     );
   }
 
-  if (otherProfile) {
+  if (openProfile) {
     return (
       <>
         <div className="pane-fade">
         <PersonProfile
-          person={otherProfile}
+          person={openProfile}
           locale={locale}
           revealed={revealed}
           showSecrets={showSecrets}
@@ -634,6 +649,38 @@ function RosterSheet({
   );
 }
 
+function GamesSheet({
+  games,
+  locale,
+  onClose,
+}: {
+  games: SummaryGame[];
+  locale: Locale;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
+      <div className="sheet-content picker-sheet">
+        <h2>{t(locale, "monthGames")}</h2>
+        <div className="picker-list">
+          {games.map((g) => (
+            <div key={`${g.platform}:${g.title_id}`} className="picker-row is-game">
+              <span className="picker-game-art">
+                {g.icon_url ? <img src={g.icon_url} alt="" /> : <span className="stat-game-fallback" />}
+                <PlatformLogo platform={g.platform} size={14} />
+              </span>
+              <span className="picker-row-copy">
+                <strong>{g.name || "—"}</strong>
+                <p>{g.count}</p>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
 function ClubStats({
   meId,
   locale,
@@ -659,6 +706,7 @@ function ClubStats({
   busy: boolean;
   onOpenPerson: (tgId: number) => void;
 }) {
+  const [gamesOpen, setGamesOpen] = useState(false);
   if (day.length === 0 && month.length === 0 && feed.length === 0) {
     return (
       <>
@@ -735,9 +783,19 @@ function ClubStats({
       </section>
       {games.length > 0 ? (
         <section className="stat-games-block">
-          <p className="stat-block-title">{t(locale, "monthGames")}</p>
+          <div className="section-head">
+            <p className="stat-block-title" style={{ margin: 0 }}>
+              {t(locale, "monthGames")}
+            </p>
+            {games.length > 0 ? (
+              <button type="button" className="see-all" onClick={() => setGamesOpen(true)}>
+                <span>{t(locale, "seeAll")}</span>
+                <Icon name="forward" size={16} />
+              </button>
+            ) : null}
+          </div>
           <div className="stat-games">
-            {games.map((g) => (
+            {games.slice(0, GAMES_PREVIEW).map((g) => (
               <div key={`${g.platform}:${g.title_id}`} className="stat-game-tile">
                 <span className="stat-game-art">
                   {g.icon_url ? (
@@ -753,6 +811,9 @@ function ClubStats({
             ))}
           </div>
         </section>
+      ) : null}
+      {gamesOpen ? (
+        <GamesSheet games={games} locale={locale} onClose={() => setGamesOpen(false)} />
       ) : null}
       {day.length > 0 ? (
         <section className="stat-block">
