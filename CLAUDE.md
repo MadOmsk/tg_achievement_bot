@@ -1754,14 +1754,27 @@ the last line of `/help` and the group hub, and logged at startup —
   dirty and its own `git merge --ff-only` would refuse the next one.
   `TRUNK_LINE` is the one number a person still edits, on a rewrite or when a
   release deserves its own.
-- **C** — commits made on this branch since it left `main`, counted at
-  startup from the *merge base* (owner's call, 2026-09-16: a short number
-  that grows by one per commit beats a hash nobody can order at a glance).
-  From the merge base rather than from `main`'s tip, so somebody else
-  merging into the trunk does not renumber this branch's builds; `0` on
-  `main` itself, `?` where git cannot answer at all. Deliberately not stored
-  in a file: a number you must remember to bump is wrong exactly when it
-  matters, and one edited per commit is a merge conflict per commit.
+- **C** — a count of commits read from git at startup (owner's call,
+  2026-09-16: a short number that grows by one per commit beats a hash
+  nobody can order at a glance), measuring a different distance on each
+  side (owner, 2026-09-18):
+  - on a working branch, since the **merge base** with `main` — how far this
+    line of work has come. From the merge base rather than `main`'s tip, so
+    somebody else merging into the trunk does not renumber this branch;
+  - on `main`, since the **newest release tag** (`v[0-9]*`, found with
+    `git describe`) — which release production is on.
+
+  It used to be `0` on `main` always, because the trunk does not depart from
+  itself, and that made production builds indistinguishable: four went out
+  on 2026-09-18 all calling themselves `v1.2.0.050`. `?` where git cannot
+  answer at all, and `0` on a `main` with no tag yet rather than a
+  four-digit count from the root commit. Deliberately not stored in a file:
+  a number you must remember to bump is wrong exactly when it matters, and
+  one edited per commit is a merge conflict per commit.
+
+  **Cutting a release is therefore tagging one.** `v1.2.0` marks the
+  production baseline; until the next tag exists the number keeps growing,
+  which is the honest answer to "how much has gone out since".
 - **D** — the newest migration this code ships. Not what the database has.
 
 **A database ahead of the code refuses to start** (`Database.connect` →

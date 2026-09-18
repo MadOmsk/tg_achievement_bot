@@ -184,3 +184,70 @@ async def test_a_migration_that_fails_for_any_other_reason_still_stops_startup(t
             await Database(tmp_path / "bot.db").connect()
     finally:
         database_module.MIGRATIONS_DIR = original
+
+
+def _git_answers(monkeypatch, answers: dict[tuple[str, ...], str | None]) -> list[tuple[str, ...]]:
+    """Stand in for git, and record what was asked."""
+    asked: list[tuple[str, ...]] = []
+
+    def fake(*args: str):
+        asked.append(args)
+        for prefix, answer in answers.items():
+            if args[: len(prefix)] == prefix:
+                return answer
+        return None
+
+    version_module.line.cache_clear()
+    version_module.revision.cache_clear()
+    monkeypatch.setattr(version_module, "_git", fake)
+    return asked
+
+
+def test_production_counts_from_the_newest_release_tag(monkeypatch) -> None:
+    """The gap this closes: `main` does not depart from itself, so C was 0
+    there forever — four different production builds went out on 2026-09-18
+    all calling themselves v1.2.0.050."""
+    asked = _git_answers(
+        monkeypatch,
+        {
+            ("rev-parse", "--abbrev-ref"): TRUNK,
+            ("describe",): "v1.2.0",
+            ("rev-list", "--count"): "7",
+        },
+    )
+
+    assert version_module.revision() == "7"
+    assert any(args[0] == "describe" for args in asked)
+    assert ("rev-list", "--count", "v1.2.0..HEAD") in asked
+    version_module.revision.cache_clear()
+    version_module.line.cache_clear()
+
+
+def test_production_without_a_tag_yet_says_zero(monkeypatch) -> None:
+    """Rather than counting from the root commit, which would be a
+    four-digit number meaning nothing at all."""
+    _git_answers(monkeypatch, {("rev-parse", "--abbrev-ref"): TRUNK})
+
+    assert version_module.revision() == "0"
+    version_module.revision.cache_clear()
+    version_module.line.cache_clear()
+
+
+def test_a_working_branch_still_counts_from_where_it_left_main(monkeypatch) -> None:
+    """Unchanged, and deliberately not the tag: on the test bot the useful
+    number is how far this line of work has come."""
+    asked = _git_answers(
+        monkeypatch,
+        {
+            ("rev-parse", "--abbrev-ref"): "test",
+            ("rev-parse", "--verify"): "origin/main",
+            ("merge-base",): "abc123",
+            ("rev-list", "--count"): "3",
+        },
+    )
+
+    assert version_module.revision() == "3"
+    assert ("rev-list", "--count", "abc123..HEAD") in asked
+    assert not any(args[0] == "describe" for args in asked), "a branch must not read the tag"
+    version_module.revision.cache_clear()
+    version_module.line.cache_clear()
