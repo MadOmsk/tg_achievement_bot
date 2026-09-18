@@ -1884,6 +1884,35 @@ The Mini App is built by CI rather than on the box on purpose: `npm ci` plus
 Vite on a machine with 300 MB free is the one part of this deploy that could
 genuinely take the bots down with it.
 
+### The two bots, and the two Mini Apps
+
+One box, two instances, and since 2026-09-18 **each has a hostname of its
+own**:
+
+| | production | test |
+|---|---|---|
+| bot | `@xbox_achievement_bot` | `@tg_achievement_bot` |
+| unit / port | `xbox-bot` · 8080 | `xbox-bot-test` · 8081 |
+| checkout | `/opt/xbox_achievement_bot` | `/opt/xbox_bot_test` |
+| env / database | `.env` · `data/bot.db` | `.env.test` · `data/test.db` |
+| branch | `main` | `test` |
+| Mini App | `xbox.sultanpharm.com/app/` | `test.xbox.sultanpharm.com/app/` |
+| SPA files | `/var/www/xbox-mini` | `/var/www/xbox-mini-test` |
+
+The separate hostname is not tidiness. **The SPA calls `/api/mini/*` by
+absolute path and has no configurable base**, so whatever origin serves the
+page is the origin its API must answer on — one host cannot serve both bots,
+and while it was shared, trying the app on test meant pointing the live
+domain at the test bot. A test that requires touching production is not a
+test. A bot token is also the API key here, so a signature from one bot never
+validates against the other: the split is enforced, not merely conventional.
+
+The test bot's OAuth callback stays on the production host, at
+`/auth/callback-test` — Microsoft has that redirect URL registered and it is
+not worth re-registering. Nothing else answers on the test host at all.
+
+Both certificates are Let's Encrypt, renewed by the same certbot timer.
+
 ## Engineering rules
 
 - Keep handlers thin — they call services and repository methods, never raw SQL or
