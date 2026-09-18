@@ -1762,7 +1762,12 @@ the last line of `/help` and the group hub, and logged at startup —
     line of work has come. From the merge base rather than `main`'s tip, so
     somebody else merging into the trunk does not renumber this branch;
   - on `main`, since the **newest release tag** (`v[0-9]*`, found with
-    `git describe`) — which release production is on.
+    `git describe`), counted **along first parents** — which release
+    production is on. One per release rather than one per commit that rode
+    in with it: a merge is one thing going out, and counting its branch's
+    commits would grow the number by the size of whatever was merged
+    instead of by how many times production changed (3 against 19, measured
+    on the day this was written).
 
   It used to be `0` on `main` always, because the trunk does not depart from
   itself, and that made production builds indistinguishable: four went out

@@ -218,7 +218,10 @@ def test_production_counts_from_the_newest_release_tag(monkeypatch) -> None:
 
     assert version_module.revision() == "7"
     assert any(args[0] == "describe" for args in asked)
-    assert ("rev-list", "--count", "v1.2.0..HEAD") in asked
+    # --first-parent: one per release, not one per commit that rode in with
+    # it. Measured on the day this was written: 3 releases against 19
+    # commits, and the number is meant to say which release is running.
+    assert ("rev-list", "--count", "--first-parent", "v1.2.0..HEAD") in asked
     version_module.revision.cache_clear()
     version_module.line.cache_clear()
 
@@ -247,6 +250,8 @@ def test_a_working_branch_still_counts_from_where_it_left_main(monkeypatch) -> N
     )
 
     assert version_module.revision() == "3"
+    # Every commit here, not first parents: on a working branch the question
+    # is how much work has accumulated.
     assert ("rev-list", "--count", "abc123..HEAD") in asked
     assert not any(args[0] == "describe" for args in asked), "a branch must not read the tag"
     version_module.revision.cache_clear()

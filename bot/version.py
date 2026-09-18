@@ -17,11 +17,13 @@ an outage:
 
   * on a working branch, **since it left `main`** — how far this line of work
     has come, which is what somebody looking at the test bot wants to know;
-  * on `main`, **since the newest release tag** — which release production is
-    on. It used to be `0` there always, because `main` does not depart from
-    itself: four different production builds went out on 2026-09-18 all
-    calling themselves `v1.2.0.050`, and this string is printed in `/help`
-    and at startup precisely so an incident can tell builds apart.
+  * on `main`, **since the newest release tag, counted along first parents**
+    — which release production is on. One per release rather than one per
+    commit that rode in with it: a merge is one thing going out. It used to
+    be `0` there always, because `main` does not depart from itself, so four
+    different production builds went out on 2026-09-18 all calling
+    themselves `v1.2.0.050` — and this string is printed in `/help` and at
+    startup precisely so an incident can tell builds apart.
 
   A version you have to remember to bump is wrong precisely when it matters,
   and one edited per commit is a merge conflict per commit.
@@ -96,10 +98,22 @@ def revision() -> str:
     for. A `main` carrying no tag yet answers `0` rather than counting from
     the root commit, which would be a four-digit number meaning nothing.
     """
-    start = _release_tag() if line() == TRUNK_LINE else _fork_point()
-    if start is None:
-        return "0" if line() == TRUNK_LINE else UNKNOWN_REVISION
-    return _git("rev-list", "--count", f"{start}..HEAD") or "0"
+    if line() == TRUNK_LINE:
+        tag = _release_tag()
+        if tag is None:
+            return "0"
+        # --first-parent: one per *release*, not one per commit that rode in
+        # with it. A merge of a five-commit branch is one thing going out,
+        # and counting it as six would make the number grow by the size of
+        # whatever happened to be merged rather than by how many times
+        # production changed. Measured on 2026-09-18: 3 against 19.
+        return _git("rev-list", "--count", "--first-parent", f"{tag}..HEAD") or "0"
+    fork_point = _fork_point()
+    if fork_point is None:
+        return UNKNOWN_REVISION
+    # Every commit, not first-parent: on a working branch the question is how
+    # much work has accumulated, and each commit is a piece of it.
+    return _git("rev-list", "--count", f"{fork_point}..HEAD") or "0"
 
 
 def _fork_point() -> str | None:
