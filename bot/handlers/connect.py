@@ -84,7 +84,7 @@ async def start_with_payload(
             return
         await _send_login_link(message, connect, i18n, origin_chat_id=origin_chat_id)
         return
-    await _greet(message, repo, connect, bot, i18n)
+    await _greet(message, repo, connect, bot, i18n, settings)
 
 
 @router.message(CommandStart())
@@ -94,9 +94,10 @@ async def start(
     connect: ConnectService,
     bot: Bot,
     i18n: I18nContext,
+    settings: Settings,
 ) -> None:
     await repo.ensure_user(_person_id(message), _username(message))
-    await _greet(message, repo, connect, bot, i18n)
+    await _greet(message, repo, connect, bot, i18n, settings)
 
 
 @router.message(Command("connect_xbox"))
@@ -271,6 +272,7 @@ async def _greet(
     connect: ConnectService,
     bot: Bot,
     i18n: I18nContext,
+    settings: Settings,
 ) -> None:
     """Already connected on *any* platform -> straight to the panel;
     otherwise greet and offer all three (#53).
@@ -283,7 +285,11 @@ async def _greet(
     await message.answer(i18n.get("connect-greeting-multi"))
     await message.answer(
         i18n.get("connect-pick-platform"),
-        reply_markup=onboarding_keyboard(connect.start_login(message.chat.id), i18n),
+        reply_markup=onboarding_keyboard(
+            connect.start_login(message.chat.id),
+            i18n,
+            mini_app_url=settings.mini_app_url or "",
+        ),
     )
 
 

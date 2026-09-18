@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import type { FeedItem, PersonPayload } from "./api";
 import { dayKey, dayLabel, t, timeAgo, type Locale } from "./i18n";
-import { Avatar, Icon, PlatformDot, ScoreCup, Sheet, isOnline } from "./ui";
+import { Avatar, CoverImg, Icon, PlatformDot, ScoreCup, Sheet, isOnline } from "./ui";
 
 const HOME_SLIDES = 5;
 
@@ -121,6 +121,7 @@ export function UnlockSlider({
   showSecrets,
   onReveal,
   onOpenPerson,
+  variant = "hero",
 }: {
   items: FeedItem[];
   locale: Locale;
@@ -128,8 +129,10 @@ export function UnlockSlider({
   showSecrets?: boolean;
   onReveal?: (key: string) => void;
   onOpenPerson?: (tgId: number) => void;
+  /** hero = profile stage (capped); feed = full UnlockCards for a streak */
+  variant?: "hero" | "feed";
 }) {
-  const slides = items.slice(0, HOME_SLIDES);
+  const slides = variant === "feed" ? items : items.slice(0, HOME_SLIDES);
   const loopable = slides.length > 1;
   // Clone of the first after the last: swipe forward lands on a twin, then
   // we teleport scroll to the real first with no reverse animation.
@@ -140,7 +143,9 @@ export function UnlockSlider({
   const settleRef = useRef(0);
   const wrappingRef = useRef(false);
   const [progress, setProgress] = useState(0);
-  const [using, setUsing] = useState(false);
+  // Profile gallery: show dots on open, then the same fade as after a swipe.
+  const [using, setUsing] = useState(() => variant !== "feed" && items.length > 1);
+  const feedDots = variant === "feed";
 
   const readProgress = () => {
     const track = trackRef.current;
@@ -154,6 +159,13 @@ export function UnlockSlider({
     window.clearTimeout(hideRef.current);
     hideRef.current = window.setTimeout(() => setUsing(false), 1400);
   };
+
+  useEffect(() => {
+    if (feedDots || slides.length < 2) return;
+    setUsing(true);
+    window.clearTimeout(hideRef.current);
+    hideRef.current = window.setTimeout(() => setUsing(false), 1400);
+  }, [feedDots, slides.length]);
 
   const wrapIfNeeded = () => {
     const track = trackRef.current;
@@ -214,7 +226,7 @@ export function UnlockSlider({
   const active = ((Math.round(progress) % slides.length) + slides.length) % slides.length;
 
   return (
-    <div className="unlock-slider">
+    <div className={feedDots ? "unlock-slider is-feed" : "unlock-slider"}>
       <div
         ref={trackRef}
         className="unlock-slider-track"
@@ -235,6 +247,7 @@ export function UnlockSlider({
           const offset = i - progress;
           const away = Math.min(1, Math.abs(offset));
           const ease = away * away * (3 - 2 * away);
+          const secret = veiled(item, feedKey(item), revealed, showSecrets);
           return (
             <div
               key={`${feedKey(item)}:${i}`}
@@ -248,25 +261,41 @@ export function UnlockSlider({
                 } as CSSProperties
               }
             >
-              <UnlockHero
-                item={item}
-                secret={veiled(item, feedKey(item), revealed, showSecrets)}
-                locale={locale}
-                onReveal={onReveal}
-                onOpenPerson={onOpenPerson}
-              />
+              {feedDots ? (
+                <UnlockCard
+                  item={item}
+                  locale={locale}
+                  secret={secret}
+                  author
+                  gameInCopy
+                  onOpenPerson={onOpenPerson}
+                  onReveal={onReveal}
+                />
+              ) : (
+                <UnlockHero
+                  item={item}
+                  secret={secret}
+                  locale={locale}
+                  onReveal={onReveal}
+                  onOpenPerson={onOpenPerson}
+                />
+              )}
             </div>
           );
         })}
       </div>
       {slides.length > 1 ? (
-        <div className={using ? "unlock-dots is-live" : "unlock-dots"} role="tablist">
+        <div
+          className={feedDots || using ? "unlock-dots is-live" : "unlock-dots"}
+          role="tablist"
+          aria-label={`${active + 1} / ${slides.length}`}
+        >
           {slides.map((item, i) => (
             <button
               key={feedKey(item)}
               type="button"
               className={i === active ? "is-on" : undefined}
-              aria-label={`${i + 1}`}
+              aria-label={`${i + 1} / ${slides.length}`}
               onClick={() => go(i)}
             />
           ))}
@@ -356,11 +385,7 @@ export function UnlockCard({
     >
       <div ref={artRef} className="unlock-card-art">
         <span className="profile-hero-layers">
-          {item.icon_url ? (
-            <img src={item.icon_url} alt="" draggable={false} className="profile-hero-art" />
-          ) : (
-            <span className="profile-hero-art home-banner-fallback" />
-          )}
+          <CoverImg src={item.icon_url} kind="achievement" className="profile-hero-art" />
         </span>
         <span className="profile-hero-wash" />
         <div className="unlock-card-head">
@@ -389,11 +414,6 @@ export function UnlockCard({
         <div className="unlock-card-foot">
           <HeroGame item={item} />
           <div className="unlock-card-copy">
-            {!secret && item.icon_url ? (
-              <img src={item.icon_url} alt="" className="unlock-card-copy-blur" draggable={false} />
-            ) : !secret ? (
-              <span className="unlock-card-copy-blur home-banner-fallback" />
-            ) : null}
             <h2>
               <span>{secret ? t(locale, "secret") : item.name}</span>
               <PlatformDot platform={item.platform} locale={locale} />
@@ -403,11 +423,6 @@ export function UnlockCard({
         </div>
       ) : (
         <div className="unlock-card-copy">
-          {!secret && item.icon_url ? (
-            <img src={item.icon_url} alt="" className="unlock-card-copy-blur" draggable={false} />
-          ) : !secret ? (
-            <span className="unlock-card-copy-blur home-banner-fallback" />
-          ) : null}
           <h2>
             <span>{secret ? t(locale, "secret") : item.name}</span>
             <PlatformDot platform={item.platform} locale={locale} />
@@ -467,20 +482,18 @@ export function FeedList({
                   .join(" ")}
                 onClick={() => setItem(row)}
               >
-                {row.icon_url ? (
-                  <span className="feed-cover">
-                    <img src={row.icon_url} alt="" className="cover" />
-                    {secret ? (
-                      <span className="feed-lock">
-                        <Icon name="lock" size={18} />
-                      </span>
-                    ) : null}
-                  </span>
-                ) : (
-                  <span className="feed-icon">
-                    {secret ? <Icon name="lock" size={18} /> : null}
-                  </span>
-                )}
+                <CoverImg
+                  src={row.icon_url}
+                  kind="achievement"
+                  className="feed-cover"
+                  imgClassName="cover"
+                >
+                  {secret ? (
+                    <span className="feed-lock">
+                      <Icon name="lock" size={18} />
+                    </span>
+                  ) : null}
+                </CoverImg>
                 <span className="feed-copy">
                   <p className="unlock-title">
                     <span>{secret ? t(locale, "secret") : row.name}</span>
@@ -550,21 +563,53 @@ export function FeedPosts({
   onReveal: (key: string) => void;
   onOpenPerson: (tgId: number) => void;
 }) {
+  // Same person + same game in a row → one carousel; a different game or
+  // person starts a new post even if the author is the same.
+  const groups: FeedItem[][] = [];
+  for (const row of items) {
+    const last = groups[groups.length - 1];
+    const head = last?.[0];
+    if (
+      head &&
+      head.tg_id === row.tg_id &&
+      head.platform === row.platform &&
+      head.title_id === row.title_id
+    ) {
+      last.push(row);
+    } else {
+      groups.push([row]);
+    }
+  }
   return (
     <div className="feed-posts">
-      {items.map((row) => {
-        const key = feedKey(row);
-        const secret = veiled(row, key, revealed, showSecrets);
+      {groups.map((group) => {
+        const head = group[0];
+        const key = `${feedKey(head)}:n${group.length}`;
+        if (group.length === 1) {
+          const secret = veiled(head, feedKey(head), revealed, showSecrets);
+          return (
+            <UnlockCard
+              key={key}
+              item={head}
+              locale={locale}
+              secret={secret}
+              author
+              gameInCopy
+              onOpenPerson={onOpenPerson}
+              onReveal={onReveal}
+            />
+          );
+        }
         return (
-          <UnlockCard
+          <UnlockSlider
             key={key}
-            item={row}
+            items={group}
             locale={locale}
-            secret={secret}
-            author
-            gameInCopy
-            onOpenPerson={onOpenPerson}
+            revealed={revealed}
+            showSecrets={showSecrets}
             onReveal={onReveal}
+            onOpenPerson={onOpenPerson}
+            variant="feed"
           />
         );
       })}
@@ -614,10 +659,8 @@ export function HeroGame({ item }: { item: FeedItem }) {
       : 0;
   return (
     <span className="hero-game">
-      {item.game_icon_url ? (
-        <img src={item.game_icon_url} alt="" />
-      ) : item.game ? (
-        <span className="hero-game-fallback" />
+      {item.game || item.game_icon_url ? (
+        <CoverImg src={item.game_icon_url} kind="game" className="hero-game-art" />
       ) : null}
       <span className="hero-game-text">
         {item.game ? <strong className="hero-game-title">{item.game}</strong> : null}

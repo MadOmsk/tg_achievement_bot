@@ -13,7 +13,7 @@ same way hltb.py got its own.
 
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
@@ -82,7 +82,12 @@ def connect_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
     )
 
 
-def onboarding_keyboard(url: str, i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarkup:
+def onboarding_keyboard(
+    url: str,
+    i18n: I18nContext | StaticI18nContext,
+    *,
+    mini_app_url: str = "",
+) -> InlineKeyboardMarkup:
     """All three platforms, one row each, in the same fixed order /panel
     uses (#53, #33). /start used to offer the Microsoft sign-in and nothing
     else, so Steam and PSN existed only for whoever already knew the
@@ -90,22 +95,33 @@ def onboarding_keyboard(url: str, i18n: I18nContext | StaticI18nContext) -> Inli
 
     Xbox is a URL button because its flow leaves Telegram for Microsoft;
     the other two are callbacks — they only need a nickname typed back.
+    When MINI_APP_URL is set, "Open the app" is the last row (DM WebApp
+    button — groups cannot use that shape).
     """
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)],
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)],
+        [
+            InlineKeyboardButton(
+                text=i18n.get("kb-panel-connect-psn"), callback_data="psn:connect"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=i18n.get("kb-panel-connect-steam"), callback_data="steam:connect"
+            )
+        ],
+    ]
+    app = (mini_app_url or "").strip()
+    if app:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text=i18n.get("kb-panel-connect-psn"), callback_data="psn:connect"
+                    text=i18n.get("connect-open-app-button"),
+                    web_app=WebAppInfo(url=app),
                 )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=i18n.get("kb-panel-connect-steam"), callback_data="steam:connect"
-                )
-            ],
-        ]
-    )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # "Never digest" is stored as a number rather than NULL so the publisher stays
