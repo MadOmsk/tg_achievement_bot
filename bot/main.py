@@ -393,8 +393,8 @@ async def _publish_command_menu(bot: Bot) -> None:
     def menus(locale: str) -> tuple[list[BotCommand], list[BotCommand]]:
         _ = translator("main", locale)
         private = [
-            BotCommand(command="panel", description=_("main-cmd-panel")),
             BotCommand(command="app", description=_("main-cmd-app")),
+            BotCommand(command="panel", description=_("main-cmd-panel")),
             BotCommand(command="stats", description=_("main-cmd-stats-private")),
             BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
             BotCommand(command="disconnect_xbox", description=_("main-cmd-disconnect-xbox")),
@@ -406,10 +406,13 @@ async def _publish_command_menu(bot: Bot) -> None:
             BotCommand(command="help", description=_("main-cmd-help")),
         ]
         group = [
-            BotCommand(command="stats", description=_("main-cmd-stats-group")),
             BotCommand(command="app", description=_("main-cmd-app")),
-            BotCommand(command="online", description=_("main-cmd-online")),
+            # /stats and /who answer the same question — one about whoever
+            # asked, one about somebody they pick — so they sit together
+            # (owner, 2026-09-18). /online used to fall between them.
+            BotCommand(command="stats", description=_("main-cmd-stats-group")),
             BotCommand(command="who", description=_("main-cmd-who")),
+            BotCommand(command="online", description=_("main-cmd-online")),
             BotCommand(command="recent", description=_("main-cmd-recent")),
             BotCommand(command="summary_day", description=_("main-cmd-summary-day")),
             BotCommand(command="summary_month", description=_("main-cmd-summary-month")),

@@ -42,6 +42,7 @@ chat-unknown-user = I don't know them. The Bot API can't look people up by @name
 chat-help-text = 🎮 I watch the achievements and trophies of everyone playing on XBOX, PlayStation and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
 
     Chat commands:
+    /app — open the app
     /stats [@who] — stats: yours with no argument, someone else's with a name
     /who — look up a specific player's stats
     /online — who's in a game right now
@@ -49,7 +50,6 @@ chat-help-text = 🎮 I watch the achievements and trophies of everyone playing 
     /summary_day — the last 24 hours in review
     /summary_month — the month so far in review
     /hltb — a game's HowLongToBeat summary
-    /app — open the app
 
     Settings are in a DM, /panel.
 chat-help-version = <i>Version { $version }</i>
