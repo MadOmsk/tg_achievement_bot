@@ -1736,9 +1736,22 @@ the last line of `/help` and the group hub, and logged at startup —
 `bot @tg_achievement_bot is up (v1.1.53.046)`.
 
 - **A** — the architecture. By hand, on a rewrite. `1`.
-- **B** — which line of work this build is. `0` on `main`; a working branch
-  takes the next number and `main` inherits it on merge, so "is this the
-  test bot" is answerable from the version alone. `accounts-52` is `1`.
+- **B** — which line of work this build is, **derived from the branch at
+  startup** (2026-09-18): `TRUNK_LINE` on `main`, one above it anywhere else.
+  Production is `1.2.…`, the test bot is `1.3.…`, and "which bot am I looking
+  at" is answerable from the version alone.
+
+  It used to be a constant edited by hand, which `main` inherited whenever a
+  branch merged — and that quietly stopped working the moment a merge went
+  straight to `main` without passing through the test bot: both then reported
+  `1.2` and were indistinguishable, which is precisely the question B exists
+  to answer. Deriving it needs no bookkeeping and cannot drift.
+
+  Not written by `scripts/xbox-deploy.sh`, where it would seem to belong: a
+  deploy that rewrote `version.py` on the server would leave the checkout
+  dirty and its own `git merge --ff-only` would refuse the next one.
+  `TRUNK_LINE` is the one number a person still edits, on a rewrite or when a
+  release deserves its own.
 - **C** — commits made on this branch since it left `main`, counted at
   startup from the *merge base* (owner's call, 2026-09-16: a short number
   that grows by one per commit beats a hash nobody can order at a glance).
@@ -1847,15 +1860,86 @@ Back up with `sqlite3`'s own `backup()`, never `cp`: these databases run in
 WAL mode and a plain copy of one can come back malformed. Name the file for
 what it is and when: `bot-pre042-20260915-084500.db`.
 
-Deploy is currently manual: `git pull --ff-only`, reinstall dependencies if they
-changed, `systemctl restart xbox-bot`. Back up `bot.db` first whenever the deploy
-includes a new migration — migrations here are forward-only, and a destructive one
-(a rebuild-and-swap that drops a column) can't be undone without a kept backup and a
-matching code rollback together.
+**Two branches, two bots, and the merge is the deploy** (#4, 2026-09-18).
 
-Open work: GitHub Actions CI (pytest + ruff on every PR/push) and automated deploy
-from a protected production branch, secrets via GitHub Actions secrets, never in the
-repository — issue #4.
+```
+push to any branch   →  CI: pytest, both ruff checks, a real Mini App build
+push to `test`       →  CI, then the test bot (8081) deploys itself
+merge `test` → `main`→  CI, then production (8080) deploys itself
+```
+
+There is no branch called `production`: **`main` is it**, and merging into it
+is the release. Work happens on `test`, which is also what the test bot runs,
+so "what is on the test bot" and "what is about to become production" are the
+same question with one answer.
+
+Nothing is pushed by hand any more. `.github/workflows/ci.yml` runs on every
+branch and pull request; only `test` and `main` go on to deploy, and only
+once both CI jobs are green. The repository is public, so none of this costs
+minutes.
+
+`scripts/xbox-deploy.sh` is what actually runs on the server (installed at
+`/usr/local/bin/xbox-deploy`): back up the database **every** time, not only
+when a migration ships; `git merge --ff-only`, never a merge commit made by a
+robot; reinstall dependencies only when `pyproject.toml` changed; unpack the
+SPA the workflow built; restart; and then *verify* — `systemctl` returning 0
+means the unit was asked to start, and whether the bot came up is a different
+question that only its own `is up (v…)` line answers. That check is bounded by
+a timestamp taken before the restart, because a relative window matches the
+previous deploy's line and reports success for a restart that never happened.
+
+The CI key is a dedicated `deploy` user whose sudoers entry permits exactly
+that one script, so what it can do is "deploy what is already in the
+repository" rather than "anything, as root". `.env`, `FERNET_KEY` and the
+database never go near GitHub; the four secrets there are the SSH key, the
+host, the user and the host's own fingerprint.
+
+**What it does not do is rehearse a migration, and the merge is where that
+belongs** (owner, 2026-09-18). The backup is automatic; the rehearsal above —
+copy production's database, run the real `Database.connect()` against the
+copy, count the rows on both sides — stays a person's job, and it happens
+**before merging `test` into `main`**, not after. That is the last moment
+anything is still a decision: once the merge lands, CI deploys production
+without asking.
+
+The test bot is not a substitute for it. It migrates its own database on
+every deploy, which is a genuine rehearsal of the *code path* — but against
+`data/test.db`, half production's size and with a different history, and it
+is production's particular history that broke three migrations in one
+afternoon during #52.
+
+The Mini App is built by CI rather than on the box on purpose: `npm ci` plus
+Vite on a machine with 300 MB free is the one part of this deploy that could
+genuinely take the bots down with it.
+
+### The two bots, and the two Mini Apps
+
+One box, two instances, and since 2026-09-18 **each has a hostname of its
+own**:
+
+| | production | test |
+|---|---|---|
+| bot | `@xbox_achievement_bot` | `@tg_achievement_bot` |
+| unit / port | `xbox-bot` · 8080 | `xbox-bot-test` · 8081 |
+| checkout | `/opt/xbox_achievement_bot` | `/opt/xbox_bot_test` |
+| env / database | `.env` · `data/bot.db` | `.env.test` · `data/test.db` |
+| branch | `main` | `test` |
+| Mini App | `xbox.sultanpharm.com/app/` | `test.xbox.sultanpharm.com/app/` |
+| SPA files | `/var/www/xbox-mini` | `/var/www/xbox-mini-test` |
+
+The separate hostname is not tidiness. **The SPA calls `/api/mini/*` by
+absolute path and has no configurable base**, so whatever origin serves the
+page is the origin its API must answer on — one host cannot serve both bots,
+and while it was shared, trying the app on test meant pointing the live
+domain at the test bot. A test that requires touching production is not a
+test. A bot token is also the API key here, so a signature from one bot never
+validates against the other: the split is enforced, not merely conventional.
+
+The test bot's OAuth callback stays on the production host, at
+`/auth/callback-test` — Microsoft has that redirect URL registered and it is
+not worth re-registering. Nothing else answers on the test host at all.
+
+Both certificates are Let's Encrypt, renewed by the same certbot timer.
 
 ## Engineering rules
 
