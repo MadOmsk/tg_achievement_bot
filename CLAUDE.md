@@ -1847,15 +1847,42 @@ Back up with `sqlite3`'s own `backup()`, never `cp`: these databases run in
 WAL mode and a plain copy of one can come back malformed. Name the file for
 what it is and when: `bot-pre042-20260915-084500.db`.
 
-Deploy is currently manual: `git pull --ff-only`, reinstall dependencies if they
-changed, `systemctl restart xbox-bot`. Back up `bot.db` first whenever the deploy
-includes a new migration — migrations here are forward-only, and a destructive one
-(a rebuild-and-swap that drops a column) can't be undone without a kept backup and a
-matching code rollback together.
+**Two branches, two bots, and the merge is the deploy** (#4, 2026-09-18).
 
-Open work: GitHub Actions CI (pytest + ruff on every PR/push) and automated deploy
-from a protected production branch, secrets via GitHub Actions secrets, never in the
-repository — issue #4.
+```
+work  →  push to `test`        →  CI, then the test bot (8081) deploys itself
+ready →  merge `test` → `main` →  CI, then production (8080) deploys itself
+```
+
+Nothing is pushed by hand any more. `.github/workflows/ci.yml` runs `pytest`,
+`ruff check`, `ruff format --check` and a real Mini App build on every branch
+and pull request; only `test` and `main` go on to deploy, and only once both
+of those are green. The repository is public, so none of this costs minutes.
+
+`scripts/xbox-deploy.sh` is what actually runs on the server (installed at
+`/usr/local/bin/xbox-deploy`): back up the database **every** time, not only
+when a migration ships; `git merge --ff-only`, never a merge commit made by a
+robot; reinstall dependencies only when `pyproject.toml` changed; unpack the
+SPA the workflow built; restart; and then *verify* — `systemctl` returning 0
+means the unit was asked to start, and whether the bot came up is a different
+question that only its own `is up (v…)` line answers. That check is bounded by
+a timestamp taken before the restart, because a relative window matches the
+previous deploy's line and reports success for a restart that never happened.
+
+The CI key is a dedicated `deploy` user whose sudoers entry permits exactly
+that one script, so what it can do is "deploy what is already in the
+repository" rather than "anything, as root". `.env`, `FERNET_KEY` and the
+database never go near GitHub; the four secrets there are the SSH key, the
+host, the user and the host's own fingerprint.
+
+**What it does not do is rehearse a migration.** The backup is automatic; the
+"run `Database.connect()` against a copy of production and count the rows on
+both sides" step above is still a person's job, and still worth doing before
+anything that rebuilds a table rather than adding a column to one.
+
+The Mini App is built by CI rather than on the box on purpose: `npm ci` plus
+Vite on a machine with 300 MB free is the one part of this deploy that could
+genuinely take the bots down with it.
 
 ## Engineering rules
 

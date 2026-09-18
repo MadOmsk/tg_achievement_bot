@@ -1,0 +1,133 @@
+# Tests and linters on every push and pull request (#4).
+#
+# The repository is public, so Actions minutes are free and there is nothing
+# to ration: the full suite is about three minutes.
+#
+# The webapp job is not in #4's own scope and is here because of what 1.2.0
+# cost us by hand. The SPA is built on a developer's machine and copied to
+# the server, so nothing in the project noticed that the branch as submitted
+# did not compile at all (`tsc` failed on an unread prop), and nothing
+# noticed when a build went out with a mangled `--base` and opened to a blank
+# page. Both are a minute of CI.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  # A branch pushed twice in a minute only needs its newest commit checked.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: pytest + ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: ruff format
+        run: ruff format --check .
+
+      - name: pytest
+        # Real Xbox/Steam/PSN/HLTB/Telegram calls are forbidden in tests
+        # (CLAUDE.md), so this needs no secrets and no network of its own.
+        run: pytest -q
+
+  webapp:
+    name: Mini App build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      - name: Install
+        working-directory: webapp
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: webapp
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: webapp
+        # The same `--base` the deploy uses: a build that only works at the
+        # domain root would pass here and break in production, which is
+        # exactly what happened on the first deploy.
+        run: npx vite build --base=/app/
+
+      - name: Check the built page asks for its assets under /app/
+        working-directory: webapp
+        run: |
+          grep -q 'src="/app/assets/' dist/index.html
+          grep -q 'href="/app/assets/' dist/index.html
+
+  deploy:
+    name: Deploy
+    # Only after both halves are green: a deploy that ships a failing suite
+    # is worse than a manual one, because nobody was watching.
+    needs: [python, webapp]
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test')
+    runs-on: ubuntu-latest
+    # `test` and `main` deploy to different bots on the same box, so they
+    # must not overlap; two pushes to the same branch queue instead of
+    # racing each other onto the server.
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      - name: Build the Mini App
+        working-directory: webapp
+        run: |
+          npm ci
+          npx vite build --base=/app/
+          tar -czf ../spa.tgz -C dist .
+
+      - name: Authorize
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Pinned, not trust-on-first-use: a deploy key is exactly what a
+          # man in the middle would like to be handed.
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Ship
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          TARGET=${{ github.ref == 'refs/heads/main' && 'prod' || 'test' }}
+          scp spa.tgz "$USER@$HOST:/tmp/spa-$TARGET.tgz"
+          ssh "$USER@$HOST" sudo /usr/local/bin/xbox-deploy "$TARGET" "/tmp/spa-$TARGET.tgz"
