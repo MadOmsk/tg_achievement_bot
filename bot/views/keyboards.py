@@ -100,11 +100,7 @@ def onboarding_keyboard(
     """
     rows: list[list[InlineKeyboardButton]] = [
         [InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)],
-        [
-            InlineKeyboardButton(
-                text=i18n.get("kb-panel-connect-psn"), callback_data="psn:connect"
-            )
-        ],
+        [InlineKeyboardButton(text=i18n.get("kb-panel-connect-psn"), callback_data="psn:connect")],
         [
             InlineKeyboardButton(
                 text=i18n.get("kb-panel-connect-steam"), callback_data="steam:connect"
