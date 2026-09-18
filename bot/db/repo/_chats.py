@@ -96,10 +96,6 @@ class _ChatsRepo:
             "  UNION "
             "  SELECT chat_id FROM chat_seen WHERE tg_id = ?"
             ") "
-            # Subscribed chats first, then the one this person was in most
-            # recently — plain ORDER BY title put a private test chat ahead of
-            # the real group, so Mini App home opened empty (no friends, no
-            # feed) for anyone who also had a quieter chat alphabetically first.
             "ORDER BY CASE WHEN s.rarity_mode IS NOT NULL THEN 0 ELSE 1 END,"
             "  (SELECT MAX(cs.last_seen_at) FROM chat_seen cs"
             "    WHERE cs.chat_id = c.chat_id AND cs.tg_id = ?) DESC,"

@@ -103,10 +103,7 @@ async def _month_choices(repo: Repo, chat_id: int, *extra: str) -> list[str]:
 async def _person_month(
     repo: Repo, tg_id: int, month: str | None
 ) -> tuple[str, datetime, datetime, str, int]:
-    """Calendar month in *this person's* timezone — never a chat's.
-
-    Achievements are collected per account; the person card must not inherit
-    a club's offset or the empty-chat month list that comes with it."""
+    """Calendar month in this person's timezone (not a chat's)."""
     settings_row = await repo.get_user_settings(tg_id)
     tz = settings_row.tz_offset_min if settings_row else None
     current = _calendar_month_key(tz)
@@ -215,9 +212,6 @@ async def build_person_payload(
     week_xbox, week_steam, week_psn = await repo.achievement_platform_breakdown(
         target.tg_id, week_cutoff_utc()
     )
-    # Person stats are account-scoped. chat_id is only an access gate for the
-    # Mini App route ("are you in a club with them"), never a filter on which
-    # unlocks count — otherwise a second/empty chat empties somebody's card.
     key, month_since, month_until, current, _n = await _person_month(
         repo, target.tg_id, month
     )

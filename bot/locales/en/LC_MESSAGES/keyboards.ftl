@@ -30,7 +30,6 @@ kb-cancel = Cancel
 kb-panel-connect-xbox = 🎮 Connect Xbox
 kb-panel-connect-steam = 🎮 Connect Steam
 kb-panel-connect-psn = 🎮 Connect PSN
-kb-open-app = Open the app
 kb-steam-disconnect = 🔕 Disconnect Steam
 kb-psn-disconnect = 🔕 Disconnect PSN
 kb-xbox-reconnect = 🔄 Connect again

@@ -230,12 +230,7 @@ class _MessagesRepo:
         return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
 
     async def person_unlock_months(self, tg_id: int, limit: int = 24) -> list[str]:
-        """Distinct `YYYY-MM` of this person's own unlocks — chat-independent.
-
-        The person card's month picker must not borrow `chat_unlock_months`:
-        with several clubs that list is whoever published there, not what
-        this account earned, and an empty club would hide a full personal
-        history."""
+        """Distinct `YYYY-MM` of this person's unlocks (not scoped to a chat)."""
         cursor = await self._conn.execute(
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
             "FROM users u "

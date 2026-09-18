@@ -24,7 +24,6 @@ kb-cancel = Отмена
 kb-panel-connect-xbox = 🎮 Подключить Xbox
 kb-panel-connect-steam = 🎮 Подключить Steam
 kb-panel-connect-psn = 🎮 Подключить PSN
-kb-open-app = Открыть приложение
 kb-steam-disconnect = 🔕 Отключить Steam
 kb-psn-disconnect = 🔕 Отключить PSN
 kb-xbox-reconnect = 🔄 Подключить заново

@@ -32,8 +32,7 @@ def test_hub_keyboard_adds_open_app_when_mini_url_is_set() -> None:
     assert len(buttons) == 6
     open_app = next(b for b in buttons if b.text == "Открыть приложение")
     assert open_app.url == f"https://t.me/mybot?startapp=c{CHAT_ID}"
-    # Still one row of four: Xbox · PSN · Steam · Open app
-    assert len(markup.inline_keyboard[1]) == 4
+    assert markup.inline_keyboard[-1] == [open_app]
 
 
 async def test_chat_member_presence_orders_playing_first(repo: Repo) -> None:

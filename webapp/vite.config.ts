@@ -35,5 +35,11 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Vite 8 defaults to lightningcss minify, which drops unprefixed
+    // backdrop-filter when -webkit-backdrop-filter is also present, and
+    // collapses blur(0)/saturate(1) to invalid blur()/saturate().
+    // Chromium (Telegram Android WebView) then loses glass/blur effects.
+    // https://github.com/vitejs/vite/issues/22649
+    cssMinify: "esbuild",
   },
 });
