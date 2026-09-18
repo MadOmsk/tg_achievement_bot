@@ -520,7 +520,7 @@ every column.
   polling progress: `psn_title_progress` / `psn_poll_state`. Xbox title
   history/gamerscore cache: `title_history`, `titles`.
   Steam achievement schema/rarity cache: `steam_schema_cache`, `steam_rarity_cache`.
-  PSN's own cached account level: `platform_links.psn_trophy_level` (refreshed by
+  PSN's own cached account level: `accounts.psn_trophy_level` (refreshed by
   the poller after backfill and after any tick that finds new trophies — the level
   only changes when a trophy is earned, so there's no reason to touch it every
   tick). PSN trophy groups: `title_groups (title_id, group_id, name, total)` —
@@ -897,8 +897,10 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
 
 Open work (see the linked issues, not this file, for scope/status):
 
-- Linking more than one PSN account per person — issue #10. `platform_links`
-  currently allows exactly one row per `(tg_id, platform)`.
+- Linking more than one PSN account per person — issue #10. Dropping the
+  partial unique index `idx_links_one_active_per_platform` on
+  `account_links` is all it needs; that index is what allows exactly one
+  active account per platform per person today.
 
 ## Polling model
 
@@ -1146,7 +1148,7 @@ hand-duplicated copy of it (`show_links=False` here: `/panel`'s names were never
 inline hyperlinks, its own "Profile" buttons already cover that). The body below
 carries login status per platform (Xbox: token status; Steam/PSN: achievement/
 trophy *visibility* as of the last actual check — connect time, or any backfill/
-resync since, `platform_links.achievements_visible`), publication destinations,
+resync since, `accounts.achievements_visible`), publication destinations,
 current presence, and the timezone. The presence row is **one row for every
 platform at once** (issue #1's tail, 2026-09-15) — "where is this person" has a
 single answer, and the two platforms they are not on could only repeat
