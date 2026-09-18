@@ -369,7 +369,7 @@ export function UnlockCard({
         </div>
       </div>
       <div className="unlock-card-stage">
-        <HeroGame item={item} locale={locale} />
+        <HeroGame item={item} />
         {secret ? (
           <span className="sheet-secret-veil">
             <button
@@ -387,7 +387,7 @@ export function UnlockCard({
       </div>
       {gameInCopy ? (
         <div className="unlock-card-foot">
-          <HeroGame item={item} locale={locale} />
+          <HeroGame item={item} />
           <div className="unlock-card-copy">
             {!secret && item.icon_url ? (
               <img src={item.icon_url} alt="" className="unlock-card-copy-blur" draggable={false} />
@@ -599,12 +599,12 @@ export function PostLead({
           <p>{timeAgo(item.unlocked_at, locale)}</p>
         </span>
       </button>
-      {whoOnly ? null : <HeroGame item={item} locale={locale} />}
+      {whoOnly ? null : <HeroGame item={item} />}
     </span>
   );
 }
 
-export function HeroGame({ item, locale }: { item: FeedItem; locale: Locale }) {
+export function HeroGame({ item }: { item: FeedItem }) {
   if (!item.game && !item.platform) return null;
   const progress = item.progress;
   const showBar = Boolean(progress && progress.total > 0);
