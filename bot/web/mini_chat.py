@@ -212,9 +212,7 @@ async def build_person_payload(
     week_xbox, week_steam, week_psn = await repo.achievement_platform_breakdown(
         target.tg_id, week_cutoff_utc()
     )
-    key, month_since, month_until, current, _n = await _person_month(
-        repo, target.tg_id, month
-    )
+    key, month_since, month_until, current, _n = await _person_month(repo, target.tg_id, month)
     months = await _person_month_choices(repo, target.tg_id, current, key)
     month_count, month_score = await repo.achievement_counts_for_person(
         target.tg_id, month_since, month_until
