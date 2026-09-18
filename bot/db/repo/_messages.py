@@ -229,6 +229,20 @@ class _MessagesRepo:
         )
         return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
 
+    async def person_unlock_months(self, tg_id: int, limit: int = 24) -> list[str]:
+        """Distinct `YYYY-MM` of this person's unlocks (not scoped to a chat)."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
+            "FROM users u "
+            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            "ORDER BY ym DESC LIMIT ?",
+            (tg_id, limit),
+        )
+        return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
+
     async def person_recent(
         self,
         tg_id: int,

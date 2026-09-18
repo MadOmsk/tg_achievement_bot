@@ -312,6 +312,7 @@ export type PersonPayload = {
   current_month?: string;
   months?: string[];
   games: Array<{
+    title_id?: string | null;
     name: string | null;
     unlocked: number | null;
     gamerscore: number | null;

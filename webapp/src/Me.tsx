@@ -226,7 +226,7 @@ export function Settings({
   onDisconnectPsn: () => void;
   onSync: () => void;
 }) {
-  const [pane, setPane] = useState<"root" | "achievements" | "notifications" | "chats">("root");
+  const [pane, setPane] = useState<"root" | "achievements" | "chats">("root");
   const tz = me.settings.tz_offset_min;
   const tzOptions = TIMEZONES;
 
@@ -260,25 +260,6 @@ export function Settings({
     );
   }
 
-  if (pane === "notifications") {
-    return (
-      <>
-        <BackHead
-          title={t(locale, "notifications")}
-          backLabel={t(locale, "back")}
-          onBack={() => setPane("root")}
-        />
-        {me.chats.length === 0 ? (
-          <p className="empty">{t(locale, "noChats")}</p>
-        ) : (
-          me.chats.map((chat) => (
-            <ChatSettingsCard key={chat.chat_id} chat={chat} locale={locale} onPatch={onChatPatch} />
-          ))
-        )}
-      </>
-    );
-  }
-
   if (pane === "chats") {
     return (
       <>
@@ -287,6 +268,7 @@ export function Settings({
           backLabel={t(locale, "back")}
           onBack={() => setPane("root")}
         />
+        <p className="settings-hint">{t(locale, "myChatsHint")}</p>
         {me.chats.length === 0 ? (
           <p className="empty">{t(locale, "noChats")}</p>
         ) : (
@@ -347,10 +329,6 @@ export function Settings({
           <span>{t(locale, "homeAchievements")}</span>
           <span className="ios-value">›</span>
         </button>
-        <button type="button" className="ios-row" onClick={() => setPane("notifications")}>
-          <span>{t(locale, "notifications")}</span>
-          <span className="ios-value">›</span>
-        </button>
         <button type="button" className="ios-row" onClick={() => setPane("chats")}>
           <span>{t(locale, "myChats")}</span>
           <span className="ios-value">
@@ -398,7 +376,8 @@ function ChatSettingsCard({
   onPatch: (chatId: number, body: Record<string, unknown>) => void;
 }) {
   return (
-    <div className="glass-card">
+    <div className="glass-card chat-settings-card">
+      <p className="chat-settings-title">{chat.title || String(chat.chat_id)}</p>
       <div className="ios-row">
         <span>{t(locale, "subscribe")}</span>
         <Toggle
@@ -411,7 +390,6 @@ function ChatSettingsCard({
           }
         />
       </div>
-      <p className="ios-sub">{chat.title || chat.chat_id}</p>
       {chat.is_subscribed ? (
         <>
           <label className="ios-row">
