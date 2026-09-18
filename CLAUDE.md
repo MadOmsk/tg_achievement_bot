@@ -1850,14 +1850,20 @@ what it is and when: `bot-pre042-20260915-084500.db`.
 **Two branches, two bots, and the merge is the deploy** (#4, 2026-09-18).
 
 ```
-work  →  push to `test`        →  CI, then the test bot (8081) deploys itself
-ready →  merge `test` → `main` →  CI, then production (8080) deploys itself
+push to any branch   →  CI: pytest, both ruff checks, a real Mini App build
+push to `test`       →  CI, then the test bot (8081) deploys itself
+merge `test` → `main`→  CI, then production (8080) deploys itself
 ```
 
-Nothing is pushed by hand any more. `.github/workflows/ci.yml` runs `pytest`,
-`ruff check`, `ruff format --check` and a real Mini App build on every branch
-and pull request; only `test` and `main` go on to deploy, and only once both
-of those are green. The repository is public, so none of this costs minutes.
+There is no branch called `production`: **`main` is it**, and merging into it
+is the release. Work happens on `test`, which is also what the test bot runs,
+so "what is on the test bot" and "what is about to become production" are the
+same question with one answer.
+
+Nothing is pushed by hand any more. `.github/workflows/ci.yml` runs on every
+branch and pull request; only `test` and `main` go on to deploy, and only
+once both CI jobs are green. The repository is public, so none of this costs
+minutes.
 
 `scripts/xbox-deploy.sh` is what actually runs on the server (installed at
 `/usr/local/bin/xbox-deploy`): back up the database **every** time, not only
@@ -1875,10 +1881,19 @@ repository" rather than "anything, as root". `.env`, `FERNET_KEY` and the
 database never go near GitHub; the four secrets there are the SSH key, the
 host, the user and the host's own fingerprint.
 
-**What it does not do is rehearse a migration.** The backup is automatic; the
-"run `Database.connect()` against a copy of production and count the rows on
-both sides" step above is still a person's job, and still worth doing before
-anything that rebuilds a table rather than adding a column to one.
+**What it does not do is rehearse a migration, and the merge is where that
+belongs** (owner, 2026-09-18). The backup is automatic; the rehearsal above —
+copy production's database, run the real `Database.connect()` against the
+copy, count the rows on both sides — stays a person's job, and it happens
+**before merging `test` into `main`**, not after. That is the last moment
+anything is still a decision: once the merge lands, CI deploys production
+without asking.
+
+The test bot is not a substitute for it. It migrates its own database on
+every deploy, which is a genuine rehearsal of the *code path* — but against
+`data/test.db`, half production's size and with a different history, and it
+is production's particular history that broke three migrations in one
+afternoon during #52.
 
 The Mini App is built by CI rather than on the box on purpose: `npm ci` plus
 Vite on a machine with 300 MB free is the one part of this deploy that could
