@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { resolveHltb, searchHltb, type HltbHit } from "./api";
 import { t, type Locale } from "./i18n";
-import { GlassWait, Sheet } from "./ui";
+import { CoverImg, GlassWait, Sheet } from "./ui";
 
 export function useHltbSearch(
   data: string,
@@ -78,11 +78,7 @@ export function GameHits({
               className="game-hit"
               onClick={() => onOpen(hit)}
             >
-              {hit.image_url ? (
-                <img src={hit.image_url} alt="" className="game-hit-art" />
-              ) : (
-                <span className="game-hit-art" />
-              )}
+              <CoverImg src={hit.image_url} kind="game" className="game-hit-art" />
               <span>
                 <strong>{hit.name}</strong>
                 <p className="muted tight">
@@ -144,11 +140,7 @@ export function GameSheet({
         <div className="unlock-card hltb-sheet">
           <div className="unlock-card-art">
             <span className="profile-hero-layers">
-              {cover ? (
-                <img src={cover} alt="" draggable={false} className="profile-hero-art" />
-              ) : (
-                <span className="profile-hero-art home-banner-fallback" />
-              )}
+              <CoverImg src={cover} kind="game" className="profile-hero-art" />
             </span>
             <span className="profile-hero-wash" />
             <div className="unlock-card-head">
@@ -216,11 +208,6 @@ export function GameSheet({
             </div>
           </div>
           <div className="unlock-card-copy">
-            {cover ? (
-              <img src={cover} alt="" className="unlock-card-copy-blur" draggable={false} />
-            ) : (
-              <span className="unlock-card-copy-blur home-banner-fallback" />
-            )}
             <h2>
               <span>{game.name}</span>
             </h2>

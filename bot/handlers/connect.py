@@ -84,7 +84,7 @@ async def start_with_payload(
             return
         await _send_login_link(message, connect, i18n, origin_chat_id=origin_chat_id)
         return
-    await _greet(message, repo, connect, bot, i18n)
+    await _greet(message, repo, connect, bot, i18n, settings)
 
 
 @router.message(CommandStart())
@@ -94,9 +94,10 @@ async def start(
     connect: ConnectService,
     bot: Bot,
     i18n: I18nContext,
+    settings: Settings,
 ) -> None:
     await repo.ensure_user(_person_id(message), _username(message))
-    await _greet(message, repo, connect, bot, i18n)
+    await _greet(message, repo, connect, bot, i18n, settings)
 
 
 @router.message(Command("connect_xbox"))
@@ -271,6 +272,7 @@ async def _greet(
     connect: ConnectService,
     bot: Bot,
     i18n: I18nContext,
+    settings: Settings,
 ) -> None:
     """Already connected on *any* platform -> straight to the panel;
     otherwise greet and offer all three (#53).
@@ -280,10 +282,21 @@ async def _greet(
     if (user is not None and user.xuid) or links:
         await send_panel(bot, repo, message.chat.id, i18n)
         return
+    # The Mini App row is a `web_app` button, which Telegram accepts only in
+    # a private chat — anywhere else it answers BUTTON_TYPE_INVALID and the
+    # whole message fails to send. `/start` carries no chat-type filter (the
+    # one in this file guards the timezone prompt, not this), so it does
+    # reach here from a group, and without this guard it would stop
+    # answering there entirely rather than simply offering one row fewer.
+    in_private = message.chat.type == ChatType.PRIVATE
     await message.answer(i18n.get("connect-greeting-multi"))
     await message.answer(
         i18n.get("connect-pick-platform"),
-        reply_markup=onboarding_keyboard(connect.start_login(message.chat.id), i18n),
+        reply_markup=onboarding_keyboard(
+            connect.start_login(message.chat.id),
+            i18n,
+            mini_app_url=(settings.mini_app_url or "") if in_private else "",
+        ),
     )
 
 

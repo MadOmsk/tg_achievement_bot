@@ -93,3 +93,36 @@ async def test_app_command_says_so_when_no_app_is_configured(i18n) -> None:
 
     assert message.markups == [None]
     assert "MINI_APP_URL" in message.answers[0]
+
+
+async def test_start_in_a_group_gets_no_web_app_button(i18n, repo) -> None:
+    """Telegram accepts a `web_app` button only in a private chat; anywhere
+    else it answers BUTTON_TYPE_INVALID and the *whole message* fails. So a
+    `/start` typed in a group — which carries no chat-type filter — must be
+    answered with one row fewer, not with an error.
+    """
+    from types import SimpleNamespace
+
+    from bot.handlers.connect import _greet
+
+    class _Msg:
+        def __init__(self, chat_type: str) -> None:
+            self.chat = SimpleNamespace(id=555, type=chat_type)
+            self.markups: list[object] = []
+
+        async def answer(self, text: str, reply_markup=None, **kwargs) -> None:
+            self.markups.append(reply_markup)
+
+    connect = SimpleNamespace(start_login=lambda tg_id: "https://login.example")
+    settings = SimpleNamespace(mini_app_url=APP_URL)
+
+    group = _Msg(ChatType.SUPERGROUP)
+    await _greet(group, repo, connect, _FakeBot(), i18n, settings)
+    group_buttons = _buttons(group.markups[-1])
+
+    private = _Msg(ChatType.PRIVATE)
+    await _greet(private, repo, connect, _FakeBot(), i18n, settings)
+    private_buttons = _buttons(private.markups[-1])
+
+    assert not any(button.web_app for button in group_buttons)
+    assert any(button.web_app for button in private_buttons)
