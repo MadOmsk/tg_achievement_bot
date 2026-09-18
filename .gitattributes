@@ -14,3 +14,8 @@
 
 # cmd misparses a .bat with LF-only line endings.
 *.bat text eol=crlf
+
+# Shell scripts run on Linux. A CRLF copy dies with
+# `syntax error near unexpected token $'in'` the moment bash reads it,
+# which is exactly how the first deploy script reached the server.
+*.sh text eol=lf

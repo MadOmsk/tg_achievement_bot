@@ -5,20 +5,73 @@ from __future__ import annotations
 
 import pytest
 
+from bot import version as version_module
 from bot.db.repo._database import Database, SchemaTooNewError
-from bot.version import BRANCH, MAJOR, expected_schema, schema_gap, version
+from bot.version import (
+    MAJOR,
+    TRUNK,
+    TRUNK_LINE,
+    expected_schema,
+    line,
+    schema_gap,
+    version,
+)
 
 
 def test_the_version_names_the_branch_and_the_schema_it_expects() -> None:
     parts = version().split(".")
 
     assert parts[0] == str(MAJOR)
-    assert parts[1] == str(BRANCH)
+    assert parts[1] == str(line())
     # Commits since this branch left main — a number, or "?" where git
     # cannot answer at all (a tarball, a container with no .git).
     assert parts[2].isdigit() or parts[2] == "?"
     assert parts[3] == expected_schema()
     assert parts[3].isdigit() and len(parts[3]) == 3
+
+
+def _on_branch(monkeypatch, name: str | None) -> None:
+    """Pretend git reports this branch, leaving every other git call alone."""
+    real = version_module._git
+
+    def fake(*args: str):
+        if args[:2] == ("rev-parse", "--abbrev-ref"):
+            return name
+        return real(*args)
+
+    line.cache_clear()
+    monkeypatch.setattr(version_module, "_git", fake)
+
+
+def test_production_and_the_test_bot_do_not_share_a_number(monkeypatch) -> None:
+    """The whole job of B, and it had stopped doing it: the number used to be
+    a hand-edited constant that `main` inherited on every merge, so after the
+    Mini App went in both bots reported 1.2 and could not be told apart."""
+    _on_branch(monkeypatch, TRUNK)
+    trunk = line()
+
+    _on_branch(monkeypatch, "test")
+    working = line()
+
+    assert trunk == TRUNK_LINE
+    assert working == TRUNK_LINE + 1
+    assert trunk != working
+    line.cache_clear()
+
+
+def test_any_branch_that_is_not_the_trunk_counts_as_a_line_of_work(monkeypatch) -> None:
+    for name in ("test", "feature/whatever", "HEAD"):
+        _on_branch(monkeypatch, name)
+        assert line() == TRUNK_LINE + 1, name
+    line.cache_clear()
+
+
+def test_without_git_it_falls_back_to_the_trunk(monkeypatch) -> None:
+    """A tarball or a container with no .git. `revision()` already renders
+    `?` there, which is the part that says the label is not to be trusted."""
+    _on_branch(monkeypatch, None)
+    assert line() == TRUNK_LINE
+    line.cache_clear()
 
 
 def test_the_revision_counts_from_the_fork_point_not_from_main_s_tip() -> None:
