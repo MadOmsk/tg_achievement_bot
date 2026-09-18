@@ -167,3 +167,70 @@ async def test_coverage_counts_what_is_left(repo: Repo, monkeypatch, tmp_path) -
     files, urls, total = await repo.cover_coverage()
     assert (files, total) == (1, 2)
     assert urls == 1
+
+
+async def _xbox_owner_with(repo: Repo, cipher, *, tg_id: int = 7) -> None:
+    await repo.ensure_user(tg_id, "igor")
+    await repo.save_refresh_token(tg_id, cipher.encrypt("refresh"))
+    await repo.link_xbox_account(tg_id, f"xuid-{tg_id}", "Mad Omsk", None)
+    await repo.upsert_title(XBOX_TITLE, "Gears of War 3", Platform.XBOX_360)
+    await repo.insert_new_achievements(
+        f"xuid-{tg_id}",
+        [
+            AchievementRow(
+                title_id=XBOX_TITLE,
+                achievement_id="a1",
+                name="Level 25",
+                description=None,
+                icon_url=None,
+                unlocked_at=None,
+                gamerscore=10,
+                rarity_percent=None,
+                platform=Platform.XBOX_360,
+                title_name="Gears of War 3",
+            )
+        ],
+        is_backfill=False,
+    )
+
+
+async def _checked_at(repo: Repo, title_id: str) -> str | None:
+    cursor = await repo._conn.execute(
+        "SELECT cover_checked_at FROM titles WHERE title_id = ?", (title_id,)
+    )
+    row = await cursor.fetchone()
+    return row["cover_checked_at"] if row else None
+
+
+async def test_a_dead_login_is_never_asked_through(repo: Repo, cipher, monkeypatch, tmp_path):
+    """Found live on 2026-09-18, an hour after this shipped: somebody's Xbox
+    grant expired, and picking them as the owner would buy a refusal from
+    Microsoft plus a doomed token refresh on every visit."""
+    await _xbox_owner_with(repo, cipher)
+    await repo.set_token_status(7, "invalid")
+    _downloads_to(monkeypatch, tmp_path)
+    client = _FakeXbox()
+
+    await CoverRefresh(repo, client).tick()  # type: ignore[arg-type]
+
+    assert client.asked == []
+    assert await _checked_at(repo, XBOX_TITLE) is not None, "must still be stamped"
+
+
+async def test_a_login_dying_mid_visit_does_not_escape(repo: Repo, cipher, monkeypatch, tmp_path):
+    """`TokenDeadError` comes from the auth service and is not an
+    `XboxApiError`, so catching only the latter let it past the stamp and
+    put the same title back at the head of the queue forever."""
+    from bot.services.xbox.auth import TokenDeadError
+
+    await _xbox_owner_with(repo, cipher)
+
+    class _Expired(_FakeXbox):
+        async def resolve_title(self, tg_id: int, title_id: str):
+            raise TokenDeadError("refresh token rejected")
+
+    _downloads_to(monkeypatch, tmp_path)
+
+    await CoverRefresh(repo, _Expired()).tick()  # type: ignore[arg-type]
+
+    assert await _checked_at(repo, XBOX_TITLE) is not None

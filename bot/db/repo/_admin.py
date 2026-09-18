@@ -356,13 +356,19 @@ class _AdminRepo:
             # `owner_tg_id` is somebody who has earned something in this game,
             # because Xbox answers about a title only through a *person's*
             # token (unlike Steam's one shared key, or PSN's). Any owner will
-            # do — the art is a fact about the game, not about them. NULL for
-            # a title nobody here plays any more, which is exactly the title
-            # Xbox can no longer be asked about.
+            # do — the art is a fact about the game, not about them.
+            #
+            # Only an owner whose token is **active**, the same condition
+            # `pollable_users` applies: asking through a dead one buys a
+            # refusal from Microsoft and a doomed refresh attempt per visit.
+            # NULL when nobody here can be asked, which is exactly the title
+            # the walker should stamp and leave alone.
             "SELECT t.title_id, t.name, t.platform, t.icon_url, t.cover_path, t.cover_hash,"
             "       (SELECT MIN(al.tg_id) FROM seen_achievements s "
             "        JOIN account_links al ON al.platform = s.account_platform"
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
+            "        JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
+            "        JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
             "        WHERE s.title_id = t.title_id) AS owner_tg_id "
             "FROM titles t "
             "WHERE t.cover_path IS NULL "

@@ -37,6 +37,7 @@ from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import Repo, TitleCoverRow
 from bot.services import covers
 from bot.services.steam.client import cover_url as steam_cover_url
+from bot.services.xbox.auth import TokenRefreshError
 from bot.services.xbox.client import XboxApiError, XboxClient
 
 log = logging.getLogger(__name__)
@@ -101,7 +102,14 @@ class CoverRefresh:
             return None
         try:
             entry = await self._client.resolve_title(title.owner_tg_id, title.title_id)
-        except XboxApiError as exc:
+        except (XboxApiError, TokenRefreshError) as exc:
+            # TokenRefreshError is not an XboxApiError — it comes from the
+            # auth service, not the API client — and catching only the
+            # latter let a dead login escape this function, skip the
+            # `cover_checked_at` stamp, and bring the same title back to the
+            # head of the queue on the next tick with another doomed refresh
+            # behind it. The queue already prefers a live token; this is the
+            # race where it dies between the query and the request.
             log.info("cover lookup for title %s unanswerable (%s)", title.title_id, exc)
             return None
         return entry.icon_url if entry else None
