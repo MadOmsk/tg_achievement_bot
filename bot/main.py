@@ -40,6 +40,7 @@ from bot.lock import AlreadyRunningError, single_instance
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.avatars import AvatarRefresh
 from bot.poller.catch_up import CatchUpPoller
+from bot.poller.covers import CoverRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher, catch_up_since
@@ -199,6 +200,7 @@ async def run(settings: Settings) -> None:
         SteamLocalization(repo),
         AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
         CatchUpPoller(settings, repo, fetcher),
+        CoverRefresh(repo, client),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

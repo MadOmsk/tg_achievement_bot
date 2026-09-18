@@ -362,6 +362,14 @@ CREATE TABLE IF NOT EXISTS titles (
     -- and Steam's is the length of its cached schema, so those two have an
     -- answer already. NULL until a platform that needs this one says so.
     achievements_total INTEGER,
+    -- The downloaded copy of `icon_url` above, and what maps this row to it
+    -- (migration 050): a path relative to data/covers/, the sha256 of the
+    -- bytes, and when the title was last looked at — stamped even when the
+    -- platform offered no art, or a game without any would be asked about
+    -- on every tick forever. Filled by poller/covers.py.
+    cover_path TEXT,
+    cover_hash TEXT,
+    cover_checked_at TEXT,
     updated_at TEXT NOT NULL
 );
 

@@ -552,6 +552,23 @@ class TitleHistoryRow:
 
 
 @dataclass(slots=True)
+class TitleCoverRow:
+    """One game as the cover walker sees it (migration 050): what art it
+    already has, and what it would take to get the rest."""
+
+    title_id: str
+    name: str
+    platform: str | None
+    icon_url: str | None
+    cover_path: str | None
+    cover_hash: str | None
+    #: Somebody who has earned something here, for the platforms that answer
+    #: only through a person's own token. None when nobody holds this game
+    #: any more.
+    owner_tg_id: int | None = None
+
+
+@dataclass(slots=True)
 class HltbCacheRow:
     hltb_id: int
     name: str

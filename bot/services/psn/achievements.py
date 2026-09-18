@@ -130,12 +130,19 @@ async def sync_account(
             if defined is not None
             else 0
         )
-        if defined_total:
+        # The game's own art, from the same listing and by the same getattr
+        # rule (2026-09-18): the Mini App shows a cover beside every trophy,
+        # and Sony hands one over here for nothing. `upsert_title` never
+        # blanks an icon it already has, so a listing that omits it costs
+        # nothing either.
+        icon_url = getattr(title, "title_icon_url", None)
+        if defined_total or icon_url:
             await repo.upsert_title(
                 title.np_communication_id,
                 title.title_name,
                 Platform.PSN,
-                achievements_total=defined_total,
+                icon_url=icon_url,
+                achievements_total=defined_total or None,
             )
 
         # The name and size of each group this game's trophy list is split

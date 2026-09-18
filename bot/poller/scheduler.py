@@ -16,6 +16,7 @@ from bot.db.repo import Repo
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.avatars import AvatarRefresh
 from bot.poller.catch_up import CatchUpPoller
+from bot.poller.covers import CoverRefresh
 from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher
@@ -57,6 +58,7 @@ class PollerScheduler:
         steam_localization: SteamLocalization,
         avatar_refresh: AvatarRefresh,
         catch_up: CatchUpPoller,
+        cover_refresh: CoverRefresh,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -76,6 +78,7 @@ class PollerScheduler:
         self._steam_localization = steam_localization
         self._avatar_refresh = avatar_refresh
         self._catch_up = catch_up
+        self._cover_refresh = cover_refresh
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -104,6 +107,15 @@ class PollerScheduler:
             self._catch_up.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="catch_up",
+            coalesce=True,
+            max_instances=1,
+        )
+        # A finite backlog nobody is waiting on: a few games a minute until
+        # every stored title has its art, then nothing at all (#covers).
+        self._scheduler.add_job(
+            self._cover_refresh.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="cover_refresh",
             coalesce=True,
             max_instances=1,
         )

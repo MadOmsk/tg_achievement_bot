@@ -143,8 +143,11 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           now" — /online's own rule, for one person (#1)
 │   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
 │   │   ├── notify.py               notifications to the admin
+│   │   ├── images.py               fetching a picture, bounding it, hashing it, writing it
+│   │   │                           down — shared by avatars and covers
 │   │   ├── avatars.py              where a downloaded profile picture goes: one file per
 │   │   │                           subject under data/avatars/, hashed (#55)
+│   │   ├── covers.py               the same for a game's own art, under data/covers/
 │   │   ├── crypto.py               refresh-token encryption (Fernet)
 │   │   ├── credential_health.py    what one failed liveness check means for a shared
 │   │   │                           credential — confirm before declaring death,
@@ -194,6 +197,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
 │   │   ├── avatars.py             profile photos: each person's Telegram one, and each
 │   │   │                          platform account's own, a few per tick (#55)
+│   │   ├── covers.py              a game's cover art, a few titles per tick, once each
 │   │   ├── description_backfill.py fills the bilingual cache for Xbox a few titles per
 │   │   │                           tick — the gap new Xbox accounts keep reopening (#48)
 │   │   ├── rarity_backfill.py     fills achievement_rarity_cache for the Xbox history
@@ -409,6 +413,30 @@ every column.
   shared credential see this account's achievements/trophies" — `NULL` until
   checked once, then `1`/`0`; set at connect time and refreshed by every
   backfill/resync (`SteamFetcher`/`PsnFetcher`), not read live from a UI path.
+- **Game covers** (2026-09-18, owner request). `titles.icon_url` is the
+  platform's own URL and `titles.cover_path` / `cover_hash` /
+  `cover_checked_at` the downloaded copy under `data/covers/` — the same
+  three-column shape avatars use below, and for the same reason: a URL is a
+  promise somebody else can break. The Mini App shows a game's art beside
+  every achievement, and of 2544 stored titles exactly two had any, because
+  `icon_url` had only ever been filled for the Xbox 360 games whose
+  achievement messages borrow the box art.
+
+  What it costs differs completely per platform, which is why only one of
+  them needs a walker. **Steam** is free — the capsule is at a fixed path
+  under its CDN, derived from the appid with no request at all
+  (`library_600x900`, portrait, because the Mini App crops covers square and
+  a 460×215 banner does not survive that). **PSN** is free too —
+  `title_icon_url` already rides in the trophy-title listing the scan walks,
+  so it is written as the scan goes and existing games fill in by
+  themselves. **Xbox** costs one titlehub request per game through
+  somebody's own token, which is what `poller/covers.py` rations at three a
+  minute.
+
+  A title is visited **once**: art does not change after release, unlike a
+  face. `cover_checked_at` is stamped on every visit, found or not, so a
+  game nobody can find art for sorts behind everything never looked at
+  instead of returning to the head of the queue every minute.
 - **Profile pictures** (#55, 2026-09-16). A person's Telegram photo
   (`users.photo_file_id` / `photo_unique_id` / `photo_path`) and each
   platform account's own (`accounts.avatar_url` / `avatar_path` /
