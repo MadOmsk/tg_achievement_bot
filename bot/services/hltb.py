@@ -330,6 +330,16 @@ def _as_result(entry: object) -> HltbResult:
     )
 
 
+async def overlay_cache(repo: Repo, results: list[HltbResult]) -> list[HltbResult]:
+    """Search JSON has no description/genre — if we already resolved this
+    game once, reuse the cached card so the Mini App isn't empty then jumps."""
+    out: list[HltbResult] = []
+    for item in results:
+        cached = await repo.hltb_get_cached(item.hltb_id)
+        out.append(_from_cache_row(cached) if cached is not None else item)
+    return out
+
+
 def _from_cache_row(row: HltbCacheRow) -> HltbResult:
     return HltbResult(
         hltb_id=row.hltb_id,

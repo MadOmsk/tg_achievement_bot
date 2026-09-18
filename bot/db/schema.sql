@@ -113,6 +113,10 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- default_rarity_mode (repo.py's ensure_user). /panel is exempt — it's
     -- only ever shown to its own owner, always shows links there.
     show_profile_links INTEGER NOT NULL DEFAULT 0,
+    -- Mini App only: whether this person sees secret achievement names
+    -- unspoilered. Off by default. Group posts are unchanged — Telegram
+    -- cannot hide a published name from one viewer only.
+    show_secrets     INTEGER NOT NULL DEFAULT 0,
     -- This person's own language, for DMs only (/panel, /stats in a DM,
     -- personal notifications) — a group always follows chat_settings.locale
     -- instead, see there (#48). Deliberately not seeded from Telegram's own

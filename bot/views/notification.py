@@ -119,7 +119,7 @@ def _game_line(
 _TITLE_SEPARATORS = (":", "-", "–", "—", "|", "·")
 
 
-def _group_label(progress: TitleProgress, title: str, locale: str) -> str:
+def _group_label(progress: TitleProgress, title: str, locale: str, *, html: bool = True) -> str:
     """What to call this trophy group on the second line.
 
     Never anything that merely repeats the game's own name: a group named
@@ -132,8 +132,12 @@ def _group_label(progress: TitleProgress, title: str, locale: str) -> str:
     In the chat's own language where Sony has one (#61): unlike a game's
     title, group names *are* localized — "CTNS: The Heist" comes back as
     "Город, который никогда не спит: Ограбление".
+
+    `html=False` for the Mini App JSON path — React text nodes must not get
+    Telegram's entity escapes or the ampersand shows up as `&amp;`.
     """
     _ = translator("achievements", locale)
+    escape = html_escape if html else (lambda s: s)
     localized = progress.group_name_en if locale == "en" else progress.group_name_ru
     name = (localized or progress.group_name or "").strip()
     bare_title = title.strip()
@@ -143,8 +147,8 @@ def _group_label(progress: TitleProgress, title: str, locale: str) -> str:
         tail = name[len(bare_title) :].lstrip()
         while tail[:1] in _TITLE_SEPARATORS:
             tail = tail[1:].lstrip()
-        return html_escape(tail) if tail else _("achievement-group-main")
-    return html_escape(name)
+        return escape(tail) if tail else _("achievement-group-main")
+    return escape(name)
 
 
 def _achievement_word(platform: str, locale: str, *, secret: bool = False) -> str:

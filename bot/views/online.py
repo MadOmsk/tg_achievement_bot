@@ -40,6 +40,11 @@ def presence_icon(row: ChatPresenceRow) -> str:
     return PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
 
 
+def presence_display_name(row: ChatPresenceRow) -> str:
+    """Public name for one /online row — Mini App JSON uses the same rule."""
+    return _row_name(row)
+
+
 def _row_name(row: ChatPresenceRow) -> str:
     """**Online**: the nickname of the platform they are on right now
     (#51, user decision) — the row answers "where is this person", and the

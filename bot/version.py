@@ -34,7 +34,7 @@ from pathlib import Path
 MAJOR = 1
 # The trunk inherits a branch's number when it merges (#56): accounts-52
 # was 1, so main is 1 now and the next working branch starts at 2.
-BRANCH = 1
+BRANCH = 2
 
 MIGRATIONS = Path(__file__).resolve().parent / "db" / "migrations"
 REPO = Path(__file__).resolve().parents[1]

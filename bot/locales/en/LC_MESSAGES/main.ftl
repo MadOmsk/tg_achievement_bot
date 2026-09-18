@@ -39,6 +39,8 @@ main-cmd-summary-day = The last 24 hours in review
 main-cmd-summary-month = The month so far in review
 main-cmd-subscribe = Publish my achievements here
 main-cmd-unsubscribe = Stop publishing here
+main-cmd-app = Open the app
+main-menu-open-app = App
 
 # Second-instance guard (main())
 main-already-running =

@@ -2,7 +2,7 @@
 rem Wrapper around manage.ps1. PowerShell refuses unsigned scripts under the
 rem default Restricted policy; bypassing it here leaves the machine's policy
 rem alone. Kept ASCII-only on purpose: cmd reads a .bat in the console codepage,
-rem so Cyrillic in this file would break. All Russian text lives in manage.ps1.
+rem so non-ASCII in this file would break. All console text lives in manage.ps1.
 chcp 65001 >nul
 setlocal
 
