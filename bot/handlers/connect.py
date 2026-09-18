@@ -282,13 +282,20 @@ async def _greet(
     if (user is not None and user.xuid) or links:
         await send_panel(bot, repo, message.chat.id, i18n)
         return
+    # The Mini App row is a `web_app` button, which Telegram accepts only in
+    # a private chat — anywhere else it answers BUTTON_TYPE_INVALID and the
+    # whole message fails to send. `/start` carries no chat-type filter (the
+    # one in this file guards the timezone prompt, not this), so it does
+    # reach here from a group, and without this guard it would stop
+    # answering there entirely rather than simply offering one row fewer.
+    in_private = message.chat.type == ChatType.PRIVATE
     await message.answer(i18n.get("connect-greeting-multi"))
     await message.answer(
         i18n.get("connect-pick-platform"),
         reply_markup=onboarding_keyboard(
             connect.start_login(message.chat.id),
             i18n,
-            mini_app_url=settings.mini_app_url or "",
+            mini_app_url=(settings.mini_app_url or "") if in_private else "",
         ),
     )
 
