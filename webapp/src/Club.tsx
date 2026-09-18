@@ -14,8 +14,8 @@ import {
 } from "./api";
 import { t, type Locale } from "./i18n";
 import { GameHits, GameSheet, useHltbSearch } from "./Hltb";
-import { AccountBar, Avatar, GlassWait, HomeSkel, PageSkel, PlatformLogo, ScoreCup, SearchBar, Sheet, accountLabel, isOnline, meScoreLines, telegramPhoto, Icon } from "./ui";
-import { FeedList, FeedPosts, PeopleHits, PersonProfile, UnlockSlider, feedKey, matchQuery } from "./Person";
+import { FeedList, FeedPosts, PeopleHits, PersonProfile, UnlockCard, UnlockSlider, HeroMarks, feedKey, matchQuery } from "./Person";
+import { AccountBar, Avatar, CoverImg, GlassWait, HomeSkel, PageSkel, PlatformDot, PlatformLogo, ScoreCup, SearchBar, Sheet, accountLabel, isOnline, meScoreLines, telegramPhoto, Icon } from "./ui";
 
 type ClubPane = "home" | "feed" | "summary";
 
@@ -73,7 +73,7 @@ export function Club({
   const [personBusy, setPersonBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [rosterOpen, setRosterOpen] = useState(false);
-  const [game, setGame] = useState<HltbHit | null>(null);
+  const [hltbGame, setHltbGame] = useState<HltbHit | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const feedRef = useRef(feed);
   const onlineRef = useRef(online);
@@ -385,7 +385,7 @@ export function Club({
                 busy={gameSearch.busy}
                 searched={gameSearch.searched}
                 locale={locale}
-                onOpen={setGame}
+                onOpen={setHltbGame}
               />
             </div>
           ) : (
@@ -474,6 +474,9 @@ export function Club({
             online={online}
             monthChip={monthChip(statsMonth, "stats")}
             busy={statsBusy}
+            revealed={revealed}
+            showSecrets={showSecrets}
+            onReveal={(key) => setRevealed(new Set(revealed).add(key))}
             onOpenPerson={openPerson}
           />
         )
@@ -503,12 +506,12 @@ export function Club({
           onPick={pickMonth}
         />
       ) : null}
-      {game ? (
+      {hltbGame ? (
         <GameSheet
-          preview={game}
+          preview={hltbGame}
           data={data}
           locale={locale}
-          onClose={() => setGame(null)}
+          onClose={() => setHltbGame(null)}
           onFlash={onFlash}
         />
       ) : null}
@@ -660,21 +663,29 @@ function GamesSheet({
 }) {
   return (
     <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
-      <div className="sheet-content picker-sheet">
+      <div className="sheet-content picker-sheet games-sheet">
         <h2>{t(locale, "monthGames")}</h2>
-        <div className="picker-list">
-          {games.map((g) => (
-            <div key={`${g.platform}:${g.title_id}`} className="picker-row is-game">
-              <span className="picker-game-art">
-                {g.icon_url ? <img src={g.icon_url} alt="" /> : <span className="stat-game-fallback" />}
-                <PlatformLogo platform={g.platform} size={14} />
-              </span>
-              <span className="picker-row-copy">
-                <strong>{g.name || "—"}</strong>
-                <p>{g.count}</p>
-              </span>
-            </div>
-          ))}
+        <div className="picker-list games-sheet-list">
+          {games.map((g) => {
+            const meta = [
+              `${g.count} ${t(locale, "achievements")}`,
+              g.score > 0 ? `+${g.score} G` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <div key={`${g.platform}:${g.title_id}`} className="picker-row is-game">
+                <span className="picker-game-art">
+                  <CoverImg src={g.icon_url} kind="game" className="picker-game-cover" />
+                  <PlatformLogo platform={g.platform} size={14} />
+                </span>
+                <span className="picker-row-copy">
+                  <strong>{g.name || "—"}</strong>
+                  <p>{meta}</p>
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </Sheet>
@@ -692,6 +703,9 @@ function ClubStats({
   online,
   monthChip,
   busy,
+  revealed,
+  showSecrets,
+  onReveal,
   onOpenPerson,
 }: {
   meId: number;
@@ -704,9 +718,13 @@ function ClubStats({
   online: OnlineMember[];
   monthChip: ReactNode;
   busy: boolean;
+  revealed: Set<string>;
+  showSecrets?: boolean;
+  onReveal: (key: string) => void;
   onOpenPerson: (tgId: number) => void;
 }) {
   const [gamesOpen, setGamesOpen] = useState(false);
+  const [rareItem, setRareItem] = useState<FeedItem | null>(null);
   if (day.length === 0 && month.length === 0 && feed.length === 0) {
     return (
       <>
@@ -743,13 +761,13 @@ function ClubStats({
       key,
       name: row.game,
       platform: row.platform,
-      cover: row.game_icon_url || row.icon_url,
+      cover: row.game_icon_url || null,
       people: new Map<number, string>(),
       count: 0,
     };
     cur.people.set(row.tg_id, row.person);
     cur.count += 1;
-    if (!cur.cover) cur.cover = row.game_icon_url || row.icon_url;
+    if (!cur.cover && row.game_icon_url) cur.cover = row.game_icon_url;
     together.set(key, cur);
   }
   const hunts = [...together.values()]
@@ -798,11 +816,7 @@ function ClubStats({
             {games.slice(0, GAMES_PREVIEW).map((g) => (
               <div key={`${g.platform}:${g.title_id}`} className="stat-game-tile">
                 <span className="stat-game-art">
-                  {g.icon_url ? (
-                    <img src={g.icon_url} alt="" />
-                  ) : (
-                    <span className="stat-game-fallback" />
-                  )}
+                  <CoverImg src={g.icon_url} kind="game" className="stat-game-fallback" />
                   <PlatformLogo platform={g.platform} size={14} />
                 </span>
                 <strong>{g.name || "—"}</strong>
@@ -838,7 +852,7 @@ function ClubStats({
               return (
                 <article key={row.key} className="stat-hunt">
                   <span className="stat-hunt-art">
-                    {row.cover ? <img src={row.cover} alt="" /> : <span className="stat-game-fallback" />}
+                    <CoverImg src={row.cover} kind="game" className="stat-game-fallback" />
                     <PlatformLogo platform={row.platform} size={14} />
                   </span>
                   <div className="stat-hunt-copy">
@@ -863,11 +877,7 @@ function ClubStats({
                       {extra > 0 ? <span className="stat-hunt-more">+{extra}</span> : null}
                     </div>
                   </div>
-                  <p className="stat-hunt-meta">
-                    {row.people.size} {t(locale, "hunters")}
-                    <span aria-hidden> · </span>
-                    {row.count}
-                  </p>
+                  <p className="stat-hunt-count">{row.count}</p>
                 </article>
               );
             })}
@@ -875,25 +885,68 @@ function ClubStats({
         </section>
       ) : null}
       {rares.length > 0 ? (
-        <section className="stat-block">
+        <section className="stat-rares-block">
           <p className="stat-block-title">{t(locale, "rareFinds")}</p>
-          {rares.map((row) => (
-            <button key={feedKey(row)} type="button" className="stat-lead" onClick={() => onOpenPerson(row.tg_id)}>
-              <Avatar
-                name={row.person}
-                tgId={row.tg_id}
-                online={isOnline(online.find((m) => m.tg_id === row.tg_id) ?? {})}
-                platform={online.find((m) => m.tg_id === row.tg_id && isOnline(m))?.platform}
-                size={36}
-              />
-              <span className="stat-lead-copy">
-                <strong>{row.person}</strong>
-                <p>{row.name}</p>
-              </span>
-              <span className="stat-lead-n">{row.rarity_percent}%</span>
-            </button>
-          ))}
+          <div className="stat-rares">
+            {rares.map((row) => {
+              const key = feedKey(row);
+              const secret = Boolean(
+                row.is_secret && !showSecrets && !revealed.has(key),
+              );
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={["feed-row", secret ? "is-secret" : ""].filter(Boolean).join(" ")}
+                  onClick={() => setRareItem(row)}
+                >
+                  <CoverImg
+                    src={row.icon_url}
+                    kind="achievement"
+                    className="feed-cover"
+                    imgClassName="cover"
+                  >
+                    {secret ? (
+                      <span className="feed-lock">
+                        <Icon name="lock" size={18} />
+                      </span>
+                    ) : null}
+                  </CoverImg>
+                  <span className="feed-copy">
+                    <p className="unlock-title">
+                      <span>{secret ? t(locale, "secret") : row.name}</span>
+                      <PlatformDot platform={row.platform} locale={locale} />
+                    </p>
+                    {row.game ? <p className="unlock-game">{row.game}</p> : null}
+                    <p className="feed-person">{row.person}</p>
+                  </span>
+                  <HeroMarks
+                    compact
+                    score={row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)}
+                    rarity={row.rarity_percent != null ? `${row.rarity_percent}%` : null}
+                  />
+                </button>
+              );
+            })}
+          </div>
         </section>
+      ) : null}
+      {rareItem ? (
+        <Sheet mid onClose={() => setRareItem(null)} closeLabel={t(locale, "close")} noClose>
+          <div className="sheet-unlock">
+            <UnlockCard
+              item={rareItem}
+              locale={locale}
+              secret={Boolean(
+                rareItem.is_secret && !showSecrets && !revealed.has(feedKey(rareItem)),
+              )}
+              author
+              gameInCopy
+              onOpenPerson={onOpenPerson}
+              onReveal={onReveal}
+            />
+          </div>
+        </Sheet>
       ) : null}
     </>
   );

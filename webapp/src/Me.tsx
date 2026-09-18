@@ -130,7 +130,7 @@ function PlatformCard({
   return (
     <div className={linked ? "plat-card is-linked" : "plat-card"}>
       <div className="plat-card-main">
-        <PlatformLogo platform={mark} size={36} />
+        <PlatformLogo platform={mark} size={22} />
         <strong className="plat-card-nick">
           {linked ? name : t(locale, "notLinked")}
         </strong>
@@ -144,25 +144,25 @@ function PlatformCard({
                 aria-label={t(locale, "profile")}
                 title={t(locale, "profile")}
               >
-                <Icon name="link" size={18} />
+                <Icon name="link" size={16} />
               </a>
             ) : (
               <span className="is-disabled" aria-hidden>
-                <Icon name="link" size={18} />
+                <Icon name="link" size={16} />
               </span>
             )}
             {onSync ? (
-              <button
-                type="button"
-                onClick={onSync}
-                aria-label={t(locale, "sync")}
-                title={t(locale, "sync")}
-              >
-                <Icon name="sync" size={18} />
-              </button>
+            <button
+              type="button"
+              onClick={onSync}
+              aria-label={t(locale, "sync")}
+              title={t(locale, "sync")}
+            >
+              <Icon name="sync" size={16} />
+            </button>
             ) : (
               <span className="is-disabled" aria-hidden>
-                <Icon name="sync" size={18} />
+                <Icon name="sync" size={16} />
               </span>
             )}
             <button
@@ -172,7 +172,7 @@ function PlatformCard({
               aria-label={t(locale, "disconnect")}
               title={t(locale, "disconnect")}
             >
-              <Icon name="off" size={18} />
+              <Icon name="off" size={16} />
             </button>
           </div>
         ) : (

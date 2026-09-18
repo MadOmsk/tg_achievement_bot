@@ -348,7 +348,7 @@ a:focus-visible {
 
 .person-stage .unlock-slider {
   margin: 0;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 10 / 11;
 }
 
 .person-stage .empty {
@@ -589,20 +589,34 @@ a:focus-visible {
 }
 
 .picker-game-art img,
-.picker-game-art .stat-game-fallback {
-  display: block;
+.picker-game-art .stat-game-fallback,
+.picker-game-art .cover-ph {
+  display: grid;
+  place-items: center;
   width: 44px;
   height: 44px;
   border-radius: 12px;
   object-fit: cover;
-  background: rgba(255, 255, 255, 0.06);
 }
 
-.picker-game-art .plat-logo {
+.picker-game-art .plat-logo,
+.stat-game-art .plat-logo,
+.stat-hunt-art .plat-logo {
   position: absolute;
-  right: -3px;
-  bottom: -3px;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
+  top: 6px;
+  right: 6px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
+  color: #fff;
+}
+
+.games-sheet .picker-game-art .plat-logo {
+  top: 5px;
+  right: 5px;
 }
 
 .picker-row.is-game strong {
@@ -654,6 +668,60 @@ a:focus-visible {
 
 .picker-row.is-on > span:not(.picker-row-copy) {
   color: rgba(238, 241, 246, 0.72);
+}
+
+.games-sheet-list {
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.games-sheet .picker-row.is-game {
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.games-sheet .picker-game-art img,
+.games-sheet .picker-game-art .cover-ph,
+.games-sheet .picker-game-cover {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+}
+
+.games-sheet .picker-game-art .cover-ph-mark {
+  opacity: 0.85;
+}
+
+.games-sheet .picker-game-art .cover-ph-mark svg {
+  width: 24px;
+  height: 24px;
+}
+
+.games-sheet .picker-row-copy {
+  gap: 4px;
+  justify-content: center;
+}
+
+.games-sheet .picker-row-copy strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  line-height: 1.25;
+}
+
+.games-sheet .picker-row-copy p {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(238, 241, 246, 0.55);
 }
 
 .page-head h1 {
@@ -925,6 +993,125 @@ a:focus-visible {
     linear-gradient(165deg, #1a2236, #0a0c12);
 }
 
+/* Missing / broken cover or achievement art — same family as the banner wash. */
+.cover-ph {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+  background:
+    radial-gradient(90% 80% at 22% 8%, rgba(155, 182, 255, 0.3), transparent 55%),
+    radial-gradient(75% 70% at 95% 95%, rgba(72, 52, 120, 0.28), transparent 52%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+.cover-ph > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.cover-ph-mark {
+  display: grid;
+  place-items: center;
+  opacity: 0.78;
+  color: rgba(188, 206, 255, 0.78);
+  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.45));
+}
+
+.cover-ph.is-achievement.is-empty {
+  background:
+    radial-gradient(ellipse 115% 100% at 0% 0%, #c9a0ff 0%, rgba(150, 80, 240, 0.78) 38%, transparent 66%),
+    radial-gradient(ellipse 115% 100% at 100% 100%, #8b2cff 0%, rgba(70, 20, 180, 0.88) 40%, transparent 66%),
+    radial-gradient(ellipse 100% 90% at 100% 0%, #ff4d5e 0%, rgba(255, 60, 90, 0.82) 36%, transparent 62%),
+    radial-gradient(ellipse 100% 90% at 0% 100%, rgba(255, 110, 70, 0.55) 0%, rgba(255, 90, 60, 0.35) 32%, transparent 62%),
+    linear-gradient(135deg, #2a0c18 0%, #160820 50%, #0a0612 100%);
+}
+
+.cover-ph.is-achievement.is-empty .cover-ph-mark {
+  color: #f5e8ff;
+  opacity: 1;
+  filter:
+    drop-shadow(0 0 16px rgba(220, 150, 255, 0.75))
+    drop-shadow(0 0 28px rgba(255, 80, 100, 0.35))
+    drop-shadow(0 8px 20px rgba(0, 0, 0, 0.55));
+}
+
+.cover-ph.is-empty.profile-hero-art.is-achievement .cover-ph-mark {
+  opacity: 1;
+}
+
+/* Large post / sheet hero: keep the glyph readable over the wash. */
+.cover-ph.is-empty.profile-hero-art {
+  display: grid;
+  place-items: center;
+}
+
+.cover-ph.is-empty.profile-hero-art .cover-ph-mark {
+  opacity: 0.92;
+  transform: none;
+}
+
+.cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
+  width: 96px;
+  height: 96px;
+}
+
+/*
+ * Unlock cards stretch art behind the caption. Match the stage box so the
+ * glyph centers in the photo, not the full art+caption stack.
+ */
+.unlock-card-art .cover-ph.is-empty.profile-hero-art {
+  place-items: stretch;
+}
+
+.unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  transform: none;
+  display: grid;
+  place-items: center;
+  opacity: 0.98;
+}
+
+.unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
+  width: 132px;
+  height: 132px;
+}
+
+/*
+ * Feed posts are different: the card itself is 4/5 and the game bar + title
+ * sit on top of the art. Center in the open area above that overlay.
+ */
+.feed-posts .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark {
+  inset: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+  padding-bottom: 40%;
+  box-sizing: border-box;
+}
+
+.feed-posts .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
+  width: 120px;
+  height: 120px;
+}
+
+.feed-cover.is-achievement.is-empty .cover-ph-mark svg {
+  width: 30px;
+  height: 30px;
+}
+
+/* Blurred caption wash — no second art layer; the hero under the panel shows through. */
+.cover-ph.has-img {
+  background: #0a0c12;
+}
+
 .home-banner-shade {
   position: absolute;
   inset: 0;
@@ -1024,7 +1211,7 @@ a:focus-visible {
   z-index: 0;
   height: auto;
   margin: 0 -18px 28px;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 10 / 11;
   overflow: hidden;
 }
 
@@ -1097,7 +1284,7 @@ a:focus-visible {
   left: 0;
   right: 0;
   top: auto;
-  bottom: 12px;
+  bottom: 14px;
   z-index: 20;
   display: flex;
   justify-content: center;
@@ -1169,8 +1356,21 @@ a:focus-visible {
   height: 100%;
   object-fit: cover;
   object-position: center;
-  display: block;
+  display: grid;
+  place-items: center;
   animation: hero-art-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.profile-hero-art.has-img {
+  display: block;
+}
+
+.profile-hero-art.has-img > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
 }
 
 .profile-hero .profile-hero-art {
@@ -1225,38 +1425,11 @@ a:focus-visible {
   position: relative;
   z-index: 5;
   overflow: hidden;
-  isolation: isolate;
-  padding: 16px 16px 22px;
+  padding: 14px 16px 34px;
   background: transparent;
   border-top: 0;
-  backdrop-filter: blur(42px) saturate(1.35);
-  -webkit-backdrop-filter: blur(42px) saturate(1.35);
-}
-
-.unlock-card-copy-blur {
-  position: absolute;
-  inset: -48px;
-  z-index: -1;
-  width: calc(100% + 96px);
-  height: calc(100% + 96px);
-  object-fit: cover;
-  object-position: center bottom;
-  filter: blur(38px) saturate(1.25);
-  transform: scale(1.12);
-  pointer-events: none;
-}
-
-.unlock-card-copy::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    to top,
-    rgba(8, 10, 16, 0.38) 0%,
-    rgba(8, 10, 16, 0.18) 100%
-  );
+  backdrop-filter: blur(42px) saturate(1.25);
+  -webkit-backdrop-filter: blur(42px) saturate(1.25);
 }
 
 .unlock-card-copy h2,
@@ -1293,7 +1466,7 @@ a:focus-visible {
 
 .unlock-card-copy p {
   margin: 6px 0 0;
-  color: rgba(238, 241, 246, 0.78);
+  color: rgba(238, 241, 246, 0.88);
   font-size: 0.86rem;
   line-height: 1.4;
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
@@ -1311,10 +1484,6 @@ a:focus-visible {
   background: #0a0c12;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-}
-
-.unlock-card.is-secret .unlock-card-copy::after {
-  content: none;
 }
 
 .unlock-card.is-secret .unlock-card-copy h2 {
@@ -1422,9 +1591,10 @@ a:focus-visible {
   top: auto;
   bottom: 14px;
   left: 14px;
+  right: 14px;
   z-index: 4;
-  width: calc(80% - 14px);
-  max-width: calc(80% - 14px);
+  width: auto;
+  max-width: none;
   pointer-events: none;
 }
 
@@ -1444,28 +1614,29 @@ a:focus-visible {
   );
 }
 
-.hero-game img,
-.hero-game-fallback {
+.hero-game .cover-ph,
+.hero-game-art {
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  object-fit: cover;
   flex: 0 0 42px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
-.hero-game-fallback {
-  background: rgba(255, 255, 255, 0.1);
+.hero-game-art .cover-ph-mark svg {
+  width: 18px;
+  height: 18px;
 }
 
 .hero-game-text {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
   flex: 1;
-  /* Match the left avatar so the bar can pin to its bottom edge. */
+  /* Match the cover so the bar sits on its bottom edge when there's only a title. */
   min-height: 42px;
+  justify-content: center;
 }
 
 .hero-game-title,
@@ -1488,46 +1659,60 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-width: 0;
   margin-top: auto;
 }
 
 .hero-game-bar {
-  flex: 0 1 auto;
-  width: 100%;
-  max-width: 6.75rem;
+  flex: 1 1 auto;
   min-width: 0;
-  height: 8px;
+  height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.14);
   overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 1px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .hero-game-bar-fill {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #7dd3fc 0%, #38bdf8 45%, #a78bfa 100%);
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
+  background: linear-gradient(
+    90deg,
+    rgba(196, 206, 220, 0.42) 0%,
+    rgba(236, 242, 250, 0.92) 72%,
+    rgba(255, 255, 255, 0.98) 100%
+  );
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.18);
 }
 
 .feed-row-progress {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
-  max-width: 10.5rem;
-  margin-top: 7px;
+  width: 100%;
+  max-width: none;
+  margin: auto 0 0;
+  line-height: 1;
+  min-height: 0;
 }
 
 .feed-row-progress .hero-game-bar {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 3px;
+  margin-bottom: 2px;
+  background: rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .feed-row-progress .hero-game-bar-fill {
-  background: rgba(186, 196, 214, 0.42);
+  background: linear-gradient(
+    90deg,
+    rgba(168, 180, 200, 0.35) 0%,
+    rgba(210, 220, 236, 0.7) 100%
+  );
   box-shadow: none;
 }
 
@@ -1536,6 +1721,7 @@ a:focus-visible {
   font-size: 0.68rem;
   font-weight: 650;
   letter-spacing: 0.01em;
+  line-height: 1;
   text-shadow: none;
 }
 
@@ -1546,11 +1732,12 @@ a:focus-visible {
 
 .hero-game-count {
   flex: 0 0 auto;
-  color: #fff;
-  font-size: 0.74rem;
-  font-weight: 750;
+  color: rgba(245, 248, 252, 0.92);
+  font-size: 0.7rem;
+  font-weight: 700;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.95),
     0 2px 10px rgba(0, 0, 0, 0.85),
@@ -2097,8 +2284,8 @@ a:focus-visible {
 }
 
 .feed-posts .unlock-card {
-  /* A bit taller than square — room for the game bar over the art. */
-  aspect-ratio: 4 / 5;
+  /* Slightly taller than square — room for the game bar over the art. */
+  aspect-ratio: 5 / 6;
   grid-template-rows: 1fr;
   overflow: hidden;
   border-radius: 18px;
@@ -2124,9 +2311,9 @@ a:focus-visible {
 
 .feed-posts .unlock-card-foot .hero-game {
   position: static;
-  align-self: flex-start;
-  width: calc(80% - 14px);
-  max-width: calc(80% - 14px);
+  align-self: stretch;
+  width: auto;
+  max-width: none;
   margin: 0 14px;
   padding: 0;
   border-radius: 0;
@@ -2137,7 +2324,9 @@ a:focus-visible {
 }
 
 .feed-posts .unlock-card-copy {
-  padding: 16px 16px 18px;
+  padding: 14px 16px 34px;
+  background: transparent;
+  border-top: 0;
 }
 
 .feed-posts .unlock-card-stage .hero-game {
@@ -2158,6 +2347,52 @@ a:focus-visible {
   filter: none;
   transform: scale(1.04);
   animation: none;
+}
+
+.feed-posts .unlock-slider.is-feed {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 5 / 6;
+  height: auto;
+  overflow: hidden;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-slider-track {
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+  /* Keep overflow-x: auto from .unlock-slider-track — `overflow: hidden`
+     here was killing horizontal swipe on feed carousels. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-shadow: none;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-slide {
+  height: 100%;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-card {
+  margin: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-dots {
+  position: absolute;
+  bottom: 14px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-dots button {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-dots button.is-on {
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .feed-post-lead {
@@ -2235,12 +2470,15 @@ a:focus-visible {
   color: inherit;
   text-align: left;
   cursor: pointer;
-  align-items: start;
+  align-items: stretch;
 }
 
 .feed-copy {
   min-width: 0;
+  height: 58px;
   padding-right: 5.4rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .feed-copy .plat-dot {
@@ -2248,10 +2486,18 @@ a:focus-visible {
   text-shadow: none;
 }
 
+.feed-row .feed-cover {
+  align-self: start;
+}
+
 .feed-plat {
   position: absolute;
   top: 12px;
   right: 12px;
+  height: 58px;
+  display: flex;
+  align-items: flex-start;
+  line-height: 1;
   color: var(--muted);
   font-size: 0.74rem;
   font-weight: 700;
@@ -2273,7 +2519,8 @@ a:focus-visible {
 .cover,
 .feed-cover,
 .feed-icon {
-  display: block;
+  display: grid;
+  place-items: center;
   width: 58px;
   height: 58px;
   object-fit: cover;
@@ -2289,9 +2536,18 @@ a:focus-visible {
   flex: 0 0 auto;
 }
 
+.feed-cover.cover-ph {
+  background:
+    radial-gradient(90% 80% at 22% 8%, rgba(155, 182, 255, 0.3), transparent 55%),
+    radial-gradient(75% 70% at 95% 95%, rgba(72, 52, 120, 0.28), transparent 52%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+.feed-cover.has-img {
+  background: #0a0c12;
+}
+
 .feed-icon {
-  display: grid;
-  place-items: center;
   color: rgba(238, 241, 246, 0.72);
 }
 
@@ -2311,6 +2567,38 @@ a:focus-visible {
   object-fit: cover;
   object-position: center;
   transform: scale(1.2);
+}
+
+.feed-row .unlock-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  line-height: 1;
+  min-height: 0;
+}
+
+.feed-row .unlock-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-row .unlock-title .plat-dot {
+  flex: 0 0 auto;
+}
+
+.feed-row .unlock-game {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .unlock-title {
@@ -2539,7 +2827,7 @@ button.stat-row {
 }
 
 .platform-head .plat-logo {
-  flex: 0 0 36px;
+  flex: 0 0 22px;
 }
 
 .platform-head > span:not(.plat-logo) {
@@ -2561,27 +2849,27 @@ button.stat-row {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 14px 16px;
-  border-radius: 18px;
+  padding: 12px 14px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.045);
   box-shadow: inset 0 0 0 1px var(--stroke);
 }
 
 .plat-card + .plat-card {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .plat-card-main {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .plat-card-icons {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: 2px;
+  gap: 0;
   margin-left: auto;
 }
 
@@ -2592,9 +2880,9 @@ button.stat-row {
   border: 0;
   background: transparent;
   color: var(--mint-2);
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 12px;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   text-decoration: none;
@@ -2626,7 +2914,7 @@ button.stat-row {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 1.02rem;
+  font-size: 0.95rem;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2927,7 +3215,7 @@ a.btn {
 }
 
 .sheet-hltb .hltb-sheet .unlock-card-art {
-  grid-area: 1 / 1;
+  grid-area: 1 / 1 / -1 / 1;
   position: relative;
   inset: auto;
   aspect-ratio: auto;
@@ -2976,9 +3264,9 @@ a.btn {
 
 .sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game {
   position: static;
-  align-self: flex-start;
-  width: calc(80% - 14px);
-  max-width: calc(80% - 14px);
+  align-self: stretch;
+  width: auto;
+  max-width: none;
   margin: 0 14px;
   padding: 0;
   border-radius: 0;
@@ -3554,8 +3842,13 @@ a.btn {
   height: 52px;
   border-radius: 14px;
   object-fit: cover;
-  background: rgba(155, 182, 255, 0.1);
-  display: block;
+  display: grid;
+  place-items: center;
+}
+
+.game-hit-art .cover-ph-mark svg {
+  width: 20px;
+  height: 20px;
 }
 
 .search-pane,
@@ -4077,6 +4370,11 @@ a.btn {
 .share-meter-top strong,
 .meter-row-top strong,
 .stat-lead-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mint-2);
+  font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
   font-weight: 750;
 }
@@ -4177,16 +4475,17 @@ a.btn {
 .stat-lead-copy p {
   margin-top: 2px;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .stat-lead-copy .stat-meter {
   margin-top: 6px;
-}
-
-.stat-lead-n {
-  color: var(--mint-2);
-  font-size: 0.82rem;
 }
 
 .meter-row-top span {
@@ -4323,7 +4622,8 @@ a.btn {
   gap: 10px;
   overflow-x: auto;
   margin: 0 -18px;
-  padding: 0 18px 4px;
+  /* Room for the platform badge hanging off the cover corner. */
+  padding: 0 18px 10px;
   scrollbar-width: none;
 }
 
@@ -4334,28 +4634,43 @@ a.btn {
 .stat-game-tile {
   flex: 0 0 108px;
   width: 108px;
+  overflow: visible;
 }
 
 .stat-game-art {
   position: relative;
   display: block;
-}
-
-.stat-game-art .plat-logo {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
+  overflow: visible;
 }
 
 .stat-game-tile img,
+.stat-game-tile .cover-ph,
 .stat-game-fallback {
-  display: block;
+  display: grid;
+  place-items: center;
   width: 108px;
   height: 108px;
   border-radius: 16px;
   object-fit: cover;
-  background: rgba(255, 255, 255, 0.06);
+}
+
+.stat-game-fallback.cover-ph,
+.stat-game-tile .cover-ph {
+  background:
+    radial-gradient(90% 80% at 22% 8%, rgba(155, 182, 255, 0.3), transparent 55%),
+    radial-gradient(75% 70% at 95% 95%, rgba(72, 52, 120, 0.28), transparent 52%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+.stat-game-fallback.cover-ph.has-img,
+.stat-game-tile .cover-ph.has-img {
+  background: #0a0c12;
+}
+
+.stat-game-fallback .cover-ph-mark svg,
+.stat-game-tile .cover-ph-mark svg {
+  width: 36px;
+  height: 36px;
 }
 
 .stat-game-tile strong,
@@ -4383,6 +4698,30 @@ a.btn {
   margin: 0 0 18px;
 }
 
+.stat-rares-block {
+  margin: 0 0 18px;
+}
+
+.stat-rares {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stat-rares .feed-row {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stroke);
+}
+
+.stat-rares .feed-copy .feed-person {
+  margin: auto 0 0;
+  line-height: 1;
+}
+
+.stat-rares .feed-copy .unlock-game {
+  margin: 3px 0 0;
+}
+
 .stat-hunts {
   display: flex;
   flex-direction: column;
@@ -4408,17 +4747,32 @@ a.btn {
 }
 
 .stat-hunt-art img,
-.stat-hunt-art .stat-game-fallback {
+.stat-hunt-art .stat-game-fallback,
+.stat-hunt-art .cover-ph {
   width: 72px;
   height: 72px;
   border-radius: 16px;
+  display: grid;
+  place-items: center;
+  object-fit: cover;
 }
 
-.stat-hunt-art .plat-logo {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
+.stat-hunt-art .stat-game-fallback.cover-ph,
+.stat-hunt-art .cover-ph {
+  background:
+    radial-gradient(90% 80% at 22% 8%, rgba(155, 182, 255, 0.3), transparent 55%),
+    radial-gradient(75% 70% at 95% 95%, rgba(72, 52, 120, 0.28), transparent 52%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+.stat-hunt-art .stat-game-fallback.cover-ph.has-img,
+.stat-hunt-art .cover-ph.has-img {
+  background: #0a0c12;
+}
+
+.stat-hunt-art .cover-ph-mark svg {
+  width: 26px;
+  height: 26px;
 }
 
 .stat-hunt-copy {
@@ -4432,6 +4786,16 @@ a.btn {
   white-space: nowrap;
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.stat-hunt-count {
+  margin: 0;
+  padding-right: 2px;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .stat-hunt-faces {
@@ -4468,16 +4832,6 @@ a.btn {
   color: var(--muted);
   font-size: 0.62rem;
   font-weight: 750;
-}
-
-.stat-hunt-meta {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
 }
 
 .spinner-wrap {

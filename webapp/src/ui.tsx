@@ -35,6 +35,76 @@ export function isOnline(row: { state?: string | null; playing?: boolean }): boo
   return Boolean(row.playing || row.state === "Online" || row.state === "online");
 }
 
+/** Game cover or achievement icon — gradient + glyph when URL is missing or 404. */
+export function CoverImg({
+  src,
+  kind = "game",
+  className,
+  imgClassName,
+  children,
+}: {
+  src?: string | null;
+  kind?: "game" | "achievement";
+  className?: string;
+  imgClassName?: string;
+  children?: ReactNode;
+}) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [src]);
+  const ok = Boolean(src) && !broken;
+  const hero = Boolean(className?.includes("profile-hero-art"));
+  const markSize = hero ? 128 : 28;
+  return (
+    <span
+      className={["cover-ph", `is-${kind}`, ok ? "has-img" : "is-empty", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {ok ? (
+        <img
+          src={src!}
+          alt=""
+          className={imgClassName}
+          draggable={false}
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        <span className="cover-ph-mark" aria-hidden>
+          {kind === "achievement" ? (
+            <Icon name="cup" size={markSize} filled />
+          ) : (
+            <GamePadMark size={markSize} />
+          )}
+        </span>
+      )}
+      {children}
+    </span>
+  );
+}
+
+function GamePadMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.55"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M7.4 8.6h9.2a4.4 4.4 0 0 1 4.2 5.6l-.6 2.2a2.9 2.9 0 0 1-2.8 2.1H6.6a2.9 2.9 0 0 1-2.8-2.1l-.6-2.2a4.4 4.4 0 0 1 4.2-5.6Z" />
+      <path d="M9 12.1v3.1M7.45 13.65h3.1" />
+      <circle cx="15.15" cy="12.35" r="0.85" fill="currentColor" stroke="none" />
+      <circle cx="17.2" cy="14.25" r="0.85" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function Avatar({
   name,
   photo,
@@ -225,13 +295,14 @@ export function Icon({
   }
   if (name === "cup") {
     return (
-      <svg {...props}>
-        <path d="M8 4.5h8v3.6a4 4 0 0 1-8 0z" />
-        <path d="M8 6.2H5.4A2.3 2.3 0 0 0 7.6 9" />
-        <path d="M16 6.2h2.6A2.3 2.3 0 0 1 16.4 9" />
-        <path d="M10.2 12.2v2.4h3.6v-2.4" />
-        <path d="M9 19.2h6" />
-        <path d="M12 14.6v4.6" />
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 32 32"
+        fill="currentColor"
+        aria-hidden
+      >
+        <path d="M31.734,2.429c-1.438-1.196-3.664-1.953-6.543,0.354c-0.006-0.35-0.01-0.695-0.022-1.059c-1.79,0-16.547,0-18.337,0 C6.818,2.088,6.814,2.434,6.81,2.782C3.93,0.477,1.705,1.231,0.268,2.43L0,2.653l0.017,0.346c0.015,0.333,0.432,8.199,4.749,11.769 c1.508,1.247,3.305,1.824,5.343,1.701c-0.139,0.438-0.414,1.042-0.731,1.574l1.197,0.718c0.227-0.379,0.602-1.066,0.828-1.769 c1.59,1.29,2.982,1.677,2.982,2.631c0,2.148-5.313,3.546-5.504,4.891H8.143v0.567H7.355v5.632h17.116v-5.632h-0.691v-0.567H23.12 c-0.188-1.345-5.505-2.741-5.505-4.891c0-0.955,1.393-1.342,2.984-2.631c0.227,0.701,0.601,1.389,0.825,1.768l1.199-0.719 c-0.317-0.53-0.595-1.135-0.731-1.572c2.039,0.122,3.834-0.454,5.342-1.701c4.317-3.57,4.733-11.437,4.75-11.77L32,2.65 L31.734,2.429z M5.659,13.694C2.301,10.919,1.57,4.828,1.438,3.291c1.586-1.121,3.353-0.673,5.378,1.364 C6.824,4.919,6.84,5.169,6.854,5.422c-0.49,0.47-1.151,1.085-1.756,1.633l0.938,1.036c0.36-0.326,0.676-0.613,0.952-0.868 c0.409,3.825,1.438,6.242,2.604,7.855C8.095,15.075,6.773,14.615,5.659,13.694z M21.936,29.541H10.219v-2.863h11.716V29.541z M26.342,13.694c-1.113,0.921-2.436,1.38-3.932,1.384c1.165-1.614,2.195-4.03,2.604-7.854c0.277,0.254,0.592,0.541,0.953,0.867 l0.938-1.035c-0.605-0.548-1.268-1.162-1.756-1.635c0.014-0.252,0.027-0.501,0.035-0.766c2.025-2.037,3.793-2.485,5.379-1.365 C30.43,4.827,29.701,10.918,26.342,13.694z" />
       </svg>
     );
   }
@@ -701,11 +772,7 @@ export function SheetHero({
   return (
     <div className={secret ? "sheet-hero is-secret" : "sheet-hero"}>
       <div className="profile-hero-layers">
-        {src ? (
-          <img src={src} alt="" className="profile-hero-art" />
-        ) : (
-          <span className="profile-hero-art home-banner-fallback" />
-        )}
+        <CoverImg src={src} kind="achievement" className="profile-hero-art" />
       </div>
       <div className="profile-hero-wash" />
       {lead}
