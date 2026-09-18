@@ -188,6 +188,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
 │   │   ├── psn_fetcher.py          PSN trophies: no presence hook of its own, its own debounce,
 │   │   │                           backfill, admin resync (#27)
+│   │   ├── catch_up.py             the hourly Xbox delta, one account per tick — what picks
+│   │   │                           up achievements earned offline (#82)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
 │   │   ├── avatars.py             profile photos: each person's Telegram one, and each
@@ -908,6 +910,25 @@ due.
   had this problem, which is why it went unnoticed: `poll_title` publishes a
   dateless row normally. The window still binds — a game last played a
   fortnight ago stays silent, which is the case the window exists for.
+- **A catch-up window starts at the newest unlock already stored**, never at
+  presence (#82, 2026-09-18) — `poller/fetcher.py::catch_up_since`, written
+  once and used by startup, the hourly sweep and the admin panel's own
+  refresh alike. `presence_state.updated_at` is rewritten on every tick
+  whether or not anything changed, so a window measured from it is always
+  "since a minute ago": `_played_since` finds no candidate title and
+  catch-up returns having done nothing, on every account, silently. It is
+  floored at `catchup_publish_window_hours` back, because an account with
+  nothing stored (or idle for a year) would otherwise hand back the whole
+  library to publish nothing at all.
+- **Catch-up also runs while the bot is up**, hourly, one account per tick
+  (`poller/catch_up.py`, #82). The presence poller only ever asks about the
+  game somebody is in *right now*, plus one last look as they leave it — and
+  an Xbox console uploads what was earned offline when it next reaches the
+  network, normally well after that look. Nothing asked again until the next
+  restart, which is how two people lost a Gears of War 3 session. One
+  account per tick rather than all of them: `title_history` for a large
+  account is heavy (~46s for a real 1011-title one), and a pass where
+  nobody played anything costs exactly one request per account.
 
 ## Publication rules
 

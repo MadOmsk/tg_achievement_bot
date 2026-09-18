@@ -15,6 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from bot.db.repo import Repo
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.avatars import AvatarRefresh
+from bot.poller.catch_up import CatchUpPoller
 from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher
@@ -55,6 +56,7 @@ class PollerScheduler:
         rarity_backfill: RarityBackfill,
         steam_localization: SteamLocalization,
         avatar_refresh: AvatarRefresh,
+        catch_up: CatchUpPoller,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -73,6 +75,7 @@ class PollerScheduler:
         self._rarity_backfill = rarity_backfill
         self._steam_localization = steam_localization
         self._avatar_refresh = avatar_refresh
+        self._catch_up = catch_up
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -90,6 +93,17 @@ class PollerScheduler:
             self._steam_poller.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="steam_presence",
+            coalesce=True,
+            max_instances=1,
+        )
+        # Every minute, but it acts on at most one account and only once
+        # that account's own hour is up (#82) — the interval lives in the
+        # poller, not in the trigger, so one slow account cannot delay the
+        # next one's turn.
+        self._scheduler.add_job(
+            self._catch_up.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="catch_up",
             coalesce=True,
             max_instances=1,
         )

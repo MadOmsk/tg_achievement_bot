@@ -39,9 +39,10 @@ from bot.i18n import (
 from bot.lock import AlreadyRunningError, single_instance
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.avatars import AvatarRefresh
+from bot.poller.catch_up import CatchUpPoller
 from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
-from bot.poller.fetcher import Fetcher
+from bot.poller.fetcher import Fetcher, catch_up_since
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
@@ -66,7 +67,6 @@ from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
-from bot.util import parse_iso
 from bot.version import version
 from bot.views.keyboards import timezone_keyboard
 from bot.web.oauth import OAuthServer
@@ -198,6 +198,7 @@ async def run(settings: Settings) -> None:
         RarityBackfill(repo, client),
         SteamLocalization(repo),
         AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
+        CatchUpPoller(settings, repo, fetcher),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -329,7 +330,9 @@ async def run(settings: Settings) -> None:
                         target.xuid,
                         (user.gamertag if user else None)
                         or gettext("main", "main-default-player-name", locale=DEFAULT_LOCALE),
-                        parse_iso(target.updated_at),
+                        await catch_up_since(
+                            repo, target.xuid, settings.catchup_publish_window_hours
+                        ),
                         settings.catchup_publish_window_hours,
                         settings.catchup_max_titles,
                     ),

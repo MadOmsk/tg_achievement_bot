@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from bot.constants import Platform, PresenceState
+from bot.constants import AccountPlatform, Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleHistoryRow
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
@@ -391,6 +391,30 @@ class Fetcher:
         # which is why it is written from here at all.
         if snapshot.avatar_url:
             await self._repo.set_account_avatar_url(xuid, snapshot.avatar_url)
+
+
+async def catch_up_since(repo: Repo, xuid: str, window_hours: int) -> datetime:
+    """Where this account's catch-up window starts (#82).
+
+    The newest unlock already stored, which only moves when an achievement
+    actually arrives. Deliberately **not** `presence_state.updated_at`: the
+    presence poller writes that on every tick whether or not anything
+    changed, so a window measured from it is always "since a minute ago" and
+    `_played_since` finds no candidate title at all. That is what made
+    startup catch-up a silent no-op on every account — the admin panel's own
+    refresh had used the right value all along.
+
+    A floor of `window_hours` back, for two different accounts that both
+    need one: an account with nothing stored answers `None`, and an account
+    idle for a year answers with a year-old date. Either would have
+    `_played_since` hand back the whole library, up to `catchup_max_titles`
+    achievement requests per account on every pass, to publish nothing —
+    nothing older than the window may be announced anyway. What is older
+    than that and still missing is backfill's job, not catch-up's.
+    """
+    floor = utcnow() - timedelta(hours=window_hours)
+    stored = parse_iso(await repo.account_latest_unlock(AccountPlatform.XBOX, xuid))
+    return max(stored, floor) if stored is not None else floor
 
 
 def _played_since(
