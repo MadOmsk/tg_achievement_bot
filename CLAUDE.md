@@ -254,6 +254,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
 │   ├── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
 │   │                               account linked before that column meant anything (#5)
+│   ├── backfill_title_names.py    one-off: the 76 Xbox games with achievements and no
+│   │                               `titles` row, plus the 125 rows with no platform (2026-09-19)
 │   ├── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
 │   │                               before the description cache existed (#48) — per title,
 │   │                               two locales, then the shared bilingual_descriptions()

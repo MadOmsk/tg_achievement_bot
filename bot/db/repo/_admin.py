@@ -338,6 +338,61 @@ class _AdminRepo:
         row = await cursor.fetchone()
         return row["icon_url"] if row else None
 
+    async def titles_missing_from_catalogue(self, limit: int) -> list[tuple[str, int]]:
+        """Games somebody has achievements in that have no `titles` row at
+        all — `(title_id, tg_id)`, paired with an owner who can be asked.
+
+        These render as "без названия" everywhere and nothing fills them in:
+        a name is learned when a game is *polled*, and a game nobody plays
+        any more is never polled again. 76 of them on production, 658
+        achievements between them, all Xbox — Steam's own version of this
+        was #70 and is long closed.
+
+        Xbox needs a person's token to answer for a title, so the owner
+        comes along; only one whose token is active and who is not excluded,
+        the same condition `pollable_users` applies.
+        """
+        cursor = await self._conn.execute(
+            "SELECT s.title_id, MIN(al.tg_id) AS tg_id "
+            "FROM seen_achievements s "
+            "JOIN account_links al ON al.platform = s.account_platform"
+            "   AND al.external_id = s.xuid AND al.is_active = 1 "
+            "JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
+            "JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            "WHERE t.title_id IS NULL "
+            "GROUP BY s.title_id LIMIT ?",
+            (limit,),
+        )
+        return [(row["title_id"], int(row["tg_id"])) for row in await cursor.fetchall()]
+
+    async def titles_without_platform(self) -> list[tuple[str, str]]:
+        """`(title_id, platform)` for rows whose own platform is NULL while
+        their achievements know perfectly well what it is.
+
+        125 of them on production. Nothing reads `titles.platform` on a hot
+        path today, which is why this went unnoticed — but anything that
+        routes by platform (the cover walker does) has to guess for them.
+        Free to fix: the answer is already in the rows next door.
+        """
+        cursor = await self._conn.execute(
+            "SELECT t.title_id, MIN(s.platform) AS platform "
+            "FROM titles t JOIN seen_achievements s ON s.title_id = t.title_id "
+            "WHERE t.platform IS NULL AND s.platform IS NOT NULL "
+            "GROUP BY t.title_id"
+        )
+        return [(row["title_id"], row["platform"]) for row in await cursor.fetchall()]
+
+    async def set_title_platform(self, title_id: str, platform: str) -> None:
+        """Only where it is still unknown: a platform already recorded is
+        the one the game was actually seen on, and must not be overwritten
+        by a guess from a stray row."""
+        await self._conn.execute(
+            "UPDATE titles SET platform = ? WHERE title_id = ? AND platform IS NULL",
+            (platform, title_id),
+        )
+        await self._conn.commit()
+
     async def titles_needing_cover(self, limit: int) -> list[TitleCoverRow]:
         """Games whose art is missing or has never been looked at, oldest
         check first (migration 050).
