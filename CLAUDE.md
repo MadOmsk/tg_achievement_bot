@@ -254,6 +254,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
 │   ├── backfill_achievements_visible.py  one-off: re-check achievements_visible for every
 │   │                               account linked before that column meant anything (#5)
+│   ├── backfill_title_names.py    one-off: the 76 Xbox games with achievements and no
+│   │                               `titles` row, plus the 125 rows with no platform (2026-09-19)
 │   ├── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
 │   │                               before the description cache existed (#48) — per title,
 │   │                               two locales, then the shared bilingual_descriptions()
@@ -520,7 +522,7 @@ every column.
   polling progress: `psn_title_progress` / `psn_poll_state`. Xbox title
   history/gamerscore cache: `title_history`, `titles`.
   Steam achievement schema/rarity cache: `steam_schema_cache`, `steam_rarity_cache`.
-  PSN's own cached account level: `platform_links.psn_trophy_level` (refreshed by
+  PSN's own cached account level: `accounts.psn_trophy_level` (refreshed by
   the poller after backfill and after any tick that finds new trophies — the level
   only changes when a trophy is earned, so there's no reason to touch it every
   tick). PSN trophy groups: `title_groups (title_id, group_id, name, total)` —
@@ -897,8 +899,10 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
 
 Open work (see the linked issues, not this file, for scope/status):
 
-- Linking more than one PSN account per person — issue #10. `platform_links`
-  currently allows exactly one row per `(tg_id, platform)`.
+- Linking more than one PSN account per person — issue #10. Dropping the
+  partial unique index `idx_links_one_active_per_platform` on
+  `account_links` is all it needs; that index is what allows exactly one
+  active account per platform per person today.
 
 ## Polling model
 
@@ -1146,7 +1150,7 @@ hand-duplicated copy of it (`show_links=False` here: `/panel`'s names were never
 inline hyperlinks, its own "Profile" buttons already cover that). The body below
 carries login status per platform (Xbox: token status; Steam/PSN: achievement/
 trophy *visibility* as of the last actual check — connect time, or any backfill/
-resync since, `platform_links.achievements_visible`), publication destinations,
+resync since, `accounts.achievements_visible`), publication destinations,
 current presence, and the timezone. The presence row is **one row for every
 platform at once** (issue #1's tail, 2026-09-15) — "where is this person" has a
 single answer, and the two platforms they are not on could only repeat
@@ -1752,14 +1756,32 @@ the last line of `/help` and the group hub, and logged at startup —
   dirty and its own `git merge --ff-only` would refuse the next one.
   `TRUNK_LINE` is the one number a person still edits, on a rewrite or when a
   release deserves its own.
-- **C** — commits made on this branch since it left `main`, counted at
-  startup from the *merge base* (owner's call, 2026-09-16: a short number
-  that grows by one per commit beats a hash nobody can order at a glance).
-  From the merge base rather than from `main`'s tip, so somebody else
-  merging into the trunk does not renumber this branch's builds; `0` on
-  `main` itself, `?` where git cannot answer at all. Deliberately not stored
-  in a file: a number you must remember to bump is wrong exactly when it
-  matters, and one edited per commit is a merge conflict per commit.
+- **C** — a count of commits read from git at startup (owner's call,
+  2026-09-16: a short number that grows by one per commit beats a hash
+  nobody can order at a glance), measuring a different distance on each
+  side (owner, 2026-09-18):
+  - on a working branch, since the **merge base** with `main` — how far this
+    line of work has come. From the merge base rather than `main`'s tip, so
+    somebody else merging into the trunk does not renumber this branch;
+  - on `main`, since the **newest release tag** (`v[0-9]*`, found with
+    `git describe`), counted **along first parents** — which release
+    production is on. One per release rather than one per commit that rode
+    in with it: a merge is one thing going out, and counting its branch's
+    commits would grow the number by the size of whatever was merged
+    instead of by how many times production changed (3 against 19, measured
+    on the day this was written).
+
+  It used to be `0` on `main` always, because the trunk does not depart from
+  itself, and that made production builds indistinguishable: four went out
+  on 2026-09-18 all calling themselves `v1.2.0.050`. `?` where git cannot
+  answer at all, and `0` on a `main` with no tag yet rather than a
+  four-digit count from the root commit. Deliberately not stored in a file:
+  a number you must remember to bump is wrong exactly when it matters, and
+  one edited per commit is a merge conflict per commit.
+
+  **Cutting a release is therefore tagging one.** `v1.2.0` marks the
+  production baseline; until the next tag exists the number keeps growing,
+  which is the honest answer to "how much has gone out since".
 - **D** — the newest migration this code ships. Not what the database has.
 
 **A database ahead of the code refuses to start** (`Database.connect` →

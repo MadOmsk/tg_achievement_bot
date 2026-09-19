@@ -10,13 +10,23 @@ an outage:
   than stored because a hand-edited constant stopped saying it — `main`
   inherited the number whenever a branch merged, so after the Mini App went
   in both bots reported `1.2`.
-- **C** — how many commits this branch has made since it left `main`,
-  counted from git at startup rather than typed into a file (owner's call,
-  2026-09-16: a short number that grows by one per commit reads better than
-  a hash nobody can order at a glance). It is `0` on `main` itself, so a
-  build from the trunk says so. A version you have to remember to bump is
-  wrong precisely when it matters, and one edited per commit is a merge
-  conflict per commit.
+- **C** — a count of commits, read from git at startup rather than typed
+  into a file (owner's call, 2026-09-16: a short number that grows by one per
+  commit reads better than a hash nobody can order at a glance). It measures
+  a different distance on each side:
+
+  * on a working branch, **since it left `main`** — how far this line of work
+    has come, which is what somebody looking at the test bot wants to know;
+  * on `main`, **since the newest release tag, counted along first parents**
+    — which release production is on. One per release rather than one per
+    commit that rode in with it: a merge is one thing going out. It used to
+    be `0` there always, because `main` does not depart from itself, so four
+    different production builds went out on 2026-09-18 all calling
+    themselves `v1.2.0.050` — and this string is printed in `/help` and at
+    startup precisely so an incident can tell builds apart.
+
+  A version you have to remember to bump is wrong precisely when it matters,
+  and one edited per commit is a merge conflict per commit.
 - **D** — the database schema this code expects: the highest migration file
   it ships. Not what the database *has* — see `schema_gap()` for that, and
   for why the difference is worth refusing to start over.
@@ -55,6 +65,11 @@ UNKNOWN_REVISION = "?"
 #: on two machines.
 BASE_REFS = ("origin/main", "main")
 
+#: What a release tag looks like. Production counts from the newest one
+#: reachable from HEAD; until the next tag exists the number simply keeps
+#: growing, which is the honest answer to "how much has gone out since".
+TAG_PATTERN = "v[0-9]*"
+
 
 def _git(*args: str) -> str | None:
     try:
@@ -69,25 +84,51 @@ def _git(*args: str) -> str | None:
 
 @cache
 def revision() -> str:
-    """Commits made on this branch since it left `main`.
+    """How far this build is from whatever it is measured against.
 
-    Counted from the *merge base*, not from the tip of `main`: the question
-    is "how far has this branch come", and measuring against a trunk that
-    has moved on since would answer a different one — and a different number
-    every time somebody else merges something.
+    On `main` that is the newest release tag, so the number says which
+    release production is on; anywhere else it is the merge base with
+    `main`, so it says how far a line of work has come. The merge base
+    rather than the tip of `main`, or somebody else merging something would
+    renumber this branch's builds.
 
     `?` when git cannot answer at all (a release tarball, a container with
     no .git). Never fatal: a version is a label, and refusing to start
     because one is incomplete would be the opposite of what this file is
-    for.
+    for. A `main` carrying no tag yet answers `0` rather than counting from
+    the root commit, which would be a four-digit number meaning nothing.
     """
-    base = next((ref for ref in BASE_REFS if _git("rev-parse", "--verify", "--quiet", ref)), None)
-    if base is None:
-        return UNKNOWN_REVISION
-    fork_point = _git("merge-base", base, "HEAD")
+    if line() == TRUNK_LINE:
+        tag = _release_tag()
+        if tag is None:
+            return "0"
+        # --first-parent: one per *release*, not one per commit that rode in
+        # with it. A merge of a five-commit branch is one thing going out,
+        # and counting it as six would make the number grow by the size of
+        # whatever happened to be merged rather than by how many times
+        # production changed. Measured on 2026-09-18: 3 against 19.
+        return _git("rev-list", "--count", "--first-parent", f"{tag}..HEAD") or "0"
+    fork_point = _fork_point()
     if fork_point is None:
         return UNKNOWN_REVISION
+    # Every commit, not first-parent: on a working branch the question is how
+    # much work has accumulated, and each commit is a piece of it.
     return _git("rev-list", "--count", f"{fork_point}..HEAD") or "0"
+
+
+def _fork_point() -> str | None:
+    base = next((ref for ref in BASE_REFS if _git("rev-parse", "--verify", "--quiet", ref)), None)
+    return _git("merge-base", base, "HEAD") if base else None
+
+
+def _release_tag() -> str | None:
+    """The newest release tag reachable from HEAD.
+
+    Found by walking history (`git describe`) rather than by sorting names:
+    a tag marks where a release actually happened, and the commit graph
+    cannot disagree with itself the way a version-sort can.
+    """
+    return _git("describe", "--tags", "--abbrev=0", "--match", TAG_PATTERN)
 
 
 @cache
