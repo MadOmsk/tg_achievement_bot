@@ -32,6 +32,16 @@ _MONTH_KEY = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 DEFAULT_STATS_GAMES_LIMIT = 15
 
 
+def _https_url(url: str | None) -> str | None:
+    """Mini App is always HTTPS — plain http:// icon URLs are mixed content
+    and the browser drops them (Xbox store-images still hand out http)."""
+    if not url:
+        return None
+    if url.startswith("http://"):
+        return "https://" + url[len("http://") :]
+    return url
+
+
 async def chat_of_user(repo: Repo, tg_id: int, chat_id: int) -> UserChatRow | None:
     chats = await repo.user_chats(tg_id)
     return next((c for c in chats if c.chat_id == chat_id), None)
@@ -192,7 +202,7 @@ async def build_summary_payload(
                 "silver": g.silver,
                 "gold": g.gold,
                 "platinum": g.platinum,
-                "icon_url": g.icon_url,
+                "icon_url": _https_url(g.icon_url),
             }
             for g in games
         ],
@@ -369,8 +379,8 @@ def _feed_item_json(
         "is_secret": row.is_secret,
         "title_id": row.title_id,
         "achievement_id": row.achievement_id,
-        "icon_url": row.icon_url,
-        "game_icon_url": row.game_icon_url,
+        "icon_url": _https_url(row.icon_url),
+        "game_icon_url": _https_url(row.game_icon_url),
         "description": descriptions.get(
             (row.platform, row.title_id, row.achievement_id), row.description
         ),
