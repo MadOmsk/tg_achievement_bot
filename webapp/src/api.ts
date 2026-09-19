@@ -231,10 +231,13 @@ export function patchChat(
 export type FeedProgress = {
   unlocked: number;
   total: number;
+  /** PSN title split into base + DLC/mode — overall count includes them. */
+  has_dlc?: boolean;
   group?: {
     name: string;
     unlocked: number;
     total: number;
+    is_default?: boolean;
   } | null;
 };
 

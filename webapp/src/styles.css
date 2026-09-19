@@ -247,7 +247,7 @@ a:focus-visible {
 }
 
 .home-chrome.is-compact .score-cup {
-  top: calc(12px + var(--safe-top));
+  display: none;
 }
 
 .home-chrome.is-compact .score-connect {
@@ -302,8 +302,7 @@ a:focus-visible {
 
 .home-chrome.is-compact .home-search-row {
   padding-left: 48px;
-  /* Keep the search field clear of the absolute score-cup logos on the right. */
-  padding-right: 72px;
+  padding-right: 0;
 }
 
 .account-bar {
@@ -348,7 +347,7 @@ a:focus-visible {
 
 .person-stage .unlock-slider {
   margin: 0;
-  aspect-ratio: 10 / 11;
+  aspect-ratio: 1 / 1;
 }
 
 .person-stage .empty {
@@ -527,17 +526,18 @@ a:focus-visible {
   opacity: 0.62;
 }
 
-/* Shared bottom picker (friends + months): same height, same rows. */
+/* Shared bottom picker (friends / months / games): same hairline rows as
+   the header score sheet — no card chips. */
 .picker-sheet {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 20px 18px 0;
+  padding: 22px 18px 4px;
 }
 
 .picker-sheet h2 {
-  margin: 0 0 12px;
+  margin: 0 0 8px;
   flex: 0 0 auto;
   font-size: 1.12rem;
   font-weight: 750;
@@ -546,9 +546,8 @@ a:focus-visible {
 .picker-list {
   flex: 1;
   min-height: 0;
-  display: grid;
-  gap: 6px;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -558,17 +557,21 @@ a:focus-visible {
 .picker-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   width: 100%;
   border: 0;
+  border-bottom: 1px solid var(--hair);
+  border-radius: 0;
   cursor: pointer;
   text-align: left;
-  padding: 11px 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  padding: 14px 0;
+  background: none;
+  box-shadow: none;
   color: var(--text);
+}
+
+.picker-row:last-child {
+  border-bottom: 0;
 }
 
 .picker-row.is-person {
@@ -612,6 +615,11 @@ a:focus-visible {
   overflow: visible;
   filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
   color: #fff;
+}
+
+.stat-hunt-art .plat-logo {
+  top: 6px;
+  right: 6px;
 }
 
 .games-sheet .picker-game-art .plat-logo {
@@ -662,8 +670,12 @@ a:focus-visible {
 }
 
 .picker-row.is-on {
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  background: none;
+  box-shadow: none;
+}
+
+.picker-row.is-on strong {
+  color: var(--mint-2);
 }
 
 .picker-row.is-on > span:not(.picker-row-copy) {
@@ -671,24 +683,23 @@ a:focus-visible {
 }
 
 .games-sheet-list {
-  gap: 8px;
   padding-bottom: 12px;
 }
 
 .games-sheet .picker-row.is-game {
   gap: 14px;
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.055);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  padding: 14px 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .games-sheet .picker-game-art img,
 .games-sheet .picker-game-art .cover-ph,
 .games-sheet .picker-game-cover {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
 }
 
 .games-sheet .picker-game-art .cover-ph-mark {
@@ -696,8 +707,8 @@ a:focus-visible {
 }
 
 .games-sheet .picker-game-art .cover-ph-mark svg {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 
 .games-sheet .picker-row-copy {
@@ -1021,22 +1032,20 @@ a:focus-visible {
   filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.45));
 }
 
-.cover-ph.is-achievement.is-empty {
+/* Empty game / achievement art — dark field with a soft corner glow. */
+.cover-ph.is-achievement.is-empty,
+.cover-ph.is-game.is-empty {
   background:
-    radial-gradient(ellipse 115% 100% at 0% 0%, #c9a0ff 0%, rgba(150, 80, 240, 0.78) 38%, transparent 66%),
-    radial-gradient(ellipse 115% 100% at 100% 100%, #8b2cff 0%, rgba(70, 20, 180, 0.88) 40%, transparent 66%),
-    radial-gradient(ellipse 100% 90% at 100% 0%, #ff4d5e 0%, rgba(255, 60, 90, 0.82) 36%, transparent 62%),
-    radial-gradient(ellipse 100% 90% at 0% 100%, rgba(255, 110, 70, 0.55) 0%, rgba(255, 90, 60, 0.35) 32%, transparent 62%),
-    linear-gradient(135deg, #2a0c18 0%, #160820 50%, #0a0612 100%);
+    radial-gradient(90% 80% at 18% 10%, rgba(155, 182, 255, 0.34), transparent 58%),
+    radial-gradient(70% 65% at 92% 88%, rgba(90, 60, 160, 0.28), transparent 55%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
 }
 
-.cover-ph.is-achievement.is-empty .cover-ph-mark {
-  color: #f5e8ff;
+.cover-ph.is-achievement.is-empty .cover-ph-mark,
+.cover-ph.is-game.is-empty .cover-ph-mark {
+  color: rgba(210, 222, 255, 0.9);
   opacity: 1;
-  filter:
-    drop-shadow(0 0 16px rgba(220, 150, 255, 0.75))
-    drop-shadow(0 0 28px rgba(255, 80, 100, 0.35))
-    drop-shadow(0 8px 20px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.5));
 }
 
 .cover-ph.is-empty.profile-hero-art.is-achievement .cover-ph-mark {
@@ -1082,6 +1091,254 @@ a:focus-visible {
 .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
   width: 132px;
   height: 132px;
+}
+
+/* Square home/profile carousel — a 4/5 mark box is taller than the card and
+   clips the glyph under the copy. Match the slide so the icon stays visible. */
+.unlock-slider .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark {
+  aspect-ratio: 1 / 1;
+  height: auto;
+  max-height: 100%;
+  padding-bottom: 22%;
+  box-sizing: border-box;
+}
+
+.unlock-slider .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
+  width: 96px;
+  height: 96px;
+}
+
+/* Game carousel — cover stays open; a thin foot carries the facts. */
+.game-card {
+  height: 100%;
+  grid-template-rows: 1fr;
+}
+
+.game-card .unlock-card-art {
+  grid-area: 1 / 1;
+  height: 100%;
+  background: #0a0c12;
+}
+
+.game-card-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  object-fit: cover;
+}
+
+.game-card-art.has-img {
+  display: block;
+  background: #0a0c12;
+}
+
+.game-card-art.has-img > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+/* Glyph centers in the open sky above the title veil — not the full card. */
+.game-card-art.is-empty {
+  display: block;
+  background:
+    radial-gradient(90% 80% at 18% 10%, rgba(155, 182, 255, 0.34), transparent 58%),
+    radial-gradient(70% 65% at 92% 88%, rgba(90, 60, 160, 0.28), transparent 55%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+.game-card-art.is-empty .cover-ph-mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* Nudge only a little for the title veil — was bottom:34% and sat too high. */
+  padding: 0 0 12%;
+  box-sizing: border-box;
+  opacity: 0.9;
+  color: rgba(210, 222, 255, 0.9);
+  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.5));
+}
+
+.game-card-art.is-empty .cover-ph-mark svg {
+  width: 112px;
+  height: 112px;
+}
+
+.game-card-veil {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  /* Same bottom band as feed .unlock-card-copy (34px) — clears the dots. */
+  padding: 64px 16px 42px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(6, 8, 14, 0.12) 36%,
+    rgba(6, 8, 14, 0.72) 78%,
+    rgba(6, 8, 14, 0.9) 100%
+  );
+  pointer-events: none;
+  text-align: left;
+}
+
+.game-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.55);
+}
+
+.game-card-title span {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.game-card-title .plat-dot {
+  flex: 0 0 auto;
+}
+
+.game-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
+  line-height: 1.2;
+}
+
+.game-card-stats strong {
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.game-card-stats small {
+  font-size: 0.78em;
+  font-weight: 650;
+  color: rgba(238, 241, 246, 0.62);
+}
+
+.game-card-stats > span:not([aria-hidden]) {
+  color: rgba(236, 242, 250, 0.92);
+  font-weight: 750;
+}
+
+.game-card-stats em {
+  color: rgba(238, 241, 246, 0.58);
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-transform: lowercase;
+}
+
+.dlc-mark {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-game-text .dlc-mark {
+  margin: 0;
+  font-size: 0.56rem;
+  line-height: 1.05;
+  color: rgba(245, 248, 252, 0.62);
+  text-shadow:
+    -1px 0 0 rgba(0, 0, 0, 0.7),
+    1px 0 0 rgba(0, 0, 0, 0.7),
+    0 -1px 0 rgba(0, 0, 0, 0.7),
+    0 1px 0 rgba(0, 0, 0, 0.7);
+}
+
+.game-card-veil .dlc-mark {
+  margin: 4px 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+}
+
+.game-card-progress {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.game-card-progress .hero-game-bar-row {
+  margin: 0;
+  gap: 10px;
+}
+
+.game-card-progress .hero-game-bar {
+  height: 7px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.game-card-progress .hero-game-count {
+  font-size: 0.68rem;
+  font-weight: 650;
+  color: rgba(245, 248, 252, 0.88);
+}
+
+.game-card-stats.is-done {
+  gap: 6px;
+}
+
+.game-card-group,
+.game-card-when {
+  margin: 0;
+  color: rgba(238, 241, 246, 0.62);
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.3;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.game-card-group i {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.game-card-when {
+  color: rgba(238, 241, 246, 0.5);
 }
 
 /*
@@ -1211,7 +1468,7 @@ a:focus-visible {
   z-index: 0;
   height: auto;
   margin: 0 -18px 28px;
-  aspect-ratio: 10 / 11;
+  aspect-ratio: 1 / 1;
   overflow: hidden;
 }
 
@@ -1221,11 +1478,10 @@ a:focus-visible {
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x mandatory;
-  /* Instant by default — smooth only via scrollTo(..., { behavior: "smooth" })
-     on dot taps. CSS smooth makes the clone→first teleport rewind visibly. */
   scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
+  /* Allow vertical page scroll when the gesture starts on the slider. */
   touch-action: pan-x pan-y;
   scrollbar-width: none;
 }
@@ -1264,11 +1520,21 @@ a:focus-visible {
 
 .unlock-slider .unlock-card-art .profile-hero-layers {
   inset: -2%;
-  transform: translate3d(var(--slide-x, 0%), var(--parallax, 0px), 0);
+  transform: translate3d(var(--slide-x, 0%), var(--parallax, 0px), 0) scale(var(--slide-scale, 1.04));
   will-change: transform;
 }
 
-.unlock-slider .unlock-card-copy {
+/* Game gallery — same parallax vars, on the cover (no layers wrapper). */
+.unlock-slider .game-card-art {
+  inset: -5%;
+  width: auto;
+  height: auto;
+  transform: translate3d(var(--slide-x, 0%), 0, 0) scale(var(--slide-scale, 1.04));
+  will-change: transform;
+}
+
+.unlock-slider .unlock-card-copy,
+.unlock-slider .game-card-veil {
   transform: translate3d(var(--slide-copy, 0px), 0, 0);
   opacity: var(--slide-fade, 1);
 }
@@ -1276,7 +1542,7 @@ a:focus-visible {
 .unlock-slider .profile-hero-art {
   filter: none;
   animation: none;
-  transform: scale(1.04);
+  transform: none;
 }
 
 .unlock-dots {
@@ -1476,24 +1742,41 @@ a:focus-visible {
   overflow: hidden;
 }
 
-.unlock-card.is-secret .unlock-card-art {
-  grid-area: 1 / 1;
-}
-
-.unlock-card.is-secret .unlock-card-copy {
-  background: #0a0c12;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
 .unlock-card.is-secret .unlock-card-copy h2 {
   font-style: italic;
   font-weight: 600;
   letter-spacing: 0.03em;
+  color: rgba(245, 248, 252, 0.72);
 }
 
-.unlock-card-stage .sheet-secret-veil {
+.unlock-card.is-secret .unlock-card-copy p {
+  display: none;
+}
+
+/*
+ * Reveal sits in the open sky of the art only. Head (who / rarity) and foot
+ * (game / "Secret") stay sharp — those aren't the spoilers.
+ */
+.sheet-secret-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  /* Optical middle of the sky above the foot (game row + secret label). */
+  padding-bottom: 34%;
+  box-sizing: border-box;
+  background: none;
   pointer-events: none;
+}
+
+.sheet-secret-veil .btn {
+  pointer-events: auto;
+  min-width: 148px;
+  min-height: 48px;
+  padding: 10px 22px;
+  font-size: 1rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
 .profile-hero-wash {
@@ -1579,7 +1862,7 @@ a:focus-visible {
 
 .hero-game {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   min-width: 0;
 }
@@ -1604,48 +1887,61 @@ a:focus-visible {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 64%;
+  /* Full-width bottom shade — readability for the game row without a
+     local plate behind the title. */
+  height: 72%;
   pointer-events: none;
   background: linear-gradient(
     to top,
-    rgba(8, 10, 16, 0.52) 0%,
-    rgba(8, 10, 16, 0.22) 42%,
+    rgba(8, 10, 16, 0.78) 0%,
+    rgba(8, 10, 16, 0.48) 28%,
+    rgba(8, 10, 16, 0.18) 58%,
     rgba(8, 10, 16, 0) 100%
   );
 }
 
 .hero-game .cover-ph,
 .hero-game-art {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-  flex: 0 0 42px;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  flex: 0 0 52px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
 .hero-game-art .cover-ph-mark svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
 }
 
 .hero-game-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   min-width: 0;
   flex: 1;
-  /* Match the cover so the bar sits on its bottom edge when there's only a title. */
-  min-height: 42px;
+  height: 52px;
+  min-height: 52px;
+  /* No DLC / group: title + bar centred with a bit more air between them. */
   justify-content: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.hero-game.has-mid .hero-game-text {
+  /* With a middle line: pin first to the top edge, bar to the bottom. */
+  gap: 2px;
+  justify-content: space-between;
 }
 
 .hero-game-title,
 .hero-game strong {
   min-width: 0;
+  max-width: 100%;
   margin: 0;
   color: #fff;
   font-size: 0.82rem;
   font-weight: 650;
+  line-height: 1.2;
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.95),
     0 2px 12px rgba(0, 0, 0, 0.85),
@@ -1660,14 +1956,15 @@ a:focus-visible {
   align-items: center;
   gap: 8px;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .hero-game-bar {
   flex: 1 1 auto;
   min-width: 0;
-  height: 5px;
+  height: 7px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
   overflow: hidden;
@@ -1690,19 +1987,28 @@ a:focus-visible {
 }
 
 .feed-row-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  width: 100%;
+  width: auto;
   max-width: none;
-  margin: auto 0 0;
+  margin: 0;
   line-height: 1;
   min-height: 0;
 }
 
+.feed-row-progress .hero-game-bar-row {
+  width: 100%;
+  margin: 0;
+}
+
 .feed-row-progress .hero-game-bar {
   height: 3px;
-  margin-bottom: 2px;
+  margin-bottom: 0;
   background: rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
@@ -1740,14 +2046,14 @@ a:focus-visible {
   line-height: 1;
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.95),
-    0 2px 10px rgba(0, 0, 0, 0.85),
-    0 0 14px rgba(0, 0, 0, 0.5);
+    0 2px 10px rgba(0, 0, 0, 0.8);
 }
 
 .hero-game-group {
   color: rgba(255, 255, 255, 0.92);
   font-size: 0.68rem;
   font-weight: 550;
+  line-height: 1.2;
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.95),
     0 2px 10px rgba(0, 0, 0, 0.8);
@@ -1995,7 +2301,8 @@ a:focus-visible {
   gap: 14px;
   overflow-x: auto;
   margin: 0 -18px 22px;
-  padding: 0 18px 4px;
+  /* Top pad so the avatar ring/shadow isn't clipped by the scrollport. */
+  padding: 4px 18px 4px;
   scrollbar-width: none;
 }
 
@@ -2031,7 +2338,9 @@ a:focus-visible {
   width: 80px;
   min-width: 80px;
   max-width: 80px;
-  overflow: hidden;
+  /* Visible — overflow:hidden was shaving the avatar ring at the top;
+     name/status already clamp on their own. */
+  overflow: visible;
   border: 0;
   background: transparent;
   color: inherit;
@@ -2093,6 +2402,50 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Same visual height across Xbox / PSN / Steam — header cup, its sheet, admin people. */
+.score-plats .plat-logo,
+.admin-plats .plat-logo {
+  height: 18px !important;
+  width: auto !important;
+  min-width: 0;
+}
+
+.score-plats .plat-logo.is-xbox,
+.score-plats .plat-logo.is-steam,
+.admin-plats .plat-logo.is-xbox,
+.admin-plats .plat-logo.is-steam {
+  width: 18px !important;
+}
+
+.score-plats .plat-logo.is-psn,
+.admin-plats .plat-logo.is-psn {
+  width: 26px !important;
+}
+
+.score-row .plat-logo {
+  height: 22px !important;
+  width: auto !important;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.score-row .plat-logo.is-xbox,
+.score-row .plat-logo.is-steam {
+  width: 22px !important;
+}
+
+.score-row .plat-logo.is-psn {
+  width: 32px !important;
+}
+
+.score-plats .plat-logo .plat-logo-svg,
+.admin-plats .plat-logo .plat-logo-svg,
+.score-row .plat-logo .plat-logo-svg {
+  width: 100%;
+  height: 100%;
+  transform: none;
 }
 
 .score-connect {
@@ -2287,8 +2640,10 @@ a:focus-visible {
   /* Slightly taller than square — room for the game bar over the art. */
   aspect-ratio: 5 / 6;
   grid-template-rows: 1fr;
+  min-width: 0;
   overflow: hidden;
   border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
@@ -2297,6 +2652,7 @@ a:focus-visible {
   position: absolute;
   inset: 0;
   aspect-ratio: auto;
+  min-width: 0;
 }
 
 .feed-posts .unlock-card-foot {
@@ -2307,15 +2663,24 @@ a:focus-visible {
   flex-direction: column;
   gap: 10px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0;
 }
 
 .feed-posts .unlock-card-foot .hero-game {
   position: static;
   align-self: stretch;
-  width: auto;
-  max-width: none;
+  flex: 0 1 auto;
+  /* Inset only the game row over the art — copy stays full-bleed below. */
+  width: calc(100% - 28px);
+  max-width: calc(100% - 28px);
+  min-width: 0;
   margin: 0 14px;
   padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: 0;
   background: none;
   backdrop-filter: none;
@@ -2323,8 +2688,17 @@ a:focus-visible {
   box-shadow: none;
 }
 
+.feed-posts .unlock-card-foot .hero-game-text {
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+}
+
 .feed-posts .unlock-card-copy {
   padding: 14px 16px 34px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   background: transparent;
   border-top: 0;
 }
@@ -2335,6 +2709,15 @@ a:focus-visible {
 
 .feed-posts .profile-hero-layers {
   inset: -2%;
+}
+
+.feed-posts .unlock-slider.is-feed .profile-hero-art {
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  filter: none;
+  transform: none;
+  animation: none;
 }
 
 .feed-posts .profile-hero-art {
@@ -2356,6 +2739,7 @@ a:focus-visible {
   height: auto;
   overflow: hidden;
   border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
@@ -2368,6 +2752,7 @@ a:focus-visible {
   overflow-x: auto;
   overflow-y: hidden;
   box-shadow: none;
+  touch-action: pan-x pan-y;
 }
 
 .feed-posts .unlock-slider.is-feed .unlock-slide {
@@ -2423,10 +2808,18 @@ a:focus-visible {
 }
 
 .feed-post-lead .hero-game img,
-.feed-post-lead .hero-game-fallback {
-  width: 36px;
-  height: 36px;
-  flex-basis: 36px;
+.feed-post-lead .hero-game-fallback,
+.feed-post-lead .hero-game-art,
+.feed-post-lead .hero-game .cover-ph {
+  width: 52px;
+  height: 52px;
+  flex-basis: 52px;
+}
+
+.feed-post-lead .hero-game-text {
+  height: auto;
+  min-height: 0;
+  max-height: none;
 }
 
 .feed-post-who {
@@ -2474,11 +2867,13 @@ a:focus-visible {
 }
 
 .feed-copy {
+  position: relative;
   min-width: 0;
   height: 58px;
   padding-right: 5.4rem;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
 }
 
 .feed-copy .plat-dot {
@@ -2849,7 +3244,7 @@ button.stat-row {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 12px 14px;
+  padding: 12px 14px 12px 18px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.045);
   box-shadow: inset 0 0 0 1px var(--stroke);
@@ -2862,15 +3257,31 @@ button.stat-row {
 .plat-card-main {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
+}
+
+.plat-card-main > .plat-logo {
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+
+/* Keep the action strip ≈ the Russian «Подключить» button footprint. */
+.plat-card-main > .btn.sm {
+  min-width: 6.75rem;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .plat-card-icons {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   flex: 0 0 auto;
-  gap: 0;
+  gap: 2px;
   margin-left: auto;
+  min-width: 6.75rem;
+  padding-right: 4px;
+  box-sizing: border-box;
 }
 
 .plat-card-icons a,
@@ -3104,19 +3515,74 @@ a.btn {
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
   animation: veil-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .sheet.is-compact {
-  align-items: center;
   justify-content: center;
-  padding: 0 28px 18dvh;
+  padding: max(12px, env(safe-area-inset-top, 0px)) 28px 12dvh;
 }
 
 .sheet.is-leave {
   animation: veil-out 0.26s ease both;
   pointer-events: none;
+}
+
+.sheet-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 28rem;
+  transform-origin: 50% 100%;
+  animation: sheet-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sheet.is-compact .sheet-stack {
+  width: auto;
+  max-width: min(28rem, calc(100vw - 56px));
+  transform-origin: 50% 50%;
+  animation: sheet-pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sheet.is-leave .sheet-stack {
+  animation: sheet-sink 0.26s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.sheet.is-compact.is-leave .sheet-stack {
+  animation: sheet-pop-out 0.22s ease both;
+}
+
+.sheet-dismiss {
+  flex: 0 0 auto;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 1.35rem;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.65);
+  transition: color 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sheet-dismiss:active {
+  color: #fff;
+  opacity: 0.7;
+  transform: scale(0.94);
 }
 
 .sheet-body {
@@ -3125,7 +3591,8 @@ a.btn {
   max-width: 28rem;
   margin: 0 auto;
   container-type: inline-size;
-  max-height: 92dvh;
+  /* Leave room for the dismiss chip sitting above the drawer on the veil. */
+  max-height: calc(92dvh - 56px - env(safe-area-inset-top, 0px));
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -3137,8 +3604,6 @@ a.btn {
   border: 1px solid var(--stroke);
   border-radius: 28px 28px 0 0;
   padding: 0 0 calc(22px + var(--safe-bottom));
-  transform-origin: 50% 100%;
-  animation: sheet-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Telegram's WebView often skips backdrop-filter — without a denser fill
@@ -3215,19 +3680,19 @@ a.btn {
 }
 
 .sheet-hltb .hltb-sheet .unlock-card-art {
+  /* Same as other cards: art fills the whole sheet, copy overlays the foot. */
   grid-area: 1 / 1 / -1 / 1;
   position: relative;
   inset: auto;
   aspect-ratio: auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;
 }
 
 .sheet-hltb .hltb-sheet .unlock-card-copy {
   grid-area: 2 / 1;
   position: relative;
-  z-index: 2;
+  z-index: 6;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   padding: 14px 16px calc(14px + var(--safe-bottom));
@@ -3260,15 +3725,22 @@ a.btn {
   flex-direction: column;
   gap: 10px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0;
 }
 
 .sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game {
   position: static;
   align-self: stretch;
-  width: auto;
-  max-width: none;
+  width: calc(100% - 28px);
+  max-width: calc(100% - 28px);
+  min-width: 0;
   margin: 0 14px;
   padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: 0;
   background: none;
   backdrop-filter: none;
@@ -3298,36 +3770,6 @@ a.btn {
   margin: 0;
   border-radius: 22px;
   padding-bottom: 12px;
-  animation: sheet-pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.sheet.is-leave .sheet-body {
-  animation: sheet-sink 0.26s cubic-bezier(0.4, 0, 1, 1) both;
-}
-
-.sheet.is-compact.is-leave .sheet-body {
-  animation: sheet-pop-out 0.22s ease both;
-}
-
-.sheet-close {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  right: auto;
-  z-index: 6;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(8, 10, 16, 0.55);
-  color: #fff;
-  font-size: 1.05rem;
-  line-height: 1;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 .sheet-cover-wrap {
@@ -3439,9 +3881,13 @@ a.btn {
 }
 
 .hltb-sheet .hltb-marks {
-  position: relative;
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Sit on the cover, just above the description pane (row ratio 1.45fr / 1fr). */
+  bottom: calc(100% * 1 / 2.45);
   z-index: 5;
-  margin-top: auto;
+  margin: 0;
   padding: 0 12px 12px;
   pointer-events: none;
 }
@@ -3562,27 +4008,6 @@ a.btn {
   -webkit-line-clamp: 8;
 }
 
-.sheet-secret-veil {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  display: grid;
-  place-items: center;
-  background: none;
-  pointer-events: none;
-}
-
-.sheet-secret-veil .btn {
-  pointer-events: auto;
-}
-
-.sheet-secret-veil .btn {
-  min-width: 148px;
-  min-height: 48px;
-  padding: 10px 22px;
-  font-size: 1rem;
-}
-
 .roster-sheet {
   flex: 1;
   min-height: 0;
@@ -3641,6 +4066,11 @@ a.btn {
 
 .sheet-content {
   padding: 18px 18px 0;
+}
+
+.sheet-content.score-sheet,
+.sheet-content.picker-sheet {
+  padding: 22px 18px 4px;
 }
 
 .sheet-content .chips {
@@ -3808,10 +4238,6 @@ a.btn {
   color: inherit;
 }
 
-.admin-plats .plat-logo {
-  display: block;
-}
-
 .game-hits {
   animation: pane-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -3823,11 +4249,16 @@ a.btn {
   align-items: center;
   width: 100%;
   text-align: left;
-  padding: 8px 0;
+  padding: 14px 0;
   border: 0;
+  border-bottom: 1px solid var(--hair);
   background: none;
   color: inherit;
   cursor: pointer;
+}
+
+.list .game-hit:last-child {
+  border-bottom: 0;
 }
 
 .list .game-hit.is-wait {
@@ -4345,6 +4776,46 @@ a.btn {
   text-transform: uppercase;
 }
 
+.stat-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.stat-block-head .stat-block-title {
+  margin: 0;
+}
+
+.stat-board-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--stroke);
+}
+
+.stat-board-switch button {
+  margin: 0;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.stat-board-switch button.is-on {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
 .stat-block-sub {
   margin: 6px 0 0;
   color: var(--muted);
@@ -4702,24 +5173,54 @@ a.btn {
   margin: 0 0 18px;
 }
 
-.stat-rares {
+.stat-rares-block .stat-block-head {
+  margin-bottom: 12px;
+}
+
+.stat-rares,
+.stat-hunt-sheet-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
-.stat-rares .feed-row {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--stroke);
+.stat-rares .feed-row,
+.stat-hunt-sheet-list .feed-row {
+  align-items: start;
 }
 
-.stat-rares .feed-copy .feed-person {
-  margin: auto 0 0;
-  line-height: 1;
+.stat-rares .feed-cover,
+.stat-hunt-sheet-list .feed-cover {
+  align-self: start;
 }
 
-.stat-rares .feed-copy .unlock-game {
-  margin: 3px 0 0;
+.stat-rares .feed-copy,
+.stat-hunt-sheet-list .feed-copy {
+  /* Same height as the cover — title / game / author spaced evenly beside it. */
+  height: 58px;
+  min-height: 58px;
+  justify-content: space-between;
+  gap: 0;
+}
+
+.stat-rares .feed-copy .unlock-title,
+.stat-rares .feed-copy .unlock-game,
+.stat-rares .feed-copy .feed-person,
+.stat-hunt-sheet-list .feed-copy .unlock-title,
+.stat-hunt-sheet-list .feed-copy .unlock-game,
+.stat-hunt-sheet-list .feed-copy .feed-person {
+  margin: 0;
+  line-height: 1.15;
+}
+
+.stat-rares .feed-person,
+.stat-hunt-sheet-list .feed-person {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
 }
 
 .stat-hunts {
@@ -4733,10 +5234,14 @@ a.btn {
   grid-template-columns: 72px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
+  width: 100%;
   padding: 10px 12px 10px 10px;
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--stroke);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .stat-hunt-art {
@@ -4804,20 +5309,13 @@ a.btn {
   margin-top: 8px;
 }
 
-.stat-hunt-faces button {
-  padding: 0;
-  border: 0;
-  background: none;
-  margin-left: -8px;
-  cursor: pointer;
-}
-
-.stat-hunt-faces button:first-child {
-  margin-left: 0;
-}
-
 .stat-hunt-faces .avatar-wrap {
+  margin-left: -8px;
   box-shadow: 0 0 0 2px rgba(14, 18, 28, 0.9);
+}
+
+.stat-hunt-faces .avatar-wrap:first-child {
+  margin-left: 0;
 }
 
 .stat-hunt-more {
@@ -4832,6 +5330,10 @@ a.btn {
   color: var(--muted);
   font-size: 0.62rem;
   font-weight: 750;
+}
+
+.stat-hunt-sheet-list {
+  margin-top: 4px;
 }
 
 .spinner-wrap {
@@ -4861,6 +5363,49 @@ a.btn {
   height: 2px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.06);
+}
+
+.pull-refresh {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 10px;
+  pointer-events: none;
+  transition: height 0.12s ease;
+}
+
+.pull-refresh.is-busy {
+  transition: height 0.2s ease;
+}
+
+.pull-refresh-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-top-color: rgba(208, 220, 255, 0.92);
+  border-radius: 50%;
+  opacity: 0.55;
+  transform: rotate(0deg);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.pull-refresh.is-armed .pull-refresh-spinner,
+.pull-refresh.is-busy .pull-refresh-spinner {
+  opacity: 1;
+}
+
+.pull-refresh.is-busy .pull-refresh-spinner {
+  animation: spin 0.7s linear infinite;
+}
+
+.pull-refresh:not(.is-busy) .pull-refresh-spinner {
+  /* Map pull distance into a partial spin so it feels live. */
+  transform: rotate(calc(var(--pull-turn, 0.35) * 360deg));
 }
 
 .busy-bar::after {
@@ -5043,6 +5588,7 @@ a.btn {
   .search-pane,
   .unlock-slider .profile-hero-layers,
   .unlock-slider .profile-hero-words,
+  .unlock-slider .game-card-art,
   .unlock-dots button,
   .home-me,
   .home-hello-row,

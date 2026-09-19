@@ -460,8 +460,6 @@ class _PlatformLinksRepo:
         )
         row = await cursor.fetchone()
         progress = TitleProgress(unlocked=int(row[0]) if row else 0, total=total)
-        if group_id is None:
-            return progress
 
         # Sony gives every title at least a 'default' group, so "has groups"
         # is not the question — "is it split into more than one" is. A game
@@ -471,7 +469,9 @@ class _PlatformLinksRepo:
             "SELECT COUNT(*) FROM title_groups WHERE title_id = ?", (title_id,)
         )
         row = await cursor.fetchone()
-        if row is None or int(row[0]) < 2:
+        has_dlc = row is not None and int(row[0]) >= 2
+        progress.has_dlc = has_dlc
+        if group_id is None or not has_dlc:
             return progress
 
         cursor = await self._conn.execute(

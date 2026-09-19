@@ -419,9 +419,9 @@ export function Admin({
                         </small>
                       </span>
                       <span className="admin-plats">
-                        {row.xbox ? <PlatformLogo platform="xbox" size={16} /> : null}
-                        {row.psn ? <PlatformLogo platform="psn" size={16} /> : null}
-                        {row.steam ? <PlatformLogo platform="steam" size={16} /> : null}
+                        {row.xbox ? <PlatformLogo platform="xbox" size={18} /> : null}
+                        {row.psn ? <PlatformLogo platform="psn" size={18} /> : null}
+                        {row.steam ? <PlatformLogo platform="steam" size={18} /> : null}
                         <span className="ios-value">›</span>
                       </span>
                     </button>
