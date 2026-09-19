@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import httpx
+from pydantic import ValidationError
 from xbox.webapi.api.client import XboxLiveClient
 
 from bot.constants import (
@@ -349,6 +350,23 @@ class XboxClient:
             raise _translate(exc) from None
         except httpx.RequestError as exc:
             raise XboxApiError(f"title info request failed: {exc!r}") from None
+        except ValidationError as exc:
+            # titlehub answers for some games with `detail.developerName:
+            # null`, and xbox-webapi's own model demands a string — so a
+            # perfectly good reply arrives as a validation error. Not an API
+            # failure, not something to retry, and not ours to fix upstream:
+            # the honest reading is "titlehub cannot describe this game",
+            # which is what `None` already means here.
+            #
+            # Worth catching precisely because of where this is called from.
+            # `Fetcher.ensure_title_name` catches XboxApiError and nothing
+            # else, and `poll_title` calls it *after* storing the new rows
+            # and *before* publishing them — so an escaping exception stored
+            # somebody's achievements and silently never announced them,
+            # which is the whole shape of #82 arriving by another road.
+            # Found on 2026-09-19 by a backfill that died on its first title.
+            log.info("titlehub could not describe title %s: %s", title_id, exc.error_count())
+            return None
 
         for title in response.titles or []:
             return _as_entry(title)

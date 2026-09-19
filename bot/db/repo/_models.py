@@ -197,6 +197,10 @@ class TitleProgress:
     # language and falls back to `group_name`, whichever locale that was.
     group_name_ru: str | None = None
     group_name_en: str | None = None
+    # True when the title is split into base + at least one DLC/mode group
+    # (#46) — the overall unlocked/total already includes them, and the Mini
+    # App marks that so the counter is not read as "base game only".
+    has_dlc: bool = False
 
 
 @dataclass(slots=True)

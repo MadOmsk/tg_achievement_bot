@@ -216,3 +216,18 @@ class _ChatsRepo:
             tz_offset_min=row["tz_offset_min"],
             locale=row["locale"],
         )
+
+    async def active_group_chats(self) -> list[tuple[int, str]]:
+        """Every active group chat and its configured language, for release
+        announcements.
+
+        A chat that has no chat_settings row falls back to DEFAULT_LOCALE."""
+        cursor = await self._conn.execute(
+            "SELECT c.chat_id, COALESCE(s.locale, ?) AS locale "
+            "FROM chats c "
+            "LEFT JOIN chat_settings s ON s.chat_id = c.chat_id "
+            "WHERE c.is_active = 1 AND c.chat_id < 0 "
+            "ORDER BY c.chat_id",
+            (DEFAULT_LOCALE,),
+        )
+        return [(int(row["chat_id"]), str(row["locale"])) for row in await cursor.fetchall()]

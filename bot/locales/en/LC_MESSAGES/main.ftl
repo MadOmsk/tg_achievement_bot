@@ -47,3 +47,11 @@ main-already-running =
     The bot is already running — a second copy isn't needed.
     Two bots on one token steal each other's Telegram updates.
     State: manage.bat status
+
+# Release announcements (services/release_notify.py)
+main-release-announced =
+    🚀 <b>Bot has been updated to version { $version }!</b>
+
+    See what's new in this release:
+main-release-button = 📖 Release Notes
+main-test-release-announced = 🧪 <b>Test bot has been updated to version { $version }!</b>

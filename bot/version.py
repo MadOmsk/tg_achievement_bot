@@ -48,8 +48,8 @@ MAJOR = 1
 
 #: The line of work `main` is on, and the only part of this file a person
 #: edits — on a rewrite, or when the owner decides a release deserves its own
-#: number. Production has been `2` since the Mini App merged.
-TRUNK_LINE = 2
+#: number. Production has been `3` since release 1.3.
+TRUNK_LINE = 3
 
 #: The branch that *is* production (2026-09-18): merging into it is the
 #: release, and everything else is by definition a line of work above it.

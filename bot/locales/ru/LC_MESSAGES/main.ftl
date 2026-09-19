@@ -47,3 +47,11 @@ main-already-running =
     Бот уже запущен — вторая копия не нужна.
     Два бота с одним токеном отбирают друг у друга сообщения Telegram.
     Состояние: manage.bat status
+
+# Release announcements (services/release_notify.py)
+main-release-announced =
+    🚀 <b>Бот обновлён до версии { $version }!</b>
+
+    Посмотрите, что нового появилось в этом обновлении:
+main-release-button = 📖 Патчноутс
+main-test-release-announced = 🧪 <b>Тестовый бот обновлён до версии { $version }!</b>

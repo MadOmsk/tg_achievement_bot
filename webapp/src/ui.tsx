@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { fetchAvatarBlob, type MeResponse } from "./api";
 import { platformLabel, platformMark, t, type Locale } from "./i18n";
@@ -35,7 +35,11 @@ export function isOnline(row: { state?: string | null; playing?: boolean }): boo
   return Boolean(row.playing || row.state === "Online" || row.state === "online");
 }
 
-/** Game cover or achievement icon — gradient + glyph when URL is missing or 404. */
+/** Game cover or achievement icon — gradient + glyph when URL is missing or 404.
+ *  Preload off-DOM so a dead CDN never flashes the browser's broken-image icon
+ *  (Telegram's WebView often keeps that glyph even after onError). */
+const coverReady = new Map<string, boolean>();
+
 export function CoverImg({
   src,
   kind = "game",
@@ -49,13 +53,44 @@ export function CoverImg({
   imgClassName?: string;
   children?: ReactNode;
 }) {
-  const [broken, setBroken] = useState(false);
+  const url = (src ?? "").trim();
+  const [ready, setReady] = useState<string | null>(() =>
+    url && coverReady.get(url) ? url : null,
+  );
   useEffect(() => {
-    setBroken(false);
-  }, [src]);
-  const ok = Boolean(src) && !broken;
+    if (!url) {
+      setReady(null);
+      return;
+    }
+    if (coverReady.get(url)) {
+      setReady(url);
+      return;
+    }
+    let cancelled = false;
+    // Keep the last good frame if the same URL is already showing — a hard
+    // clear flashes the empty glyph when a carousel clones a slide.
+    setReady((prev) => (prev === url ? prev : null));
+    const probe = new Image();
+    probe.onload = () => {
+      coverReady.set(url, true);
+      if (!cancelled) setReady(url);
+    };
+    probe.onerror = () => {
+      coverReady.set(url, false);
+      if (!cancelled) setReady(null);
+    };
+    probe.src = url;
+    return () => {
+      cancelled = true;
+      probe.onload = null;
+      probe.onerror = null;
+      probe.src = "";
+    };
+  }, [url]);
+  const ok = ready != null;
   const hero = Boolean(className?.includes("profile-hero-art"));
-  const markSize = hero ? 128 : 28;
+  const gameHero = Boolean(className?.includes("game-card-art"));
+  const markSize = hero ? 96 : gameHero ? 112 : 28;
   return (
     <span
       className={["cover-ph", `is-${kind}`, ok ? "has-img" : "is-empty", className]
@@ -63,13 +98,7 @@ export function CoverImg({
         .join(" ")}
     >
       {ok ? (
-        <img
-          src={src!}
-          alt=""
-          className={imgClassName}
-          draggable={false}
-          onError={() => setBroken(true)}
-        />
+        <img src={ready} alt="" className={imgClassName} draggable={false} />
       ) : (
         <span className="cover-ph-mark" aria-hidden>
           {kind === "achievement" ? (
@@ -122,18 +151,44 @@ export function Avatar({
   platform?: string | null;
   size?: number;
 }) {
-  const [src, setSrc] = useState<string | null>(photo ?? null);
+  const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
-    if (photo) {
-      setSrc(photo);
-      return;
-    }
-    if (tgId == null) return;
-    const data = window.Telegram?.WebApp?.initData ?? "";
     let cancelled = false;
-    void loadTelegramAvatar(tgId, data).then((url) => {
-      if (!cancelled && url) setSrc(url);
-    });
+    const takeBlob = () => {
+      if (tgId == null) return;
+      const data = window.Telegram?.WebApp?.initData ?? "";
+      void loadTelegramAvatar(tgId, data).then((url) => {
+        if (!cancelled && url) setSrc(url);
+      });
+    };
+    if (photo) {
+      const url = photo.trim();
+      if (!url) {
+        setSrc(null);
+        takeBlob();
+        return () => {
+          cancelled = true;
+        };
+      }
+      const probe = new Image();
+      probe.onload = () => {
+        if (!cancelled) setSrc(url);
+      };
+      probe.onerror = () => {
+        if (cancelled) return;
+        setSrc(null);
+        takeBlob();
+      };
+      probe.src = url;
+      return () => {
+        cancelled = true;
+        probe.onload = null;
+        probe.onerror = null;
+        probe.src = "";
+      };
+    }
+    setSrc(null);
+    takeBlob();
     return () => {
       cancelled = true;
     };
@@ -148,7 +203,7 @@ export function Avatar({
   return (
     <span className={live ? "avatar-wrap is-live" : "avatar-wrap"} style={{ width: size, height: size }}>
       <span className="avatar">
-        {src ? <img src={src} alt="" onError={() => setSrc(null)} /> : <span>{initials(name)}</span>}
+        {src ? <img src={src} alt="" draggable={false} /> : <span>{initials(name)}</span>}
       </span>
       {live ? (
         <span
@@ -642,6 +697,108 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
+/** Mobile-style pull-to-refresh at the top of the page scroll. */
+export function usePullToRefresh(onRefresh: () => void | Promise<void>) {
+  const [pull, setPull] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const startY = useRef(0);
+  const pulling = useRef(false);
+  const armed = useRef(false);
+  const refresh = useRef(onRefresh);
+  refresh.current = onRefresh;
+
+  useEffect(() => {
+    const THRESHOLD = 68;
+    const MAX = 112;
+    const onStart = (event: TouchEvent) => {
+      if (document.documentElement.classList.contains("is-sheet-open")) return;
+      if (refreshing) return;
+      if (window.scrollY > 1) return;
+      startY.current = event.touches[0]?.clientY ?? 0;
+      pulling.current = true;
+      armed.current = false;
+    };
+    const onMove = (event: TouchEvent) => {
+      if (!pulling.current || refreshing) return;
+      if (document.documentElement.classList.contains("is-sheet-open")) {
+        pulling.current = false;
+        setPull(0);
+        return;
+      }
+      if (window.scrollY > 1) {
+        pulling.current = false;
+        setPull(0);
+        return;
+      }
+      const y = event.touches[0]?.clientY ?? 0;
+      const dy = y - startY.current;
+      if (dy <= 0) {
+        setPull(0);
+        armed.current = false;
+        return;
+      }
+      const next = Math.min(MAX, dy * 0.42);
+      setPull(next);
+      armed.current = next >= THRESHOLD;
+      if (dy > 12) event.preventDefault();
+    };
+    const onEnd = () => {
+      if (!pulling.current) return;
+      pulling.current = false;
+      if (armed.current) {
+        setRefreshing(true);
+        setPull(THRESHOLD);
+        void Promise.resolve(refresh.current())
+          .catch(() => undefined)
+          .finally(() => {
+            setRefreshing(false);
+            setPull(0);
+          });
+      } else {
+        setPull(0);
+      }
+      armed.current = false;
+    };
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd);
+    document.addEventListener("touchcancel", onEnd);
+    return () => {
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", onEnd);
+    };
+  }, [refreshing]);
+
+  const indicator =
+    pull > 0 || refreshing
+      ? createPortal(
+          <div
+            className={[
+              "pull-refresh",
+              refreshing ? "is-busy" : "",
+              pull >= 68 && !refreshing ? "is-armed" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={
+              {
+                height: Math.max(pull, refreshing ? 52 : 0),
+                ["--pull-turn"]: String(Math.min(1, pull / 68)),
+              } as CSSProperties
+            }
+            aria-hidden
+          >
+            <span className="pull-refresh-spinner" />
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return { indicator, refreshing };
+}
+
 export function Sheet({
   children,
   onClose,
@@ -650,7 +807,7 @@ export function Sheet({
   tall,
   mid,
   compact,
-  noClose,
+  noClose: _noClose,
 }: {
   children: ReactNode;
   onClose: () => void;
@@ -660,6 +817,7 @@ export function Sheet({
   /** Bottom sheet that stops a bit above mid-screen (month picker). */
   mid?: boolean;
   compact?: boolean;
+  /** Kept for callers; close now lives above the drawer on the blur veil. */
   noClose?: boolean;
 }) {
   const [leaving, setLeaving] = useState(false);
@@ -725,25 +883,33 @@ export function Sheet({
       }}
       role="presentation"
     >
-      <div
-        className={[
-          "sheet-body glass",
-          photo ? "is-photo" : "",
-          tall ? "is-tall" : "",
-          mid ? "is-mid" : "",
-          compact ? "is-compact" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-      >
-        {photo || noClose ? null : (
-          <button type="button" className="sheet-close" onClick={close} aria-label={closeLabel}>
-            ✕
-          </button>
-        )}
-        {children}
+      <div className="sheet-stack">
+        <button
+          type="button"
+          className="sheet-dismiss"
+          onClick={(e) => {
+            e.stopPropagation();
+            close();
+          }}
+          aria-label={closeLabel}
+        >
+          ✕
+        </button>
+        <div
+          className={[
+            "sheet-body glass",
+            photo ? "is-photo" : "",
+            tall ? "is-tall" : "",
+            mid ? "is-mid" : "",
+            compact ? "is-compact" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+        >
+          {children}
+        </div>
       </div>
     </div>,
     document.body,
