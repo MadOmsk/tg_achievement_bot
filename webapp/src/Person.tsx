@@ -5,6 +5,24 @@ import { Avatar, CoverImg, Icon, PlatformDot, ScoreCup, Sheet, isOnline } from "
 
 const HOME_SLIDES = 5;
 
+/** Newest unlock per game, capped — home carousel shows games, not achievements. */
+export function recentGames(items: FeedItem[], limit = HOME_SLIDES): FeedItem[] {
+  const seen = new Set<string>();
+  const out: FeedItem[] = [];
+  for (const row of items) {
+    const key = `${row.platform}:${row.title_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function gameKey(item: FeedItem): string {
+  return `${item.platform}:${item.title_id}`;
+}
+
 function veiled(
   item: { is_secret: boolean },
   key: string,
@@ -60,7 +78,7 @@ export function PersonProfile({
       tiers,
     }];
   });
-  const rest = feed.slice(HOME_SLIDES);
+  const games = recentGames(feed);
   return (
     <>
       <header className="account-bar person-bar">
@@ -83,14 +101,8 @@ export function PersonProfile({
         </div>
       </header>
       <div className="person-stage">
-        {feed.length > 0 ? (
-          <UnlockSlider
-            items={feed}
-            locale={locale}
-            revealed={revealed}
-            showSecrets={showSecrets}
-            onReveal={onReveal}
-          />
+        {games.length > 0 ? (
+          <UnlockSlider items={games} locale={locale} variant="game" />
         ) : (
           <p className="empty">{t(locale, "emptyFeed")}</p>
         )}
@@ -101,9 +113,9 @@ export function PersonProfile({
         </h1>
         {monthChip}
       </div>
-      {rest.length > 0 ? (
+      {feed.length > 0 ? (
         <FeedList
-          items={rest}
+          items={feed}
           locale={locale}
           revealed={revealed}
           showSecrets={showSecrets}
@@ -129,13 +141,15 @@ export function UnlockSlider({
   showSecrets?: boolean;
   onReveal?: (key: string) => void;
   onOpenPerson?: (tgId: number) => void;
-  /** hero = profile stage (capped); feed = full UnlockCards for a streak */
-  variant?: "hero" | "feed";
+  /** hero = profile stage; game = home recent games; feed = full UnlockCards */
+  variant?: "hero" | "feed" | "game";
 }) {
   const slides = variant === "feed" ? items : items.slice(0, HOME_SLIDES);
-  const loopable = slides.length > 1;
-  // Clone of the first after the last: swipe forward lands on a twin, then
-  // we teleport scroll to the real first with no reverse animation.
+  const slideKey = variant === "game" ? gameKey : feedKey;
+  const n = slides.length;
+  const loopable = n > 1;
+  // Clone of the first after the last — forward loop only (the shape that
+  // worked this morning). Bidirectional clones + pointer capture were the jerk.
   const trackSlides = loopable ? [...slides, slides[0]] : slides;
   const trackRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef(0);
@@ -143,7 +157,6 @@ export function UnlockSlider({
   const settleRef = useRef(0);
   const wrappingRef = useRef(false);
   const [progress, setProgress] = useState(0);
-  // Profile gallery: show dots on open, then the same fade as after a swipe.
   const [using, setUsing] = useState(() => variant !== "feed" && items.length > 1);
   const feedDots = variant === "feed";
 
@@ -154,27 +167,25 @@ export function UnlockSlider({
   };
 
   const markUse = () => {
-    if (slides.length < 2) return;
+    if (n < 2) return;
     setUsing(true);
     window.clearTimeout(hideRef.current);
     hideRef.current = window.setTimeout(() => setUsing(false), 1400);
   };
 
   useEffect(() => {
-    if (feedDots || slides.length < 2) return;
+    if (feedDots || n < 2) return;
     setUsing(true);
     window.clearTimeout(hideRef.current);
     hideRef.current = window.setTimeout(() => setUsing(false), 1400);
-  }, [feedDots, slides.length]);
+  }, [feedDots, n]);
 
   const wrapIfNeeded = () => {
     const track = trackRef.current;
     if (!track || !loopable || !track.clientWidth || wrappingRef.current) return;
     const width = track.clientWidth;
     const idx = Math.round(track.scrollLeft / width);
-    if (idx < slides.length) return;
-    // Same picture as slide 0 — jump without smooth scroll so it feels like
-    // the strip continues forward instead of rewinding.
+    if (idx < n) return;
     wrappingRef.current = true;
     window.clearTimeout(settleRef.current);
     cancelAnimationFrame(frameRef.current);
@@ -182,7 +193,7 @@ export function UnlockSlider({
     const behavior = track.style.scrollBehavior;
     track.style.scrollSnapType = "none";
     track.style.scrollBehavior = "auto";
-    track.scrollTo({ left: 0, behavior: "instant" });
+    track.scrollTo({ left: 0, behavior: "instant" as ScrollBehavior });
     setProgress(0);
     requestAnimationFrame(() => {
       track.scrollLeft = 0;
@@ -190,8 +201,6 @@ export function UnlockSlider({
         track.style.scrollSnapType = snap;
         track.style.scrollBehavior = behavior;
         setProgress(0);
-        // Keep ignoring scroll until the browser finishes settling the jump —
-        // restoring snap too early can still animate backwards on WebKit.
         window.setTimeout(() => {
           if (track.scrollLeft > width * 0.25) {
             track.style.scrollSnapType = "none";
@@ -211,19 +220,20 @@ export function UnlockSlider({
     () => () => {
       window.clearTimeout(hideRef.current);
       window.clearTimeout(settleRef.current);
+      cancelAnimationFrame(frameRef.current);
     },
     [],
   );
 
   const go = (next: number) => {
     const track = trackRef.current;
-    if (!track) return;
+    if (!track || !track.clientWidth) return;
     markUse();
-    const target = ((next % slides.length) + slides.length) % slides.length;
+    const target = ((next % n) + n) % n;
     track.scrollTo({ left: target * track.clientWidth, behavior: "smooth" });
   };
 
-  const active = ((Math.round(progress) % slides.length) + slides.length) % slides.length;
+  const active = ((Math.round(progress) % n) + n) % n;
 
   return (
     <div className={feedDots ? "unlock-slider is-feed" : "unlock-slider"}>
@@ -250,7 +260,7 @@ export function UnlockSlider({
           const secret = veiled(item, feedKey(item), revealed, showSecrets);
           return (
             <div
-              key={`${feedKey(item)}:${i}`}
+              key={`${slideKey(item)}:${i}`}
               className="unlock-slide"
               style={
                 {
@@ -261,7 +271,9 @@ export function UnlockSlider({
                 } as CSSProperties
               }
             >
-              {feedDots ? (
+              {variant === "game" ? (
+                <GameCard item={item} locale={locale} />
+              ) : feedDots ? (
                 <UnlockCard
                   item={item}
                   locale={locale}
@@ -284,23 +296,53 @@ export function UnlockSlider({
           );
         })}
       </div>
-      {slides.length > 1 ? (
+      {n > 1 ? (
         <div
           className={feedDots || using ? "unlock-dots is-live" : "unlock-dots"}
           role="tablist"
-          aria-label={`${active + 1} / ${slides.length}`}
+          aria-label={`${active + 1} / ${n}`}
         >
           {slides.map((item, i) => (
             <button
-              key={feedKey(item)}
+              key={slideKey(item)}
               type="button"
               className={i === active ? "is-on" : undefined}
-              aria-label={`${i + 1} / ${slides.length}`}
+              aria-label={`${i + 1} / ${n}`}
               onClick={() => go(i)}
             />
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Home carousel: cover first, a thin foot with progress — not an achievement card. */
+export function GameCard({ item, locale }: { item: FeedItem; locale: Locale }) {
+  const progress = item.progress;
+  const show = Boolean(progress && progress.total > 0);
+  const title = item.game || "\u00a0";
+  const cover = item.game_icon_url || item.icon_url;
+  const when = timeAgo(item.unlocked_at, locale);
+  const dlc = Boolean(progress?.has_dlc);
+  return (
+    <div className="unlock-card game-card">
+      <div className="unlock-card-art">
+        <CoverImg src={cover} kind="game" className="game-card-art" />
+        <div className="game-card-veil">
+          <h2 className="game-card-title">
+            <span>{title}</span>
+            <PlatformDot platform={item.platform} locale={locale} />
+          </h2>
+          {dlc ? <p className="dlc-mark">{t(locale, "inclDlc")}</p> : null}
+          {show ? (
+            <span className="game-card-progress">
+              <ProgressBar progress={progress} />
+            </span>
+          ) : null}
+          {when ? <p className="game-card-when">{when}</p> : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -394,7 +436,7 @@ export function UnlockCard({
         </div>
       </div>
       <div className="unlock-card-stage">
-        <HeroGame item={item} />
+        <HeroGame item={item} locale={locale} />
         {secret ? (
           <span className="sheet-secret-veil">
             <button
@@ -412,7 +454,7 @@ export function UnlockCard({
       </div>
       {gameInCopy ? (
         <div className="unlock-card-foot">
-          <HeroGame item={item} />
+          <HeroGame item={item} locale={locale} />
           <div className="unlock-card-copy">
             <h2>
               <span>{secret ? t(locale, "secret") : item.name}</span>
@@ -502,20 +544,7 @@ export function FeedList({
                   {row.game ? <p className="unlock-game">{row.game}</p> : null}
                   {row.progress && row.progress.total > 0 ? (
                     <span className="feed-row-progress" aria-hidden="true">
-                      <span className="hero-game-bar">
-                        <span
-                          className="hero-game-bar-fill"
-                          style={{
-                            width: `${Math.min(
-                              100,
-                              (100 * row.progress.unlocked) / row.progress.total,
-                            )}%`,
-                          }}
-                        />
-                      </span>
-                      <span className="hero-game-count">
-                        {row.progress.unlocked}/{row.progress.total}
-                      </span>
+                      <ProgressBar progress={row.progress} />
                     </span>
                   ) : null}
                 </span>
@@ -644,41 +673,53 @@ export function PostLead({
           <p>{timeAgo(item.unlocked_at, locale)}</p>
         </span>
       </button>
-      {whoOnly ? null : <HeroGame item={item} />}
+      {whoOnly ? null : <HeroGame item={item} locale={locale} />}
     </span>
   );
 }
 
-export function HeroGame({ item }: { item: FeedItem }) {
+export function ProgressBar({ progress }: { progress: FeedItem["progress"] }) {
+  if (!progress || progress.total <= 0) return null;
+  const total = progress.total;
+  const unlocked = progress.unlocked;
+  const pct = Math.min(100, (100 * unlocked) / total);
+  return (
+    <span className="hero-game-bar-row">
+      <span className="hero-game-bar" aria-hidden="true">
+        <span className="hero-game-bar-fill" style={{ width: `${pct}%` }} />
+      </span>
+      <span className="hero-game-count">
+        {unlocked}/{total}
+      </span>
+    </span>
+  );
+}
+
+export function HeroGame({ item, locale }: { item: FeedItem; locale?: Locale }) {
   if (!item.game && !item.platform) return null;
   const progress = item.progress;
   const showBar = Boolean(progress && progress.total > 0);
-  const pct =
-    showBar && progress
-      ? Math.min(100, (100 * progress.unlocked) / progress.total)
-      : 0;
+  const group = progress?.group;
+  // Only name a non-base section (DLC / mode) — no second counter beside the bar.
+  const showGroup = Boolean(
+    group &&
+      group.name &&
+      !group.is_default &&
+      group.name.trim().toLowerCase() !== "основная игра" &&
+      group.name.trim().toLowerCase() !== "main game",
+  );
+  const dlc = Boolean(progress?.has_dlc && locale);
+  const midLine = showGroup || dlc;
   return (
-    <span className="hero-game">
+    <span className={midLine ? "hero-game has-mid" : "hero-game"}>
       {item.game || item.game_icon_url ? (
         <CoverImg src={item.game_icon_url} kind="game" className="hero-game-art" />
       ) : null}
       <span className="hero-game-text">
         {item.game ? <strong className="hero-game-title">{item.game}</strong> : null}
-        {progress?.group ? (
-          <span className="hero-game-group">
-            {progress.group.name} · {progress.group.unlocked}/{progress.group.total}
-          </span>
-        ) : null}
-        {showBar && progress ? (
-          <span className="hero-game-bar-row">
-            <span className="hero-game-bar" aria-hidden="true">
-              <span className="hero-game-bar-fill" style={{ width: `${pct}%` }} />
-            </span>
-            <span className="hero-game-count">
-              {progress.unlocked}/{progress.total}
-            </span>
-          </span>
-        ) : null}
+        {showGroup && group ? <span className="hero-game-group">{group.name}</span> : null}
+        {dlc && locale ? <span className="dlc-mark">{t(locale, "inclDlc")}</span> : null}
+        {showBar ? <ProgressBar progress={progress} /> : null}
       </span>
     </span>
   );

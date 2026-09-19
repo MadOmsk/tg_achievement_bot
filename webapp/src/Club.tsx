@@ -12,9 +12,9 @@ import {
   type SummaryGame,
   type SummaryMember,
 } from "./api";
-import { t, type Locale } from "./i18n";
+import { t, timeAgo, type Locale } from "./i18n";
 import { GameHits, GameSheet, useHltbSearch } from "./Hltb";
-import { FeedList, FeedPosts, PeopleHits, PersonProfile, UnlockCard, UnlockSlider, HeroMarks, feedKey, matchQuery } from "./Person";
+import { FeedList, FeedPosts, PeopleHits, PersonProfile, UnlockCard, UnlockSlider, HeroMarks, feedKey, matchQuery, recentGames } from "./Person";
 import { AccountBar, Avatar, CoverImg, GlassWait, HomeSkel, PageSkel, PlatformDot, PlatformLogo, ScoreCup, SearchBar, Sheet, accountLabel, isOnline, meScoreLines, telegramPhoto, Icon } from "./ui";
 
 type ClubPane = "home" | "feed" | "summary";
@@ -29,6 +29,7 @@ export function Club({
   openPersonId,
   data,
   pane,
+  refreshKey = 0,
   onChat: _onChat,
   onFlash,
   onOpenPerson,
@@ -42,6 +43,8 @@ export function Club({
   openPersonId?: number | null;
   data: string;
   pane: ClubPane;
+  /** Increment to refetch club data without leaving the current pane. */
+  refreshKey?: number;
   onChat: (chatId: number) => void;
   onFlash: (message: string) => void;
   onOpenPerson?: (tgId: number) => void;
@@ -85,9 +88,13 @@ export function Club({
     (me.chats.find((c) => c.chat_id === chatId) ?? me.chats[0])?.chat_id ?? null;
 
   useEffect(() => {
+    // Blank only when the chat/account changes — pull-to-refresh keeps the UI.
+    setClubReady(false);
+  }, [activeId, data, me.tg_id]);
+
+  useEffect(() => {
     if (!activeId || !data) return;
     let cancelled = false;
-    setClubReady(false);
     const load = async () => {
       const [f, o, s, mine] = await Promise.allSettled([
         fetchFeed(data, activeId),
@@ -123,7 +130,7 @@ export function Club({
     return () => {
       cancelled = true;
     };
-  }, [activeId, data, me.tg_id]);
+  }, [activeId, data, me.tg_id, refreshKey]);
 
   useEffect(() => {
     if (!openPersonId || !activeId) {
@@ -134,7 +141,8 @@ export function Club({
     // Own profile uses myPerson when the month matches; still refetch when
     // the picker moves so Steam/PSN/Xbox stay in sync with the chip.
     let cancelled = false;
-    setPersonBusy(true);
+    // Keep the open profile visible while pull-to-refresh refetches it.
+    if (refreshKey === 0) setPersonBusy(true);
     void fetchPerson(data, activeId, openPersonId, personMonth ? { month: personMonth } : undefined)
       .then((payload) => {
         if (!cancelled) {
@@ -169,7 +177,7 @@ export function Club({
     return () => {
       cancelled = true;
     };
-  }, [openPersonId, activeId, data, locale, onFlash, me.tg_id, personMonth]);
+  }, [openPersonId, activeId, data, locale, onFlash, me.tg_id, personMonth, refreshKey]);
 
   useEffect(() => {
     onPersonVisible?.(person != null);
@@ -253,8 +261,7 @@ export function Club({
         {formatMonth(ym, locale, "chip")}
       </button>
     ) : null;
-  const mySlides = mine.slice(0, 5);
-  const myRest = mine.slice(5);
+  const myGames = recentGames(mine, 5);
   const openProfile = person && openPersonId ? person : null;
   const [homeCompact, setHomeCompact] = useState(false);
   const homeCompactRef = useRef(false);
@@ -390,14 +397,11 @@ export function Club({
             </div>
           ) : (
             <>
-              {mySlides.length > 0 ? (
+              {myGames.length > 0 ? (
                 <UnlockSlider
-                  items={mySlides}
+                  items={myGames}
                   locale={locale}
-                  revealed={revealed}
-                  showSecrets={showSecrets}
-                  onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-                  onOpenPerson={openPerson}
+                  variant="game"
                 />
               ) : me.xbox.linked || me.steam.linked || me.psn.linked ? (
                 <p className="empty">{t(locale, "emptyFeed")}</p>
@@ -417,9 +421,9 @@ export function Club({
               </div>
               {homeBusy ? (
                 <GlassWait />
-              ) : myRest.length > 0 ? (
+              ) : mine.length > 0 ? (
                 <FeedList
-                  items={myRest}
+                  items={mine}
                   locale={locale}
                   revealed={revealed}
                   showSecrets={showSecrets}
@@ -548,7 +552,7 @@ function MonthSheet({
 }) {
   return (
     <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
-      <div className="sheet-content picker-sheet">
+      <div className="sheet-content score-sheet picker-sheet">
         <h2>{t(locale, "pickMonth")}</h2>
         <div className="picker-list">
           {months.map((ym) => (
@@ -630,7 +634,7 @@ function RosterSheet({
   const rows = rankPeople(members);
   return (
     <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
-      <div className="sheet-content picker-sheet">
+      <div className="sheet-content score-sheet picker-sheet">
         <h2>{t(locale, "friends")}</h2>
         {rows.length === 0 ? (
           <p className="empty">{t(locale, "nobodyOnline")}</p>
@@ -663,7 +667,7 @@ function GamesSheet({
 }) {
   return (
     <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
-      <div className="sheet-content picker-sheet games-sheet">
+      <div className="sheet-content score-sheet picker-sheet games-sheet">
         <h2>{t(locale, "monthGames")}</h2>
         <div className="picker-list games-sheet-list">
           {games.map((g) => {
@@ -724,7 +728,17 @@ function ClubStats({
   onOpenPerson: (tgId: number) => void;
 }) {
   const [gamesOpen, setGamesOpen] = useState(false);
+  const [board, setBoard] = useState<"day" | "month">("day");
+  const [finds, setFinds] = useState<"plats" | "rares">("plats");
   const [rareItem, setRareItem] = useState<FeedItem | null>(null);
+  const [huntOpen, setHuntOpen] = useState<{
+    key: string;
+    name: string;
+    platform: string;
+    cover: string | null;
+    people: Map<number, string>;
+    items: FeedItem[];
+  } | null>(null);
   if (day.length === 0 && month.length === 0 && feed.length === 0) {
     return (
       <>
@@ -751,7 +765,7 @@ function ClubStats({
       platform: string;
       cover: string | null;
       people: Map<number, string>;
-      count: number;
+      items: FeedItem[];
     }
   >();
   for (const row of feed) {
@@ -763,21 +777,29 @@ function ClubStats({
       platform: row.platform,
       cover: row.game_icon_url || null,
       people: new Map<number, string>(),
-      count: 0,
+      items: [],
     };
     cur.people.set(row.tg_id, row.person);
-    cur.count += 1;
+    cur.items.push(row);
     if (!cur.cover && row.game_icon_url) cur.cover = row.game_icon_url;
     together.set(key, cur);
   }
   const hunts = [...together.values()]
     .filter((row) => row.people.size > 1)
-    .sort((a, b) => b.people.size - a.people.size || b.count - a.count)
-    .slice(0, 6);
+    .sort(
+      (a, b) =>
+        b.people.size - a.people.size || b.items.length - a.items.length,
+    )
+    .slice(0, 4);
   const rares = [...feed]
     .filter((row) => row.rarity_percent != null)
     .sort((a, b) => (a.rarity_percent ?? 100) - (b.rarity_percent ?? 100))
     .slice(0, 5);
+  // progress.unlocked/total is already on every feed row — no extra API.
+  const plats = recentCompletions(feed).slice(0, 8);
+  const boardRows = board === "day" ? day : month;
+  const findsTab = finds === "plats" && plats.length === 0 && rares.length > 0 ? "rares" : finds;
+  const findsRows = findsTab === "plats" ? plats : rares;
   return (
     <>
       <header className="page-head is-split">
@@ -829,70 +851,79 @@ function ClubStats({
       {gamesOpen ? (
         <GamesSheet games={games} locale={locale} onClose={() => setGamesOpen(false)} />
       ) : null}
-      {day.length > 0 ? (
+      {day.length > 0 || month.length > 0 ? (
         <section className="stat-block">
-          <p className="stat-block-title">{t(locale, "leadersDay")}</p>
-          <Leaderboard rows={day} live={online} onOpen={onOpenPerson} />
-        </section>
-      ) : null}
-      {month.length > 0 ? (
-        <section className="stat-block">
-          <p className="stat-block-title">{t(locale, "leadersMonth")}</p>
-          <Leaderboard rows={month} live={online} showRare onOpen={onOpenPerson} />
-        </section>
-      ) : null}
-      {hunts.length > 0 ? (
-        <section className="stat-hunts-block">
-          <p className="stat-block-title">{t(locale, "huntTogether")}</p>
-          <div className="stat-hunts">
-            {hunts.map((row) => {
-              const faces = [...row.people.entries()];
-              const shown = faces.slice(0, 4);
-              const extra = faces.length - shown.length;
-              return (
-                <article key={row.key} className="stat-hunt">
-                  <span className="stat-hunt-art">
-                    <CoverImg src={row.cover} kind="game" className="stat-game-fallback" />
-                    <PlatformLogo platform={row.platform} size={14} />
-                  </span>
-                  <div className="stat-hunt-copy">
-                    <strong>{row.name}</strong>
-                    <div className="stat-hunt-faces">
-                      {shown.map(([tgId, name]) => (
-                        <button
-                          key={tgId}
-                          type="button"
-                          onClick={() => onOpenPerson(tgId)}
-                          aria-label={name}
-                        >
-                          <Avatar
-                            name={name}
-                            tgId={tgId}
-                            online={isOnline(online.find((m) => m.tg_id === tgId) ?? {})}
-                            platform={online.find((m) => m.tg_id === tgId && isOnline(m))?.platform}
-                            size={28}
-                          />
-                        </button>
-                      ))}
-                      {extra > 0 ? <span className="stat-hunt-more">+{extra}</span> : null}
-                    </div>
-                  </div>
-                  <p className="stat-hunt-count">{row.count}</p>
-                </article>
-              );
-            })}
+          <div className="stat-block-head">
+            <p className="stat-block-title">{t(locale, "leaders")}</p>
+            <div className="stat-board-switch" role="tablist" aria-label={t(locale, "leaders")}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={board === "day"}
+                className={board === "day" ? "is-on" : undefined}
+                onClick={() => setBoard("day")}
+              >
+                {t(locale, "boardDay")}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={board === "month"}
+                className={board === "month" ? "is-on" : undefined}
+                onClick={() => setBoard("month")}
+              >
+                {t(locale, "boardMonth")}
+              </button>
+            </div>
           </div>
+          {boardRows.length > 0 ? (
+            <Leaderboard
+              rows={boardRows}
+              live={online}
+              showRare={board === "month"}
+              onOpen={onOpenPerson}
+            />
+          ) : (
+            <p className="empty">{t(locale, "emptySummary")}</p>
+          )}
         </section>
       ) : null}
-      {rares.length > 0 ? (
+      {plats.length > 0 || rares.length > 0 ? (
         <section className="stat-rares-block">
-          <p className="stat-block-title">{t(locale, "rareFinds")}</p>
+          <div className="stat-block-head">
+            <p className="stat-block-title">{t(locale, "finds")}</p>
+            <div className="stat-board-switch" role="tablist" aria-label={t(locale, "finds")}>
+              {plats.length > 0 ? (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={findsTab === "plats"}
+                  className={findsTab === "plats" ? "is-on" : undefined}
+                  onClick={() => setFinds("plats")}
+                >
+                  {t(locale, "recentPlats")}
+                </button>
+              ) : null}
+              {rares.length > 0 ? (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={findsTab === "rares"}
+                  className={findsTab === "rares" ? "is-on" : undefined}
+                  onClick={() => setFinds("rares")}
+                >
+                  {t(locale, "rareFinds")}
+                </button>
+              ) : null}
+            </div>
+          </div>
           <div className="stat-rares">
-            {rares.map((row) => {
+            {findsRows.map((row) => {
               const key = feedKey(row);
               const secret = Boolean(
                 row.is_secret && !showSecrets && !revealed.has(key),
               );
+              const isPlat = findsTab === "plats";
               return (
                 <button
                   key={key}
@@ -901,8 +932,8 @@ function ClubStats({
                   onClick={() => setRareItem(row)}
                 >
                   <CoverImg
-                    src={row.icon_url}
-                    kind="achievement"
+                    src={isPlat ? row.game_icon_url || row.icon_url : row.icon_url}
+                    kind={isPlat ? "game" : "achievement"}
                     className="feed-cover"
                     imgClassName="cover"
                   >
@@ -914,22 +945,137 @@ function ClubStats({
                   </CoverImg>
                   <span className="feed-copy">
                     <p className="unlock-title">
-                      <span>{secret ? t(locale, "secret") : row.name}</span>
+                      <span>
+                        {isPlat
+                          ? row.game || row.name
+                          : secret
+                            ? t(locale, "secret")
+                            : row.name}
+                      </span>
                       <PlatformDot platform={row.platform} locale={locale} />
                     </p>
-                    {row.game ? <p className="unlock-game">{row.game}</p> : null}
+                    {isPlat ? (
+                      <p className="unlock-game">{timeAgo(row.unlocked_at, locale)}</p>
+                    ) : row.game ? (
+                      <p className="unlock-game">{row.game}</p>
+                    ) : null}
                     <p className="feed-person">{row.person}</p>
                   </span>
-                  <HeroMarks
-                    compact
-                    score={row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)}
-                    rarity={row.rarity_percent != null ? `${row.rarity_percent}%` : null}
-                  />
+                  {isPlat ? (
+                    <span className="feed-plat" aria-hidden>
+                      💠
+                    </span>
+                  ) : (
+                    <HeroMarks
+                      compact
+                      score={row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)}
+                      rarity={row.rarity_percent != null ? `${row.rarity_percent}%` : null}
+                    />
+                  )}
                 </button>
               );
             })}
           </div>
         </section>
+      ) : null}
+      {hunts.length > 0 ? (
+        <section className="stat-hunts-block">
+          <p className="stat-block-title">{t(locale, "huntTogether")}</p>
+          <div className="stat-hunts">
+            {hunts.map((hunt) => {
+              const faces = [...hunt.people.entries()];
+              const shown = faces.slice(0, 4);
+              const extra = faces.length - shown.length;
+              return (
+                <button
+                  key={hunt.key}
+                  type="button"
+                  className="stat-hunt"
+                  onClick={() => setHuntOpen(hunt)}
+                >
+                  <span className="stat-hunt-art">
+                    <CoverImg src={hunt.cover} kind="game" className="stat-game-fallback" />
+                    <PlatformLogo platform={hunt.platform} size={14} />
+                  </span>
+                  <div className="stat-hunt-copy">
+                    <strong>{hunt.name}</strong>
+                    <div className="stat-hunt-faces">
+                      {shown.map(([tgId, name]) => (
+                        <Avatar
+                          key={tgId}
+                          name={name}
+                          tgId={tgId}
+                          online={isOnline(online.find((m) => m.tg_id === tgId) ?? {})}
+                          platform={
+                            online.find((m) => m.tg_id === tgId && isOnline(m))?.platform
+                          }
+                          size={28}
+                        />
+                      ))}
+                      {extra > 0 ? <span className="stat-hunt-more">+{extra}</span> : null}
+                    </div>
+                  </div>
+                  <p className="stat-hunt-count">{hunt.items.length}</p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+      {huntOpen ? (
+        <Sheet mid onClose={() => setHuntOpen(null)} closeLabel={t(locale, "close")} noClose>
+          <div className="sheet-content score-sheet picker-sheet hunt-sheet">
+            <h2>{huntOpen.name}</h2>
+            <div className="stat-hunt-sheet-list">
+              {huntOpen.items.map((row) => {
+                const key = feedKey(row);
+                const secret = Boolean(
+                  row.is_secret && !showSecrets && !revealed.has(key),
+                );
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={["feed-row", secret ? "is-secret" : ""]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => setRareItem(row)}
+                  >
+                    <CoverImg
+                      src={row.icon_url}
+                      kind="achievement"
+                      className="feed-cover"
+                      imgClassName="cover"
+                    >
+                      {secret ? (
+                        <span className="feed-lock">
+                          <Icon name="lock" size={18} />
+                        </span>
+                      ) : null}
+                    </CoverImg>
+                    <span className="feed-copy">
+                      <p className="unlock-title">
+                        <span>{secret ? t(locale, "secret") : row.name}</span>
+                        <PlatformDot platform={row.platform} locale={locale} />
+                      </p>
+                      {row.game ? <p className="unlock-game">{row.game}</p> : null}
+                      <p className="feed-person">{row.person}</p>
+                    </span>
+                    <HeroMarks
+                      compact
+                      score={
+                        row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)
+                      }
+                      rarity={
+                        row.rarity_percent != null ? `${row.rarity_percent}%` : null
+                      }
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Sheet>
       ) : null}
       {rareItem ? (
         <Sheet mid onClose={() => setRareItem(null)} closeLabel={t(locale, "close")} noClose>
@@ -963,6 +1109,35 @@ function countByPerson(items: FeedItem[], sinceMs?: number): Map<number, number>
     counts.set(id, (counts.get(id) ?? 0) + 1);
   }
   return counts;
+}
+
+/** Games closed to 100% — PSN platinum, or any platform with unlocked ≥ total. */
+function recentCompletions(items: FeedItem[]): FeedItem[] {
+  const best = new Map<string, FeedItem>();
+  for (const row of items) {
+    const done =
+      row.trophy_type === "platinum" ||
+      Boolean(row.progress && row.progress.total > 0 && row.progress.unlocked >= row.progress.total);
+    if (!done) continue;
+    const key = `${row.tg_id}:${row.platform}:${row.title_id}`;
+    const prev = best.get(key);
+    if (!prev) {
+      best.set(key, row);
+      continue;
+    }
+    // Prefer the real platinum trophy over another unlock of the same finished game.
+    if (row.trophy_type === "platinum" && prev.trophy_type !== "platinum") {
+      best.set(key, row);
+      continue;
+    }
+    if (prev.trophy_type === "platinum" && row.trophy_type !== "platinum") continue;
+    if (Date.parse(row.unlocked_at ?? "") > Date.parse(prev.unlocked_at ?? "")) {
+      best.set(key, row);
+    }
+  }
+  return [...best.values()].sort(
+    (a, b) => Date.parse(b.unlocked_at ?? "") - Date.parse(a.unlocked_at ?? ""),
+  );
 }
 
 function sumMap(counts: Map<number, number>): number {

@@ -409,11 +409,14 @@ def _progress_json(
     if progress is None:
         return None
     out: dict[str, Any] = {"unlocked": progress.unlocked, "total": progress.total}
+    if progress.has_dlc:
+        out["has_dlc"] = True
     if progress.group_total:
         out["group"] = {
             "name": _group_label(progress, title or "", locale, html=False),
             "unlocked": progress.group_unlocked,
             "total": progress.group_total,
+            "is_default": progress.group_is_default,
         }
     return out
 
