@@ -64,11 +64,12 @@ from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
+from bot.services.release_notify import announce_release_if_needed
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
-from bot.version import version
+from bot.version import TRUNK_LINE, line, version
 from bot.views.keyboards import timezone_keyboard
 from bot.web.oauth import OAuthServer
 
@@ -365,7 +366,11 @@ async def run(settings: Settings) -> None:
     await _publish_mini_app_menu(bot, settings)
 
     me = await bot.me()
-    log.info("bot @%s is up (v%s)", me.username, version())
+    bot_version = version()
+    log.info("bot @%s is up (v%s)", me.username, bot_version)
+    asyncio.create_task(  # noqa: RUF006
+        announce_release_if_needed(bot, repo, bot_version, is_test=(line() != TRUNK_LINE))
+    )
     try:
         await dispatcher.start_polling(bot, handle_signals=False)
     finally:

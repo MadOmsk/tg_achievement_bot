@@ -1934,6 +1934,37 @@ The Mini App is built by CI rather than on the box on purpose: `npm ci` plus
 Vite on a machine with 300 MB free is the one part of this deploy that could
 genuinely take the bots down with it.
 
+### Release ceremony, changelogs, and chat announcements
+
+**Write the release notes before the merge into `main`** (owner, 2026-09-19).
+Every production release must ship with user-facing and contributor notes in
+`changelog/`:
+  * `changelog/<version>.ru.md` — user notes in Russian;
+  * `changelog/<version>.en.md` — user notes in English;
+  * `changelog/<version>.contributors.md` — architectural and developer notes.
+
+The AI assistant must draft and commit these files to `test` **before** merging
+into `main`. That ensures `main` always carries the release notes for its own
+version, and the announcement links can never point to a 404.
+
+**Automated release announcement on startup** (`services/release_notify.py`):
+On startup, both bots check `app_settings.last_announced_version`:
+  * If the version matches what is running, nothing is sent (ordinary restarts
+    are silent).
+  * Only active group chats (`chats.is_active = 1`) are notified; private chats
+    never receive broadcast announcements.
+  * Each group receives the message rendered in its configured locale
+    (`chat_settings.locale`).
+  * **Production bot (`main`)**: announces the update with an inline button
+    linking to the public GitHub release notes for that language
+    (`https://github.com/MadOmsk/tg_achievement_bot/blob/main/changelog/<version>.<locale>.md`).
+  * **Test bot (`test`)**: announces the update to test groups without links or
+    buttons.
+  * Rate-limited to 0.05s between sends; `TelegramForbiddenError` automatically
+    marks dead chats inactive via `repo.deactivate_chat(chat_id)`.
+  * After the broadcast completes, `app_settings.last_announced_version` is
+    updated to the current version.
+
 ### The two bots, and the two Mini Apps
 
 One box, two instances, and since 2026-09-18 **each has a hostname of its

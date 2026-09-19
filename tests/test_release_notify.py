@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import MagicMock
+
+import pytest
+from aiogram.exceptions import TelegramForbiddenError
+from aiogram.types import InlineKeyboardMarkup
+
+from bot.db.repo import Repo
+from bot.services.release_notify import (
+    CHANGELOG_BASE_URL,
+    announce_release_if_needed,
+    base_version,
+)
+
+
+class FakeBot:
+    def __init__(self, fail_for: set[int] | None = None) -> None:
+        self.sent: list[dict[str, Any]] = []
+        self.fail_for = fail_for or set()
+
+    async def send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        reply_markup: InlineKeyboardMarkup | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if chat_id in self.fail_for:
+            # Match TelegramForbiddenError's signature
+            raise TelegramForbiddenError(method=MagicMock(), message="Forbidden: bot was kicked")
+        self.sent.append({"chat_id": chat_id, "text": text, "reply_markup": reply_markup})
+
+
+def test_base_version_extraction() -> None:
+    assert base_version("1.3.0.050") == "1.3.0"
+    assert base_version("1.2.4.050") == "1.2.4"
+    assert base_version("1.3") == "1.3"
+
+
+@pytest.mark.asyncio
+async def test_production_announces_with_localized_button(repo: Repo) -> None:
+    # Set up two active group chats (chat_id < 0) with ru and en locales
+    chat_ru = -1001001
+    chat_en = -1001002
+    await repo.upsert_chat(chat_ru, "RU Chat", None)
+    await repo.upsert_chat(chat_en, "EN Chat", None)
+    await repo.update_chat_settings(chat_ru, locale="ru")
+    await repo.update_chat_settings(chat_en, locale="en")
+
+    bot = FakeBot()
+    delivered = await announce_release_if_needed(
+        bot, repo, "1.3.0.050", is_test=False, sleep_delay=0
+    )
+
+    assert delivered == 2
+    assert len(bot.sent) == 2
+
+    sent_ru = next(m for m in bot.sent if m["chat_id"] == chat_ru)
+    assert "Бот обновлён до версии 1.3.0.050!" in sent_ru["text"]
+    markup_ru = sent_ru["reply_markup"]
+    assert isinstance(markup_ru, InlineKeyboardMarkup)
+    btn_ru = markup_ru.inline_keyboard[0][0]
+    assert btn_ru.text == "📖 Патчноутс"
+    assert btn_ru.url == f"{CHANGELOG_BASE_URL}/1.3.0.ru.md"
+
+    sent_en = next(m for m in bot.sent if m["chat_id"] == chat_en)
+    assert "Bot has been updated to version 1.3.0.050!" in sent_en["text"]
+    markup_en = sent_en["reply_markup"]
+    assert isinstance(markup_en, InlineKeyboardMarkup)
+    btn_en = markup_en.inline_keyboard[0][0]
+    assert btn_en.text == "📖 Release Notes"
+    assert btn_en.url == f"{CHANGELOG_BASE_URL}/1.3.0.en.md"
+
+    # Verify last_announced_version is stored
+    assert await repo.get_app_setting("last_announced_version") == "1.3.0.050"
+
+
+@pytest.mark.asyncio
+async def test_test_bot_announces_without_button(repo: Repo) -> None:
+    chat_ru = -1002001
+    await repo.upsert_chat(chat_ru, "RU Chat", None)
+    await repo.update_chat_settings(chat_ru, locale="ru")
+
+    bot = FakeBot()
+    delivered = await announce_release_if_needed(
+        bot, repo, "1.3.7.050", is_test=True, sleep_delay=0
+    )
+
+    assert delivered == 1
+    sent = bot.sent[0]
+    assert "Тестовый бот обновлён до версии 1.3.7.050!" in sent["text"]
+    assert sent["reply_markup"] is None
+    assert await repo.get_app_setting("last_announced_version") == "1.3.7.050"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_run_does_not_announce_again(repo: Repo) -> None:
+    chat_ru = -1003001
+    await repo.upsert_chat(chat_ru, "RU Chat", None)
+
+    bot = FakeBot()
+    await announce_release_if_needed(bot, repo, "1.3.0.050", is_test=False, sleep_delay=0)
+    assert len(bot.sent) == 1
+
+    # Second call with the same version
+    bot.sent.clear()
+    delivered = await announce_release_if_needed(
+        bot, repo, "1.3.0.050", is_test=False, sleep_delay=0
+    )
+    assert delivered == 0
+    assert len(bot.sent) == 0
+
+
+@pytest.mark.asyncio
+async def test_forbidden_error_deactivates_chat(repo: Repo) -> None:
+    chat_kicked = -1004001
+    await repo.upsert_chat(chat_kicked, "Kicked Chat", None)
+
+    bot = FakeBot(fail_for={chat_kicked})
+    delivered = await announce_release_if_needed(
+        bot, repo, "1.3.0.050", is_test=False, sleep_delay=0
+    )
+    assert delivered == 0
+
+    # Verify chat was deactivated
+    cursor = await repo._conn.execute(
+        "SELECT is_active FROM chats WHERE chat_id = ?", (chat_kicked,)
+    )
+    row = await cursor.fetchone()
+    assert row["is_active"] == 0
