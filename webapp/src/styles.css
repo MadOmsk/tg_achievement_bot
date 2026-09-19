@@ -1142,22 +1142,22 @@ a:focus-visible {
   object-position: center;
 }
 
+/* Glyph centers in the open sky above the title veil — not the full card. */
 .game-card-art.is-empty {
-  place-items: stretch;
-  box-sizing: border-box;
+  display: block;
   background:
     radial-gradient(90% 80% at 18% 10%, rgba(155, 182, 255, 0.34), transparent 58%),
     radial-gradient(70% 65% at 92% 88%, rgba(90, 60, 160, 0.28), transparent 55%),
     linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
 }
 
-/* Sit in the open field above the veil — geometric center reads low. */
 .game-card-art.is-empty .cover-ph-mark {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  padding-bottom: 28%;
+  /* Nudge only a little for the title veil — was bottom:34% and sat too high. */
+  padding: 0 0 12%;
   box-sizing: border-box;
   opacity: 0.9;
   color: rgba(210, 222, 255, 0.9);
@@ -1178,8 +1178,9 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
-  padding: 56px 14px 14px;
+  gap: 0;
+  /* Same bottom band as feed .unlock-card-copy (34px) — clears the dots. */
+  padding: 64px 16px 42px;
   background: linear-gradient(
     180deg,
     transparent 0%,
@@ -1286,7 +1287,7 @@ a:focus-visible {
 }
 
 .game-card-veil .dlc-mark {
-  margin: 0;
+  margin: 4px 0 0;
   color: rgba(255, 255, 255, 0.62);
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
 }
@@ -1294,12 +1295,12 @@ a:focus-visible {
 .game-card-progress {
   display: block;
   width: 100%;
-  margin-top: 2px;
+  margin-top: 12px;
 }
 
 .game-card-progress .hero-game-bar-row {
   margin: 0;
-  gap: 8px;
+  gap: 10px;
 }
 
 .game-card-progress .hero-game-bar {
@@ -1741,24 +1742,41 @@ a:focus-visible {
   overflow: hidden;
 }
 
-.unlock-card.is-secret .unlock-card-art {
-  grid-area: 1 / 1;
-}
-
-.unlock-card.is-secret .unlock-card-copy {
-  background: #0a0c12;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
 .unlock-card.is-secret .unlock-card-copy h2 {
   font-style: italic;
   font-weight: 600;
   letter-spacing: 0.03em;
+  color: rgba(245, 248, 252, 0.72);
 }
 
-.unlock-card-stage .sheet-secret-veil {
+.unlock-card.is-secret .unlock-card-copy p {
+  display: none;
+}
+
+/*
+ * Reveal sits in the open sky of the art only. Head (who / rarity) and foot
+ * (game / "Secret") stay sharp — those aren't the spoilers.
+ */
+.sheet-secret-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  /* Optical middle of the sky above the foot (game row + secret label). */
+  padding-bottom: 34%;
+  box-sizing: border-box;
+  background: none;
   pointer-events: none;
+}
+
+.sheet-secret-veil .btn {
+  pointer-events: auto;
+  min-width: 148px;
+  min-height: 48px;
+  padding: 10px 22px;
+  font-size: 1rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
 .profile-hero-wash {
@@ -2283,7 +2301,8 @@ a:focus-visible {
   gap: 14px;
   overflow-x: auto;
   margin: 0 -18px 22px;
-  padding: 0 18px 4px;
+  /* Top pad so the avatar ring/shadow isn't clipped by the scrollport. */
+  padding: 4px 18px 4px;
   scrollbar-width: none;
 }
 
@@ -2319,7 +2338,9 @@ a:focus-visible {
   width: 80px;
   min-width: 80px;
   max-width: 80px;
-  overflow: hidden;
+  /* Visible — overflow:hidden was shaving the avatar ring at the top;
+     name/status already clamp on their own. */
+  overflow: visible;
   border: 0;
   background: transparent;
   color: inherit;
@@ -3985,27 +4006,6 @@ a.btn {
 
 .sheet-hero .profile-hero-copy p {
   -webkit-line-clamp: 8;
-}
-
-.sheet-secret-veil {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  display: grid;
-  place-items: center;
-  background: none;
-  pointer-events: none;
-}
-
-.sheet-secret-veil .btn {
-  pointer-events: auto;
-}
-
-.sheet-secret-veil .btn {
-  min-width: 148px;
-  min-height: 48px;
-  padding: 10px 22px;
-  font-size: 1rem;
 }
 
 .roster-sheet {

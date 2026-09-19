@@ -323,7 +323,6 @@ export function GameCard({ item, locale }: { item: FeedItem; locale: Locale }) {
   const show = Boolean(progress && progress.total > 0);
   const title = item.game || "\u00a0";
   const cover = item.game_icon_url || item.icon_url;
-  const when = timeAgo(item.unlocked_at, locale);
   const dlc = Boolean(progress?.has_dlc);
   return (
     <div className="unlock-card game-card">
@@ -340,7 +339,6 @@ export function GameCard({ item, locale }: { item: FeedItem; locale: Locale }) {
               <ProgressBar progress={progress} />
             </span>
           ) : null}
-          {when ? <p className="game-card-when">{when}</p> : null}
         </div>
       </div>
     </div>
@@ -434,9 +432,7 @@ export function UnlockCard({
           {author ? <PostLead item={item} locale={locale} onOpenPerson={onOpenPerson} whoOnly /> : <span />}
           <HeroMarks score={score} rarity={rarity} />
         </div>
-      </div>
-      <div className="unlock-card-stage">
-        <HeroGame item={item} locale={locale} />
+        {/* Veil only over the art sky — game / rarity / author stay readable. */}
         {secret ? (
           <span className="sheet-secret-veil">
             <button
@@ -451,6 +447,9 @@ export function UnlockCard({
             </button>
           </span>
         ) : null}
+      </div>
+      <div className="unlock-card-stage">
+        <HeroGame item={item} locale={locale} />
       </div>
       {gameInCopy ? (
         <div className="unlock-card-foot">

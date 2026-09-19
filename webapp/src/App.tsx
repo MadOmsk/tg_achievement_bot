@@ -20,14 +20,19 @@ import { ConnectForm, Settings, type PlatNotes } from "./Me";
 import { previewMe } from "./preview";
 import { Icon, PageSkel, usePullToRefresh } from "./ui";
 
-type Screen =
-  | { name: "home" }
-  | { name: "feed" }
-  | { name: "summary" }
-  | { name: "settings" }
-  | { name: "admin" }
-  | { name: "connect-steam" }
-  | { name: "connect-psn" };
+const SCREENS = {
+  home: { name: "home" },
+  feed: { name: "feed" },
+  summary: { name: "summary" },
+  settings: { name: "settings" },
+  admin: { name: "admin" },
+  "connect-steam": { name: "connect-steam" },
+  "connect-psn": { name: "connect-psn" },
+} as const;
+
+type Screen = (typeof SCREENS)[keyof typeof SCREENS];
+type DockTab = "feed" | "summary" | "settings";
+type LaunchTab = "home" | "feed" | "summary";
 
 type LoadState =
   | { status: "loading" }
@@ -46,7 +51,7 @@ function localeOf(me: MeResponse): Locale {
 function launchContext(): {
   chatId: number | null;
   personId: number | null;
-  tab: "home" | "feed" | "summary";
+  tab: LaunchTab;
 } {
   const q = new URLSearchParams(window.location.search);
   const start = window.Telegram?.WebApp?.initDataUnsafe?.start_param ?? "";
@@ -69,13 +74,7 @@ function launchContext(): {
 export function App() {
   const launch = launchContext();
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [screen, setScreen] = useState<Screen>(
-    launch.tab === "feed"
-      ? { name: "feed" }
-      : launch.tab === "summary"
-        ? { name: "summary" }
-        : { name: "home" },
-  );
+  const [screen, setScreen] = useState<Screen>(SCREENS[launch.tab]);
   const [chatId, setChatId] = useState<number | null>(launch.chatId);
   const [personId, setPersonId] = useState<number | null>(launch.personId);
   const [busy, setBusy] = useState(false);
@@ -191,10 +190,10 @@ export function App() {
       return;
     }
     setPersonId(null);
-    setScreen({ name: "home" });
+    setScreen(SCREENS.home);
   };
 
-  const goTab = (tab: "feed" | "summary" | "settings") => {
+  const goTab = (tab: DockTab) => {
     const already =
       tab === "settings"
         ? screen.name === "settings" || screen.name === "admin"
@@ -204,7 +203,7 @@ export function App() {
       return;
     }
     setPersonId(null);
-    setScreen({ name: tab });
+    setScreen(SCREENS[tab]);
   };
 
   return (
@@ -235,14 +234,14 @@ export function App() {
           onOpenPerson={(id) => {
             if (id === me.tg_id) {
               setPersonId(null);
-              setScreen({ name: "home" });
+              setScreen(SCREENS.home);
               return;
             }
             setPersonId(id);
           }}
           onClosePerson={() => setPersonId(null)}
           onPersonVisible={setPersonOpen}
-          onSettings={() => setScreen({ name: "settings" })}
+          onSettings={() => setScreen(SCREENS.settings)}
         />
       ) : null}
 
@@ -250,7 +249,7 @@ export function App() {
         <Settings
           me={me}
           locale={locale}
-          onAdmin={me.is_admin ? () => setScreen({ name: "admin" }) : undefined}
+          onAdmin={me.is_admin ? () => setScreen(SCREENS.admin) : undefined}
           onPatch={(body) =>
             void run(async () => {
               await patchSettings(data, body);
@@ -261,8 +260,8 @@ export function App() {
               await patchChat(data, chatId, body);
             })
           }
-          onConnectSteam={() => setScreen({ name: "connect-steam" })}
-          onConnectPsn={() => setScreen({ name: "connect-psn" })}
+          onConnectSteam={() => setScreen(SCREENS["connect-steam"])}
+          onConnectPsn={() => setScreen(SCREENS["connect-psn"])}
           notes={platNotes}
           onConnectXbox={() =>
             void runPlat("xbox", async () => {
@@ -302,7 +301,7 @@ export function App() {
           locale={locale}
           data={data}
           onFlash={setFlash}
-          onBack={() => setScreen({ name: "settings" })}
+          onBack={() => setScreen(SCREENS.settings)}
         />
       ) : null}
 
@@ -311,7 +310,7 @@ export function App() {
           locale={locale}
           platform="steam"
           label={t(locale, "steamPrompt")}
-          onBack={() => setScreen({ name: "settings" })}
+          onBack={() => setScreen(SCREENS.settings)}
           onSubmit={async (identity) => {
             await connectSteam(data, identity);
             await reload();
@@ -319,7 +318,7 @@ export function App() {
               ...current,
               steam: { kind: "info", text: t(locale, "backfillStarted") },
             }));
-            setScreen({ name: "settings" });
+            setScreen(SCREENS.settings);
           }}
         />
       ) : null}
@@ -329,7 +328,7 @@ export function App() {
           locale={locale}
           platform="psn"
           label={t(locale, "psnPrompt")}
-          onBack={() => setScreen({ name: "settings" })}
+          onBack={() => setScreen(SCREENS.settings)}
           onSubmit={async (identity) => {
             await connectPsn(data, identity);
             await reload();
@@ -337,7 +336,7 @@ export function App() {
               ...current,
               psn: { kind: "info", text: t(locale, "backfillStarted") },
             }));
-            setScreen({ name: "settings" });
+            setScreen(SCREENS.settings);
           }}
         />
       ) : null}
