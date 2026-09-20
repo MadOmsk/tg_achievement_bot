@@ -206,3 +206,97 @@ def test_format_digest_still_says_trophies_when_everything_is_psn() -> None:
     items = [achievement("m1", platform="psn"), achievement("m2", platform="psn")]
     text = format_digest("Игрок", None, items, locale="ru")
     assert "трофе" in text.lower()
+
+
+async def test_flood_flush_single_psn_trophy_uses_single_format_and_platform_nickname(
+    repo: Repo,
+) -> None:
+    """When only 1 trophy is flushed from an anti-flood buffer, it should use
+    format_single with the platform's nickname and include the description,
+    not a bare 'получает 1 трофей' digest with Telegram first_name."""
+    await repo.upsert_chat(CHAT_ID, "Test chat", 1)
+    await repo.ensure_user(TG_ID, "igortg", first_name="Igor", last_name="Petrov")
+    await repo.link_platform_account(TG_ID, "psn", "acc-psn", "Justdrunkzero")
+    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.update_chat_settings(CHAT_ID, flood_limit=1, flood_window_minutes=60)
+    await repo.upsert_title("title-lego", "LEGO CITY UNDERCOVER", "psn", achievements_total=49)
+
+    item = AchievementRow(
+        title_id="title-lego",
+        achievement_id="t1",
+        name="Двойной удар",
+        description="Пройти главу 3",
+        icon_url="https://example.com/icon.png",
+        unlocked_at=utcnow().isoformat(timespec="seconds"),
+        gamerscore=0,
+        rarity_percent=43.1,
+        platform="psn",
+        title_name="LEGO CITY UNDERCOVER",
+        trophy_type="bronze",
+    )
+    await repo.insert_new_achievements_psn(TG_ID, "acc-psn", [item], is_backfill=False)
+    await repo.set_flood_state(
+        TG_ID,
+        CHAT_ID,
+        window_started_at=utcnow() - timedelta(minutes=61),
+        count_in_window=1,
+        throttled=True,
+    )
+
+    publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+    await FloodFlush(repo, publisher).tick()
+
+    assert publisher._queue.qsize() == 1
+    job = publisher._queue.get_nowait()
+    assert "Justdrunkzero" in job.text
+    assert "Igor" not in job.text
+    assert "получает трофей" in job.text
+    assert "получает 1 трофей" not in job.text
+    assert "Пройти главу 3" in job.text
+
+
+async def test_flood_flush_multiple_psn_trophies_uses_platform_nickname(
+    repo: Repo,
+) -> None:
+    """Multiple flushed trophies on a single platform use format_digest, but still
+    with the platform's nickname rather than Telegram identity."""
+    await repo.upsert_chat(CHAT_ID, "Test chat", 1)
+    await repo.ensure_user(TG_ID, "igortg", first_name="Igor", last_name="Petrov")
+    await repo.link_platform_account(TG_ID, "psn", "acc-psn", "Justdrunkzero")
+    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.update_chat_settings(CHAT_ID, flood_limit=1, flood_window_minutes=60)
+    await repo.upsert_title("title-lego", "LEGO CITY UNDERCOVER", "psn", achievements_total=49)
+
+    items = [
+        AchievementRow(
+            title_id="title-lego",
+            achievement_id=f"t{i}",
+            name=f"Trophy {i}",
+            description=None,
+            icon_url="https://example.com/icon.png",
+            unlocked_at=utcnow().isoformat(timespec="seconds"),
+            gamerscore=0,
+            rarity_percent=43.1,
+            platform="psn",
+            title_name="LEGO CITY UNDERCOVER",
+            trophy_type="bronze",
+        )
+        for i in (1, 2)
+    ]
+    await repo.insert_new_achievements_psn(TG_ID, "acc-psn", items, is_backfill=False)
+    await repo.set_flood_state(
+        TG_ID,
+        CHAT_ID,
+        window_started_at=utcnow() - timedelta(minutes=61),
+        count_in_window=1,
+        throttled=True,
+    )
+
+    publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+    await FloodFlush(repo, publisher).tick()
+
+    assert publisher._queue.qsize() == 1
+    job = publisher._queue.get_nowait()
+    assert "Justdrunkzero" in job.text
+    assert "Igor" not in job.text
+    assert "получает 2 трофея" in job.text
