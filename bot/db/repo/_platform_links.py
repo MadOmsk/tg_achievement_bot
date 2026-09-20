@@ -420,18 +420,25 @@ class _PlatformLinksRepo:
                 total = int(fallback["achievements_total"] or 0) if fallback else 0
             if not total:
                 return None
-            if row is not None and row["achievements_unlocked"] is not None:
-                # Microsoft's own count when it has one: it knows about
-                # achievements earned before this bot existed.
-                unlocked = int(row["achievements_unlocked"])
-            else:
-                cursor = await self._conn.execute(
-                    "SELECT COUNT(*) FROM seen_achievements "
-                    "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
-                    (account_platform, external_id, title_id),
-                )
-                counted = await cursor.fetchone()
-                unlocked = int(counted[0]) if counted else 0
+            cursor = await self._conn.execute(
+                "SELECT COUNT(*) FROM seen_achievements "
+                "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+                (account_platform, external_id, title_id),
+            )
+            counted = await cursor.fetchone()
+            seen_unlocked = int(counted[0]) if counted else 0
+            history_unlocked = (
+                int(row["achievements_unlocked"])
+                if row is not None and row["achievements_unlocked"] is not None
+                else 0
+            )
+            # seen_achievements has every achievement earned in real-time while
+            # the bot is running; title_history holds Microsoft's historical count
+            # from TitleHub. TitleHub only refreshes on game exit/daily, so during
+            # active gameplay seen_achievements is strictly fresher. max() ensures
+            # live unlocks increment the counter immediately without losing
+            # pre-bot historical counts.
+            unlocked = max(seen_unlocked, history_unlocked)
             return TitleProgress(unlocked=unlocked, total=total)
 
         if account_platform == AccountPlatform.STEAM:

@@ -439,6 +439,39 @@ async def test_a_known_titlehub_total_still_wins(repo: Repo) -> None:
     assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == TitleProgress(47, 50)
 
 
+async def test_xbox_progress_live_unlocks_advance_beyond_stale_titlehub_history(repo: Repo) -> None:
+    """During active gameplay, TitleHub's title_history does not update in real
+    time (only on game exit / daily refresh). Live unlocks in seen_achievements
+    must advance the counter immediately beyond the stale title_history count."""
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    # Stale title_history says 1 unlocked
+    await repo.save_title_history(
+        XUID,
+        [
+            TitleHistoryRow(
+                title_id="550",
+                name="Left 4 Dead 2",
+                platform="xbox_modern",
+                current_gamerscore=10,
+                max_gamerscore=500,
+                achievements_unlocked=1,
+                achievements_total=50,
+                last_played_at=utcnow().isoformat(timespec="seconds"),
+            )
+        ],
+    )
+    # Live poller inserts new unlocks into seen_achievements
+    await repo.insert_new_achievements(
+        XUID,
+        [_achievement(f"a{i}", "xbox_modern", title_id="550") for i in range(1, 6)],
+        is_backfill=False,
+    )
+
+    # Must reflect the 5 live unlocks, not the stale 1 from title_history
+    assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == TitleProgress(5, 50)
+
+
 def test_the_group_line_follows_the_chats_language(i18n) -> None:
     """Sony localizes group names, unlike a game's own title (#61, verified
     live: "CTNS: The Heist" comes back as "Город, который никогда не спит:
