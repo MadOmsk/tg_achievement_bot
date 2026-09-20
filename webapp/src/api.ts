@@ -292,9 +292,25 @@ export type SummaryGame = {
   icon_url?: string | null;
 };
 
+export type DroppedGame = {
+  tg_id: number;
+  person: string;
+  title_id: string;
+  platform: string;
+  name: string | null;
+  last_earned: string;
+  icon_url?: string | null;
+};
+
 export type PersonPayload = {
   tg_id: number;
   name: string;
+  presence?: {
+    state: string | null;
+    playing: boolean;
+    platform: string | null;
+    title_name?: string | null;
+  } | null;
   platforms: Array<{
     platform: string;
     name: string | null;
@@ -353,6 +369,7 @@ export function fetchSummary(
   day: SummaryMember[];
   month: SummaryMember[];
   games: SummaryGame[];
+  dropped: DroppedGame[];
 }> {
   const query = new URLSearchParams({ chat_id: String(chatId) });
   if (opts?.month) query.set("month", opts.month);

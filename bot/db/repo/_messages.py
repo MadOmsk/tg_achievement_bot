@@ -328,6 +328,7 @@ class _MessagesRepo:
         limit: int = 15,
         locale: str = "ru",
         until: datetime | None = None,
+        order: str = "count",
     ) -> list[GameAchievements]:
         """Games these people earned achievements in since `since`, ranked by
         how many.
@@ -356,9 +357,11 @@ class _MessagesRepo:
         collide by accident. `user_games` grouped by title_id only and had
         that latent bug; the monthly block never did.
 
-        **Ordered by count, then by the most recent unlock** (owner, 2026-09-17)
-        — gamerscore takes no part in it, having no meaning at all on two of
-        the three platforms, where it is always 0.
+        **Ordered by count, then by the most recent unlock** by default
+        (owner, 2026-09-17) — gamerscore takes no part in it, having no
+        meaning at all on two of the three platforms, where it is always 0.
+        Pass `order="recent"` for the Mini App trending strip, which wants
+        the freshest unlock first regardless of how many.
 
         `rare_threshold` is the chat's own `rare_threshold_percent`; rows keep
         whatever rarity the platform reported when they were stored, which can
@@ -375,6 +378,11 @@ class _MessagesRepo:
         if until is not None:
             date_bound += f" AND {earned_at()} < ?"
             date_params.append(_iso(until))
+        order_sql = (
+            "ORDER BY last_earned DESC, cnt DESC"
+            if order == "recent"
+            else "ORDER BY cnt DESC, last_earned DESC"
+        )
         cursor = await self._conn.execute(
             "SELECT s.title_id, s.platform, t.name, t.icon_url, " + LOCALIZED_TITLE_COLUMNS + ","
             "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
@@ -391,7 +399,7 @@ class _MessagesRepo:
             + rarity_cache_join()
             + f"WHERE al.tg_id IN ({owners}) {date_bound} "
             "GROUP BY s.title_id, s.platform "
-            "ORDER BY cnt DESC, last_earned DESC LIMIT ?",
+            f"{order_sql} LIMIT ?",
             (rare_threshold, *tg_ids, *date_params, limit or -1),
         )
         return [
