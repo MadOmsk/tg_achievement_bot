@@ -69,8 +69,11 @@ async def send_panel(bot: Bot, repo: Repo, tg_id: int, i18n: I18nContext) -> Non
 
 @router.message(Command("panel"), F.chat.type == ChatType.PRIVATE)
 async def panel_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    await repo.ensure_user(_person_id(message), _username(message))
-    await send_panel(bot, repo, message.chat.id, i18n)
+    person_id = _person_id(message)
+    if person_id is None:
+        return
+    await repo.ensure_user(person_id, _username(message))
+    await send_panel(bot, repo, person_id, i18n)
 
 
 @router.message(Command("panel"))
@@ -393,7 +396,7 @@ async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:
         await bot.delete_message(chat_id, message_id)
 
 
-def _person_id(message: Message) -> int:
+def _person_id(message: Message) -> int | None:
     """Whose row this is — the person's id, never the chat's (#66).
 
     These handlers used to pass `message.chat.id`, which is the same number
@@ -402,8 +405,10 @@ def _person_id(message: Message) -> int:
     *group*. Found on production as tg_id -5246175458, a person who does not
     exist sitting in the table every "who are our people" query reads.
     """
-    return message.from_user.id if message.from_user else message.chat.id
+    from_user = getattr(message, "from_user", None)
+    return from_user.id if from_user else None
 
 
 def _username(message: Message) -> str | None:
-    return message.from_user.username if message.from_user else None
+    from_user = getattr(message, "from_user", None)
+    return from_user.username if from_user else None

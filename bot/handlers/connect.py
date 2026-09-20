@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 
@@ -33,6 +34,7 @@ from bot.views.keyboards import (
     TZ_SET,
     TZ_SKIP,
     connect_keyboard,
+    deep_link_keyboard,
     format_offset,
     onboarding_keyboard,
     timezone_keyboard,
@@ -43,6 +45,22 @@ log = logging.getLogger(__name__)
 router = Router(name="connect")
 
 REVOKE_URL = "https://account.live.com/consent/Manage"
+GROUP_HINT_TTL = 15
+
+
+async def _redirect_to_dm(
+    message: Message, bot: Bot, hint_text: str, i18n: I18nContext, *, payload: str | None = None
+) -> None:
+    me = await bot.me()
+    url = f"https://t.me/{me.username}" + (f"?start={payload}" if payload else "")
+    hint = await message.answer(hint_text, reply_markup=deep_link_keyboard(url, i18n))
+    asyncio.create_task(_delete_later(bot, hint.chat.id, hint.message_id))  # noqa: RUF006
+
+
+async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:
+    await asyncio.sleep(GROUP_HINT_TTL)
+    with contextlib.suppress(Exception):
+        await bot.delete_message(chat_id, message_id)
 
 
 @router.message(CommandStart(deep_link=True))
@@ -57,20 +75,23 @@ async def start_with_payload(
     i18n: I18nContext,
 ) -> None:
     """Deep link from a group chat: its buttons send people here (SPEC 6.3)."""
-    await repo.ensure_user(_person_id(message), _username(message))
+    person_id = _person_id(message)
+    if person_id is None:
+        return
+    await repo.ensure_user(person_id, _username(message))
     if command.args == "panel":
-        await send_panel(bot, repo, message.chat.id, i18n)
+        await send_panel(bot, repo, person_id, i18n)
         return
     if command.args == "connectsteam":
         # Same prompt-and-wait as every other door into this flow
         # (steam.py's prompt_for_link, 2026-09-05 follow-up) — a deep link
         # can't carry the profile URL itself, but landing here now arms the
         # wait too, so there's nothing left to type but the link itself.
-        await prompt_for_link(bot, repo, settings, message.chat.id)
+        await prompt_for_link(bot, repo, settings, person_id)
         return
     if command.args == "connectpsn":
         # Same treatment as connectsteam above, for PSN (SPEC 9, M-PSN-1).
-        await prompt_for_psn_link(bot, repo, psn_auth, message.chat.id)
+        await prompt_for_psn_link(bot, repo, psn_auth, person_id)
         return
     is_connect, origin_chat_id = _parse_connect_payload(command.args or "")
     if is_connect:
@@ -78,7 +99,7 @@ async def start_with_payload(
         # group and does not need the whole greeting again. If the button
         # carried which group it was pressed in, we auto-subscribe him there
         # once the login actually succeeds (see on_linked in bot/main.py).
-        user = await repo.get_user(message.chat.id)
+        user = await repo.get_user(person_id)
         if user is not None and user.xuid:
             await message.answer(i18n.get("connect-xbox-already-connected"))
             return
@@ -96,25 +117,46 @@ async def start(
     i18n: I18nContext,
     settings: Settings,
 ) -> None:
-    await repo.ensure_user(_person_id(message), _username(message))
+    person_id = _person_id(message)
+    if person_id is None:
+        return
+    await repo.ensure_user(person_id, _username(message))
     await _greet(message, repo, connect, bot, i18n, settings)
 
 
-@router.message(Command("connect_xbox"))
+@router.message(Command("connect_xbox"), F.chat.type != ChatType.PRIVATE)
+async def connect_xbox_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
+    await _redirect_to_dm(
+        message, bot, i18n.get("connect-xbox-group-redirect"), i18n, payload="connect"
+    )
+
+
+@router.message(Command("disconnect_xbox"), F.chat.type != ChatType.PRIVATE)
+async def disconnect_xbox_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
+    await _redirect_to_dm(message, bot, i18n.get("connect-xbox-private-only"), i18n)
+
+
+@router.message(Command("connect_xbox"), F.chat.type == ChatType.PRIVATE)
 async def connect_command(
     message: Message, repo: Repo, connect: ConnectService, i18n: I18nContext
 ) -> None:
-    await repo.ensure_user(_person_id(message), _username(message))
-    user = await repo.get_user(message.chat.id)
+    person_id = _person_id(message)
+    if person_id is None:
+        return
+    await repo.ensure_user(person_id, _username(message))
+    user = await repo.get_user(person_id)
     if user is not None and user.xuid:
         await message.answer(i18n.get("connect-xbox-already-connected-relogin"))
         return
     await _send_login_link(message, connect, i18n)
 
 
-@router.message(Command("disconnect_xbox"))
+@router.message(Command("disconnect_xbox"), F.chat.type == ChatType.PRIVATE)
 async def disconnect_command(message: Message, repo: Repo, i18n: I18nContext) -> None:
-    user = await repo.get_user(message.chat.id)
+    person_id = _person_id(message)
+    if person_id is None:
+        return
+    user = await repo.get_user(person_id)
     if user is None or not user.xuid:
         await message.answer(i18n.get("connect-xbox-not-connected"))
         return
@@ -277,11 +319,13 @@ async def _greet(
     """Already connected on *any* platform -> straight to the panel;
     otherwise greet and offer all three (#53).
     """
-    user = await repo.get_user(message.chat.id)
-    links = await repo.platform_links_of(message.chat.id)
-    if (user is not None and user.xuid) or links:
-        await send_panel(bot, repo, message.chat.id, i18n)
-        return
+    person_id = _person_id(message)
+    if person_id:
+        user = await repo.get_user(person_id)
+        links = await repo.platform_links_of(person_id)
+        if (user is not None and user.xuid) or links:
+            await send_panel(bot, repo, person_id, i18n)
+            return
     # The Mini App row is a `web_app` button, which Telegram accepts only in
     # a private chat — anywhere else it answers BUTTON_TYPE_INVALID and the
     # whole message fails to send. `/start` carries no chat-type filter (the
@@ -293,7 +337,7 @@ async def _greet(
     await message.answer(
         i18n.get("connect-pick-platform"),
         reply_markup=onboarding_keyboard(
-            connect.start_login(message.chat.id),
+            connect.start_login(person_id or 0),
             i18n,
             mini_app_url=(settings.mini_app_url or "") if in_private else "",
         ),
@@ -307,7 +351,10 @@ async def _send_login_link(
     *,
     origin_chat_id: int | None = None,
 ) -> None:
-    url = connect.start_login(message.chat.id, origin_chat_id=origin_chat_id)
+    person_id = _person_id(message)
+    if person_id is None:
+        return
+    url = connect.start_login(person_id, origin_chat_id=origin_chat_id)
     await message.answer(
         i18n.get("connect-login-button-hint"),
         reply_markup=connect_keyboard(url, i18n),
@@ -328,7 +375,7 @@ def _parse_connect_payload(args: str) -> tuple[bool, int | None]:
     return False, None
 
 
-def _person_id(message: Message) -> int:
+def _person_id(message: Message) -> int | None:
     """Whose row this is — the person's id, never the chat's (#66).
 
     These handlers used to pass `message.chat.id`, which is the same number
@@ -337,8 +384,10 @@ def _person_id(message: Message) -> int:
     *group*. Found on production as tg_id -5246175458, a person who does not
     exist sitting in the table every "who are our people" query reads.
     """
-    return message.from_user.id if message.from_user else message.chat.id
+    from_user = getattr(message, "from_user", None)
+    return from_user.id if from_user else None
 
 
 def _username(message: Message) -> str | None:
-    return message.from_user.username if message.from_user else None
+    from_user = getattr(message, "from_user", None)
+    return from_user.username if from_user else None

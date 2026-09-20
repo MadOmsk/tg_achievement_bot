@@ -7,7 +7,7 @@
 -- columns beside these. A second copy of a fact is a second version of it
 -- waiting to happen.
 CREATE TABLE IF NOT EXISTS users (
-    tg_id           INTEGER PRIMARY KEY,
+    tg_id           INTEGER PRIMARY KEY CHECK (tg_id > 0),
     username        TEXT,                 -- for /stats @user, refreshed on every message
     -- /stats' header identity (Follow-up 2026-09-06) — refreshed the same
     -- way username is, on every message (handlers/chat.py's message

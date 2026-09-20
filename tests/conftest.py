@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import aiosqlite
 import pytest
 from aiogram_i18n import I18nContext
 from aiogram_i18n.cores.fluent_runtime_core import FluentRuntimeCore
@@ -18,9 +21,29 @@ from bot.services.steam.auth import SteamAuth
 FERNET_KEY = Fernet.generate_key().decode()
 
 
+@pytest.fixture(scope="session")
+def _db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    template_dir = tmp_path_factory.mktemp("db_template")
+    template_path = template_dir / "template.db"
+
+    async def _init() -> None:
+        db = await Database(template_path).connect()
+        await db.close()
+
+    asyncio.run(_init())
+    return template_path
+
+
 @pytest.fixture
-async def database(tmp_path: Path) -> AsyncIterator[Database]:
-    db = await Database(tmp_path / "test.db").connect()
+async def database(tmp_path: Path, _db_template: Path) -> AsyncIterator[Database]:
+    db_path = tmp_path / "test.db"
+    shutil.copyfile(_db_template, db_path)
+    db = Database(db_path)
+    db._conn = await aiosqlite.connect(db_path)
+    db._conn.row_factory = aiosqlite.Row
+    await db._conn.execute("PRAGMA journal_mode = WAL")
+    await db._conn.execute("PRAGMA foreign_keys = ON")
+    await db._conn.execute("PRAGMA synchronous = OFF")
     try:
         yield db
     finally:
@@ -44,17 +67,22 @@ async def steam_auth(repo: Repo, cipher: TokenCipher) -> SteamAuth:
     return SteamAuth(repo, cipher, env_key="fake-steam-key")
 
 
+@pytest.fixture(scope="session")
+def _shared_fluent_core() -> FluentRuntimeCore:
+    core = FluentRuntimeCore(path=LOCALES_DIR / "{locale}" / "LC_MESSAGES")
+    asyncio.run(core.startup())
+    return core
+
+
 @pytest.fixture
-async def i18n() -> I18nContext:
+def i18n(_shared_fluent_core: FluentRuntimeCore) -> I18nContext:
     """A real Fluent core over bot/locales/ru, not a stub — this exercises
     the actual .ftl files (a typo or missing key fails the test the same
     way it would fail in production), same principle as using the real repo
     fixture above instead of mocking the database."""
-    core = FluentRuntimeCore(path=LOCALES_DIR / "{locale}" / "LC_MESSAGES")
-    await core.startup()
     return I18nContext(
         locale=DEFAULT_LOCALE,
-        core=core,
+        core=_shared_fluent_core,
         manager=ConstManager(DEFAULT_LOCALE),
         data={},
     )

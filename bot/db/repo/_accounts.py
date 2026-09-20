@@ -5,6 +5,7 @@ __init__.py). Behavior is unchanged from before the split.
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import Any
 
@@ -20,6 +21,8 @@ from bot.db.repo._models import (
 from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS
 from bot.i18n import DEFAULT_LOCALE
 from bot.util import utcnow, utcnow_iso
+
+log = logging.getLogger(__name__)
 
 
 class _AccountsRepo:
@@ -38,6 +41,10 @@ class _AccountsRepo:
         to pass before this existed, and the message middleware
         (handlers/chat.py) backfills both from this person's very next
         message regardless."""
+        if tg_id <= 0:
+            log.warning("refusing to create user with non-user tg_id=%s (#66)", tg_id)
+            return
+
         now = utcnow_iso()
         await self._conn.execute(
             "INSERT INTO users (tg_id, username, first_name, last_name, created_at, updated_at) "
@@ -77,7 +84,8 @@ class _AccountsRepo:
         been checked at all and goes first."""
         cursor = await self._conn.execute(
             "SELECT tg_id FROM users "
-            "WHERE photo_checked_at IS NULL OR photo_checked_at < ? "
+            "WHERE (photo_checked_at IS NULL OR photo_checked_at < ?) "
+            "  AND tg_id > 0 "
             "ORDER BY photo_checked_at IS NOT NULL, photo_checked_at LIMIT ?",
             (before, limit),
         )
