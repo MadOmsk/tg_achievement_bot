@@ -10,6 +10,7 @@ import {
   type OnlineMember,
   type PersonPayload,
   type SummaryGame,
+  type DroppedGame,
   type SummaryMember,
 } from "./api";
 import { t, timeAgo, type Locale } from "./i18n";
@@ -69,6 +70,7 @@ export function Club({
   const [day, setDay] = useState<SummaryMember[]>([]);
   const [month, setMonth] = useState<SummaryMember[]>([]);
   const [games, setGames] = useState<SummaryGame[]>([]);
+  const [dropped, setDropped] = useState<DroppedGame[]>([]);
   const [monthLabel, setMonthLabel] = useState("");
   const [person, setPerson] = useState<PersonPayload | null>(null);
   const [myPerson, setMyPerson] = useState<PersonPayload | null>(null);
@@ -121,6 +123,7 @@ export function Club({
         setDay(s.value.day);
         setMonth(s.value.month);
         setGames(s.value.games);
+        setDropped(s.value.dropped ?? []);
         setMonthLabel(s.value.month_label);
       }
       if (mine.status === "fulfilled") setMyPerson(mine.value);
@@ -242,6 +245,7 @@ export function Club({
           setDay(summary.day);
           setMonth(summary.month);
           setGames(summary.games);
+          setDropped(summary.dropped ?? []);
           setMonthLabel(summary.month_label);
         })
         .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
@@ -375,7 +379,12 @@ export function Club({
               onEmpty={needle || homeCompact ? undefined : onSettings}
             />
             <div className="home-hello-row">
-              <AccountBar me={me} locale={locale} onProfile={() => openPerson(me.tg_id)} score={false} />
+              <AccountBar
+                me={me}
+                locale={locale}
+                onProfile={() => openPerson(me.tg_id)}
+                score={false}
+              />
             </div>
             <div className="home-search-row">
               <SearchBar locale={locale} value={query} onChange={setQuery} />
@@ -473,6 +482,7 @@ export function Club({
             day={day}
             month={month}
             games={games}
+            dropped={dropped}
             monthLabel={monthLabel}
             feed={statsFeed}
             online={online}
@@ -696,12 +706,59 @@ function GamesSheet({
   );
 }
 
+function DroppedSheet({
+  rows,
+  locale,
+  onClose,
+  onOpenPerson,
+}: {
+  rows: DroppedGame[];
+  locale: Locale;
+  onClose: () => void;
+  onOpenPerson: (tgId: number) => void;
+}) {
+  return (
+    <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
+      <div className="sheet-content score-sheet picker-sheet games-sheet">
+        <h2>{t(locale, "droppedGames")}</h2>
+        <div className="picker-list games-sheet-list">
+          {rows.map((row) => (
+            <button
+              key={`${row.tg_id}:${row.platform}:${row.title_id}`}
+              type="button"
+              className="picker-row is-game"
+              onClick={() => {
+                onClose();
+                onOpenPerson(row.tg_id);
+              }}
+            >
+              <span className="picker-game-art">
+                <CoverImg src={row.icon_url} kind="game" className="picker-game-cover" />
+                <PlatformLogo platform={row.platform} size={14} />
+              </span>
+              <span className="picker-row-copy">
+                <strong>{row.name || "—"}</strong>
+                <p>
+                  {row.person}
+                  <i aria-hidden> · </i>
+                  {timeAgo(row.last_earned, locale)}
+                </p>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
 function ClubStats({
   meId,
   locale,
   day,
   month,
   games,
+  dropped,
   monthLabel,
   feed,
   online,
@@ -717,6 +774,7 @@ function ClubStats({
   day: SummaryMember[];
   month: SummaryMember[];
   games: SummaryGame[];
+  dropped: DroppedGame[];
   monthLabel: string;
   feed: FeedItem[];
   online: OnlineMember[];
@@ -728,6 +786,7 @@ function ClubStats({
   onOpenPerson: (tgId: number) => void;
 }) {
   const [gamesOpen, setGamesOpen] = useState(false);
+  const [droppedOpen, setDroppedOpen] = useState(false);
   const [board, setBoard] = useState<"day" | "month">("day");
   const [finds, setFinds] = useState<"plats" | "rares">("plats");
   const [rareItem, setRareItem] = useState<FeedItem | null>(null);
@@ -795,7 +854,6 @@ function ClubStats({
     .filter((row) => row.rarity_percent != null)
     .sort((a, b) => (a.rarity_percent ?? 100) - (b.rarity_percent ?? 100))
     .slice(0, 5);
-  // progress.unlocked/total is already on every feed row — no extra API.
   const plats = recentCompletions(feed).slice(0, 8);
   const boardRows = board === "day" ? day : month;
   const findsTab = finds === "plats" && plats.length === 0 && rares.length > 0 ? "rares" : finds;
@@ -848,14 +906,52 @@ function ClubStats({
           </div>
         </section>
       ) : null}
+      {dropped.length > 0 ? (
+        <section className="stat-games-block">
+          <div className="section-head">
+            <p className="stat-block-title" style={{ margin: 0 }}>
+              {t(locale, "droppedGames")}
+            </p>
+            <button type="button" className="see-all" onClick={() => setDroppedOpen(true)}>
+              <span>{t(locale, "seeAll")}</span>
+              <Icon name="forward" size={16} />
+            </button>
+          </div>
+          <div className="stat-games">
+            {dropped.slice(0, GAMES_PREVIEW).map((row) => (
+              <button
+                key={`${row.tg_id}:${row.platform}:${row.title_id}`}
+                type="button"
+                className="stat-game-tile"
+                onClick={() => onOpenPerson(row.tg_id)}
+              >
+                <span className="stat-game-art">
+                  <CoverImg src={row.icon_url} kind="game" className="stat-game-fallback" />
+                  <PlatformLogo platform={row.platform} size={14} />
+                </span>
+                <strong>{row.name || "—"}</strong>
+                <p>{row.person}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {gamesOpen ? (
         <GamesSheet games={games} locale={locale} onClose={() => setGamesOpen(false)} />
+      ) : null}
+      {droppedOpen ? (
+        <DroppedSheet
+          rows={dropped}
+          locale={locale}
+          onClose={() => setDroppedOpen(false)}
+          onOpenPerson={onOpenPerson}
+        />
       ) : null}
       {day.length > 0 || month.length > 0 ? (
         <section className="stat-block">
           <div className="stat-block-head">
             <p className="stat-block-title">{t(locale, "leaders")}</p>
-            <div className="stat-board-switch" role="tablist" aria-label={t(locale, "leaders")}>
+            <div className="segment" role="tablist" aria-label={t(locale, "leaders")}>
               <button
                 type="button"
                 role="tab"
@@ -892,7 +988,7 @@ function ClubStats({
         <section className="stat-rares-block">
           <div className="stat-block-head">
             <p className="stat-block-title">{t(locale, "finds")}</p>
-            <div className="stat-board-switch" role="tablist" aria-label={t(locale, "finds")}>
+            <div className="segment" role="tablist" aria-label={t(locale, "finds")}>
               {plats.length > 0 ? (
                 <button
                   type="button"
@@ -928,7 +1024,9 @@ function ClubStats({
                 <button
                   key={key}
                   type="button"
-                  className={["feed-row", secret ? "is-secret" : ""].filter(Boolean).join(" ")}
+                  className={["feed-row", secret ? "is-secret" : "", isPlat ? "is-done" : ""]
+                    .filter(Boolean)
+                    .join(" ")}
                   onClick={() => setRareItem(row)}
                 >
                   <CoverImg
@@ -944,16 +1042,33 @@ function ClubStats({
                     ) : null}
                   </CoverImg>
                   <span className="feed-copy">
-                    <p className="unlock-title">
-                      <span>
-                        {isPlat
-                          ? row.game || row.name
-                          : secret
-                            ? t(locale, "secret")
-                            : row.name}
-                      </span>
-                      <PlatformDot platform={row.platform} locale={locale} />
-                    </p>
+                    <span className="feed-copy-head">
+                      <p className="unlock-title">
+                        <span>
+                          {isPlat
+                            ? row.game || row.name
+                            : secret
+                              ? t(locale, "secret")
+                              : row.name}
+                        </span>
+                        <PlatformDot platform={row.platform} locale={locale} />
+                      </p>
+                      {isPlat ? (
+                        <span className="feed-plat is-plat" aria-hidden>
+                          💠
+                        </span>
+                      ) : (
+                        <HeroMarks
+                          compact
+                          score={
+                            row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)
+                          }
+                          rarity={
+                            row.rarity_percent != null ? `${row.rarity_percent}%` : null
+                          }
+                        />
+                      )}
+                    </span>
                     {isPlat ? (
                       <p className="unlock-game">{timeAgo(row.unlocked_at, locale)}</p>
                     ) : row.game ? (
@@ -961,17 +1076,6 @@ function ClubStats({
                     ) : null}
                     <p className="feed-person">{row.person}</p>
                   </span>
-                  {isPlat ? (
-                    <span className="feed-plat" aria-hidden>
-                      💠
-                    </span>
-                  ) : (
-                    <HeroMarks
-                      compact
-                      score={row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)}
-                      rarity={row.rarity_percent != null ? `${row.rarity_percent}%` : null}
-                    />
-                  )}
                 </button>
               );
             })}
@@ -1054,22 +1158,24 @@ function ClubStats({
                       ) : null}
                     </CoverImg>
                     <span className="feed-copy">
-                      <p className="unlock-title">
-                        <span>{secret ? t(locale, "secret") : row.name}</span>
-                        <PlatformDot platform={row.platform} locale={locale} />
-                      </p>
+                      <span className="feed-copy-head">
+                        <p className="unlock-title">
+                          <span>{secret ? t(locale, "secret") : row.name}</span>
+                          <PlatformDot platform={row.platform} locale={locale} />
+                        </p>
+                        <HeroMarks
+                          compact
+                          score={
+                            row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)
+                          }
+                          rarity={
+                            row.rarity_percent != null ? `${row.rarity_percent}%` : null
+                          }
+                        />
+                      </span>
                       {row.game ? <p className="unlock-game">{row.game}</p> : null}
                       <p className="feed-person">{row.person}</p>
                     </span>
-                    <HeroMarks
-                      compact
-                      score={
-                        row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)
-                      }
-                      rarity={
-                        row.rarity_percent != null ? `${row.rarity_percent}%` : null
-                      }
-                    />
                   </button>
                 );
               })}

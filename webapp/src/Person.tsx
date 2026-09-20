@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import type { FeedItem, PersonPayload } from "./api";
 import { dayKey, dayLabel, t, timeAgo, type Locale } from "./i18n";
 import { Avatar, CoverImg, Icon, PlatformDot, ScoreCup, Sheet, isOnline } from "./ui";
@@ -79,6 +79,8 @@ export function PersonProfile({
     }];
   });
   const games = recentGames(feed);
+  const live = isOnline(person.presence ?? {});
+  const playing = Boolean(person.presence?.playing);
   return (
     <>
       <header className="account-bar person-bar">
@@ -92,7 +94,14 @@ export function PersonProfile({
             >
               <Icon name="back" size={28} />
             </button>
-            <Avatar name={person.name} tgId={person.tg_id} size={48} />
+            <Avatar
+              name={person.name}
+              tgId={person.tg_id}
+              size={48}
+              online={live}
+              playing={playing}
+              platform={person.presence?.platform}
+            />
             <span>
               <strong>{person.name}</strong>
             </span>
@@ -141,15 +150,12 @@ export function UnlockSlider({
   showSecrets?: boolean;
   onReveal?: (key: string) => void;
   onOpenPerson?: (tgId: number) => void;
-  /** hero = profile stage; game = home recent games; feed = full UnlockCards */
   variant?: "hero" | "feed" | "game";
 }) {
   const slides = variant === "feed" ? items : items.slice(0, HOME_SLIDES);
   const slideKey = variant === "game" ? gameKey : feedKey;
   const n = slides.length;
   const loopable = n > 1;
-  // Clone of the first after the last — forward loop only (the shape that
-  // worked this morning). Bidirectional clones + pointer capture were the jerk.
   const trackSlides = loopable ? [...slides, slides[0]] : slides;
   const trackRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef(0);
@@ -254,23 +260,9 @@ export function UnlockSlider({
         onScrollEnd={wrapIfNeeded}
       >
         {trackSlides.map((item, i) => {
-          const offset = i - progress;
-          const away = Math.min(1, Math.abs(offset));
-          const ease = away * away * (3 - 2 * away);
           const secret = veiled(item, feedKey(item), revealed, showSecrets);
           return (
-            <div
-              key={`${slideKey(item)}:${i}`}
-              className="unlock-slide"
-              style={
-                {
-                  "--slide-x": `${offset * -12}%`,
-                  "--slide-copy": `${offset * 28}px`,
-                  "--slide-scale": `${1.04 - ease * 0.06}`,
-                  "--slide-fade": `${1 - ease * 0.55}`,
-                } as CSSProperties
-              }
-            >
+            <div key={`${slideKey(item)}:${i}`} className="unlock-slide">
               {variant === "game" ? (
                 <GameCard item={item} locale={locale} />
               ) : feedDots ? (
@@ -321,11 +313,12 @@ export function UnlockSlider({
 export function GameCard({ item, locale }: { item: FeedItem; locale: Locale }) {
   const progress = item.progress;
   const show = Boolean(progress && progress.total > 0);
+  const done = Boolean(progress && progress.total > 0 && progress.unlocked >= progress.total);
   const title = item.game || "\u00a0";
   const cover = item.game_icon_url || item.icon_url;
   const dlc = Boolean(progress?.has_dlc);
   return (
-    <div className="unlock-card game-card">
+    <div className={done ? "unlock-card game-card is-done" : "unlock-card game-card"}>
       <div className="unlock-card-art">
         <CoverImg src={cover} kind="game" className="game-card-art" />
         <div className="game-card-veil">
@@ -358,30 +351,8 @@ export function UnlockHero({
   onReveal?: (key: string) => void;
   onOpenPerson?: (tgId: number) => void;
 }) {
-  const heroRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (secret) return;
-    const node = heroRef.current;
-    if (!node) return;
-    let frame = 0;
-    const update = () => {
-      const y = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0);
-      node.style.setProperty("--parallax", `${Math.min(y, 180) * 0.16}px`);
-    };
-    const onScroll = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(update);
-    };
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", onScroll);
-    };
-  }, [secret]);
   return (
     <UnlockCard
-      artRef={heroRef}
       item={item}
       locale={locale}
       secret={secret}
@@ -429,10 +400,18 @@ export function UnlockCard({
         </span>
         <span className="profile-hero-wash" />
         <div className="unlock-card-head">
-          {author ? <PostLead item={item} locale={locale} onOpenPerson={onOpenPerson} whoOnly /> : <span />}
+          {author ? (
+            <PostLead
+              item={item}
+              locale={locale}
+              onOpenPerson={onOpenPerson}
+              whoOnly
+            />
+          ) : (
+            <span />
+          )}
           <HeroMarks score={score} rarity={rarity} />
         </div>
-        {/* Veil only over the art sky — game / rarity / author stay readable. */}
         {secret ? (
           <span className="sheet-secret-veil">
             <button
@@ -507,18 +486,17 @@ export function FeedList({
             const key = feedKey(row);
             const secret = veiled(row, key, revealed, showSecrets);
             const done =
-              Boolean(row.progress) &&
-              (row.progress?.total ?? 0) > 0 &&
-              (row.progress?.unlocked ?? 0) >= (row.progress?.total ?? 0);
+              row.trophy_type === "platinum" ||
+              Boolean(
+                row.progress &&
+                  row.progress.total > 0 &&
+                  row.progress.unlocked >= row.progress.total,
+              );
             return (
               <button
                 key={key}
                 type="button"
-                className={[
-                  "feed-row",
-                  secret ? "is-secret" : "",
-                  done ? "is-done" : "",
-                ]
+                className={["feed-row", secret ? "is-secret" : "", done ? "is-done" : ""]
                   .filter(Boolean)
                   .join(" ")}
                 onClick={() => setItem(row)}
@@ -536,22 +514,31 @@ export function FeedList({
                   ) : null}
                 </CoverImg>
                 <span className="feed-copy">
-                  <p className="unlock-title">
-                    <span>{secret ? t(locale, "secret") : row.name}</span>
-                    <PlatformDot platform={row.platform} locale={locale} />
-                  </p>
-                  {row.game ? <p className="unlock-game">{row.game}</p> : null}
+                  <span className="feed-copy-head">
+                    <p className="unlock-title">
+                      <span>{secret ? t(locale, "secret") : row.name}</span>
+                      <PlatformDot platform={row.platform} locale={locale} />
+                    </p>
+                    <HeroMarks
+                      compact
+                      score={row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)}
+                      rarity={row.rarity_percent != null ? `${row.rarity_percent}%` : null}
+                    />
+                  </span>
+                  {row.game ? (
+                    <p className="unlock-game">
+                      <span className="unlock-game-name">{row.game}</span>
+                      {row.progress?.has_dlc ? (
+                        <span className="dlc-mark">{t(locale, "inclDlc")}</span>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {row.progress && row.progress.total > 0 ? (
                     <span className="feed-row-progress" aria-hidden="true">
                       <ProgressBar progress={row.progress} />
                     </span>
                   ) : null}
                 </span>
-                <HeroMarks
-                  compact
-                  score={row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)}
-                  rarity={row.rarity_percent != null ? `${row.rarity_percent}%` : null}
-                />
               </button>
             );
           })}
@@ -591,8 +578,6 @@ export function FeedPosts({
   onReveal: (key: string) => void;
   onOpenPerson: (tgId: number) => void;
 }) {
-  // Same person + same game in a row → one carousel; a different game or
-  // person starts a new post even if the author is the same.
   const groups: FeedItem[][] = [];
   for (const row of items) {
     const last = groups[groups.length - 1];
@@ -666,7 +651,7 @@ export function PostLead({
           onOpenPerson?.(item.tg_id);
         }}
       >
-        <Avatar name={item.person} tgId={item.tg_id} size={32} />
+        <Avatar name={item.person} tgId={item.tg_id} size={36} />
         <span>
           <strong>{item.person}</strong>
           <p>{timeAgo(item.unlocked_at, locale)}</p>
@@ -682,8 +667,9 @@ export function ProgressBar({ progress }: { progress: FeedItem["progress"] }) {
   const total = progress.total;
   const unlocked = progress.unlocked;
   const pct = Math.min(100, (100 * unlocked) / total);
+  const done = unlocked >= total;
   return (
-    <span className="hero-game-bar-row">
+    <span className={done ? "hero-game-bar-row is-done" : "hero-game-bar-row"}>
       <span className="hero-game-bar" aria-hidden="true">
         <span className="hero-game-bar-fill" style={{ width: `${pct}%` }} />
       </span>
@@ -699,7 +685,6 @@ export function HeroGame({ item, locale }: { item: FeedItem; locale?: Locale }) 
   const progress = item.progress;
   const showBar = Boolean(progress && progress.total > 0);
   const group = progress?.group;
-  // Only name a non-base section (DLC / mode) — no second counter beside the bar.
   const showGroup = Boolean(
     group &&
       group.name &&
@@ -708,16 +693,20 @@ export function HeroGame({ item, locale }: { item: FeedItem; locale?: Locale }) 
       group.name.trim().toLowerCase() !== "main game",
   );
   const dlc = Boolean(progress?.has_dlc && locale);
-  const midLine = showGroup || dlc;
+  const mid = dlc || showGroup;
   return (
-    <span className={midLine ? "hero-game has-mid" : "hero-game"}>
+    <span className={mid ? "hero-game has-mid" : "hero-game"}>
       {item.game || item.game_icon_url ? (
         <CoverImg src={item.game_icon_url} kind="game" className="hero-game-art" />
       ) : null}
       <span className="hero-game-text">
         {item.game ? <strong className="hero-game-title">{item.game}</strong> : null}
-        {showGroup && group ? <span className="hero-game-group">{group.name}</span> : null}
-        {dlc && locale ? <span className="dlc-mark">{t(locale, "inclDlc")}</span> : null}
+        {mid ? (
+          <span className="hero-game-mid">
+            {dlc && locale ? <span className="dlc-mark">{t(locale, "inclDlc")}</span> : null}
+            {showGroup && group ? <span className="hero-game-group">{group.name}</span> : null}
+          </span>
+        ) : null}
         {showBar ? <ProgressBar progress={progress} /> : null}
       </span>
     </span>
@@ -733,17 +722,14 @@ export function HeroMarks({
   rarity: string | null;
   compact?: boolean;
 }) {
-  if (!score && !rarity) return null;
+  const text = [rarity, score].filter(Boolean).join(" · ");
+  if (!text) return null;
   if (compact) {
-    return (
-      <span className="feed-plat">
-                    {[rarity, score].filter(Boolean).join(" · ")}
-      </span>
-    );
+    return <span className="feed-plat">{text}</span>;
   }
   return (
     <span className="hero-corner">
-      <span className="hero-mark">{[rarity, score].filter(Boolean).join(" · ")}</span>
+      <span className="hero-mark">{text}</span>
     </span>
   );
 }
