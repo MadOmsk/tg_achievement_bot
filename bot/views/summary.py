@@ -21,7 +21,7 @@ from bot.db.repo import ChatMemberStat, GameAchievements, Repo
 from bot.i18n import translator
 from bot.services.admin_settings import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.services.naming import person_name, xbox_nickname
-from bot.services.stats import local_now, month_cutoff_utc
+from bot.services.stats import local_now, month_cutoff_utc, month_window_utc
 from bot.util import utcnow
 from bot.views.lists import Listing, games_listing, total_line, truncate_name
 from bot.views.parts import (
@@ -88,10 +88,12 @@ async def build_summary(
     _ = translator("daily", locale)
     top_limit = await current_top_limit(repo)
     is_day = window == DAY
-    cutoff = (
-        utcnow() - timedelta(hours=DAY_WINDOW_HOURS) if is_day else month_cutoff_utc(tz_offset_min)
-    )
-    rows = await repo.chat_member_stats(chat_id, cutoff, threshold)
+    if is_day:
+        cutoff = utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
+        until = None
+    else:
+        cutoff, until = month_window_utc(today.year, today.month, tz_offset_min)
+    rows = await repo.chat_member_stats(chat_id, cutoff, threshold, until=until)
     if not rows:
         return None
 
@@ -112,6 +114,7 @@ async def build_summary(
     games = await repo.users_games_achievements(
         [row.tg_id for row in rows],
         cutoff,
+        until=until,
         rare_threshold=threshold,
         limit=top_limit,
         locale=locale,
