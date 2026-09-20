@@ -9,6 +9,7 @@ from bot.services.admin_settings import (
     DEFAULT_SHOW_LINKS_KEY,
     LIMIT_MAX,
     LIMIT_MIN,
+    MONTHLY_DELAY_KEY,
     NUMERIC_SETTINGS,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
@@ -65,7 +66,13 @@ def test_only_summary_stats_and_ttl_limits_allow_zero() -> None:
         "stats_games_limit",
         SYSTEM_MESSAGE_TTL_KEY,
         ONLINE_REFRESH_INTERVAL_KEY,
+        MONTHLY_DELAY_KEY,
     }
+
+
+def test_format_limit_shows_no_delay_for_zero_monthly_delay() -> None:
+    assert _format_limit(MONTHLY_DELAY_KEY, "0", locale="ru") == "без задержки"
+    assert _format_limit(MONTHLY_DELAY_KEY, "0", locale="en") == "no delay"
 
 
 def test_format_limit_shows_unlimited_for_zero() -> None:

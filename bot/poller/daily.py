@@ -15,6 +15,10 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError
 
 from bot.db.repo import Repo
+from bot.services.admin_settings import (
+    DEFAULT_MONTHLY_DELAY_MINUTES,
+    MONTHLY_DELAY_KEY,
+)
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
 from bot.views.summary import (
@@ -35,10 +39,6 @@ log = logging.getLogger(__name__)
 # in the chat's own timezone (services/stats.py::month_cutoff_utc). The
 # figure resets on the 1st instead of sliding.
 
-# The month-end wrap-up trails the daily summary by five minutes (owner,
-# 2026-09-17, #74).
-MONTHLY_DELAY_MINUTES = 5
-
 
 class DailySummary:
     def __init__(self, bot: Bot, repo: Repo) -> None:
@@ -49,6 +49,9 @@ class DailySummary:
         # Every chat has its own time/zone/threshold in chat_settings (SPEC
         # 5.7), so "is it time yet" is answered separately per chat, not once
         # for everyone.
+        delay_minutes = await self._repo.get_int_setting(
+            MONTHLY_DELAY_KEY, DEFAULT_MONTHLY_DELAY_MINUTES
+        )
         for chat in await self._repo.admin_chats():
             if not chat.is_active or not chat.daily_summary:
                 continue
@@ -61,13 +64,13 @@ class DailySummary:
                     await self._send_scheduled(chat, marker, target_date=report_date, window=DAY)
 
             # On the last calendar day of the month, the month-end wrap-up
-            # goes out too (#14) — trailing the daily summary by five minutes
+            # goes out too (#14) — trailing the daily summary by delay_minutes
             # (#74), under its own dedup marker, and additional to that day's
             # daily summary, not instead of it.
-            # Checked against the time five minutes ago so the wrap-up still
+            # Checked against the time delay_minutes ago so the wrap-up still
             # covers the month that just ended even if the timer crossed
             # midnight into the 1st of the next month (e.g. 23:58 + 5m -> 00:03).
-            month_ref = now_local - timedelta(minutes=MONTHLY_DELAY_MINUTES)
+            month_ref = now_local - timedelta(minutes=delay_minutes)
             if month_ref.strftime("%H:%M") == chat.daily_summary_time and _is_last_day_of_month(
                 month_ref.date()
             ):

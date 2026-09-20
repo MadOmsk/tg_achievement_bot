@@ -8,6 +8,7 @@ from datetime import date as date_type
 from bot.constants import AchievementBadge
 from bot.db.repo import AchievementRow, Repo
 from bot.poller.daily import DailySummary, _is_last_day_of_month, _monthly_key
+from bot.services.admin_settings import MONTHLY_DELAY_KEY
 from bot.util import start_of_month_utc, utcnow
 from bot.views.parts import platform_breakdown_suffix
 from bot.views.summary import DAY, MONTH, build_summary, full_leaderboard
@@ -704,3 +705,51 @@ async def test_month_end_wrapup_near_midnight_rollover_into_next_month(repo: Rep
     assert "1 достижение" in month_text
     # Dedup marker is for September:
     assert await repo.daily_report_sent(CHAT_ID, "2026-09-monthly") is True
+
+
+async def test_month_end_wrapup_respects_custom_delay_setting(repo: Repo) -> None:
+    """The month-end delay obeys the admin variable
+    (app_settings['monthly_summary_delay_minutes'])."""
+    await _chat_with_two_players(repo)
+    await repo.set_app_setting(MONTHLY_DELAY_KEY, "10")
+    sept_30 = datetime(2026, 9, 30, 20, 0, tzinfo=UTC)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("a1", sept_30 - timedelta(hours=2))], is_backfill=False
+    )
+    await repo.update_chat_settings(CHAT_ID, daily_summary_time="20:00", tz_offset_min=0)
+
+    bot = FakeBot()
+    job = DailySummary(bot, repo)
+
+    # 1. At 20:00: daily summary fires.
+    await job.tick(now=sept_30)
+    assert len(bot.sent) == 1
+
+    # 2. At 20:05 (default delay, but admin set 10m): nothing fires.
+    await job.tick(now=sept_30 + timedelta(minutes=5))
+    assert len(bot.sent) == 1
+
+    # 3. At 20:10 (custom delay): monthly wrap-up fires!
+    await job.tick(now=sept_30 + timedelta(minutes=10))
+    assert len(bot.sent) == 2
+    assert "<b>Итоги месяца</b>" in bot.sent[1][1]
+
+
+async def test_month_end_wrapup_zero_delay_sends_immediately(repo: Repo) -> None:
+    """When delay is 0, both reports send in the same tick (the legacy behavior)."""
+    await _chat_with_two_players(repo)
+    await repo.set_app_setting(MONTHLY_DELAY_KEY, "0")
+    sept_30 = datetime(2026, 9, 30, 20, 0, tzinfo=UTC)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("a1", sept_30 - timedelta(hours=2))], is_backfill=False
+    )
+    await repo.update_chat_settings(CHAT_ID, daily_summary_time="20:00", tz_offset_min=0)
+
+    bot = FakeBot()
+    job = DailySummary(bot, repo)
+
+    # At 20:00: both daily and monthly send in the same tick.
+    await job.tick(now=sept_30)
+    assert len(bot.sent) == 2
+    assert "<b>Итоги дня</b>" in bot.sent[0][1]
+    assert "<b>Итоги месяца</b>" in bot.sent[1][1]

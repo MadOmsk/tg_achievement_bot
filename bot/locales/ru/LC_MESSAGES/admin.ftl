@@ -2,6 +2,7 @@
 # makes callback alerts and generated cards follow the same locale as menus.
 admin-unlimited = без ограничения
 admin-disabled = выключено
+admin-no-delay = без задержки
 admin-back = ‹ Назад
 admin-cancel = Отмена
 admin-yes = да
@@ -21,6 +22,7 @@ admin-setting-system-ttl = Автоудаление системных сооб�
 admin-setting-online-interval = Интервал автообновления /online (мин)
 admin-setting-online-ttl = Автообновление /online, часов
 admin-setting-key-check = Проверка ключей / автообновление /admin (мин)
+admin-setting-monthly-delay = Задержка итогов месяца (мин)
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
