@@ -28,7 +28,7 @@ from aiogram.types import (
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
-from bot.constants import SettingKey
+from bot.constants import RarityMode, SettingKey
 from bot.db.repo import (
     Repo,
     User,
@@ -51,6 +51,7 @@ from bot.views.chat import (
     recent_list,
     render_who_picker,
 )
+from bot.views.keyboards import next_rarity_mode
 from bot.views.online import render_online_table
 from bot.views.summary import DAY, MONTH, build_summary, full_leaderboard
 
@@ -593,11 +594,24 @@ async def subscribe_button(
 
     await repo.upsert_chat(message.chat.id, message.chat.title, callback.from_user.id)
     async with _subscription_lock(message.chat.id, callback.from_user.id):
-        if await repo.is_subscribed(message.chat.id, callback.from_user.id):
-            await callback.answer(i18n.get("chat-subscribe-already"))
-            return
-        await repo.subscribe(message.chat.id, callback.from_user.id)
-    await callback.answer(i18n.get("chat-subscribe-button-done"))
+        current_mode = await repo.get_subscription_rarity_mode(
+            message.chat.id, callback.from_user.id
+        )
+        if current_mode is None:
+            await repo.subscribe(message.chat.id, callback.from_user.id)
+            current_mode = (
+                await repo.get_subscription_rarity_mode(message.chat.id, callback.from_user.id)
+                or RarityMode.ALL
+            )
+            toast = i18n.get(f"chat-hub-toast-{current_mode}")
+        else:
+            new_mode = next_rarity_mode(current_mode)
+            await repo.update_subscription_rarity_mode(
+                message.chat.id, callback.from_user.id, new_mode
+            )
+            toast = i18n.get(f"chat-hub-toast-{new_mode}")
+
+    await callback.answer(toast)
     await _refresh_hub(message, repo, bot, i18n, settings)
 
 

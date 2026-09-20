@@ -101,7 +101,7 @@ class _MessagesRepo:
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + "WHERE s.chat_id = ? AND u.is_excluded = 0",
+            + "WHERE s.chat_id = ? AND u.is_excluded = 0 AND s.rarity_mode != 'hidden'",
             (chat_id,),
         )
         return [
