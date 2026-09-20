@@ -51,6 +51,7 @@ from bot.services.admin_settings import (
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
 )
+from bot.services.naming import link_nickname
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
     PsnClientSetupError,
@@ -826,7 +827,7 @@ async def _sync_target(
     )
     if link is None:
         return None
-    return link.external_id, link.display_name or link.external_id
+    return link.external_id, link_nickname(link)
 
 
 @router.callback_query(F.data.startswith("a:sync:"))

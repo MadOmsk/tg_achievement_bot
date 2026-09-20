@@ -212,3 +212,21 @@ async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
 
     assert "Сейчас:      не в сети" in text
     assert "Steam  ·  не в сети" not in text
+
+
+async def test_panel_steam_row_uses_naming_chain_fallback(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", None)
+    await repo.set_platform_secondary_name(TG_ID, "steam", "gaben_vanity")
+
+    text, _ = (await render_panel(repo, TG_ID)).as_pair()
+    assert "Вход Steam:  gaben_vanity" in text
+
+
+async def test_panel_psn_row_uses_naming_chain_fallback(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "psn", "2130000000000000000", None)
+    await repo.set_platform_secondary_name(TG_ID, "psn", "old_psn_tag")
+
+    text, _ = (await render_panel(repo, TG_ID)).as_pair()
+    assert "Вход PSN:    old_psn_tag" in text

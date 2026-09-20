@@ -45,6 +45,7 @@ from bot.handlers.delivery import notify_previous_owner, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import relink
+from bot.services.naming import link_nickname
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import (
     SteamApiError,
@@ -147,7 +148,7 @@ async def prompt_for_link(
     link = await repo.get_platform_link(tg_id, Platform.STEAM)
     awaiting.expect(tg_id, "steam")
     if link is not None:
-        await bot.send_message(tg_id, i18n.get("steam-already-connected", name=link.display_name))
+        await bot.send_message(tg_id, i18n.get("steam-already-connected", name=link_nickname(link)))
     await bot.send_message(tg_id, i18n.get("steam-link-prompt", privacy_url=PRIVACY_URL))
 
 
@@ -467,7 +468,7 @@ async def disconnect_steam_command(message: Message, repo: Repo, i18n: I18nConte
         await message.answer(i18n.get("steam-already-disconnected"))
         return
     await message.answer(
-        i18n.get("steam-disconnect-prompt", name=link.display_name),
+        i18n.get("steam-disconnect-prompt", name=link_nickname(link)),
         reply_markup=_disconnect_prompt_keyboard(i18n, from_panel=False),
     )
 
@@ -482,7 +483,7 @@ async def steam_disconnect_button(callback: CallbackQuery, repo: Repo, i18n: I18
         return
     await safe_edit(
         callback,
-        i18n.get("steam-disconnect-prompt", name=link.display_name),
+        i18n.get("steam-disconnect-prompt", name=link_nickname(link)),
         _disconnect_prompt_keyboard(i18n, from_panel=True),
     )
     await callback.answer()

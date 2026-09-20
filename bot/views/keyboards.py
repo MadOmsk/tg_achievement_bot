@@ -19,6 +19,7 @@ from aiogram_i18n import I18nContext
 
 from bot.constants import RarityMode
 from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
+from bot.services.naming import link_nickname
 from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
 from bot.services.relink import LinkPreview
 
@@ -409,7 +410,7 @@ def switch_prompt(
             i18n.get(
                 "connect-switch-confirm",
                 platform=platform_name,
-                current=preview.current.display_name or preview.current.external_id,
+                current=link_nickname(preview.current),
                 incoming=incoming_name,
                 current_count=preview.current_achievements,
             )

@@ -11,6 +11,7 @@ from bot.db.repo import PlatformLink, User
 from bot.services.naming import (
     NO_NICKNAME,
     account_nickname,
+    link_nickname,
     person_name,
     person_name_of,
     psn_nickname,
@@ -143,3 +144,35 @@ def test_account_nickname_dispatches_on_platform() -> None:
         account_nickname("psn", display_name=None, secondary_name="oldname", external_id="213")
         == "oldname"
     )
+
+
+def test_link_nickname_follows_platform_naming_chain() -> None:
+    steam_link = PlatformLink(
+        tg_id=1,
+        platform="steam",
+        external_id="76561198000000000",
+        display_name=None,
+        linked_at="2026-01-01T00:00:00Z",
+        secondary_name="my_vanity",
+    )
+    assert link_nickname(steam_link) == "my_vanity"
+
+    psn_link = PlatformLink(
+        tg_id=1,
+        platform="psn",
+        external_id="2130000000000000000",
+        display_name=None,
+        linked_at="2026-01-01T00:00:00Z",
+        secondary_name="old_psn_id",
+    )
+    assert link_nickname(psn_link) == "old_psn_id"
+
+    psn_bare = PlatformLink(
+        tg_id=1,
+        platform="psn",
+        external_id="2130000000000000000",
+        display_name=None,
+        linked_at="2026-01-01T00:00:00Z",
+        secondary_name=None,
+    )
+    assert link_nickname(psn_bare) == "2130000000000000000"

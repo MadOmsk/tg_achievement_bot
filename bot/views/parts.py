@@ -26,6 +26,7 @@ from bot.constants import (
 )
 from bot.db.repo import PlatformLink, Repo
 from bot.i18n import gettext, translator
+from bot.services.naming import link_nickname
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.util import humanize_ago, thousands
 
@@ -330,7 +331,7 @@ async def platform_header_lines(
         # directly; neither carries the x360-specific gap
         # repo.py::xbox_achievement_count's own docstring flags for Xbox.
         count = await repo.platform_achievement_count(tg_id, link.platform)
-        name_html = html_escape(link.display_name or link.external_id)
+        name_html = html_escape(link_nickname(link))
         if show_links:
             url = platform_profile_url(
                 link.platform, external_id=link.external_id, display_name=link.display_name
