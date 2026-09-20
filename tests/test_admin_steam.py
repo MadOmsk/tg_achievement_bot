@@ -41,6 +41,20 @@ async def test_admin_users_includes_someone_with_both_platforms(repo: Repo) -> N
     assert users[0].steam_id == STEAM_ID
 
 
+async def test_admin_users_includes_visibility_status_for_steam_and_psn(repo: Repo) -> None:
+    await repo.ensure_user(1, "gamer")
+    await repo.link_platform_account(1, "steam", STEAM_ID, "GamerSteam")
+    await repo.link_platform_account(1, "psn", "psn-account-123", "GamerPsn")
+    await repo.set_achievements_visible(1, "steam", False)
+    await repo.set_achievements_visible(1, "psn", True)
+
+    users = await repo.admin_users()
+
+    assert len(users) == 1
+    assert users[0].steam_achievements_visible is False
+    assert users[0].psn_achievements_visible is True
+
+
 async def test_achievement_counts_by_tg_id_sums_every_platform(repo: Repo) -> None:
     """The admin users list's own combined counter — used to be
     achievement_counts_by_xuid, which showed 0 for a Steam-only person and
@@ -106,7 +120,13 @@ async def test_steam_presence_of_round_trips(repo: Repo) -> None:
 
 
 def _row(
-    *, xuid: str | None, steam_id: str | None, token_status: str | None = None
+    *,
+    xuid: str | None,
+    steam_id: str | None,
+    token_status: str | None = None,
+    psn_account_id: str | None = None,
+    steam_achievements_visible: bool | None = None,
+    psn_achievements_visible: bool | None = None,
 ) -> AdminUserRow:
     return AdminUserRow(
         tg_id=1,
@@ -120,13 +140,81 @@ def _row(
         last_refresh_at=None,
         steam_id=steam_id,
         steam_name="Igor" if steam_id else None,
+        psn_account_id=psn_account_id,
+        psn_online_id="Igor" if psn_account_id else None,
+        steam_achievements_visible=steam_achievements_visible,
+        psn_achievements_visible=psn_achievements_visible,
     )
 
 
 def test_icon_shows_platform_dots() -> None:
     assert _icon(_row(xuid=XUID, steam_id=None, token_status="active")) == "🟢✅"
-    assert _icon(_row(xuid=None, steam_id=STEAM_ID)) == "⚫"
-    assert _icon(_row(xuid=XUID, steam_id=STEAM_ID, token_status="invalid")) == "🟢⚠️⚫"
+    assert (
+        _icon(_row(xuid=None, steam_id=STEAM_ID, steam_achievements_visible=True))
+        == "⚫✅"
+    )
+    assert (
+        _icon(_row(xuid=None, steam_id=STEAM_ID, steam_achievements_visible=False))
+        == "⚫⚠️"
+    )
+    assert _icon(_row(xuid=None, steam_id=STEAM_ID, steam_achievements_visible=None)) == "⚫—"
+    assert (
+        _icon(
+            _row(
+                xuid=XUID,
+                steam_id=STEAM_ID,
+                token_status="invalid",
+                steam_achievements_visible=True,
+            )
+        )
+        == "🟢⚠️⚫✅"
+    )
+    assert (
+        _icon(
+            _row(
+                xuid=None,
+                steam_id=None,
+                psn_account_id="psn-id",
+                psn_achievements_visible=True,
+            )
+        )
+        == "🔵✅"
+    )
+    assert (
+        _icon(
+            _row(
+                xuid=None,
+                steam_id=None,
+                psn_account_id="psn-id",
+                psn_achievements_visible=False,
+            )
+        )
+        == "🔵⚠️"
+    )
+    assert (
+        _icon(
+            _row(
+                xuid=None,
+                steam_id=None,
+                psn_account_id="psn-id",
+                psn_achievements_visible=None,
+            )
+        )
+        == "🔵—"
+    )
+    assert (
+        _icon(
+            _row(
+                xuid=XUID,
+                steam_id=STEAM_ID,
+                psn_account_id="psn-id",
+                token_status="active",
+                steam_achievements_visible=False,
+                psn_achievements_visible=True,
+            )
+        )
+        == "🟢✅⚫⚠️🔵✅"
+    )
 
 
 def test_icon_excluded_overrides_platform_dots() -> None:

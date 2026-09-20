@@ -16,7 +16,12 @@ from bot.services.admin_settings import (
     TOP_LIMIT_KEY,
     unlimited_label,
 )
-from bot.views.admin import _format_limit, render_limit, render_new_user_defaults
+from bot.views.admin import (
+    _format_limit,
+    render_limit,
+    render_new_user_defaults,
+    render_user_list,
+)
 from bot.views.admin_home import _format_api_usage
 
 
@@ -112,3 +117,32 @@ async def test_a_limit_with_a_real_minimum_has_no_zero_hint(repo: Repo) -> None:
     screen = await render_limit(repo, SYSTEM_MESSAGE_TTL_KEY, locale="ru")
 
     assert "без ограничения" not in screen.text
+
+
+async def test_render_user_list_shows_visibility_icons_on_body_and_buttons(
+    repo: Repo,
+) -> None:
+    # User 1: Xbox (active) + Steam (hidden) + PSN (visible)
+    await repo.ensure_user(1, "allplatforms", "Alex")
+    await repo.link_xbox_account(1, "xuid-1", "AlexXbox", 100)
+    await repo.save_refresh_token(1, b"enc")
+    await repo.link_platform_account(1, "steam", "steam-1", "AlexSteam")
+    await repo.link_platform_account(1, "psn", "psn-1", "AlexPsn")
+    await repo.set_achievements_visible(1, "steam", False)
+    await repo.set_achievements_visible(1, "psn", True)
+
+    # User 2: PSN only (hidden)
+    await repo.ensure_user(2, "psnonly", "Igor")
+    await repo.link_platform_account(2, "psn", "psn-2", "IgorPsn")
+    await repo.set_achievements_visible(2, "psn", False)
+
+    text, markup = await render_user_list(repo, 0, locale="ru")
+
+    # Body check
+    assert "🟢✅⚫⚠️🔵✅" in text
+    assert "🔵⚠️" in text
+
+    # Buttons check
+    button_texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    assert any("🟢✅⚫⚠️🔵✅" in btn_text for btn_text in button_texts)
+    assert any("🔵⚠️" in btn_text for btn_text in button_texts)

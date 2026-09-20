@@ -95,7 +95,9 @@ class _AdminRepo:
             "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
-            "       pp.external_id AS psn_account_id, pp.display_name AS psn_online_id "
+            "       ps.achievements_visible AS steam_achievements_visible,"
+            "       pp.external_id AS psn_account_id, pp.display_name AS psn_online_id,"
+            "       pp.achievements_visible AS psn_achievements_visible "
             "FROM users u "
             + XBOX_ACCOUNT
             + "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
@@ -123,6 +125,16 @@ class _AdminRepo:
                 first_name=row["first_name"],
                 last_name=row["last_name"],
                 gamertag_modern=row["gamertag_modern"],
+                steam_achievements_visible=(
+                    bool(row["steam_achievements_visible"])
+                    if row["steam_achievements_visible"] is not None
+                    else None
+                ),
+                psn_achievements_visible=(
+                    bool(row["psn_achievements_visible"])
+                    if row["psn_achievements_visible"] is not None
+                    else None
+                ),
             )
             for row in await cursor.fetchall()
         ]

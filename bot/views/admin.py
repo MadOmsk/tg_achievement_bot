@@ -35,6 +35,7 @@ from bot.services.admin_settings import (
     PAGE_SIZE,
     STATUS_ICON,
     TOAST_PREVIEW_MAX_CHARS,
+    VISIBILITY_ICON,
     NumericSetting,
 )
 from bot.services.naming import (
@@ -768,19 +769,17 @@ def _back_home(*, locale: str) -> InlineKeyboardMarkup:
 
 
 def _icon(user: AdminUserRow) -> str:
-    """Platform dots (2026-09-05 follow-up, extended for M-PSN-1) plus
-    Xbox's own login-status icon — Steam and PSN have no per-person token
-    to expire (one shared service credential each), so there's nothing
-    analogous to add for either beyond the dot itself."""
+    """Platform dots plus status icons — Xbox login/token status,
+    Steam and PSN achievement visibility (public = ✅, private = ⚠️)."""
     if user.is_excluded:
         return "🚫"
     parts = []
     if user.xuid:
         parts.append("🟢" + STATUS_ICON.get(user.token_status or "", "—"))
     if user.steam_id:
-        parts.append("⚫")
+        parts.append("⚫" + VISIBILITY_ICON.get(user.steam_achievements_visible, "—"))
     if user.psn_account_id:
-        parts.append("🔵")
+        parts.append("🔵" + VISIBILITY_ICON.get(user.psn_achievements_visible, "—"))
     return "".join(parts)
 
 

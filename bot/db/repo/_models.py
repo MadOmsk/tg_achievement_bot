@@ -333,6 +333,8 @@ class AdminUserRow:
     first_name: str | None = None
     last_name: str | None = None
     gamertag_modern: str | None = None
+    steam_achievements_visible: bool | None = None
+    psn_achievements_visible: bool | None = None
 
 
 @dataclass(slots=True)

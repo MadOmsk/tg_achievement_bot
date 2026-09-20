@@ -58,6 +58,11 @@ STATUS_ICON = {
     TokenStatus.REVOKED: "🔕",
 }
 
+VISIBILITY_ICON: dict[bool | None, str] = {
+    True: "✅",
+    False: "⚠️",
+}
+
 
 RARE_THRESHOLD_MIN = 0.01
 RARE_THRESHOLD_MAX = 100.0
