@@ -110,40 +110,34 @@ def who_label(row: ChatPresenceRow) -> str:
 
 
 async def build_stats_text(
-    repo: Repo, target: User, chat_id: int, i18n: I18nContext | None = None
+    repo: Repo,
+    target: User,
+    chat_id: int,
+    i18n: I18nContext | None = None,
+    *,
+    target_year: int | None = None,
+    target_month: int | None = None,
 ) -> str | None:
     """Shared by /stats and /who's buttons (SPEC 6.3) — one implementation,
-    so a player's card looks the same no matter how it was opened.
-
-    `chat_id` is what the games list counts rare achievements against: the
-    threshold is per chat and admin-set, never a number hardcoded here
-    (CLAUDE.md's own publication rule), so the same person's card can
-    legitimately mark a different number of games as rare in two chats.
-
-    Works for a Steam-only person too (SPEC 9, M-Steam-2e) — used to bail
-    out on `not target.xuid` alone, which meant no card at all for anyone
-    without Xbox connected."""
+    so a player's card looks the same no matter how it was opened."""
     platform_links = await repo.platform_links_of(target.tg_id)
     if not target.xuid and not platform_links:
         return None
 
-    # Gates whether any nickname below becomes a clickable link at all — the
-    # target's own choice (Follow-up 2026-09-06), off by default, and not
-    # relaxed for the target viewing their own card: this card is one and
-    # the same message regardless of who asked for it (no per-viewer
-    # rendering), so "only hide it from others" isn't a distinction that
-    # exists here. Own links live in /panel instead, which really is
-    # per-viewer (never rendered in a group at all).
     settings_row = await repo.get_user_settings(target.tg_id)
     show_links = bool(settings_row and settings_row.show_profile_links)
 
     locale = _locale_of(i18n)
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
     rare_threshold = (await repo.get_chat_daily_settings(chat_id)).rare_threshold_percent
-    counters = await counters_for(repo, target.tg_id, rare_threshold=rare_threshold)
+    counters = await counters_for(
+        repo,
+        target.tg_id,
+        rare_threshold=rare_threshold,
+        target_year=target_year,
+        target_month=target_month,
+    )
     lines = [f"👤 <b>{html_escape(display_name(target, platform_links))}</b>"]
-    # Shared with /panel's own header (2026-09-08, user request: "пусть одни
-    # одинаково формируются") — services/achievements.py::platform_header_lines.
     lines += await platform_header_lines(
         repo,
         tg_id=target.tg_id,
@@ -161,10 +155,20 @@ async def build_stats_text(
     month_breakdown = platform_breakdown_suffix(
         counters.month_xbox, counters.month_steam, counters.month_psn
     )
-    # "За сутки" and "С 1 сентября" rather than "Сегодня"/"За месяц" (owner,
-    # 2026-09-17): the first really is a rolling 24 hours, and the second has
-    # been the calendar month since #14 — the games header below already said
-    # "с 1 сентября", so one card was naming one window two ways.
+
+    if target_year is not None and target_month is not None:
+        from bot.views.date_picker import DAY_GENITIVE_RU, MONTH_SHORT_EN
+
+        if locale == "ru":
+            m_label = f"{DAY_GENITIVE_RU[target_month - 1]} {target_year}"
+            window_label = f"с 1 {DAY_GENITIVE_RU[target_month - 1]} {target_year}"
+        else:
+            m_label = f"{MONTH_SHORT_EN[target_month - 1]} {target_year}"
+            window_label = f"since 1 {MONTH_SHORT_EN[target_month - 1]} {target_year}"
+    else:
+        m_label = month_name(tz_offset_min, locale)
+        window_label = month_window_label(tz_offset_min, locale)
+
     lines += [
         "",
         _hub_text(
@@ -179,33 +183,28 @@ async def build_stats_text(
         _hub_text(
             i18n,
             "chat-stats-month",
-            month=month_name(tz_offset_min, locale),
+            month=m_label,
             achievements=plural_achievements(counters.month, locale),
             breakdown=month_breakdown,
             value=bracketed(
                 value_parts(counters.month_score, counters.month_rare, counters.month_tiers)
             ),
         ),
-        # No lifetime "Всего" here: seen_achievements is permanently
-        # best-effort (title_history's cap, achievements with no unlock
-        # date), so a lifetime count from it can't be trusted the way a
-        # date-bounded one can — better absent than quietly wrong (SPEC 5.4).
     ]
 
-    # One combined ranked list across every platform, not a section per
-    # platform — same "one number, not one per platform" spirit as the
-    # counters above. One query too, since 2026-09-17: this used to fire one
-    # per linked account and merge them in Python, which applied the cap
-    # twice (once per platform, once after the merge) and ranked by
-    # gamerscore, so PSN and Steam — where gamerscore is always 0 — sank
-    # below every Xbox game no matter what was actually played.
-    # 0 = no cap (SPEC 6.4) — the list lives in a collapsible quote either
-    # way, no separate "показать все игры" tap needed any more.
     limit = await _stats_games_limit(repo)
-    since = month_cutoff_utc(tz_offset_min)
+    if target_year is not None and target_month is not None:
+        from bot.services.stats import month_window_utc
+
+        since, until = month_window_utc(target_year, target_month, tz_offset_min)
+    else:
+        since = month_cutoff_utc(tz_offset_min)
+        until = None
+
     games = await repo.users_games_achievements(
         [target.tg_id],
         since,
+        until=until,
         rare_threshold=rare_threshold,
         limit=limit,
         locale=locale,
@@ -216,7 +215,7 @@ async def build_stats_text(
             _hub_text(
                 i18n,
                 "chat-stats-games-header",
-                window=month_window_label(tz_offset_min, locale),
+                window=window_label,
             ),
             _games_list(games, i18n),
         ]

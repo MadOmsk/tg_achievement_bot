@@ -359,7 +359,9 @@ async def test_summary_top_limit_zero_means_no_cap(repo: Repo) -> None:
 
     assert built is not None
     text, markup = built
-    assert markup is None  # nothing truncated, nothing to show more of
+    assert markup is not None  # Navigation keyboard is present
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert not any(b.callback_data and b.callback_data.startswith("summary:all:") for b in buttons)
     assert all(f"Player{i}" in text for i in range(3))
 
     full = await full_leaderboard(repo, CHAT_ID, 10.0, "day", locale="ru")
@@ -375,7 +377,9 @@ async def test_summary_has_no_show_all_button_under_the_limit(repo: Repo) -> Non
 
     assert built is not None
     _text, markup = built
-    assert markup is None
+    assert markup is not None
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert not any(b.callback_data and b.callback_data.startswith("summary:all:") for b in buttons)
 
 
 async def test_chat_rare_threshold_defaults_and_updates(repo: Repo) -> None:

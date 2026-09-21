@@ -93,7 +93,13 @@ def month_window_utc(year: int, month: int, tz_offset_min: int | None) -> tuple[
 
 
 async def counters_for(
-    repo: Repo, tg_id: int, now: datetime | None = None, *, rare_threshold: float = 10.0
+    repo: Repo,
+    tg_id: int,
+    now: datetime | None = None,
+    *,
+    rare_threshold: float = 10.0,
+    target_year: int | None = None,
+    target_month: int | None = None,
 ) -> Counters:
     """Summed across every platform the person has connected (SPEC 9,
     M-Steam-2e) — keyed by tg_id, not any one platform's own external id.
@@ -103,20 +109,27 @@ async def counters_for(
     settings_row = await repo.get_user_settings(tg_id)
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
     today_cutoff = today_cutoff_utc(now)
-    month_cutoff = month_cutoff_utc(tz_offset_min, now)
+    if target_year is not None and target_month is not None:
+        month_cutoff, month_until = month_window_utc(target_year, target_month, tz_offset_min)
+    else:
+        month_cutoff = month_cutoff_utc(tz_offset_min, now)
+        month_until = None
+
     today, today_score = await repo.achievement_counts_for_person(tg_id, today_cutoff)
-    month, month_score = await repo.achievement_counts_for_person(tg_id, month_cutoff)
+    month, month_score = await repo.achievement_counts_for_person(
+        tg_id, month_cutoff, until=month_until
+    )
     today_xbox, today_steam, today_psn = await repo.achievement_platform_breakdown(
         tg_id, today_cutoff
     )
     month_xbox, month_steam, month_psn = await repo.achievement_platform_breakdown(
-        tg_id, month_cutoff
+        tg_id, month_cutoff, until=month_until
     )
     today_rare, today_tiers = await repo.achievement_value_breakdown(
         tg_id, today_cutoff, rare_threshold
     )
     month_rare, month_tiers = await repo.achievement_value_breakdown(
-        tg_id, month_cutoff, rare_threshold
+        tg_id, month_cutoff, rare_threshold, until=month_until
     )
     return Counters(
         today,

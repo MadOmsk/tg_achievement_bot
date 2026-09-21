@@ -196,7 +196,11 @@ class _StatsRepo:
         return (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)) if row else (0, 0, 0)
 
     async def achievement_value_breakdown(
-        self, tg_id: int, since: datetime | None, rare_threshold: float
+        self,
+        tg_id: int,
+        since: datetime | None,
+        rare_threshold: float,
+        until: datetime | None = None,
     ) -> tuple[int, tuple[int, int, int, int]]:
         """What this person's achievements in the window were *worth*, beyond
         the count and the gamerscore: how many cleared the chat's rarity
@@ -226,6 +230,9 @@ class _StatsRepo:
         if since is not None:
             query += f" AND {earned_since('')}"
             params.append(_iso(since))
+        if until is not None:
+            query += f" AND {earned_at('')} < ?"
+            params.append(_iso(until))
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
         if row is None:

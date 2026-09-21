@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import date
 from typing import Any
 
 from aiogram import BaseMiddleware, Bot, F, Router
@@ -50,6 +51,12 @@ from bot.views.chat import (
     hub_text,
     recent_list,
     render_who_picker,
+)
+from bot.views.date_picker import (
+    stats_month_calendar_keyboard,
+    stats_navigation_keyboard,
+    summary_day_calendar_keyboard,
+    summary_month_calendar_keyboard,
 )
 from bot.views.keyboards import next_rarity_mode
 from bot.views.online import render_online_table
@@ -219,7 +226,14 @@ async def unsubscribe_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nCon
 # -------------------------------------------------------------------- stats
 
 
-async def _send_stats_card(bot: Bot, repo: Repo, chat_id: int, target: User, text: str) -> None:
+async def _send_stats_card(
+    bot: Bot,
+    repo: Repo,
+    chat_id: int,
+    target: User,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
     """Shared by /stats and /who's button (Follow-up 2026-09-08) — one
     implementation, so a Telegram-level send option (like the line below)
     only needs to be right in one place. Keyed by the person the card is
@@ -243,6 +257,7 @@ async def _send_stats_card(bot: Bot, repo: Repo, chat_id: int, target: User, tex
             subject_id=target.tg_id,
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
+            reply_markup=reply_markup,
         )
 
 
@@ -260,7 +275,19 @@ async def stats(
         with stats_category():
             await message.answer(i18n.get("chat-stats-nothing-connected"))
         return
-    await _send_stats_card(bot, repo, message.chat.id, target, text)
+
+    settings_row = await repo.get_user_settings(target.tg_id)
+    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    now_local = local_now(tz_offset_min)
+    markup = stats_navigation_keyboard(
+        target.tg_id,
+        now_local.year,
+        now_local.month,
+        now_local.year,
+        now_local.month,
+        locale=i18n.locale,
+    )
+    await _send_stats_card(bot, repo, message.chat.id, target, text, reply_markup=markup)
 
 
 # --------------------------------------------------------------------- online
@@ -437,6 +464,189 @@ async def summary_month_command(message: Message, repo: Repo, bot: Bot, i18n: I1
     await _run_summary_command(message, repo, bot, i18n, window=MONTH)
 
 
+@router.callback_query(F.data == "noop")
+async def noop_callback(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("st:nav:"))
+async def stats_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    target_id = int(parts[2])
+    year = int(parts[3])
+    month = int(parts[4])
+
+    target = await repo.get_user(target_id)
+    if target is None:
+        await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
+        return
+
+    text = await build_stats_text(
+        repo,
+        target,
+        callback.message.chat.id,
+        i18n,
+        target_year=year,
+        target_month=month,
+    )
+    if text is None:
+        await callback.answer()
+        return
+
+    settings_row = await repo.get_user_settings(target.tg_id)
+    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    now_local = local_now(tz_offset_min)
+    markup = stats_navigation_keyboard(
+        target.tg_id,
+        year,
+        month,
+        now_local.year,
+        now_local.month,
+        locale=i18n.locale,
+    )
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=markup,
+        )
+
+
+@router.callback_query(F.data.startswith("st:cal:"))
+async def stats_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    target_id = int(parts[2])
+    year = int(parts[3])
+
+    target = await repo.get_user(target_id)
+    if target is None:
+        await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
+        return
+
+    settings_row = await repo.get_user_settings(target.tg_id)
+    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    now_local = local_now(tz_offset_min)
+    markup = stats_month_calendar_keyboard(
+        target.tg_id,
+        year,
+        now_local.year,
+        now_local.month,
+        locale=i18n.locale,
+    )
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_reply_markup(reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("sm:nav:"))
+async def summary_month_nav_callback(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    year = int(parts[2])
+    month = int(parts[3])
+
+    settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
+    target_date = date(year, month, 1)
+    built = await build_summary(
+        repo,
+        callback.message.chat.id,
+        settings_row.rare_threshold_percent,
+        target_date,
+        locale=settings_row.locale,
+        tz_offset_min=settings_row.tz_offset_min,
+        window=MONTH,
+    )
+    await callback.answer()
+    if built is not None:
+        text, markup = built
+        with contextlib.suppress(Exception):
+            await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("sm:cal:"))
+async def summary_month_cal_callback(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    year = int(parts[2])
+
+    settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
+    now_local = local_now(settings_row.tz_offset_min)
+    markup = summary_month_calendar_keyboard(
+        year,
+        now_local.year,
+        now_local.month,
+        locale=settings_row.locale,
+    )
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_reply_markup(reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("sd:nav:"))
+async def summary_day_nav_callback(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[2])
+
+    settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
+    built = await build_summary(
+        repo,
+        callback.message.chat.id,
+        settings_row.rare_threshold_percent,
+        target_date,
+        locale=settings_row.locale,
+        tz_offset_min=settings_row.tz_offset_min,
+        window=DAY,
+    )
+    await callback.answer()
+    if built is not None:
+        text, markup = built
+        with contextlib.suppress(Exception):
+            await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("sd:cal:"))
+async def summary_day_cal_callback(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[2])
+
+    settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
+    now_date = local_now(settings_row.tz_offset_min).date()
+    markup = summary_day_calendar_keyboard(
+        target_date,
+        now_date,
+        locale=settings_row.locale,
+    )
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_reply_markup(reply_markup=markup)
+
+
 @router.callback_query(F.data.startswith("summary:all:"))
 async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """«Показать всех» under a truncated summary table — a fresh, uncapped
@@ -444,7 +654,16 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
     if not isinstance(callback.message, Message):
         return
     assert callback.data is not None
-    window = callback.data.rsplit(":", 1)[1]
+    parts = callback.data.split(":")
+    window = parts[2]
+    target_year = int(parts[3]) if len(parts) > 4 and window == "month" else None
+    target_month = int(parts[4]) if len(parts) > 4 and window == "month" else None
+    target_date = (
+        date.fromisoformat(parts[3])
+        if len(parts) > 3 and window == "day" and parts[3] != "day"
+        else None
+    )
+
     settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
     text = await full_leaderboard(
         repo,
@@ -453,6 +672,9 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
         window,
         settings_row.tz_offset_min,
         locale=settings_row.locale,
+        target_year=target_year,
+        target_month=target_month,
+        target_date=target_date,
     )
     await callback.answer()
     if text is not None:
