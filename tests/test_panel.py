@@ -230,3 +230,77 @@ async def test_panel_psn_row_uses_naming_chain_fallback(repo: Repo) -> None:
 
     text, _ = (await render_panel(repo, TG_ID)).as_pair()
     assert "Вход PSN:    old_psn_tag" in text
+
+
+async def test_panel_has_delete_account_button_above_refresh(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
+    rows = markup.inline_keyboard
+    delete_i = next(
+        i for i, r in enumerate(rows) if any(b.callback_data == "panel:delete_account" for b in r)
+    )
+    refresh_i = next(
+        i for i, r in enumerate(rows) if any(b.callback_data == "panel:refresh" for b in r)
+    )
+    assert refresh_i == delete_i + 1
+
+
+async def test_panel_delete_account_screens() -> None:
+    from bot.views.panel import render_panel_delete_confirm_1, render_panel_delete_confirm_2
+
+    screen1 = await render_panel_delete_confirm_1(locale="ru")
+    cb1 = [b.callback_data for row in screen1.keyboard.inline_keyboard for b in row]
+    assert "panel:delete:step1" in cb1
+    assert "panel:refresh" in cb1
+
+    screen2 = await render_panel_delete_confirm_2(locale="ru")
+    cb2 = [b.callback_data for row in screen2.keyboard.inline_keyboard for b in row]
+    assert "panel:delete:step2" in cb2
+    assert "panel:refresh" in cb2
+
+
+async def test_panel_delete_account_flow(repo: Repo, i18n, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from bot.handlers import panel as panel_handlers
+
+    await repo.ensure_user(TG_ID, "someone")
+    edits: list[tuple[str, object]] = []
+
+    async def fake_edit(callback, text, markup=None, **kwargs):
+        edits.append((text, markup))
+
+    monkeypatch.setattr(panel_handlers, "safe_edit", fake_edit)
+
+    class _Cb:
+        def __init__(self, data: str, tg_id: int):
+            self.data = data
+            self.from_user = SimpleNamespace(id=tg_id)
+            self.answers: list[tuple[str, bool]] = []
+
+        async def answer(self, text: str = "", show_alert: bool = False):
+            self.answers.append((text, show_alert))
+
+    # Step 1
+    cb1 = _Cb("panel:delete_account", TG_ID)
+    await panel_handlers.panel_delete_account_step1(cb1, i18n)  # type: ignore[arg-type]
+    assert len(edits) == 1
+    assert "panel:delete:step1" in [
+        b.callback_data for row in edits[-1][1].inline_keyboard for b in row
+    ]
+
+    # Step 2
+    cb2 = _Cb("panel:delete:step1", TG_ID)
+    await panel_handlers.panel_delete_account_step2(cb2, i18n)  # type: ignore[arg-type]
+    assert len(edits) == 2
+    assert "panel:delete:step2" in [
+        b.callback_data for row in edits[-1][1].inline_keyboard for b in row
+    ]
+
+    # Confirm
+    cb3 = _Cb("panel:delete:step2", TG_ID)
+    await panel_handlers.panel_delete_account_confirmed(cb3, repo, i18n)  # type: ignore[arg-type]
+    assert len(edits) == 3
+    assert edits[-1][1] is None  # no keyboard on final message
+    assert cb3.answers[0][1] is True  # show_alert=True
+    assert await repo.get_user(TG_ID) is None

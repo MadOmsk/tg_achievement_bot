@@ -166,3 +166,34 @@ async def test_an_account_can_only_have_one_owner_at_a_time(repo: Repo) -> None:
 
     assert await repo.account_owner("steam", ACCOUNT_A) == BOB
     assert await repo.platform_links_of(ALICE) == []
+
+
+async def test_delete_user_cascades_all_data(repo: Repo) -> None:
+    await repo.ensure_user(ALICE, "alice")
+    await repo.save_refresh_token(ALICE, b"encrypted_token")
+    await repo.link_platform_account(ALICE, "steam", ACCOUNT_A, "AccountA")
+    await repo.link_platform_account(ALICE, "psn", "psn_1", "PsnAlice")
+    await repo.link_xbox_account(ALICE, "xuid-alice", "AliceXbox", 50)
+    await repo.upsert_chat(100, "Test Chat", None)
+    await repo.subscribe(100, ALICE)
+    await repo.record_chat_seen(100, ALICE)
+
+    # Verify user and related rows exist
+    assert await repo.get_user(ALICE) is not None
+    assert await repo.get_token(ALICE) is not None
+    assert await repo.get_user_settings(ALICE) is not None
+    assert len(await repo.platform_links_of(ALICE)) == 2
+    assert len(await repo.user_chats(ALICE)) == 1
+
+    # Delete user
+    assert await repo.delete_user(ALICE) is True
+
+    # Verify everything was wiped by CASCADE
+    assert await repo.get_user(ALICE) is None
+    assert await repo.get_token(ALICE) is None
+    assert await repo.get_user_settings(ALICE) is None
+    assert await repo.platform_links_of(ALICE) == []
+    assert await repo.user_chats(ALICE) == []
+
+    # Deleting again returns False
+    assert await repo.delete_user(ALICE) is False

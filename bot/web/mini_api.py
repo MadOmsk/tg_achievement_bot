@@ -91,6 +91,8 @@ def setup_mini_api(
 
     app.router.add_get("/api/mini/health", handle_health)
     app.router.add_get("/api/mini/me", handle_me)
+    app.router.add_delete("/api/mini/me", handle_delete_me)
+    app.router.add_post("/api/mini/me/delete", handle_delete_me)
     app.router.add_patch("/api/mini/settings", handle_patch_settings)
     app.router.add_post("/api/mini/connect/xbox", handle_connect_xbox)
     app.router.add_post("/api/mini/disconnect/xbox", handle_disconnect_xbox)
@@ -134,6 +136,13 @@ async def handle_me(request: web.Request) -> web.Response:
         is_admin=settings.is_admin(user.tg_id),
     )
     return web.json_response(payload)
+
+
+async def handle_delete_me(request: web.Request) -> web.Response:
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    await repo.delete_user(user.tg_id)
+    return web.json_response({"ok": True})
 
 
 async def handle_patch_settings(request: web.Request) -> web.Response:

@@ -37,10 +37,10 @@ def test_not_connected_keyboard_offers_all_platforms() -> None:
     (2026-09-05 follow-up, extended for PSN)."""
     markup = panel_keyboard(None, connected=False)
     data = _callback_data(markup)
-    assert data[-4:-1] == ["relogin", "psn:connect", "steam:connect"]
+    assert data[-5:-2] == ["relogin", "psn:connect", "steam:connect"]
     # #33: uniform "🎮 Подключить X" wording, not "🔗 XBOX" / "🎮 Steam".
     texts = _button_texts(markup)
-    assert texts[-4:-1] == [
+    assert texts[-5:-2] == [
         "🎮 Подключить Xbox",
         "🎮 Подключить PSN",
         "🎮 Подключить Steam",
@@ -59,6 +59,7 @@ def test_not_connected_keyboard_still_offers_the_rest_of_the_settings() -> None:
     assert "panel:chatlist" in data
     assert "panel:sync" in data
     assert "panel:linkstoggle" in data
+    assert "panel:delete_account" in data
     assert "panel:refresh" in data
 
 
@@ -90,14 +91,17 @@ def test_every_platform_is_exactly_one_row_in_xbox_psn_steam_order() -> None:
     psn_i = next(i for i, r in enumerate(rows) if any(b.callback_data == "psn:connect" for b in r))
     assert psn_i == xbox_i + 1
     assert steam_i == xbox_i + 2
-    assert rows[steam_i + 1][0].callback_data == "panel:refresh"  # platform block, then Обновить
+    assert (
+        rows[steam_i + 1][0].callback_data == "panel:delete_account"
+    )  # platform block, then delete_account
+    assert rows[steam_i + 2][0].callback_data == "panel:refresh"  # then Обновить
 
 
 def test_not_connected_keyboard_offers_steam_disconnect_once_connected() -> None:
     """Steam-only, no XBOX at all — still gets a real disconnect option for
     the platform it does have, not nothing (2026-09-05 follow-up)."""
     markup = panel_keyboard(None, connected=False, steam_connected=True)
-    assert _callback_data(markup)[-4:-1] == ["relogin", "psn:connect", "steam:disconnectprompt"]
+    assert _callback_data(markup)[-5:-2] == ["relogin", "psn:connect", "steam:disconnectprompt"]
 
 
 def test_connected_keyboard_offers_steam_connect_or_disconnect_not_both() -> None:

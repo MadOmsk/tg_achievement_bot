@@ -232,6 +232,18 @@ admin-reset-confirm-prompt =
     platform is deleted and read back from nothing (nothing is published to
     any chat — same as a first-time link).
 admin-reset-confirm-yes = Yes, wipe and resync
+admin-delete-user = 🗑 Delete user
+admin-delete-confirm-1 =
+    Delete user { $name } (ID: { $tg_id })?
+
+    All account links, user settings, and chat subscriptions will be removed.
+admin-delete-confirm-1-yes = ⚠️ Yes, proceed
+admin-delete-confirm-2 =
+    Warning! This action cannot be undone!
+
+    Permanently delete user { $name } (ID: { $tg_id }) from the database?
+admin-delete-confirm-2-yes = 🔥 Permanently delete user
+admin-delete-toast = User deleted
 admin-back-to-users = ‹ Back to the list
 
 # Chat cards

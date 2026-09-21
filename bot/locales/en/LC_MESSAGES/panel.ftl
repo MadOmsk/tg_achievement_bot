@@ -103,3 +103,15 @@ panel-playing = playing — { $game }
 panel-excluded = 🚫 excluded by the administrator
 panel-not-subscribed-anywhere = — not subscribed in any chat
 panel-subscribed-in = ✅ in { $chats }
+
+panel-delete-account = 🗑 Delete account
+panel-delete-confirm-1 =
+    Are you sure you want to delete your account from the bot?
+    All your platform links, chat subscriptions, and settings will be removed.
+panel-delete-confirm-1-yes = ⚠️ Yes, proceed
+panel-delete-confirm-2 =
+    This action cannot be undone!
+    All your bot data will be permanently erased. Are you sure?
+panel-delete-confirm-2-yes = 🔥 Permanently delete account
+panel-delete-done = Your account and related data have been deleted. If you ever wish to return, send /start.
+panel-delete-toast = Account deleted

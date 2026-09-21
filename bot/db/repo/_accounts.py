@@ -122,6 +122,30 @@ class _AccountsRepo:
         row = await cursor.fetchone()
         return (row["photo_unique_id"], row["photo_path"]) if row else (None, None)
 
+    async def delete_user(self, tg_id: int) -> bool:
+        """Completely remove a user and all related rows (tokens, subscriptions,
+        settings, account links, chat_seen) via foreign key cascades.
+        Returns True if a user was deleted, False if no such user existed."""
+        cursor = await self._conn.execute("SELECT photo_path FROM users WHERE tg_id = ?", (tg_id,))
+        row = await cursor.fetchone()
+        photo_path = row["photo_path"] if row else None
+
+        cursor = await self._conn.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
+        await self._conn.commit()
+        deleted = cursor.rowcount > 0
+
+        if deleted and photo_path:
+            from bot.services.avatars import avatar_dir
+
+            try:
+                path = avatar_dir() / photo_path
+                if path.is_file():
+                    path.unlink()
+            except OSError:
+                log.warning("failed to remove avatar for tg_id=%s path=%s", tg_id, photo_path)
+
+        return deleted
+
     async def accounts_needing_avatar(self, before: str, limit: int) -> list[tuple[str, str]]:
         """A few platform accounts whose picture has not been looked at since
         `before`, oldest first — the account half of poller/avatars.py's own

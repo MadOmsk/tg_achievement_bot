@@ -36,6 +36,8 @@ from bot.views.panel import (
     render_chat_delete_prompt,
     render_chat_list,
     render_panel,
+    render_panel_delete_confirm_1,
+    render_panel_delete_confirm_2,
     render_unsub_prompt,
 )
 
@@ -388,6 +390,29 @@ async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I
     await repo.forget_chat_membership(chat_id, callback.from_user.id)
     await callback.answer(i18n.get("panel-deleted-toast"))
     await _redraw_chat_list(callback, repo, i18n)
+
+
+@router.callback_query(F.data == "panel:delete_account")
+async def panel_delete_account_step1(callback: CallbackQuery, i18n: I18nContext) -> None:
+    screen = await render_panel_delete_confirm_1(locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "panel:delete:step1")
+async def panel_delete_account_step2(callback: CallbackQuery, i18n: I18nContext) -> None:
+    screen = await render_panel_delete_confirm_2(locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "panel:delete:step2")
+async def panel_delete_account_confirmed(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    await repo.delete_user(callback.from_user.id)
+    await safe_edit(callback, i18n.get("panel-delete-done"), None)
+    await callback.answer(i18n.get("panel-delete-toast"), show_alert=True)
 
 
 async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:

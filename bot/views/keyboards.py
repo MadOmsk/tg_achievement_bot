@@ -335,6 +335,14 @@ def panel_keyboard(
         ],
     ]
     rows += platform_rows
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=i18n.get("panel-delete-account"),
+                callback_data="panel:delete_account",
+            )
+        ]
+    )
     rows.append([InlineKeyboardButton(text=i18n.get("kb-refresh"), callback_data="panel:refresh")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

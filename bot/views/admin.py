@@ -569,6 +569,7 @@ async def render_user_card(
                 text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
             ),
         )
+    builder.row(InlineKeyboardButton(text=_("admin-delete-user"), callback_data=f"a:udel:{tg_id}"))
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
 
@@ -964,5 +965,35 @@ def render_system_wipe_prompt(
     )
     return Screen(
         _("admin-system-wipe-prompt", count=count, title=chat.title or chat.chat_id),
+        builder.as_markup(),
+    )
+
+
+def render_admin_user_delete_confirm_1(name: str, tg_id: int, *, locale: str) -> Screen:
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-delete-confirm-1-yes"), callback_data=f"a:udel1:{tg_id}"
+        ),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
+    )
+    return Screen(
+        _("admin-delete-confirm-1", name=name, tg_id=tg_id),
+        builder.as_markup(),
+    )
+
+
+def render_admin_user_delete_confirm_2(name: str, tg_id: int, *, locale: str) -> Screen:
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-delete-confirm-2-yes"), callback_data=f"a:udel2:{tg_id}"
+        ),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
+    )
+    return Screen(
+        _("admin-delete-confirm-2", name=name, tg_id=tg_id),
         builder.as_markup(),
     )

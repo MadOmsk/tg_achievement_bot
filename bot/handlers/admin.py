@@ -51,7 +51,7 @@ from bot.services.admin_settings import (
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
 )
-from bot.services.naming import link_nickname
+from bot.services.naming import link_nickname, person_name, xbox_nickname
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
     PsnClientSetupError,
@@ -74,6 +74,8 @@ from bot.views.admin import (
     _toast_preview,
     _tz_grid_markup,
     find_chat,
+    render_admin_user_delete_confirm_1,
+    render_admin_user_delete_confirm_2,
     render_chat_card,
     render_chat_list,
     render_flood_limit_prompt,
@@ -1185,6 +1187,59 @@ async def reset_platform_confirmed(
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
 
     text, markup = await render_user_card(repo, tg_id, locale=i18n.locale)
+    await _redraw(callback, text, markup)
+
+
+@router.callback_query(F.data.startswith("a:udel:"))
+async def admin_delete_user_step1(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _prefix, _action, tg_id_s = callback.data.split(":")
+    tg_id = int(tg_id_s)
+    user = await repo.get_user(tg_id)
+    if user is None:
+        _ = translator("admin", i18n.locale)
+        await callback.answer(_("admin-user-not-found"), show_alert=True)
+        return
+    name = person_name(
+        tg_id=user.tg_id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        username=user.username,
+        xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
+    )
+    screen = render_admin_user_delete_confirm_1(name, tg_id, locale=i18n.locale)
+    await _redraw(callback, *screen.as_pair())
+
+
+@router.callback_query(F.data.startswith("a:udel1:"))
+async def admin_delete_user_step2(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    _prefix, _action, tg_id_s = callback.data.split(":")
+    tg_id = int(tg_id_s)
+    user = await repo.get_user(tg_id)
+    if user is None:
+        _ = translator("admin", i18n.locale)
+        await callback.answer(_("admin-user-not-found"), show_alert=True)
+        return
+    name = person_name(
+        tg_id=user.tg_id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        username=user.username,
+        xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
+    )
+    screen = render_admin_user_delete_confirm_2(name, tg_id, locale=i18n.locale)
+    await _redraw(callback, *screen.as_pair())
+
+
+@router.callback_query(F.data.startswith("a:udel2:"))
+async def admin_delete_user_confirmed(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    _ = translator("admin", i18n.locale)
+    _prefix, _action, tg_id_s = callback.data.split(":")
+    tg_id = int(tg_id_s)
+    await repo.delete_user(tg_id)
+    await callback.answer(_("admin-delete-toast"))
+    text, markup = await render_user_list(repo, 0, locale=i18n.locale)
     await _redraw(callback, text, markup)
 
 

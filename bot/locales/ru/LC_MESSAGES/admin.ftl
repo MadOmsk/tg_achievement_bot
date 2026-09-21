@@ -232,6 +232,18 @@ admin-reset-confirm-prompt =
     удалена и перечитана с нуля (в чат ничего не публикуется — как при
     первой привязке).
 admin-reset-confirm-yes = Да, стереть и пересинхронизировать
+admin-delete-user = 🗑 Удалить пользователя
+admin-delete-confirm-1 =
+    Удалить пользователя { $name } (ID: { $tg_id })?
+
+    Будут удалены все привязки к аккаунтам, настройки пользователя и подписки на чаты.
+admin-delete-confirm-1-yes = ⚠️ Да, продолжить
+admin-delete-confirm-2 =
+    Внимание! Это действие необратимо!
+
+    Безвозвратно стереть пользователя { $name } (ID: { $tg_id }) из базы данных?
+admin-delete-confirm-2-yes = 🔥 Точно удалить пользователя
+admin-delete-toast = Пользователь удалён
 admin-back-to-users = ‹ К списку
 
 # Chat cards

@@ -360,3 +360,29 @@ async def _chat_confirm(
         )
     )
     return Screen(i18n.get(prompt, title=chat.title or chat.chat_id), builder.as_markup())
+
+
+async def render_panel_delete_confirm_1(*, locale: str) -> Screen:
+    i18n = await i18n_for(locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-delete-confirm-1-yes"),
+            callback_data="panel:delete:step1",
+        )
+    )
+    builder.row(InlineKeyboardButton(text=i18n.get("kb-cancel"), callback_data="panel:refresh"))
+    return Screen(i18n.get("panel-delete-confirm-1"), builder.as_markup())
+
+
+async def render_panel_delete_confirm_2(*, locale: str) -> Screen:
+    i18n = await i18n_for(locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-delete-confirm-2-yes"),
+            callback_data="panel:delete:step2",
+        )
+    )
+    builder.row(InlineKeyboardButton(text=i18n.get("kb-cancel"), callback_data="panel:refresh"))
+    return Screen(i18n.get("panel-delete-confirm-2"), builder.as_markup())

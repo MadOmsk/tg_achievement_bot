@@ -358,3 +358,49 @@ async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> Non
     assert await rows("presence_state", "xuid", XUID) == 0
     assert await rows("steam_presence_state", "steam_id", "76561197960287930") == 0
     assert await rows("psn_presence_state", "account_id", "acc-1") == 0
+
+
+async def test_admin_card_has_delete_user_button(repo: Repo) -> None:
+    await repo.ensure_user(7, "someone")
+    await repo.link_xbox_account(7, XUID, "GamerTag", 0)
+    _text, markup = await render_user_card(repo, 7, locale="ru")
+    datas = _callback_datas(markup)
+    assert "a:udel:7" in datas
+    assert datas[-2] == "a:udel:7"
+    assert datas[-1] == "a:users:0"
+
+
+async def test_admin_delete_user_flow(repo: Repo, i18n, monkeypatch) -> None:
+    from bot.handlers import admin as admin_handlers
+
+    await repo.ensure_user(7, "someone")
+    await repo.link_xbox_account(7, XUID, "GamerTag", 0)
+    drawn: list[tuple[str, object]] = []
+
+    async def record(callback, text, markup):
+        drawn.append((text, markup))
+
+    monkeypatch.setattr(admin_handlers, "_redraw", record)
+
+    # Step 1
+    cb1 = _FakeCallback("a:udel:7")
+    await admin_handlers.admin_delete_user_step1(cb1, repo, i18n)  # type: ignore[arg-type]
+    assert len(drawn) == 1
+    _text1, markup1 = drawn[-1]
+    assert "a:udel1:7" in _callback_datas(markup1)
+    assert "a:u:7" in _callback_datas(markup1)
+
+    # Step 2
+    cb2 = _FakeCallback("a:udel1:7")
+    await admin_handlers.admin_delete_user_step2(cb2, repo, i18n)  # type: ignore[arg-type]
+    assert len(drawn) == 2
+    _text2, markup2 = drawn[-1]
+    assert "a:udel2:7" in _callback_datas(markup2)
+    assert "a:u:7" in _callback_datas(markup2)
+
+    # Confirm
+    cb3 = _FakeCallback("a:udel2:7")
+    await admin_handlers.admin_delete_user_confirmed(cb3, repo, i18n)  # type: ignore[arg-type]
+    assert len(drawn) == 3
+    assert cb3.answers
+    assert await repo.get_user(7) is None

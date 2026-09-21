@@ -100,3 +100,15 @@ panel-playing = играет — { $game }
 panel-excluded = 🚫 исключён администратором
 panel-not-subscribed-anywhere = — не подписан ни в одном чате
 panel-subscribed-in = ✅ в { $chats }
+
+panel-delete-account = 🗑 Удалить аккаунт
+panel-delete-confirm-1 =
+    Вы действительно хотите удалить свой аккаунт из бота?
+    Будут удалены все ваши привязки платформ, подписки на чаты и настройки.
+panel-delete-confirm-1-yes = ⚠️ Да, продолжить
+panel-delete-confirm-2 =
+    Это действие необратимо!
+    Все ваши данные в боте будут безвозвратно стёрты. Вы уверены?
+panel-delete-confirm-2-yes = 🔥 Точно удалить аккаунт
+panel-delete-done = Ваш аккаунт и связанные данные успешно удалены. Если захотите вернуться, просто отправьте /start.
+panel-delete-toast = Аккаунт удалён
