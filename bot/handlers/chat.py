@@ -599,9 +599,7 @@ async def summary_month_cal_callback(
 
 
 @router.callback_query(F.data.startswith("sd:nav:"))
-async def summary_day_nav_callback(
-    callback: CallbackQuery, repo: Repo, i18n: I18nContext
-) -> None:
+async def summary_day_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     if not isinstance(callback.message, Message):
         return
     assert callback.data is not None
@@ -626,9 +624,7 @@ async def summary_day_nav_callback(
 
 
 @router.callback_query(F.data.startswith("sd:cal:"))
-async def summary_day_cal_callback(
-    callback: CallbackQuery, repo: Repo, i18n: I18nContext
-) -> None:
+async def summary_day_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     if not isinstance(callback.message, Message):
         return
     assert callback.data is not None
