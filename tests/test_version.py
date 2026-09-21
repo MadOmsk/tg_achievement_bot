@@ -12,6 +12,8 @@ from bot.version import (
     TRUNK,
     TRUNK_LINE,
     expected_schema,
+    is_test,
+    is_trunk,
     line,
     schema_gap,
     version,
@@ -43,26 +45,29 @@ def _on_branch(monkeypatch, name: str | None) -> None:
     monkeypatch.setattr(version_module, "_git", fake)
 
 
-def test_production_and_the_test_bot_do_not_share_a_number(monkeypatch) -> None:
-    """The whole job of B, and it had stopped doing it: the number used to be
-    a hand-edited constant that `main` inherited on every merge, so after the
-    Mini App went in both bots reported 1.2 and could not be told apart."""
+def test_production_and_working_branches_share_the_minor_version(monkeypatch) -> None:
+    """B is the minor release line (TRUNK_LINE). When pushing to test, only C
+    (commit count) and D (migrations) grow — the minor version does not jump to
+    TRUNK_LINE + 1 on a working branch, and only updates when test is merged to
+    main for a release."""
     _on_branch(monkeypatch, TRUNK)
-    trunk = line()
+    assert line() == TRUNK_LINE
+    assert is_trunk() is True
+    assert is_test() is False
 
     _on_branch(monkeypatch, "test")
-    working = line()
-
-    assert trunk == TRUNK_LINE
-    assert working == TRUNK_LINE + 1
-    assert trunk != working
+    assert line() == TRUNK_LINE
+    assert is_trunk() is False
+    assert is_test() is True
     line.cache_clear()
 
 
-def test_any_branch_that_is_not_the_trunk_counts_as_a_line_of_work(monkeypatch) -> None:
-    for name in ("test", "feature/whatever", "HEAD"):
+def test_working_branches_are_recognized_as_test(monkeypatch) -> None:
+    for name in ("test", "feature/whatever", "HEAD", "dev"):
         _on_branch(monkeypatch, name)
-        assert line() == TRUNK_LINE + 1, name
+        assert line() == TRUNK_LINE, name
+        assert is_trunk() is False, name
+        assert is_test() is True, name
     line.cache_clear()
 
 
@@ -71,6 +76,8 @@ def test_without_git_it_falls_back_to_the_trunk(monkeypatch) -> None:
     `?` there, which is the part that says the label is not to be trusted."""
     _on_branch(monkeypatch, None)
     assert line() == TRUNK_LINE
+    assert is_trunk() is False
+    assert is_test() is True
     line.cache_clear()
 
 

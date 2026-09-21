@@ -4,12 +4,9 @@
 an outage:
 
 - **A** — the architecture. Bumped by hand, on a rewrite. It is `1`.
-- **B** — which line of work this build comes from, derived from the branch
-  at startup: `TRUNK_LINE` on `main`, one above it anywhere else. This is the
-  part that says "you are looking at the test bot", and it is computed rather
-  than stored because a hand-edited constant stopped saying it — `main`
-  inherited the number whenever a branch merged, so after the Mini App went
-  in both bots reported `1.2`.
+- **B** — the minor release line (`TRUNK_LINE`). Shared across `main` and
+  working branches. Minor only updates when `test` is merged to `main` for
+  a release; pushing to `test` only advances C (commits) and D (schema).
 - **C** — a count of commits, read from git at startup rather than typed
   into a file (owner's call, 2026-09-16: a short number that grows by one per
   commit reads better than a hash nobody can order at a glance). It measures
@@ -82,6 +79,17 @@ def _git(*args: str) -> str | None:
     return output if result.returncode == 0 and output else None
 
 
+def is_trunk() -> bool:
+    """True if running on the production trunk branch ('main')."""
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    return branch == TRUNK
+
+
+def is_test() -> bool:
+    """True if running on a working/test branch rather than production trunk."""
+    return not is_trunk()
+
+
 @cache
 def revision() -> str:
     """How far this build is from whatever it is measured against.
@@ -98,7 +106,7 @@ def revision() -> str:
     for. A `main` carrying no tag yet answers `0` rather than counting from
     the root commit, which would be a four-digit number meaning nothing.
     """
-    if line() == TRUNK_LINE:
+    if is_trunk():
         tag = _release_tag()
         if tag is None:
             return "0"
@@ -133,30 +141,13 @@ def _release_tag() -> str | None:
 
 @cache
 def line() -> int:
-    """Which line of work this build comes from: **B**.
+    """The minor version / line of work: **B**.
 
-    `TRUNK_LINE` on `main`, one above it anywhere else — so production reads
-    `1.2.…` and the test bot reads `1.3.…`, and "which bot am I looking at"
-    is answerable from the version alone. That was the whole point of B and
-    it had quietly stopped working: B used to be a constant edited by hand,
-    which `main` inherited whenever a branch merged, so after the Mini App
-    went in both bots reported `1.2` and were indistinguishable.
-
-    Derived rather than stored, and derived *here* rather than in
-    `scripts/xbox-deploy.sh` where the owner first asked for it: a deploy
-    script that rewrote this file on the server would leave the checkout
-    dirty, and its own `git merge --ff-only` would refuse the next deploy.
-    Nothing to remember, nothing to commit, and it is right on a developer's
-    machine too.
-
-    A checkout with no git (a tarball, a container) falls back to the trunk's
-    number — `revision()` already renders `?` in that case, which is the part
-    that says "do not trust this label".
+    `TRUNK_LINE` on both `main` and working/test branches. Minor version
+    updates only when test is merged into `main` for a new release.
+    When pushing to `test`, only C (commits) and D (schema) grow.
     """
-    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
-    if branch is None:
-        return TRUNK_LINE
-    return TRUNK_LINE if branch == TRUNK else TRUNK_LINE + 1
+    return TRUNK_LINE
 
 
 @cache

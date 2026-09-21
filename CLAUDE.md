@@ -1774,22 +1774,12 @@ the last line of `/help` and the group hub, and logged at startup —
 `bot @tg_achievement_bot is up (v1.1.53.046)`.
 
 - **A** — the architecture. By hand, on a rewrite. `1`.
-- **B** — which line of work this build is, **derived from the branch at
-  startup** (2026-09-18): `TRUNK_LINE` on `main`, one above it anywhere else.
-  Production is `1.2.…`, the test bot is `1.3.…`, and "which bot am I looking
-  at" is answerable from the version alone.
-
-  It used to be a constant edited by hand, which `main` inherited whenever a
-  branch merged — and that quietly stopped working the moment a merge went
-  straight to `main` without passing through the test bot: both then reported
-  `1.2` and were indistinguishable, which is precisely the question B exists
-  to answer. Deriving it needs no bookkeeping and cannot drift.
-
-  Not written by `scripts/xbox-deploy.sh`, where it would seem to belong: a
-  deploy that rewrote `version.py` on the server would leave the checkout
-  dirty and its own `git merge --ff-only` would refuse the next one.
-  `TRUNK_LINE` is the one number a person still edits, on a rewrite or when a
-  release deserves its own.
+- **B** — the minor release line (`TRUNK_LINE` in `bot/version.py`, owner's rule
+  2026-09-21): shared across `main` and working/test branches (e.g. `1.3.*`).
+  Minor only updates when `test` is merged into `main` for a release; pushing
+  to `test` or working branches must never bump B — only C (commit count) and
+  D (schema version) advance. Test vs. production identity is answered by
+  `is_test()` / `is_trunk()` (branch check), startup announcements, and C.
 - **C** — a count of commits read from git at startup (owner's call,
   2026-09-16: a short number that grows by one per commit beats a hash
   nobody can order at a glance), measuring a different distance on each

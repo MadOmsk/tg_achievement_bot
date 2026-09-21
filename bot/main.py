@@ -70,7 +70,7 @@ from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
-from bot.version import TRUNK_LINE, line, version
+from bot.version import is_test, version
 from bot.views.keyboards import timezone_keyboard
 from bot.web.oauth import OAuthServer
 
@@ -388,7 +388,7 @@ async def run(settings: Settings) -> None:
     bot_version = version()
     log.info("bot @%s is up (v%s)", me.username, bot_version)
     asyncio.create_task(  # noqa: RUF006
-        announce_release_if_needed(bot, repo, bot_version, is_test=(line() != TRUNK_LINE))
+        announce_release_if_needed(bot, repo, bot_version, is_test=is_test())
     )
     try:
         await dispatcher.start_polling(bot, handle_signals=False)
