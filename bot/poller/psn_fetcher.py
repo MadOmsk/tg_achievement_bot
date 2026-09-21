@@ -24,7 +24,7 @@ from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.i18n import translator
-from bot.poller.cadence import debounce_passed
+from bot.poller.cadence import debounce_passed, is_dormant
 from bot.poller.publisher import Publisher
 from bot.services.psn.achievements import sync_account
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
@@ -80,7 +80,19 @@ class PsnFetcher:
                 # if just earned. A stuck one is recovered via the admin
                 # panel's PSN resync, not by this tick.
                 continue
-            if not debounce_passed(target.last_polled_at, self._settings.achievement_poll_interval):
+            if target.presence_state == "Offline":
+                interval = (
+                    self._settings.psn_dormant_poll_interval
+                    if is_dormant(
+                        target.last_online_at,
+                        target.linked_at,
+                        self._settings.catchup_idle_threshold_days,
+                    )
+                    else self._settings.psn_offline_poll_interval
+                )
+            else:
+                interval = self._settings.achievement_poll_interval
+            if not debounce_passed(target.last_polled_at, interval):
                 continue
             try:
                 await self.poll_account(

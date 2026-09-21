@@ -87,6 +87,8 @@ class PollTarget:
     changed_at: str | None
     last_ach_poll_at: str | None
     updated_at: str | None
+    last_online_at: str | None = None
+    linked_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -108,6 +110,9 @@ class SteamPollTarget:
     last_active_gameid: str | None = None
     last_active_game_name: str | None = None
     last_active_at: str | None = None
+    persona_name: str | None = None
+    last_online_at: str | None = None
+    linked_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -126,6 +131,9 @@ class PsnPollTarget:
     # False — polling it would race the in-flight backfill and publish the
     # account's whole trophy history at once.
     backfill_done: bool = True
+    presence_state: str | None = None
+    last_online_at: str | None = None
+    linked_at: str | None = None
 
 
 @dataclass(slots=True)

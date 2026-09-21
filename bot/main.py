@@ -55,6 +55,7 @@ from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
 from bot.poller.service_health import ServiceHealth
+from bot.poller.steam_catch_up import SteamCatchUpPoller
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
@@ -172,13 +173,14 @@ async def run(settings: Settings) -> None:
         repo, steam_auth, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
     )
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
+    steam_catch_up = SteamCatchUpPoller(settings, repo, steam_fetcher, steam_auth)
 
     # Trophy sync itself still has no presence poller of its own (SPEC 9,
     # M-PSN-2) — psn_fetcher.tick() scans every linked account directly on
     # its own schedule. psn_presence below is a separate, unrelated poller
     # (issue #1): presence for /online only, never triggers a trophy poll.
     psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher, anthropic_auth=anthropic_auth)
-    psn_presence = PsnPresencePoller(settings, repo, psn_auth)
+    psn_presence = PsnPresencePoller(settings, repo, psn_auth, psn_fetcher=psn_fetcher)
 
     flood_flush = FloodFlush(repo, publisher)
 
@@ -202,6 +204,7 @@ async def run(settings: Settings) -> None:
         AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
         CatchUpPoller(settings, repo, fetcher),
         CoverRefresh(repo, client),
+        steam_catch_up,
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -349,6 +352,22 @@ async def run(settings: Settings) -> None:
                 )
             except Exception:
                 log.exception("catch-up for tg_id=%s failed", target.tg_id)
+
+        if await steam_auth.get_key() is not None:
+            for steam_target in await repo.steam_pollable_users():
+                try:
+                    await asyncio.wait_for(
+                        steam_catch_up.catch_up_target(steam_target),
+                        timeout=STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                    )
+                except TimeoutError:
+                    log.error(
+                        "steam catch-up for tg_id=%s exceeded %.0fs overall, moving on",
+                        steam_target.tg_id,
+                        STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                    )
+                except Exception:
+                    log.exception("steam catch-up for tg_id=%s failed", steam_target.tg_id)
 
     await publisher.start()
     # Force-exit every anti-flood window still open from before this restart

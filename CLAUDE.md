@@ -185,14 +185,15 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── cadence.py              shared interval/debounce math for every presence poller
 │   │   ├── presence.py             step 1: Xbox presence, interval by state
 │   │   ├── steam_presence.py       Steam presence, same step 1, its own batch request
-│   │   ├── psn_presence.py         PSN presence for /online (#1) — one account per request,
-│   │   │                           unrelated to psn_fetcher.py's own trophy-scan cadence below
+│   │   ├── psn_presence.py         PSN presence for /online (#1, #90) — one account per request,
+│   │   │                           triggers exit trophy poll on Online -> Offline transition
 │   │   ├── fetcher.py              step 2: Xbox achievements per game, title history, backfill
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
-│   │   ├── psn_fetcher.py          PSN trophies: no presence hook of its own, its own debounce,
-│   │   │                           backfill, admin resync (#27)
-│   │   ├── catch_up.py             the hourly Xbox delta, one account per tick — what picks
+│   │   ├── psn_fetcher.py          PSN trophies: polled with presence-aware throttling (120s online,
+│   │   │                           30m active offline, 24h dormant), debounced, backfill, admin resync (#27, #90)
+│   │   ├── catch_up.py             the hourly Xbox delta (24h for dormant), one account per tick — what picks
 │   │   │                           up achievements earned offline (#82)
+│   │   ├── steam_catch_up.py       periodic Steam delta (1h active, 24h dormant) via GetRecentlyPlayedGames (#89)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
 │   │   ├── avatars.py             profile photos: each person's Telegram one, and each
@@ -776,6 +777,21 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
   still always gets the Russian side — the English half exists only in the
   cache for now, unused until that switch is built. Xbox and (2026-09-09)
   PSN now do the same (see their own sections).
+- **Delayed exit poll** (`poller/steam_presence.py`, #89): Valve's web API
+  (`GetPlayerAchievements`) is heavily cached on Akamai edge CDNs for 2–5 minutes,
+  and Steam Cloud syncs on game exit. An immediate poll upon exiting a game or changing
+  games almost always hits stale CDN cache, missing the final achievements of the session.
+  Instead of an immediate poll, the game is enqueued in a delayed exit poll queue
+  (`STEAM_DELAYED_EXIT_POLL_SECONDS = 180.0`, 3 minutes). Each presence tick flushes
+  due polls. If the player re-launches the same game before 180s elapse, the pending
+  delayed poll is canceled/superseded by live in-game polling.
+- **Steam catch-up poller** (`poller/steam_catch_up.py`, #89): Like Xbox (#82), Steam
+  accounts can earn achievements offline or during bot downtime. `SteamCatchUpPoller`
+  polls `GetRecentlyPlayedGames` (`IPlayerService/GetRecentlyPlayedGames/v1/`) to inspect
+  recently played games, and runs `steam_catch_up_since` which calls `steam_fetcher.poll_title`
+  for any game played since the newest stored unlock (or within the catch-up window).
+  Runs one account per tick when due (hourly for active accounts, 24h for dormant accounts),
+  and also during bot startup (`startup_catch_up()`).
 
 ### PlayStation Network
 
@@ -815,17 +831,19 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   beside `on_dead`, because an alarm with no end to it reads as permanent —
   the admin could previously only learn a credential recovered by opening
   /admin.
-- Trophy polling itself has no presence hook at all, unlike Xbox/Steam — a
-  permanent design decision, not a gap: PSN trophies may only sync to Sony's
-  servers when a player opens trophy data on the console, not at the moment
-  of unlock, so the trophy poller scans every linked account's trophy titles
-  on every tick and only fetches full detail for a title whose progress
-  grew. **Presence itself is now tracked separately** (#1,
-  `poller/psn_presence.py`, `psn_presence_state`) for `/online` and the
-  admin card's "В сети" line — one `get_presence()` request per account (no
-  PSN batch-presence endpoint exists), same politeness-driven cadence
-  (`poller/cadence.py`) Xbox/Steam presence already use. This poller never
-  triggers a trophy poll — the two stay deliberately unrelated.
+- **Presence and trophy polling coordination** (#90): PSN trophies often sync to Sony's
+  servers when a player finishes a session or opens trophy data on console.
+  `poller/psn_presence.py` tracks presence for `/online` and the admin card
+  (`psn_presence_state`) with one `get_presence()` request per account (politeness-driven
+  cadence). **Upon transitioning from `Online` to `Offline`, `psn_presence` immediately
+  triggers `psn_fetcher.poll_account(...)`** as an exit poll to capture session trophies.
+- **Presence-aware trophy throttling** (`poller/psn_fetcher.py`, #90): Polling PSN
+  trophy titles for every account every 120s was hammering Sony's private endpoints
+  with unneeded calls for offline users. Now:
+  - When Online: polled every 120s (`settings.psn_poll_interval`).
+  - When Offline & Active ($\le 14$ days since last online): throttled to every 30m / 1800s (`settings.psn_offline_poll_interval`).
+  - When Dormant ($> 14$ days inactive): throttled to once every 24h / 86400s (`settings.psn_dormant_poll_interval`).
+  When progress grows, the poller fetches full detail for the updated title.
 - The scan (`services/psn/achievements.py::sync_account`) persists **one game at a
   time, trophies before the progress cache** (#26). Advancing `psn_title_progress`
   before a game's trophies are actually written — the old shape — meant any
@@ -914,10 +932,17 @@ due.
   The goal is politeness, not quota optimization — sparse polling of an absent user
   keeps logs clean and avoids pointless calls, on both platforms, even though
   neither is actually quota-constrained at this scale.
-- **Achievement polling**: while in a game, poll that game on the achievement
-  debounce interval; on a game change or going offline, do one final poll of the
-  *previous* game first (to catch a last-second unlock before leaving). A poller
-  must never crash a whole tick because one user, account, title, or small API
+- **Achievement polling & Exit polls**: while in a game, poll that game on the achievement
+  debounce interval. On leaving a game or going offline, an **exit poll** captures
+  last-second unlocks:
+  - *Xbox*: immediate final poll of the previous game on game change or going offline.
+  - *Steam*: **delayed exit poll** (`STEAM_DELAYED_EXIT_POLL_SECONDS = 180.0`, #89). Valve's
+    `GetPlayerAchievements` is cached on Akamai edge CDNs for 2–5 minutes and Steam Cloud syncs
+    on process exit; an immediate poll almost always returns stale cache. The game is enqueued
+    and polled after 3 minutes (canceled if the player restarts the same game in that window).
+  - *PSN*: `psn_presence` detects `Online -> Offline` and immediately fires an exit poll
+    on `psn_fetcher.poll_account(...)` (#90).
+  A poller must never crash a whole tick because one user, account, title, or small API
   batch failed — isolate and log, then continue. Expected external states (not
   exceptions): private profiles, empty responses, HTTP 429, timeouts, dead
   credentials, upstream outages.
@@ -952,15 +977,24 @@ due.
   floored at `catchup_publish_window_hours` back, because an account with
   nothing stored (or idle for a year) would otherwise hand back the whole
   library to publish nothing at all.
-- **Catch-up also runs while the bot is up**, hourly, one account per tick
-  (`poller/catch_up.py`, #82). The presence poller only ever asks about the
-  game somebody is in *right now*, plus one last look as they leave it — and
-  an Xbox console uploads what was earned offline when it next reaches the
-  network, normally well after that look. Nothing asked again until the next
-  restart, which is how two people lost a Gears of War 3 session. One
-  account per tick rather than all of them: `title_history` for a large
-  account is heavy (~46s for a real 1011-title one), and a pass where
-  nobody played anything costs exactly one request per account.
+- **Catch-up also runs while the bot is up** (Xbox: `poller/catch_up.py`, #82; Steam: `poller/steam_catch_up.py`, #89).
+  The presence poller only ever asks about the game somebody is in *right now* (plus exit polls),
+  but console/PC games upload offline-earned achievements whenever network connectivity or Cloud
+  sync occurs. Catch-up sweeps candidate games since the newest stored unlock. One account per tick
+  is polled when due rather than all of them: `title_history` (Xbox) and `GetRecentlyPlayedGames` (Steam)
+  stay lightweight and spread out.
+- **Adaptive cadence & Dormant tiering (14-day inactivity threshold)**:
+  Users frequently leave for weeks or months. Repeatedly querying heavy endpoints
+  (such as Xbox `title_history`, Steam `GetRecentlyPlayedGames`, or PSN trophy lists)
+  every hour forever on hundreds of absent accounts wastes API quotas and network bandwidth.
+  The cadence module (`poller/cadence.py::is_dormant`) classifies accounts as dormant if
+  they have not been seen online for $> 14$ days (`catchup_idle_threshold_days = 14`,
+  measured from `last_online_at`, or `linked_at` if never seen online):
+  - *Active users* ($\le 14$ days): polled hourly (Xbox & Steam catch-up) or every 30m (PSN offline).
+  - *Dormant users* ($> 14$ days): polled once every 24 hours (1440m for Xbox/Steam, 86400s for PSN).
+  - *Wake-up*: As soon as presence detects a user coming online (`touch_last_online`), the account
+    immediately returns to the active tier. Freshly connected accounts are treated as active
+    using `linked_at` fallback.
 
 ## Publication rules
 

@@ -178,3 +178,27 @@ async def test_one_account_failing_does_not_stop_the_next_tick(repo: Repo, ciphe
     await poller.tick()
 
     assert len(fetcher.calls) == 2
+
+
+async def test_dormant_xbox_account_uses_idle_interval(repo: Repo, cipher) -> None:
+    await _connected(repo, cipher)
+    twenty_days_ago = (utcnow() - timedelta(days=20)).isoformat()
+    await repo._conn.execute(
+        "UPDATE users SET last_online_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+    )
+    await repo._conn.execute(
+        "UPDATE account_links SET linked_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+    )
+    await repo._conn.commit()
+
+    poller = CatchUpPoller(_settings(), repo, _FakeFetcher())  # type: ignore[arg-type]
+    [target] = await repo.pollable_users()
+    assert poller._target_interval(target) == 1440 * 60  # 24 hours
+
+    now_iso = utcnow().isoformat()
+    await repo._conn.execute(
+        "UPDATE users SET last_online_at = ? WHERE tg_id = ?", (now_iso, TG_ID)
+    )
+    await repo._conn.commit()
+    [target] = await repo.pollable_users()
+    assert poller._target_interval(target) == 60 * 60  # 1 hour

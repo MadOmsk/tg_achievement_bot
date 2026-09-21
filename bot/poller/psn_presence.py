@@ -34,10 +34,18 @@ log = logging.getLogger(__name__)
 
 
 class PsnPresencePoller:
-    def __init__(self, settings: Settings, repo: Repo, psn_auth: PsnAuth) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repo: Repo,
+        psn_auth: PsnAuth,
+        *,
+        psn_fetcher: object | None = None,
+    ) -> None:
         self._settings = settings
         self._repo = repo
         self._psn_auth = psn_auth
+        self._psn_fetcher = psn_fetcher
 
     async def tick(self) -> None:
         try:
@@ -78,6 +86,22 @@ class PsnPresencePoller:
         if snapshot.state == "Online":
             await self._repo.touch_last_online(target.tg_id)
         await self._refresh_nickname(target, snapshot.online_id)
+
+        # Final trophy check of the session (#90):
+        # if the user went offline, poll trophies right away so anything
+        # earned immediately before turning off the console is announced without
+        # waiting for the slower offline interval.
+        if changed and target.state == "Online" and snapshot.state != "Online":
+            if self._psn_fetcher is not None and hasattr(self._psn_fetcher, "poll_account"):
+                try:
+                    await self._psn_fetcher.poll_account(
+                        target.tg_id, target.account_id, target.online_id or target.account_id
+                    )
+                except Exception:
+                    log.exception(
+                        "psn exit trophy poll failed for account_id=%s", target.account_id
+                    )
+                await self._repo.touch_psn_poll_state(target.account_id)
 
     async def _refresh_nickname(self, target: PsnPresenceTarget, online_id: str | None) -> None:
         """The current online ID came along with the presence request (#51),

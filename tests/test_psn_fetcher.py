@@ -335,3 +335,52 @@ async def test_psn_pollable_users_falls_back_to_account_id_with_no_online_id(
     assert target.online_id is None
     assert target.last_polled_at is None
     assert target.backfill_done is False  # no psn_poll_state row yet (#21)
+    assert target.presence_state is None
+
+
+async def test_tick_throttles_offline_users(
+    repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
+) -> None:
+    await _linked_user(repo)
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    _fake_level(monkeypatch)
+    calls = _fake_sync(monkeypatch, PsnSyncOutcome())
+    await repo.mark_psn_backfill_done(ACCOUNT_ID)
+
+    # 1. User is Offline and was polled 5 minutes ago (300s ago)
+    # Since psn_offline_poll_interval is 1800s, this should NOT poll.
+    five_min_ago = (datetime.now(UTC) - timedelta(seconds=300)).isoformat()
+    await repo._conn.execute(
+        "UPDATE psn_poll_state SET last_polled_at = ? WHERE account_id = ?",
+        (five_min_ago, ACCOUNT_ID),
+    )
+    await repo.save_psn_presence_state(ACCOUNT_ID, "Offline", None, None, changed=False)
+
+    fetcher = PsnFetcher(settings, repo, auth, FakePublisher(), anthropic_auth=None)
+    await fetcher.tick()
+    assert len(calls) == 0, "offline user should not be polled within offline interval"
+
+    # 2. If user is Online and was polled 300s ago (> achievement_poll_interval=120s):
+    await repo.save_psn_presence_state(ACCOUNT_ID, "Online", "CUSA001", "Rust", changed=False)
+    await fetcher.tick()
+    assert len(calls) == 1, "online user should be polled once 120s passed"
+
+    # 3. If user is Offline AND dormant (>14 days inactive), interval is 86400s (24h)
+    twenty_days_ago = (datetime.now(UTC) - timedelta(days=20)).isoformat()
+    await repo._conn.execute(
+        "UPDATE users SET last_online_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+    )
+    await repo._conn.execute(
+        "UPDATE account_links SET linked_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+    )
+    one_hour_ago = (datetime.now(UTC) - timedelta(seconds=3600)).isoformat()
+    await repo._conn.execute(
+        "UPDATE psn_poll_state SET last_polled_at = ? WHERE account_id = ?",
+        (one_hour_ago, ACCOUNT_ID),
+    )
+    await repo.save_psn_presence_state(ACCOUNT_ID, "Offline", None, None, changed=False)
+    await repo._conn.commit()
+
+    # Polled 1h ago, but dormant interval is 24h -> should NOT poll
+    await fetcher.tick()
+    assert len(calls) == 1, "dormant offline user should not be polled within 24h"

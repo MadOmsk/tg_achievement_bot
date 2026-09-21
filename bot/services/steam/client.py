@@ -304,6 +304,39 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
     ]
 
 
+@dataclass(slots=True)
+class RecentlyPlayedGame:
+    appid: str
+    name: str
+    playtime_2weeks: int
+    playtime_forever: int
+    last_played: int  # rtime_last_played in unix seconds
+
+
+async def get_recently_played_games(
+    api_key: str, steam_id: str, count: int = 10
+) -> list[RecentlyPlayedGame]:
+    """Games played in the last 2 weeks (issue #89) — much cheaper than
+    GetOwnedGames (1-5 games vs hundreds), used for periodic catch-up."""
+    payload = await _get(
+        "/IPlayerService/GetRecentlyPlayedGames/v1/",
+        api_key,
+        {"steamid": steam_id, "count": str(count)},
+    )
+    games = payload.get("games") or []
+    return [
+        RecentlyPlayedGame(
+            appid=str(item["appid"]),
+            name=item.get("name") or str(item["appid"]),
+            playtime_2weeks=int(item.get("playtime_2weeks") or 0),
+            playtime_forever=int(item.get("playtime_forever") or 0),
+            last_played=int(item.get("rtime_last_played") or 0),
+        )
+        for item in games
+        if item.get("appid")
+    ]
+
+
 async def get_player_achievements(
     api_key: str, steam_id: str, appid: str, *, language: str = "russian"
 ) -> list[RawAchievement]:

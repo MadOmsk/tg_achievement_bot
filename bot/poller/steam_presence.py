@@ -14,6 +14,7 @@ discipline presence.py already follows.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterator
 
 from bot.config import Settings
@@ -40,6 +41,11 @@ BATCH_SIZE = 100  # GetPlayerSummaries' own documented limit per call
 # genuine quit doesn't keep getting polled long after the fact.
 GRACE_PERIOD_SECONDS = 10 * 60
 
+# Steam's Web API CDN edge caches GetPlayerAchievements for 2-5 minutes (issue #89).
+# A poll 10-20 seconds after game exit often gets the stale pre-unlock CDN cache.
+# A delayed poll after 3 minutes guarantees the CDN cache has expired and Steam Cloud sync finished.
+STEAM_DELAYED_EXIT_POLL_SECONDS = 180.0
+
 
 class SteamPresencePoller:
     def __init__(
@@ -49,8 +55,11 @@ class SteamPresencePoller:
         self._repo = repo
         self._fetcher = fetcher
         self._steam_auth = steam_auth
+        # (steam_id, appid) -> (tg_id, game_name, poll_at_monotonic, persona_name)
+        self._exit_queue: dict[tuple[str, str], tuple[int, str | None, float, str]] = {}
 
     async def tick(self) -> None:
+        await self._flush_exit_queue()
         api_key = await self._steam_auth.get_key()
         if api_key is None:
             return  # Steam not configured on this instance — same silent
@@ -100,6 +109,14 @@ class SteamPresencePoller:
             # before quitting (same reasoning as presence.py, SPEC 5.3).
             await self._poll_achievements(
                 target, snapshot.persona_name, target.gameid, target.game_name, force=True
+            )
+            # Schedule a delayed exit poll (issue #89) to overcome the 2-5m Steam
+            # CDN cache and cloud sync latency.
+            self._exit_queue[(target.steam_id, target.gameid)] = (
+                target.tg_id,
+                target.game_name,
+                time.monotonic() + STEAM_DELAYED_EXIT_POLL_SECONDS,
+                snapshot.persona_name or target.persona_name or target.steam_id,
             )
 
         if in_game:
@@ -178,6 +195,27 @@ class SteamPresencePoller:
             interval_offline=self._settings.presence_interval_offline,
             interval_idle=self._settings.presence_interval_idle,
         )
+
+    async def _flush_exit_queue(self) -> None:
+        """Process delayed exit polls whose 3-minute grace delay has elapsed (#89)."""
+        now = time.monotonic()
+        due = [key for key, item in self._exit_queue.items() if item[2] <= now]
+        for key in due:
+            steam_id, appid = key
+            tg_id, game_name, _, p_name = self._exit_queue.pop(key)
+            try:
+                await self._fetcher.poll_title(
+                    tg_id,
+                    steam_id,
+                    p_name,
+                    appid,
+                    game_name,
+                    window_hours=self._settings.catchup_publish_window_hours,
+                )
+            except Exception:
+                log.exception(
+                    "delayed steam exit poll failed for steam_id=%s, appid=%s", steam_id, appid
+                )
 
 
 def _chunks(items: list[SteamPollTarget], size: int) -> Iterator[list[SteamPollTarget]]:

@@ -24,7 +24,7 @@ class FakeFetcher:
     def __init__(self) -> None:
         self.calls: list[tuple[int, str, str, str, str | None]] = []
 
-    async def poll_title(self, tg_id, steam_id, persona_name, appid, game_name) -> int:
+    async def poll_title(self, tg_id, steam_id, persona_name, appid, game_name, **kwargs) -> int:
         self.calls.append((tg_id, steam_id, persona_name, appid, game_name))
         return 0
 
@@ -329,3 +329,78 @@ async def test_tick_survives_a_batch_failure(
     await poller.tick()  # must not raise
 
     assert fetcher.calls == []
+
+
+async def test_leaving_game_queues_delayed_exit_poll_and_flushes_after_delay(
+    repo: Repo, settings: Settings, steam_auth, monkeypatch
+) -> None:
+    """When leaving a game, an exit poll runs immediately AND a delayed exit poll
+    is queued for 180s later to account for Steam CDN caching and cloud sync (#89)."""
+    await _linked_user(repo)
+    steam_settings = _steam_settings(settings)
+
+    now = 1000.0
+    monkeypatch.setattr(steam_presence_module.time, "monotonic", lambda: now)
+
+    # 1. Start in game 550
+    async def fake_batch_in_game(api_key, steam_ids):
+        return {
+            STEAM_ID: SteamPresence(
+                steam_id=STEAM_ID,
+                persona_name="Mad Omsk",
+                persona_state=1,
+                gameid="550",
+                game_name="Left 4 Dead 2",
+            )
+        }
+
+    monkeypatch.setattr(steam_presence_module, "get_presence_batch", fake_batch_in_game)
+    fetcher = FakeFetcher()
+    poller = SteamPresencePoller(steam_settings, repo, fetcher, steam_auth)  # type: ignore[arg-type]
+    await poller.tick()
+    assert len(fetcher.calls) == 1
+    assert poller._exit_queue == {}
+
+    # Advance time so poller doesn't get debounced
+    now = 2000.0
+    # Age updated_at in DB so _is_due passes
+    await repo._conn.execute(
+        "UPDATE steam_presence_state SET updated_at = '2000-01-01T00:00:00+00:00'"
+    )
+    await repo._conn.commit()
+
+    # 2. Leave game (persona_state=1, gameid=None)
+    async def fake_batch_left_game(api_key, steam_ids):
+        return {
+            STEAM_ID: SteamPresence(
+                steam_id=STEAM_ID,
+                persona_name="Mad Omsk",
+                persona_state=1,
+                gameid=None,
+                game_name=None,
+            )
+        }
+
+    monkeypatch.setattr(steam_presence_module, "get_presence_batch", fake_batch_left_game)
+    await poller.tick()
+
+    # Immediate exit poll ran:
+    assert len(fetcher.calls) == 2
+    assert fetcher.calls[1] == (TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+    # And delayed exit poll is queued for now + 180s:
+    assert (STEAM_ID, "550") in poller._exit_queue
+    due_at = poller._exit_queue[(STEAM_ID, "550")][2]
+    assert due_at == 2000.0 + steam_presence_module.STEAM_DELAYED_EXIT_POLL_SECONDS
+
+    # 3. Before 180s elapse, flush does nothing
+    now = 2100.0
+    await poller.tick()
+    assert len(fetcher.calls) == 2
+    assert (STEAM_ID, "550") in poller._exit_queue
+
+    # 4. Once 180s elapse, delayed exit poll is triggered
+    now = 2200.0  # 2000 + 200 > 2180
+    await poller.tick()
+    assert len(fetcher.calls) == 3
+    assert fetcher.calls[2] == (TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+    assert poller._exit_queue == {}
