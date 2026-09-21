@@ -57,10 +57,9 @@ def test_not_connected_keyboard_still_offers_the_rest_of_the_settings() -> None:
     data = _callback_data(markup)
     assert "panel:tz" in data
     assert "panel:chatlist" in data
-    assert "panel:sync" in data
     assert "panel:linkstoggle" in data
     assert "panel:delete_account" in data
-    assert "panel:refresh" in data
+    assert "panel:sync" in data
 
 
 def test_every_platform_is_exactly_one_row_in_xbox_psn_steam_order() -> None:
@@ -94,7 +93,7 @@ def test_every_platform_is_exactly_one_row_in_xbox_psn_steam_order() -> None:
     assert (
         rows[steam_i + 1][0].callback_data == "panel:delete_account"
     )  # platform block, then delete_account
-    assert rows[steam_i + 2][0].callback_data == "panel:refresh"  # then Обновить
+    assert rows[steam_i + 2][0].callback_data == "panel:sync"  # then Синхронизировать
 
 
 def test_not_connected_keyboard_offers_steam_disconnect_once_connected() -> None:

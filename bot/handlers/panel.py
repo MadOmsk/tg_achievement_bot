@@ -14,11 +14,18 @@ from aiogram.types import CallbackQuery, Message
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
-from bot.constants import RarityMode, TokenStatus
+from bot.constants import AccountPlatform, Platform, RarityMode, TokenStatus
 from bot.db.repo import Repo
 from bot.handlers.delivery import safe_edit
 from bot.poller.fetcher import Fetcher
+from bot.poller.psn_fetcher import PsnFetcher
+from bot.poller.steam_catch_up import steam_catch_up_since
+from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.naming import link_nickname
 from bot.services.single_message import send_replacing
+from bot.services.steam import client as steam_client
+from bot.services.steam.auth import SteamAuth
+from bot.services.steam.client import SteamApiError
 from bot.util import cooldown_minutes_left, parse_iso
 from bot.views.keyboards import (
     DIGEST_NEVER,
@@ -92,6 +99,7 @@ async def panel_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
 
 @router.callback_query(F.data == "panel:refresh")
 async def panel_refresh(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    await repo.touch_last_online(callback.from_user.id)
     screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard)
     await callback.answer(i18n.get("panel-refreshed"))
@@ -99,13 +107,30 @@ async def panel_refresh(callback: CallbackQuery, repo: Repo, i18n: I18nContext) 
 
 @router.callback_query(F.data == "panel:sync")
 async def panel_sync(
-    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, settings: Settings, i18n: I18nContext
+    callback: CallbackQuery,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_fetcher: PsnFetcher,
+    steam_auth: SteamAuth,
+    settings: Settings,
+    i18n: I18nContext,
 ) -> None:
-    """Catch up on what was unlocked while the bot was down (SPEC 5.8)."""
+    """Wake up user, refresh UI, and catch up across all connected platforms (Xbox, Steam, PSN)."""
     tg_id = callback.from_user.id
+    await repo.touch_last_online(tg_id)
+
+    screen = await render_panel(repo, tg_id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+
     user = await repo.get_user(tg_id)
-    if user is None or not user.xuid:
-        await callback.answer(i18n.get("panel-xbox-not-connected"), show_alert=True)
+    token = await repo.get_token(tg_id) if user and user.xuid else None
+    xbox_active = bool(user and user.xuid and token and token.status == TokenStatus.ACTIVE)
+    steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
+    psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
+
+    if not (xbox_active or steam_link or psn_link):
+        await callback.answer(i18n.get("panel-connect-any-platform-first"), show_alert=True)
         return
 
     minutes_left = cooldown_minutes_left(
@@ -118,25 +143,72 @@ async def panel_sync(
     _last_sync[tg_id] = time.monotonic()
     await callback.answer(i18n.get("panel-syncing"))
 
-    target = next((t for t in await repo.pollable_users() if t.tg_id == tg_id), None)
-    try:
-        titles, published = await fetcher.catch_up(
-            tg_id,
-            user.xuid,
-            user.gamertag or i18n.get("panel-default-player-name"),
-            parse_iso(target.updated_at) if target else None,
-            settings.catchup_publish_window_hours,
-            settings.catchup_max_titles,
-        )
-    except Exception:
-        log.exception("manual catch-up for tg_id=%s failed", tg_id)
-        if isinstance(callback.message, Message):
-            await callback.message.answer(i18n.get("panel-sync-failed"))
-        return
+    total_titles = 0
+    total_published = 0
+
+    # 1. Xbox
+    if xbox_active and user and user.xuid:
+        since_iso = await repo.account_latest_unlock(AccountPlatform.XBOX, user.xuid)
+        try:
+            x_titles, x_published = await fetcher.catch_up(
+                tg_id,
+                user.xuid,
+                user.gamertag or i18n.get("panel-default-player-name"),
+                parse_iso(since_iso) if since_iso else None,
+                settings.catchup_publish_window_hours,
+                settings.catchup_max_titles,
+            )
+            total_titles += x_titles
+            total_published += x_published
+        except Exception:
+            log.exception("manual xbox catch-up for tg_id=%s failed", tg_id)
+
+    # 2. Steam
+    if steam_link:
+        api_key = await steam_auth.get_key()
+        if api_key:
+            try:
+                since = await steam_catch_up_since(
+                    repo, steam_link.external_id, settings.catchup_publish_window_hours
+                )
+                cutoff = since.timestamp()
+                games = await steam_client.get_recently_played_games(
+                    api_key, steam_link.external_id
+                )
+                candidates = [g for g in games if g.last_played > cutoff]
+                total_titles += len(candidates)
+                for game in candidates:
+                    try:
+                        total_published += await steam_fetcher.poll_title(
+                            tg_id,
+                            steam_link.external_id,
+                            link_nickname(steam_link),
+                            game.appid,
+                            game.name,
+                            window_hours=settings.catchup_publish_window_hours,
+                        )
+                    except SteamApiError as exc:
+                        log.info("manual steam catch-up of appid=%s skipped: %s", game.appid, exc)
+            except Exception:
+                log.exception("manual steam catch-up for tg_id=%s failed", tg_id)
+
+    # 3. PSN
+    if psn_link:
+        try:
+            p_published = await psn_fetcher.poll_account(
+                tg_id, psn_link.external_id, link_nickname(psn_link)
+            )
+            total_published += p_published
+        except Exception:
+            log.exception("manual psn catch-up for tg_id=%s failed", tg_id)
+
+    # Redraw panel with newly inserted achievements / gamerscore
+    screen = await render_panel(repo, tg_id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
 
     summary = (
-        i18n.get("panel-sync-summary-found", titles=titles, published=published)
-        if titles
+        i18n.get("panel-sync-summary-found", titles=total_titles, published=total_published)
+        if (total_titles or total_published)
         else i18n.get("panel-sync-summary-none")
     )
     if isinstance(callback.message, Message):
