@@ -149,14 +149,8 @@ def _row(
 
 def test_icon_shows_platform_dots() -> None:
     assert _icon(_row(xuid=XUID, steam_id=None, token_status="active")) == "🟢✅"
-    assert (
-        _icon(_row(xuid=None, steam_id=STEAM_ID, steam_achievements_visible=True))
-        == "⚫✅"
-    )
-    assert (
-        _icon(_row(xuid=None, steam_id=STEAM_ID, steam_achievements_visible=False))
-        == "⚫⚠️"
-    )
+    assert _icon(_row(xuid=None, steam_id=STEAM_ID, steam_achievements_visible=True)) == "⚫✅"
+    assert _icon(_row(xuid=None, steam_id=STEAM_ID, steam_achievements_visible=False)) == "⚫⚠️"
     assert _icon(_row(xuid=None, steam_id=STEAM_ID, steam_achievements_visible=None)) == "⚫—"
     assert (
         _icon(
