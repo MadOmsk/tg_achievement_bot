@@ -224,7 +224,7 @@ def test_games_list_colours_x360_the_same_as_modern_xbox() -> None:
         title_id="t1", platform="xbox_360", name="Fallout 3", count=5, score=100
     )
     line = _games_list([game])
-    assert "🟢 Fallout 3" in line
+    assert "(🟢 X360) Fallout 3" in line
 
 
 async def test_games_list_is_capped_by_the_configured_limit(repo: Repo) -> None:

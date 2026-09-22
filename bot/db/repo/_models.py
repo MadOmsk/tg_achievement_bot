@@ -183,6 +183,10 @@ class AchievementRow:
     # split into the base game plus one per DLC (#46). None everywhere else:
     # Xbox and Steam have no notion of groups.
     trophy_group_id: str | None = None
+    # Specific console/device where earned (#79, NULL for backfill)
+    device: str | None = None
+    # Available platforms for the title (JSON string e.g. '["XboxOne", "XboxSeriesX"]')
+    game_platforms: str | None = None
 
 
 @dataclass(slots=True)
@@ -352,6 +356,7 @@ class PresenceRow:
     title_id: str | None
     title_name: str | None
     updated_at: str | None
+    device: str | None = None
 
 
 @dataclass(slots=True)
@@ -381,6 +386,7 @@ class PsnPresenceRow:
     title_id: str | None
     title_name: str | None
     updated_at: str | None
+    device: str | None = None
 
 
 @dataclass(slots=True)
@@ -414,6 +420,7 @@ class ChatPresenceRow:
     username: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    device: str | None = None
 
 
 @dataclass(slots=True)
@@ -516,6 +523,10 @@ class RecentAchievement:
     # External account id + PSN group — progress "47/50" on the Mini card.
     xuid: str = ""
     trophy_group_id: str | None = None
+    # Specific console/device where earned (#79, NULL for backfill)
+    device: str | None = None
+    # Available platforms for the game (JSON / comma list)
+    game_platforms: str | None = None
 
 
 @dataclass(slots=True)
@@ -549,6 +560,8 @@ class GameAchievements:
     silver: int = 0
     gold: int = 0
     platinum: int = 0
+    # Available platforms for the game as reported by API (#79)
+    platforms: str | None = None
     # Cached box art from `titles` — Mini App games rows; unused by chat text.
     icon_url: str | None = None
 

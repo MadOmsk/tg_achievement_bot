@@ -4,6 +4,7 @@
 # I18nContext.
 # Presence states
 onlineview-playing = играет — { $where }
+onlineview-playing-device = играет [{ $platform }] — { $where }
 onlineview-online-idle = в сети, не играет
 onlineview-offline = не в сети
 onlineview-no-data = нет данных

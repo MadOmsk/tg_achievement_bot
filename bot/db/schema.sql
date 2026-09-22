@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     trophy_type     TEXT,                -- PSN's tier (bronze/silver/gold/platinum), NULL
                                           -- elsewhere — new dimension, no analogue on any other
                                           -- platform (M-PSN-1's design notes), M-PSN-2
+    device          TEXT,                -- Specific device/platform where earned (#79, NULL for backfill)
     created_at      TEXT NOT NULL,
     -- Which `accounts` row this belongs to. Both Xbox generations are one
     -- account and one platform as far as a person is concerned (#52, owner
@@ -279,6 +280,7 @@ CREATE TABLE IF NOT EXISTS presence_state (
     state            TEXT,     -- Online / Offline
     title_id         TEXT,
     title_name       TEXT,
+    device           TEXT,     -- Xbox device (XboxSeriesX, XboxOne, WindowsOneCore, etc.)
     changed_at       TEXT,     -- when title_id or state last changed
     last_ach_poll_at TEXT,     -- when achievements were last fetched (debounce)
     updated_at       TEXT
@@ -319,6 +321,7 @@ CREATE TABLE IF NOT EXISTS psn_presence_state (
     state      TEXT,     -- Online / Offline, same vocabulary as presence_state
     title_id   TEXT,     -- npTitleId
     title_name TEXT,
+    device     TEXT,     -- PSN platform/device (PS5, PS4, etc.)
     changed_at TEXT,
     updated_at TEXT
 );
@@ -350,6 +353,7 @@ CREATE TABLE IF NOT EXISTS titles (
     name_ru    TEXT,
     name_en    TEXT,
     platform   TEXT,               -- xbox_360 / xbox_modern
+    platforms  TEXT,               -- JSON array of available platforms from API (#79)
     -- The game's own box art (titlehub's display_image), not an achievement
     -- icon — used as a stand-in icon for Xbox 360 achievement messages
     -- (fetcher.py's ensure_title_icon): contract 1 only ever gives a bare

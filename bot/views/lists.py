@@ -28,6 +28,7 @@ from html import escape as html_escape
 
 from bot.constants import Platform
 from bot.db.repo import GameAchievements
+from bot.services.platform_format import format_game_platforms
 from bot.views.parts import (
     PLATFORM_ICON,
     bracketed,
@@ -118,10 +119,11 @@ class GameRow:
     score: int = 0
     rare: int = 0
     tiers: tuple[int, int, int, int] = (0, 0, 0, 0)
+    platforms: str | None = None
 
 
 def game_rows(games: list[GameRow], untitled: str, locale: str) -> list[str]:
-    """`N. 🟢 Название — 29 ач. (+525 G)`, or a PSN row's trophy tiers.
+    """`N. 🟢 XBOX Series X|S Название — 29 ач. (+525 G)`, or a PSN row's trophy tiers.
 
     Not truncated (2026-09-08, owner request), unlike an achievement row: a
     games list always lives inside its own collapsible quote, so a long title
@@ -130,11 +132,15 @@ def game_rows(games: list[GameRow], untitled: str, locale: str) -> list[str]:
     This was two identical copies until #64 — one in /stats, one in the
     monthly summary — down to the comment above.
     """
-    return [
-        f"{place}. {PLATFORM_ICON.get(game.platform or '', '')} "
-        f"{html_escape(game.name or untitled)} — {_game_tail(game, locale)}"
-        for place, game in enumerate(games, start=1)
-    ]
+    rows: list[str] = []
+    for place, game in enumerate(games, start=1):
+        icon = PLATFORM_ICON.get(game.platform or "", "")
+        plat = format_game_platforms(game.platforms, game.platform, short=True)
+        tag = f"({icon} {plat}) " if plat else (f"{icon} " if icon else "")
+        tail = _game_tail(game, locale)
+        escaped_name = html_escape(game.name or untitled)
+        rows.append(f"{place}. {tag}{escaped_name} — {tail}")
+    return rows
 
 
 def games_listing(games: Sequence[GameAchievements], untitled: str, locale: str) -> Listing:
@@ -161,6 +167,7 @@ def games_listing(games: Sequence[GameAchievements], untitled: str, locale: str)
                     score=game.score,
                     rare=game.rare,
                     tiers=(game.platinum, game.gold, game.silver, game.bronze),
+                    platforms=game.platforms,
                 )
                 for game in games
             ],

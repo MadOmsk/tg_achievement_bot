@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import httpx
@@ -65,6 +65,7 @@ class PresenceSnapshot:
     title_name: str | None
     platform: Platform
     last_seen_at: datetime | None
+    device: str | None = None
 
     @property
     def in_game(self) -> bool:
@@ -88,6 +89,7 @@ class TitleHistoryEntry:
     # it into a URL at all (verified live against the real API — the raw
     # response has nothing image-shaped besides that number).
     icon_url: str | None = None
+    devices: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -143,6 +145,7 @@ class XboxClient:
             title_name=title_name,
             platform=Platform.XBOX_360 if device in X360_DEVICES else Platform.XBOX_MODERN,
             last_seen_at=getattr(last_seen, "timestamp", None),
+            device=device,
         )
 
     # -------------------------------------------------------- achievements
@@ -441,6 +444,7 @@ def _as_entry(title: object) -> TitleHistoryEntry:
         achievements_total=getattr(achievement, "total_achievements", None),
         last_played_at=_as_iso(getattr(history, "last_time_played", None)),
         icon_url=getattr(title, "display_image", None) or None,
+        devices=list(devices),
     )
 
 

@@ -42,7 +42,6 @@ chat-unknown-user = Не знаю такого. Bot API не умеет иска
 chat-help-text = 🎮 Слежу за достижениями и трофеями тех, кто играет на XBOX, PlayStation и в Steam, и публикую их сюда — с фильтром по редкости, статистикой каждого и итогом дня.
 
     Команды чата:
-    /app — открыть приложение
     /stats [@кто] — статистика: без аргумента своя, с ником — чужая
     /who — узнать стату конкретного игрока
     /online — кто сейчас в игре
@@ -55,13 +54,18 @@ chat-help-text = 🎮 Слежу за достижениями и трофеям
 chat-help-version = <i>Версия { $version }</i>
 chat-hub-nobody = Пока здесь никто не публикуется.
 chat-hub-publishing = Публикуются: { $names }
-chat-hub-publish-button = 🔔 Мои достижения здесь ▸
+chat-hub-publish-button = 🔔 Настройка уведомлений
 chat-hub-toast-all = Публикую все достижения
 chat-hub-toast-rare = Только редкие
 chat-hub-toast-hidden = Ничего не публикую здесь
 chat-hub-xbox-button = 🔗 XBOX
 chat-hub-steam-button = 🎮 Steam
 chat-hub-psn-button = 🎮 PSN
+chat-hub-who-button = 👤 Игрок
+chat-hub-online-button = 🟢 Онлайн
+chat-hub-recent-button = 🕘 Недавние
+chat-hub-summary-day-button = 📅 Сводка дня
+chat-hub-summary-month-button = 📆 Сводка месяца
 chat-hub-settings-button = ⚙️ Настройки
 chat-hub-open-app = Открыть приложение
 chat-app-hint = Смотри в приложении:

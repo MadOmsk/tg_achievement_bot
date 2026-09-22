@@ -77,7 +77,13 @@ def _rarity_line(achievement: AchievementRow, locale: str) -> str:
 
 
 def _game_line(
-    title: str, platform: str, locale: str, progress: TitleProgress | None = None
+    title: str,
+    platform: str,
+    locale: str,
+    progress: TitleProgress | None = None,
+    *,
+    device: str | None = None,
+    platforms: str | None = None,
 ) -> str:
     """The game, its platform, and how far this person is through it (#46).
 
@@ -96,7 +102,7 @@ def _game_line(
     line = _(
         "achievement-game-line",
         title=html_escape(title),
-        platform=platform_tag(platform, locale),
+        platform=platform_tag(platform, locale, device=device, platforms=platforms, short=False),
     )
     if progress is None:
         return line
@@ -190,7 +196,14 @@ def format_single(
         gamertag=html_escape(gamertag),
         word=_achievement_word(achievement.platform, locale, secret=achievement.is_secret),
     )
-    game_line = _game_line(title, achievement.platform, locale, progress)
+    game_line = _game_line(
+        title,
+        achievement.platform,
+        locale,
+        progress,
+        device=achievement.device,
+        platforms=achievement.game_platforms,
+    )
     text = f"{header}\n\n{game_line}\n{_rarity_line(achievement, locale)}"
     if achievement.description:
         description = _spoiler(html_escape(achievement.description), secret=achievement.is_secret)
@@ -266,6 +279,17 @@ def format_digest(
         # in a message that is already grouping things. `None` is the
         # game-only progress entry every platform has.
         key = (group[0].platform, group[0].title_id, None)
-        lines.append(_game_line(title, group[0].platform, locale, (progress or {}).get(key)))
+        device = group[0].device if group else None
+        platforms = getattr(group[0], "game_platforms", None) if group else None
+        lines.append(
+            _game_line(
+                title,
+                group[0].platform,
+                locale,
+                (progress or {}).get(key),
+                device=device,
+                platforms=platforms,
+            )
+        )
         lines.extend(_rarity_line(item, locale) for item in group)
     return "\n".join(lines)

@@ -38,7 +38,6 @@ from bot.handlers.admin import IsAdmin
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.admin_settings import DEFAULT_RECENT_LIMIT
 from bot.services.message_log import stats_category
-from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import (
     person_name_of,
 )
@@ -70,13 +69,24 @@ GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
 
 
 def _hub_markup(
-    bot_username: str, chat_id: int, i18n: I18nContext, settings: Settings
+    bot_username: str,
+    chat_id: int,
+    i18n: I18nContext,
+    settings: Settings,
+    *,
+    is_group: bool = True,
 ) -> InlineKeyboardMarkup:
     """The hub's keyboard, with the Mini App row when there is an app to
     open. Every caller already holds `settings`, and the alternative — a
     view reaching for configuration itself — is what `bot/views/` exists to
     avoid."""
-    return hub_keyboard(bot_username, chat_id, i18n, mini_app_url=settings.mini_app_url or "")
+    return hub_keyboard(
+        bot_username,
+        chat_id,
+        i18n,
+        mini_app_url=settings.mini_app_url or "",
+        is_group=is_group,
+    )
 
 
 # subscribe/unsubscribe is a check-then-act (is_subscribed, then write) —
@@ -293,8 +303,7 @@ async def stats(
 # --------------------------------------------------------------------- online
 
 
-@router.message(Command("online"))
-async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+async def _run_online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-group-command-only"))
         return
@@ -336,10 +345,12 @@ async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> N
         await repo.delete_online_auto_refresh(message.chat.id)
 
 
-@router.message(Command("who"))
-async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
-    """The picker /online used to double as (SPEC 6.3) — split out so /online
-    can stay a plain glance and this can stay a plain button grid."""
+@router.message(Command("online"))
+async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+    await _run_online(message, repo, bot, i18n)
+
+
+async def _run_who(message: Message, repo: Repo, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-group-command-only"))
         return
@@ -353,6 +364,13 @@ async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
         i18n.get("chat-who-prompt"),
         reply_markup=render_who_picker(rows, i18n),
     )
+
+
+@router.message(Command("who"))
+async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
+    """The picker /online used to double as (SPEC 6.3) — split out so /online
+    can stay a plain glance and this can stay a plain button grid."""
+    await _run_who(message, repo, i18n)
 
 
 @router.callback_query(F.data == "who:cancel")
@@ -678,17 +696,15 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
             await callback.message.answer(text, parse_mode=ParseMode.HTML)
 
 
-@router.message(Command("recent"))
-async def recent(
-    message: Message, repo: Repo, bot: Bot, command: CommandObject, i18n: I18nContext
+async def _run_recent(
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, *, limit: int | None = None
 ) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-recent-group-only"))
         return
 
-    limit = await repo.get_int_setting(SettingKey.RECENT_LIMIT, DEFAULT_RECENT_LIMIT)
-    if command.args and command.args.strip().isdigit():
-        limit = max(1, min(int(command.args.strip()), RECENT_MAX))
+    if limit is None:
+        limit = await repo.get_int_setting(SettingKey.RECENT_LIMIT, DEFAULT_RECENT_LIMIT)
 
     rows = await repo.chat_recent(message.chat.id, limit, locale=i18n.locale)
     if not rows:
@@ -699,6 +715,16 @@ async def recent(
     # Replaces the chat's previous /recent outright (Follow-up 2026-09-06).
     with stats_category():
         await send_replacing(bot, repo, message.chat.id, "recent", text, parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("recent"))
+async def recent(
+    message: Message, repo: Repo, bot: Bot, command: CommandObject, i18n: I18nContext
+) -> None:
+    limit = None
+    if command.args and command.args.strip().isdigit():
+        limit = max(1, min(int(command.args.strip()), RECENT_MAX))
+    await _run_recent(message, repo, bot, i18n, limit=limit)
 
 
 async def _resolve(message: Message, repo: Repo, argument: str | None) -> User | None:
@@ -730,43 +756,20 @@ async def _resolve(message: Message, repo: Repo, argument: str | None) -> User |
 async def help_command(
     message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
 ) -> None:
-    if message.chat.type not in GROUP_TYPES:
-        await message.answer(help_text(i18n))
-        return
     me = await bot.me()
+    bot_username = me.username or ""
+    if message.chat.type not in GROUP_TYPES:
+        await message.answer(
+            help_text(i18n),
+            parse_mode=ParseMode.HTML,
+            reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=False),
+        )
+        return
     await message.answer(
         await hub_text(repo, message.chat.id, i18n),
-        reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=True),
     )
-
-
-@router.message(Command("app"))
-async def open_app(message: Message, bot: Bot, i18n: I18nContext, settings: Settings) -> None:
-    """The Mini App's own way in, typed rather than hunted for in a menu.
-
-    In a group the button can only be a link — Telegram answers
-    BUTTON_TYPE_INVALID for a `web_app` button anywhere but a private chat —
-    and `mini_app_open_markup` picks the right shape for us. Either way the
-    chat's id rides along, so the app opens on the club the command was
-    typed in; the SPA drops an id that isn't one of the reader's own chats,
-    which is what makes this safe to send from a DM too.
-    """
-    url = (settings.mini_app_url or "").strip()
-    me = await bot.me()
-    markup = mini_app_open_markup(
-        i18n.get("chat-hub-open-app"),
-        https_url=url,
-        bot_username=me.username or "",
-        chat_id=message.chat.id,
-        in_group=message.chat.type in GROUP_TYPES,
-    )
-    if markup is None:
-        # No MINI_APP_URL, or no username to build a group link from. Say so
-        # rather than answering with an empty message: the command is
-        # published in the menu, so somebody will type it either way.
-        await message.answer(i18n.get("chat-app-no-url"))
-        return
-    await message.answer(i18n.get("chat-app-hint"), reply_markup=markup)
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
@@ -781,6 +784,7 @@ async def greet_new_chat(
     await bot.send_message(
         event.chat.id,
         await hub_text(repo, event.chat.id, i18n),
+        parse_mode=ParseMode.HTML,
         reply_markup=_hub_markup(me.username or "", event.chat.id, i18n, settings),
     )
 
@@ -806,6 +810,7 @@ async def subscribe_button(
         await callback.answer(url=f"https://t.me/{me.username}?start=connect{message.chat.id}")
         await message.answer(
             i18n.get("chat-subscribe-connect-first"),
+            parse_mode=ParseMode.HTML,
             reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
         )
         return
@@ -841,8 +846,57 @@ async def _refresh_hub(
         # Telegram refuses an edit that changes nothing — not an error.
         await message.edit_text(
             await hub_text(repo, message.chat.id, i18n),
+            parse_mode=ParseMode.HTML,
             reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
         )
+
+
+@router.callback_query(F.data == "hub:who")
+async def hub_who_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_who(callback.message, repo, i18n)
+
+
+@router.callback_query(F.data == "hub:online")
+async def hub_online_callback(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_online(callback.message, repo, bot, i18n)
+
+
+@router.callback_query(F.data == "hub:recent")
+async def hub_recent_callback(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_recent(callback.message, repo, bot, i18n)
+
+
+@router.callback_query(F.data == "hub:summary_day")
+async def hub_summary_day_callback(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_summary_command(callback.message, repo, bot, i18n, window=DAY)
+
+
+@router.callback_query(F.data == "hub:summary_month")
+async def hub_summary_month_callback(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_summary_command(callback.message, repo, bot, i18n, window=MONTH)
 
 
 @router.message(Command("delete_last"), F.chat.type.in_(GROUP_TYPES), IsAdmin())

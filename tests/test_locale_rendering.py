@@ -26,7 +26,11 @@ CHAT_ID = -100700
 TG_ID = 7007
 
 
-def _achievement(achievement_id: str = "a1", platform: str = "xbox_modern") -> AchievementRow:
+def _achievement(
+    achievement_id: str = "a1",
+    platform: str = "xbox_modern",
+    device: str | None = None,
+) -> AchievementRow:
     return AchievementRow(
         title_id="t1",
         achievement_id=achievement_id,
@@ -38,6 +42,7 @@ def _achievement(achievement_id: str = "a1", platform: str = "xbox_modern") -> A
         rarity_percent=2.5,
         platform=platform,
         title_name="Halo Infinite",
+        device=device,
     )
 
 
@@ -48,6 +53,18 @@ def test_single_achievement_renders_in_english() -> None:
     text = format_single("Igor", _achievement(), "Halo Infinite", locale="en")
     assert text.startswith("<b>Igor</b> gets an achievement")
     assert "rarity" in text
+
+
+def test_single_achievement_shows_device_in_game_line() -> None:
+    row = _achievement(device="XboxSeriesX")
+    text = format_single("Igor", row, "Halo Infinite", locale="ru")
+    assert "🟢 XBOX Series X|S" in text
+
+
+def test_single_trophy_shows_device_in_game_line() -> None:
+    trophy = _achievement(platform="psn", device="PS5")
+    text = format_single("Igor", trophy, "Spider-Man", locale="ru")
+    assert "🔵 PlayStation 5" in text
 
 
 def test_single_trophy_keeps_psns_own_word_in_english() -> None:

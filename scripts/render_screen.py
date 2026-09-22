@@ -146,7 +146,17 @@ async def _recent(ctx: Context) -> Screen:
 
 @screen("help")
 async def _help(ctx: Context) -> Screen:
-    return Screen(help_text(await i18n_for(ctx.locale)))
+    i18n = await i18n_for(ctx.locale)
+    return Screen(
+        help_text(i18n),
+        hub_keyboard(
+            "tg_achievement_bot",
+            ctx.chat_id,
+            i18n,
+            mini_app_url=(ctx.settings.mini_app_url or "") if ctx.settings else "",
+            is_group=False,
+        ),
+    )
 
 
 @screen("hub")

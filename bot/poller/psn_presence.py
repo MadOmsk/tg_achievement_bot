@@ -81,6 +81,7 @@ class PsnPresencePoller:
             snapshot.state,
             snapshot.title_id,
             snapshot.title_name,
+            device=snapshot.device,
             changed=changed,
         )
         if snapshot.state == "Online":

@@ -293,6 +293,18 @@ class _AdminRepo:
             row["title_id"]: (row["name_ru"], row["name_en"]) for row in await cursor.fetchall()
         }
 
+    async def title_platforms(self, title_ids: list[str]) -> dict[str, str]:
+        """`{title_id: platforms}` for notifications (#79) — one query for a batch."""
+        if not title_ids:
+            return {}
+        placeholders = ", ".join("?" * len(title_ids))
+        cursor = await self._conn.execute(
+            f"SELECT title_id, platforms FROM titles "
+            f"WHERE title_id IN ({placeholders}) AND platforms IS NOT NULL",
+            title_ids,
+        )
+        return {row["title_id"]: row["platforms"] for row in await cursor.fetchall()}
+
     async def set_title_total(self, title_id: str, total: int) -> None:
         """How many achievements a game has, without touching anything else
         about it (#46).
@@ -317,6 +329,7 @@ class _AdminRepo:
         platform: str | None,
         icon_url: str | None = None,
         achievements_total: int | None = None,
+        platforms: str | None = None,
     ) -> None:
         # icon_url only overwrites when this call actually has one —
         # ensure_title_name() (fetcher.py) upserts just the name/platform on
@@ -324,17 +337,19 @@ class _AdminRepo:
         # separate ensure_title_icon() call already cached here.
         await self._conn.execute(
             "INSERT INTO titles"
-            " (title_id, name, platform, icon_url, achievements_total, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            " (title_id, name, platform, icon_url, achievements_total, platforms, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
-            " platform = excluded.platform, updated_at = excluded.updated_at,"
+            " platform = COALESCE(excluded.platform, titles.platform),"
+            " updated_at = excluded.updated_at,"
             " icon_url = COALESCE(excluded.icon_url, titles.icon_url),"
             # Same "only overwrite when this call actually has one" rule as
             # icon_url above (#46): most upserts here know the name and
             # nothing else, and must not blank a total somebody else cached.
             " achievements_total = COALESCE(excluded.achievements_total,"
-            "                               titles.achievements_total)",
-            (title_id, name, platform, icon_url, achievements_total, utcnow_iso()),
+            "                               titles.achievements_total),"
+            " platforms = COALESCE(excluded.platforms, titles.platforms)",
+            (title_id, name, platform, icon_url, achievements_total, platforms, utcnow_iso()),
         )
         await self._conn.commit()
 

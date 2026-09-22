@@ -89,6 +89,14 @@ STARTUP_CATCH_UP_DEADLINE_SECONDS = 120.0
 
 
 def setup_logging(level: str) -> None:
+    # On Windows, stdout/stderr might default to legacy code pages (e.g. cp1251)
+    # when redirected to a file. Reconfigure to UTF-8 so emojis and Unicode
+    # strings never cause UnicodeEncodeError.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     logging.basicConfig(
         level=level.upper(),
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
@@ -422,7 +430,6 @@ async def _publish_command_menu(bot: Bot) -> None:
     def menus(locale: str) -> tuple[list[BotCommand], list[BotCommand]]:
         _ = translator("main", locale)
         private = [
-            BotCommand(command="app", description=_("main-cmd-app")),
             BotCommand(command="panel", description=_("main-cmd-panel")),
             BotCommand(command="stats", description=_("main-cmd-stats-private")),
             BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
@@ -435,7 +442,6 @@ async def _publish_command_menu(bot: Bot) -> None:
             BotCommand(command="help", description=_("main-cmd-help")),
         ]
         group = [
-            BotCommand(command="app", description=_("main-cmd-app")),
             # /stats and /who answer the same question — one about whoever
             # asked, one about somebody they pick — so they sit together
             # (owner, 2026-09-18). /online used to fall between them.

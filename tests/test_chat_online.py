@@ -13,10 +13,10 @@ XUID_B = "xuid-b"
 CHAT_ID = -100500
 
 
-def test_hub_keyboard_has_exactly_five_buttons_and_carries_the_chat_id() -> None:
+def test_hub_keyboard_has_the_expected_buttons_and_carries_the_chat_id() -> None:
     markup = hub_keyboard("mybot", CHAT_ID)
     buttons = [b for row in markup.inline_keyboard for b in row]
-    assert len(buttons) == 5
+    assert len(buttons) == 10
     connect_button = next(b for b in buttons if b.text == "🔗 XBOX")
     assert connect_button.url is not None
     assert f"start=connect{CHAT_ID}" in connect_button.url
@@ -24,15 +24,20 @@ def test_hub_keyboard_has_exactly_five_buttons_and_carries_the_chat_id() -> None
     assert steam_button.url == "https://t.me/mybot?start=connectsteam"
     psn_button = next(b for b in buttons if b.text == "🎮 PSN")
     assert psn_button.url == "https://t.me/mybot?start=connectpsn"
+    assert any(b.callback_data == "hub:who" for b in buttons)
+    assert any(b.callback_data == "hub:online" for b in buttons)
+    assert any(b.callback_data == "hub:recent" for b in buttons)
+    assert any(b.callback_data == "hub:summary_day" for b in buttons)
+    assert any(b.callback_data == "hub:summary_month" for b in buttons)
 
 
 def test_hub_keyboard_adds_open_app_when_mini_url_is_set() -> None:
     markup = hub_keyboard("mybot", CHAT_ID, mini_app_url="https://app.example/")
     buttons = [b for row in markup.inline_keyboard for b in row]
-    assert len(buttons) == 6
+    assert len(buttons) == 11
     open_app = next(b for b in buttons if b.text == "Открыть приложение")
     assert open_app.url == f"https://t.me/mybot?startapp=c{CHAT_ID}"
-    assert markup.inline_keyboard[-1] == [open_app]
+    assert markup.inline_keyboard[0] == [open_app]
 
 
 async def test_chat_member_presence_orders_playing_first(repo: Repo) -> None:
@@ -321,3 +326,45 @@ async def test_record_chat_seen_ignores_an_unknown_tg_id(repo: Repo) -> None:
     rows = await repo.chat_member_presence(CHAT_ID)
 
     assert rows == []
+
+
+async def test_hub_callbacks(repo: Repo, i18n) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from aiogram.types import CallbackQuery, Chat, Message
+    from aiogram.types import User as TgUser
+
+    from bot.handlers.chat import (
+        hub_online_callback,
+        hub_recent_callback,
+        hub_summary_day_callback,
+        hub_summary_month_callback,
+        hub_who_callback,
+    )
+
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    message = MagicMock(spec=Message)
+    message.chat = Chat(id=CHAT_ID, type="supergroup", title="Гейминг-чат")
+    message.answer = AsyncMock()
+
+    callback = MagicMock(spec=CallbackQuery)
+    callback.from_user = TgUser(id=1, is_bot=False, first_name="Tester")
+    callback.message = message
+    callback.answer = AsyncMock()
+
+    bot = MagicMock()
+
+    await hub_who_callback(callback, repo, i18n)
+    assert callback.answer.called
+
+    await hub_online_callback(callback, repo, bot, i18n)
+    assert callback.answer.called
+
+    await hub_recent_callback(callback, repo, bot, i18n)
+    assert callback.answer.called
+
+    await hub_summary_day_callback(callback, repo, bot, i18n)
+    assert callback.answer.called
+
+    await hub_summary_month_callback(callback, repo, bot, i18n)
+    assert callback.answer.called

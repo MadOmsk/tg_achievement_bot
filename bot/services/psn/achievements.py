@@ -21,6 +21,7 @@ publish.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -136,13 +137,25 @@ async def sync_account(
         # blanks an icon it already has, so a listing that omits it costs
         # nothing either.
         icon_url = getattr(title, "title_icon_url", None)
-        if defined_total or icon_url:
+        raw_platforms = getattr(title, "title_platform", None)
+        platforms_list: list[str] = []
+        if raw_platforms:
+            for p in raw_platforms:
+                if hasattr(p, "value"):
+                    platforms_list.append(str(p.value))
+                elif p:
+                    platforms_list.append(str(p))
+            platforms_list.sort()
+        platforms_json = json.dumps(platforms_list) if platforms_list else None
+
+        if defined_total or icon_url or platforms_json:
             await repo.upsert_title(
                 title.np_communication_id,
                 title.title_name,
                 Platform.PSN,
                 icon_url=icon_url,
                 achievements_total=defined_total or None,
+                platforms=platforms_json,
             )
 
         # The name and size of each group this game's trophy list is split
@@ -235,7 +248,21 @@ async def sync_account(
                 if item.trophy_earn_rate is not None
             },
         )
-        rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
+        target_device: str | None = None
+        if not is_backfill:
+            if len(platforms_list) == 1:
+                target_device = platforms_list[0]
+            elif platforms_list:
+                presence = await repo.psn_presence_of(account_id)
+                if presence and presence.device:
+                    target_device = presence.device
+                if not target_device:
+                    target_device = platforms_list[0]
+
+        rows = [
+            to_achievement_row(_to_parsed(title.np_communication_id, item, device=target_device))
+            for item in earned
+        ]
         inserted = await repo.insert_new_achievements_psn(
             tg_id, account_id, rows, is_backfill=is_backfill
         )
@@ -253,7 +280,9 @@ async def sync_account(
     return outcome
 
 
-def _to_parsed(np_communication_id: str, item: EarnedTrophy) -> ParsedAchievement:
+def _to_parsed(
+    np_communication_id: str, item: EarnedTrophy, *, device: str | None = None
+) -> ParsedAchievement:
     return ParsedAchievement(
         achievement_id=str(item.trophy_id),
         title_id=np_communication_id,
@@ -268,6 +297,7 @@ def _to_parsed(np_communication_id: str, item: EarnedTrophy) -> ParsedAchievemen
         is_secret=item.trophy_hidden,
         trophy_type=item.trophy_type.value if item.trophy_type else None,
         trophy_group_id=item.trophy_group_id,
+        device=device,
     )
 
 

@@ -157,7 +157,8 @@ class _MessagesRepo:
             "       s.is_secret, s.trophy_type,"
             "       s.title_id, s.achievement_id, s.icon_url,"
             "       t.icon_url AS game_icon_url, s.description,"
-            "       s.xuid AS achievement_xuid, s.trophy_group_id "
+            "       s.xuid AS achievement_xuid, s.trophy_group_id,"
+            "       s.device, t.platforms AS game_platforms "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
@@ -205,6 +206,8 @@ class _MessagesRepo:
                 description=row["description"],
                 xuid=row["achievement_xuid"] or "",
                 trophy_group_id=row["trophy_group_id"],
+                device=row["device"],
+                game_platforms=row["game_platforms"],
             )
             for row in await cursor.fetchall()
         ]
@@ -276,7 +279,8 @@ class _MessagesRepo:
             "       s.is_secret, s.trophy_type,"
             "       s.title_id, s.achievement_id, s.icon_url,"
             "       t.icon_url AS game_icon_url, s.description,"
-            "       s.xuid AS achievement_xuid, s.trophy_group_id "
+            "       s.xuid AS achievement_xuid, s.trophy_group_id,"
+            "       s.device, t.platforms AS game_platforms "
             "FROM users u "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
@@ -315,6 +319,8 @@ class _MessagesRepo:
                 description=row["description"],
                 xuid=row["achievement_xuid"] or "",
                 trophy_group_id=row["trophy_group_id"],
+                device=row["device"],
+                game_platforms=row["game_platforms"],
             )
             for row in await cursor.fetchall()
         ]
@@ -384,7 +390,9 @@ class _MessagesRepo:
             else "ORDER BY cnt DESC, last_earned DESC"
         )
         cursor = await self._conn.execute(
-            "SELECT s.title_id, s.platform, t.name, t.icon_url, " + LOCALIZED_TITLE_COLUMNS + ","
+            "SELECT s.title_id, s.platform, t.name, t.icon_url, t.platforms, "
+            + LOCALIZED_TITLE_COLUMNS
+            + ","
             "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
             f"       SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= ?"
             "                THEN 1 ELSE 0 END) AS rare,"
@@ -418,6 +426,7 @@ class _MessagesRepo:
                 gold=int(row["gold"] or 0),
                 platinum=int(row["platinum"] or 0),
                 icon_url=row["icon_url"],
+                platforms=row["platforms"],
             )
             for row in await cursor.fetchall()
         ]

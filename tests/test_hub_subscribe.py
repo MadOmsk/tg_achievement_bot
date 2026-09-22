@@ -1,4 +1,4 @@
-"""Tests for the Group Hub "🔔 Мои достижения здесь ▸" publish button (#54).
+"""Tests for the Group Hub "🔔 Настройка уведомлений" publish button (#54).
 
 The button cycles through publication modes (all -> rare -> hidden -> all)
 instead of dead-ending after the first press, respecting admin's default_rarity_mode
@@ -50,7 +50,7 @@ def test_hub_keyboard_publish_button_label_ru() -> None:
     markup = hub_keyboard("xboxbot", CHAT_ID)
     buttons = [b for row in markup.inline_keyboard for b in row]
     publish_btn = next(b for b in buttons if b.callback_data == "sub:on")
-    assert publish_btn.text == "🔔 Мои достижения здесь ▸"
+    assert publish_btn.text == "🔔 Настройка уведомлений"
 
 
 def test_hub_keyboard_publish_button_label_en() -> None:
@@ -58,7 +58,7 @@ def test_hub_keyboard_publish_button_label_en() -> None:
     markup = hub_keyboard("xboxbot", CHAT_ID, i18n_en)
     buttons = [b for row in markup.inline_keyboard for b in row]
     publish_btn = next(b for b in buttons if b.callback_data == "sub:on")
-    assert publish_btn.text == "🔔 My achievements here ▸"
+    assert publish_btn.text == "🔔 Notification settings"
 
 
 async def test_subscribe_button_redirects_when_not_connected(

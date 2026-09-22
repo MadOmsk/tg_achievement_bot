@@ -62,26 +62,28 @@ class _PollingRepo:
         state: str,
         title_id: str | None,
         title_name: str | None,
+        device: str | None = None,
         *,
         changed: bool,
     ) -> None:
         now = utcnow_iso()
         await self._conn.execute(
             "INSERT INTO presence_state "
-            "(xuid, state, title_id, title_name, changed_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "(xuid, state, title_id, title_name, device, changed_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(xuid) DO UPDATE SET "
             "  state = excluded.state, title_id = excluded.title_id,"
-            "  title_name = excluded.title_name, updated_at = excluded.updated_at,"
+            "  title_name = excluded.title_name, device = excluded.device,"
+            "  updated_at = excluded.updated_at,"
             "  changed_at = CASE WHEN ? THEN excluded.changed_at "
             "                 ELSE presence_state.changed_at END",
-            (xuid, state, title_id, title_name, now, now, 1 if changed else 0),
+            (xuid, state, title_id, title_name, device, now, now, 1 if changed else 0),
         )
         await self._conn.commit()
 
     async def presence_of(self, xuid: str) -> PresenceRow | None:
         cursor = await self._conn.execute(
-            "SELECT xuid, state, title_id, title_name, updated_at FROM presence_state "
+            "SELECT xuid, state, title_id, title_name, device, updated_at FROM presence_state "
             "WHERE xuid = ?",
             (xuid,),
         )
@@ -94,6 +96,7 @@ class _PollingRepo:
             title_id=row["title_id"],
             title_name=row["title_name"],
             updated_at=row["updated_at"],
+            device=row["device"],
         )
 
     async def steam_presence_of(self, steam_id: str) -> SteamPresenceRow | None:
@@ -344,20 +347,22 @@ class _PollingRepo:
         state: str,
         title_id: str | None,
         title_name: str | None,
+        device: str | None = None,
         *,
         changed: bool,
     ) -> None:
         now = utcnow_iso()
         await self._conn.execute(
             "INSERT INTO psn_presence_state "
-            "(account_id, state, title_id, title_name, changed_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "(account_id, state, title_id, title_name, device, changed_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(account_id) DO UPDATE SET "
             "  state = excluded.state, title_id = excluded.title_id,"
-            "  title_name = excluded.title_name, updated_at = excluded.updated_at,"
+            "  title_name = excluded.title_name, device = excluded.device,"
+            "  updated_at = excluded.updated_at,"
             "  changed_at = CASE WHEN ? THEN excluded.changed_at "
             "                 ELSE psn_presence_state.changed_at END",
-            (account_id, state, title_id, title_name, now, now, 1 if changed else 0),
+            (account_id, state, title_id, title_name, device, now, now, 1 if changed else 0),
         )
         await self._conn.commit()
 
@@ -366,7 +371,7 @@ class _PollingRepo:
         `steam_presence_of`) — not the batched `psn_presence_pollable_
         accounts()` the poller itself uses."""
         cursor = await self._conn.execute(
-            "SELECT account_id, state, title_id, title_name, updated_at "
+            "SELECT account_id, state, title_id, title_name, device, updated_at "
             "FROM psn_presence_state WHERE account_id = ?",
             (account_id,),
         )
@@ -379,4 +384,5 @@ class _PollingRepo:
             title_id=row["title_id"],
             title_name=row["title_name"],
             updated_at=row["updated_at"],
+            device=row["device"],
         )

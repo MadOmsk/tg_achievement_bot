@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 from aiogram.enums import ChatType
 
-from bot.handlers.chat import open_app
+from bot.handlers.chat import help_command
 from bot.views.chat import hub_keyboard
 
 BOT = "mybot"
@@ -48,11 +48,11 @@ class _FakeBot:
 
 
 def test_the_hub_gains_an_app_row_only_when_there_is_an_app() -> None:
-    assert len(_buttons(hub_keyboard(BOT, CHAT_ID))) == 5
+    assert len(_buttons(hub_keyboard(BOT, CHAT_ID))) == 10
 
     buttons = _buttons(hub_keyboard(BOT, CHAT_ID, mini_app_url=APP_URL))
-    assert len(buttons) == 6
-    app_button = buttons[-1]
+    assert len(buttons) == 11
+    app_button = buttons[0]
     assert app_button.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
     assert app_button.web_app is None
 
@@ -60,39 +60,40 @@ def test_the_hub_gains_an_app_row_only_when_there_is_an_app() -> None:
 def test_a_blank_url_is_not_an_app() -> None:
     """`MINI_APP_URL=` in the environment reads as an empty string, not as a
     missing key — a button to nowhere is worse than no button."""
-    assert len(_buttons(hub_keyboard(BOT, CHAT_ID, mini_app_url="   "))) == 5
+    assert len(_buttons(hub_keyboard(BOT, CHAT_ID, mini_app_url="   "))) == 10
 
 
-async def test_app_command_in_a_group_sends_a_link_not_a_web_app(i18n) -> None:
+async def test_help_command_in_a_group_sends_a_link_not_a_web_app(i18n, repo) -> None:
     message = _FakeMessage(ChatType.SUPERGROUP, CHAT_ID)
 
-    await open_app(message, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
+    await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
 
-    [button] = _buttons(message.markups[0])
-    assert button.web_app is None
-    assert button.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
+    buttons = _buttons(message.markups[0])
+    app_button = buttons[0]
+    assert app_button.web_app is None
+    assert app_button.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
 
 
-async def test_app_command_in_a_dm_opens_the_app_itself(i18n) -> None:
+async def test_help_command_in_a_dm_opens_the_app_itself(i18n, repo) -> None:
     message = _FakeMessage(ChatType.PRIVATE, 4242)
 
-    await open_app(message, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
+    await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
 
-    [button] = _buttons(message.markups[0])
-    assert button.url is None
-    assert button.web_app is not None
-    assert button.web_app.url.startswith(APP_URL)
+    buttons = _buttons(message.markups[0])
+    app_button = buttons[0]
+    assert app_button.url is None
+    assert app_button.web_app is not None
+    assert app_button.web_app.url.startswith(APP_URL)
 
 
-async def test_app_command_says_so_when_no_app_is_configured(i18n) -> None:
-    """The command is published in Telegram's own menu, so somebody will
-    type it whether or not MINI_APP_URL is set."""
-    message = _FakeMessage(ChatType.SUPERGROUP, CHAT_ID)
+async def test_help_command_in_a_dm_without_app_url(i18n, repo) -> None:
+    message = _FakeMessage(ChatType.PRIVATE, 4242)
 
-    await open_app(message, _FakeBot(), i18n, SimpleNamespace(mini_app_url=""))
+    await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=""))
 
-    assert message.markups == [None]
-    assert "MINI_APP_URL" in message.answers[0]
+    buttons = _buttons(message.markups[0])
+    assert not any(button.web_app for button in buttons)
+    assert len(buttons) == 4
 
 
 async def test_start_in_a_group_gets_no_web_app_button(i18n, repo) -> None:

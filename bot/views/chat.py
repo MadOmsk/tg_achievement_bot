@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from html import escape as html_escape
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from aiogram_i18n import I18nContext
 
 from bot.constants import SettingKey
@@ -23,13 +23,14 @@ from bot.db.repo import (
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
-from bot.services.mini_app import mini_app_group_url
+from bot.services.mini_app import mini_app_group_url, mini_app_open_url
 from bot.services.naming import (
     person_name,
     person_name_of,
     subscriber_names,
     xbox_nickname,
 )
+from bot.services.platform_format import format_game_platforms
 from bot.services.stats import counters_for, month_cutoff_utc
 from bot.util import humanize_ago, thousands
 from bot.version import version
@@ -258,6 +259,8 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
     )
     game = html_escape(truncate_name(row.game or _hub_text(i18n, "chat-untitled")))
     icon = PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
+    plat = format_game_platforms(row.game_platforms, row.platform, device=row.device, short=True)
+    icon_tag = f"({icon} {plat})" if plat else icon
     # Found live: every Steam row showed a flat "+0 G" — Steam achievements
     # have no gamerscore at all (services/steam/achievements.py), same
     # "0 is 0 on any platform, don't name it" rule the achievement message
@@ -275,7 +278,7 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
         "chat-recent-row",
         badge=badge,
         gamertag=gamertag,
-        icon=icon,
+        icon=icon_tag,
         game=game,
         name=name,
         tail=tail_text,
@@ -289,72 +292,114 @@ def hub_keyboard(
     i18n: I18nContext | None = None,
     *,
     mini_app_url: str = "",
+    is_group: bool = True,
 ) -> InlineKeyboardMarkup:
-    """A short walkthrough, not a control panel: SPEC 6.3 walks through
-    connect → publish in that order, so the keyboard should not offer more
-    choices than that story needs. Steam's and PSN's connect buttons
-    (SPEC 9, M-Steam-2e, M-PSN-1) sit next to Xbox's rather than adding a
-    whole extra row each — it is still the same "connect" step, just
-    another platform for it.
-
-    Buttons act on whoever presses them — that is why "Публиковать мои
-    достижения" is allowed here at all: SPEC 6.3 forbids rendering *someone
-    else's* settings where any member could page through them, not a button
-    that only ever touches the presser's own subscription.
+    """A short walkthrough and quick navigation:
+    1. App button (Open the app) - top row if configured
+    2. Platforms to connect (Xbox, PSN, Steam)
+    3. Management:
+       - In groups: Publish toggle ('Настройка уведомлений') + Settings ('Настройки')
+       - In private chat: Settings ('Настройки')
     """
-    rows: list[list[InlineKeyboardButton]] = [
-        [
-            InlineKeyboardButton(
-                text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
+    rows: list[list[InlineKeyboardButton]] = []
+    app_url = (mini_app_url or "").strip()
+    if app_url:
+        if is_group:
+            # A plain link, not a `web_app` button: Telegram answers
+            # BUTTON_TYPE_INVALID for a WebApp button anywhere but a private
+            # chat. `?startapp=` opens the same Mini App and carries this chat's
+            # id, so it lands on the club the reader is standing in instead of a
+            # chooser.
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=_hub_text(i18n, "chat-hub-open-app"),
+                        url=mini_app_group_url(bot_username, chat_id=chat_id),
+                    )
+                ]
             )
-        ],
+        else:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=_hub_text(i18n, "chat-hub-open-app"),
+                        web_app=WebAppInfo(url=mini_app_open_url(app_url, chat_id=chat_id)),
+                    )
+                ]
+            )
+
+    # Platforms row (Row 2)
+    xbox_url = (
+        f"https://t.me/{bot_username}?start=connect{chat_id}"
+        if is_group
+        else f"https://t.me/{bot_username}?start=connect"
+    )
+    rows.append(
         [
             InlineKeyboardButton(
                 text=_hub_text(i18n, "chat-hub-xbox-button"),
-                # The chat id rides along in the deep-link payload so a
-                # successful login can auto-subscribe him right back here
-                # (SPEC 6.3) — see _parse_connect_payload in connect.py.
-                url=f"https://t.me/{bot_username}?start=connect{chat_id}",
+                url=xbox_url,
             ),
             InlineKeyboardButton(
                 text=_hub_text(i18n, "chat-hub-psn-button"),
-                # No chat id here (unlike Xbox above) — see Steam's own
-                # button below for why (SPEC 9, M-PSN-1, handlers/psn.py,
-                # connect.py's ?start=connectpsn).
                 url=f"https://t.me/{bot_username}?start=connectpsn",
             ),
             InlineKeyboardButton(
                 text=_hub_text(i18n, "chat-hub-steam-button"),
-                # No chat id here (unlike Xbox above) — /connect_steam
-                # needs a profile link a button tap can't supply anyway,
-                # so this just opens the DM at the right prompt (SPEC 9,
-                # handlers/steam.py, connect.py's ?start=connectsteam).
                 url=f"https://t.me/{bot_username}?start=connectsteam",
             ),
-        ],
-        [
-            InlineKeyboardButton(
-                text=_hub_text(i18n, "chat-hub-settings-button"),
-                url=f"https://t.me/{bot_username}?start=panel",
-            ),
-        ],
-    ]
-    if mini_app_url.strip():
-        # A plain link, not a `web_app` button: Telegram answers
-        # BUTTON_TYPE_INVALID for a WebApp button anywhere but a private
-        # chat. `?startapp=` opens the same Mini App and carries this chat's
-        # id, so it lands on the club the reader is standing in instead of a
-        # chooser. Last row on purpose — the rows above are the connect →
-        # publish walkthrough this keyboard exists for, and the app is
-        # another door onto it rather than a step inside it.
+        ]
+    )
+
+    # In groups: add action rows and management
+    settings_btn = InlineKeyboardButton(
+        text=_hub_text(i18n, "chat-hub-settings-button"),
+        url=f"https://t.me/{bot_username}?start=panel",
+    )
+    if is_group:
+        # Row 3: who, online, recent
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-open-app"),
-                    url=mini_app_group_url(bot_username, chat_id=chat_id),
-                )
+                    text=_hub_text(i18n, "chat-hub-who-button"),
+                    callback_data="hub:who",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-online-button"),
+                    callback_data="hub:online",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-recent-button"),
+                    callback_data="hub:recent",
+                ),
             ]
         )
+        # Row 4: summary day and month
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-summary-day-button"),
+                    callback_data="hub:summary_day",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-summary-month-button"),
+                    callback_data="hub:summary_month",
+                ),
+            ]
+        )
+        # Row 5: management (publish toggle + settings)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
+                ),
+                settings_btn,
+            ]
+        )
+    else:
+        # In private chat: settings
+        rows.append([settings_btn])
+
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -368,10 +413,11 @@ def help_text(i18n: I18nContext) -> str:
 
 async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
     names = subscriber_names(await repo.chat_subscribers(chat_id))
+    escaped_names = [html_escape(name) for name in names]
     who = (
         i18n.get("chat-hub-nobody")
         if not names
-        else i18n.get("chat-hub-publishing", names=", ".join(names))
+        else i18n.get("chat-hub-publishing", names=", ".join(escaped_names))
     )
     # The version stays the last line of the whole message — under the
     # subscriber list, not buried above it.

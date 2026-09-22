@@ -318,6 +318,7 @@ class PsnPresenceSnapshot:
     # is the current one — a rename is visible here for free, and PSN used
     # to store the nickname once at connect and never again.
     online_id: str | None = None
+    device: str | None = None
 
 
 LEGACY_PROFILE_URL = "https://us-prof.np.community.playstation.net/userProfile/v1/users"
@@ -377,11 +378,13 @@ async def get_presence(client: PSNAWP, account_id: str) -> PsnPresenceSnapshot:
     titles = basic.get("gameTitleInfoList") or []
     title_id = titles[0].get("npTitleId") if titles else None
     title_name = titles[0].get("titleName") if titles else None
+    device = primary.get("platform") or None
     return PsnPresenceSnapshot(
         state=state,
         title_id=title_id,
         title_name=title_name,
         online_id=getattr(user, "online_id", None) or None,
+        device=device,
     )
 
 

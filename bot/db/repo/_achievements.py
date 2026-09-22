@@ -130,9 +130,9 @@ class _AchievementsRepo:
         for item in achievements:
             cursor = await self._conn.execute(
                 "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
-                " gamerscore, rarity_percent, platform, is_backfill, is_secret, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at, "
+                "gamerscore, rarity_percent, platform, is_backfill, is_secret, device, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     xuid,
                     item.title_id,
@@ -146,6 +146,7 @@ class _AchievementsRepo:
                     item.platform,
                     1 if is_backfill else 0,
                     1 if item.is_secret else 0,
+                    None if is_backfill else item.device,
                     now,
                 ),
             )
@@ -183,7 +184,7 @@ class _AchievementsRepo:
             if item.title_name and item.title_id not in cached_titles:
                 cached_titles[item.title_id] = item.title_name
         for title_id, name in cached_titles.items():
-            await self.upsert_title(title_id, name, Platform.STEAM)
+            await self.upsert_title(title_id, name, Platform.STEAM, platforms='["PC"]')
         await self._ensure_account(AccountPlatform.STEAM, steam_id)
 
         new_rows: list[AchievementRow] = []
@@ -191,9 +192,9 @@ class _AchievementsRepo:
         for item in achievements:
             cursor = await self._conn.execute(
                 "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
-                " gamerscore, rarity_percent, platform, is_backfill, is_secret, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at, "
+                "gamerscore, rarity_percent, platform, is_backfill, is_secret, device, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     steam_id,
                     item.title_id,
@@ -207,6 +208,7 @@ class _AchievementsRepo:
                     item.platform,
                     1 if is_backfill else 0,
                     1 if item.is_secret else 0,
+                    None if is_backfill else (item.device or "PC"),
                     now,
                 ),
             )
@@ -249,8 +251,8 @@ class _AchievementsRepo:
                 "INSERT OR IGNORE INTO seen_achievements "
                 "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
                 " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
-                " trophy_group_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " trophy_group_id, device, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     account_id,
                     item.title_id,
@@ -266,6 +268,7 @@ class _AchievementsRepo:
                     1 if item.is_secret else 0,
                     item.trophy_type,
                     item.trophy_group_id,
+                    None if is_backfill else item.device,
                     now,
                 ),
             )
@@ -382,7 +385,7 @@ class _AchievementsRepo:
         as it is today outside the flood filter entirely.
         """
         cursor = await self._conn.execute(
-            "SELECT s.*, t.name AS game,"
+            "SELECT s.*, t.name AS game, t.platforms AS game_platforms,"
             # Plain COALESCE on purpose, unlike every windowed read (#69):
             # `is_backfill = 0` below already excludes the only rows the
             # fallback lies about, so the rule has nothing left to decide here.
@@ -412,6 +415,8 @@ class _AchievementsRepo:
                 trophy_type=row["trophy_type"],
                 trophy_group_id=row["trophy_group_id"],
                 xuid=row["xuid"],
+                device=row["device"],
+                game_platforms=row["game_platforms"],
             )
             for row in await cursor.fetchall()
         ]

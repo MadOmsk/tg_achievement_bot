@@ -12,6 +12,7 @@ from bot.constants import Platform, PresenceState
 from bot.db.repo import ChatPresenceRow
 from bot.i18n import translator
 from bot.services.naming import person_name, xbox_nickname
+from bot.services.platform_format import normalize_device_name
 from bot.views.lists import Listing
 from bot.views.parts import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
 
@@ -22,6 +23,13 @@ from bot.views.parts import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
 def presence_text(row: ChatPresenceRow, locale: str) -> str:
     _ = translator("onlineview", locale)
     if row.state == PresenceState.ONLINE and row.title_id:
+        norm_device = normalize_device_name(row.device)
+        if norm_device:
+            return _(
+                "onlineview-playing-device",
+                where=row.title_name or row.title_id,
+                platform=norm_device,
+            )
         return _("onlineview-playing", where=row.title_name or row.title_id)
     if row.state == PresenceState.ONLINE:
         return _("onlineview-online-idle")

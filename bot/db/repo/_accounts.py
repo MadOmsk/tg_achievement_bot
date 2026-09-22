@@ -131,8 +131,20 @@ class _AccountsRepo:
         photo_path = row["photo_path"] if row else None
 
         cursor = await self._conn.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
-        await self._conn.commit()
         deleted = cursor.rowcount > 0
+
+        if deleted:
+            await self._conn.execute(
+                "DELETE FROM tracked_messages "
+                "WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
+                (tg_id, tg_id),
+            )
+            await self._conn.execute(
+                "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
+                (tg_id,),
+            )
+
+        await self._conn.commit()
 
         if deleted and photo_path:
             from bot.services.avatars import avatar_dir

@@ -177,6 +177,9 @@ async def test_delete_user_cascades_all_data(repo: Repo) -> None:
     await repo.upsert_chat(100, "Test Chat", None)
     await repo.subscribe(100, ALICE)
     await repo.record_chat_seen(100, ALICE)
+    await repo.set_tracked_message(ALICE, "panel", 0, 1001)
+    await repo.set_tracked_message(100, "stats", ALICE, 1002)
+    await repo.start_admin_panel_refresh(ALICE, 1003)
 
     # Verify user and related rows exist
     assert await repo.get_user(ALICE) is not None
@@ -184,6 +187,9 @@ async def test_delete_user_cascades_all_data(repo: Repo) -> None:
     assert await repo.get_user_settings(ALICE) is not None
     assert len(await repo.platform_links_of(ALICE)) == 2
     assert len(await repo.user_chats(ALICE)) == 1
+    assert await repo.tracked_message(ALICE, "panel", 0) == 1001
+    assert await repo.tracked_message(100, "stats", ALICE) == 1002
+    assert await repo.get_admin_panel_refresh(ALICE) is not None
 
     # Delete user
     assert await repo.delete_user(ALICE) is True
@@ -194,6 +200,9 @@ async def test_delete_user_cascades_all_data(repo: Repo) -> None:
     assert await repo.get_user_settings(ALICE) is None
     assert await repo.platform_links_of(ALICE) == []
     assert await repo.user_chats(ALICE) == []
+    assert await repo.tracked_message(ALICE, "panel", 0) is None
+    assert await repo.tracked_message(100, "stats", ALICE) is None
+    assert await repo.get_admin_panel_refresh(ALICE) is None
 
     # Deleting again returns False
     assert await repo.delete_user(ALICE) is False

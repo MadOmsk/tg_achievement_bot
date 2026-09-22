@@ -50,11 +50,15 @@ class _StatsRepo:
                     now,
                 ),
             )
+            platforms_json = json.dumps(entry.devices) if getattr(entry, "devices", None) else None
             await self._conn.execute(
-                "INSERT INTO titles (title_id, name, platform, updated_at) VALUES (?, ?, ?, ?) "
+                "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
                 "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
-                " platform = excluded.platform, updated_at = excluded.updated_at",
-                (entry.title_id, entry.name, entry.platform, now),
+                " platform = COALESCE(excluded.platform, titles.platform),"
+                " platforms = COALESCE(excluded.platforms, titles.platforms),"
+                " updated_at = excluded.updated_at",
+                (entry.title_id, entry.name, entry.platform, platforms_json, now),
             )
         await self._conn.commit()
 

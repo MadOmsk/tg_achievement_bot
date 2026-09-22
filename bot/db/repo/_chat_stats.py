@@ -266,13 +266,14 @@ class _ChatStatsRepo:
             "  SELECT u.tg_id, u.username, u.first_name,"
             "         u.last_name, " + XBOX_COLUMNS + ","
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
+            "         xp.device AS xbox_device,"
             "         xp.title_name AS xbox_title_name, xp.updated_at AS xbox_updated_at,"
             "         sp.persona_state AS steam_persona_state, sp.gameid AS steam_gameid,"
             "         sp.game_name AS steam_game_name, sp.updated_at AS steam_updated_at,"
             "         steam.external_id AS steam_external_id,"
             "         steam.display_name AS steam_display_name,"
             "         psn.external_id AS psn_external_id, psn.display_name AS psn_display_name,"
-            "         pp.state AS psn_state, pp.title_id AS psn_title_id,"
+            "         pp.state AS psn_state, pp.title_id AS psn_title_id, pp.device AS psn_device,"
             "         pp.title_name AS psn_title_name, pp.updated_at AS psn_updated_at,"
             "         CASE WHEN xp.state = 'Online' AND xp.title_id IS NOT NULL THEN 2"
             "              WHEN xp.state = 'Online' THEN 1"
@@ -333,7 +334,12 @@ class _ChatStatsRepo:
             "       CASE winner WHEN 'steam' THEN steam_game_name"
             "                   WHEN 'xbox_modern' THEN xbox_title_name"
             "                   WHEN 'psn' THEN psn_title_name ELSE NULL END AS title_name,"
-            "       winner AS platform, steam_display_name, psn_display_name "
+            "       winner AS platform, steam_display_name, psn_display_name,"
+            "       CASE winner"
+            "         WHEN 'xbox_modern' THEN xbox_device"
+            "         WHEN 'psn' THEN psn_device"
+            "         WHEN 'steam' THEN 'PC'"
+            "         ELSE NULL END AS device "
             "FROM final "
             "ORDER BY "
             "  CASE WHEN state = 'Online' AND title_id IS NOT NULL THEN 0 "
@@ -362,6 +368,7 @@ class _ChatStatsRepo:
                 username=row["username"],
                 first_name=row["first_name"],
                 last_name=row["last_name"],
+                device=row["device"],
             )
             for row in await cursor.fetchall()
         ]

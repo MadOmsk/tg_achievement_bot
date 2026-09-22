@@ -167,6 +167,12 @@ class Publisher:
             # user_settings — Follow-up, 2026-09-05, same move as
             # rarity_mode before it).
             progress = await self._progress_for(allowed, xuid)
+            missing = [a.title_id for a in allowed if not getattr(a, "game_platforms", None)]
+            if missing:
+                plat_map = await self._repo.title_platforms(missing)
+                for a in allowed:
+                    if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
+                        a.game_platforms = plat_map[a.title_id]
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
@@ -351,6 +357,13 @@ class Publisher:
                     )
         if not name or name == NO_NICKNAME:
             name = person_name_of(user, links) if user else f"id{tg_id}"
+
+        missing = [a.title_id for a in achievements if not getattr(a, "game_platforms", None)]
+        if missing:
+            plat_map = await self._repo.title_platforms(missing)
+            for a in achievements:
+                if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
+                    a.game_platforms = plat_map[a.title_id]
 
         progress_map = await self._progress_for(achievements)
         if len(achievements) == 1:

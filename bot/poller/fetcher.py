@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 
@@ -49,6 +50,7 @@ class Fetcher:
         title_id: str,
         platform: Platform,
         title_name: str | None,
+        device: str | None = None,
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
         parsed, total = await self._client.title_achievements_with_total(tg_id, title_id, platform)
@@ -75,7 +77,7 @@ class Fetcher:
             title_id,
             {a.achievement_id: a.rarity_percent for a in parsed if a.rarity_percent is not None},
         )
-        rows = [to_achievement_row(item) for item in parsed]
+        rows = [to_achievement_row(item, device=device) for item in parsed]
         new_rows = await self._repo.insert_new_achievements(xuid, rows, is_backfill=False)
         await self._repo.mark_achievements_polled(xuid)
         if not new_rows:
@@ -106,7 +108,10 @@ class Fetcher:
             return None
         if entry is None or not entry.name:
             return None
-        await self._repo.upsert_title(entry.title_id, entry.name, entry.platform)
+        platforms_json = json.dumps(entry.devices) if getattr(entry, "devices", None) else None
+        await self._repo.upsert_title(
+            entry.title_id, entry.name, entry.platform, platforms=platforms_json
+        )
         return entry.name
 
     async def ensure_title_icon(self, tg_id: int, title_id: str) -> str | None:
@@ -326,13 +331,24 @@ class Fetcher:
         _ = translator("fetcher", locale)
         snapshot = await self._client.presence(tg_id)
         await self._repo.save_presence_state(
-            xuid, snapshot.state, snapshot.title_id, snapshot.title_name, changed=False
+            xuid,
+            snapshot.state,
+            snapshot.title_id,
+            snapshot.title_name,
+            device=snapshot.device,
+            changed=False,
         )
 
         published = 0
         if snapshot.in_game and snapshot.title_id:
             published = await self.poll_title(
-                tg_id, xuid, gamertag, snapshot.title_id, snapshot.platform, snapshot.title_name
+                tg_id,
+                xuid,
+                gamertag,
+                snapshot.title_id,
+                snapshot.platform,
+                snapshot.title_name,
+                device=snapshot.device,
             )
         await self.refresh_title_history(tg_id, xuid)
 
