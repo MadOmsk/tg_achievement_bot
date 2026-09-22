@@ -79,11 +79,17 @@ class RarityBackfill:
                 continue
             remaining -= 1
             try:
-                rarity = await self._client.title_rarity(tg_id, title_id)
+                if hasattr(self._client, "title_rarity_with_name"):
+                    rarity, title_name = await self._client.title_rarity_with_name(tg_id, title_id)
+                else:
+                    rarity = await self._client.title_rarity(tg_id, title_id)
+                    title_name = None
             except XboxApiError as exc:
                 log.info("rarity backfill: title %s unanswerable (%s)", title_id, exc)
                 self._unanswerable.add(title_id)
                 continue
+            if title_name:
+                await self._repo.upsert_title(title_id, title_name, Platform.XBOX_MODERN)
             if not rarity:
                 # Asked and there is none — an Xbox 360 title reached through
                 # a modern row, or a game Microsoft reports no percentages
@@ -92,3 +98,48 @@ class RarityBackfill:
                 continue
             await self._repo.cache_rarity(Platform.XBOX_MODERN, title_id, rarity)
             log.info("rarity backfill: cached %s percentages for title %s", len(rarity), title_id)
+
+        # Also heal titles that exist in seen_achievements but are missing
+        # from `titles` catalog (#77).
+        if remaining > 0:
+            missing = await self._repo.titles_missing_from_catalogue(
+                remaining + len(self._unanswerable)
+            )
+            for title_id, tg_id in missing:
+                if remaining <= 0:
+                    break
+                if title_id in self._unanswerable:
+                    continue
+                remaining -= 1
+                title_name = None
+                rarity = {}
+                if hasattr(self._client, "title_rarity_with_name"):
+                    try:
+                        rarity, title_name = await self._client.title_rarity_with_name(
+                            tg_id, title_id
+                        )
+                    except XboxApiError:
+                        pass
+                if title_name:
+                    await self._repo.upsert_title(title_id, title_name, Platform.XBOX_MODERN)
+                    if rarity:
+                        await self._repo.cache_rarity(Platform.XBOX_MODERN, title_id, rarity)
+                    continue
+
+                if hasattr(self._client, "resolve_title"):
+                    try:
+                        entry = await self._client.resolve_title(tg_id, title_id)
+                    except XboxApiError as exc:
+                        log.info("rarity backfill: title %s unresolvable (%s)", title_id, exc)
+                        self._unanswerable.add(title_id)
+                        continue
+                    if entry is None or not entry.name:
+                        self._unanswerable.add(title_id)
+                        continue
+                    await self._repo.upsert_title(
+                        entry.title_id, entry.name, entry.platform, entry.icon_url
+                    )
+                    if rarity:
+                        await self._repo.cache_rarity(Platform.XBOX_MODERN, title_id, rarity)
+                else:
+                    self._unanswerable.add(title_id)

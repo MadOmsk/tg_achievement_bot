@@ -211,6 +211,29 @@ def parse_achievements(
     return result
 
 
+def parse_rarity_with_title(payload: dict[str, Any]) -> tuple[dict[str, float], str | None]:
+    """Every achievement's rarity and the title's name in one contract-4 response.
+
+    Contract 4 includes titleAssociations on each achievement item, which
+    carries the human-readable game title. This allows learning title names
+    during rarity caching without extra requests (#77).
+    """
+    result: dict[str, float] = {}
+    title_name: str | None = None
+    for item in payload.get("achievements") or []:
+        try:
+            achievement = ModernAchievement.model_validate(item)
+        except Exception:
+            continue
+        if title_name is None and achievement.title_associations:
+            assoc = achievement.title_associations[0]
+            if assoc and assoc.name:
+                title_name = assoc.name
+        if achievement.rarity is not None and achievement.rarity.current_percentage is not None:
+            result[str(achievement.id)] = float(achievement.rarity.current_percentage)
+    return result, title_name
+
+
 def parse_rarity(payload: dict[str, Any]) -> dict[str, float]:
     """Every achievement's rarity in one title's response, earned or not.
 
@@ -223,15 +246,8 @@ def parse_rarity(payload: dict[str, Any]) -> dict[str, float]:
     Contract 2 and contract 1 carry no rarity at all, which needs no check
     here: their achievements simply have no `rarity` block and fall out.
     """
-    result: dict[str, float] = {}
-    for item in payload.get("achievements") or []:
-        try:
-            achievement = ModernAchievement.model_validate(item)
-        except Exception:
-            continue
-        if achievement.rarity is not None and achievement.rarity.current_percentage is not None:
-            result[str(achievement.id)] = float(achievement.rarity.current_percentage)
-    return result
+    rarity, _ = parse_rarity_with_title(payload)
+    return rarity
 
 
 def continuation_token(payload: dict[str, Any]) -> str | None:

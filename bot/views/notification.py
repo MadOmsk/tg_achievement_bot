@@ -291,5 +291,8 @@ def format_digest(
                 platforms=platforms,
             )
         )
-        lines.extend(_rarity_line(item, locale) for item in group)
+        for item in group:
+            lines.append(_rarity_line(item, locale))
+            if item.description:
+                lines.append(_spoiler(html_escape(item.description), secret=item.is_secret))
     return "\n".join(lines)

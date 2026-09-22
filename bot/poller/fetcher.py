@@ -278,7 +278,16 @@ class Fetcher:
         old achievements into the chat.
         """
         async with self._backfill_slots:
-            rows = [to_achievement_row(item) for item in await self._client.all_achievements(tg_id)]
+            raw_items = await self._client.all_achievements(tg_id)
+            rows = [to_achievement_row(item) for item in raw_items]
+
+            # Save any titles learned from all_achievements (contract 2) so older
+            # games beyond title_history's window don't stay untitled in the catalog (#77).
+            for item in raw_items:
+                if item.title_id and item.title_name:
+                    await self._repo.upsert_title(
+                        item.title_id, item.title_name, item.platform or Platform.XBOX_MODERN
+                    )
 
             # Contract 2 covers modern titles only — verified against a live
             # account, where an Xbox 360 game with 33 unlocked achievements was

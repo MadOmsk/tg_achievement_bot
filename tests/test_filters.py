@@ -289,7 +289,9 @@ def test_secret_achievement_name_is_spoilered_in_a_digest_line_too() -> None:
     items = [achievement(is_secret=True), achievement(is_secret=False)]
     text = format_digest("Igor", "Halo Infinite", items, locale="ru")
     assert '«<span class="tg-spoiler">Ashes to Ashes</span>»' in text
+    assert '<span class="tg-spoiler">Kill 100 enemies</span>' in text
     assert "«Ashes to Ashes» ·" in text  # the non-secret one, unwrapped
+    assert "\nKill 100 enemies" in text
 
 
 def test_gamertag_and_achievement_text_are_html_escaped() -> None:

@@ -419,6 +419,11 @@ async def handle_patch_chat(request: web.Request) -> web.Response:
 
     body = await _json_body(request)
     action = str(body.get("action") or "").strip()
+    if not action:
+        if "rarity_mode" in body:
+            action = "set_rarity"
+        elif "digest_threshold" in body:
+            action = "set_digest"
 
     if action == "cycle_rarity":
         if not chat.is_subscribed:

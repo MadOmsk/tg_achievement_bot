@@ -29,7 +29,7 @@ from bot.services.xbox.models import (
     ParsedAchievement,
     continuation_token,
     parse_achievements,
-    parse_rarity,
+    parse_rarity_with_title,
 )
 
 log = logging.getLogger(__name__)
@@ -241,10 +241,17 @@ class XboxClient:
         and contract 1 has no rarity to give) — the caller treats that as
         "asked and there is none", not as a failure to retry.
         """
+        rarity, _ = await self.title_rarity_with_name(tg_id, title_id)
+        return rarity
+
+    async def title_rarity_with_name(
+        self, tg_id: int, title_id: str
+    ) -> tuple[dict[str, float], str | None]:
+        """Contract 4 returns both rarity map and human-readable title name (#77)."""
         payload = await self._get_achievements(
             tg_id, "4", {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         )
-        return parse_rarity(payload)
+        return parse_rarity_with_title(payload)
 
     async def all_achievements(self, tg_id: int) -> list[ParsedAchievement]:
         """Every achievement of the player, for backfill only (SPEC 5.6).
