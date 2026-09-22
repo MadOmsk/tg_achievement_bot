@@ -54,9 +54,15 @@ import aiosqlite
 from bot.db.repo._accounts import _AccountsRepo
 from bot.db.repo._achievements import _AchievementsRepo
 from bot.db.repo._admin import _AdminRepo
+from bot.db.repo._catalog import _CatalogRepo
 from bot.db.repo._chat_stats import _ChatStatsRepo
 from bot.db.repo._chats import _ChatsRepo
-from bot.db.repo._database import DEFAULT_APP_SETTINGS, MIGRATIONS_DIR, SCHEMA_PATH, Database
+from bot.db.repo._database import (
+    DEFAULT_APP_SETTINGS,
+    MIGRATIONS_DIR,
+    SCHEMA_PATH,
+    Database,
+)
 from bot.db.repo._descriptions import _DescriptionsRepo
 from bot.db.repo._flood import _FloodRepo
 from bot.db.repo._messages import _MessagesRepo
@@ -86,6 +92,8 @@ from bot.db.repo._models import (
     SteamPollTarget,
     SteamPresenceRow,
     SteamSchemaAchievement,
+    TitleAchievementRow,
+    TitleAchievementWithUnlock,
     TitleCoverRow,
     TitleHistoryRow,
     TitleProgress,
@@ -132,6 +140,8 @@ __all__ = [
     "SteamPollTarget",
     "SteamPresenceRow",
     "SteamSchemaAchievement",
+    "TitleAchievementRow",
+    "TitleAchievementWithUnlock",
     "TitleCoverRow",
     "TitleHistoryRow",
     "TitleProgress",
@@ -154,6 +164,7 @@ class Repo(
     _PlatformLinksRepo,
     _FloodRepo,
     _DescriptionsRepo,
+    _CatalogRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

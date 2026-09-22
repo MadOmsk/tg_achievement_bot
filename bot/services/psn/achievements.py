@@ -29,7 +29,7 @@ from psnawp_api import PSNAWP
 from psnawp_api.models.trophies import TrophyTitle
 
 from bot.constants import Platform
-from bot.db.repo import AchievementRow, Repo
+from bot.db.repo import AchievementRow, Repo, TitleAchievementRow
 from bot.services.models import ParsedAchievement
 from bot.services.psn.client import (
     EarnedTrophy,
@@ -43,7 +43,7 @@ from bot.services.psn.client import (
 from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
-from bot.util import parse_iso
+from bot.util import parse_iso, utcnow_iso
 
 log = logging.getLogger(__name__)
 
@@ -167,7 +167,13 @@ async def sync_account(
         # so a game nobody had advanced lately never got either — which is the
         # same reason its trophy *total* was missing (#60). The DB check is
         # what keeps this to one call per game rather than one per tick.
-        if not await repo.has_title_groups(title.np_communication_id):
+        stored_count = await repo.title_achievements_count(
+            Platform.PSN.value, title.np_communication_id
+        )
+        needs_groups_refresh = not await repo.has_title_groups(title.np_communication_id) or (
+            defined_total > 0 and stored_count != defined_total
+        )
+        if needs_groups_refresh:
             structure = await trophy_groups_for_title(
                 client, account_id, title, translation_client=translation_client
             )
@@ -333,9 +339,16 @@ async def _bilingual_descriptions(
     if not candidates and not nameless:
         return
 
+    catalog = await repo.get_title_achievements(Platform.PSN.value, title.np_communication_id)
+    cat_by_id = {row.achievement_id: row for row in catalog} if catalog else {}
+
     to_fetch: dict[int, str] = {}
     cached: dict[int, str] = {}
     for trophy_id, english_text in candidates.items():
+        cat_row = cat_by_id.get(str(trophy_id))
+        if cat_row and cat_row.description_ru:
+            cached[trophy_id] = cat_row.description_ru
+            continue
         row = await repo.get_cached_description(
             Platform.PSN, title.np_communication_id, str(trophy_id)
         )
@@ -412,6 +425,32 @@ async def _bilingual_descriptions(
                 cached[trophy_id] = pair[0]
 
     _apply(earned, cached)
+
+    now = utcnow_iso()
+    en_names = english_names if "english_names" in locals() else {}
+    cat_rows = [
+        TitleAchievementRow(
+            platform=Platform.PSN.value,
+            title_id=title.np_communication_id,
+            achievement_id=str(item.trophy_id),
+            name_ru=item.trophy_name,
+            name_en=en_names.get(item.trophy_id, item.trophy_name),
+            description_ru=cached.get(item.trophy_id),
+            description_en=item.trophy_detail,
+            icon_url=item.trophy_icon_url,
+            is_secret=item.trophy_hidden,
+            trophy_type=(
+                item.trophy_type.value
+                if hasattr(item.trophy_type, "value")
+                else str(item.trophy_type or "")
+            ),
+            trophy_group_id=item.trophy_group_id,
+            rarity_percent=item.trophy_earn_rate,
+            updated_at=now,
+        )
+        for item in earned
+    ]
+    await repo.upsert_title_achievements(cat_rows)
 
 
 def _apply(earned: list[EarnedTrophy], resolved: dict[int, str]) -> None:

@@ -667,6 +667,36 @@ class SteamSchemaAchievement:
     hidden: bool
 
 
+@dataclass(slots=True)
+class TitleAchievementRow:
+    """One achievement in the game's full catalog (Issue #99) — locked or unlocked,
+    shared across all players."""
+
+    platform: str
+    title_id: str
+    achievement_id: str
+    name_ru: str | None = None
+    name_en: str | None = None
+    description_ru: str | None = None
+    description_en: str | None = None
+    icon_url: str | None = None
+    is_secret: bool = False
+    gamerscore: int | None = None
+    trophy_type: str | None = None
+    trophy_group_id: str | None = None
+    rarity_percent: float | None = None
+    updated_at: str | None = None
+
+
+@dataclass(slots=True)
+class TitleAchievementWithUnlock:
+    """One achievement combined with a user's unlock state for checklists / Mini App."""
+
+    achievement: TitleAchievementRow
+    is_unlocked: bool = False
+    unlocked_at: str | None = None
+
+
 def _as_user(row: aiosqlite.Row) -> User:
     return User(
         tg_id=row["tg_id"],

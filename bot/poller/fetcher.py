@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 
 from bot.constants import AccountPlatform, Platform, PresenceState
-from bot.db.repo import AchievementRow, Repo, TitleHistoryRow
+from bot.db.repo import AchievementRow, Repo, TitleAchievementRow, TitleHistoryRow
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
 from bot.services.rows import to_achievement_row
@@ -16,7 +16,7 @@ from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.client import TitleHistoryEntry, XboxApiError, XboxClient
 from bot.services.xbox.models import ParsedAchievement
-from bot.util import parse_iso, utcnow
+from bot.util import parse_iso, utcnow, utcnow_iso
 
 log = logging.getLogger(__name__)
 
@@ -178,14 +178,30 @@ class Fetcher:
         if not candidates and not nameless:
             return
 
+        plat_str = platform.value if hasattr(platform, "value") else str(platform)
+        catalog = await self._repo.get_title_achievements(plat_str, title_id)
+        cat_by_id = {row.achievement_id: row for row in catalog} if catalog else {}
+
         result: dict[str, tuple[str | None, str | None]] = {}
         uncached: dict[str, str] = {}
         for achievement_id, english_text in candidates.items():
+            cat_row = cat_by_id.get(achievement_id)
+            if cat_row and cat_row.description_ru:
+                result[achievement_id] = (
+                    cat_row.description_ru,
+                    cat_row.description_en or english_text,
+                )
+                continue
             cached = await self._repo.get_cached_description(platform, title_id, achievement_id)
             if cached is not None:
                 result[achievement_id] = (cached.description_ru, cached.description_en)
             else:
                 uncached[achievement_id] = english_text
+
+        if nameless and catalog:
+            nameless = [
+                aid for aid in nameless if aid not in cat_by_id or not cat_by_id[aid].name_ru
+            ]
 
         if uncached or nameless:
             try:
@@ -228,6 +244,27 @@ class Fetcher:
                     self._repo, self._anthropic_auth, platform, title_id, native
                 )
                 result.update(resolved)
+
+            now = utcnow_iso()
+            ru_names = {item.achievement_id: item.name for item in russian_parsed}
+            cat_rows = [
+                TitleAchievementRow(
+                    platform=plat_str,
+                    title_id=title_id,
+                    achievement_id=item.achievement_id,
+                    name_ru=ru_names.get(item.achievement_id, item.name),
+                    name_en=item.name,
+                    description_ru=result.get(item.achievement_id, (None, None))[0],
+                    description_en=item.description,
+                    icon_url=item.icon_url,
+                    is_secret=item.is_secret,
+                    gamerscore=item.gamerscore,
+                    rarity_percent=item.rarity_percent,
+                    updated_at=now,
+                )
+                for item in parsed
+            ]
+            await self._repo.upsert_title_achievements(cat_rows)
 
         for item in parsed:
             resolved_pair = result.get(item.achievement_id)

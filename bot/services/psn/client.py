@@ -406,15 +406,15 @@ async def trophy_titles_for_account(
 
 
 async def trophies_for_title(
-    client: PSNAWP, account_id: str, title: TrophyTitle
+    client: PSNAWP, account_id: str, title: TrophyTitle, *, earned_only: bool = True
 ) -> list[EarnedTrophy]:
-    """Full detail (name/tier/rarity/hidden/icon) for every *earned* trophy
-    in one game — the per-title body recent_earned_trophies below and the
-    trophy poller (SPEC 9, M-PSN-2) both need. Raises PsnPrivateProfileError
-    if this one game's detail is hidden, or PsnTitleUnavailableError if
-    Sony's own API 404s on it — the caller decides what that means
-    (recent_earned_trophies skips just this game, not the whole screen; the
-    poller does the same, SPEC 9, M-PSN-2)."""
+    """Full detail (name/tier/rarity/hidden/icon) for every trophy in one game.
+    When earned_only is True (default), filters to earned trophies only.
+    Raises PsnPrivateProfileError if this one game's detail is hidden, or
+    PsnTitleUnavailableError if Sony's own API 404s on it — the caller decides
+    what that means (recent_earned_trophies skips just this game, not the whole
+    screen; the poller does the same, SPEC 9, M-PSN-2).
+    """
     try:
         user = await _call(client.user, account_id=account_id)
     except PSNAWPNotFoundError:
@@ -471,7 +471,7 @@ async def trophies_for_title(
             ),
         )
         for trophy in trophies
-        if trophy.earned
+        if (not earned_only or trophy.earned)
     ]
 
 

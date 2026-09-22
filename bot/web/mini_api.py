@@ -38,6 +38,7 @@ from bot.services.steam.client import (
     get_profile,
     resolve_steam_id,
 )
+from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
 from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 from bot.web.mini_admin import setup_admin_routes
@@ -76,6 +77,7 @@ def setup_mini_api(
     notifier: AdminNotifier | None = None,
     anthropic_auth: Any = None,
     bot: Any = None,
+    title_catalog: TitleCatalogService | None = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -88,6 +90,16 @@ def setup_mini_api(
     app["mini_notifier"] = notifier
     app["mini_anthropic_auth"] = anthropic_auth
     app["mini_bot"] = bot
+
+    if title_catalog is None:
+        title_catalog = TitleCatalogService(
+            repo,
+            xbox_client=getattr(xbox_fetcher, "_client", None),
+            psn_auth=psn_auth,
+            steam_auth=steam_auth,
+            anthropic_auth=anthropic_auth,
+        )
+    app["mini_title_catalog"] = title_catalog
 
     app.router.add_get("/api/mini/health", handle_health)
     app.router.add_get("/api/mini/me", handle_me)
@@ -115,6 +127,8 @@ def setup_mini_api(
     app.router.add_get("/api/mini/club/people", handle_chat_person)
     app.router.add_patch("/api/mini/club", handle_patch_chat)
     app.router.add_get("/api/mini/avatar/{tg_id}", handle_avatar)
+    app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
+    app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
     setup_admin_routes(app)
     setup_hltb_routes(app)
 
@@ -574,6 +588,63 @@ async def _psn_backfill(fetcher: PsnFetcher, tg_id: int, account_id: str) -> Non
         await fetcher.backfill(tg_id, account_id)
     except Exception:
         log.exception("mini psn backfill failed tg_id=%s", tg_id)
+
+
+async def handle_game_details(request: web.Request) -> web.Response:
+    user = await _require_user(request)
+    platform = request.match_info.get("platform", "").lower()
+    title_id = request.match_info.get("title_id", "")
+    force = request.query.get("force", "").lower() in ("1", "true", "yes")
+
+    repo: Repo = request.app["mini_repo"]
+    catalog_service: TitleCatalogService = request.app["mini_title_catalog"]
+
+    checklist = await catalog_service.get_title_checklist_for_user(
+        platform, title_id, tg_id=user.tg_id, force=force
+    )
+    title_info = await repo.title_record(title_id) or {}
+
+    total = len(checklist)
+    unlocked = sum(1 for item in checklist if item.is_unlocked)
+    percent = round((unlocked / total) * 100, 1) if total > 0 else 0.0
+
+    groups = await repo.get_title_groups(title_id) if platform == Platform.PSN else []
+
+    return web.json_response(
+        {
+            "ok": True,
+            "platform": platform,
+            "title_id": title_id,
+            "name": title_info.get("name"),
+            "name_ru": title_info.get("name_ru"),
+            "name_en": title_info.get("name_en"),
+            "icon_url": title_info.get("icon_url"),
+            "cover_path": title_info.get("cover_path"),
+            "achievements_total": total or title_info.get("achievements_total") or 0,
+            "achievements_unlocked": unlocked,
+            "completion_percent": percent,
+            "achievements_checked_at": title_info.get("achievements_checked_at"),
+            "groups": groups,
+            "achievements": [
+                {
+                    "achievement_id": item.achievement.achievement_id,
+                    "name_ru": item.achievement.name_ru,
+                    "name_en": item.achievement.name_en,
+                    "description_ru": item.achievement.description_ru,
+                    "description_en": item.achievement.description_en,
+                    "icon_url": item.achievement.icon_url,
+                    "is_secret": item.achievement.is_secret,
+                    "gamerscore": item.achievement.gamerscore,
+                    "trophy_type": item.achievement.trophy_type,
+                    "trophy_group_id": item.achievement.trophy_group_id,
+                    "rarity_percent": item.achievement.rarity_percent,
+                    "is_unlocked": item.is_unlocked,
+                    "unlocked_at": item.unlocked_at,
+                }
+                for item in checklist
+            ],
+        }
+    )
 
 
 def _extract_init_data(request: web.Request) -> str:

@@ -17,7 +17,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from bot.constants import Platform
-from bot.db.repo import Repo, SteamSchemaAchievement
+from bot.db.repo import Repo, SteamSchemaAchievement, TitleAchievementRow
 from bot.services.models import ParsedAchievement
 from bot.services.steam.client import (
     RawAchievement,
@@ -28,7 +28,7 @@ from bot.services.steam.client import (
 )
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
-from bot.util import parse_iso, utcnow
+from bot.util import parse_iso, utcnow, utcnow_iso
 
 # "Раз в неделю" (SPEC 9, M-Steam-2b) — real unlock percentages drift slowly,
 # and re-fetching more often than this buys nothing (no key-less rate limit
@@ -95,9 +95,41 @@ async def fetch_unlocked(
     # platform's rarity is read the same way — steam_rarity_cache stays what
     # it is, the per-appid blob this call is served from.
     await repo.cache_rarity(Platform.STEAM, appid, percentages)
-    descriptions = await _bilingual_descriptions(
-        repo, anthropic_auth, api_key, steam_id, appid, unlocked
-    )
+    stored_count = await repo.title_achievements_count(Platform.STEAM.value, appid)
+    api_total = len(raw)
+    if stored_count > 0 and stored_count == api_total:
+        catalog = await repo.get_title_achievements(Platform.STEAM.value, appid)
+        descriptions = {
+            row.achievement_id: (row.description_ru, row.description_en) for row in catalog
+        }
+    else:
+        descriptions = await _bilingual_descriptions(
+            repo, anthropic_auth, api_key, steam_id, appid, unlocked
+        )
+        now = utcnow_iso()
+        cat_rows = [
+            TitleAchievementRow(
+                platform=Platform.STEAM.value,
+                title_id=appid,
+                achievement_id=item.apiname,
+                name_ru=item.name,
+                name_en=item.name,
+                description_ru=descriptions.get(item.apiname, (item.description, None))[0],
+                description_en=descriptions.get(item.apiname, (None, item.description))[1],
+                icon_url=(
+                    schema_by_id.get(item.apiname).icon if schema_by_id.get(item.apiname) else None
+                ),
+                is_secret=(
+                    schema_by_id.get(item.apiname).hidden
+                    if schema_by_id.get(item.apiname)
+                    else False
+                ),
+                rarity_percent=percentages.get(item.apiname),
+                updated_at=now,
+            )
+            for item in raw
+        ]
+        await repo.upsert_title_achievements(cat_rows)
 
     result: list[ParsedAchievement] = []
     for item in unlocked:

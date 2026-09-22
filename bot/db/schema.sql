@@ -374,6 +374,7 @@ CREATE TABLE IF NOT EXISTS titles (
     cover_path TEXT,
     cover_hash TEXT,
     cover_checked_at TEXT,
+    achievements_checked_at TEXT,
     updated_at TEXT NOT NULL
 );
 
@@ -639,6 +640,31 @@ CREATE TABLE IF NOT EXISTS achievement_rarity_cache (
 
 CREATE INDEX IF NOT EXISTS idx_rarity_cache_title
     ON achievement_rarity_cache(platform, title_id, checked_at);
+
+-- Full game achievement catalog (Issue #99, 2026-09-22) — stores all achievements
+-- of a title (both unlocked and locked), with bilingual names and descriptions,
+-- icons, secrecy, gamerscore, trophy tiers and rarity. Shared across all users.
+CREATE TABLE IF NOT EXISTS title_achievements (
+    platform        TEXT NOT NULL CHECK (platform IN ('xbox_modern', 'xbox_360', 'steam', 'psn')),
+    title_id        TEXT NOT NULL,
+    achievement_id  TEXT NOT NULL,
+    name_ru         TEXT,
+    name_en         TEXT,
+    description_ru  TEXT,
+    description_en  TEXT,
+    icon_url        TEXT,
+    is_secret       INTEGER NOT NULL DEFAULT 0,
+    gamerscore      INTEGER,
+    trophy_type     TEXT,
+    trophy_group_id TEXT,
+    rarity_percent  REAL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (platform, title_id, achievement_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_title_achievements_title
+    ON title_achievements(platform, title_id);
+
 
 -- The single live copy of a self-deduplicating message kind (Follow-up
 -- 2026-09-06) — /panel, /summary, /recent and a specific person's /stats

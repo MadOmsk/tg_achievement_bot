@@ -151,7 +151,13 @@ class XboxClient:
     # -------------------------------------------------------- achievements
 
     async def title_achievements(
-        self, tg_id: int, title_id: str, platform: Platform, *, language: str = "en-US"
+        self,
+        tg_id: int,
+        title_id: str,
+        platform: Platform,
+        *,
+        language: str = "en-US",
+        earned_only: bool = True,
     ) -> list[ParsedAchievement]:
         """Achievements of one game — the only request that carries rarity.
 
@@ -171,12 +177,18 @@ class XboxClient:
         own default strings when no match exists for the requested locale.
         """
         unlocked, _total = await self.title_achievements_with_total(
-            tg_id, title_id, platform, language=language
+            tg_id, title_id, platform, language=language, earned_only=earned_only
         )
         return unlocked
 
     async def title_achievements_with_total(
-        self, tg_id: int, title_id: str, platform: Platform, *, language: str = "en-US"
+        self,
+        tg_id: int,
+        title_id: str,
+        platform: Platform,
+        *,
+        language: str = "en-US",
+        earned_only: bool = True,
     ) -> tuple[list[ParsedAchievement], int]:
         """The same call, also reporting **how many achievements the game
         has** — the unlocked ones and the size of the set they came from.
@@ -195,15 +207,26 @@ class XboxClient:
         params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         if platform == Platform.XBOX_360:
             payload = await self._get_achievements(tg_id, "1", params, language=language)
-            return parse_achievements(payload, Platform.XBOX_360, title_id), _total_in(payload)
+            return (
+                parse_achievements(payload, Platform.XBOX_360, title_id, earned_only=earned_only),
+                _total_in(payload),
+            )
 
         payload = await self._get_achievements(tg_id, "4", params, language=language)
         if payload.get("achievements"):
-            return parse_achievements(payload, Platform.XBOX_MODERN, title_id), _total_in(payload)
+            return (
+                parse_achievements(
+                    payload, Platform.XBOX_MODERN, title_id, earned_only=earned_only
+                ),
+                _total_in(payload),
+            )
 
         log.info("title %s looks like Xbox 360, retrying on contract 1", title_id)
         payload = await self._get_achievements(tg_id, "1", params, language=language)
-        return parse_achievements(payload, Platform.XBOX_360, title_id), _total_in(payload)
+        return (
+            parse_achievements(payload, Platform.XBOX_360, title_id, earned_only=earned_only),
+            _total_in(payload),
+        )
 
     async def title_rarity(self, tg_id: int, title_id: str) -> dict[str, float]:
         """Every achievement's rarity for one modern title, earned or not.

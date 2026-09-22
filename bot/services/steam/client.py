@@ -127,6 +127,8 @@ class RawSchemaAchievement:
     apiname: str
     icon: str | None  # unlocked icon, not `icongray` — only unlocked ever gets published
     hidden: bool  # Steam's own secrecy flag, Steam's isSecret equivalent (7.1)
+    display_name: str | None = None
+    description: str | None = None
 
 
 # Valve's own founder — a vanity name essentially guaranteed to keep
@@ -375,11 +377,13 @@ async def get_player_achievements(
     ]
 
 
-async def get_schema(api_key: str, appid: str) -> list[RawSchemaAchievement]:
+async def get_schema(
+    api_key: str, appid: str, *, language: str = "russian"
+) -> list[RawSchemaAchievement]:
     """About the game, not any one person — cache this forever, never per
     request (SPEC 9, M-Steam-2b)."""
     payload = await _get(
-        "/ISteamUserStats/GetSchemaForGame/v2/", api_key, {"appid": appid, "l": "russian"}
+        "/ISteamUserStats/GetSchemaForGame/v2/", api_key, {"appid": appid, "l": language}
     )
     achievements = (payload.get("game") or {}).get("availableGameStats", {}).get(
         "achievements"
@@ -389,6 +393,8 @@ async def get_schema(api_key: str, appid: str) -> list[RawSchemaAchievement]:
             apiname=str(item["name"]),  # Steam's own key here, not `apiname`
             icon=item.get("icon") or None,
             hidden=bool(item.get("hidden")),
+            display_name=item.get("displayName") or None,
+            description=item.get("description") or None,
         )
         for item in achievements
         if item.get("name")

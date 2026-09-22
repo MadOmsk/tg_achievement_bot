@@ -187,9 +187,14 @@ def parse_timestamp(value: str | None) -> datetime | None:
 
 
 def parse_achievements(
-    payload: dict[str, Any], platform: Platform, title_id: str | None = None
+    payload: dict[str, Any],
+    platform: Platform,
+    title_id: str | None = None,
+    *,
+    earned_only: bool = True,
 ) -> list[ParsedAchievement]:
-    """Turn a raw response into unlocked achievements only.
+    """Turn a raw response into parsed achievements.
+    When earned_only is True (default), keeps unlocked achievements only.
 
     Anything that fails to parse is skipped rather than raising: one malformed
     record must not cost a user his whole session.
@@ -201,7 +206,7 @@ def parse_achievements(
             achievement = model.model_validate(item)
         except Exception:
             continue
-        if achievement.is_achieved:
+        if not earned_only or achievement.is_achieved:
             result.append(achievement.to_parsed(title_id))
     return result
 
