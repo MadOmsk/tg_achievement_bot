@@ -734,3 +734,16 @@ CREATE TABLE IF NOT EXISTS psn_poll_state (
     last_polled_at TEXT NOT NULL,
     backfill_done  INTEGER NOT NULL DEFAULT 0
 );
+
+-- Platform cooldowns for anti-abuse protection on account resets/re-links.
+CREATE TABLE IF NOT EXISTS platform_cooldowns (
+    tg_id          INTEGER NOT NULL,
+    platform       TEXT NOT NULL,
+    external_id    TEXT,
+    reset_count    INTEGER NOT NULL DEFAULT 1,
+    last_reset_at  TEXT NOT NULL,
+    PRIMARY KEY (tg_id, platform)
+);
+
+CREATE INDEX IF NOT EXISTS idx_platform_cooldowns_ext
+    ON platform_cooldowns(platform, external_id);

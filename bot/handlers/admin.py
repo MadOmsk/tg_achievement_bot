@@ -1237,7 +1237,7 @@ async def admin_delete_user_confirmed(
     _ = translator("admin", i18n.locale)
     _prefix, _action, tg_id_s = callback.data.split(":")
     tg_id = int(tg_id_s)
-    await repo.delete_user(tg_id)
+    await repo.delete_user(tg_id, is_admin=True)
     await callback.answer(_("admin-delete-toast"))
     text, markup = await render_user_list(repo, 0, locale=i18n.locale)
     await _redraw(callback, text, markup)

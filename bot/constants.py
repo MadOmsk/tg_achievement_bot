@@ -107,6 +107,7 @@ class SettingKey(StrEnum):
     HLTB_RESULTS_LIMIT = "hltb_results_limit"
     HLTB_PAGE_SIZE = "hltb_page_size"
     RECENT_LIMIT = "recent_limit"
+    ACCOUNT_RESET_COOLDOWN_HOURS = "account_reset_cooldown_hours"
 
 
 class XboxApiValue(StrEnum):

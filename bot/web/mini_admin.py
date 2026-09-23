@@ -426,7 +426,7 @@ async def handle_admin_user_delete(request: web.Request) -> web.Response:
     await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
     tg_id = int(request.match_info["tg_id"])
-    deleted = await repo.delete_user(tg_id)
+    deleted = await repo.delete_user(tg_id, is_admin=True)
     if not deleted:
         raise web.HTTPNotFound()
     return web.json_response({"ok": True})

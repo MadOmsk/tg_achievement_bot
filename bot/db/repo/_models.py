@@ -740,3 +740,10 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
 def _iso(moment: datetime) -> str:
     """Stored timestamps are UTC ISO strings truncated to seconds."""
     return moment.astimezone(UTC).isoformat(timespec="seconds")
+
+
+@dataclass(frozen=True, slots=True)
+class CooldownCheckResult:
+    is_blocked: bool
+    remaining_seconds: int = 0
+    reset_count: int = 0

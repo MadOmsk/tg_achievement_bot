@@ -23,6 +23,7 @@ admin-setting-online-interval = /online auto-refresh interval (min)
 admin-setting-online-ttl = /online auto-refresh, hours
 admin-setting-key-check = Key check / /admin auto-refresh (min)
 admin-setting-monthly-delay = Month-end wrap-up delay (min)
+admin-setting-account-reset-cooldown = Account reset cooldown (hours)
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)

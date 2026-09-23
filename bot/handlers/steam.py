@@ -323,6 +323,16 @@ async def _connect(
 
     await repo.ensure_user(tg_id, username)
 
+    cooldown = await repo.check_platform_cooldown(tg_id, Platform.STEAM, profile.steam_id)
+    if cooldown.is_blocked:
+        hours = cooldown.remaining_seconds // 3600
+        minutes = (cooldown.remaining_seconds % 3600) // 60
+        await bot.send_message(
+            tg_id,
+            i18n.get("platform-cooldown-active", platform="Steam", hours=hours, minutes=minutes),
+        )
+        return
+
     # Swapping one Steam account for another is not an overwrite any more
     # (#52): the old account keeps its achievements, and they stop counting
     # for this person the moment the link moves. Worth asking first — but

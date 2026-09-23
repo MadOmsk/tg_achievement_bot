@@ -8,6 +8,7 @@ connect-xbox-already-connected = XBOX уже подключён. Настрой�
 connect-xbox-already-connected-relogin =
     XBOX уже подключён. Если нужно войти заново — сначала /disconnect_xbox.
 connect-xbox-not-connected = XBOX и так не подключён.
+platform-cooldown-active = Повторное подключение { $platform } временно заблокировано (антифлуд). Попробуйте через { $hours } ч. { $minutes } мин.
 connect-disconnect-yes = Да, отключить
 connect-disconnect-cancel = Отмена
 connect-disconnect-prompt =

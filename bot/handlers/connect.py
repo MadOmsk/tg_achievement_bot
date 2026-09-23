@@ -105,7 +105,7 @@ async def start_with_payload(
         if user is not None and user.xuid:
             await message.answer(i18n.get("connect-xbox-already-connected"))
             return
-        await _send_login_link(message, connect, i18n, origin_chat_id=origin_chat_id)
+        await _send_login_link(message, connect, repo, i18n, origin_chat_id=origin_chat_id)
         return
     await _greet(message, repo, connect, bot, i18n, settings)
 
@@ -150,7 +150,7 @@ async def connect_command(
     if user is not None and user.xuid:
         await message.answer(i18n.get("connect-xbox-already-connected-relogin"))
         return
-    await _send_login_link(message, connect, i18n)
+    await _send_login_link(message, connect, repo, i18n)
 
 
 @router.message(Command("disconnect_xbox"), F.chat.type == ChatType.PRIVATE)
@@ -349,12 +349,21 @@ async def _greet(
 async def _send_login_link(
     message: Message,
     connect: ConnectService,
+    repo: Repo,
     i18n: I18nContext,
     *,
     origin_chat_id: int | None = None,
 ) -> None:
     person_id = _person_id(message)
     if person_id is None:
+        return
+    cooldown = await repo.check_platform_cooldown(person_id, "xbox")
+    if cooldown.is_blocked:
+        hours = cooldown.remaining_seconds // 3600
+        minutes = (cooldown.remaining_seconds % 3600) // 60
+        await message.answer(
+            i18n.get("platform-cooldown-active", platform="Xbox", hours=hours, minutes=minutes)
+        )
         return
     url = connect.start_login(person_id, origin_chat_id=origin_chat_id)
     await message.answer(

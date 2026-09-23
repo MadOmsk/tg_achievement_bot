@@ -208,6 +208,21 @@ async def _connect(
 
     await repo.ensure_user(tg_id, username)
 
+    cooldown = await repo.check_platform_cooldown(tg_id, Platform.PSN, profile.account_id)
+    if cooldown.is_blocked:
+        hours = cooldown.remaining_seconds // 3600
+        minutes = (cooldown.remaining_seconds % 3600) // 60
+        await bot.send_message(
+            tg_id,
+            i18n.get(
+                "platform-cooldown-active",
+                platform="PlayStation",
+                hours=hours,
+                minutes=minutes,
+            ),
+        )
+        return
+
     # Same as Steam's own switch guard (#52): trading one PSN account for
     # another leaves the first one's trophies behind, so ask before doing it
     # — but never for relinking the same account.

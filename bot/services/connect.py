@@ -75,6 +75,21 @@ class ConnectService:
                 )
             )
 
+        cooldown = await self._repo.check_platform_cooldown(pending.tg_id, "xbox", identity.xuid)
+        if cooldown.is_blocked:
+            hours = cooldown.remaining_seconds // 3600
+            minutes = (cooldown.remaining_seconds % 3600) // 60
+            raise ConnectError(
+                gettext(
+                    "connectservice",
+                    "connectservice-platform-cooldown",
+                    platform="Xbox",
+                    hours=hours,
+                    minutes=minutes,
+                    locale=await self.user_locale(pending.tg_id),
+                )
+            )
+
         await self._auth.store_identity(pending.tg_id, identity)
         log.info("tg_id=%s linked xuid=%s", pending.tg_id, identity.xuid)
         return pending.tg_id, identity, pending.origin_chat_id

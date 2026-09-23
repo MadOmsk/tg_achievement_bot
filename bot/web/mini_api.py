@@ -258,6 +258,17 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "private"}, status=400)
 
     await repo.ensure_user(user.tg_id, user.username)
+    cooldown = await repo.check_platform_cooldown(user.tg_id, Platform.STEAM, profile.steam_id)
+    if cooldown.is_blocked:
+        return web.json_response(
+            {
+                "ok": False,
+                "error": "cooldown",
+                "cooldown_seconds": cooldown.remaining_seconds,
+            },
+            status=400,
+        )
+
     await repo.link_platform_account(
         user.tg_id, Platform.STEAM, profile.steam_id, profile.persona_name
     )
@@ -322,6 +333,17 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "private"}, status=400)
 
     await repo.ensure_user(user.tg_id, user.username)
+    cooldown = await repo.check_platform_cooldown(user.tg_id, Platform.PSN, profile.account_id)
+    if cooldown.is_blocked:
+        return web.json_response(
+            {
+                "ok": False,
+                "error": "cooldown",
+                "cooldown_seconds": cooldown.remaining_seconds,
+            },
+            status=400,
+        )
+
     await repo.link_platform_account(
         user.tg_id, Platform.PSN, profile.account_id, profile.online_id
     )

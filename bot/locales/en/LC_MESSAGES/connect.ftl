@@ -8,6 +8,7 @@ connect-xbox-already-connected = XBOX is already connected. Settings are in /pan
 connect-xbox-already-connected-relogin =
     XBOX is already connected. To sign in again, run /disconnect_xbox first.
 connect-xbox-not-connected = XBOX isn't connected anyway.
+platform-cooldown-active = Re-connecting { $platform } is temporarily blocked (anti-abuse cooldown). Please try again in { $hours }h { $minutes }m.
 connect-disconnect-yes = Yes, disconnect
 connect-disconnect-cancel = Cancel
 connect-disconnect-prompt =

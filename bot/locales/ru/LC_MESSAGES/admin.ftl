@@ -23,6 +23,7 @@ admin-setting-online-interval = Интервал автообновления /o
 admin-setting-online-ttl = Автообновление /online, часов
 admin-setting-key-check = Проверка ключей / автообновление /admin (мин)
 admin-setting-monthly-delay = Задержка итогов месяца (мин)
+admin-setting-account-reset-cooldown = Кулдаун после сброса (часы)
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)

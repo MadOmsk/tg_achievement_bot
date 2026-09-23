@@ -42,6 +42,10 @@ DEFAULT_TABLE_TOP = 15
 MONTHLY_DELAY_KEY = "monthly_summary_delay_minutes"
 DEFAULT_MONTHLY_DELAY_MINUTES = 5
 
+# Anti-abuse cooldown in hours before re-linking a platform after repeated resets.
+ACCOUNT_RESET_COOLDOWN_HOURS_KEY = SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS
+DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS = 24
+
 
 def unlimited_label(locale: str) -> str:
     """What a 0 renders as in the numeric-settings screens. Was a
@@ -185,6 +189,13 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
         min=0,
         max=60,
         zero_label="admin-no-delay",
+    ),
+    ACCOUNT_RESET_COOLDOWN_HOURS_KEY: NumericSetting(
+        "admin-setting-account-reset-cooldown",
+        DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS,
+        min=0,
+        max=168,
+        zero_label="admin-disabled",
     ),
 }
 

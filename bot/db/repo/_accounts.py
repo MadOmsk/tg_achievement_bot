@@ -6,11 +6,12 @@ __init__.py). Behavior is unchanged from before the split.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import UTC, timedelta
 from typing import Any
 
 from bot.constants import AccountPlatform, TokenStatus
 from bot.db.repo._models import (
+    CooldownCheckResult,
     TokenRecord,
     User,
     UserSettings,
@@ -122,33 +123,133 @@ class _AccountsRepo:
         row = await cursor.fetchone()
         return (row["photo_unique_id"], row["photo_path"]) if row else (None, None)
 
-    async def delete_user(self, tg_id: int) -> bool:
-        """Completely remove a user and all related rows (tokens, subscriptions,
-        settings, account links, chat_seen) via foreign key cascades.
-        Returns True if a user was deleted, False if no such user existed."""
+    async def delete_user(self, tg_id: int, *, is_admin: bool = False) -> bool:
+        """Completely remove a user, their linked platform accounts, and all related
+        rows (tokens, subscriptions, settings, seen achievements, publications,
+        presence/poll state, cached history, avatars).
+
+        If not is_admin: records platform reset in `platform_cooldowns` for anti-abuse.
+        If is_admin: clears cooldown for this user.
+
+        Returns True if a user was deleted, False if no such user existed.
+        """
         cursor = await self._conn.execute("SELECT photo_path FROM users WHERE tg_id = ?", (tg_id,))
         row = await cursor.fetchone()
-        photo_path = row["photo_path"] if row else None
+        if not row:
+            return False
+        photo_path = row["photo_path"]
 
-        cursor = await self._conn.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
-        deleted = cursor.rowcount > 0
+        # Step 1: Find all linked platform accounts for this user
+        cursor = await self._conn.execute(
+            "SELECT platform, external_id FROM account_links WHERE tg_id = ?",
+            (tg_id,),
+        )
+        linked_accounts = [(r["platform"], r["external_id"]) for r in await cursor.fetchall()]
 
-        if deleted:
-            await self._conn.execute(
-                "DELETE FROM tracked_messages "
-                "WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
-                (tg_id, tg_id),
+        from bot.services.avatars import avatar_dir
+
+        # Step 2: Clean up platform accounts that belong to this user
+        for platform, external_id in linked_accounts:
+            # Check if any OTHER active user has linked this account
+            cursor = await self._conn.execute(
+                "SELECT tg_id FROM account_links "
+                "WHERE platform = ? AND external_id = ? AND is_active = 1 AND tg_id != ?",
+                (platform, external_id, tg_id),
             )
-            await self._conn.execute(
-                "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
-                (tg_id,),
-            )
+            other_owner = await cursor.fetchone()
+
+            if not other_owner:
+                # Wipe seen_achievements
+                await self._conn.execute(
+                    "DELETE FROM seen_achievements WHERE account_platform = ? AND xuid = ?",
+                    (platform, external_id),
+                )
+                # Wipe publications
+                await self._conn.execute(
+                    "DELETE FROM publications WHERE xuid = ?",
+                    (external_id,),
+                )
+                # Wipe title_history
+                await self._conn.execute(
+                    "DELETE FROM title_history WHERE xuid = ?",
+                    (external_id,),
+                )
+                # Wipe presence and poller state
+                if platform in (AccountPlatform.XBOX, "xbox_modern", "xbox_360"):
+                    await self._conn.execute(
+                        "DELETE FROM presence_state WHERE xuid = ?",
+                        (external_id,),
+                    )
+                elif platform == AccountPlatform.STEAM:
+                    await self._conn.execute(
+                        "DELETE FROM steam_presence_state WHERE steam_id = ?",
+                        (external_id,),
+                    )
+                elif platform == AccountPlatform.PSN:
+                    await self._conn.execute(
+                        "DELETE FROM psn_presence_state WHERE account_id = ?",
+                        (external_id,),
+                    )
+                    await self._conn.execute(
+                        "DELETE FROM psn_title_progress WHERE account_id = ?",
+                        (external_id,),
+                    )
+                    await self._conn.execute(
+                        "DELETE FROM psn_poll_state WHERE account_id = ?",
+                        (external_id,),
+                    )
+
+                # Wipe avatar on disk
+                cursor = await self._conn.execute(
+                    "SELECT avatar_path FROM accounts WHERE platform = ? AND external_id = ?",
+                    (platform, external_id),
+                )
+                acc_row = await cursor.fetchone()
+                if acc_row and acc_row["avatar_path"]:
+                    try:
+                        acc_path = avatar_dir() / acc_row["avatar_path"]
+                        if acc_path.is_file():
+                            acc_path.unlink()
+                    except OSError:
+                        log.warning(
+                            "failed to remove platform avatar platform=%s ext_id=%s path=%s",
+                            platform,
+                            external_id,
+                            acc_row["avatar_path"],
+                        )
+
+                # Wipe account_links and accounts
+                await self._conn.execute(
+                    "DELETE FROM account_links WHERE platform = ? AND external_id = ?",
+                    (platform, external_id),
+                )
+                await self._conn.execute(
+                    "DELETE FROM accounts WHERE platform = ? AND external_id = ?",
+                    (platform, external_id),
+                )
+
+            # Record cooldown if user-initiated
+            if not is_admin:
+                await self.record_platform_reset(tg_id, platform, external_id)
+
+        if is_admin:
+            await self.clear_platform_cooldown(tg_id)
+
+        # Step 3: Remove user, tokens, and related records
+        await self._conn.execute("DELETE FROM tokens WHERE tg_id = ?", (tg_id,))
+        await self._conn.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
+        await self._conn.execute(
+            "DELETE FROM tracked_messages WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
+            (tg_id, tg_id),
+        )
+        await self._conn.execute(
+            "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
+            (tg_id,),
+        )
 
         await self._conn.commit()
 
-        if deleted and photo_path:
-            from bot.services.avatars import avatar_dir
-
+        if photo_path:
             try:
                 path = avatar_dir() / photo_path
                 if path.is_file():
@@ -156,7 +257,141 @@ class _AccountsRepo:
             except OSError:
                 log.warning("failed to remove avatar for tg_id=%s path=%s", tg_id, photo_path)
 
-        return deleted
+        return True
+
+    async def record_platform_reset(
+        self, tg_id: int, platform: str, external_id: str | None = None
+    ) -> None:
+        """Record an account deletion/reset event in `platform_cooldowns`.
+        If within existing cooldown window, increment reset_count; otherwise reset to 1.
+        """
+        from datetime import datetime
+
+        from bot.constants import SettingKey
+        from bot.services.admin_settings import DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
+
+        cursor = await self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS,),
+        )
+        row = await cursor.fetchone()
+        cooldown_hours = int(row["value"]) if row else DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
+        if cooldown_hours <= 0:
+            return
+
+        cursor = await self._conn.execute(
+            "SELECT reset_count, last_reset_at FROM platform_cooldowns "
+            "WHERE tg_id = ? AND platform = ?",
+            (tg_id, platform),
+        )
+        existing = await cursor.fetchone()
+        now = utcnow()
+        now_iso = utcnow_iso()
+
+        new_count = 1
+        if existing:
+            try:
+                last_reset_at = datetime.fromisoformat(existing["last_reset_at"])
+                if last_reset_at.tzinfo is None:
+                    last_reset_at = last_reset_at.replace(tzinfo=UTC)
+                elapsed_seconds = (now - last_reset_at).total_seconds()
+                if elapsed_seconds < cooldown_hours * 3600:
+                    new_count = int(existing["reset_count"]) + 1
+            except Exception:
+                pass
+
+        await self._conn.execute(
+            "INSERT INTO platform_cooldowns "
+            "(tg_id, platform, external_id, reset_count, last_reset_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(tg_id, platform) DO UPDATE SET "
+            "  external_id = COALESCE(excluded.external_id, platform_cooldowns.external_id), "
+            "  reset_count = excluded.reset_count, "
+            "  last_reset_at = excluded.last_reset_at",
+            (tg_id, platform, str(external_id) if external_id else None, new_count, now_iso),
+        )
+        await self._conn.commit()
+
+    async def check_platform_cooldown(
+        self, tg_id: int, platform: str, external_id: str | None = None
+    ) -> CooldownCheckResult:
+        """Check if re-linking `platform` is currently blocked by anti-abuse cooldown.
+        Rules:
+        - Setting `account_reset_cooldown_hours` sets the window (default 24h, 0 = off).
+        - reset_count <= 1: 1 free re-link is allowed immediately without cooldown.
+        - reset_count > 1 and within window: blocked until elapsed >= window.
+        - Checks both (tg_id, platform) and (platform, external_id).
+        """
+        from datetime import datetime
+
+        from bot.constants import SettingKey
+        from bot.services.admin_settings import DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
+
+        cursor = await self._conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS,),
+        )
+        row = await cursor.fetchone()
+        cooldown_hours = int(row["value"]) if row else DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
+        if cooldown_hours <= 0:
+            return CooldownCheckResult(is_blocked=False)
+
+        # Check by (tg_id, platform) or (platform, external_id)
+        if external_id:
+            cursor = await self._conn.execute(
+                "SELECT reset_count, last_reset_at FROM platform_cooldowns "
+                "WHERE (tg_id = ? AND platform = ?) OR (platform = ? AND external_id = ?) "
+                "ORDER BY last_reset_at DESC LIMIT 1",
+                (tg_id, platform, platform, str(external_id)),
+            )
+        else:
+            cursor = await self._conn.execute(
+                "SELECT reset_count, last_reset_at FROM platform_cooldowns "
+                "WHERE tg_id = ? AND platform = ?",
+                (tg_id, platform),
+            )
+        row = await cursor.fetchone()
+        if not row:
+            return CooldownCheckResult(is_blocked=False)
+
+        reset_count = int(row["reset_count"])
+        last_reset_at_str = row["last_reset_at"]
+        try:
+            last_reset_at = datetime.fromisoformat(last_reset_at_str)
+            if last_reset_at.tzinfo is None:
+                last_reset_at = last_reset_at.replace(tzinfo=UTC)
+            now = utcnow()
+            elapsed_seconds = (now - last_reset_at).total_seconds()
+        except Exception:
+            elapsed_seconds = 0
+
+        cooldown_seconds = cooldown_hours * 3600
+        if elapsed_seconds >= cooldown_seconds:
+            return CooldownCheckResult(is_blocked=False, reset_count=reset_count)
+
+        if reset_count <= 1:
+            return CooldownCheckResult(is_blocked=False, reset_count=reset_count)
+
+        remaining_seconds = max(0, int(cooldown_seconds - elapsed_seconds))
+        return CooldownCheckResult(
+            is_blocked=True,
+            remaining_seconds=remaining_seconds,
+            reset_count=reset_count,
+        )
+
+    async def clear_platform_cooldown(self, tg_id: int, platform: str | None = None) -> None:
+        """Clear cooldown records for tg_id (e.g. on admin operations)."""
+        if platform:
+            await self._conn.execute(
+                "DELETE FROM platform_cooldowns WHERE tg_id = ? AND platform = ?",
+                (tg_id, platform),
+            )
+        else:
+            await self._conn.execute(
+                "DELETE FROM platform_cooldowns WHERE tg_id = ?",
+                (tg_id,),
+            )
+        await self._conn.commit()
 
     async def accounts_needing_avatar(self, before: str, limit: int) -> list[tuple[str, str]]:
         """A few platform accounts whose picture has not been looked at since

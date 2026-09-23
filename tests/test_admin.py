@@ -6,6 +6,7 @@ from bot.db.repo import Repo
 from bot.poller.message_cleanup import TTL_SETTING_KEY as SYSTEM_MESSAGE_TTL_KEY
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
 from bot.services.admin_settings import (
+    ACCOUNT_RESET_COOLDOWN_HOURS_KEY,
     DEFAULT_SHOW_LINKS_KEY,
     LIMIT_MAX,
     LIMIT_MIN,
@@ -72,6 +73,7 @@ def test_only_summary_stats_and_ttl_limits_allow_zero() -> None:
         SYSTEM_MESSAGE_TTL_KEY,
         ONLINE_REFRESH_INTERVAL_KEY,
         MONTHLY_DELAY_KEY,
+        ACCOUNT_RESET_COOLDOWN_HOURS_KEY,
     }
 
 
