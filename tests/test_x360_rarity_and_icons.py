@@ -8,8 +8,11 @@ import httpx
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+from bot.db.repo import AchievementRow
 from bot.poller.fetcher import Fetcher
+from bot.poller.publisher import _gallery
 from bot.services.models import ParsedAchievement, Platform
+from bot.views.notification import format_digest, format_single
 from bot.web.mini_api import _X360_ICON_CACHE, handle_x360_icon
 from bot.web.mini_chat import _https_url
 
@@ -145,3 +148,98 @@ async def test_fill_x360_icon_preserves_existing_icon() -> None:
     assert ach1.icon_url == "http://image.xboxlive.com/global/t.584109cb/ach/0/3"
     # ach2 had None, so it fell back to game box art
     assert ach2.icon_url == "https://boxart.png"
+
+
+def test_gallery_distinct_icons_for_x360() -> None:
+    ach1 = AchievementRow(
+        title_id="1480657355",
+        achievement_id="1",
+        name="Episode 1",
+        description="Escape from Wolfenstein",
+        icon_url="http://image.xboxlive.com/global/t.584109cb/ach/0/1",
+        unlocked_at="2026-09-23T10:00:00Z",
+        gamerscore=15,
+        rarity_percent=14.8,
+        platform=Platform.XBOX_360,
+        title_name="Wolfenstein 3D",
+        is_secret=False,
+    )
+    ach2 = AchievementRow(
+        title_id="1480657355",
+        achievement_id="2",
+        name="Secret Room",
+        description="Found secret room",
+        icon_url="http://image.xboxlive.com/global/t.584109cb/ach/0/2",
+        unlocked_at="2026-09-23T10:05:00Z",
+        gamerscore=15,
+        rarity_percent=5.0,
+        platform=Platform.XBOX_360,
+        title_name="Wolfenstein 3D",
+        is_secret=True,
+    )
+
+    gallery = _gallery([ach1, ach2])
+    # Individual icons are not grouped into one box art photo
+    assert len(gallery) == 2
+    assert gallery[0] == ("http://image.xboxlive.com/global/t.584109cb/ach/0/1", False)
+    assert gallery[1] == ("http://image.xboxlive.com/global/t.584109cb/ach/0/2", True)
+
+
+def test_format_digest_x360_rarity_and_spoilers() -> None:
+    ach1 = AchievementRow(
+        title_id="1480657355",
+        achievement_id="1",
+        name="Common Achievement",
+        description="Common description",
+        icon_url="http://image.xboxlive.com/global/t.584109cb/ach/0/1",
+        unlocked_at="2026-09-23T10:00:00Z",
+        gamerscore=15,
+        rarity_percent=25.0,
+        platform=Platform.XBOX_360,
+        title_name="Wolfenstein 3D",
+        is_secret=False,
+    )
+    ach2 = AchievementRow(
+        title_id="1480657355",
+        achievement_id="2",
+        name="Rare Secret",
+        description="Secret description",
+        icon_url="http://image.xboxlive.com/global/t.584109cb/ach/0/2",
+        unlocked_at="2026-09-23T10:05:00Z",
+        gamerscore=30,
+        rarity_percent=4.5,
+        platform=Platform.XBOX_360,
+        title_name="Wolfenstein 3D",
+        is_secret=True,
+    )
+
+    text = format_digest("Player", "Wolfenstein 3D", [ach1, ach2], locale="ru")
+
+    # Common achievement: 🏆 badge, 25% rarity, no spoiler
+    assert "🏆 «Common Achievement» · 15 G · редкость 25%" in text
+    assert "Common description" in text
+
+    # Rare secret achievement: 💎 badge, 4.5% rarity, spoiler on title and description
+    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · редкость 4.5%' in text
+    assert '<span class="tg-spoiler">Secret description</span>' in text
+
+
+def test_format_single_x360_secret_achievement() -> None:
+    ach = AchievementRow(
+        title_id="1480657355",
+        achievement_id="2",
+        name="Rare Secret",
+        description="Secret description",
+        icon_url="http://image.xboxlive.com/global/t.584109cb/ach/0/2",
+        unlocked_at="2026-09-23T10:05:00Z",
+        gamerscore=30,
+        rarity_percent=4.5,
+        platform=Platform.XBOX_360,
+        title_name="Wolfenstein 3D",
+        is_secret=True,
+    )
+
+    text = format_single("Player", ach, "Wolfenstein 3D", locale="ru")
+    assert "получает секретное достижение" in text
+    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · редкость 4.5%' in text
+    assert '<span class="tg-spoiler">Secret description</span>' in text

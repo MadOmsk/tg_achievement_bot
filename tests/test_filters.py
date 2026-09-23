@@ -80,13 +80,18 @@ def test_rarity_threshold_is_the_chat_setting(
     assert passes_filters(item, chat(rarity_mode="rare"), threshold) is expected
 
 
-def test_x360_passes_rare_mode_regardless_of_rarity() -> None:
-    """Rarity is unknown for Xbox 360, not "too common" — a platform with no
-    rarity data at all is exempt from the rarity check, not hidden by it
-    (SPEC 5.5, 1.4 — one rarity_mode for every platform since M-Steam-2e,
-    no more separate show_x360 switch)."""
-    item = achievement(rarity=None, platform="xbox_360")
-    assert passes_filters(item, chat(rarity_mode="rare"), 10.0) is True
+def test_x360_obeys_rarity_check() -> None:
+    """Now that Contract 3 supplies rarity for Xbox 360, it obeys the chat's rarity check."""
+    rare_item = achievement(rarity=4.5, platform="xbox_360")
+    assert passes_filters(rare_item, chat(rarity_mode="rare"), 10.0) is True
+
+    common_item = achievement(rarity=25.0, platform="xbox_360")
+    assert passes_filters(common_item, chat(rarity_mode="rare"), 10.0) is False
+    assert passes_filters(common_item, chat(rarity_mode="all"), 10.0) is True
+
+    unproven_item = achievement(rarity=None, platform="xbox_360")
+    assert passes_filters(unproven_item, chat(rarity_mode="rare"), 10.0) is False
+    assert passes_filters(unproven_item, chat(rarity_mode="all"), 10.0) is True
 
 
 def test_hidden_mode_hides_every_platform_including_x360() -> None:

@@ -152,7 +152,7 @@ class _MessagesRepo:
             # the *first* one. Every /recent row was showing the player's
             # career total (249 504 G) in place of what the achievement was
             # actually worth (15 G). Found by rendering the screen.
-            "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
+            f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
             "       s.platform, " + earned_at() + " AS unlocked_at,"
             "       s.is_secret, s.trophy_type,"
             "       s.title_id, s.achievement_id, s.icon_url,"
@@ -173,6 +173,7 @@ class _MessagesRepo:
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             + NAME_CACHE_JOIN
+            + rarity_cache_join()
             # An undated backfill row is not "recent" (#69): its created_at is
             # when the import ran, so right after somebody connects their whole
             # imported history would sort to the top of this list — in the one
@@ -274,7 +275,7 @@ class _MessagesRepo:
             "       psn.display_name AS psn_name,"
             "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
             "       " + LOCALIZED_TITLE_COLUMNS + ","
-            "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
+            f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
             "       s.platform, " + earned_at() + " AS unlocked_at,"
             "       s.is_secret, s.trophy_type,"
             "       s.title_id, s.achievement_id, s.icon_url,"
@@ -290,6 +291,7 @@ class _MessagesRepo:
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             + NAME_CACHE_JOIN
+            + rarity_cache_join()
             + where
             + f"ORDER BY {earned_at()} DESC LIMIT ?",
             params,

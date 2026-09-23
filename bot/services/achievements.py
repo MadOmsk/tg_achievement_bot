@@ -7,10 +7,8 @@ the wording out into views/parts.py and views/notification.py.
 
 from __future__ import annotations
 
-from bot.constants import Platform, RarityMode
+from bot.constants import RarityMode
 from bot.db.repo import AchievementRow, ChatTarget
-
-_NO_RARITY_DATA_PLATFORMS = {Platform.XBOX_360}
 
 
 def passes_filters(
@@ -39,9 +37,7 @@ def passes_filters(
         # Every platform's feed off entirely, for this chat.
         return False
 
-    if achievement.platform not in _NO_RARITY_DATA_PLATFORMS and not _passes_rarity(
-        achievement, chat.rarity_mode, rare_threshold
-    ):
+    if not _passes_rarity(achievement, chat.rarity_mode, rare_threshold):
         return False
 
     if achievement.gamerscore < chat.min_gamerscore:

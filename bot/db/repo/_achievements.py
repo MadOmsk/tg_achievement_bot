@@ -11,7 +11,7 @@ from collections.abc import Sequence
 
 from bot.constants import AccountPlatform, Platform
 from bot.db.repo._models import AchievementRow
-from bot.db.repo._sql import OWNED_BY_PERSON
+from bot.db.repo._sql import OWNED_BY_PERSON, rarity, rarity_cache_join
 from bot.util import utcnow_iso
 
 log = logging.getLogger(__name__)
@@ -306,7 +306,11 @@ class _AchievementsRepo:
         """The last N unlocks, newest first — for the panel (SPEC 6.2).
         Undated rows never win: an unknown unlock time is not "recent"."""
         cursor = await self._conn.execute(
-            "SELECT s.*, t.name AS game,"
+            "SELECT s.title_id, s.achievement_id, s.name, s.description, s.icon_url,"
+            "       s.gamerscore, "
+            f"      {rarity()} AS rarity_percent,"
+            "       s.platform, s.is_secret, s.trophy_type, s.trophy_group_id,"
+            "       t.name AS game,"
             # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder
             # date for some Xbox 360 achievements, which the parser discards
             # (see services/xbox/models.py). Those rows still count (owner
@@ -316,7 +320,8 @@ class _AchievementsRepo:
             "       COALESCE(s.unlocked_at, s.created_at) AS seen_at "
             "FROM seen_achievements s "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.xuid = ? "
+            + rarity_cache_join()
+            + "WHERE s.xuid = ? "
             "ORDER BY seen_at DESC LIMIT ?",
             (xuid, limit),
         )
@@ -385,7 +390,12 @@ class _AchievementsRepo:
         as it is today outside the flood filter entirely.
         """
         cursor = await self._conn.execute(
-            "SELECT s.*, t.name AS game, t.platforms AS game_platforms,"
+            "SELECT s.title_id, s.achievement_id, s.name, s.description, s.icon_url,"
+            "       s.gamerscore, "
+            f"      {rarity()} AS rarity_percent,"
+            "       s.platform, s.is_secret, s.trophy_type, s.trophy_group_id,"
+            "       s.xuid, s.device,"
+            "       t.name AS game, t.platforms AS game_platforms,"
             # Plain COALESCE on purpose, unlike every windowed read (#69):
             # `is_backfill = 0` below already excludes the only rows the
             # fallback lies about, so the rule has nothing left to decide here.
@@ -393,7 +403,8 @@ class _AchievementsRepo:
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "LEFT JOIN publications p ON p.chat_id = ? AND p.xuid = s.xuid"
+            + rarity_cache_join()
+            + "LEFT JOIN publications p ON p.chat_id = ? AND p.xuid = s.xuid"
             "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "
             "WHERE al.tg_id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL "
             "ORDER BY COALESCE(s.unlocked_at, s.created_at) ASC",

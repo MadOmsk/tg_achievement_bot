@@ -245,3 +245,69 @@ async def test_the_walker_heals_titles_missing_from_catalogue(repo: Repo) -> Non
     await walker.tick()
     assert await repo.title_name(TITLE) == "Healed Game Title"
     assert await repo.titles_missing_from_catalogue(10) == []
+
+
+async def test_the_walker_fills_xbox_360_title_and_views_pick_up_cache(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
+    await repo.subscribe(CHAT_ID, TG_ID)
+
+    row_360 = AchievementRow(
+        title_id="t-360",
+        achievement_id="ach-1",
+        name="Episode 1",
+        description="Completed episode",
+        icon_url="http://image.xboxlive.com/global/t.12345/ach/0/1",
+        unlocked_at=utcnow().isoformat(timespec="seconds"),
+        gamerscore=15,
+        rarity_percent=None,
+        platform=Platform.XBOX_360,
+        title_name="Wolf 3D",
+    )
+    await repo.insert_new_achievements(XUID, [row_360], is_backfill=True)
+
+    client = FakeClient(rarity={"ach-1": 8.5}, title_name="Wolf 3D")
+    walker = RarityBackfill(repo, client)  # type: ignore[arg-type]
+
+    await walker.tick()
+    assert (TG_ID, "t-360") in client.asked
+
+    # Verify cached rarity is picked up in queries
+    recent = await repo.recent_achievements(XUID, limit=5)
+    assert len(recent) == 1
+    assert recent[0].rarity_percent == 8.5
+
+    person_rec = await repo.person_recent(TG_ID, limit=5)
+    assert len(person_rec) == 1
+    assert person_rec[0].rarity_percent == 8.5
+
+    chat_rec = await repo.chat_recent(CHAT_ID, limit=5)
+    assert len(chat_rec) == 1
+    assert chat_rec[0].rarity_percent == 8.5
+
+
+async def test_unpublished_achievements_reads_rarity_cache(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
+    await repo.subscribe(CHAT_ID, TG_ID)
+
+    row_360 = AchievementRow(
+        title_id="t-360",
+        achievement_id="ach-2",
+        name="Episode 2",
+        description="Completed episode 2",
+        icon_url="http://image.xboxlive.com/global/t.12345/ach/0/2",
+        unlocked_at=utcnow().isoformat(timespec="seconds"),
+        gamerscore=15,
+        rarity_percent=None,
+        platform=Platform.XBOX_360,
+        title_name="Wolf 3D",
+    )
+    await repo.insert_new_achievements(XUID, [row_360], is_backfill=False)
+    await repo.cache_rarity(Platform.XBOX_360, "t-360", {"ach-2": 4.2})
+
+    pending = await repo.unpublished_achievements(TG_ID, CHAT_ID)
+    assert len(pending) == 1
+    assert pending[0].rarity_percent == 4.2

@@ -68,11 +68,15 @@ class RarityBackfill:
         self._unanswerable: set[str] = set()
 
     async def tick(self) -> None:
-        titles = await self._repo.titles_missing_rarity(
-            Platform.XBOX_MODERN, self._titles_per_tick + len(self._unanswerable)
-        )
+        needed = self._titles_per_tick + len(self._unanswerable)
+        titles_modern = await self._repo.titles_missing_rarity(Platform.XBOX_MODERN, needed)
+        titles_360 = await self._repo.titles_missing_rarity(Platform.XBOX_360, needed)
+        titles: list[tuple[str, int, Platform]] = [
+            (t_id, tg_id, Platform.XBOX_MODERN) for t_id, tg_id in titles_modern
+        ] + [(t_id, tg_id, Platform.XBOX_360) for t_id, tg_id in titles_360]
+
         remaining = self._titles_per_tick
-        for title_id, tg_id in titles:
+        for title_id, tg_id, platform in titles:
             if remaining <= 0:
                 break
             if title_id in self._unanswerable:
@@ -89,15 +93,19 @@ class RarityBackfill:
                 self._unanswerable.add(title_id)
                 continue
             if title_name:
-                await self._repo.upsert_title(title_id, title_name, Platform.XBOX_MODERN)
+                await self._repo.upsert_title(title_id, title_name, platform)
             if not rarity:
-                # Asked and there is none — an Xbox 360 title reached through
-                # a modern row, or a game Microsoft reports no percentages
+                # Asked and there is none — a game Microsoft reports no percentages
                 # for. Nothing to cache and nothing to retry.
                 self._unanswerable.add(title_id)
                 continue
-            await self._repo.cache_rarity(Platform.XBOX_MODERN, title_id, rarity)
-            log.info("rarity backfill: cached %s percentages for title %s", len(rarity), title_id)
+            await self._repo.cache_rarity(platform, title_id, rarity)
+            log.info(
+                "rarity backfill: cached %s percentages for %s title %s",
+                len(rarity),
+                platform,
+                title_id,
+            )
 
         # Also heal titles that exist in seen_achievements but are missing
         # from `titles` catalog (#77).
@@ -111,6 +119,17 @@ class RarityBackfill:
                 if title_id in self._unanswerable:
                     continue
                 remaining -= 1
+                cursor = await self._repo._conn.execute(
+                    "SELECT platform FROM seen_achievements WHERE title_id = ? LIMIT 1",
+                    (title_id,),
+                )
+                p_row = await cursor.fetchone()
+                platform = (
+                    Platform(p_row["platform"])
+                    if p_row and p_row["platform"]
+                    else Platform.XBOX_MODERN
+                )
+
                 title_name = None
                 rarity = {}
                 if hasattr(self._client, "title_rarity_with_name"):
@@ -121,9 +140,9 @@ class RarityBackfill:
                     except XboxApiError:
                         pass
                 if title_name:
-                    await self._repo.upsert_title(title_id, title_name, Platform.XBOX_MODERN)
+                    await self._repo.upsert_title(title_id, title_name, platform)
                     if rarity:
-                        await self._repo.cache_rarity(Platform.XBOX_MODERN, title_id, rarity)
+                        await self._repo.cache_rarity(platform, title_id, rarity)
                     continue
 
                 if hasattr(self._client, "resolve_title"):
@@ -140,6 +159,6 @@ class RarityBackfill:
                         entry.title_id, entry.name, entry.platform, entry.icon_url
                     )
                     if rarity:
-                        await self._repo.cache_rarity(Platform.XBOX_MODERN, title_id, rarity)
+                        await self._repo.cache_rarity(entry.platform, title_id, rarity)
                 else:
                     self._unanswerable.add(title_id)
