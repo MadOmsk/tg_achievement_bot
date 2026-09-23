@@ -118,9 +118,10 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── lists.py                what every *text* list shares — the wrapper (usually a
 │   │   │                           collapsible quote, not always), the total line, the
 │   │   │                           name cap, and the one games row two screens draw (#64)
-│   │   └── inline_lists.py         the same for a list rendered as a *keyboard*: the
-│   │                               button rows, the page arithmetic, the one navigation
-│   │                               shape, the way out
+│   │   ├── inline_lists.py         the same for a list rendered as a *keyboard*: the
+│   │   │                           button rows, the page arithmetic, the one navigation
+│   │   │                           shape, the way out
+│   │   └── date_picker.py          calendar pickers and month/day navigation keyboards (#75)
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py         whether an achievement may be published (the wording
