@@ -100,9 +100,24 @@ function Get-BotProcess {
     if (-not $recorded) { return $null }
 
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$recorded" -ErrorAction SilentlyContinue
-    if (-not $process) { return $null }
-    if ($process.CommandLine -notmatch 'bot\.main') { return $null }
-    return $process
+    if ($process -and $process.CommandLine -match 'bot\.main') { return $process }
+
+    $child = Get-CimInstance Win32_Process -Filter "ParentProcessId=$recorded" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match 'bot\.main' } | Select-Object -First 1
+    if ($child) {
+        $child.ProcessId | Set-Content $Path -Encoding ascii
+        return $child
+    }
+
+    $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($conn) {
+        $portProc = Get-CimInstance Win32_Process -Filter "ProcessId=$($conn.OwningProcess)" -ErrorAction SilentlyContinue
+        if ($portProc -and $portProc.CommandLine -match 'bot\.main') {
+            $portProc.ProcessId | Set-Content $Path -Encoding ascii
+            return $portProc
+        }
+    }
+    return $null
 }
 
 function Get-BotTree {

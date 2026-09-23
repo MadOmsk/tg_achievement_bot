@@ -41,6 +41,7 @@ history.md
 # Runtime artefacts
 logs/
 *.pid
+*.log
 
 # Database copies, dumps, and the one-off scripts that make them (2026-09-14
 # incident): they belong in backups/ and nowhere else, and none of it is ever

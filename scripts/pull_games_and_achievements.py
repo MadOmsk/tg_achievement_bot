@@ -493,9 +493,7 @@ async def run_sync(cfg: SyncConfig) -> None:
                     )
                 except Exception as exc:
                     catalog_results["failed"] += 1
-                    log.warning(
-                        "Catalog [%s] %s (%s) failed: %s", plat_str, title_title, tid, exc
-                    )
+                    log.warning("Catalog [%s] %s (%s) failed: %s", plat_str, title_title, tid, exc)
                 await asyncio.sleep(0.1)
 
         await asyncio.gather(*(sync_one(t[0], t[1], t[2]) for t in titles_to_sync))
@@ -507,15 +505,11 @@ async def run_sync(cfg: SyncConfig) -> None:
     cur = await database.conn.execute("SELECT COUNT(*) FROM users")
     total_users = (await cur.fetchone())[0]
 
-    cur = await database.conn.execute(
-        "SELECT platform, COUNT(*) FROM accounts GROUP BY platform"
-    )
+    cur = await database.conn.execute("SELECT platform, COUNT(*) FROM accounts GROUP BY platform")
     acc_rows = await cur.fetchall()
     acc_summary = ", ".join(f"{r[0]}: {r[1]}" for r in acc_rows) or "0"
 
-    cur = await database.conn.execute(
-        "SELECT platform, COUNT(*) FROM titles GROUP BY platform"
-    )
+    cur = await database.conn.execute("SELECT platform, COUNT(*) FROM titles GROUP BY platform")
     title_rows = await cur.fetchall()
     titles_summary = ", ".join(f"{r[0]}: {r[1]}" for r in title_rows) or "0"
 
