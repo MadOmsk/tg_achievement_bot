@@ -139,13 +139,16 @@ class Fetcher:
         self, tg_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
     ) -> None:
         """Shared by poll_title() and catch_up() — both publish live x360
-        unlocks and must agree on the icon, not just the one that happens
-        to run more often."""
+        unlocks and must agree on the icon. If an achievement has no genuine icon,
+        fall back to the game's box art."""
         if platform != Platform.XBOX_360:
+            return
+        missing = [item for item in parsed if not item.icon_url]
+        if not missing:
             return
         icon_url = await self.ensure_title_icon(tg_id, title_id)
         if icon_url:
-            for item in parsed:
+            for item in missing:
                 item.icon_url = icon_url
 
     async def _bilingual_descriptions(

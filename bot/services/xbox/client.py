@@ -34,7 +34,8 @@ from bot.services.xbox.models import (
 
 log = logging.getLogger(__name__)
 
-ACHIEVEMENTS_URL = "https://achievements.xboxlive.com/users/xuid({xuid})/achievements"
+ACHIEVEMENTS_BASE_URL = "https://achievements.xboxlive.com/users/xuid({xuid})"
+ACHIEVEMENTS_URL = f"{ACHIEVEMENTS_BASE_URL}/achievements"
 PAGE_SIZE = 1000
 MAX_ATTEMPTS = 3
 
@@ -206,7 +207,11 @@ class XboxClient:
         """
         params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         if platform == Platform.XBOX_360:
-            payload = await self._get_achievements(tg_id, "1", params, language=language)
+            payload = await self._get_achievements(
+                tg_id, "3", params, language=language, endpoint="titleachievements"
+            )
+            if not payload.get("achievements"):
+                payload = await self._get_achievements(tg_id, "1", params, language=language)
             return (
                 parse_achievements(payload, Platform.XBOX_360, title_id, earned_only=earned_only),
                 _total_in(payload),
@@ -221,37 +226,45 @@ class XboxClient:
                 _total_in(payload),
             )
 
-        log.info("title %s looks like Xbox 360, retrying on contract 1", title_id)
-        payload = await self._get_achievements(tg_id, "1", params, language=language)
+        log.info("title %s looks like Xbox 360, retrying on contract 3", title_id)
+        payload = await self._get_achievements(
+            tg_id, "3", params, language=language, endpoint="titleachievements"
+        )
+        if not payload.get("achievements"):
+            payload = await self._get_achievements(tg_id, "1", params, language=language)
         return (
             parse_achievements(payload, Platform.XBOX_360, title_id, earned_only=earned_only),
             _total_in(payload),
         )
 
     async def title_rarity(self, tg_id: int, title_id: str) -> dict[str, float]:
-        """Every achievement's rarity for one modern title, earned or not.
-
-        The same contract-4 request `title_achievements` makes, kept for the
-        one field in it that belongs to the achievement rather than to the
-        caller. Any owner of the game can answer for all of them, which is
-        what makes filling the shared cache one request per *title* instead
-        of one per person per title.
-
-        Empty for an Xbox 360 title (contract 4 answers those with nothing,
-        and contract 1 has no rarity to give) — the caller treats that as
-        "asked and there is none", not as a failure to retry.
-        """
+        """Every achievement's rarity for one modern or back-compat title, earned or not."""
         rarity, _ = await self.title_rarity_with_name(tg_id, title_id)
         return rarity
 
     async def title_rarity_with_name(
         self, tg_id: int, title_id: str
     ) -> tuple[dict[str, float], str | None]:
-        """Contract 4 returns both rarity map and human-readable title name (#77)."""
+        """Contract 4 returns both rarity map and human-readable title name (#77).
+
+        Xbox 360 titles return empty on contract 4, but contract 3 on /titleachievements
+        supplies their rarity.
+        """
         payload = await self._get_achievements(
             tg_id, "4", {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         )
-        return parse_rarity_with_title(payload)
+        rarity, title_name = parse_rarity_with_title(payload)
+        if not rarity:
+            payload_360 = await self._get_achievements(
+                tg_id,
+                "3",
+                {"titleId": title_id, "maxItems": str(PAGE_SIZE)},
+                endpoint="titleachievements",
+            )
+            rarity_360, name_360 = parse_rarity_with_title(payload_360)
+            if rarity_360:
+                return rarity_360, name_360 or title_name
+        return rarity, title_name
 
     async def all_achievements(self, tg_id: int) -> list[ParsedAchievement]:
         """Every achievement of the player, for backfill only (SPEC 5.6).
@@ -271,11 +284,17 @@ class XboxClient:
         return collected
 
     async def _get_achievements(
-        self, tg_id: int, contract: str, params: dict[str, str], *, language: str = "en-US"
+        self,
+        tg_id: int,
+        contract: str,
+        params: dict[str, str],
+        *,
+        language: str = "en-US",
+        endpoint: str = "achievements",
     ) -> dict:
         manager = await self._auth.authenticated_manager(tg_id)
         assert manager.xsts_token is not None
-        url = ACHIEVEMENTS_URL.format(xuid=manager.xsts_token.xuid)
+        url = f"{ACHIEVEMENTS_BASE_URL.format(xuid=manager.xsts_token.xuid)}/{endpoint}"
         headers = {
             "Authorization": manager.xsts_token.authorization_header_value,
             "x-xbl-contract-version": contract,

@@ -32,7 +32,10 @@ __all__ = [
     "X360Achievement",
     "continuation_token",
     "parse_achievements",
+    "parse_rarity",
+    "parse_rarity_with_title",
     "parse_timestamp",
+    "x360_achievement_icon_url",
 ]
 
 # "2025-08-30T09:17:58.7770000Z" — seven fractional digits, which
@@ -136,8 +139,30 @@ class ModernAchievement(BaseModel):
         return 0
 
 
+def x360_achievement_icon_url(title_id: str | int | None, image_id: str | int | None) -> str | None:
+    """Return the Xbox Live CDN URL for an Xbox 360 achievement icon.
+
+    Xbox 360 games store image assets under Microsoft's Akamai CDN path:
+    http://image.xboxlive.com/global/t.{title_hex}/ach/0/{image_hex}
+    where title_hex is an 8-character hex string and image_hex is lowercase hex.
+    """
+    if not title_id or image_id is None:
+        return None
+    try:
+        title_hex = f"{int(title_id):08x}"
+        image_hex = f"{int(image_id):x}"
+        return f"http://image.xboxlive.com/global/t.{title_hex}/ach/0/{image_hex}"
+    except (ValueError, TypeError):
+        return None
+
+
 class X360Achievement(BaseModel):
-    """Contract 1. No rarity exists for Xbox 360 and never will."""
+    """Contract 1 and Contract 3.
+
+    Contract 1 was the legacy Xbox 360 achievement response (no rarity, no secret).
+    Contract 3 (accessed via /titleachievements) brings modern parity to Xbox 360:
+    it adds rarity, isSecret, description, and carries imageId.
+    """
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -148,28 +173,28 @@ class X360Achievement(BaseModel):
     unlocked: bool = False
     time_unlocked: str | None = Field(default=None, alias="timeUnlocked")
     title_id: int | str | None = Field(default=None, alias="titleId")
+    image_id: int | str | None = Field(default=None, alias="imageId")
+    rarity: _Rarity | None = None
+    is_secret: bool = Field(default=False, alias="isSecret")
 
     @property
     def is_achieved(self) -> bool:
         return self.unlocked
 
     def to_parsed(self, fallback_title_id: str | None = None) -> ParsedAchievement:
+        tid = str(self.title_id) if self.title_id else (fallback_title_id or "")
         return ParsedAchievement(
             achievement_id=str(self.id),
-            title_id=str(self.title_id) if self.title_id else (fallback_title_id or ""),
-            title_name=None,  # contract 1 does not carry the title name
+            title_id=tid,
+            title_name=None,  # x360 payload does not carry title name
             name=self.name,
             description=self.description,
-            # imageId is a bare int, no documented (or discoverable — checked
-            # the raw response live) way to turn it into a URL. Left None
-            # here on purpose: poller/fetcher.py's poll_title() fills in the
-            # game's own box art as a stand-in once it knows this is x360,
-            # a job for the poller layer, not this parser.
-            icon_url=None,
+            icon_url=x360_achievement_icon_url(tid, self.image_id),
             unlocked_at=parse_timestamp(self.time_unlocked),
             gamerscore=self.gamerscore,
-            rarity_percent=None,
+            rarity_percent=self.rarity.current_percentage if self.rarity else None,
             platform=Platform.XBOX_360,
+            is_secret=self.is_secret,
         )
 
 
@@ -212,25 +237,37 @@ def parse_achievements(
 
 
 def parse_rarity_with_title(payload: dict[str, Any]) -> tuple[dict[str, float], str | None]:
-    """Every achievement's rarity and the title's name in one contract-4 response.
+    """Every achievement's rarity and the title's name in one contract-4 or contract-3 response.
 
     Contract 4 includes titleAssociations on each achievement item, which
     carries the human-readable game title. This allows learning title names
     during rarity caching without extra requests (#77).
+    Contract 3 (/titleachievements for Xbox 360) carries rarity without titleAssociations.
     """
     result: dict[str, float] = {}
     title_name: str | None = None
     for item in payload.get("achievements") or []:
+        if "titleAssociations" in item:
+            try:
+                achievement = ModernAchievement.model_validate(item)
+                if title_name is None and achievement.title_associations:
+                    assoc = achievement.title_associations[0]
+                    if assoc and assoc.name:
+                        title_name = assoc.name
+                if (
+                    achievement.rarity is not None
+                    and achievement.rarity.current_percentage is not None
+                ):
+                    result[str(achievement.id)] = float(achievement.rarity.current_percentage)
+                continue
+            except Exception:
+                pass
         try:
-            achievement = ModernAchievement.model_validate(item)
+            x360_ach = X360Achievement.model_validate(item)
+            if x360_ach.rarity is not None and x360_ach.rarity.current_percentage is not None:
+                result[str(x360_ach.id)] = float(x360_ach.rarity.current_percentage)
         except Exception:
             continue
-        if title_name is None and achievement.title_associations:
-            assoc = achievement.title_associations[0]
-            if assoc and assoc.name:
-                title_name = assoc.name
-        if achievement.rarity is not None and achievement.rarity.current_percentage is not None:
-            result[str(achievement.id)] = float(achievement.rarity.current_percentage)
     return result, title_name
 
 

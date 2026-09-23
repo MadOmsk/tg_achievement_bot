@@ -35,9 +35,18 @@ DEFAULT_STATS_GAMES_LIMIT = 15
 
 def _https_url(url: str | None) -> str | None:
     """Mini App is always HTTPS — plain http:// icon URLs are mixed content
-    and the browser drops them (Xbox store-images still hand out http)."""
+    and the browser drops them (Xbox store-images still hand out http).
+    Legacy Xbox 360 achievement icons live on http://image.xboxlive.com without SSL,
+    so we proxy them through /api/mini/x360-icon/{title_hex}/{image_hex}.
+    """
     if not url:
         return None
+    if url.startswith("http://image.xboxlive.com/global/t."):
+        parts = url.split("/")
+        if len(parts) >= 8 and parts[4].startswith("t."):
+            title_hex = parts[4][2:]
+            image_hex = parts[7].removesuffix(".png")
+            return f"/api/mini/x360-icon/{title_hex}/{image_hex}"
     if url.startswith("http://"):
         return "https://" + url[len("http://") :]
     return url

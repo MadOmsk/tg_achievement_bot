@@ -12,6 +12,7 @@ import logging
 import time
 from typing import Any
 
+import httpx
 from aiohttp import web
 
 from bot.config import Settings
@@ -127,6 +128,7 @@ def setup_mini_api(
     app.router.add_get("/api/mini/club/people", handle_chat_person)
     app.router.add_patch("/api/mini/club", handle_patch_chat)
     app.router.add_get("/api/mini/avatar/{tg_id}", handle_avatar)
+    app.router.add_get("/api/mini/x360-icon/{title_hex}/{image_hex}", handle_x360_icon)
     app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
     setup_admin_routes(app)
@@ -538,6 +540,48 @@ async def handle_avatar(request: web.Request) -> web.Response:
         content_type=mime,
         headers={"Cache-Control": "private, max-age=3600"},
     )
+
+
+_X360_ICON_CACHE: dict[str, bytes] = {}
+_HEX_CHARS = set("0123456789abcdefABCDEF")
+
+
+async def handle_x360_icon(request: web.Request) -> web.Response:
+    title_hex = request.match_info.get("title_hex", "").lower()
+    image_hex = request.match_info.get("image_hex", "").lower()
+    if not (title_hex and image_hex):
+        raise web.HTTPBadRequest(text="missing parameters")
+    if not (set(title_hex).issubset(_HEX_CHARS) and set(image_hex).issubset(_HEX_CHARS)):
+        raise web.HTTPBadRequest(text="invalid hex")
+
+    cache_key = f"{title_hex}/{image_hex}"
+    if cache_key in _X360_ICON_CACHE:
+        return web.Response(
+            body=_X360_ICON_CACHE[cache_key],
+            content_type="image/png",
+            headers={"Cache-Control": "public, max-age=604800, immutable"},
+        )
+
+    url = f"http://image.xboxlive.com/global/t.{title_hex}/ach/0/{image_hex}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            resp = await http.get(url)
+            if resp.status_code == 200 and resp.content:
+                if len(_X360_ICON_CACHE) < 5000:
+                    _X360_ICON_CACHE[cache_key] = resp.content
+                return web.Response(
+                    body=resp.content,
+                    content_type="image/png",
+                    headers={"Cache-Control": "public, max-age=604800, immutable"},
+                )
+            if resp.status_code == 404:
+                raise web.HTTPNotFound(text="icon not found")
+            raise web.HTTPBadGateway(text="upstream error")
+    except web.HTTPException:
+        raise
+    except Exception as exc:
+        log.info("failed to fetch x360 icon %s: %r", url, exc)
+        raise web.HTTPBadGateway(text="failed to fetch icon") from exc
 
 
 async def handle_chat_person(request: web.Request) -> web.Response:

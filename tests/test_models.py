@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from bot.services.xbox.models import parse_achievements, parse_timestamp
+from bot.services.xbox.models import (
+    parse_achievements,
+    parse_rarity_with_title,
+    parse_timestamp,
+    x360_achievement_icon_url,
+)
 
 MODERN = {
     "achievements": [
@@ -127,3 +132,67 @@ def test_seven_digit_fraction_and_placeholder_dates() -> None:
     assert parse_timestamp("1753-01-01T00:00:00.0000000Z") is None
     assert parse_timestamp(None) is None
     assert parse_timestamp("not a date") is None
+
+
+def test_x360_achievement_icon_url() -> None:
+    # 1480657355 in hex is 584109cb
+    assert (
+        x360_achievement_icon_url(1480657355, 3)
+        == "http://image.xboxlive.com/global/t.584109cb/ach/0/3"
+    )
+    assert (
+        x360_achievement_icon_url("1480657355", "10")
+        == "http://image.xboxlive.com/global/t.584109cb/ach/0/a"
+    )
+    assert x360_achievement_icon_url(None, 3) is None
+    assert x360_achievement_icon_url(123, None) is None
+    assert x360_achievement_icon_url("invalid", 3) is None
+
+
+def test_x360_contract_3_parses_rarity_and_icon() -> None:
+    c3_payload = {
+        "achievements": [
+            {
+                "id": 1,
+                "titleId": 1480657355,
+                "name": "Into the Netherworld",
+                "description": "Complete Episode 1 on any difficulty.",
+                "gamerscore": 15,
+                "unlocked": True,
+                "timeUnlocked": "2026-09-23T01:00:00.0000000Z",
+                "imageId": 3,
+                "rarity": {"currentCategory": "Rare", "currentPercentage": 14.8},
+                "isSecret": True,
+            }
+        ]
+    }
+    parsed = parse_achievements(c3_payload, "xbox_360", "1480657355")
+    assert len(parsed) == 1
+    ach = parsed[0]
+    assert ach.rarity_percent == 14.8
+    assert ach.icon_url == "http://image.xboxlive.com/global/t.584109cb/ach/0/3"
+    assert ach.is_secret is True
+    assert ach.gamerscore == 15
+    assert ach.platform == "xbox_360"
+
+
+def test_parse_rarity_with_title_x360_contract_3() -> None:
+    c3_payload = {
+        "achievements": [
+            {
+                "id": 1,
+                "titleId": 1480657355,
+                "name": "Ach 1",
+                "rarity": {"currentPercentage": 14.8},
+            },
+            {
+                "id": 2,
+                "titleId": 1480657355,
+                "name": "Ach 2",
+                "rarity": {"currentPercentage": 5.2},
+            },
+        ]
+    }
+    rarity, title_name = parse_rarity_with_title(c3_payload)
+    assert rarity == {"1": 14.8, "2": 5.2}
+    assert title_name is None
