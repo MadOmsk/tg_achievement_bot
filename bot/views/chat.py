@@ -170,24 +170,11 @@ async def build_stats_text(
     else:
         assert target_month is not None
         assert target_year is not None
-        from bot.views.date_picker import DAY_GENITIVE_RU, MONTH_NAMES_EN
+        from bot.views.date_picker import target_month_labels
 
-        if locale == "ru":
-            month_str = DAY_GENITIVE_RU[target_month - 1]
-            if target_year == now_local.year:
-                window_label = month_str
-                m_label = month_str
-            else:
-                window_label = f"{month_str} {target_year}"
-                m_label = f"{month_str} {target_year}"
-        else:
-            month_str = MONTH_NAMES_EN[target_month - 1]
-            if target_year == now_local.year:
-                window_label = f"of {month_str}"
-                m_label = month_str
-            else:
-                window_label = f"of {month_str} {target_year}"
-                m_label = f"{month_str} {target_year}"
+        m_label, window_label = target_month_labels(
+            target_year, target_month, now_local.year, locale
+        )
 
     lines += [
         "",

@@ -172,7 +172,7 @@ class _ChatStatsRepo:
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + f"WHERE u.is_excluded = 0 {date_bound} "
+            + f"WHERE u.is_excluded = 0 AND sub.rarity_mode != 'hidden' {date_bound} "
             "GROUP BY u.tg_id, s.title_id, s.platform "
             "HAVING unlocked >= 1 AND unlocked <= ? "
             "ORDER BY unlocked ASC, last_earned ASC LIMIT ?",

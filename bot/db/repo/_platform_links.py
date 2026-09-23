@@ -438,7 +438,7 @@ class _PlatformLinksRepo:
             # active gameplay seen_achievements is strictly fresher. max() ensures
             # live unlocks increment the counter immediately without losing
             # pre-bot historical counts.
-            unlocked = max(seen_unlocked, history_unlocked)
+            unlocked = min(max(seen_unlocked, history_unlocked), total)
             return TitleProgress(unlocked=unlocked, total=total)
 
         if account_platform == AccountPlatform.STEAM:
@@ -451,7 +451,9 @@ class _PlatformLinksRepo:
                 (account_platform, external_id, title_id),
             )
             row = await cursor.fetchone()
-            return TitleProgress(unlocked=int(row[0]) if row else 0, total=len(cached[1]))
+            total = len(cached[1])
+            unlocked = min(int(row[0]) if row else 0, total)
+            return TitleProgress(unlocked=unlocked, total=total)
 
         cursor = await self._conn.execute(
             "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
@@ -466,7 +468,8 @@ class _PlatformLinksRepo:
             (account_platform, external_id, title_id),
         )
         row = await cursor.fetchone()
-        progress = TitleProgress(unlocked=int(row[0]) if row else 0, total=total)
+        unlocked = min(int(row[0]) if row else 0, total)
+        progress = TitleProgress(unlocked=unlocked, total=total)
 
         # Sony gives every title at least a 'default' group, so "has groups"
         # is not the question — "is it split into more than one" is. A game

@@ -112,3 +112,4 @@ panel-delete-confirm-2 =
 panel-delete-confirm-2-yes = 🔥 Точно удалить аккаунт
 panel-delete-done = Ваш аккаунт и связанные данные успешно удалены. Если захотите вернуться, просто отправьте /start.
 panel-delete-toast = Аккаунт удалён
+panel-delete-not-found = Аккаунт уже удалён.

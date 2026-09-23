@@ -121,6 +121,7 @@ class SteamPresencePoller:
 
         if in_game:
             assert snapshot.gameid is not None
+            self._exit_queue.pop((target.steam_id, snapshot.gameid), None)
             await self._poll_achievements(
                 target, snapshot.persona_name, snapshot.gameid, snapshot.game_name, force=changed
             )

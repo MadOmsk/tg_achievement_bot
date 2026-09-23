@@ -107,10 +107,15 @@ async def start_with_payload(
             return
         await _send_login_link(message, connect, repo, i18n, origin_chat_id=origin_chat_id)
         return
-    await _greet(message, repo, connect, bot, i18n, settings)
+    await _greet(message, repo, connect, bot, i18n, settings, person_id)
 
 
-@router.message(CommandStart())
+@router.message(CommandStart(), F.chat.type != ChatType.PRIVATE)
+async def start_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
+    await _redirect_to_dm(message, bot, i18n.get("connect-xbox-group-redirect"), i18n)
+
+
+@router.message(CommandStart(), F.chat.type == ChatType.PRIVATE)
 async def start(
     message: Message,
     repo: Repo,
@@ -123,7 +128,7 @@ async def start(
     if person_id is None:
         return
     await repo.ensure_user(person_id, _username(message))
-    await _greet(message, repo, connect, bot, i18n, settings)
+    await _greet(message, repo, connect, bot, i18n, settings, person_id)
 
 
 @router.message(Command("connect_xbox"), F.chat.type != ChatType.PRIVATE)
@@ -317,29 +322,24 @@ async def _greet(
     bot: Bot,
     i18n: I18nContext,
     settings: Settings,
+    person_id: int | None = None,
 ) -> None:
     """Already connected on *any* platform -> straight to the panel;
     otherwise greet and offer all three (#53).
     """
-    person_id = _person_id(message)
-    if person_id:
-        user = await repo.get_user(person_id)
-        links = await repo.platform_links_of(person_id)
+    pid = person_id if person_id is not None else _person_id(message)
+    if pid:
+        user = await repo.get_user(pid)
+        links = await repo.platform_links_of(pid)
         if (user is not None and user.xuid) or links:
-            await send_panel(bot, repo, person_id, i18n)
+            await send_panel(bot, repo, pid, i18n)
             return
-    # The Mini App row is a `web_app` button, which Telegram accepts only in
-    # a private chat — anywhere else it answers BUTTON_TYPE_INVALID and the
-    # whole message fails to send. `/start` carries no chat-type filter (the
-    # one in this file guards the timezone prompt, not this), so it does
-    # reach here from a group, and without this guard it would stop
-    # answering there entirely rather than simply offering one row fewer.
     in_private = message.chat.type == ChatType.PRIVATE
     await message.answer(i18n.get("connect-greeting-multi"))
     await message.answer(
         i18n.get("connect-pick-platform"),
         reply_markup=onboarding_keyboard(
-            connect.start_login(person_id or 0),
+            connect.start_login(pid or 0),
             i18n,
             mini_app_url=(settings.mini_app_url or "") if in_private else "",
         ),

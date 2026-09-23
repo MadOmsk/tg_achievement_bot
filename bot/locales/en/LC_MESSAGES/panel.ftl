@@ -115,3 +115,4 @@ panel-delete-confirm-2 =
 panel-delete-confirm-2-yes = 🔥 Permanently delete account
 panel-delete-done = Your account and related data have been deleted. If you ever wish to return, send /start.
 panel-delete-toast = Account deleted
+panel-delete-not-found = Account already deleted.

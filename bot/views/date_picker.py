@@ -10,6 +10,8 @@ from datetime import date, timedelta
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from bot.i18n import translator
+
 MONTH_NAMES_RU = (
     "Январь",
     "Февраль",
@@ -86,18 +88,45 @@ DAY_GENITIVE_RU = (
 )
 
 
+def get_month_name(month: int, locale: str = "ru") -> str:
+    _ = translator("date_picker", locale)
+    return _(f"date-month-{month:02d}")
+
+
+def get_month_short(month: int, locale: str = "ru") -> str:
+    _ = translator("date_picker", locale)
+    return _(f"date-month-short-{month:02d}")
+
+
+def get_month_genitive(month: int, locale: str = "ru") -> str:
+    _ = translator("date_picker", locale)
+    return _(f"date-month-gen-{month:02d}")
+
+
 def format_month_year(year: int, month: int, locale: str = "ru") -> str:
-    names = MONTH_NAMES_RU if locale == "ru" else MONTH_NAMES_EN
-    month_str = names[month - 1]
-    return f"{month_str} {year}"
+    month_str = get_month_name(month, locale)
+    _ = translator("date_picker", locale)
+    return _("date-format-month-year", month=month_str, year=str(year))
 
 
 def format_day_month(d: date, locale: str = "ru") -> str:
+    month_str = get_month_genitive(d.month, locale)
+    _ = translator("date_picker", locale)
+    return _("date-format-day-month", day=str(d.day), month=month_str)
+
+
+def target_month_labels(
+    target_year: int, target_month: int, current_year: int, locale: str = "ru"
+) -> tuple[str, str]:
+    """Returns (m_label, window_label) for historical chat stats."""
     if locale == "ru":
-        month_str = DAY_GENITIVE_RU[d.month - 1]
-        return f"{d.day} {month_str}"
-    month_str = MONTH_SHORT_EN[d.month - 1]
-    return f"{d.day} {month_str}"
+        month_str = get_month_genitive(target_month, locale)
+        label = month_str if target_year == current_year else f"{month_str} {target_year}"
+        return label, label
+    month_str = get_month_name(target_month, locale)
+    if target_year == current_year:
+        return month_str, f"of {month_str}"
+    return f"{month_str} {target_year}", f"of {month_str} {target_year}"
 
 
 def prev_month(year: int, month: int) -> tuple[int, int]:
@@ -161,22 +190,23 @@ def stats_month_calendar_keyboard(
     rows.append(year_row)
 
     # 4x3 month grid
-    short_names = MONTH_SHORT_RU if locale == "ru" else MONTH_SHORT_EN
     month_grid: list[InlineKeyboardButton] = []
     for m in range(1, 13):
+        short_name = get_month_short(m, locale)
         if (year, m) > (now_year, now_month):
-            txt = f"· {short_names[m - 1]} ·"
+            txt = f"· {short_name} ·"
             month_grid.append(InlineKeyboardButton(text=txt, callback_data="noop"))
         else:
             cb = f"st:nav:{target_tg_id}:{year}:{m}"
-            month_grid.append(InlineKeyboardButton(text=short_names[m - 1], callback_data=cb))
+            month_grid.append(InlineKeyboardButton(text=short_name, callback_data=cb))
 
     for i in range(0, 12, 3):
         rows.append(month_grid[i : i + 3])
 
     # Back button
+    _ = translator("date_picker", locale)
     back_cb = f"st:nav:{target_tg_id}:{now_year}:{now_month}"
-    rows.append([InlineKeyboardButton(text="↩️ Назад", callback_data=back_cb)])
+    rows.append([InlineKeyboardButton(text=_("date-picker-back"), callback_data=back_cb)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -217,10 +247,11 @@ def summary_month_navigation_keyboard(
             if (year, month) == (now_year, now_month)
             else f"summary:all:month:{year}:{month}"
         )
+        _ = translator("date_picker", locale)
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="Показать всех (за месяц)" if locale == "ru" else "Show all (month)",
+                    text=_("date-picker-show-all-month"),
                     callback_data=all_cb,
                 )
             ]
@@ -249,21 +280,22 @@ def summary_month_calendar_keyboard(
     rows.append(year_row)
 
     # 4x3 month grid
-    short_names = MONTH_SHORT_RU if locale == "ru" else MONTH_SHORT_EN
     month_grid: list[InlineKeyboardButton] = []
     for m in range(1, 13):
+        short_name = get_month_short(m, locale)
         if (year, m) > (now_year, now_month):
-            txt = f"· {short_names[m - 1]} ·"
+            txt = f"· {short_name} ·"
             month_grid.append(InlineKeyboardButton(text=txt, callback_data="noop"))
         else:
             cb = f"sm:nav:{year}:{m}"
-            month_grid.append(InlineKeyboardButton(text=short_names[m - 1], callback_data=cb))
+            month_grid.append(InlineKeyboardButton(text=short_name, callback_data=cb))
 
     for i in range(0, 12, 3):
         rows.append(month_grid[i : i + 3])
 
+    _ = translator("date_picker", locale)
     back_cb = f"sm:nav:{now_year}:{now_month}"
-    rows.append([InlineKeyboardButton(text="↩️ Назад", callback_data=back_cb)])
+    rows.append([InlineKeyboardButton(text=_("date-picker-back"), callback_data=back_cb)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -302,10 +334,11 @@ def summary_day_navigation_keyboard(
             if target_date == now_date
             else f"summary:all:day:{target_date.isoformat()}"
         )
+        _ = translator("date_picker", locale)
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="Показать всех (24ч)" if locale == "ru" else "Show all (24h)",
+                    text=_("date-picker-show-all-day"),
                     callback_data=all_cb,
                 )
             ]
@@ -335,6 +368,7 @@ def summary_day_calendar_keyboard(
     for i in range(0, 14, 7):
         rows.append(days[i : i + 7])
 
+    _ = translator("date_picker", locale)
     back_cb = f"sd:nav:{now_date.isoformat()}"
-    rows.append([InlineKeyboardButton(text="↩️ Назад", callback_data=back_cb)])
+    rows.append([InlineKeyboardButton(text=_("date-picker-back"), callback_data=back_cb)])
     return InlineKeyboardMarkup(inline_keyboard=rows)

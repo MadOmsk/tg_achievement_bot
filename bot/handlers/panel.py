@@ -19,13 +19,12 @@ from bot.db.repo import Repo
 from bot.handlers.delivery import safe_edit
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
-from bot.poller.steam_catch_up import steam_catch_up_since
+from bot.poller.steam_catch_up import catch_up_steam_account
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services.naming import link_nickname
 from bot.services.single_message import send_replacing
-from bot.services.steam import client as steam_client
+from bot.services.steam import client as steam_client  # noqa: F401
 from bot.services.steam.auth import SteamAuth
-from bot.services.steam.client import SteamApiError
 from bot.util import cooldown_minutes_left, parse_iso
 from bot.views.keyboards import (
     DIGEST_NEVER,
@@ -125,12 +124,17 @@ async def panel_sync(
 
     user = await repo.get_user(tg_id)
     token = await repo.get_token(tg_id) if user and user.xuid else None
-    xbox_active = bool(user and user.xuid and token and token.status == TokenStatus.ACTIVE)
+    xbox_linked = bool(user and user.xuid)
+    xbox_active = bool(xbox_linked and token and token.status == TokenStatus.ACTIVE)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
     psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
 
-    if not (xbox_active or steam_link or psn_link):
+    if not (xbox_linked or steam_link or psn_link):
         await callback.answer(i18n.get("panel-connect-any-platform-first"), show_alert=True)
+        return
+
+    if xbox_linked and not xbox_active and not (steam_link or psn_link):
+        await callback.answer(i18n.get("panel-login-invalid"), show_alert=True)
         return
 
     minutes_left = cooldown_minutes_left(
@@ -145,9 +149,12 @@ async def panel_sync(
 
     total_titles = 0
     total_published = 0
+    errors: list[str] = []
+    attempted_platforms = 0
 
     # 1. Xbox
     if xbox_active and user and user.xuid:
+        attempted_platforms += 1
         since_iso = await repo.account_latest_unlock(AccountPlatform.XBOX, user.xuid)
         try:
             x_titles, x_published = await fetcher.catch_up(
@@ -161,56 +168,52 @@ async def panel_sync(
             total_titles += x_titles
             total_published += x_published
         except Exception:
+            errors.append("xbox")
             log.exception("manual xbox catch-up for tg_id=%s failed", tg_id)
 
     # 2. Steam
     if steam_link:
-        api_key = await steam_auth.get_key()
-        if api_key:
-            try:
-                since = await steam_catch_up_since(
-                    repo, steam_link.external_id, settings.catchup_publish_window_hours
-                )
-                cutoff = since.timestamp()
-                games = await steam_client.get_recently_played_games(
-                    api_key, steam_link.external_id
-                )
-                candidates = [g for g in games if g.last_played > cutoff]
-                total_titles += len(candidates)
-                for game in candidates:
-                    try:
-                        total_published += await steam_fetcher.poll_title(
-                            tg_id,
-                            steam_link.external_id,
-                            link_nickname(steam_link),
-                            game.appid,
-                            game.name,
-                            window_hours=settings.catchup_publish_window_hours,
-                        )
-                    except SteamApiError as exc:
-                        log.info("manual steam catch-up of appid=%s skipped: %s", game.appid, exc)
-            except Exception:
-                log.exception("manual steam catch-up for tg_id=%s failed", tg_id)
+        attempted_platforms += 1
+        try:
+            s_titles, s_published = await catch_up_steam_account(
+                settings,
+                repo,
+                steam_fetcher,
+                steam_auth,
+                tg_id,
+                steam_link.external_id,
+                link_nickname(steam_link),
+            )
+            total_titles += s_titles
+            total_published += s_published
+        except Exception:
+            errors.append("steam")
+            log.exception("manual steam catch-up for tg_id=%s failed", tg_id)
 
     # 3. PSN
     if psn_link:
+        attempted_platforms += 1
         try:
             p_published = await psn_fetcher.poll_account(
                 tg_id, psn_link.external_id, link_nickname(psn_link)
             )
             total_published += p_published
         except Exception:
+            errors.append("psn")
             log.exception("manual psn catch-up for tg_id=%s failed", tg_id)
 
     # Redraw panel with newly inserted achievements / gamerscore
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard)
 
-    summary = (
-        i18n.get("panel-sync-summary-found", titles=total_titles, published=total_published)
-        if (total_titles or total_published)
-        else i18n.get("panel-sync-summary-none")
-    )
+    if errors and (len(errors) == attempted_platforms or not (total_titles or total_published)):
+        summary = i18n.get("panel-sync-failed")
+    elif total_titles or total_published:
+        summary = i18n.get(
+            "panel-sync-summary-found", titles=total_titles, published=total_published
+        )
+    else:
+        summary = i18n.get("panel-sync-summary-none")
     if isinstance(callback.message, Message):
         await callback.message.answer(summary)
 
@@ -482,9 +485,13 @@ async def panel_delete_account_step2(callback: CallbackQuery, i18n: I18nContext)
 async def panel_delete_account_confirmed(
     callback: CallbackQuery, repo: Repo, i18n: I18nContext
 ) -> None:
-    await repo.delete_user(callback.from_user.id)
-    await safe_edit(callback, i18n.get("panel-delete-done"), None)
-    await callback.answer(i18n.get("panel-delete-toast"), show_alert=True)
+    deleted = await repo.delete_user(callback.from_user.id)
+    if deleted:
+        await safe_edit(callback, i18n.get("panel-delete-done"), None)
+        await callback.answer(i18n.get("panel-delete-toast"), show_alert=True)
+    else:
+        await safe_edit(callback, i18n.get("panel-delete-done"), None)
+        await callback.answer(i18n.get("panel-delete-not-found"), show_alert=True)
 
 
 async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:

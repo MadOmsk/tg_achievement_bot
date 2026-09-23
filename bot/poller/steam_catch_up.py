@@ -47,6 +47,56 @@ async def steam_catch_up_since(repo: Repo, steam_id: str, window_hours: int) -> 
     return max(stored, floor) if stored is not None else floor
 
 
+async def catch_up_steam_account(
+    settings: Settings,
+    repo: Repo,
+    fetcher: SteamFetcher,
+    steam_auth: SteamAuth,
+    tg_id: int,
+    steam_id: str,
+    persona_name: str,
+    *,
+    api_key: str | None = None,
+) -> tuple[int, int]:
+    """Check recently played games for one Steam account and poll titles played since baseline.
+
+    Returns (titles_checked, published_count).
+    """
+    if api_key is None:
+        api_key = await steam_auth.get_key()
+        if api_key is None:
+            return (0, 0)
+
+    since = await steam_catch_up_since(repo, steam_id, settings.catchup_publish_window_hours)
+    cutoff = since.timestamp()
+
+    try:
+        games = await steam_client.get_recently_played_games(api_key, steam_id)
+    except SteamApiError as exc:
+        log.info("recently played games for tg_id=%s skipped: %s", tg_id, exc)
+        return (0, 0)
+
+    candidates = [g for g in games if g.last_played > cutoff]
+    if not candidates:
+        return (0, 0)
+
+    published = 0
+    for game in candidates:
+        try:
+            published += await fetcher.poll_title(
+                tg_id,
+                steam_id,
+                persona_name,
+                game.appid,
+                game.name,
+                window_hours=settings.catchup_publish_window_hours,
+            )
+        except SteamApiError as exc:
+            log.info("steam catch-up of appid=%s skipped: %s", game.appid, exc)
+
+    return (len(candidates), published)
+
+
 class SteamCatchUpPoller:
     def __init__(
         self,
@@ -103,42 +153,16 @@ class SteamCatchUpPoller:
 
         Returns (titles_checked, published_count).
         """
-        if api_key is None:
-            api_key = await self._steam_auth.get_key()
-            if api_key is None:
-                return (0, 0)
-
-        since = await steam_catch_up_since(
-            self._repo, target.steam_id, self._settings.catchup_publish_window_hours
+        return await catch_up_steam_account(
+            self._settings,
+            self._repo,
+            self._fetcher,
+            self._steam_auth,
+            target.tg_id,
+            target.steam_id,
+            target.persona_name or target.steam_id,
+            api_key=api_key,
         )
-        cutoff = since.timestamp()
-
-        try:
-            games = await steam_client.get_recently_played_games(api_key, target.steam_id)
-        except SteamApiError as exc:
-            log.info("recently played games for tg_id=%s skipped: %s", target.tg_id, exc)
-            return (0, 0)
-
-        candidates = [g for g in games if g.last_played > cutoff]
-        if not candidates:
-            return (0, 0)
-
-        published = 0
-        persona_name = target.persona_name or target.steam_id
-        for game in candidates:
-            try:
-                published += await self._fetcher.poll_title(
-                    target.tg_id,
-                    target.steam_id,
-                    persona_name,
-                    game.appid,
-                    game.name,
-                    window_hours=self._settings.catchup_publish_window_hours,
-                )
-            except SteamApiError as exc:
-                log.info("steam catch-up of appid=%s skipped: %s", game.appid, exc)
-
-        return (len(candidates), published)
 
     def _target_interval(self, target: SteamPollTarget) -> int:
         if self._settings.catchup_interval_minutes == 0:

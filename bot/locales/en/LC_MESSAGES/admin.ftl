@@ -245,6 +245,7 @@ admin-delete-confirm-2 =
     Permanently delete user { $name } (ID: { $tg_id }) from the database?
 admin-delete-confirm-2-yes = 🔥 Permanently delete user
 admin-delete-toast = User deleted
+admin-delete-not-found = User not found
 admin-back-to-users = ‹ Back to the list
 
 # Chat cards

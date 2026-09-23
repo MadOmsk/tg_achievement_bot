@@ -245,6 +245,7 @@ admin-delete-confirm-2 =
     Безвозвратно стереть пользователя { $name } (ID: { $tg_id }) из базы данных?
 admin-delete-confirm-2-yes = 🔥 Точно удалить пользователя
 admin-delete-toast = Пользователь удалён
+admin-delete-not-found = Пользователь не найден
 admin-back-to-users = ‹ К списку
 
 # Chat cards
