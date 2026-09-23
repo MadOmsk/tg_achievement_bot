@@ -31,7 +31,7 @@ from bot.services.naming import (
     xbox_nickname,
 )
 from bot.services.platform_format import format_game_platforms
-from bot.services.stats import counters_for, month_cutoff_utc
+from bot.services.stats import counters_for, local_now, month_cutoff_utc
 from bot.util import humanize_ago, thousands
 from bot.version import version
 from bot.views.inline_lists import InlineListing, button_rows
@@ -157,18 +157,37 @@ async def build_stats_text(
         counters.month_xbox, counters.month_steam, counters.month_psn
     )
 
-    if target_year is not None and target_month is not None:
-        from bot.views.date_picker import DAY_GENITIVE_RU, MONTH_SHORT_EN
+    now_local = local_now(tz_offset_min)
+    is_current_month = (
+        target_year is None
+        or target_month is None
+        or (target_year == now_local.year and target_month == now_local.month)
+    )
 
-        if locale == "ru":
-            m_label = f"{DAY_GENITIVE_RU[target_month - 1]} {target_year}"
-            window_label = f"с 1 {DAY_GENITIVE_RU[target_month - 1]} {target_year}"
-        else:
-            m_label = f"{MONTH_SHORT_EN[target_month - 1]} {target_year}"
-            window_label = f"since 1 {MONTH_SHORT_EN[target_month - 1]} {target_year}"
-    else:
+    if is_current_month:
         m_label = month_name(tz_offset_min, locale)
         window_label = month_window_label(tz_offset_min, locale)
+    else:
+        assert target_month is not None
+        assert target_year is not None
+        from bot.views.date_picker import DAY_GENITIVE_RU, MONTH_NAMES_EN
+
+        if locale == "ru":
+            month_str = DAY_GENITIVE_RU[target_month - 1]
+            if target_year == now_local.year:
+                window_label = month_str
+                m_label = month_str
+            else:
+                window_label = f"{month_str} {target_year}"
+                m_label = f"{month_str} {target_year}"
+        else:
+            month_str = MONTH_NAMES_EN[target_month - 1]
+            if target_year == now_local.year:
+                window_label = f"of {month_str}"
+                m_label = month_str
+            else:
+                window_label = f"of {month_str} {target_year}"
+                m_label = f"{month_str} {target_year}"
 
     lines += [
         "",

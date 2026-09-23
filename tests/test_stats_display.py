@@ -845,6 +845,85 @@ async def test_send_stats_card_disables_the_link_preview(repo: Repo) -> None:
     assert kwargs.get("disable_web_page_preview") is True
 
 
+class _FakeI18n:
+    def __init__(self, locale: str = "en") -> None:
+        self.locale = locale
+
+    def get(self, key: str, **kwargs: object) -> str:
+        from bot.i18n import gettext
+
+        return gettext("chat", key, locale=self.locale, **kwargs)
+
+
+async def test_stats_games_header_closed_vs_current_month(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+
+    # Insert an unlock in March 2026
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="1",
+                achievement_id="1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at="2026-03-15T12:00:00+00:00",
+                gamerscore=10,
+                rarity_percent=50.0,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+
+    # Closed month in current year (March 2026): "Игры марта" without "с 1" or year
+    text_march = await build_stats_text(repo, user, CHAT_ID, target_year=2026, target_month=3)
+    assert text_march is not None
+    assert "<b>Игры марта</b>" in text_march
+    assert "с 1 марта" not in text_march
+
+    # Closed month in previous year (March 2025): "Игры марта 2025" without date "1"
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="2",
+                achievement_id="2",
+                name="B",
+                description=None,
+                icon_url=None,
+                unlocked_at="2025-03-15T12:00:00+00:00",
+                gamerscore=10,
+                rarity_percent=50.0,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=False,
+    )
+    text_march_prev = await build_stats_text(repo, user, CHAT_ID, target_year=2025, target_month=3)
+    assert text_march_prev is not None
+    assert "<b>Игры марта 2025</b>" in text_march_prev
+    assert "с 1" not in text_march_prev.split("<b>Игры")[1]
+
+    # English locale for closed month: "Games of March"
+    i18n_en = _FakeI18n("en")
+    text_march_en = await build_stats_text(
+        repo,
+        user,
+        CHAT_ID,
+        i18n=i18n_en,
+        target_year=2026,
+        target_month=3,  # type: ignore[arg-type]
+    )
+    assert text_march_en is not None
+    assert "<b>Games of March</b>" in text_march_en
+
+
 def _presence_row(**over) -> ChatPresenceRow:
     base = dict(
         tg_id=1,
