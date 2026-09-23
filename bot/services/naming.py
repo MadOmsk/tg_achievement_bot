@@ -127,6 +127,16 @@ def account_nickname(
     return steam_nickname(persona_name=display_name, vanity=secondary_name, steam_id=external_id)
 
 
+def link_nickname(link: PlatformLink) -> str:
+    """The account naming chain for a `PlatformLink` row (#78)."""
+    return account_nickname(
+        link.platform,
+        display_name=link.display_name,
+        secondary_name=link.secondary_name,
+        external_id=link.external_id,
+    )
+
+
 def person_name_of(user: User, links: Iterable[PlatformLink] = ()) -> str:
     """`person_name` for the two shapes most call sites already hold: a
     `users` row and that person's `platform_links`. Keeps every caller from

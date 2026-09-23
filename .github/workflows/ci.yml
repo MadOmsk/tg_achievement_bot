@@ -117,11 +117,11 @@ jobs:
       - name: Authorize
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           # Pinned, not trust-on-first-use: a deploy key is exactly what a
           # man in the middle would like to be handed.
-          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" | tr -d '\r' > ~/.ssh/known_hosts
 
       - name: Ship
         env:

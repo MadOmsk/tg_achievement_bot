@@ -17,7 +17,12 @@ from bot.db.repo import AchievementRow
 from bot.services.models import ParsedAchievement
 
 
-def to_achievement_row(item: ParsedAchievement) -> AchievementRow:
+def to_achievement_row(
+    item: ParsedAchievement,
+    *,
+    device: str | None = None,
+    game_platforms: str | None = None,
+) -> AchievementRow:
     return AchievementRow(
         title_id=item.title_id,
         achievement_id=item.achievement_id,
@@ -32,4 +37,6 @@ def to_achievement_row(item: ParsedAchievement) -> AchievementRow:
         is_secret=item.is_secret,
         trophy_type=item.trophy_type,
         trophy_group_id=item.trophy_group_id,
+        device=device or item.device,
+        game_platforms=game_platforms or item.game_platforms,
     )

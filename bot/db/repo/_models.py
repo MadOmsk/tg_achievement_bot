@@ -87,6 +87,8 @@ class PollTarget:
     changed_at: str | None
     last_ach_poll_at: str | None
     updated_at: str | None
+    last_online_at: str | None = None
+    linked_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -108,6 +110,9 @@ class SteamPollTarget:
     last_active_gameid: str | None = None
     last_active_game_name: str | None = None
     last_active_at: str | None = None
+    persona_name: str | None = None
+    last_online_at: str | None = None
+    linked_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -126,6 +131,9 @@ class PsnPollTarget:
     # False — polling it would race the in-flight backfill and publish the
     # account's whole trophy history at once.
     backfill_done: bool = True
+    presence_state: str | None = None
+    last_online_at: str | None = None
+    linked_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -175,6 +183,10 @@ class AchievementRow:
     # split into the base game plus one per DLC (#46). None everywhere else:
     # Xbox and Steam have no notion of groups.
     trophy_group_id: str | None = None
+    # Specific console/device where earned (#79, NULL for backfill)
+    device: str | None = None
+    # Available platforms for the title (JSON string e.g. '["XboxOne", "XboxSeriesX"]')
+    game_platforms: str | None = None
 
 
 @dataclass(slots=True)
@@ -333,6 +345,8 @@ class AdminUserRow:
     first_name: str | None = None
     last_name: str | None = None
     gamertag_modern: str | None = None
+    steam_achievements_visible: bool | None = None
+    psn_achievements_visible: bool | None = None
 
 
 @dataclass(slots=True)
@@ -342,6 +356,7 @@ class PresenceRow:
     title_id: str | None
     title_name: str | None
     updated_at: str | None
+    device: str | None = None
 
 
 @dataclass(slots=True)
@@ -371,6 +386,7 @@ class PsnPresenceRow:
     title_id: str | None
     title_name: str | None
     updated_at: str | None
+    device: str | None = None
 
 
 @dataclass(slots=True)
@@ -404,6 +420,7 @@ class ChatPresenceRow:
     username: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    device: str | None = None
 
 
 @dataclass(slots=True)
@@ -506,6 +523,10 @@ class RecentAchievement:
     # External account id + PSN group — progress "47/50" on the Mini card.
     xuid: str = ""
     trophy_group_id: str | None = None
+    # Specific console/device where earned (#79, NULL for backfill)
+    device: str | None = None
+    # Available platforms for the game (JSON / comma list)
+    game_platforms: str | None = None
 
 
 @dataclass(slots=True)
@@ -539,7 +560,33 @@ class GameAchievements:
     silver: int = 0
     gold: int = 0
     platinum: int = 0
+    # Available platforms for the game as reported by API (#79)
+    platforms: str | None = None
     # Cached box art from `titles` — Mini App games rows; unused by chat text.
+    icon_url: str | None = None
+
+
+@dataclass(slots=True)
+class DroppedGame:
+    """A subscriber's game with few unlocks in the stats month — Mini App
+    "Ну и кто это будет проходить?" strip. Raw identity fields feed `person_name`;
+    the Mini layer builds the display string so naming stays in one chain
+    (#51). `unlocked` is the count *inside the month window*, not lifetime.
+    """
+
+    tg_id: int
+    username: str | None
+    first_name: str | None
+    last_name: str | None
+    gamertag: str | None
+    gamertag_modern: str | None
+    steam_name: str | None
+    psn_name: str | None
+    title_id: str
+    platform: str
+    name: str | None
+    unlocked: int
+    last_earned: str
     icon_url: str | None = None
 
 
@@ -553,6 +600,7 @@ class TitleHistoryRow:
     achievements_unlocked: int | None
     achievements_total: int | None
     last_played_at: str | None
+    devices: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -620,6 +668,36 @@ class SteamSchemaAchievement:
     hidden: bool
 
 
+@dataclass(slots=True)
+class TitleAchievementRow:
+    """One achievement in the game's full catalog (Issue #99) — locked or unlocked,
+    shared across all players."""
+
+    platform: str
+    title_id: str
+    achievement_id: str
+    name_ru: str | None = None
+    name_en: str | None = None
+    description_ru: str | None = None
+    description_en: str | None = None
+    icon_url: str | None = None
+    is_secret: bool = False
+    gamerscore: int | None = None
+    trophy_type: str | None = None
+    trophy_group_id: str | None = None
+    rarity_percent: float | None = None
+    updated_at: str | None = None
+
+
+@dataclass(slots=True)
+class TitleAchievementWithUnlock:
+    """One achievement combined with a user's unlock state for checklists / Mini App."""
+
+    achievement: TitleAchievementRow
+    is_unlocked: bool = False
+    unlocked_at: str | None = None
+
+
 def _as_user(row: aiosqlite.Row) -> User:
     return User(
         tg_id=row["tg_id"],
@@ -663,3 +741,10 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
 def _iso(moment: datetime) -> str:
     """Stored timestamps are UTC ISO strings truncated to seconds."""
     return moment.astimezone(UTC).isoformat(timespec="seconds")
+
+
+@dataclass(frozen=True, slots=True)
+class CooldownCheckResult:
+    is_blocked: bool
+    remaining_seconds: int = 0
+    reset_count: int = 0

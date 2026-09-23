@@ -118,9 +118,10 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── lists.py                what every *text* list shares — the wrapper (usually a
 │   │   │                           collapsible quote, not always), the total line, the
 │   │   │                           name cap, and the one games row two screens draw (#64)
-│   │   └── inline_lists.py         the same for a list rendered as a *keyboard*: the
-│   │                               button rows, the page arithmetic, the one navigation
-│   │                               shape, the way out
+│   │   ├── inline_lists.py         the same for a list rendered as a *keyboard*: the
+│   │   │                           button rows, the page arithmetic, the one navigation
+│   │   │                           shape, the way out
+│   │   └── date_picker.py          calendar pickers and month/day navigation keyboards (#75)
 │   │
 │   ├── services/                  business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py         whether an achievement may be published (the wording
@@ -157,6 +158,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │   ├── auth.py              wrapper over xbox-webapi-python: token storage, refresh
 │   │   │   ├── client.py            Xbox Live requests, rate limiting, retry, backoff
 │   │   │   └── models.py            pydantic response models (incl. rarity from contract 4)
+│   │   ├── achievement_icons.py    local disk storage and caching for achievement icons under data/achievements/ (#99)
+│   │   ├── platform_format.py      mapping and formatting of game platforms and player devices (#79)
+│   │   ├── title_catalog.py        TitleCatalogService: game-level achievement catalog, 24h debounce (#99, #80)
 │   │   ├── rows.py                 ParsedAchievement -> AchievementRow, shared by both pollers and psn/achievements.py
 │   │   ├── description_backfill.py one Xbox title's descriptions in both locales — shared
 │   │   │                           by the one-off script and the self-healing poller (#48)
@@ -185,14 +189,15 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── cadence.py              shared interval/debounce math for every presence poller
 │   │   ├── presence.py             step 1: Xbox presence, interval by state
 │   │   ├── steam_presence.py       Steam presence, same step 1, its own batch request
-│   │   ├── psn_presence.py         PSN presence for /online (#1) — one account per request,
-│   │   │                           unrelated to psn_fetcher.py's own trophy-scan cadence below
+│   │   ├── psn_presence.py         PSN presence for /online (#1, #90) — one account per request,
+│   │   │                           triggers exit trophy poll on Online -> Offline transition
 │   │   ├── fetcher.py              step 2: Xbox achievements per game, title history, backfill
 │   │   ├── steam_fetcher.py        step 2: Steam achievements per game, backfill on link
-│   │   ├── psn_fetcher.py          PSN trophies: no presence hook of its own, its own debounce,
-│   │   │                           backfill, admin resync (#27)
-│   │   ├── catch_up.py             the hourly Xbox delta, one account per tick — what picks
+│   │   ├── psn_fetcher.py          PSN trophies: polled with presence-aware throttling (120s online,
+│   │   │                           30m active offline, 24h dormant), debounced, backfill, admin resync (#27, #90)
+│   │   ├── catch_up.py             the hourly Xbox delta (24h for dormant), one account per tick — what picks
 │   │   │                           up achievements earned offline (#82)
+│   │   ├── steam_catch_up.py       periodic Steam delta (1h active, 24h dormant) via GetRecentlyPlayedGames (#89)
 │   │   ├── publisher.py            step 3: publication, digest, the Telegram send queue,
 │   │   │                           the anti-flood filter's own write side (2026-09-09)
 │   │   ├── avatars.py             profile photos: each person's Telegram one, and each
@@ -259,6 +264,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
 │   │                               before the description cache existed (#48) — per title,
 │   │                               two locales, then the shared bilingual_descriptions()
+│   ├── cache_achievement_icons.py batch pre-caching of achievement icons into data/achievements/ (#99)
 │   └── render_screen.py           draws any screen in bot/views/ on demand and prints it,
 │                                   or sends it to the owner's DM as a real message (#63) —
 │                                   what replaced the hand-kept mockups in docs/ui/
@@ -270,7 +276,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 ├── backups/                     database copies, dumps, and the one-off scripts that
 │                                make them; gitignored — see Operations' own "Backups"
 │                                entry for the rule a dump must never break
-├── data/                        bot.db; gitignored
+├── data/                        bot.db, data/avatars/, data/covers/, data/achievements/; gitignored
 └── logs/                        bot.log, bot.err.log; gitignored
 ```
 
@@ -350,6 +356,11 @@ achievement description just keeps whatever language it was fetched in) —
 neither is fatal to anything else. Clearing a key in the panel disables its
 seed (the panel action is the newer, explicit decision), so a stale env var
 can't resurrect it.
+
+Other admin-managed dynamic settings live in `app_settings` (tunable live via
+`/admin` without restarts), including HLTB limits, summary thresholds, and
+`account_reset_cooldown_hours` (anti-abuse cooldown in hours before re-linking a
+platform after repeated resets, default 24h, 0 = disabled).
 
 ## Data model
 
@@ -623,6 +634,33 @@ every column.
   achievement whose second language genuinely never arrived. Rows are copied,
   never mutated: the publisher renders the same list once per chat, and two
   chats can be in two languages.
+- **Game platforms and device separation** (#79, migration 052):
+  `titles.platforms` stores available platforms for a game as reported by platform
+  APIs (JSON array of strings, e.g. `["XboxOne", "XboxSeriesX"]`, `["PS4", "PSVITA"]`,
+  or `["PC"]`). `seen_achievements.device`, `presence_state.device`, and
+  `psn_presence_state.device` record the specific hardware device on which an
+  achievement was earned or player presence is active (e.g. `XboxSeriesX`, `PS5`).
+  Standardized and rendered via `services/platform_format.py`.
+- **Game achievement catalog** (#99, #80, migration 053):
+  `title_achievements (platform, title_id, achievement_id, name_ru, name_en,
+  description_ru, description_en, icon_url, is_secret, gamerscore, trophy_type,
+  trophy_group_id, rarity_percent, updated_at)`.
+  A global, game-level catalog of achievements per title, decoupled from whether any
+  specific user in the database has unlocked them. `titles.achievements_checked_at`
+  tracks synchronization with a 24-hour debounce so `TitleCatalogService` avoids
+  redundant platform API walks. On bring-up, catalog rows are backfilled from
+  `seen_achievements` and the bilingual/rarity caches. Associated achievement icons
+  are cached on disk under `data/achievements/{platform}/{title_id}/{hash}.{ext}`
+  via `services/achievement_icons.py`.
+- **Platform cooldowns on account reset** (migration 054):
+  `platform_cooldowns (tg_id, platform, external_id, reset_count, last_reset_at)`.
+  Anti-abuse protection against repeated complete account deletions and re-links
+  causing excessive backfill API load. One free re-link is allowed immediately
+  (`reset_count <= 1`); subsequent resets within the cooldown window
+  (`account_reset_cooldown_hours`, default 24h) block re-linking until the window
+  expires. Cooldowns track both `(tg_id, platform)` and `(platform, external_id)` so
+  switching Telegram accounts cannot bypass the lock. Deletions initiated by a
+  super-admin (`is_admin=True`) clear cooldowns immediately.
 
 ## Platform integrations
 
@@ -776,6 +814,21 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
   still always gets the Russian side — the English half exists only in the
   cache for now, unused until that switch is built. Xbox and (2026-09-09)
   PSN now do the same (see their own sections).
+- **Delayed exit poll** (`poller/steam_presence.py`, #89): Valve's web API
+  (`GetPlayerAchievements`) is heavily cached on Akamai edge CDNs for 2–5 minutes,
+  and Steam Cloud syncs on game exit. An immediate poll upon exiting a game or changing
+  games almost always hits stale CDN cache, missing the final achievements of the session.
+  Instead of an immediate poll, the game is enqueued in a delayed exit poll queue
+  (`STEAM_DELAYED_EXIT_POLL_SECONDS = 180.0`, 3 minutes). Each presence tick flushes
+  due polls. If the player re-launches the same game before 180s elapse, the pending
+  delayed poll is canceled/superseded by live in-game polling.
+- **Steam catch-up poller** (`poller/steam_catch_up.py`, #89): Like Xbox (#82), Steam
+  accounts can earn achievements offline or during bot downtime. `SteamCatchUpPoller`
+  polls `GetRecentlyPlayedGames` (`IPlayerService/GetRecentlyPlayedGames/v1/`) to inspect
+  recently played games, and runs `steam_catch_up_since` which calls `steam_fetcher.poll_title`
+  for any game played since the newest stored unlock (or within the catch-up window).
+  Runs one account per tick when due (hourly for active accounts, 24h for dormant accounts),
+  and also during bot startup (`startup_catch_up()`).
 
 ### PlayStation Network
 
@@ -815,17 +868,19 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   beside `on_dead`, because an alarm with no end to it reads as permanent —
   the admin could previously only learn a credential recovered by opening
   /admin.
-- Trophy polling itself has no presence hook at all, unlike Xbox/Steam — a
-  permanent design decision, not a gap: PSN trophies may only sync to Sony's
-  servers when a player opens trophy data on the console, not at the moment
-  of unlock, so the trophy poller scans every linked account's trophy titles
-  on every tick and only fetches full detail for a title whose progress
-  grew. **Presence itself is now tracked separately** (#1,
-  `poller/psn_presence.py`, `psn_presence_state`) for `/online` and the
-  admin card's "В сети" line — one `get_presence()` request per account (no
-  PSN batch-presence endpoint exists), same politeness-driven cadence
-  (`poller/cadence.py`) Xbox/Steam presence already use. This poller never
-  triggers a trophy poll — the two stay deliberately unrelated.
+- **Presence and trophy polling coordination** (#90): PSN trophies often sync to Sony's
+  servers when a player finishes a session or opens trophy data on console.
+  `poller/psn_presence.py` tracks presence for `/online` and the admin card
+  (`psn_presence_state`) with one `get_presence()` request per account (politeness-driven
+  cadence). **Upon transitioning from `Online` to `Offline`, `psn_presence` immediately
+  triggers `psn_fetcher.poll_account(...)`** as an exit poll to capture session trophies.
+- **Presence-aware trophy throttling** (`poller/psn_fetcher.py`, #90): Polling PSN
+  trophy titles for every account every 120s was hammering Sony's private endpoints
+  with unneeded calls for offline users. Now:
+  - When Online: polled every 120s (`settings.psn_poll_interval`).
+  - When Offline & Active ($\le 14$ days since last online): throttled to every 30m / 1800s (`settings.psn_offline_poll_interval`).
+  - When Dormant ($> 14$ days inactive): throttled to once every 24h / 86400s (`settings.psn_dormant_poll_interval`).
+  When progress grows, the poller fetches full detail for the updated title.
 - The scan (`services/psn/achievements.py::sync_account`) persists **one game at a
   time, trophies before the progress cache** (#26). Advancing `psn_title_progress`
   before a game's trophies are actually written — the old shape — meant any
@@ -914,10 +969,17 @@ due.
   The goal is politeness, not quota optimization — sparse polling of an absent user
   keeps logs clean and avoids pointless calls, on both platforms, even though
   neither is actually quota-constrained at this scale.
-- **Achievement polling**: while in a game, poll that game on the achievement
-  debounce interval; on a game change or going offline, do one final poll of the
-  *previous* game first (to catch a last-second unlock before leaving). A poller
-  must never crash a whole tick because one user, account, title, or small API
+- **Achievement polling & Exit polls**: while in a game, poll that game on the achievement
+  debounce interval. On leaving a game or going offline, an **exit poll** captures
+  last-second unlocks:
+  - *Xbox*: immediate final poll of the previous game on game change or going offline.
+  - *Steam*: **delayed exit poll** (`STEAM_DELAYED_EXIT_POLL_SECONDS = 180.0`, #89). Valve's
+    `GetPlayerAchievements` is cached on Akamai edge CDNs for 2–5 minutes and Steam Cloud syncs
+    on process exit; an immediate poll almost always returns stale cache. The game is enqueued
+    and polled after 3 minutes (canceled if the player restarts the same game in that window).
+  - *PSN*: `psn_presence` detects `Online -> Offline` and immediately fires an exit poll
+    on `psn_fetcher.poll_account(...)` (#90).
+  A poller must never crash a whole tick because one user, account, title, or small API
   batch failed — isolate and log, then continue. Expected external states (not
   exceptions): private profiles, empty responses, HTTP 429, timeouts, dead
   credentials, upstream outages.
@@ -952,15 +1014,24 @@ due.
   floored at `catchup_publish_window_hours` back, because an account with
   nothing stored (or idle for a year) would otherwise hand back the whole
   library to publish nothing at all.
-- **Catch-up also runs while the bot is up**, hourly, one account per tick
-  (`poller/catch_up.py`, #82). The presence poller only ever asks about the
-  game somebody is in *right now*, plus one last look as they leave it — and
-  an Xbox console uploads what was earned offline when it next reaches the
-  network, normally well after that look. Nothing asked again until the next
-  restart, which is how two people lost a Gears of War 3 session. One
-  account per tick rather than all of them: `title_history` for a large
-  account is heavy (~46s for a real 1011-title one), and a pass where
-  nobody played anything costs exactly one request per account.
+- **Catch-up also runs while the bot is up** (Xbox: `poller/catch_up.py`, #82; Steam: `poller/steam_catch_up.py`, #89).
+  The presence poller only ever asks about the game somebody is in *right now* (plus exit polls),
+  but console/PC games upload offline-earned achievements whenever network connectivity or Cloud
+  sync occurs. Catch-up sweeps candidate games since the newest stored unlock. One account per tick
+  is polled when due rather than all of them: `title_history` (Xbox) and `GetRecentlyPlayedGames` (Steam)
+  stay lightweight and spread out.
+- **Adaptive cadence & Dormant tiering (14-day inactivity threshold)**:
+  Users frequently leave for weeks or months. Repeatedly querying heavy endpoints
+  (such as Xbox `title_history`, Steam `GetRecentlyPlayedGames`, or PSN trophy lists)
+  every hour forever on hundreds of absent accounts wastes API quotas and network bandwidth.
+  The cadence module (`poller/cadence.py::is_dormant`) classifies accounts as dormant if
+  they have not been seen online for $> 14$ days (`catchup_idle_threshold_days = 14`,
+  measured from `last_online_at`, or `linked_at` if never seen online):
+  - *Active users* ($\le 14$ days): polled hourly (Xbox & Steam catch-up) or every 30m (PSN offline).
+  - *Dormant users* ($> 14$ days): polled once every 24 hours (1440m for Xbox/Steam, 86400s for PSN).
+  - *Wake-up*: As soon as presence detects a user coming online (`touch_last_online`), the account
+    immediately returns to the active tier. Freshly connected accounts are treated as active
+    using `linked_at` fallback.
 
 ## Publication rules
 
@@ -1740,22 +1811,12 @@ the last line of `/help` and the group hub, and logged at startup —
 `bot @tg_achievement_bot is up (v1.1.53.046)`.
 
 - **A** — the architecture. By hand, on a rewrite. `1`.
-- **B** — which line of work this build is, **derived from the branch at
-  startup** (2026-09-18): `TRUNK_LINE` on `main`, one above it anywhere else.
-  Production is `1.2.…`, the test bot is `1.3.…`, and "which bot am I looking
-  at" is answerable from the version alone.
-
-  It used to be a constant edited by hand, which `main` inherited whenever a
-  branch merged — and that quietly stopped working the moment a merge went
-  straight to `main` without passing through the test bot: both then reported
-  `1.2` and were indistinguishable, which is precisely the question B exists
-  to answer. Deriving it needs no bookkeeping and cannot drift.
-
-  Not written by `scripts/xbox-deploy.sh`, where it would seem to belong: a
-  deploy that rewrote `version.py` on the server would leave the checkout
-  dirty and its own `git merge --ff-only` would refuse the next one.
-  `TRUNK_LINE` is the one number a person still edits, on a rewrite or when a
-  release deserves its own.
+- **B** — the minor release line (`TRUNK_LINE` in `bot/version.py`, owner's rule
+  2026-09-21): shared across `main` and working/test branches (e.g. `1.3.*`).
+  Minor only updates when `test` is merged into `main` for a release; pushing
+  to `test` or working branches must never bump B — only C (commit count) and
+  D (schema version) advance. Test vs. production identity is answered by
+  `is_test()` / `is_trunk()` (branch check), startup announcements, and C.
 - **C** — a count of commits read from git at startup (owner's call,
   2026-09-16: a short number that grows by one per commit beats a hash
   nobody can order at a glance), measuring a different distance on each

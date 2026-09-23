@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     presence_interval_offline: int = 300
     presence_interval_idle: int = 900
     achievement_poll_interval: int = 120
+    psn_offline_poll_interval: int = 1800  # 30m when user is offline (issue #90)
+    psn_dormant_poll_interval: int = 86400  # 24h when user is offline > 14 days
     token_refresh_margin: int = 300
 
     backfill_concurrency: int = 2
@@ -69,10 +71,11 @@ class Settings(BaseSettings):
     catchup_max_titles: int = 20
     # …and on a slow loop while the bot is up (#82): a console uploads what
     # was earned offline when it next reaches the network, long after the
-    # presence poller took its last look at that game. Hourly because that
-    # is a delay nobody minds on an achievement they earned yesterday, and
-    # a pass where nothing was played costs one request per account.
+    # presence poller took its last look at that game. Hourly for active
+    # accounts; dormant accounts (>14d inactive) are polled daily (1440m).
     catchup_interval_minutes: int = 60
+    catchup_idle_threshold_days: int = 14
+    catchup_idle_interval_minutes: int = 1440  # 24 hours
 
     db_path: Path = Path("data/bot.db")
     log_level: str = "INFO"

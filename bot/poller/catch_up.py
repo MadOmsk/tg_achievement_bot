@@ -26,6 +26,7 @@ import time
 from bot.config import Settings
 from bot.db.repo import PollTarget, Repo
 from bot.i18n import DEFAULT_LOCALE, gettext
+from bot.poller.cadence import is_dormant
 from bot.poller.fetcher import Fetcher, catch_up_since
 
 log = logging.getLogger(__name__)
@@ -87,6 +88,15 @@ class CatchUpPoller:
                 published,
             )
 
+    def _target_interval(self, target: PollTarget) -> int:
+        if self._settings.catchup_interval_minutes == 0:
+            return 0
+        if is_dormant(
+            target.last_online_at, target.linked_at, self._settings.catchup_idle_threshold_days
+        ):
+            return self._settings.catchup_idle_interval_minutes * 60
+        return self._settings.catchup_interval_minutes * 60
+
     async def _next_due(self) -> PollTarget | None:
         """The account that has waited longest past its interval.
 
@@ -94,12 +104,11 @@ class CatchUpPoller:
         account cannot keep jumping the queue ahead of somebody who has been
         waiting since the last sweep.
         """
-        interval = self._settings.catchup_interval_minutes * 60
         now = time.monotonic()
         overdue = [
             target
             for target in await self._repo.pollable_users()
-            if now - self._last.get(target.xuid, self._started) >= interval
+            if now - self._last.get(target.xuid, self._started) >= self._target_interval(target)
         ]
         if not overdue:
             return None

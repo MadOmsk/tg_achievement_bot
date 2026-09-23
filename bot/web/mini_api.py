@@ -22,6 +22,7 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services import achievement_icons
 from bot.services.connect import ConnectService
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
@@ -38,6 +39,7 @@ from bot.services.steam.client import (
     get_profile,
     resolve_steam_id,
 )
+from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
 from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 from bot.web.mini_admin import setup_admin_routes
@@ -76,6 +78,7 @@ def setup_mini_api(
     notifier: AdminNotifier | None = None,
     anthropic_auth: Any = None,
     bot: Any = None,
+    title_catalog: TitleCatalogService | None = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -89,8 +92,20 @@ def setup_mini_api(
     app["mini_anthropic_auth"] = anthropic_auth
     app["mini_bot"] = bot
 
+    if title_catalog is None:
+        title_catalog = TitleCatalogService(
+            repo,
+            xbox_client=getattr(xbox_fetcher, "_client", None),
+            psn_auth=psn_auth,
+            steam_auth=steam_auth,
+            anthropic_auth=anthropic_auth,
+        )
+    app["mini_title_catalog"] = title_catalog
+
     app.router.add_get("/api/mini/health", handle_health)
     app.router.add_get("/api/mini/me", handle_me)
+    app.router.add_delete("/api/mini/me", handle_delete_me)
+    app.router.add_post("/api/mini/me/delete", handle_delete_me)
     app.router.add_patch("/api/mini/settings", handle_patch_settings)
     app.router.add_post("/api/mini/connect/xbox", handle_connect_xbox)
     app.router.add_post("/api/mini/disconnect/xbox", handle_disconnect_xbox)
@@ -113,6 +128,13 @@ def setup_mini_api(
     app.router.add_get("/api/mini/club/people", handle_chat_person)
     app.router.add_patch("/api/mini/club", handle_patch_chat)
     app.router.add_get("/api/mini/avatar/{tg_id}", handle_avatar)
+    app.router.add_get("/api/mini/x360-icon/{title_hex}/{image_hex}", handle_x360_icon)
+    app.router.add_get(
+        "/api/mini/ach-icon/{platform}/{title_id}/{achievement_id:.+}",
+        handle_achievement_icon,
+    )
+    app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
+    app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
     setup_admin_routes(app)
     setup_hltb_routes(app)
 
@@ -134,6 +156,13 @@ async def handle_me(request: web.Request) -> web.Response:
         is_admin=settings.is_admin(user.tg_id),
     )
     return web.json_response(payload)
+
+
+async def handle_delete_me(request: web.Request) -> web.Response:
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    await repo.delete_user(user.tg_id)
+    return web.json_response({"ok": True})
 
 
 async def handle_patch_settings(request: web.Request) -> web.Response:
@@ -229,6 +258,17 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "private"}, status=400)
 
     await repo.ensure_user(user.tg_id, user.username)
+    cooldown = await repo.check_platform_cooldown(user.tg_id, Platform.STEAM, profile.steam_id)
+    if cooldown.is_blocked:
+        return web.json_response(
+            {
+                "ok": False,
+                "error": "cooldown",
+                "cooldown_seconds": cooldown.remaining_seconds,
+            },
+            status=400,
+        )
+
     await repo.link_platform_account(
         user.tg_id, Platform.STEAM, profile.steam_id, profile.persona_name
     )
@@ -293,6 +333,17 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "private"}, status=400)
 
     await repo.ensure_user(user.tg_id, user.username)
+    cooldown = await repo.check_platform_cooldown(user.tg_id, Platform.PSN, profile.account_id)
+    if cooldown.is_blocked:
+        return web.json_response(
+            {
+                "ok": False,
+                "error": "cooldown",
+                "cooldown_seconds": cooldown.remaining_seconds,
+            },
+            status=400,
+        )
+
     await repo.link_platform_account(
         user.tg_id, Platform.PSN, profile.account_id, profile.online_id
     )
@@ -396,6 +447,11 @@ async def handle_patch_chat(request: web.Request) -> web.Response:
 
     body = await _json_body(request)
     action = str(body.get("action") or "").strip()
+    if not action:
+        if "rarity_mode" in body:
+            action = "set_rarity"
+        elif "digest_threshold" in body:
+            action = "set_digest"
 
     if action == "cycle_rarity":
         if not chat.is_subscribed:
@@ -512,6 +568,60 @@ async def handle_avatar(request: web.Request) -> web.Response:
     )
 
 
+_X360_ICON_CACHE: dict[str, bytes] = {}
+_HEX_CHARS = set("0123456789abcdefABCDEF")
+
+
+async def handle_x360_icon(request: web.Request) -> web.Response:
+    title_hex = request.match_info.get("title_hex", "").lower()
+    image_hex = request.match_info.get("image_hex", "").lower()
+    if not (title_hex and image_hex):
+        raise web.HTTPBadRequest(text="missing parameters")
+    if not (set(title_hex).issubset(_HEX_CHARS) and set(image_hex).issubset(_HEX_CHARS)):
+        raise web.HTTPBadRequest(text="invalid hex")
+
+    cache_key = f"{title_hex}/{image_hex}"
+    if cache_key in _X360_ICON_CACHE:
+        return web.Response(
+            body=_X360_ICON_CACHE[cache_key],
+            content_type="image/png",
+            headers={"Cache-Control": "public, max-age=604800, immutable"},
+        )
+
+    result = await achievement_icons.get_or_download_x360_icon(title_hex, image_hex)
+    if result is None:
+        raise web.HTTPNotFound(text="icon not found")
+    data, mime = result
+    if len(_X360_ICON_CACHE) < 5000:
+        _X360_ICON_CACHE[cache_key] = data
+    return web.Response(
+        body=data,
+        content_type=mime,
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )
+
+
+async def handle_achievement_icon(request: web.Request) -> web.Response:
+    platform = request.match_info.get("platform", "").lower()
+    title_id = request.match_info.get("title_id", "")
+    achievement_id = request.match_info.get("achievement_id", "")
+    if not (platform and title_id and achievement_id):
+        raise web.HTTPBadRequest(text="missing parameters")
+
+    repo: Repo = request.app["mini_repo"]
+    result = await achievement_icons.get_or_download_achievement_icon(
+        repo, platform, title_id, achievement_id
+    )
+    if result is None:
+        raise web.HTTPNotFound(text="icon not found")
+    body, mime = result
+    return web.Response(
+        body=body,
+        content_type=mime,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
 async def handle_chat_person(request: web.Request) -> web.Response:
     user, chat_id, repo = await _require_chat_member(request)
     raw_target = request.match_info.get("tg_id") or request.query.get("tg_id") or ""
@@ -565,6 +675,68 @@ async def _psn_backfill(fetcher: PsnFetcher, tg_id: int, account_id: str) -> Non
         await fetcher.backfill(tg_id, account_id)
     except Exception:
         log.exception("mini psn backfill failed tg_id=%s", tg_id)
+
+
+async def handle_game_details(request: web.Request) -> web.Response:
+    user = await _require_user(request)
+    platform = request.match_info.get("platform", "").lower()
+    title_id = request.match_info.get("title_id", "")
+    force = request.query.get("force", "").lower() in ("1", "true", "yes")
+
+    repo: Repo = request.app["mini_repo"]
+    catalog_service: TitleCatalogService = request.app["mini_title_catalog"]
+
+    checklist = await catalog_service.get_title_checklist_for_user(
+        platform, title_id, tg_id=user.tg_id, force=force
+    )
+    title_info = await repo.title_record(title_id) or {}
+
+    total = len(checklist)
+    unlocked = sum(1 for item in checklist if item.is_unlocked)
+    percent = round((unlocked / total) * 100, 1) if total > 0 else 0.0
+
+    groups = await repo.get_title_groups(title_id) if platform == Platform.PSN else []
+
+    return web.json_response(
+        {
+            "ok": True,
+            "platform": platform,
+            "title_id": title_id,
+            "name": title_info.get("name"),
+            "name_ru": title_info.get("name_ru"),
+            "name_en": title_info.get("name_en"),
+            "icon_url": title_info.get("icon_url"),
+            "cover_path": title_info.get("cover_path"),
+            "achievements_total": total or title_info.get("achievements_total") or 0,
+            "achievements_unlocked": unlocked,
+            "completion_percent": percent,
+            "achievements_checked_at": title_info.get("achievements_checked_at"),
+            "groups": groups,
+            "achievements": [
+                {
+                    "achievement_id": item.achievement.achievement_id,
+                    "name_ru": item.achievement.name_ru,
+                    "name_en": item.achievement.name_en,
+                    "description_ru": item.achievement.description_ru,
+                    "description_en": item.achievement.description_en,
+                    "icon_url": achievement_icons.format_achievement_icon_url(
+                        platform,
+                        title_id,
+                        item.achievement.achievement_id,
+                        item.achievement.icon_url,
+                    ),
+                    "is_secret": item.achievement.is_secret,
+                    "gamerscore": item.achievement.gamerscore,
+                    "trophy_type": item.achievement.trophy_type,
+                    "trophy_group_id": item.achievement.trophy_group_id,
+                    "rarity_percent": item.achievement.rarity_percent,
+                    "is_unlocked": item.is_unlocked,
+                    "unlocked_at": item.unlocked_at,
+                }
+                for item in checklist
+            ],
+        }
+    )
 
 
 def _extract_init_data(request: web.Request) -> str:

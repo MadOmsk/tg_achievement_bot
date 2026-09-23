@@ -1,11 +1,14 @@
 # /start, /connect_xbox, /disconnect_xbox and the timezone picker
 # (bot/handlers/connect.py).
 # Connection flow
+connect-xbox-group-redirect = Напиши мне в личку — подключим XBOX там.
+connect-xbox-private-only = Отключить XBOX можно только в личке с ботом.
 connect-timezone-prompt = 🕐 Твой часовой пояс?
 connect-xbox-already-connected = XBOX уже подключён. Настройки — /panel.
 connect-xbox-already-connected-relogin =
     XBOX уже подключён. Если нужно войти заново — сначала /disconnect_xbox.
 connect-xbox-not-connected = XBOX и так не подключён.
+platform-cooldown-active = Повторное подключение { $platform } временно заблокировано (антифлуд). Попробуйте через { $hours } ч. { $minutes } мин.
 connect-disconnect-yes = Да, отключить
 connect-disconnect-cancel = Отмена
 connect-disconnect-prompt =

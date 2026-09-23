@@ -79,6 +79,15 @@ class _ChatsRepo:
         )
         return await cursor.fetchone() is not None
 
+    async def get_subscription_rarity_mode(self, chat_id: int, tg_id: int) -> str | None:
+        """The person's current rarity mode for this chat, or None if not subscribed (#54)."""
+        cursor = await self._conn.execute(
+            "SELECT rarity_mode FROM subscriptions WHERE chat_id = ? AND tg_id = ?",
+            (chat_id, tg_id),
+        )
+        row = await cursor.fetchone()
+        return row["rarity_mode"] if row else None
+
     async def user_chats(self, tg_id: int) -> list[UserChatRow]:
         """Every chat this person has ever touched (SPEC 6.2's "Мои чаты") —
         subscribed at some point, or just seen writing there, same membership

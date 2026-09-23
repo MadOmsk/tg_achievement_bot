@@ -65,6 +65,7 @@ class PresencePoller:
             snapshot.state,
             snapshot.title_id,
             title_name,
+            device=snapshot.device,
             changed=changed,
         )
         if snapshot.state == PresenceState.ONLINE:
@@ -103,8 +104,9 @@ class PresencePoller:
         if not force and not self._debounce_passed(target):
             return
         platform = platform_hint.platform if platform_hint else Platform.XBOX_MODERN
+        device = platform_hint.device if platform_hint else None
         await self._fetcher.poll_title(
-            target.tg_id, target.xuid, gamertag, title_id, platform, title_name
+            target.tg_id, target.xuid, gamertag, title_id, platform, title_name, device=device
         )
 
     def _debounce_passed(self, target: PollTarget) -> bool:

@@ -67,3 +67,24 @@ def presence_interval(
     if offline_for >= IDLE_AFTER_SECONDS:
         return interval_idle
     return interval_offline
+
+
+DORMANT_THRESHOLD_DAYS = 14
+
+
+def is_dormant(
+    last_online_at: str | None,
+    linked_at: str | None = None,
+    threshold_days: int = DORMANT_THRESHOLD_DAYS,
+) -> bool:
+    """Whether an account has been inactive for more than threshold_days (default 14 days).
+    Uses last_online_at, falling back to linked_at for newly linked accounts.
+    """
+    latest = parse_iso(last_online_at)
+    if linked_at:
+        linked = parse_iso(linked_at)
+        if linked is not None:
+            latest = max(latest, linked) if latest is not None else linked
+    if latest is None:
+        return True
+    return (utcnow() - latest).total_seconds() >= threshold_days * 86400

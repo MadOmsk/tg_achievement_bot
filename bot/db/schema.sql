@@ -7,7 +7,7 @@
 -- columns beside these. A second copy of a fact is a second version of it
 -- waiting to happen.
 CREATE TABLE IF NOT EXISTS users (
-    tg_id           INTEGER PRIMARY KEY,
+    tg_id           INTEGER PRIMARY KEY CHECK (tg_id > 0),
     username        TEXT,                 -- for /stats @user, refreshed on every message
     -- /stats' header identity (Follow-up 2026-09-06) — refreshed the same
     -- way username is, on every message (handlers/chat.py's message
@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     trophy_type     TEXT,                -- PSN's tier (bronze/silver/gold/platinum), NULL
                                           -- elsewhere — new dimension, no analogue on any other
                                           -- platform (M-PSN-1's design notes), M-PSN-2
+    device          TEXT,                -- Specific device/platform where earned (#79, NULL for backfill)
     created_at      TEXT NOT NULL,
     -- Which `accounts` row this belongs to. Both Xbox generations are one
     -- account and one platform as far as a person is concerned (#52, owner
@@ -279,6 +280,7 @@ CREATE TABLE IF NOT EXISTS presence_state (
     state            TEXT,     -- Online / Offline
     title_id         TEXT,
     title_name       TEXT,
+    device           TEXT,     -- Xbox device (XboxSeriesX, XboxOne, WindowsOneCore, etc.)
     changed_at       TEXT,     -- when title_id or state last changed
     last_ach_poll_at TEXT,     -- when achievements were last fetched (debounce)
     updated_at       TEXT
@@ -319,6 +321,7 @@ CREATE TABLE IF NOT EXISTS psn_presence_state (
     state      TEXT,     -- Online / Offline, same vocabulary as presence_state
     title_id   TEXT,     -- npTitleId
     title_name TEXT,
+    device     TEXT,     -- PSN platform/device (PS5, PS4, etc.)
     changed_at TEXT,
     updated_at TEXT
 );
@@ -350,6 +353,7 @@ CREATE TABLE IF NOT EXISTS titles (
     name_ru    TEXT,
     name_en    TEXT,
     platform   TEXT,               -- xbox_360 / xbox_modern
+    platforms  TEXT,               -- JSON array of available platforms from API (#79)
     -- The game's own box art (titlehub's display_image), not an achievement
     -- icon — used as a stand-in icon for Xbox 360 achievement messages
     -- (fetcher.py's ensure_title_icon): contract 1 only ever gives a bare
@@ -370,6 +374,7 @@ CREATE TABLE IF NOT EXISTS titles (
     cover_path TEXT,
     cover_hash TEXT,
     cover_checked_at TEXT,
+    achievements_checked_at TEXT,
     updated_at TEXT NOT NULL
 );
 
@@ -636,6 +641,31 @@ CREATE TABLE IF NOT EXISTS achievement_rarity_cache (
 CREATE INDEX IF NOT EXISTS idx_rarity_cache_title
     ON achievement_rarity_cache(platform, title_id, checked_at);
 
+-- Full game achievement catalog (Issue #99, 2026-09-22) — stores all achievements
+-- of a title (both unlocked and locked), with bilingual names and descriptions,
+-- icons, secrecy, gamerscore, trophy tiers and rarity. Shared across all users.
+CREATE TABLE IF NOT EXISTS title_achievements (
+    platform        TEXT NOT NULL CHECK (platform IN ('xbox_modern', 'xbox_360', 'steam', 'psn')),
+    title_id        TEXT NOT NULL,
+    achievement_id  TEXT NOT NULL,
+    name_ru         TEXT,
+    name_en         TEXT,
+    description_ru  TEXT,
+    description_en  TEXT,
+    icon_url        TEXT,
+    is_secret       INTEGER NOT NULL DEFAULT 0,
+    gamerscore      INTEGER,
+    trophy_type     TEXT,
+    trophy_group_id TEXT,
+    rarity_percent  REAL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (platform, title_id, achievement_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_title_achievements_title
+    ON title_achievements(platform, title_id);
+
+
 -- The single live copy of a self-deduplicating message kind (Follow-up
 -- 2026-09-06) — /panel, /summary, /recent and a specific person's /stats
 -- card each replace their own previous copy in the same scope instead of
@@ -704,3 +734,16 @@ CREATE TABLE IF NOT EXISTS psn_poll_state (
     last_polled_at TEXT NOT NULL,
     backfill_done  INTEGER NOT NULL DEFAULT 0
 );
+
+-- Platform cooldowns for anti-abuse protection on account resets/re-links.
+CREATE TABLE IF NOT EXISTS platform_cooldowns (
+    tg_id          INTEGER NOT NULL,
+    platform       TEXT NOT NULL,
+    external_id    TEXT,
+    reset_count    INTEGER NOT NULL DEFAULT 1,
+    last_reset_at  TEXT NOT NULL,
+    PRIMARY KEY (tg_id, platform)
+);
+
+CREATE INDEX IF NOT EXISTS idx_platform_cooldowns_ext
+    ON platform_cooldowns(platform, external_id);

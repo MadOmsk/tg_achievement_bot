@@ -70,21 +70,38 @@ async def run() -> int:
     parser = argparse.ArgumentParser(description="Backfill Xbox achievement rarity.")
     parser.add_argument("--limit", type=int, default=0, help="stop after N titles (0 = no limit)")
     parser.add_argument("--dry-run", action="store_true", help="count the work, fetch nothing")
+    parser.add_argument(
+        "--platform",
+        choices=["all", "xbox_modern", "xbox_360"],
+        default="all",
+        help="which platform to backfill (default: all)",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
     database = await Database(settings.db_path).connect()
     repo = Repo(database)
 
-    cached, total = await repo.rarity_coverage(Platform.XBOX_MODERN)
-    titles = await repo.titles_missing_rarity(Platform.XBOX_MODERN, args.limit or 10**6)
-    log.info(
-        "xbox_modern: %s of %s titles already cached, %s to fetch (one request each)",
-        cached,
-        total,
-        len(titles),
+    platforms = (
+        [Platform.XBOX_MODERN, Platform.XBOX_360]
+        if args.platform == "all"
+        else [Platform(args.platform)]
     )
-    if args.dry_run or not titles:
+
+    all_titles: list[tuple[str, int, Platform]] = []
+    for plat in platforms:
+        cached, total = await repo.rarity_coverage(plat)
+        titles = await repo.titles_missing_rarity(plat, args.limit or 10**6)
+        log.info(
+            "%s: %s of %s titles already cached, %s to fetch (one request each)",
+            plat.value,
+            cached,
+            total,
+            len(titles),
+        )
+        all_titles.extend((t_id, tg_id, plat) for t_id, tg_id in titles)
+
+    if args.dry_run or not all_titles:
         await database.close()
         return 0
 
@@ -94,25 +111,24 @@ async def run() -> int:
     client = XboxClient(auth)
 
     done = skipped = failed = percentages = 0
-    for index, (title_id, tg_id) in enumerate(titles, start=1):
+    for index, (title_id, tg_id, plat) in enumerate(all_titles, start=1):
         try:
             rarity = await client.title_rarity(tg_id, title_id)
         except XboxApiError as exc:
             # A delisted game, an owner whose token is dead, an unlucky
             # afternoon at Microsoft. One title must never end the run.
-            log.info("  %s: skipped (%s)", title_id, exc)
+            log.info("  %s (%s): skipped (%s)", title_id, plat.value, exc)
             failed += 1
             continue
         if not rarity:
-            # Asked, and there is none — an Xbox 360 title reached through a
-            # modern row, or a game Microsoft reports no percentages for.
+            # Asked, and there is none — a game Microsoft reports no percentages for.
             skipped += 1
             continue
-        await repo.cache_rarity(Platform.XBOX_MODERN, title_id, rarity)
+        await repo.cache_rarity(plat, title_id, rarity)
         done += 1
         percentages += len(rarity)
         if index % PROGRESS_EVERY == 0:
-            log.info("  %s/%s titles, %s percentages cached", index, len(titles), percentages)
+            log.info("  %s/%s titles, %s percentages cached", index, len(all_titles), percentages)
 
     log.info(
         "done: %s titles cached (%s percentages), %s had none to give, %s failed",

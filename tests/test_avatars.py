@@ -202,13 +202,19 @@ async def test_a_user_telegram_has_never_heard_of_is_not_retried_forever(repo: R
             self.asked.append(tg_id)
             raise TelegramBadRequest(method=SimpleNamespace(), message="user not found")
 
-    await repo.ensure_user(-5246175458, "a group, not a person")
+    await repo.ensure_user(999999999, "deleted user")
     bot = _NoSuchUser()
 
     await AvatarRefresh(bot, repo).tick()  # type: ignore[arg-type]
     await AvatarRefresh(bot, repo).tick()  # type: ignore[arg-type]
 
-    assert bot.asked == [-5246175458]  # asked once, then stamped and skipped
+    assert bot.asked == [999999999]  # asked once, then stamped and skipped
+
+
+async def test_ensure_user_refuses_negative_tg_id(repo: Repo) -> None:
+    """#66: a chat id is negative and must never be inserted into `users`."""
+    await repo.ensure_user(-5246175458, "a group, not a person")
+    assert await repo.get_user(-5246175458) is None
 
 
 async def test_a_network_blip_leaves_the_person_first_in_line(repo: Repo) -> None:

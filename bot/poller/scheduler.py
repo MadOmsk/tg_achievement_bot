@@ -29,6 +29,7 @@ from bot.poller.psn_presence import PsnPresencePoller
 from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.service_health import ServiceHealth
+from bot.poller.steam_catch_up import SteamCatchUpPoller
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 
@@ -59,6 +60,7 @@ class PollerScheduler:
         avatar_refresh: AvatarRefresh,
         catch_up: CatchUpPoller,
         cover_refresh: CoverRefresh,
+        steam_catch_up: SteamCatchUpPoller,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -79,6 +81,7 @@ class PollerScheduler:
         self._avatar_refresh = avatar_refresh
         self._catch_up = catch_up
         self._cover_refresh = cover_refresh
+        self._steam_catch_up = steam_catch_up
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
     def start(self) -> None:
@@ -107,6 +110,14 @@ class PollerScheduler:
             self._catch_up.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="catch_up",
+            coalesce=True,
+            max_instances=1,
+        )
+        # Hourly catch-up for Steam via recently played games (#89).
+        self._scheduler.add_job(
+            self._steam_catch_up.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="steam_catch_up",
             coalesce=True,
             max_instances=1,
         )

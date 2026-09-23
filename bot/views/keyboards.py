@@ -19,6 +19,7 @@ from aiogram_i18n import I18nContext
 
 from bot.constants import RarityMode
 from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
+from bot.services.naming import link_nickname
 from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
 from bot.services.relink import LinkPreview
 
@@ -284,15 +285,11 @@ def panel_keyboard(
     ]
 
     # Every row below applies regardless of which platforms are connected —
-    # timezone, chat list, sync, and the profile-links toggle are person-wide
+    # timezone, chat list, and the profile-links toggle are person-wide
     # settings, not Xbox-specific ones (2026-09-09, confirmed live: this used
     # to hard-gate the entire config section on `connected` — Xbox
     # specifically — so a Steam/PSN-only person saw nothing but the platform
-    # rows at all, a leftover from before Steam/PSN existed). "Синхронизировать"
-    # stays visible too: it is genuinely Xbox-only (panel_sync's own
-    # implementation), but it already answers that gracefully with a toast
-    # rather than crashing, the same way clicking "Профиль" for an
-    # unconnected platform would.
+    # rows at all, a leftover from before Steam/PSN existed).
     rows: list[list[InlineKeyboardButton]] = []
     if needs_reconnect:
         # A dead-login nudge — the account is still linked, its token just
@@ -308,7 +305,6 @@ def panel_keyboard(
             )
         ],
         [InlineKeyboardButton(text=i18n.get("kb-my-chats"), callback_data="panel:chatlist")],
-        [InlineKeyboardButton(text=i18n.get("kb-sync"), callback_data="panel:sync")],
         # Off by default (Follow-up 2026-09-06) — gates the clickable link
         # /stats and /who put in this person's nickname; the panel's own
         # "👤 Профиль" buttons below stay visible regardless (this screen is
@@ -334,7 +330,15 @@ def panel_keyboard(
         ],
     ]
     rows += platform_rows
-    rows.append([InlineKeyboardButton(text=i18n.get("kb-refresh"), callback_data="panel:refresh")])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=i18n.get("panel-delete-account"),
+                callback_data="panel:delete_account",
+            )
+        ]
+    )
+    rows.append([InlineKeyboardButton(text=i18n.get("kb-sync"), callback_data="panel:sync")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -409,7 +413,7 @@ def switch_prompt(
             i18n.get(
                 "connect-switch-confirm",
                 platform=platform_name,
-                current=preview.current.display_name or preview.current.external_id,
+                current=link_nickname(preview.current),
                 incoming=incoming_name,
                 current_count=preview.current_achievements,
             )

@@ -8,6 +8,7 @@ from datetime import date as date_type
 from bot.constants import AchievementBadge
 from bot.db.repo import AchievementRow, Repo
 from bot.poller.daily import DailySummary, _is_last_day_of_month, _monthly_key
+from bot.services.admin_settings import MONTHLY_DELAY_KEY
 from bot.util import start_of_month_utc, utcnow
 from bot.views.parts import platform_breakdown_suffix
 from bot.views.summary import DAY, MONTH, build_summary, full_leaderboard
@@ -358,7 +359,9 @@ async def test_summary_top_limit_zero_means_no_cap(repo: Repo) -> None:
 
     assert built is not None
     text, markup = built
-    assert markup is None  # nothing truncated, nothing to show more of
+    assert markup is not None  # Navigation keyboard is present
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert not any(b.callback_data and b.callback_data.startswith("summary:all:") for b in buttons)
     assert all(f"Player{i}" in text for i in range(3))
 
     full = await full_leaderboard(repo, CHAT_ID, 10.0, "day", locale="ru")
@@ -374,7 +377,9 @@ async def test_summary_has_no_show_all_button_under_the_limit(repo: Repo) -> Non
 
     assert built is not None
     _text, markup = built
-    assert markup is None
+    assert markup is not None
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert not any(b.callback_data and b.callback_data.startswith("summary:all:") for b in buttons)
 
 
 async def test_chat_rare_threshold_defaults_and_updates(repo: Repo) -> None:
@@ -610,3 +615,145 @@ async def test_a_quiet_day_has_no_games_block(repo: Repo) -> None:
     text, _markup = built
     assert "<b>Игроки:</b>" in text
     assert "<b>Игры:</b>" not in text
+
+
+async def test_month_end_wrapup_trails_daily_summary_by_five_minutes(repo: Repo) -> None:
+    """#74: on the last day of the month, the month-end wrap-up sends five minutes
+    after the daily summary rather than at the same minute."""
+    await _chat_with_two_players(repo)
+    sept_30 = datetime(2026, 9, 30, 20, 0, tzinfo=UTC)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("a1", sept_30 - timedelta(hours=2))], is_backfill=False
+    )
+    await repo.update_chat_settings(CHAT_ID, daily_summary_time="20:00", tz_offset_min=0)
+
+    bot = FakeBot()
+    job = DailySummary(bot, repo)
+
+    # 1. At 20:00: only the daily summary fires.
+    await job.tick(now=sept_30)
+    assert len(bot.sent) == 1
+    assert "<b>Итоги дня</b>" in bot.sent[0][1]
+    assert "<b>Итоги месяца</b>" not in bot.sent[0][1]
+
+    # 2. Before +5m: nothing fires.
+    await job.tick(now=sept_30 + timedelta(minutes=4))
+    assert len(bot.sent) == 1
+
+    # 3. At 20:05 (+5m): the month-end wrap-up fires.
+    await job.tick(now=sept_30 + timedelta(minutes=5))
+    assert len(bot.sent) == 2
+    assert "<b>Итоги месяца</b>" in bot.sent[1][1]
+
+    # 4. Subsequent ticks: nothing re-sends.
+    await job.tick(now=sept_30 + timedelta(minutes=5))
+    await job.tick(now=sept_30 + timedelta(minutes=6))
+    assert len(bot.sent) == 2
+
+
+async def test_monthly_wrapup_does_not_fire_on_non_last_day_of_month(repo: Repo) -> None:
+    """#74: on a normal day, the +5m tick does not send a monthly report."""
+    await _chat_with_two_players(repo)
+    sept_29 = datetime(2026, 9, 29, 20, 0, tzinfo=UTC)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("a1", sept_29 - timedelta(hours=2))], is_backfill=False
+    )
+    await repo.update_chat_settings(CHAT_ID, daily_summary_time="20:00", tz_offset_min=0)
+
+    bot = FakeBot()
+    job = DailySummary(bot, repo)
+
+    # Daily report fires.
+    await job.tick(now=sept_29)
+    assert len(bot.sent) == 1
+    assert "<b>Итоги дня</b>" in bot.sent[0][1]
+
+    # Five minutes later: no monthly report because Sept 29 is not month-end.
+    await job.tick(now=sept_29 + timedelta(minutes=5))
+    assert len(bot.sent) == 1
+
+
+async def test_month_end_wrapup_near_midnight_rollover_into_next_month(repo: Repo) -> None:
+    """#74: a chat whose summary time is within five minutes of midnight (e.g. 23:58)
+    fires its month-end wrap-up at 00:03 on the 1st of the next month.
+    The wrap-up must still fire and must cover the month that just ended."""
+    await _chat_with_two_players(repo)
+    # Achievement earned in September
+    sept_ach = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("sept-ach", sept_ach)], is_backfill=False
+    )
+    # Achievement earned in October after midnight
+    oct_ach = datetime(2026, 10, 1, 0, 1, tzinfo=UTC)
+    await repo.insert_new_achievements(XUID_B, [achievement("oct-ach", oct_ach)], is_backfill=False)
+
+    await repo.update_chat_settings(CHAT_ID, daily_summary_time="23:58", tz_offset_min=0)
+
+    bot = FakeBot()
+    job = DailySummary(bot, repo)
+
+    # 1. On Sept 30 at 23:58: daily report fires.
+    now_2358 = datetime(2026, 9, 30, 23, 58, tzinfo=UTC)
+    await job.tick(now=now_2358)
+    assert len(bot.sent) == 1
+    assert "<b>Итоги дня</b>" in bot.sent[0][1]
+    assert await repo.daily_report_sent(CHAT_ID, "2026-09-30") is True
+
+    # 2. On Oct 1 at 00:03 (+5m into next month): monthly report for September fires!
+    now_0003 = datetime(2026, 10, 1, 0, 3, tzinfo=UTC)
+    await job.tick(now=now_0003)
+    assert len(bot.sent) == 2
+    month_text = bot.sent[1][1]
+    assert "<b>Итоги месяца</b>" in month_text
+    # Month report covers September: contains sept-ach, excludes oct-ach.
+    assert "1 достижение" in month_text
+    # Dedup marker is for September:
+    assert await repo.daily_report_sent(CHAT_ID, "2026-09-monthly") is True
+
+
+async def test_month_end_wrapup_respects_custom_delay_setting(repo: Repo) -> None:
+    """The month-end delay obeys the admin variable
+    (app_settings['monthly_summary_delay_minutes'])."""
+    await _chat_with_two_players(repo)
+    await repo.set_app_setting(MONTHLY_DELAY_KEY, "10")
+    sept_30 = datetime(2026, 9, 30, 20, 0, tzinfo=UTC)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("a1", sept_30 - timedelta(hours=2))], is_backfill=False
+    )
+    await repo.update_chat_settings(CHAT_ID, daily_summary_time="20:00", tz_offset_min=0)
+
+    bot = FakeBot()
+    job = DailySummary(bot, repo)
+
+    # 1. At 20:00: daily summary fires.
+    await job.tick(now=sept_30)
+    assert len(bot.sent) == 1
+
+    # 2. At 20:05 (default delay, but admin set 10m): nothing fires.
+    await job.tick(now=sept_30 + timedelta(minutes=5))
+    assert len(bot.sent) == 1
+
+    # 3. At 20:10 (custom delay): monthly wrap-up fires!
+    await job.tick(now=sept_30 + timedelta(minutes=10))
+    assert len(bot.sent) == 2
+    assert "<b>Итоги месяца</b>" in bot.sent[1][1]
+
+
+async def test_month_end_wrapup_zero_delay_sends_immediately(repo: Repo) -> None:
+    """When delay is 0, both reports send in the same tick (the legacy behavior)."""
+    await _chat_with_two_players(repo)
+    await repo.set_app_setting(MONTHLY_DELAY_KEY, "0")
+    sept_30 = datetime(2026, 9, 30, 20, 0, tzinfo=UTC)
+    await repo.insert_new_achievements(
+        XUID_A, [achievement("a1", sept_30 - timedelta(hours=2))], is_backfill=False
+    )
+    await repo.update_chat_settings(CHAT_ID, daily_summary_time="20:00", tz_offset_min=0)
+
+    bot = FakeBot()
+    job = DailySummary(bot, repo)
+
+    # At 20:00: both daily and monthly send in the same tick.
+    await job.tick(now=sept_30)
+    assert len(bot.sent) == 2
+    assert "<b>Итоги дня</b>" in bot.sent[0][1]
+    assert "<b>Итоги месяца</b>" in bot.sent[1][1]

@@ -59,8 +59,10 @@ def test_recent_row_rarity_has_no_label_word() -> None:
 
 
 def test_recent_row_omits_the_parenthetical_entirely_when_nothing_to_show() -> None:
-    line = _recent_row(row(gamerscore=0, rarity_percent=None))
-    assert "(" not in line
+    line = _recent_row(row(name="Ashes to Ashes", gamerscore=0, rarity_percent=None))
+    assert "Ashes to Ashes (" not in line
+    assert "G" not in line
+    assert "%" not in line
 
 
 def test_recent_row_shows_the_platform_icon_before_the_game_name() -> None:
@@ -76,8 +78,8 @@ def test_recent_row_shows_the_platform_icon_before_the_game_name() -> None:
             unlocked_at="2026-09-02T10:00:00+00:00",
         )
     )
-    assert "🟢 Left 4 Dead 2" in line  # default platform="xbox_modern" from row()
-    assert "⚫ Left 4 Dead 2" in steam_line
+    assert "(🟢 <i>XBOX</i>) Left 4 Dead 2" in line  # default platform="xbox_modern" from row()
+    assert "(⚫ <i>Steam</i>) Left 4 Dead 2" in steam_line
 
 
 def test_recent_row_puts_the_game_before_the_achievement_name() -> None:

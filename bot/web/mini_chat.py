@@ -18,7 +18,9 @@ from bot.db.repo import (
     UserChatRow,
 )
 from bot.i18n import translator
+from bot.services.achievement_icons import format_achievement_icon_url
 from bot.services.naming import person_name, xbox_nickname
+from bot.services.presence_view import pick_presence
 from bot.services.stats import counters_for, month_window_utc, week_cutoff_utc
 from bot.util import utcnow
 from bot.views.notification import _group_label
@@ -34,9 +36,18 @@ DEFAULT_STATS_GAMES_LIMIT = 15
 
 def _https_url(url: str | None) -> str | None:
     """Mini App is always HTTPS — plain http:// icon URLs are mixed content
-    and the browser drops them (Xbox store-images still hand out http)."""
+    and the browser drops them (Xbox store-images still hand out http).
+    Legacy Xbox 360 achievement icons live on http://image.xboxlive.com without SSL,
+    so we proxy them through /api/mini/x360-icon/{title_hex}/{image_hex}.
+    """
     if not url:
         return None
+    if url.startswith("http://image.xboxlive.com/global/t."):
+        parts = url.split("/")
+        if len(parts) >= 8 and parts[4].startswith("t."):
+            title_hex = parts[4][2:]
+            image_hex = parts[7].removesuffix(".png")
+            return f"/api/mini/x360-icon/{title_hex}/{image_hex}"
     if url.startswith("http://"):
         return "https://" + url[len("http://") :]
     return url
@@ -179,6 +190,13 @@ async def build_summary_payload(
         limit=15,
         locale=locale,
         until=until,
+        order="recent",
+    )
+    dropped = await repo.chat_dropped_games(
+        chat_id,
+        since=since,
+        until=until,
+        locale=locale,
     )
     label = (
         _month_label(month_num, locale)
@@ -205,6 +223,27 @@ async def build_summary_payload(
                 "icon_url": _https_url(g.icon_url),
             }
             for g in games
+        ],
+        "dropped": [
+            {
+                "tg_id": d.tg_id,
+                "person": person_label(
+                    tg_id=d.tg_id,
+                    first_name=d.first_name,
+                    last_name=d.last_name,
+                    username=d.username,
+                    gamertag=d.gamertag,
+                    gamertag_modern=d.gamertag_modern,
+                    steam_name=d.steam_name,
+                    psn_name=d.psn_name,
+                ),
+                "title_id": d.title_id,
+                "platform": d.platform,
+                "name": d.name,
+                "last_earned": d.last_earned,
+                "icon_url": _https_url(d.icon_url),
+            }
+            for d in dropped
         ],
     }
 
@@ -306,6 +345,20 @@ async def build_person_payload(
     descriptions = await _localized_feed_descriptions(repo, feed_rows, locale)
     progress = await _feed_progress(repo, feed_rows)
 
+    presence = pick_presence(
+        xbox=await repo.presence_of(target.xuid) if target.xuid else None,
+        steam=await repo.steam_presence_of(steam.external_id) if steam else None,
+        psn=await repo.psn_presence_of(psn.external_id) if psn else None,
+    )
+    presence_json = None
+    if presence is not None:
+        presence_json = {
+            "state": "Online" if presence.online else "Offline",
+            "playing": bool(presence.online and presence.title_id),
+            "platform": presence.platform if presence.online else None,
+            "title_name": presence.game if presence.online else None,
+        }
+
     return {
         "tg_id": target.tg_id,
         "name": person_label(
@@ -322,6 +375,7 @@ async def build_person_payload(
                 (link.display_name for link in links if link.platform == Platform.PSN), None
             ),
         ),
+        "presence": presence_json,
         "platforms": platforms,
         "today": {
             "count": counters.today,
@@ -379,7 +433,9 @@ def _feed_item_json(
         "is_secret": row.is_secret,
         "title_id": row.title_id,
         "achievement_id": row.achievement_id,
-        "icon_url": _https_url(row.icon_url),
+        "icon_url": format_achievement_icon_url(
+            row.platform, row.title_id, row.achievement_id, row.icon_url
+        ),
         "game_icon_url": _https_url(row.game_icon_url),
         "description": descriptions.get(
             (row.platform, row.title_id, row.achievement_id), row.description

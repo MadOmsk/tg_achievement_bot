@@ -21,6 +21,7 @@ publish.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -28,7 +29,7 @@ from psnawp_api import PSNAWP
 from psnawp_api.models.trophies import TrophyTitle
 
 from bot.constants import Platform
-from bot.db.repo import AchievementRow, Repo
+from bot.db.repo import AchievementRow, Repo, TitleAchievementRow
 from bot.services.models import ParsedAchievement
 from bot.services.psn.client import (
     EarnedTrophy,
@@ -42,7 +43,7 @@ from bot.services.psn.client import (
 from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
-from bot.util import parse_iso
+from bot.util import parse_iso, utcnow_iso
 
 log = logging.getLogger(__name__)
 
@@ -136,13 +137,25 @@ async def sync_account(
         # blanks an icon it already has, so a listing that omits it costs
         # nothing either.
         icon_url = getattr(title, "title_icon_url", None)
-        if defined_total or icon_url:
+        raw_platforms = getattr(title, "title_platform", None)
+        platforms_list: list[str] = []
+        if raw_platforms:
+            for p in raw_platforms:
+                if hasattr(p, "value"):
+                    platforms_list.append(str(p.value))
+                elif p:
+                    platforms_list.append(str(p))
+            platforms_list.sort()
+        platforms_json = json.dumps(platforms_list) if platforms_list else None
+
+        if defined_total or icon_url or platforms_json:
             await repo.upsert_title(
                 title.np_communication_id,
                 title.title_name,
                 Platform.PSN,
                 icon_url=icon_url,
                 achievements_total=defined_total or None,
+                platforms=platforms_json,
             )
 
         # The name and size of each group this game's trophy list is split
@@ -154,7 +167,13 @@ async def sync_account(
         # so a game nobody had advanced lately never got either — which is the
         # same reason its trophy *total* was missing (#60). The DB check is
         # what keeps this to one call per game rather than one per tick.
-        if not await repo.has_title_groups(title.np_communication_id):
+        stored_count = await repo.title_achievements_count(
+            Platform.PSN.value, title.np_communication_id
+        )
+        needs_groups_refresh = not await repo.has_title_groups(title.np_communication_id) or (
+            defined_total > 0 and stored_count != defined_total
+        )
+        if needs_groups_refresh:
             structure = await trophy_groups_for_title(
                 client, account_id, title, translation_client=translation_client
             )
@@ -235,7 +254,21 @@ async def sync_account(
                 if item.trophy_earn_rate is not None
             },
         )
-        rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
+        target_device: str | None = None
+        if not is_backfill:
+            if len(platforms_list) == 1:
+                target_device = platforms_list[0]
+            elif platforms_list:
+                presence = await repo.psn_presence_of(account_id)
+                if presence and presence.device:
+                    target_device = presence.device
+                if not target_device:
+                    target_device = platforms_list[0]
+
+        rows = [
+            to_achievement_row(_to_parsed(title.np_communication_id, item, device=target_device))
+            for item in earned
+        ]
         inserted = await repo.insert_new_achievements_psn(
             tg_id, account_id, rows, is_backfill=is_backfill
         )
@@ -253,7 +286,9 @@ async def sync_account(
     return outcome
 
 
-def _to_parsed(np_communication_id: str, item: EarnedTrophy) -> ParsedAchievement:
+def _to_parsed(
+    np_communication_id: str, item: EarnedTrophy, *, device: str | None = None
+) -> ParsedAchievement:
     return ParsedAchievement(
         achievement_id=str(item.trophy_id),
         title_id=np_communication_id,
@@ -268,6 +303,7 @@ def _to_parsed(np_communication_id: str, item: EarnedTrophy) -> ParsedAchievemen
         is_secret=item.trophy_hidden,
         trophy_type=item.trophy_type.value if item.trophy_type else None,
         trophy_group_id=item.trophy_group_id,
+        device=device,
     )
 
 
@@ -303,9 +339,16 @@ async def _bilingual_descriptions(
     if not candidates and not nameless:
         return
 
+    catalog = await repo.get_title_achievements(Platform.PSN.value, title.np_communication_id)
+    cat_by_id = {row.achievement_id: row for row in catalog} if catalog else {}
+
     to_fetch: dict[int, str] = {}
     cached: dict[int, str] = {}
     for trophy_id, english_text in candidates.items():
+        cat_row = cat_by_id.get(str(trophy_id))
+        if cat_row and cat_row.description_ru:
+            cached[trophy_id] = cat_row.description_ru
+            continue
         row = await repo.get_cached_description(
             Platform.PSN, title.np_communication_id, str(trophy_id)
         )
@@ -382,6 +425,37 @@ async def _bilingual_descriptions(
                 cached[trophy_id] = pair[0]
 
     _apply(earned, cached)
+
+    now = utcnow_iso()
+    en_names = english_names if "english_names" in locals() else {}
+    ru_names = (
+        {item.trophy_id: item.trophy_name for item in russian_earned}
+        if "russian_earned" in locals()
+        else {}
+    )
+    cat_rows = [
+        TitleAchievementRow(
+            platform=Platform.PSN.value,
+            title_id=title.np_communication_id,
+            achievement_id=str(item.trophy_id),
+            name_ru=ru_names.get(item.trophy_id) or (item.trophy_name if not en_names else None),
+            name_en=en_names.get(item.trophy_id, item.trophy_name),
+            description_ru=cached.get(item.trophy_id),
+            description_en=item.trophy_detail,
+            icon_url=item.trophy_icon_url,
+            is_secret=item.trophy_hidden,
+            trophy_type=(
+                item.trophy_type.value
+                if hasattr(item.trophy_type, "value")
+                else str(item.trophy_type or "")
+            ),
+            trophy_group_id=item.trophy_group_id,
+            rarity_percent=item.trophy_earn_rate,
+            updated_at=now,
+        )
+        for item in earned
+    ]
+    await repo.upsert_title_achievements(cat_rows)
 
 
 def _apply(earned: list[EarnedTrophy], resolved: dict[int, str]) -> None:

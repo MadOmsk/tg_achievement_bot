@@ -212,3 +212,289 @@ async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
 
     assert "Сейчас:      не в сети" in text
     assert "Steam  ·  не в сети" not in text
+
+
+async def test_panel_steam_row_uses_naming_chain_fallback(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", None)
+    await repo.set_platform_secondary_name(TG_ID, "steam", "gaben_vanity")
+
+    text, _ = (await render_panel(repo, TG_ID)).as_pair()
+    assert "Вход Steam:  gaben_vanity" in text
+
+
+async def test_panel_psn_row_uses_naming_chain_fallback(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "psn", "2130000000000000000", None)
+    await repo.set_platform_secondary_name(TG_ID, "psn", "old_psn_tag")
+
+    text, _ = (await render_panel(repo, TG_ID)).as_pair()
+    assert "Вход PSN:    old_psn_tag" in text
+
+
+async def test_panel_has_delete_account_button_above_sync(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
+    rows = markup.inline_keyboard
+    delete_i = next(
+        i for i, r in enumerate(rows) if any(b.callback_data == "panel:delete_account" for b in r)
+    )
+    sync_i = next(i for i, r in enumerate(rows) if any(b.callback_data == "panel:sync" for b in r))
+    assert sync_i == delete_i + 1
+
+
+async def test_panel_delete_account_screens() -> None:
+    from bot.views.panel import render_panel_delete_confirm_1, render_panel_delete_confirm_2
+
+    screen1 = await render_panel_delete_confirm_1(locale="ru")
+    cb1 = [b.callback_data for row in screen1.keyboard.inline_keyboard for b in row]
+    assert "panel:delete:step1" in cb1
+    assert "panel:refresh" in cb1
+
+    screen2 = await render_panel_delete_confirm_2(locale="ru")
+    cb2 = [b.callback_data for row in screen2.keyboard.inline_keyboard for b in row]
+    assert "panel:delete:step2" in cb2
+    assert "panel:refresh" in cb2
+
+
+async def test_panel_delete_account_flow(repo: Repo, i18n, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from bot.handlers import panel as panel_handlers
+
+    await repo.ensure_user(TG_ID, "someone")
+    edits: list[tuple[str, object]] = []
+
+    async def fake_edit(callback, text, markup=None, **kwargs):
+        edits.append((text, markup))
+
+    monkeypatch.setattr(panel_handlers, "safe_edit", fake_edit)
+
+    class _Cb:
+        def __init__(self, data: str, tg_id: int):
+            self.data = data
+            self.from_user = SimpleNamespace(id=tg_id)
+            self.answers: list[tuple[str, bool]] = []
+
+        async def answer(self, text: str = "", show_alert: bool = False):
+            self.answers.append((text, show_alert))
+
+    # Step 1
+    cb1 = _Cb("panel:delete_account", TG_ID)
+    await panel_handlers.panel_delete_account_step1(cb1, i18n)  # type: ignore[arg-type]
+    assert len(edits) == 1
+    assert "panel:delete:step1" in [
+        b.callback_data for row in edits[-1][1].inline_keyboard for b in row
+    ]
+
+    # Step 2
+    cb2 = _Cb("panel:delete:step1", TG_ID)
+    await panel_handlers.panel_delete_account_step2(cb2, i18n)  # type: ignore[arg-type]
+    assert len(edits) == 2
+    assert "panel:delete:step2" in [
+        b.callback_data for row in edits[-1][1].inline_keyboard for b in row
+    ]
+
+    # Confirm
+    cb3 = _Cb("panel:delete:step2", TG_ID)
+    await panel_handlers.panel_delete_account_confirmed(cb3, repo, i18n)  # type: ignore[arg-type]
+    assert len(edits) == 3
+    assert edits[-1][1] is None  # no keyboard on final message
+    assert cb3.answers[0][1] is True  # show_alert=True
+    assert await repo.get_user(TG_ID) is None
+
+
+async def test_panel_refresh_touches_last_online(repo: Repo, i18n, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from bot.handlers import panel as panel_handlers
+
+    await repo.ensure_user(TG_ID, "someone")
+
+    async def fake_edit(callback, text, markup=None, **kwargs):
+        pass
+
+    monkeypatch.setattr(panel_handlers, "safe_edit", fake_edit)
+
+    class _Cb:
+        def __init__(self, tg_id: int):
+            self.from_user = SimpleNamespace(id=tg_id)
+            self.answers: list[str] = []
+
+        async def answer(self, text: str = "", **kwargs):
+            self.answers.append(text)
+
+    cb = _Cb(TG_ID)
+    await panel_handlers.panel_refresh(cb, repo, i18n)  # type: ignore[arg-type]
+
+    user = await repo.get_user(TG_ID)
+    assert user is not None
+    assert user.last_online_at is not None
+
+
+async def test_panel_sync_without_platforms_warns(repo: Repo, settings, i18n, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from bot.handlers import panel as panel_handlers
+
+    await repo.ensure_user(TG_ID, "someone")
+
+    async def fake_edit(callback, text, markup=None, **kwargs):
+        pass
+
+    monkeypatch.setattr(panel_handlers, "safe_edit", fake_edit)
+
+    class _Cb:
+        def __init__(self, tg_id: int):
+            self.from_user = SimpleNamespace(id=tg_id)
+            self.answers: list[tuple[str, bool]] = []
+
+        async def answer(self, text: str = "", show_alert: bool = False):
+            self.answers.append((text, show_alert))
+
+    cb = _Cb(TG_ID)
+    await panel_handlers.panel_sync(
+        cb,  # type: ignore[arg-type]
+        repo,
+        fetcher=None,  # type: ignore[arg-type]
+        steam_fetcher=None,  # type: ignore[arg-type]
+        psn_fetcher=None,  # type: ignore[arg-type]
+        steam_auth=None,  # type: ignore[arg-type]
+        settings=settings,
+        i18n=i18n,
+    )
+    assert len(cb.answers) == 1
+    assert cb.answers[0][1] is True  # show_alert
+
+
+async def test_panel_sync_multi_platform_and_cooldown(
+    repo: Repo, settings, i18n, monkeypatch
+) -> None:
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from aiogram.types import Message
+    from pydantic import SecretStr
+
+    from bot.handlers import panel as panel_handlers
+    from bot.services.steam.client import RecentlyPlayedGame
+
+    panel_handlers._last_sync.clear()
+
+    await repo.ensure_user(TG_ID, "triathlete")
+    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
+    await repo.save_refresh_token(TG_ID, b"encrypted-token")
+    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(TG_ID, "psn", "acc-psn-1", "Kaz")
+
+    edits: list[str] = []
+
+    async def fake_edit(callback, text, markup=None, **kwargs):
+        edits.append(text)
+
+    monkeypatch.setattr(panel_handlers, "safe_edit", fake_edit)
+
+    xbox_calls = []
+    steam_calls = []
+    psn_calls = []
+
+    class FakeFetcher:
+        async def catch_up(self, tg_id, xuid, gamertag, since, window_hours, max_titles):
+            xbox_calls.append((tg_id, xuid))
+            return (1, 2)  # 1 title, 2 published
+
+    class FakeSteamFetcher:
+        async def poll_title(self, tg_id, steam_id, persona_name, appid, game_name, **kwargs):
+            steam_calls.append((tg_id, steam_id, appid))
+            return 3  # 3 published
+
+    class FakePsnFetcher:
+        async def poll_account(self, tg_id, account_id, online_id):
+            psn_calls.append((tg_id, account_id))
+            return 1  # 1 published
+
+    class FakeSteamAuth:
+        async def get_key(self):
+            return SecretStr("fake_key")
+
+    now_ts = int(datetime.now(UTC).timestamp())
+
+    async def fake_recently_played(api_key, steam_id, count=10):
+        return [
+            RecentlyPlayedGame(
+                appid="550",
+                name="L4D2",
+                playtime_2weeks=10,
+                playtime_forever=100,
+                last_played=now_ts,
+            )
+        ]
+
+    monkeypatch.setattr(
+        panel_handlers.steam_client, "get_recently_played_games", fake_recently_played
+    )
+
+    messages_sent = []
+
+    msg = MagicMock(spec=Message)
+
+    async def fake_answer(text: str, **kwargs):
+        messages_sent.append(text)
+
+    msg.answer = fake_answer
+
+    class _Cb:
+        def __init__(self, tg_id: int):
+            self.from_user = SimpleNamespace(id=tg_id)
+            self.message = msg
+            self.answers: list[str] = []
+
+        async def answer(self, text: str = "", **kwargs):
+            self.answers.append(text)
+
+    cb = _Cb(TG_ID)
+    await panel_handlers.panel_sync(
+        cb,  # type: ignore[arg-type]
+        repo,
+        fetcher=FakeFetcher(),  # type: ignore[arg-type]
+        steam_fetcher=FakeSteamFetcher(),  # type: ignore[arg-type]
+        psn_fetcher=FakePsnFetcher(),  # type: ignore[arg-type]
+        steam_auth=FakeSteamAuth(),  # type: ignore[arg-type]
+        settings=settings,
+        i18n=i18n,
+    )
+
+    # 1. All platforms were queried:
+    assert xbox_calls == [(TG_ID, "xuid-1")]
+    assert steam_calls == [(TG_ID, "76561197960287930", "550")]
+    assert psn_calls == [(TG_ID, "acc-psn-1")]
+
+    # 2. User last_online_at was touched:
+    user = await repo.get_user(TG_ID)
+    assert user is not None and user.last_online_at is not None
+
+    # 3. Summary message was sent:
+    assert len(messages_sent) == 1
+    # 1 xbox title + 1 steam candidate = 2 titles; 2 xbox + 3 steam + 1 psn = 6 published
+    assert "2" in messages_sent[0]
+    assert "6" in messages_sent[0]
+
+    # 4. Immediate second call hits cooldown and does NOT query platforms again:
+    cb2 = _Cb(TG_ID)
+    await panel_handlers.panel_sync(
+        cb2,  # type: ignore[arg-type]
+        repo,
+        fetcher=FakeFetcher(),  # type: ignore[arg-type]
+        steam_fetcher=FakeSteamFetcher(),  # type: ignore[arg-type]
+        psn_fetcher=FakePsnFetcher(),  # type: ignore[arg-type]
+        steam_auth=FakeSteamAuth(),  # type: ignore[arg-type]
+        settings=settings,
+        i18n=i18n,
+    )
+    # Fetcher calls did not increase:
+    assert len(xbox_calls) == 1
+    assert len(steam_calls) == 1
+    assert len(psn_calls) == 1
+    # Toast informed about cooldown:
+    assert any("мин" in a for a in cb2.answers)

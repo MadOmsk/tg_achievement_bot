@@ -26,6 +26,8 @@ from bot.constants import (
 )
 from bot.db.repo import PlatformLink, Repo
 from bot.i18n import gettext, translator
+from bot.services.naming import link_nickname
+from bot.services.platform_format import format_game_platforms
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.util import humanize_ago, thousands
 
@@ -186,17 +188,29 @@ def score_suffix(score: int) -> str:
     return f" (+{thousands(score)} G)" if score else ""
 
 
-def platform_tag(platform: str, locale: str) -> str:
+def platform_tag(
+    platform: str,
+    locale: str,
+    *,
+    device: str | None = None,
+    platforms: str | None = None,
+    short: bool = False,
+) -> str:
     """SPEC 9, M-Steam-2e — which platform an achievement came from, right
-    in the message itself, not just inferred from context. Found live: a
-    Steam achievement arriving with no platform mention at all reads the
-    same as any other message, easy to miss."""
-    _ = translator("achievements", locale)
+    in the message itself, not just inferred from context."""
     icon = PLATFORM_ICON.get(platform, PLATFORM_ICON_UNKNOWN)
-    label = _(
-        PLATFORM_LABEL_KEYS.get(platform, "achievement-platform-unknown"),
-        platform=platform,
+    label = format_game_platforms(
+        platforms,
+        fallback_platform=platform,
+        device=device,
+        short=short,
     )
+    if not label:
+        _ = translator("achievements", locale)
+        label = _(
+            PLATFORM_LABEL_KEYS.get(platform, "achievement-platform-unknown"),
+            platform=platform,
+        )
     return f"{icon} {label}"
 
 
@@ -330,7 +344,7 @@ async def platform_header_lines(
         # directly; neither carries the x360-specific gap
         # repo.py::xbox_achievement_count's own docstring flags for Xbox.
         count = await repo.platform_achievement_count(tg_id, link.platform)
-        name_html = html_escape(link.display_name or link.external_id)
+        name_html = html_escape(link_nickname(link))
         if show_links:
             url = platform_profile_url(
                 link.platform, external_id=link.external_id, display_name=link.display_name

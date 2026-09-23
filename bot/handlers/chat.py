@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import date
 from typing import Any
 
 from aiogram import BaseMiddleware, Bot, F, Router
@@ -28,7 +29,7 @@ from aiogram.types import (
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
-from bot.constants import SettingKey
+from bot.constants import RarityMode, SettingKey
 from bot.db.repo import (
     Repo,
     User,
@@ -37,7 +38,6 @@ from bot.handlers.admin import IsAdmin
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.admin_settings import DEFAULT_RECENT_LIMIT
 from bot.services.message_log import stats_category
-from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import (
     person_name_of,
 )
@@ -51,6 +51,13 @@ from bot.views.chat import (
     recent_list,
     render_who_picker,
 )
+from bot.views.date_picker import (
+    stats_month_calendar_keyboard,
+    stats_navigation_keyboard,
+    summary_day_calendar_keyboard,
+    summary_month_calendar_keyboard,
+)
+from bot.views.keyboards import next_rarity_mode
 from bot.views.online import render_online_table
 from bot.views.summary import DAY, MONTH, build_summary, full_leaderboard
 
@@ -62,13 +69,24 @@ GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
 
 
 def _hub_markup(
-    bot_username: str, chat_id: int, i18n: I18nContext, settings: Settings
+    bot_username: str,
+    chat_id: int,
+    i18n: I18nContext,
+    settings: Settings,
+    *,
+    is_group: bool = True,
 ) -> InlineKeyboardMarkup:
     """The hub's keyboard, with the Mini App row when there is an app to
     open. Every caller already holds `settings`, and the alternative — a
     view reaching for configuration itself — is what `bot/views/` exists to
     avoid."""
-    return hub_keyboard(bot_username, chat_id, i18n, mini_app_url=settings.mini_app_url or "")
+    return hub_keyboard(
+        bot_username,
+        chat_id,
+        i18n,
+        mini_app_url=settings.mini_app_url or "",
+        is_group=is_group,
+    )
 
 
 # subscribe/unsubscribe is a check-then-act (is_subscribed, then write) —
@@ -218,7 +236,14 @@ async def unsubscribe_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nCon
 # -------------------------------------------------------------------- stats
 
 
-async def _send_stats_card(bot: Bot, repo: Repo, chat_id: int, target: User, text: str) -> None:
+async def _send_stats_card(
+    bot: Bot,
+    repo: Repo,
+    chat_id: int,
+    target: User,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
     """Shared by /stats and /who's button (Follow-up 2026-09-08) — one
     implementation, so a Telegram-level send option (like the line below)
     only needs to be right in one place. Keyed by the person the card is
@@ -242,6 +267,7 @@ async def _send_stats_card(bot: Bot, repo: Repo, chat_id: int, target: User, tex
             subject_id=target.tg_id,
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
+            reply_markup=reply_markup,
         )
 
 
@@ -259,14 +285,25 @@ async def stats(
         with stats_category():
             await message.answer(i18n.get("chat-stats-nothing-connected"))
         return
-    await _send_stats_card(bot, repo, message.chat.id, target, text)
+
+    settings_row = await repo.get_user_settings(target.tg_id)
+    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    now_local = local_now(tz_offset_min)
+    markup = stats_navigation_keyboard(
+        target.tg_id,
+        now_local.year,
+        now_local.month,
+        now_local.year,
+        now_local.month,
+        locale=i18n.locale,
+    )
+    await _send_stats_card(bot, repo, message.chat.id, target, text, reply_markup=markup)
 
 
 # --------------------------------------------------------------------- online
 
 
-@router.message(Command("online"))
-async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+async def _run_online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-group-command-only"))
         return
@@ -308,10 +345,12 @@ async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> N
         await repo.delete_online_auto_refresh(message.chat.id)
 
 
-@router.message(Command("who"))
-async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
-    """The picker /online used to double as (SPEC 6.3) — split out so /online
-    can stay a plain glance and this can stay a plain button grid."""
+@router.message(Command("online"))
+async def online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
+    await _run_online(message, repo, bot, i18n)
+
+
+async def _run_who(message: Message, repo: Repo, i18n: I18nContext) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-group-command-only"))
         return
@@ -325,6 +364,13 @@ async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
         i18n.get("chat-who-prompt"),
         reply_markup=render_who_picker(rows, i18n),
     )
+
+
+@router.message(Command("who"))
+async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
+    """The picker /online used to double as (SPEC 6.3) — split out so /online
+    can stay a plain glance and this can stay a plain button grid."""
+    await _run_who(message, repo, i18n)
 
 
 @router.callback_query(F.data == "who:cancel")
@@ -352,7 +398,20 @@ async def who_stats_button(
     if isinstance(callback.message, Message):
         text = await build_stats_text(repo, target, callback.message.chat.id, i18n)
         if text is not None:
-            await _send_stats_card(bot, repo, callback.message.chat.id, target, text)
+            settings_row = await repo.get_user_settings(target.tg_id)
+            tz_offset_min = settings_row.tz_offset_min if settings_row else None
+            now_local = local_now(tz_offset_min)
+            markup = stats_navigation_keyboard(
+                target.tg_id,
+                now_local.year,
+                now_local.month,
+                now_local.year,
+                now_local.month,
+                locale=i18n.locale,
+            )
+            await _send_stats_card(
+                bot, repo, callback.message.chat.id, target, text, reply_markup=markup
+            )
         # The picker's own job is done either way — drop it instead of
         # leaving a stale who-is-this prompt behind.
         with contextlib.suppress(Exception):
@@ -436,6 +495,185 @@ async def summary_month_command(message: Message, repo: Repo, bot: Bot, i18n: I1
     await _run_summary_command(message, repo, bot, i18n, window=MONTH)
 
 
+@router.callback_query(F.data == "noop")
+async def noop_callback(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("st:nav:"))
+async def stats_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    target_id = int(parts[2])
+    year = int(parts[3])
+    month = int(parts[4])
+
+    target = await repo.get_user(target_id)
+    if target is None:
+        await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
+        return
+
+    text = await build_stats_text(
+        repo,
+        target,
+        callback.message.chat.id,
+        i18n,
+        target_year=year,
+        target_month=month,
+    )
+    if text is None:
+        await callback.answer()
+        return
+
+    settings_row = await repo.get_user_settings(target.tg_id)
+    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    now_local = local_now(tz_offset_min)
+    markup = stats_navigation_keyboard(
+        target.tg_id,
+        year,
+        month,
+        now_local.year,
+        now_local.month,
+        locale=i18n.locale,
+    )
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=markup,
+        )
+
+
+@router.callback_query(F.data.startswith("st:cal:"))
+async def stats_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    target_id = int(parts[2])
+    year = int(parts[3])
+
+    target = await repo.get_user(target_id)
+    if target is None:
+        await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
+        return
+
+    settings_row = await repo.get_user_settings(target.tg_id)
+    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    now_local = local_now(tz_offset_min)
+    markup = stats_month_calendar_keyboard(
+        target.tg_id,
+        year,
+        now_local.year,
+        now_local.month,
+        locale=i18n.locale,
+    )
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_reply_markup(reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("sm:nav:"))
+async def summary_month_nav_callback(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    year = int(parts[2])
+    month = int(parts[3])
+
+    settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
+    target_date = date(year, month, 1)
+    built = await build_summary(
+        repo,
+        callback.message.chat.id,
+        settings_row.rare_threshold_percent,
+        target_date,
+        locale=settings_row.locale,
+        tz_offset_min=settings_row.tz_offset_min,
+        window=MONTH,
+    )
+    await callback.answer()
+    if built is not None:
+        text, markup = built
+        with contextlib.suppress(Exception):
+            await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("sm:cal:"))
+async def summary_month_cal_callback(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    year = int(parts[2])
+
+    settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
+    now_local = local_now(settings_row.tz_offset_min)
+    markup = summary_month_calendar_keyboard(
+        year,
+        now_local.year,
+        now_local.month,
+        locale=settings_row.locale,
+    )
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_reply_markup(reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("sd:nav:"))
+async def summary_day_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[2])
+
+    settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
+    built = await build_summary(
+        repo,
+        callback.message.chat.id,
+        settings_row.rare_threshold_percent,
+        target_date,
+        locale=settings_row.locale,
+        tz_offset_min=settings_row.tz_offset_min,
+        window=DAY,
+    )
+    await callback.answer()
+    if built is not None:
+        text, markup = built
+        with contextlib.suppress(Exception):
+            await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("sd:cal:"))
+async def summary_day_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    target_date = date.fromisoformat(parts[2])
+
+    settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
+    now_date = local_now(settings_row.tz_offset_min).date()
+    markup = summary_day_calendar_keyboard(
+        target_date,
+        now_date,
+        locale=settings_row.locale,
+    )
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_reply_markup(reply_markup=markup)
+
+
 @router.callback_query(F.data.startswith("summary:all:"))
 async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """«Показать всех» under a truncated summary table — a fresh, uncapped
@@ -443,7 +681,16 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
     if not isinstance(callback.message, Message):
         return
     assert callback.data is not None
-    window = callback.data.rsplit(":", 1)[1]
+    parts = callback.data.split(":")
+    window = parts[2]
+    target_year = int(parts[3]) if len(parts) > 4 and window == "month" else None
+    target_month = int(parts[4]) if len(parts) > 4 and window == "month" else None
+    target_date = (
+        date.fromisoformat(parts[3])
+        if len(parts) > 3 and window == "day" and parts[3] != "day"
+        else None
+    )
+
     settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
     text = await full_leaderboard(
         repo,
@@ -452,6 +699,9 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
         window,
         settings_row.tz_offset_min,
         locale=settings_row.locale,
+        target_year=target_year,
+        target_month=target_month,
+        target_date=target_date,
     )
     await callback.answer()
     if text is not None:
@@ -459,17 +709,15 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
             await callback.message.answer(text, parse_mode=ParseMode.HTML)
 
 
-@router.message(Command("recent"))
-async def recent(
-    message: Message, repo: Repo, bot: Bot, command: CommandObject, i18n: I18nContext
+async def _run_recent(
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, *, limit: int | None = None
 ) -> None:
     if message.chat.type not in GROUP_TYPES:
         await message.answer(i18n.get("chat-recent-group-only"))
         return
 
-    limit = await repo.get_int_setting(SettingKey.RECENT_LIMIT, DEFAULT_RECENT_LIMIT)
-    if command.args and command.args.strip().isdigit():
-        limit = max(1, min(int(command.args.strip()), RECENT_MAX))
+    if limit is None:
+        limit = await repo.get_int_setting(SettingKey.RECENT_LIMIT, DEFAULT_RECENT_LIMIT)
 
     rows = await repo.chat_recent(message.chat.id, limit, locale=i18n.locale)
     if not rows:
@@ -480,6 +728,16 @@ async def recent(
     # Replaces the chat's previous /recent outright (Follow-up 2026-09-06).
     with stats_category():
         await send_replacing(bot, repo, message.chat.id, "recent", text, parse_mode=ParseMode.HTML)
+
+
+@router.message(Command("recent"))
+async def recent(
+    message: Message, repo: Repo, bot: Bot, command: CommandObject, i18n: I18nContext
+) -> None:
+    limit = None
+    if command.args and command.args.strip().isdigit():
+        limit = max(1, min(int(command.args.strip()), RECENT_MAX))
+    await _run_recent(message, repo, bot, i18n, limit=limit)
 
 
 async def _resolve(message: Message, repo: Repo, argument: str | None) -> User | None:
@@ -507,47 +765,36 @@ async def _resolve(message: Message, repo: Repo, argument: str | None) -> User |
 # bot is, and the commands.
 
 
+@router.message(Command("panel"), F.chat.type.in_(GROUP_TYPES))
+async def panel_command(
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
+) -> None:
+    me = await bot.me()
+    bot_username = me.username or ""
+    await message.answer(
+        await hub_text(repo, message.chat.id, i18n),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=True),
+    )
+
+
 @router.message(Command("help"))
 async def help_command(
     message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
 ) -> None:
+    me = await bot.me()
+    bot_username = me.username or ""
     if message.chat.type not in GROUP_TYPES:
-        await message.answer(help_text(i18n))
+        await message.answer(
+            help_text(i18n),
+            parse_mode=ParseMode.HTML,
+            reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=False),
+        )
         return
-    me = await bot.me()
     await message.answer(
-        await hub_text(repo, message.chat.id, i18n),
-        reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
+        help_text(i18n),
+        parse_mode=ParseMode.HTML,
     )
-
-
-@router.message(Command("app"))
-async def open_app(message: Message, bot: Bot, i18n: I18nContext, settings: Settings) -> None:
-    """The Mini App's own way in, typed rather than hunted for in a menu.
-
-    In a group the button can only be a link — Telegram answers
-    BUTTON_TYPE_INVALID for a `web_app` button anywhere but a private chat —
-    and `mini_app_open_markup` picks the right shape for us. Either way the
-    chat's id rides along, so the app opens on the club the command was
-    typed in; the SPA drops an id that isn't one of the reader's own chats,
-    which is what makes this safe to send from a DM too.
-    """
-    url = (settings.mini_app_url or "").strip()
-    me = await bot.me()
-    markup = mini_app_open_markup(
-        i18n.get("chat-hub-open-app"),
-        https_url=url,
-        bot_username=me.username or "",
-        chat_id=message.chat.id,
-        in_group=message.chat.type in GROUP_TYPES,
-    )
-    if markup is None:
-        # No MINI_APP_URL, or no username to build a group link from. Say so
-        # rather than answering with an empty message: the command is
-        # published in the menu, so somebody will type it either way.
-        await message.answer(i18n.get("chat-app-no-url"))
-        return
-    await message.answer(i18n.get("chat-app-hint"), reply_markup=markup)
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
@@ -562,6 +809,7 @@ async def greet_new_chat(
     await bot.send_message(
         event.chat.id,
         await hub_text(repo, event.chat.id, i18n),
+        parse_mode=ParseMode.HTML,
         reply_markup=_hub_markup(me.username or "", event.chat.id, i18n, settings),
     )
 
@@ -587,17 +835,31 @@ async def subscribe_button(
         await callback.answer(url=f"https://t.me/{me.username}?start=connect{message.chat.id}")
         await message.answer(
             i18n.get("chat-subscribe-connect-first"),
+            parse_mode=ParseMode.HTML,
             reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
         )
         return
 
     await repo.upsert_chat(message.chat.id, message.chat.title, callback.from_user.id)
     async with _subscription_lock(message.chat.id, callback.from_user.id):
-        if await repo.is_subscribed(message.chat.id, callback.from_user.id):
-            await callback.answer(i18n.get("chat-subscribe-already"))
-            return
-        await repo.subscribe(message.chat.id, callback.from_user.id)
-    await callback.answer(i18n.get("chat-subscribe-button-done"))
+        current_mode = await repo.get_subscription_rarity_mode(
+            message.chat.id, callback.from_user.id
+        )
+        if current_mode is None:
+            await repo.subscribe(message.chat.id, callback.from_user.id)
+            current_mode = (
+                await repo.get_subscription_rarity_mode(message.chat.id, callback.from_user.id)
+                or RarityMode.ALL
+            )
+            toast = i18n.get(f"chat-hub-toast-{current_mode}")
+        else:
+            new_mode = next_rarity_mode(current_mode)
+            await repo.update_subscription_rarity_mode(
+                message.chat.id, callback.from_user.id, new_mode
+            )
+            toast = i18n.get(f"chat-hub-toast-{new_mode}")
+
+    await callback.answer(toast)
     await _refresh_hub(message, repo, bot, i18n, settings)
 
 
@@ -609,8 +871,57 @@ async def _refresh_hub(
         # Telegram refuses an edit that changes nothing — not an error.
         await message.edit_text(
             await hub_text(repo, message.chat.id, i18n),
+            parse_mode=ParseMode.HTML,
             reply_markup=_hub_markup(me.username or "", message.chat.id, i18n, settings),
         )
+
+
+@router.callback_query(F.data == "hub:who")
+async def hub_who_callback(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_who(callback.message, repo, i18n)
+
+
+@router.callback_query(F.data == "hub:online")
+async def hub_online_callback(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_online(callback.message, repo, bot, i18n)
+
+
+@router.callback_query(F.data == "hub:recent")
+async def hub_recent_callback(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_recent(callback.message, repo, bot, i18n)
+
+
+@router.callback_query(F.data == "hub:summary_day")
+async def hub_summary_day_callback(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_summary_command(callback.message, repo, bot, i18n, window=DAY)
+
+
+@router.callback_query(F.data == "hub:summary_month")
+async def hub_summary_month_callback(
+    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
+) -> None:
+    if not isinstance(callback.message, Message):
+        return
+    await callback.answer()
+    await _run_summary_command(callback.message, repo, bot, i18n, window=MONTH)
 
 
 @router.message(Command("delete_last"), F.chat.type.in_(GROUP_TYPES), IsAdmin())

@@ -10,6 +10,7 @@ import json
 from collections.abc import Sequence
 from datetime import datetime
 
+from bot.constants import Platform
 from bot.db.repo._models import TitleHistoryRow, _iso
 from bot.db.repo._sql import (
     OWNED_BY_PERSON,
@@ -50,11 +51,23 @@ class _StatsRepo:
                     now,
                 ),
             )
+            if getattr(entry, "platform", None) in (Platform.XBOX_360, "xbox_360"):
+                platforms_json = json.dumps(["Xbox360"])
+            elif getattr(entry, "devices", None):
+                if any(str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices):
+                    platforms_json = json.dumps(["Xbox360"])
+                else:
+                    platforms_json = json.dumps(entry.devices)
+            else:
+                platforms_json = None
             await self._conn.execute(
-                "INSERT INTO titles (title_id, name, platform, updated_at) VALUES (?, ?, ?, ?) "
+                "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
                 "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
-                " platform = excluded.platform, updated_at = excluded.updated_at",
-                (entry.title_id, entry.name, entry.platform, now),
+                " platform = COALESCE(excluded.platform, titles.platform),"
+                " platforms = COALESCE(excluded.platforms, titles.platforms),"
+                " updated_at = excluded.updated_at",
+                (entry.title_id, entry.name, entry.platform, platforms_json, now),
             )
         await self._conn.commit()
 
@@ -196,7 +209,11 @@ class _StatsRepo:
         return (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)) if row else (0, 0, 0)
 
     async def achievement_value_breakdown(
-        self, tg_id: int, since: datetime | None, rare_threshold: float
+        self,
+        tg_id: int,
+        since: datetime | None,
+        rare_threshold: float,
+        until: datetime | None = None,
     ) -> tuple[int, tuple[int, int, int, int]]:
         """What this person's achievements in the window were *worth*, beyond
         the count and the gamerscore: how many cleared the chat's rarity
@@ -226,6 +243,9 @@ class _StatsRepo:
         if since is not None:
             query += f" AND {earned_since('')}"
             params.append(_iso(since))
+        if until is not None:
+            query += f" AND {earned_at('')} < ?"
+            params.append(_iso(until))
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
         if row is None:
@@ -296,13 +316,53 @@ class _StatsRepo:
         return int(row[0]) if row else 0
 
     async def xbox_completed_games_count(self, xuid: str) -> int:
-        """Games where every achievement has been earned (#19) — straight
-        from the already-cached title_history, no new tracking needed."""
+        """Games where every achievement has been earned (#19).
+
+        Prior implementation relied exclusively on title_history's
+        achievements_total, but Microsoft's titlehub API returns total=0 for
+        nearly all Xbox One / Series games (#77). We now check against the
+        global title_achievements catalog, falling back to title_history or
+        titles.achievements_total for games not yet in the catalog.
+        """
         cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM title_history "
-            "WHERE xuid = ? AND achievements_total > 0"
-            " AND achievements_unlocked >= achievements_total",
-            (xuid,),
+            """
+            WITH completed_from_catalog AS (
+                SELECT s.title_id
+                FROM seen_achievements s
+                JOIN (
+                    SELECT title_id, COUNT(*) AS catalog_total
+                    FROM title_achievements
+                    WHERE platform IN ('xbox_modern', 'xbox_360')
+                    GROUP BY title_id
+                ) c ON s.title_id = c.title_id
+                WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
+                GROUP BY s.title_id, c.catalog_total
+                HAVING COUNT(DISTINCT s.achievement_id) >= c.catalog_total AND c.catalog_total > 0
+            ),
+            completed_from_titles AS (
+                SELECT s.title_id
+                FROM seen_achievements s
+                JOIN titles t ON s.title_id = t.title_id
+                WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
+                  AND t.achievements_total > 0
+                GROUP BY s.title_id, t.achievements_total
+                HAVING COUNT(DISTINCT s.achievement_id) >= t.achievements_total
+            ),
+            completed_from_history AS (
+                SELECT title_id
+                FROM title_history
+                WHERE xuid = ? AND achievements_total > 0
+                  AND achievements_unlocked >= achievements_total
+            )
+            SELECT COUNT(*) FROM (
+                SELECT title_id FROM completed_from_catalog
+                UNION
+                SELECT title_id FROM completed_from_titles
+                UNION
+                SELECT title_id FROM completed_from_history
+            )
+            """,
+            (xuid, xuid, xuid),
         )
         row = await cursor.fetchone()
         return int(row[0]) if row else 0

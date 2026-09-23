@@ -4,6 +4,8 @@ project fakes its client/service layer."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from bot.config import Settings
 from bot.db.repo import Repo
 from bot.poller import psn_presence as psn_presence_module
@@ -142,8 +144,37 @@ async def test_a_recently_polled_account_is_not_due_again_immediately(
         monkeypatch, PsnPresenceSnapshot(state="Offline", title_id=None, title_name=None)
     )
     poller = PsnPresencePoller(settings, repo, auth)
-
     await poller.tick()
     await poller.tick()  # same tick cycle, well inside the offline interval
 
     assert calls == [ACCOUNT_ID]  # second tick found nothing due
+
+
+async def test_transition_from_online_to_offline_triggers_exit_trophy_poll(
+    repo: Repo, cipher: TokenCipher, settings: Settings, monkeypatch
+) -> None:
+    await _linked_user(repo)
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+
+    # Pre-populate as Online
+    await repo.save_psn_presence_state(ACCOUNT_ID, "Online", "CUSA14296_00", "Rust", changed=False)
+    one_hour_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await repo._conn.execute(
+        "UPDATE psn_presence_state SET updated_at = ? WHERE account_id = ?",
+        (one_hour_ago, ACCOUNT_ID),
+    )
+
+    poll_calls: list[str] = []
+
+    class FakePsnFetcher:
+        async def poll_account(self, tg_id, account_id, online_id):
+            poll_calls.append(account_id)
+
+    _fake_presence(
+        monkeypatch, PsnPresenceSnapshot(state="Offline", title_id=None, title_name=None)
+    )
+    poller = PsnPresencePoller(settings, repo, auth, psn_fetcher=FakePsnFetcher())
+
+    await poller.tick()
+
+    assert poll_calls == [ACCOUNT_ID], "exit trophy poll must be triggered on transition to offline"

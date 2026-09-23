@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 
 from bot.constants import AccountPlatform, Platform, PresenceState
-from bot.db.repo import AchievementRow, Repo, TitleHistoryRow
+from bot.db.repo import AchievementRow, Repo, TitleAchievementRow, TitleHistoryRow
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
+from bot.services import achievement_icons
 from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.client import TitleHistoryEntry, XboxApiError, XboxClient
 from bot.services.xbox.models import ParsedAchievement
-from bot.util import parse_iso, utcnow
+from bot.util import parse_iso, utcnow, utcnow_iso
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class Fetcher:
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
         self._backfill_slots = asyncio.Semaphore(concurrency)
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     def api_usage(self) -> list[tuple[int, int, float]]:
         """(used, limit, window_seconds) — surfaced in the admin panel
@@ -49,6 +52,7 @@ class Fetcher:
         title_id: str,
         platform: Platform,
         title_name: str | None,
+        device: str | None = None,
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
         parsed, total = await self._client.title_achievements_with_total(tg_id, title_id, platform)
@@ -66,6 +70,8 @@ class Fetcher:
                 # Presence gives no name for a PC title; the name is resolved
                 # further down, and the total must not wait for it.
                 await self._repo.set_title_total(title_id, total)
+        if device:
+            await self._repo.ensure_title_device(title_id, device)
         await self._fill_x360_icon(tg_id, title_id, platform, parsed)
         await self._bilingual_descriptions(tg_id, title_id, platform, parsed)
         # Free: this response carried the percentages, and the shared cache is
@@ -75,7 +81,8 @@ class Fetcher:
             title_id,
             {a.achievement_id: a.rarity_percent for a in parsed if a.rarity_percent is not None},
         )
-        rows = [to_achievement_row(item) for item in parsed]
+        self._pre_cache_icons(platform, title_id, parsed)
+        rows = [to_achievement_row(item, device=device) for item in parsed]
         new_rows = await self._repo.insert_new_achievements(xuid, rows, is_backfill=False)
         await self._repo.mark_achievements_polled(xuid)
         if not new_rows:
@@ -106,7 +113,18 @@ class Fetcher:
             return None
         if entry is None or not entry.name:
             return None
-        await self._repo.upsert_title(entry.title_id, entry.name, entry.platform)
+        if entry.platform in (Platform.XBOX_360, "xbox_360"):
+            platforms_json = json.dumps(["Xbox360"])
+        elif getattr(entry, "devices", None):
+            if any(str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices):
+                platforms_json = json.dumps(["Xbox360"])
+            else:
+                platforms_json = json.dumps(entry.devices)
+        else:
+            platforms_json = None
+        await self._repo.upsert_title(
+            entry.title_id, entry.name, entry.platform, platforms=platforms_json
+        )
         return entry.name
 
     async def ensure_title_icon(self, tg_id: int, title_id: str) -> str | None:
@@ -134,14 +152,31 @@ class Fetcher:
         self, tg_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
     ) -> None:
         """Shared by poll_title() and catch_up() — both publish live x360
-        unlocks and must agree on the icon, not just the one that happens
-        to run more often."""
+        unlocks and must agree on the icon. If an achievement has no genuine icon,
+        fall back to the game's box art."""
         if platform != Platform.XBOX_360:
+            return
+        missing = [item for item in parsed if not item.icon_url]
+        if not missing:
             return
         icon_url = await self.ensure_title_icon(tg_id, title_id)
         if icon_url:
-            for item in parsed:
+            for item in missing:
                 item.icon_url = icon_url
+
+    def _pre_cache_icons(
+        self, platform: Platform, title_id: str, parsed: list[ParsedAchievement]
+    ) -> None:
+        plat_str = platform.value if hasattr(platform, "value") else str(platform)
+        for item in parsed:
+            if item.icon_url:
+                task = asyncio.create_task(
+                    achievement_icons.pre_cache_icon(
+                        plat_str, title_id, item.achievement_id, item.icon_url
+                    )
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
     async def _bilingual_descriptions(
         self, tg_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
@@ -173,14 +208,30 @@ class Fetcher:
         if not candidates and not nameless:
             return
 
+        plat_str = platform.value if hasattr(platform, "value") else str(platform)
+        catalog = await self._repo.get_title_achievements(plat_str, title_id)
+        cat_by_id = {row.achievement_id: row for row in catalog} if catalog else {}
+
         result: dict[str, tuple[str | None, str | None]] = {}
         uncached: dict[str, str] = {}
         for achievement_id, english_text in candidates.items():
+            cat_row = cat_by_id.get(achievement_id)
+            if cat_row and cat_row.description_ru:
+                result[achievement_id] = (
+                    cat_row.description_ru,
+                    cat_row.description_en or english_text,
+                )
+                continue
             cached = await self._repo.get_cached_description(platform, title_id, achievement_id)
             if cached is not None:
                 result[achievement_id] = (cached.description_ru, cached.description_en)
             else:
                 uncached[achievement_id] = english_text
+
+        if nameless and catalog:
+            nameless = [
+                aid for aid in nameless if aid not in cat_by_id or not cat_by_id[aid].name_ru
+            ]
 
         if uncached or nameless:
             try:
@@ -224,6 +275,27 @@ class Fetcher:
                 )
                 result.update(resolved)
 
+            now = utcnow_iso()
+            ru_names = {item.achievement_id: item.name for item in russian_parsed}
+            cat_rows = [
+                TitleAchievementRow(
+                    platform=plat_str,
+                    title_id=title_id,
+                    achievement_id=item.achievement_id,
+                    name_ru=ru_names.get(item.achievement_id, item.name),
+                    name_en=item.name,
+                    description_ru=result.get(item.achievement_id, (None, None))[0],
+                    description_en=item.description,
+                    icon_url=item.icon_url,
+                    is_secret=item.is_secret,
+                    gamerscore=item.gamerscore,
+                    rarity_percent=item.rarity_percent,
+                    updated_at=now,
+                )
+                for item in parsed
+            ]
+            await self._repo.upsert_title_achievements(cat_rows)
+
         for item in parsed:
             resolved_pair = result.get(item.achievement_id)
             if resolved_pair is not None and resolved_pair[0] is not None:
@@ -236,7 +308,16 @@ class Fetcher:
         old achievements into the chat.
         """
         async with self._backfill_slots:
-            rows = [to_achievement_row(item) for item in await self._client.all_achievements(tg_id)]
+            raw_items = await self._client.all_achievements(tg_id)
+            rows = [to_achievement_row(item) for item in raw_items]
+
+            # Save any titles learned from all_achievements (contract 2) so older
+            # games beyond title_history's window don't stay untitled in the catalog (#77).
+            for item in raw_items:
+                if item.title_id and item.title_name:
+                    await self._repo.upsert_title(
+                        item.title_id, item.title_name, item.platform or Platform.XBOX_MODERN
+                    )
 
             # Contract 2 covers modern titles only — verified against a live
             # account, where an Xbox 360 game with 33 unlocked achievements was
@@ -253,6 +334,15 @@ class Fetcher:
                 except XboxApiError as exc:
                     log.info("x360 backfill of %s skipped: %s", entry.title_id, exc)
                     continue
+                await self._repo.cache_rarity(
+                    Platform.XBOX_360,
+                    entry.title_id,
+                    {
+                        a.achievement_id: a.rarity_percent
+                        for a in parsed
+                        if a.rarity_percent is not None
+                    },
+                )
                 rows.extend(to_achievement_row(item) for item in parsed)
 
             await self._repo.insert_new_achievements(xuid, rows, is_backfill=True)
@@ -296,6 +386,16 @@ class Fetcher:
                     continue
                 await self._fill_x360_icon(tg_id, entry.title_id, entry.platform, parsed)
                 await self._bilingual_descriptions(tg_id, entry.title_id, entry.platform, parsed)
+                await self._repo.cache_rarity(
+                    entry.platform,
+                    entry.title_id,
+                    {
+                        a.achievement_id: a.rarity_percent
+                        for a in parsed
+                        if a.rarity_percent is not None
+                    },
+                )
+                self._pre_cache_icons(entry.platform, entry.title_id, parsed)
 
                 new_rows = await self._repo.insert_new_achievements(
                     xuid, [to_achievement_row(item) for item in parsed], is_backfill=False
@@ -326,13 +426,24 @@ class Fetcher:
         _ = translator("fetcher", locale)
         snapshot = await self._client.presence(tg_id)
         await self._repo.save_presence_state(
-            xuid, snapshot.state, snapshot.title_id, snapshot.title_name, changed=False
+            xuid,
+            snapshot.state,
+            snapshot.title_id,
+            snapshot.title_name,
+            device=snapshot.device,
+            changed=False,
         )
 
         published = 0
         if snapshot.in_game and snapshot.title_id:
             published = await self.poll_title(
-                tg_id, xuid, gamertag, snapshot.title_id, snapshot.platform, snapshot.title_name
+                tg_id,
+                xuid,
+                gamertag,
+                snapshot.title_id,
+                snapshot.platform,
+                snapshot.title_name,
+                device=snapshot.device,
             )
         await self.refresh_title_history(tg_id, xuid)
 
@@ -359,6 +470,7 @@ class Fetcher:
                 achievements_unlocked=entry.achievements_unlocked,
                 achievements_total=entry.achievements_total,
                 last_played_at=entry.last_played_at,
+                devices=getattr(entry, "devices", None) or [],
             )
             for entry in history
         ]

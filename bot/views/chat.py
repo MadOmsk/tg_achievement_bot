@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from html import escape as html_escape
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from aiogram_i18n import I18nContext
 
 from bot.constants import SettingKey
@@ -23,14 +23,15 @@ from bot.db.repo import (
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
-from bot.services.mini_app import mini_app_group_url
+from bot.services.mini_app import mini_app_group_url, mini_app_open_url
 from bot.services.naming import (
     person_name,
     person_name_of,
     subscriber_names,
     xbox_nickname,
 )
-from bot.services.stats import counters_for, month_cutoff_utc
+from bot.services.platform_format import format_game_platforms
+from bot.services.stats import counters_for, local_now, month_cutoff_utc
 from bot.util import humanize_ago, thousands
 from bot.version import version
 from bot.views.inline_lists import InlineListing, button_rows
@@ -110,40 +111,34 @@ def who_label(row: ChatPresenceRow) -> str:
 
 
 async def build_stats_text(
-    repo: Repo, target: User, chat_id: int, i18n: I18nContext | None = None
+    repo: Repo,
+    target: User,
+    chat_id: int,
+    i18n: I18nContext | None = None,
+    *,
+    target_year: int | None = None,
+    target_month: int | None = None,
 ) -> str | None:
     """Shared by /stats and /who's buttons (SPEC 6.3) — one implementation,
-    so a player's card looks the same no matter how it was opened.
-
-    `chat_id` is what the games list counts rare achievements against: the
-    threshold is per chat and admin-set, never a number hardcoded here
-    (CLAUDE.md's own publication rule), so the same person's card can
-    legitimately mark a different number of games as rare in two chats.
-
-    Works for a Steam-only person too (SPEC 9, M-Steam-2e) — used to bail
-    out on `not target.xuid` alone, which meant no card at all for anyone
-    without Xbox connected."""
+    so a player's card looks the same no matter how it was opened."""
     platform_links = await repo.platform_links_of(target.tg_id)
     if not target.xuid and not platform_links:
         return None
 
-    # Gates whether any nickname below becomes a clickable link at all — the
-    # target's own choice (Follow-up 2026-09-06), off by default, and not
-    # relaxed for the target viewing their own card: this card is one and
-    # the same message regardless of who asked for it (no per-viewer
-    # rendering), so "only hide it from others" isn't a distinction that
-    # exists here. Own links live in /panel instead, which really is
-    # per-viewer (never rendered in a group at all).
     settings_row = await repo.get_user_settings(target.tg_id)
     show_links = bool(settings_row and settings_row.show_profile_links)
 
     locale = _locale_of(i18n)
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
     rare_threshold = (await repo.get_chat_daily_settings(chat_id)).rare_threshold_percent
-    counters = await counters_for(repo, target.tg_id, rare_threshold=rare_threshold)
+    counters = await counters_for(
+        repo,
+        target.tg_id,
+        rare_threshold=rare_threshold,
+        target_year=target_year,
+        target_month=target_month,
+    )
     lines = [f"👤 <b>{html_escape(display_name(target, platform_links))}</b>"]
-    # Shared with /panel's own header (2026-09-08, user request: "пусть одни
-    # одинаково формируются") — services/achievements.py::platform_header_lines.
     lines += await platform_header_lines(
         repo,
         tg_id=target.tg_id,
@@ -161,10 +156,26 @@ async def build_stats_text(
     month_breakdown = platform_breakdown_suffix(
         counters.month_xbox, counters.month_steam, counters.month_psn
     )
-    # "За сутки" and "С 1 сентября" rather than "Сегодня"/"За месяц" (owner,
-    # 2026-09-17): the first really is a rolling 24 hours, and the second has
-    # been the calendar month since #14 — the games header below already said
-    # "с 1 сентября", so one card was naming one window two ways.
+
+    now_local = local_now(tz_offset_min)
+    is_current_month = (
+        target_year is None
+        or target_month is None
+        or (target_year == now_local.year and target_month == now_local.month)
+    )
+
+    if is_current_month:
+        m_label = month_name(tz_offset_min, locale)
+        window_label = month_window_label(tz_offset_min, locale)
+    else:
+        assert target_month is not None
+        assert target_year is not None
+        from bot.views.date_picker import target_month_labels
+
+        m_label, window_label = target_month_labels(
+            target_year, target_month, now_local.year, locale
+        )
+
     lines += [
         "",
         _hub_text(
@@ -179,33 +190,28 @@ async def build_stats_text(
         _hub_text(
             i18n,
             "chat-stats-month",
-            month=month_name(tz_offset_min, locale),
+            month=m_label,
             achievements=plural_achievements(counters.month, locale),
             breakdown=month_breakdown,
             value=bracketed(
                 value_parts(counters.month_score, counters.month_rare, counters.month_tiers)
             ),
         ),
-        # No lifetime "Всего" here: seen_achievements is permanently
-        # best-effort (title_history's cap, achievements with no unlock
-        # date), so a lifetime count from it can't be trusted the way a
-        # date-bounded one can — better absent than quietly wrong (SPEC 5.4).
     ]
 
-    # One combined ranked list across every platform, not a section per
-    # platform — same "one number, not one per platform" spirit as the
-    # counters above. One query too, since 2026-09-17: this used to fire one
-    # per linked account and merge them in Python, which applied the cap
-    # twice (once per platform, once after the merge) and ranked by
-    # gamerscore, so PSN and Steam — where gamerscore is always 0 — sank
-    # below every Xbox game no matter what was actually played.
-    # 0 = no cap (SPEC 6.4) — the list lives in a collapsible quote either
-    # way, no separate "показать все игры" tap needed any more.
     limit = await _stats_games_limit(repo)
-    since = month_cutoff_utc(tz_offset_min)
+    if target_year is not None and target_month is not None:
+        from bot.services.stats import month_window_utc
+
+        since, until = month_window_utc(target_year, target_month, tz_offset_min)
+    else:
+        since = month_cutoff_utc(tz_offset_min)
+        until = None
+
     games = await repo.users_games_achievements(
         [target.tg_id],
         since,
+        until=until,
         rare_threshold=rare_threshold,
         limit=limit,
         locale=locale,
@@ -216,7 +222,7 @@ async def build_stats_text(
             _hub_text(
                 i18n,
                 "chat-stats-games-header",
-                window=month_window_label(tz_offset_min, locale),
+                window=window_label,
             ),
             _games_list(games, i18n),
         ]
@@ -259,6 +265,8 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
     )
     game = html_escape(truncate_name(row.game or _hub_text(i18n, "chat-untitled")))
     icon = PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
+    plat = format_game_platforms(row.game_platforms, row.platform, device=row.device, short=True)
+    icon_tag = f"({icon} <i>{plat}</i>)" if plat else icon
     # Found live: every Steam row showed a flat "+0 G" — Steam achievements
     # have no gamerscore at all (services/steam/achievements.py), same
     # "0 is 0 on any platform, don't name it" rule the achievement message
@@ -276,7 +284,7 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
         "chat-recent-row",
         badge=badge,
         gamertag=gamertag,
-        icon=icon,
+        icon=icon_tag,
         game=game,
         name=name,
         tail=tail_text,
@@ -290,94 +298,134 @@ def hub_keyboard(
     i18n: I18nContext | None = None,
     *,
     mini_app_url: str = "",
+    is_group: bool = True,
 ) -> InlineKeyboardMarkup:
-    """A short walkthrough, not a control panel: SPEC 6.3 walks through
-    connect → publish in that order, so the keyboard should not offer more
-    choices than that story needs. Steam's and PSN's connect buttons
-    (SPEC 9, M-Steam-2e, M-PSN-1) sit next to Xbox's rather than adding a
-    whole extra row each — it is still the same "connect" step, just
-    another platform for it.
-
-    Buttons act on whoever presses them — that is why "Публиковать мои
-    достижения" is allowed here at all: SPEC 6.3 forbids rendering *someone
-    else's* settings where any member could page through them, not a button
-    that only ever touches the presser's own subscription.
+    """A short walkthrough and quick navigation:
+    1. App button (Open the app) - top row if configured
+    2. Platforms to connect (Xbox, PSN, Steam)
+    3. Management:
+       - In groups: Publish toggle ('Настройка уведомлений') + Settings ('Настройки')
+       - In private chat: Settings ('Настройки')
     """
-    rows: list[list[InlineKeyboardButton]] = [
-        [
-            InlineKeyboardButton(
-                text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
+    rows: list[list[InlineKeyboardButton]] = []
+    app_url = (mini_app_url or "").strip()
+    if app_url:
+        if is_group:
+            # A plain link, not a `web_app` button: Telegram answers
+            # BUTTON_TYPE_INVALID for a WebApp button anywhere but a private
+            # chat. `?startapp=` opens the same Mini App and carries this chat's
+            # id, so it lands on the club the reader is standing in instead of a
+            # chooser.
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=_hub_text(i18n, "chat-hub-open-app"),
+                        url=mini_app_group_url(bot_username, chat_id=chat_id),
+                    )
+                ]
             )
-        ],
+        else:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=_hub_text(i18n, "chat-hub-open-app"),
+                        web_app=WebAppInfo(url=mini_app_open_url(app_url, chat_id=chat_id)),
+                    )
+                ]
+            )
+
+    # In groups: add action rows and management
+    settings_btn = InlineKeyboardButton(
+        text=_hub_text(i18n, "chat-hub-settings-button"),
+        url=f"https://t.me/{bot_username}?start=panel",
+    )
+    if is_group:
+        # Action row 1: who, online, recent
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-who-button"),
+                    callback_data="hub:who",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-online-button"),
+                    callback_data="hub:online",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-recent-button"),
+                    callback_data="hub:recent",
+                ),
+            ]
+        )
+        # Action row 2: summary day and month
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-summary-day-button"),
+                    callback_data="hub:summary_day",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-summary-month-button"),
+                    callback_data="hub:summary_month",
+                ),
+            ]
+        )
+        # Action row 3: management (publish toggle + settings)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
+                ),
+                settings_btn,
+            ]
+        )
+    else:
+        # In private chat: settings
+        rows.append([settings_btn])
+
+    # Platforms row (at the bottom)
+    xbox_url = (
+        f"https://t.me/{bot_username}?start=connect{chat_id}"
+        if is_group
+        else f"https://t.me/{bot_username}?start=connect"
+    )
+    rows.append(
         [
             InlineKeyboardButton(
                 text=_hub_text(i18n, "chat-hub-xbox-button"),
-                # The chat id rides along in the deep-link payload so a
-                # successful login can auto-subscribe him right back here
-                # (SPEC 6.3) — see _parse_connect_payload in connect.py.
-                url=f"https://t.me/{bot_username}?start=connect{chat_id}",
+                url=xbox_url,
             ),
             InlineKeyboardButton(
                 text=_hub_text(i18n, "chat-hub-psn-button"),
-                # No chat id here (unlike Xbox above) — see Steam's own
-                # button below for why (SPEC 9, M-PSN-1, handlers/psn.py,
-                # connect.py's ?start=connectpsn).
                 url=f"https://t.me/{bot_username}?start=connectpsn",
             ),
             InlineKeyboardButton(
                 text=_hub_text(i18n, "chat-hub-steam-button"),
-                # No chat id here (unlike Xbox above) — /connect_steam
-                # needs a profile link a button tap can't supply anyway,
-                # so this just opens the DM at the right prompt (SPEC 9,
-                # handlers/steam.py, connect.py's ?start=connectsteam).
                 url=f"https://t.me/{bot_username}?start=connectsteam",
             ),
-        ],
-        [
-            InlineKeyboardButton(
-                text=_hub_text(i18n, "chat-hub-settings-button"),
-                url=f"https://t.me/{bot_username}?start=panel",
-            ),
-        ],
-    ]
-    if mini_app_url.strip():
-        # A plain link, not a `web_app` button: Telegram answers
-        # BUTTON_TYPE_INVALID for a WebApp button anywhere but a private
-        # chat. `?startapp=` opens the same Mini App and carries this chat's
-        # id, so it lands on the club the reader is standing in instead of a
-        # chooser. Last row on purpose — the rows above are the connect →
-        # publish walkthrough this keyboard exists for, and the app is
-        # another door onto it rather than a step inside it.
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-open-app"),
-                    url=mini_app_group_url(bot_username, chat_id=chat_id),
-                )
-            ]
-        )
+        ]
+    )
+
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def help_text(i18n: I18nContext) -> str:
-    """What the bot is for, its commands, and — last line — which build is
-    answering (#56, owner request). The version belongs here rather than in
-    /admin alone: the question it answers is "is this the test bot or the
-    real one", and anyone in the chat can have it."""
-    return i18n.get("chat-help-text") + "\n\n" + i18n.get("chat-help-version", version=version())
+    """The list of chat commands for /help (#19)."""
+    return i18n.get("chat-help-text")
 
 
 async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
     names = subscriber_names(await repo.chat_subscribers(chat_id))
+    escaped_names = [html_escape(name) for name in names]
     who = (
         i18n.get("chat-hub-nobody")
         if not names
-        else i18n.get("chat-hub-publishing", names=", ".join(names))
+        else i18n.get("chat-hub-publishing", names=", ".join(escaped_names))
     )
     # The version stays the last line of the whole message — under the
     # subscriber list, not buried above it.
     return (
-        i18n.get("chat-help-text")
+        i18n.get("chat-panel-text")
         + "\n\n"
         + who
         + "\n\n"

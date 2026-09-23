@@ -1,11 +1,14 @@
 # /start, /connect_xbox, /disconnect_xbox and the timezone picker
 # (bot/handlers/connect.py).
 # Connection flow
+connect-xbox-group-redirect = Message me in private — we'll connect XBOX there.
+connect-xbox-private-only = You can only disconnect XBOX in a private chat with the bot.
 connect-timezone-prompt = 🕐 What's your timezone?
 connect-xbox-already-connected = XBOX is already connected. Settings are in /panel.
 connect-xbox-already-connected-relogin =
     XBOX is already connected. To sign in again, run /disconnect_xbox first.
 connect-xbox-not-connected = XBOX isn't connected anyway.
+platform-cooldown-active = Re-connecting { $platform } is temporarily blocked (anti-abuse cooldown). Please try again in { $hours }h { $minutes }m.
 connect-disconnect-yes = Yes, disconnect
 connect-disconnect-cancel = Cancel
 connect-disconnect-prompt =

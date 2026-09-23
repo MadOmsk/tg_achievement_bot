@@ -420,18 +420,25 @@ class _PlatformLinksRepo:
                 total = int(fallback["achievements_total"] or 0) if fallback else 0
             if not total:
                 return None
-            if row is not None and row["achievements_unlocked"] is not None:
-                # Microsoft's own count when it has one: it knows about
-                # achievements earned before this bot existed.
-                unlocked = int(row["achievements_unlocked"])
-            else:
-                cursor = await self._conn.execute(
-                    "SELECT COUNT(*) FROM seen_achievements "
-                    "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
-                    (account_platform, external_id, title_id),
-                )
-                counted = await cursor.fetchone()
-                unlocked = int(counted[0]) if counted else 0
+            cursor = await self._conn.execute(
+                "SELECT COUNT(*) FROM seen_achievements "
+                "WHERE account_platform = ? AND xuid = ? AND title_id = ?",
+                (account_platform, external_id, title_id),
+            )
+            counted = await cursor.fetchone()
+            seen_unlocked = int(counted[0]) if counted else 0
+            history_unlocked = (
+                int(row["achievements_unlocked"])
+                if row is not None and row["achievements_unlocked"] is not None
+                else 0
+            )
+            # seen_achievements has every achievement earned in real-time while
+            # the bot is running; title_history holds Microsoft's historical count
+            # from TitleHub. TitleHub only refreshes on game exit/daily, so during
+            # active gameplay seen_achievements is strictly fresher. max() ensures
+            # live unlocks increment the counter immediately without losing
+            # pre-bot historical counts.
+            unlocked = min(max(seen_unlocked, history_unlocked), total)
             return TitleProgress(unlocked=unlocked, total=total)
 
         if account_platform == AccountPlatform.STEAM:
@@ -444,7 +451,9 @@ class _PlatformLinksRepo:
                 (account_platform, external_id, title_id),
             )
             row = await cursor.fetchone()
-            return TitleProgress(unlocked=int(row[0]) if row else 0, total=len(cached[1]))
+            total = len(cached[1])
+            unlocked = min(int(row[0]) if row else 0, total)
+            return TitleProgress(unlocked=unlocked, total=total)
 
         cursor = await self._conn.execute(
             "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
@@ -459,7 +468,8 @@ class _PlatformLinksRepo:
             (account_platform, external_id, title_id),
         )
         row = await cursor.fetchone()
-        progress = TitleProgress(unlocked=int(row[0]) if row else 0, total=total)
+        unlocked = min(int(row[0]) if row else 0, total)
+        progress = TitleProgress(unlocked=unlocked, total=total)
 
         # Sony gives every title at least a 'default' group, so "has groups"
         # is not the question — "is it split into more than one" is. A game
@@ -525,6 +535,15 @@ class _PlatformLinksRepo:
             (platform, external_id),
         )
         return await cursor.fetchone() is not None
+
+    async def any_active_external_id(self, platform: str) -> str | None:
+        """Find any active external_id linked for this platform (e.g. for catalog queries)."""
+        cursor = await self._conn.execute(
+            "SELECT external_id FROM account_links WHERE platform = ? AND is_active = 1 LIMIT 1",
+            (platform,),
+        )
+        row = await cursor.fetchone()
+        return str(row["external_id"]) if row else None
 
 
 def _as_platform_link(row) -> PlatformLink:

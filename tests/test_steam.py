@@ -17,6 +17,7 @@ from bot.services.steam.client import (
     get_player_achievements,
     get_presence_batch,
     get_profile,
+    get_recently_played_games,
     get_schema,
     resolve_steam_id,
 )
@@ -373,3 +374,54 @@ async def test_platform_links_all_carries_the_psn_trophy_level(repo: Repo) -> No
 
     assert len(links) == 1
     assert links[0].psn_trophy_level == 12
+
+
+async def test_get_recently_played_games_parses_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/IPlayerService/GetRecentlyPlayedGames/v1/"
+        assert params == {"steamid": STEAM_ID, "count": "10"}
+        return {
+            "total_count": 2,
+            "games": [
+                {
+                    "appid": 550,
+                    "name": "Left 4 Dead 2",
+                    "playtime_2weeks": 120,
+                    "playtime_forever": 2265,
+                    "rtime_last_played": 1700000000,
+                },
+                {
+                    "appid": 730,
+                    "name": "Counter-Strike 2",
+                    "playtime_2weeks": 30,
+                    "playtime_forever": 500,
+                    "rtime_last_played": 1700000500,
+                },
+            ],
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    games = await get_recently_played_games("key", STEAM_ID)
+
+    assert len(games) == 2
+    assert games[0].appid == "550"
+    assert games[0].name == "Left 4 Dead 2"
+    assert games[0].playtime_2weeks == 120
+    assert games[0].playtime_forever == 2265
+    assert games[0].last_played == 1700000000
+
+    assert games[1].appid == "730"
+    assert games[1].last_played == 1700000500
+
+
+async def test_get_recently_played_games_handles_empty_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {"total_count": 0}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    games = await get_recently_played_games("key", STEAM_ID)
+    assert games == []

@@ -2,6 +2,7 @@
 # makes callback alerts and generated cards follow the same locale as menus.
 admin-unlimited = no limit
 admin-disabled = off
+admin-no-delay = no delay
 admin-back = ‹ Back
 admin-cancel = Cancel
 admin-yes = yes
@@ -21,6 +22,8 @@ admin-setting-system-ttl = Auto-delete system messages (min)
 admin-setting-online-interval = /online auto-refresh interval (min)
 admin-setting-online-ttl = /online auto-refresh, hours
 admin-setting-key-check = Key check / /admin auto-refresh (min)
+admin-setting-monthly-delay = Month-end wrap-up delay (min)
+admin-setting-account-reset-cooldown = Account reset cooldown (hours)
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
@@ -230,6 +233,19 @@ admin-reset-confirm-prompt =
     platform is deleted and read back from nothing (nothing is published to
     any chat — same as a first-time link).
 admin-reset-confirm-yes = Yes, wipe and resync
+admin-delete-user = 🗑 Delete user
+admin-delete-confirm-1 =
+    Delete user { $name } (ID: { $tg_id })?
+
+    All account links, user settings, and chat subscriptions will be removed.
+admin-delete-confirm-1-yes = ⚠️ Yes, proceed
+admin-delete-confirm-2 =
+    Warning! This action cannot be undone!
+
+    Permanently delete user { $name } (ID: { $tg_id }) from the database?
+admin-delete-confirm-2-yes = 🔥 Permanently delete user
+admin-delete-toast = User deleted
+admin-delete-not-found = User not found
 admin-back-to-users = ‹ Back to the list
 
 # Chat cards

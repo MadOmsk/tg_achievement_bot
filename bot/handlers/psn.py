@@ -33,6 +33,7 @@ from bot.handlers.delivery import notify_previous_owner, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.services import relink
+from bot.services.naming import link_nickname
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
@@ -110,7 +111,7 @@ async def prompt_for_link(
     link = await repo.get_platform_link(tg_id, Platform.PSN)
     awaiting.expect(tg_id, "psn")
     if link is not None:
-        await bot.send_message(tg_id, i18n.get("psn-already-connected", name=link.display_name))
+        await bot.send_message(tg_id, i18n.get("psn-already-connected", name=link_nickname(link)))
     await bot.send_message(tg_id, i18n.get("psn-link-prompt"))
 
 
@@ -206,6 +207,21 @@ async def _connect(
         return
 
     await repo.ensure_user(tg_id, username)
+
+    cooldown = await repo.check_platform_cooldown(tg_id, Platform.PSN, profile.account_id)
+    if cooldown.is_blocked:
+        hours = cooldown.remaining_seconds // 3600
+        minutes = (cooldown.remaining_seconds % 3600) // 60
+        await bot.send_message(
+            tg_id,
+            i18n.get(
+                "platform-cooldown-active",
+                platform="PlayStation",
+                hours=hours,
+                minutes=minutes,
+            ),
+        )
+        return
 
     # Same as Steam's own switch guard (#52): trading one PSN account for
     # another leaves the first one's trophies behind, so ask before doing it
@@ -343,7 +359,7 @@ async def disconnect_psn_command(message: Message, repo: Repo, i18n: I18nContext
         await message.answer(i18n.get("psn-already-disconnected"))
         return
     await message.answer(
-        i18n.get("psn-disconnect-prompt", name=link.display_name),
+        i18n.get("psn-disconnect-prompt", name=link_nickname(link)),
         reply_markup=_disconnect_prompt_keyboard(i18n, from_panel=False),
     )
 
@@ -356,7 +372,7 @@ async def psn_disconnect_button(callback: CallbackQuery, repo: Repo, i18n: I18nC
         return
     await safe_edit(
         callback,
-        i18n.get("psn-disconnect-prompt", name=link.display_name),
+        i18n.get("psn-disconnect-prompt", name=link_nickname(link)),
         _disconnect_prompt_keyboard(i18n, from_panel=True),
     )
     await callback.answer()

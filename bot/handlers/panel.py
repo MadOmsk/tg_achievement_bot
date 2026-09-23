@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import time
 
@@ -14,15 +12,20 @@ from aiogram.types import CallbackQuery, Message
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
-from bot.constants import RarityMode, TokenStatus
+from bot.constants import AccountPlatform, Platform, RarityMode, TokenStatus
 from bot.db.repo import Repo
 from bot.handlers.delivery import safe_edit
 from bot.poller.fetcher import Fetcher
+from bot.poller.psn_fetcher import PsnFetcher
+from bot.poller.steam_catch_up import catch_up_steam_account
+from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.naming import link_nickname
 from bot.services.single_message import send_replacing
+from bot.services.steam import client as steam_client  # noqa: F401
+from bot.services.steam.auth import SteamAuth
 from bot.util import cooldown_minutes_left, parse_iso
 from bot.views.keyboards import (
     DIGEST_NEVER,
-    deep_link_keyboard,
     digest_keyboard,
     disconnect_prompt_keyboard,
     locale_name,
@@ -36,14 +39,14 @@ from bot.views.panel import (
     render_chat_delete_prompt,
     render_chat_list,
     render_panel,
+    render_panel_delete_confirm_1,
+    render_panel_delete_confirm_2,
     render_unsub_prompt,
 )
 
 log = logging.getLogger(__name__)
 
 router = Router(name="panel")
-
-GROUP_HINT_TTL = 30
 
 # The one panel button that goes to the network (SPEC 5.8). Without a cooldown
 # it is a way to hammer Xbox Live by holding a finger on the keyboard.
@@ -69,24 +72,16 @@ async def send_panel(bot: Bot, repo: Repo, tg_id: int, i18n: I18nContext) -> Non
 
 @router.message(Command("panel"), F.chat.type == ChatType.PRIVATE)
 async def panel_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    await repo.ensure_user(_person_id(message), _username(message))
-    await send_panel(bot, repo, message.chat.id, i18n)
-
-
-@router.message(Command("panel"))
-async def panel_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
-    """Settings never render in a group: an inline keyboard there is clickable
-    by everyone in the chat (SPEC 6.3)."""
-    me = await bot.me()
-    hint = await message.answer(
-        i18n.get("panel-group-hint"),
-        reply_markup=deep_link_keyboard(f"https://t.me/{me.username}?start=panel", i18n),
-    )
-    asyncio.create_task(_delete_later(bot, hint.chat.id, hint.message_id))  # noqa: RUF006
+    person_id = _person_id(message)
+    if person_id is None:
+        return
+    await repo.ensure_user(person_id, _username(message))
+    await send_panel(bot, repo, person_id, i18n)
 
 
 @router.callback_query(F.data == "panel:refresh")
 async def panel_refresh(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    await repo.touch_last_online(callback.from_user.id)
     screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard)
     await callback.answer(i18n.get("panel-refreshed"))
@@ -94,13 +89,35 @@ async def panel_refresh(callback: CallbackQuery, repo: Repo, i18n: I18nContext) 
 
 @router.callback_query(F.data == "panel:sync")
 async def panel_sync(
-    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, settings: Settings, i18n: I18nContext
+    callback: CallbackQuery,
+    repo: Repo,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_fetcher: PsnFetcher,
+    steam_auth: SteamAuth,
+    settings: Settings,
+    i18n: I18nContext,
 ) -> None:
-    """Catch up on what was unlocked while the bot was down (SPEC 5.8)."""
+    """Wake up user, refresh UI, and catch up across all connected platforms (Xbox, Steam, PSN)."""
     tg_id = callback.from_user.id
+    await repo.touch_last_online(tg_id)
+
+    screen = await render_panel(repo, tg_id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+
     user = await repo.get_user(tg_id)
-    if user is None or not user.xuid:
-        await callback.answer(i18n.get("panel-xbox-not-connected"), show_alert=True)
+    token = await repo.get_token(tg_id) if user and user.xuid else None
+    xbox_linked = bool(user and user.xuid)
+    xbox_active = bool(xbox_linked and token and token.status == TokenStatus.ACTIVE)
+    steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
+    psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
+
+    if not (xbox_linked or steam_link or psn_link):
+        await callback.answer(i18n.get("panel-connect-any-platform-first"), show_alert=True)
+        return
+
+    if xbox_linked and not xbox_active and not (steam_link or psn_link):
+        await callback.answer(i18n.get("panel-login-invalid"), show_alert=True)
         return
 
     minutes_left = cooldown_minutes_left(
@@ -113,27 +130,73 @@ async def panel_sync(
     _last_sync[tg_id] = time.monotonic()
     await callback.answer(i18n.get("panel-syncing"))
 
-    target = next((t for t in await repo.pollable_users() if t.tg_id == tg_id), None)
-    try:
-        titles, published = await fetcher.catch_up(
-            tg_id,
-            user.xuid,
-            user.gamertag or i18n.get("panel-default-player-name"),
-            parse_iso(target.updated_at) if target else None,
-            settings.catchup_publish_window_hours,
-            settings.catchup_max_titles,
-        )
-    except Exception:
-        log.exception("manual catch-up for tg_id=%s failed", tg_id)
-        if isinstance(callback.message, Message):
-            await callback.message.answer(i18n.get("panel-sync-failed"))
-        return
+    total_titles = 0
+    total_published = 0
+    errors: list[str] = []
+    attempted_platforms = 0
 
-    summary = (
-        i18n.get("panel-sync-summary-found", titles=titles, published=published)
-        if titles
-        else i18n.get("panel-sync-summary-none")
-    )
+    # 1. Xbox
+    if xbox_active and user and user.xuid:
+        attempted_platforms += 1
+        since_iso = await repo.account_latest_unlock(AccountPlatform.XBOX, user.xuid)
+        try:
+            x_titles, x_published = await fetcher.catch_up(
+                tg_id,
+                user.xuid,
+                user.gamertag or i18n.get("panel-default-player-name"),
+                parse_iso(since_iso) if since_iso else None,
+                settings.catchup_publish_window_hours,
+                settings.catchup_max_titles,
+            )
+            total_titles += x_titles
+            total_published += x_published
+        except Exception:
+            errors.append("xbox")
+            log.exception("manual xbox catch-up for tg_id=%s failed", tg_id)
+
+    # 2. Steam
+    if steam_link:
+        attempted_platforms += 1
+        try:
+            s_titles, s_published = await catch_up_steam_account(
+                settings,
+                repo,
+                steam_fetcher,
+                steam_auth,
+                tg_id,
+                steam_link.external_id,
+                link_nickname(steam_link),
+            )
+            total_titles += s_titles
+            total_published += s_published
+        except Exception:
+            errors.append("steam")
+            log.exception("manual steam catch-up for tg_id=%s failed", tg_id)
+
+    # 3. PSN
+    if psn_link:
+        attempted_platforms += 1
+        try:
+            p_published = await psn_fetcher.poll_account(
+                tg_id, psn_link.external_id, link_nickname(psn_link)
+            )
+            total_published += p_published
+        except Exception:
+            errors.append("psn")
+            log.exception("manual psn catch-up for tg_id=%s failed", tg_id)
+
+    # Redraw panel with newly inserted achievements / gamerscore
+    screen = await render_panel(repo, tg_id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+
+    if errors and (len(errors) == attempted_platforms or not (total_titles or total_published)):
+        summary = i18n.get("panel-sync-failed")
+    elif total_titles or total_published:
+        summary = i18n.get(
+            "panel-sync-summary-found", titles=total_titles, published=total_published
+        )
+    else:
+        summary = i18n.get("panel-sync-summary-none")
     if isinstance(callback.message, Message):
         await callback.message.answer(summary)
 
@@ -387,13 +450,34 @@ async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I
     await _redraw_chat_list(callback, repo, i18n)
 
 
-async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:
-    await asyncio.sleep(GROUP_HINT_TTL)
-    with contextlib.suppress(Exception):
-        await bot.delete_message(chat_id, message_id)
+@router.callback_query(F.data == "panel:delete_account")
+async def panel_delete_account_step1(callback: CallbackQuery, i18n: I18nContext) -> None:
+    screen = await render_panel_delete_confirm_1(locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+    await callback.answer()
 
 
-def _person_id(message: Message) -> int:
+@router.callback_query(F.data == "panel:delete:step1")
+async def panel_delete_account_step2(callback: CallbackQuery, i18n: I18nContext) -> None:
+    screen = await render_panel_delete_confirm_2(locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "panel:delete:step2")
+async def panel_delete_account_confirmed(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    deleted = await repo.delete_user(callback.from_user.id)
+    if deleted:
+        await safe_edit(callback, i18n.get("panel-delete-done"), None)
+        await callback.answer(i18n.get("panel-delete-toast"), show_alert=True)
+    else:
+        await safe_edit(callback, i18n.get("panel-delete-done"), None)
+        await callback.answer(i18n.get("panel-delete-not-found"), show_alert=True)
+
+
+def _person_id(message: Message) -> int | None:
     """Whose row this is — the person's id, never the chat's (#66).
 
     These handlers used to pass `message.chat.id`, which is the same number
@@ -402,8 +486,10 @@ def _person_id(message: Message) -> int:
     *group*. Found on production as tg_id -5246175458, a person who does not
     exist sitting in the table every "who are our people" query reads.
     """
-    return message.from_user.id if message.from_user else message.chat.id
+    from_user = getattr(message, "from_user", None)
+    return from_user.id if from_user else None
 
 
 def _username(message: Message) -> str | None:
-    return message.from_user.username if message.from_user else None
+    from_user = getattr(message, "from_user", None)
+    return from_user.username if from_user else None

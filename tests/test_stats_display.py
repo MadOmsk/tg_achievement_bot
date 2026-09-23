@@ -12,6 +12,7 @@ from bot.db.repo import (
     GameAchievements,
     Repo,
     SteamSchemaAchievement,
+    TitleAchievementRow,
 )
 from bot.handlers.chat import _send_stats_card
 from bot.util import utcnow
@@ -224,7 +225,7 @@ def test_games_list_colours_x360_the_same_as_modern_xbox() -> None:
         title_id="t1", platform="xbox_360", name="Fallout 3", count=5, score=100
     )
     line = _games_list([game])
-    assert "🟢 Fallout 3" in line
+    assert "(🟢 <i>X360</i>) Fallout 3" in line
 
 
 async def test_games_list_is_capped_by_the_configured_limit(repo: Repo) -> None:
@@ -730,6 +731,125 @@ async def test_xbox_completed_games_count_needs_a_nonzero_total(repo: Repo) -> N
     assert await repo.xbox_completed_games_count(XUID) == 1  # only title "1" is fully unlocked
 
 
+async def test_xbox_completed_games_count_from_catalog_and_titles(repo: Repo) -> None:
+    # 1. Game '100' completed via title_achievements catalog (2/2 achievements unlocked)
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="100",
+                achievement_id="a1",
+                name_en="Ach 1",
+                gamerscore=10,
+            ),
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="100",
+                achievement_id="a2",
+                name_en="Ach 2",
+                gamerscore=20,
+            ),
+        ]
+    )
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="100",
+                achievement_id="a1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+            AchievementRow(
+                title_id="100",
+                achievement_id="a2",
+                name="Ach 2",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=20,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 2. Game '200' has catalog of 2 achievements, but user only unlocked 1 -> not completed
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="200",
+                achievement_id="b1",
+                name_en="Ach 1",
+                gamerscore=10,
+            ),
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="200",
+                achievement_id="b2",
+                name_en="Ach 2",
+                gamerscore=20,
+            ),
+        ]
+    )
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="200",
+                achievement_id="b1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 3. Game '300' has titles table with achievements_total=1, user unlocked 1 -> completed
+    await repo.upsert_title("300", "Game 300", platform="xbox_modern", achievements_total=1)
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="300",
+                achievement_id="c1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 4. Game '100' is also in title_history (overlap test: UNION must deduplicate)
+    await repo._conn.execute(
+        "INSERT INTO title_history "
+        "(xuid, title_id, achievements_unlocked, achievements_total, updated_at) "
+        "VALUES (?, '100', 2, 2, '2026-01-01T00:00:00+00:00')",
+        (XUID,),
+    )
+    await repo._conn.commit()
+
+    # Total completed games: Game '100' and Game '300' = 2
+    assert await repo.xbox_completed_games_count(XUID) == 2
+
+
 async def test_psn_platinum_count_only_counts_platinum_rows(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     # Linked, not merely inserted (#52): a statistic counts the accounts a
@@ -845,6 +965,85 @@ async def test_send_stats_card_disables_the_link_preview(repo: Repo) -> None:
     assert kwargs.get("disable_web_page_preview") is True
 
 
+class _FakeI18n:
+    def __init__(self, locale: str = "en") -> None:
+        self.locale = locale
+
+    def get(self, key: str, **kwargs: object) -> str:
+        from bot.i18n import gettext
+
+        return gettext("chat", key, locale=self.locale, **kwargs)
+
+
+async def test_stats_games_header_closed_vs_current_month(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+
+    # Insert an unlock in March 2026
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="1",
+                achievement_id="1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at="2026-03-15T12:00:00+00:00",
+                gamerscore=10,
+                rarity_percent=50.0,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+
+    # Closed month in current year (March 2026): "Игры марта" without "с 1" or year
+    text_march = await build_stats_text(repo, user, CHAT_ID, target_year=2026, target_month=3)
+    assert text_march is not None
+    assert "<b>Игры марта</b>" in text_march
+    assert "с 1 марта" not in text_march
+
+    # Closed month in previous year (March 2025): "Игры марта 2025" without date "1"
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="2",
+                achievement_id="2",
+                name="B",
+                description=None,
+                icon_url=None,
+                unlocked_at="2025-03-15T12:00:00+00:00",
+                gamerscore=10,
+                rarity_percent=50.0,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=False,
+    )
+    text_march_prev = await build_stats_text(repo, user, CHAT_ID, target_year=2025, target_month=3)
+    assert text_march_prev is not None
+    assert "<b>Игры марта 2025</b>" in text_march_prev
+    assert "с 1" not in text_march_prev.split("<b>Игры")[1]
+
+    # English locale for closed month: "Games of March"
+    i18n_en = _FakeI18n("en")
+    text_march_en = await build_stats_text(
+        repo,
+        user,
+        CHAT_ID,
+        i18n=i18n_en,
+        target_year=2026,
+        target_month=3,  # type: ignore[arg-type]
+    )
+    assert text_march_en is not None
+    assert "<b>Games of March</b>" in text_march_en
+
+
 def _presence_row(**over) -> ChatPresenceRow:
     base = dict(
         tg_id=1,
@@ -892,3 +1091,39 @@ def test_who_label_never_stops_at_the_empty_xbox_dash() -> None:
 
 def test_who_label_last_resort_is_the_id_when_nothing_else_exists() -> None:
     assert "1" in who_label(_presence_row(tg_id=1))
+
+
+async def test_who_stats_button_sends_card_with_reply_markup(repo: Repo) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from aiogram.types import CallbackQuery, Chat, Message
+
+    from bot.handlers.chat import who_stats_button
+
+    await repo.ensure_user(1, "player")
+    await repo.link_xbox_account(1, "xuid-1", "Player", 100)
+
+    chat_message = MagicMock(spec=Message)
+    chat_message.chat = Chat(id=-1001, type="supergroup", title="Chat")
+    chat_message.delete = AsyncMock()
+
+    callback = MagicMock(spec=CallbackQuery)
+    callback.data = "who:stats:1"
+    callback.message = chat_message
+    callback.answer = AsyncMock()
+
+    sent_message = MagicMock(spec=Message, message_id=123)
+    bot = MagicMock()
+    bot.send_message = AsyncMock(return_value=sent_message)
+
+    i18n = MagicMock()
+    i18n.locale = "ru"
+    i18n.get = lambda key, **kwargs: key
+
+    await who_stats_button(callback, repo, bot, i18n)
+
+    callback.answer.assert_called()
+    chat_message.delete.assert_called()
+    bot.send_message.assert_called_once()
+    _, kwargs = bot.send_message.call_args
+    assert kwargs.get("reply_markup") is not None

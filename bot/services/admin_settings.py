@@ -38,6 +38,14 @@ DEFAULT_PAGE_SIZE = 5
 TOP_LIMIT_KEY = "summary_top_limit"
 DEFAULT_TABLE_TOP = 15
 
+# How many minutes the month-end wrap-up trails the daily summary (#74).
+MONTHLY_DELAY_KEY = "monthly_summary_delay_minutes"
+DEFAULT_MONTHLY_DELAY_MINUTES = 5
+
+# Anti-abuse cooldown in hours before re-linking a platform after repeated resets.
+ACCOUNT_RESET_COOLDOWN_HOURS_KEY = SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS
+DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS = 24
+
 
 def unlimited_label(locale: str) -> str:
     """What a 0 renders as in the numeric-settings screens. Was a
@@ -52,6 +60,11 @@ STATUS_ICON = {
     TokenStatus.ACTIVE: "✅",
     TokenStatus.INVALID: "⚠️",
     TokenStatus.REVOKED: "🔕",
+}
+
+VISIBILITY_ICON: dict[bool | None, str] = {
+    True: "✅",
+    False: "⚠️",
 }
 
 
@@ -169,6 +182,20 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
         DEFAULT_KEY_CHECK_INTERVAL_MIN,
         min=1,
         max=60,
+    ),
+    MONTHLY_DELAY_KEY: NumericSetting(
+        "admin-setting-monthly-delay",
+        DEFAULT_MONTHLY_DELAY_MINUTES,
+        min=0,
+        max=60,
+        zero_label="admin-no-delay",
+    ),
+    ACCOUNT_RESET_COOLDOWN_HOURS_KEY: NumericSetting(
+        "admin-setting-account-reset-cooldown",
+        DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS,
+        min=0,
+        max=168,
+        zero_label="admin-disabled",
     ),
 }
 

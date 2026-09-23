@@ -101,7 +101,7 @@ class _MessagesRepo:
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + "WHERE s.chat_id = ? AND u.is_excluded = 0",
+            + "WHERE s.chat_id = ? AND u.is_excluded = 0 AND s.rarity_mode != 'hidden'",
             (chat_id,),
         )
         return [
@@ -152,12 +152,13 @@ class _MessagesRepo:
             # the *first* one. Every /recent row was showing the player's
             # career total (249 504 G) in place of what the achievement was
             # actually worth (15 G). Found by rendering the screen.
-            "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
+            f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
             "       s.platform, " + earned_at() + " AS unlocked_at,"
             "       s.is_secret, s.trophy_type,"
             "       s.title_id, s.achievement_id, s.icon_url,"
             "       t.icon_url AS game_icon_url, s.description,"
-            "       s.xuid AS achievement_xuid, s.trophy_group_id "
+            "       s.xuid AS achievement_xuid, s.trophy_group_id,"
+            "       s.device, t.platforms AS game_platforms "
             "FROM subscriptions sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
@@ -172,6 +173,7 @@ class _MessagesRepo:
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             + NAME_CACHE_JOIN
+            + rarity_cache_join()
             # An undated backfill row is not "recent" (#69): its created_at is
             # when the import ran, so right after somebody connects their whole
             # imported history would sort to the top of this list — in the one
@@ -205,6 +207,8 @@ class _MessagesRepo:
                 description=row["description"],
                 xuid=row["achievement_xuid"] or "",
                 trophy_group_id=row["trophy_group_id"],
+                device=row["device"],
+                game_platforms=row["game_platforms"],
             )
             for row in await cursor.fetchall()
         ]
@@ -271,12 +275,13 @@ class _MessagesRepo:
             "       psn.display_name AS psn_name,"
             "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
             "       " + LOCALIZED_TITLE_COLUMNS + ","
-            "       s.gamerscore AS achievement_gamerscore, s.rarity_percent,"
+            f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
             "       s.platform, " + earned_at() + " AS unlocked_at,"
             "       s.is_secret, s.trophy_type,"
             "       s.title_id, s.achievement_id, s.icon_url,"
             "       t.icon_url AS game_icon_url, s.description,"
-            "       s.xuid AS achievement_xuid, s.trophy_group_id "
+            "       s.xuid AS achievement_xuid, s.trophy_group_id,"
+            "       s.device, t.platforms AS game_platforms "
             "FROM users u "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
@@ -286,6 +291,7 @@ class _MessagesRepo:
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             + NAME_CACHE_JOIN
+            + rarity_cache_join()
             + where
             + f"ORDER BY {earned_at()} DESC LIMIT ?",
             params,
@@ -315,6 +321,8 @@ class _MessagesRepo:
                 description=row["description"],
                 xuid=row["achievement_xuid"] or "",
                 trophy_group_id=row["trophy_group_id"],
+                device=row["device"],
+                game_platforms=row["game_platforms"],
             )
             for row in await cursor.fetchall()
         ]
@@ -328,6 +336,7 @@ class _MessagesRepo:
         limit: int = 15,
         locale: str = "ru",
         until: datetime | None = None,
+        order: str = "count",
     ) -> list[GameAchievements]:
         """Games these people earned achievements in since `since`, ranked by
         how many.
@@ -356,9 +365,11 @@ class _MessagesRepo:
         collide by accident. `user_games` grouped by title_id only and had
         that latent bug; the monthly block never did.
 
-        **Ordered by count, then by the most recent unlock** (owner, 2026-09-17)
-        — gamerscore takes no part in it, having no meaning at all on two of
-        the three platforms, where it is always 0.
+        **Ordered by count, then by the most recent unlock** by default
+        (owner, 2026-09-17) — gamerscore takes no part in it, having no
+        meaning at all on two of the three platforms, where it is always 0.
+        Pass `order="recent"` for the Mini App trending strip, which wants
+        the freshest unlock first regardless of how many.
 
         `rare_threshold` is the chat's own `rare_threshold_percent`; rows keep
         whatever rarity the platform reported when they were stored, which can
@@ -375,8 +386,15 @@ class _MessagesRepo:
         if until is not None:
             date_bound += f" AND {earned_at()} < ?"
             date_params.append(_iso(until))
+        order_sql = (
+            "ORDER BY last_earned DESC, cnt DESC"
+            if order == "recent"
+            else "ORDER BY cnt DESC, last_earned DESC"
+        )
         cursor = await self._conn.execute(
-            "SELECT s.title_id, s.platform, t.name, t.icon_url, " + LOCALIZED_TITLE_COLUMNS + ","
+            "SELECT s.title_id, s.platform, t.name, t.icon_url, t.platforms, "
+            + LOCALIZED_TITLE_COLUMNS
+            + ","
             "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
             f"       SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= ?"
             "                THEN 1 ELSE 0 END) AS rare,"
@@ -391,7 +409,7 @@ class _MessagesRepo:
             + rarity_cache_join()
             + f"WHERE al.tg_id IN ({owners}) {date_bound} "
             "GROUP BY s.title_id, s.platform "
-            "ORDER BY cnt DESC, last_earned DESC LIMIT ?",
+            f"{order_sql} LIMIT ?",
             (rare_threshold, *tg_ids, *date_params, limit or -1),
         )
         return [
@@ -410,6 +428,7 @@ class _MessagesRepo:
                 gold=int(row["gold"] or 0),
                 platinum=int(row["platinum"] or 0),
                 icon_url=row["icon_url"],
+                platforms=row["platforms"],
             )
             for row in await cursor.fetchall()
         ]

@@ -89,6 +89,12 @@ const feedItem = (
 const person: PersonPayload = {
   tg_id: 1,
   name: "Preview",
+  presence: {
+    state: "Online",
+    playing: true,
+    platform: "xbox_modern",
+    title_name: "Cupid Parasite",
+  },
   platforms: [
     {
       platform: "xbox",
@@ -428,6 +434,38 @@ export function previewResponse(path: string, init?: RequestInit): unknown {
             summaryMember(3, "HeCnu", 9, 150, 1),
           ],
       games: past ? games.slice(0, 2) : games,
+      dropped: past
+        ? [
+            {
+              tg_id: 2,
+              person: "Forrogmir",
+              title_id: "drop-1",
+              platform: "steam",
+              name: games[0]?.name ?? "Abandoned",
+              last_earned: "2026-08-12T18:00:00Z",
+              icon_url: games[0]?.icon_url ?? null,
+            },
+          ]
+        : [
+            {
+              tg_id: 3,
+              person: "HeCnu",
+              title_id: "drop-2",
+              platform: "psn",
+              name: games[1]?.name ?? "On hold",
+              last_earned: "2026-09-05T12:00:00Z",
+              icon_url: games[1]?.icon_url ?? null,
+            },
+            {
+              tg_id: 2,
+              person: "Forrogmir",
+              title_id: "drop-3",
+              platform: "xbox_modern",
+              name: games[2]?.name ?? "Slow burn",
+              last_earned: "2026-09-10T09:00:00Z",
+              icon_url: games[2]?.icon_url ?? null,
+            },
+          ],
     };
   }
   if (path.includes("/people")) return person;

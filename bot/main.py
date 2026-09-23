@@ -55,6 +55,7 @@ from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
 from bot.poller.service_health import ServiceHealth
+from bot.poller.steam_catch_up import SteamCatchUpPoller
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
@@ -69,7 +70,7 @@ from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
-from bot.version import TRUNK_LINE, line, version
+from bot.version import is_test, version
 from bot.views.keyboards import timezone_keyboard
 from bot.web.oauth import OAuthServer
 
@@ -88,6 +89,14 @@ STARTUP_CATCH_UP_DEADLINE_SECONDS = 120.0
 
 
 def setup_logging(level: str) -> None:
+    # On Windows, stdout/stderr might default to legacy code pages (e.g. cp1251)
+    # when redirected to a file. Reconfigure to UTF-8 so emojis and Unicode
+    # strings never cause UnicodeEncodeError.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     logging.basicConfig(
         level=level.upper(),
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
@@ -172,13 +181,14 @@ async def run(settings: Settings) -> None:
         repo, steam_auth, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
     )
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
+    steam_catch_up = SteamCatchUpPoller(settings, repo, steam_fetcher, steam_auth)
 
     # Trophy sync itself still has no presence poller of its own (SPEC 9,
     # M-PSN-2) — psn_fetcher.tick() scans every linked account directly on
     # its own schedule. psn_presence below is a separate, unrelated poller
     # (issue #1): presence for /online only, never triggers a trophy poll.
     psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher, anthropic_auth=anthropic_auth)
-    psn_presence = PsnPresencePoller(settings, repo, psn_auth)
+    psn_presence = PsnPresencePoller(settings, repo, psn_auth, psn_fetcher=psn_fetcher)
 
     flood_flush = FloodFlush(repo, publisher)
 
@@ -202,6 +212,7 @@ async def run(settings: Settings) -> None:
         AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
         CatchUpPoller(settings, repo, fetcher),
         CoverRefresh(repo, client),
+        steam_catch_up,
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -350,6 +361,22 @@ async def run(settings: Settings) -> None:
             except Exception:
                 log.exception("catch-up for tg_id=%s failed", target.tg_id)
 
+        if await steam_auth.get_key() is not None:
+            for steam_target in await repo.steam_pollable_users():
+                try:
+                    await asyncio.wait_for(
+                        steam_catch_up.catch_up_target(steam_target),
+                        timeout=STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                    )
+                except TimeoutError:
+                    log.error(
+                        "steam catch-up for tg_id=%s exceeded %.0fs overall, moving on",
+                        steam_target.tg_id,
+                        STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                    )
+                except Exception:
+                    log.exception("steam catch-up for tg_id=%s failed", steam_target.tg_id)
+
     await publisher.start()
     # Force-exit every anti-flood window still open from before this restart
     # (2026-09-09 user request) — a window mid-count when the bot last
@@ -369,7 +396,7 @@ async def run(settings: Settings) -> None:
     bot_version = version()
     log.info("bot @%s is up (v%s)", me.username, bot_version)
     asyncio.create_task(  # noqa: RUF006
-        announce_release_if_needed(bot, repo, bot_version, is_test=(line() != TRUNK_LINE))
+        announce_release_if_needed(bot, repo, bot_version, is_test=is_test())
     )
     try:
         await dispatcher.start_polling(bot, handle_signals=False)
@@ -403,7 +430,6 @@ async def _publish_command_menu(bot: Bot) -> None:
     def menus(locale: str) -> tuple[list[BotCommand], list[BotCommand]]:
         _ = translator("main", locale)
         private = [
-            BotCommand(command="app", description=_("main-cmd-app")),
             BotCommand(command="panel", description=_("main-cmd-panel")),
             BotCommand(command="stats", description=_("main-cmd-stats-private")),
             BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
@@ -416,19 +442,9 @@ async def _publish_command_menu(bot: Bot) -> None:
             BotCommand(command="help", description=_("main-cmd-help")),
         ]
         group = [
-            BotCommand(command="app", description=_("main-cmd-app")),
-            # /stats and /who answer the same question — one about whoever
-            # asked, one about somebody they pick — so they sit together
-            # (owner, 2026-09-18). /online used to fall between them.
-            BotCommand(command="stats", description=_("main-cmd-stats-group")),
-            BotCommand(command="who", description=_("main-cmd-who")),
-            BotCommand(command="online", description=_("main-cmd-online")),
-            BotCommand(command="recent", description=_("main-cmd-recent")),
-            BotCommand(command="summary_day", description=_("main-cmd-summary-day")),
-            BotCommand(command="summary_month", description=_("main-cmd-summary-month")),
-            BotCommand(command="hltb", description=_("main-cmd-hltb")),
+            BotCommand(command="panel", description=_("main-cmd-panel-group")),
             BotCommand(command="subscribe", description=_("main-cmd-subscribe")),
-            BotCommand(command="unsubscribe", description=_("main-cmd-unsubscribe")),
+            BotCommand(command="hltb", description=_("main-cmd-hltb")),
             BotCommand(command="help", description=_("main-cmd-help")),
         ]
         return private, group

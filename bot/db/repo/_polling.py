@@ -34,7 +34,8 @@ class _PollingRepo:
         """
         cursor = await self._conn.execute(
             "SELECT u.tg_id, xb.external_id AS xuid, p.state, p.title_id, p.title_name,"
-            "       p.changed_at, p.last_ach_poll_at, p.updated_at "
+            "       p.changed_at, p.last_ach_poll_at, p.updated_at, u.last_online_at,"
+            "       xb_link.linked_at "
             "FROM users u " + XBOX_ACCOUNT + "JOIN tokens t ON t.tg_id = u.tg_id "
             "LEFT JOIN presence_state p ON p.xuid = xb.external_id "
             "WHERE xb.external_id IS NOT NULL AND u.is_excluded = 0 AND t.status = 'active'"
@@ -49,6 +50,8 @@ class _PollingRepo:
                 changed_at=row["changed_at"],
                 last_ach_poll_at=row["last_ach_poll_at"],
                 updated_at=row["updated_at"],
+                last_online_at=row["last_online_at"],
+                linked_at=row["linked_at"],
             )
             for row in await cursor.fetchall()
         ]
@@ -59,26 +62,28 @@ class _PollingRepo:
         state: str,
         title_id: str | None,
         title_name: str | None,
+        device: str | None = None,
         *,
         changed: bool,
     ) -> None:
         now = utcnow_iso()
         await self._conn.execute(
             "INSERT INTO presence_state "
-            "(xuid, state, title_id, title_name, changed_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "(xuid, state, title_id, title_name, device, changed_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(xuid) DO UPDATE SET "
             "  state = excluded.state, title_id = excluded.title_id,"
-            "  title_name = excluded.title_name, updated_at = excluded.updated_at,"
+            "  title_name = excluded.title_name, device = excluded.device,"
+            "  updated_at = excluded.updated_at,"
             "  changed_at = CASE WHEN ? THEN excluded.changed_at "
             "                 ELSE presence_state.changed_at END",
-            (xuid, state, title_id, title_name, now, now, 1 if changed else 0),
+            (xuid, state, title_id, title_name, device, now, now, 1 if changed else 0),
         )
         await self._conn.commit()
 
     async def presence_of(self, xuid: str) -> PresenceRow | None:
         cursor = await self._conn.execute(
-            "SELECT xuid, state, title_id, title_name, updated_at FROM presence_state "
+            "SELECT xuid, state, title_id, title_name, device, updated_at FROM presence_state "
             "WHERE xuid = ?",
             (xuid,),
         )
@@ -91,6 +96,7 @@ class _PollingRepo:
             title_id=row["title_id"],
             title_name=row["title_name"],
             updated_at=row["updated_at"],
+            device=row["device"],
         )
 
     async def steam_presence_of(self, steam_id: str) -> SteamPresenceRow | None:
@@ -134,13 +140,15 @@ class _PollingRepo:
         JOIN here unlike `pollable_users()`: Steam has no per-user OAuth at
         all, one shared API key for the whole bot (M-Steam-1)."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, pl.external_id AS steam_id, p.persona_state, p.gameid,"
-            "       p.game_name, p.changed_at, p.last_ach_poll_at, p.updated_at,"
-            "       p.last_active_gameid, p.last_active_game_name, p.last_active_at "
+            "SELECT u.tg_id, pl.external_id AS steam_id, a.display_name AS persona_name,"
+            "       p.persona_state, p.gameid, p.game_name, p.changed_at, p.last_ach_poll_at,"
+            "       p.updated_at, p.last_active_gameid, p.last_active_game_name, p.last_active_at,"
+            "       u.last_online_at, pl.linked_at "
             # Active links only (#52) — an account somebody used to hold is
             # not polled, and its stored presence is nobody's.
             "FROM account_links pl "
             "JOIN users u ON u.tg_id = pl.tg_id "
+            "LEFT JOIN accounts a ON a.platform = 'steam' AND a.external_id = pl.external_id "
             "LEFT JOIN steam_presence_state p ON p.steam_id = pl.external_id "
             "WHERE pl.platform = 'steam' AND pl.is_active = 1 AND u.is_excluded = 0"
         )
@@ -157,6 +165,9 @@ class _PollingRepo:
                 last_active_gameid=row["last_active_gameid"],
                 last_active_game_name=row["last_active_game_name"],
                 last_active_at=row["last_active_at"],
+                persona_name=row["persona_name"],
+                last_online_at=row["last_online_at"],
+                linked_at=row["linked_at"],
             )
             for row in await cursor.fetchall()
         ]
@@ -231,11 +242,13 @@ class _PollingRepo:
         per-user OAuth."""
         cursor = await self._conn.execute(
             "SELECT u.tg_id, pl.external_id AS account_id, a.display_name AS online_id,"
-            "       ps.last_polled_at, COALESCE(ps.backfill_done, 0) AS backfill_done "
+            "       ps.last_polled_at, COALESCE(ps.backfill_done, 0) AS backfill_done,"
+            "       pp.state AS presence_state, u.last_online_at, pl.linked_at "
             "FROM account_links pl "
             "JOIN users u ON u.tg_id = pl.tg_id "
             "JOIN accounts a ON a.platform = pl.platform AND a.external_id = pl.external_id "
             "LEFT JOIN psn_poll_state ps ON ps.account_id = pl.external_id "
+            "LEFT JOIN psn_presence_state pp ON pp.account_id = pl.external_id "
             "WHERE pl.platform = 'psn' AND pl.is_active = 1 AND u.is_excluded = 0"
         )
         return [
@@ -247,6 +260,9 @@ class _PollingRepo:
                 # No psn_poll_state row yet (a link whose backfill hasn't
                 # finished, or hasn't started) reads as not-done — #21.
                 backfill_done=bool(row["backfill_done"]),
+                presence_state=row["presence_state"],
+                last_online_at=row["last_online_at"],
+                linked_at=row["linked_at"],
             )
             for row in await cursor.fetchall()
         ]
@@ -331,20 +347,22 @@ class _PollingRepo:
         state: str,
         title_id: str | None,
         title_name: str | None,
+        device: str | None = None,
         *,
         changed: bool,
     ) -> None:
         now = utcnow_iso()
         await self._conn.execute(
             "INSERT INTO psn_presence_state "
-            "(account_id, state, title_id, title_name, changed_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
+            "(account_id, state, title_id, title_name, device, changed_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(account_id) DO UPDATE SET "
             "  state = excluded.state, title_id = excluded.title_id,"
-            "  title_name = excluded.title_name, updated_at = excluded.updated_at,"
+            "  title_name = excluded.title_name, device = excluded.device,"
+            "  updated_at = excluded.updated_at,"
             "  changed_at = CASE WHEN ? THEN excluded.changed_at "
             "                 ELSE psn_presence_state.changed_at END",
-            (account_id, state, title_id, title_name, now, now, 1 if changed else 0),
+            (account_id, state, title_id, title_name, device, now, now, 1 if changed else 0),
         )
         await self._conn.commit()
 
@@ -353,7 +371,7 @@ class _PollingRepo:
         `steam_presence_of`) — not the batched `psn_presence_pollable_
         accounts()` the poller itself uses."""
         cursor = await self._conn.execute(
-            "SELECT account_id, state, title_id, title_name, updated_at "
+            "SELECT account_id, state, title_id, title_name, device, updated_at "
             "FROM psn_presence_state WHERE account_id = ?",
             (account_id,),
         )
@@ -366,4 +384,5 @@ class _PollingRepo:
             title_id=row["title_id"],
             title_name=row["title_name"],
             updated_at=row["updated_at"],
+            device=row["device"],
         )

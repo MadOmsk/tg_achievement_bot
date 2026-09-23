@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Start, stop and inspect the bot process on this machine.
 
@@ -19,11 +19,12 @@
     .\manage.ps1 status
     .\manage.ps1 logs -Lines 50
     .\manage.ps1 dashboard -RefreshSeconds 5
+    .\manage.ps1 watch -Test
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('start', 'stop', 'restart', 'status', 'logs', 'menu', 'dashboard', 'web-stop')]
+    [ValidateSet('start', 'stop', 'restart', 'status', 'logs', 'menu', 'dashboard', 'web-stop', 'watch')]
     [string]$Command = 'status',
 
     [int]$Lines = 20,
@@ -99,9 +100,24 @@ function Get-BotProcess {
     if (-not $recorded) { return $null }
 
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$recorded" -ErrorAction SilentlyContinue
-    if (-not $process) { return $null }
-    if ($process.CommandLine -notmatch 'bot\.main') { return $null }
-    return $process
+    if ($process -and $process.CommandLine -match 'bot\.main') { return $process }
+
+    $child = Get-CimInstance Win32_Process -Filter "ParentProcessId=$recorded" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match 'bot\.main' } | Select-Object -First 1
+    if ($child) {
+        $child.ProcessId | Set-Content $Path -Encoding ascii
+        return $child
+    }
+
+    $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($conn) {
+        $portProc = Get-CimInstance Win32_Process -Filter "ProcessId=$($conn.OwningProcess)" -ErrorAction SilentlyContinue
+        if ($portProc -and $portProc.CommandLine -match 'bot\.main') {
+            $portProc.ProcessId | Set-Content $Path -Encoding ascii
+            return $portProc
+        }
+    }
+    return $null
 }
 
 function Get-BotTree {
@@ -308,6 +324,45 @@ function Stop-Bot {
     if ($Web) { Stop-Web }
 }
 
+function Watch-Bot {
+    Write-Host ("Watching 'bot/' for changes ({0})..." -f $InstanceLabel) -ForegroundColor Cyan
+    Write-Host "Press Ctrl+C to stop watching." -ForegroundColor DarkGray
+    if (-not (Get-BotProcess)) {
+        Start-Bot
+    }
+
+    $botDir = Join-Path $Root 'bot'
+    $watcher = New-Object System.IO.FileSystemWatcher
+    $watcher.Path = $botDir
+    $watcher.IncludeSubdirectories = $true
+    $watcher.EnableRaisingEvents = $true
+    $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, LastWrite'
+
+    $lastRestart = [DateTime]::MinValue
+    $debounceMs = 1500
+
+    try {
+        while ($true) {
+            $change = $watcher.WaitForChanged([System.IO.WatcherChangeTypes]::All, 1000)
+            if (-not $change.TimedOut) {
+                $ext = [System.IO.Path]::GetExtension($change.Name).ToLower()
+                if ($ext -in @('.py', '.ftl', '.sql')) {
+                    $now = [DateTime]::UtcNow
+                    if (($now - $lastRestart).TotalMilliseconds -gt $debounceMs) {
+                        $lastRestart = $now
+                        Write-Host ("[watch] Change in {0} -> restarting {1}..." -f $change.Name, $InstanceLabel) -ForegroundColor Yellow
+                        Stop-Bot
+                        Start-Sleep -Milliseconds 500
+                        Start-Bot
+                    }
+                }
+            }
+        }
+    } finally {
+        $watcher.Dispose()
+    }
+}
+
 function Write-StatusBlock {
     # Shared by `status` (one shot) and `dashboard` (redrawn every tick), so
     # the two never drift into showing different things for the same state.
@@ -400,7 +455,7 @@ function Show-Dashboard {
             Write-Host ''
             Write-StatusBlock
             Write-Host ''
-            Write-Host '[2] Start   [3] Stop   [4] Restart   [Q] Quit' -ForegroundColor Cyan
+            Write-Host '[2] Start   [3] Stop   [4] Restart   [W] Watch   [Q] Quit' -ForegroundColor Cyan
             Write-Host ("Refresh every {0}s." -f $RefreshSeconds) -ForegroundColor DarkGray
 
             if (Test-Path $LogFile) {
@@ -418,6 +473,8 @@ function Show-Dashboard {
                         '2' { Write-Host ''; Start-Bot; $acted = $true }
                         '3' { Write-Host ''; Stop-Bot; $acted = $true }
                         '4' { Write-Host ''; Stop-Bot; Start-Sleep -Seconds 1; Start-Bot; $acted = $true }
+                        'w' { Write-Host ''; Watch-Bot; $acted = $true }
+                        'W' { Write-Host ''; Watch-Bot; $acted = $true }
                         'q' { return }
                         'Q' { return }
                         default {}
@@ -443,6 +500,7 @@ switch ($Command) {
     'restart'   { Stop-Bot; if ($Web) { Stop-Web }; Start-Sleep -Seconds 1; Start-Bot }
     'web-stop'  { Stop-Web }
     'status'    { Show-Status }
+    'watch'     { Watch-Bot }
     'logs'      {
         if (-not (Test-Path $LogFile)) { Write-Host 'No logs yet.'; break }
         Get-Content $LogFile -Tail $Lines

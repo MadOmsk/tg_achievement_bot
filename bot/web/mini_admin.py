@@ -259,6 +259,8 @@ def setup_admin_routes(app: web.Application) -> None:
     app.router.add_get("/api/mini/admin/users", handle_admin_users)
     app.router.add_get("/api/mini/admin/users/{tg_id}", handle_admin_user)
     app.router.add_patch("/api/mini/admin/users/{tg_id}", handle_admin_user_patch)
+    app.router.add_delete("/api/mini/admin/users/{tg_id}", handle_admin_user_delete)
+    app.router.add_post("/api/mini/admin/users/{tg_id}/delete", handle_admin_user_delete)
     app.router.add_get("/api/mini/admin/chats", handle_admin_chats)
     app.router.add_patch("/api/mini/admin/chats/{chat_id}", handle_admin_chat_patch)
     app.router.add_post("/api/mini/admin/chats/{chat_id}/actions", handle_admin_chat_action)
@@ -418,6 +420,16 @@ async def handle_admin_user_patch(request: web.Request) -> web.Response:
     if payload is None:
         raise web.HTTPNotFound()
     return web.json_response(payload)
+
+
+async def handle_admin_user_delete(request: web.Request) -> web.Response:
+    await _require_admin(request)
+    repo: Repo = request.app["mini_repo"]
+    tg_id = int(request.match_info["tg_id"])
+    deleted = await repo.delete_user(tg_id, is_admin=True)
+    if not deleted:
+        raise web.HTTPNotFound()
+    return web.json_response({"ok": True})
 
 
 async def handle_admin_chats(request: web.Request) -> web.Response:

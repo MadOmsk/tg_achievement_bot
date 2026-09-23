@@ -15,7 +15,7 @@ from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
 from bot.poller.rarity_backfill import RarityBackfill
 from bot.services.stats import month_cutoff_utc
-from bot.services.xbox.models import parse_rarity
+from bot.services.xbox.models import parse_rarity, parse_rarity_with_title
 from bot.util import utcnow
 
 XUID = "xuid-rarity"
@@ -54,13 +54,24 @@ class FakeClient:
     """Answers like contract 4: every achievement of the title, including the
     ones this caller never earned."""
 
-    def __init__(self, rarity: dict[str, float] | None = None) -> None:
+    def __init__(
+        self,
+        rarity: dict[str, float] | None = None,
+        title_name: str | None = None,
+    ) -> None:
         self.asked: list[tuple[int, str]] = []
         self._rarity = rarity if rarity is not None else {"a1": 2.0, "a2": 80.0, "a3": 0.5}
+        self._title_name = title_name
 
     async def title_rarity(self, tg_id: int, title_id: str) -> dict[str, float]:
         self.asked.append((tg_id, title_id))
         return self._rarity
+
+    async def title_rarity_with_name(
+        self, tg_id: int, title_id: str
+    ) -> tuple[dict[str, float], str | None]:
+        self.asked.append((tg_id, title_id))
+        return self._rarity, self._title_name
 
 
 def test_parse_rarity_keeps_the_achievements_nobody_earned() -> None:
@@ -74,6 +85,22 @@ def test_parse_rarity_keeps_the_achievements_nobody_earned() -> None:
         ]
     }
     assert parse_rarity(payload) == {"earned": 4.5, "locked": 0.9}
+
+
+def test_parse_rarity_with_title_extracts_title_name() -> None:
+    payload = {
+        "achievements": [
+            {
+                "id": "1",
+                "progressState": "Achieved",
+                "rarity": {"currentPercentage": 4.5},
+                "titleAssociations": [{"id": 111, "name": "Halo Infinite"}],
+            },
+        ]
+    }
+    rarity, name = parse_rarity_with_title(payload)
+    assert rarity == {"1": 4.5}
+    assert name == "Halo Infinite"
 
 
 async def test_the_cache_answers_where_the_row_is_silent(repo: Repo) -> None:
@@ -190,3 +217,97 @@ async def test_an_old_cache_entry_is_still_used(repo: Repo) -> None:
 
     rare, _tiers = await repo.achievement_value_breakdown(TG_ID, month_cutoff_utc(180), 10.0)
     assert rare == 1
+
+
+async def test_the_walker_upserts_title_name_learned_from_contract_4(repo: Repo) -> None:
+    await _person_with_uncached_history(repo)
+    client = FakeClient(title_name="Halo Infinite")
+    walker = RarityBackfill(repo, client)  # type: ignore[arg-type]
+
+    await walker.tick()
+    assert await repo.title_name(TITLE) == "Halo Infinite"
+
+
+async def test_the_walker_heals_titles_missing_from_catalogue(repo: Repo) -> None:
+    # Title has rarity cached, but no row in `titles` catalog (#77)
+    await _person_with_uncached_history(repo)
+    await repo.cache_rarity(Platform.XBOX_MODERN, TITLE, {"a1": 2.0})
+
+    await repo.save_refresh_token(TG_ID, b"mock-token")
+
+    assert await repo.title_name(TITLE) is None
+    missing = await repo.titles_missing_from_catalogue(10)
+    assert len(missing) == 1
+
+    client = FakeClient(title_name="Healed Game Title")
+    walker = RarityBackfill(repo, client)  # type: ignore[arg-type]
+
+    await walker.tick()
+    assert await repo.title_name(TITLE) == "Healed Game Title"
+    assert await repo.titles_missing_from_catalogue(10) == []
+
+
+async def test_the_walker_fills_xbox_360_title_and_views_pick_up_cache(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
+    await repo.subscribe(CHAT_ID, TG_ID)
+
+    row_360 = AchievementRow(
+        title_id="t-360",
+        achievement_id="ach-1",
+        name="Episode 1",
+        description="Completed episode",
+        icon_url="http://image.xboxlive.com/global/t.12345/ach/0/1",
+        unlocked_at=utcnow().isoformat(timespec="seconds"),
+        gamerscore=15,
+        rarity_percent=None,
+        platform=Platform.XBOX_360,
+        title_name="Wolf 3D",
+    )
+    await repo.insert_new_achievements(XUID, [row_360], is_backfill=True)
+
+    client = FakeClient(rarity={"ach-1": 8.5}, title_name="Wolf 3D")
+    walker = RarityBackfill(repo, client)  # type: ignore[arg-type]
+
+    await walker.tick()
+    assert (TG_ID, "t-360") in client.asked
+
+    # Verify cached rarity is picked up in queries
+    recent = await repo.recent_achievements(XUID, limit=5)
+    assert len(recent) == 1
+    assert recent[0].rarity_percent == 8.5
+
+    person_rec = await repo.person_recent(TG_ID, limit=5)
+    assert len(person_rec) == 1
+    assert person_rec[0].rarity_percent == 8.5
+
+    chat_rec = await repo.chat_recent(CHAT_ID, limit=5)
+    assert len(chat_rec) == 1
+    assert chat_rec[0].rarity_percent == 8.5
+
+
+async def test_unpublished_achievements_reads_rarity_cache(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
+    await repo.subscribe(CHAT_ID, TG_ID)
+
+    row_360 = AchievementRow(
+        title_id="t-360",
+        achievement_id="ach-2",
+        name="Episode 2",
+        description="Completed episode 2",
+        icon_url="http://image.xboxlive.com/global/t.12345/ach/0/2",
+        unlocked_at=utcnow().isoformat(timespec="seconds"),
+        gamerscore=15,
+        rarity_percent=None,
+        platform=Platform.XBOX_360,
+        title_name="Wolf 3D",
+    )
+    await repo.insert_new_achievements(XUID, [row_360], is_backfill=False)
+    await repo.cache_rarity(Platform.XBOX_360, "t-360", {"ach-2": 4.2})
+
+    pending = await repo.unpublished_achievements(TG_ID, CHAT_ID)
+    assert len(pending) == 1
+    assert pending[0].rarity_percent == 4.2

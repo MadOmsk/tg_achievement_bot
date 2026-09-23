@@ -8,13 +8,17 @@ change at runtime; a cron trigger would have to be rebuilt on every change.
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError
 
 from bot.db.repo import Repo
+from bot.services.admin_settings import (
+    DEFAULT_MONTHLY_DELAY_MINUTES,
+    MONTHLY_DELAY_KEY,
+)
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
 from bot.views.summary import (
@@ -41,37 +45,51 @@ class DailySummary:
         self._bot = bot
         self._repo = repo
 
-    async def tick(self) -> None:
+    async def tick(self, now: datetime | None = None) -> None:
         # Every chat has its own time/zone/threshold in chat_settings (SPEC
         # 5.7), so "is it time yet" is answered separately per chat, not once
         # for everyone.
+        delay_minutes = await self._repo.get_int_setting(
+            MONTHLY_DELAY_KEY, DEFAULT_MONTHLY_DELAY_MINUTES
+        )
         for chat in await self._repo.admin_chats():
             if not chat.is_active or not chat.daily_summary:
                 continue
 
-            now_local = local_now(chat.tz_offset_min)
-            if now_local.strftime("%H:%M") != chat.daily_summary_time:
-                continue
-
-            report_date = now_local.date().isoformat()
-            if not await self._repo.daily_report_sent(chat.chat_id, report_date):
-                await self._send_scheduled(chat, report_date, window=DAY)
+            now_local = local_now(chat.tz_offset_min, now=now)
+            if now_local.strftime("%H:%M") == chat.daily_summary_time:
+                report_date = now_local.date()
+                marker = report_date.isoformat()
+                if not await self._repo.daily_report_sent(chat.chat_id, marker):
+                    await self._send_scheduled(chat, marker, target_date=report_date, window=DAY)
 
             # On the last calendar day of the month, the month-end wrap-up
-            # goes out too (#14) — same time, its own dedup marker, and
-            # additional to that day's daily summary, not instead of it.
-            if _is_last_day_of_month(now_local):
-                month_key = _monthly_key(now_local)
+            # goes out too (#14) — trailing the daily summary by delay_minutes
+            # (#74), under its own dedup marker, and additional to that day's
+            # daily summary, not instead of it.
+            # Checked against the time delay_minutes ago so the wrap-up still
+            # covers the month that just ended even if the timer crossed
+            # midnight into the 1st of the next month (e.g. 23:58 + 5m -> 00:03).
+            month_ref = now_local - timedelta(minutes=delay_minutes)
+            if month_ref.strftime("%H:%M") == chat.daily_summary_time and _is_last_day_of_month(
+                month_ref.date()
+            ):
+                month_date = month_ref.date()
+                month_key = _monthly_key(month_date)
                 if not await self._repo.daily_report_sent(chat.chat_id, month_key):
-                    await self._send_scheduled(chat, month_key, window=MONTH)
+                    await self._send_scheduled(
+                        chat, month_key, target_date=month_date, window=MONTH
+                    )
 
-    async def _send_scheduled(self, chat, marker: str, *, window: str) -> None:
-        now_local = local_now(chat.tz_offset_min)
+    async def _send_scheduled(
+        self, chat, marker: str, *, target_date: date | None = None, window: str
+    ) -> None:
+        target = target_date or local_now(chat.tz_offset_min).date()
         built = await build_summary(
             self._repo,
             chat.chat_id,
             chat.rare_threshold_percent,
-            now_local.date(),
+            target,
             locale=chat.locale,
             tz_offset_min=chat.tz_offset_min,
             window=window,

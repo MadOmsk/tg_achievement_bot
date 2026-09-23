@@ -14,7 +14,7 @@ from aiogram_i18n import I18nContext
 from bot.constants import Platform, RarityMode, TokenStatus
 from bot.db.repo import PlatformLink, Repo, User, UserChatRow
 from bot.i18n import gettext, i18n_for
-from bot.services.naming import person_name_of
+from bot.services.naming import link_nickname, person_name_of
 from bot.services.presence_view import pick_presence
 from bot.util import humanize_ago
 from bot.views import Screen
@@ -221,7 +221,7 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         lines.append(
             i18n.get(
                 "panel-login-steam-row",
-                name=steam_link.display_name,
+                name=link_nickname(steam_link),
                 status=visibility_status_text(steam_link, i18n.locale),
             )
         )
@@ -229,7 +229,7 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         lines.append(
             i18n.get(
                 "panel-login-psn-row",
-                name=psn_link.display_name,
+                name=link_nickname(psn_link),
                 status=visibility_status_text(psn_link, i18n.locale),
             )
         )
@@ -360,3 +360,29 @@ async def _chat_confirm(
         )
     )
     return Screen(i18n.get(prompt, title=chat.title or chat.chat_id), builder.as_markup())
+
+
+async def render_panel_delete_confirm_1(*, locale: str) -> Screen:
+    i18n = await i18n_for(locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-delete-confirm-1-yes"),
+            callback_data="panel:delete:step1",
+        )
+    )
+    builder.row(InlineKeyboardButton(text=i18n.get("kb-cancel"), callback_data="panel:refresh"))
+    return Screen(i18n.get("panel-delete-confirm-1"), builder.as_markup())
+
+
+async def render_panel_delete_confirm_2(*, locale: str) -> Screen:
+    i18n = await i18n_for(locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("panel-delete-confirm-2-yes"),
+            callback_data="panel:delete:step2",
+        )
+    )
+    builder.row(InlineKeyboardButton(text=i18n.get("kb-cancel"), callback_data="panel:refresh"))
+    return Screen(i18n.get("panel-delete-confirm-2"), builder.as_markup())

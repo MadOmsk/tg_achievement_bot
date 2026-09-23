@@ -2,6 +2,7 @@
 # makes callback alerts and generated cards follow the same locale as menus.
 admin-unlimited = без ограничения
 admin-disabled = выключено
+admin-no-delay = без задержки
 admin-back = ‹ Назад
 admin-cancel = Отмена
 admin-yes = да
@@ -21,6 +22,8 @@ admin-setting-system-ttl = Автоудаление системных сооб�
 admin-setting-online-interval = Интервал автообновления /online (мин)
 admin-setting-online-ttl = Автообновление /online, часов
 admin-setting-key-check = Проверка ключей / автообновление /admin (мин)
+admin-setting-monthly-delay = Задержка итогов месяца (мин)
+admin-setting-account-reset-cooldown = Кулдаун после сброса (часы)
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
@@ -230,6 +233,19 @@ admin-reset-confirm-prompt =
     удалена и перечитана с нуля (в чат ничего не публикуется — как при
     первой привязке).
 admin-reset-confirm-yes = Да, стереть и пересинхронизировать
+admin-delete-user = 🗑 Удалить пользователя
+admin-delete-confirm-1 =
+    Удалить пользователя { $name } (ID: { $tg_id })?
+
+    Будут удалены все привязки к аккаунтам, настройки пользователя и подписки на чаты.
+admin-delete-confirm-1-yes = ⚠️ Да, продолжить
+admin-delete-confirm-2 =
+    Внимание! Это действие необратимо!
+
+    Безвозвратно стереть пользователя { $name } (ID: { $tg_id }) из базы данных?
+admin-delete-confirm-2-yes = 🔥 Точно удалить пользователя
+admin-delete-toast = Пользователь удалён
+admin-delete-not-found = Пользователь не найден
 admin-back-to-users = ‹ К списку
 
 # Chat cards

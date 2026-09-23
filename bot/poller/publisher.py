@@ -17,12 +17,12 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InputMediaPhoto
 
-from bot.constants import account_platform_of
+from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.services.achievements import passes_filters
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import stats_category
-from bot.services.naming import person_name_of
+from bot.services.naming import NO_NICKNAME, account_nickname, person_name_of, xbox_nickname
 from bot.util import parse_iso, utcnow
 from bot.views.notification import format_digest, format_single
 
@@ -167,6 +167,12 @@ class Publisher:
             # user_settings — Follow-up, 2026-09-05, same move as
             # rarity_mode before it).
             progress = await self._progress_for(allowed, xuid)
+            missing = [a.title_id for a in allowed if not getattr(a, "game_platforms", None)]
+            if missing:
+                plat_map = await self._repo.title_platforms(missing)
+                for a in allowed:
+                    if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
+                        a.game_platforms = plat_map[a.title_id]
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
@@ -326,21 +332,65 @@ class Publisher:
         achievements = await localize_descriptions(self._repo, achievements, locale)
         user = await self._repo.get_user(tg_id)
         links = await self._repo.platform_links_of(tg_id)
-        name = person_name_of(user, links) if user else f"id{tg_id}"
+        platforms = {account_platform_of(item.platform) for item in achievements}
+        name: str | None = None
+        if len(platforms) == 1:
+            single_plat = next(iter(platforms))
+            if single_plat == AccountPlatform.XBOX:
+                name = (
+                    xbox_nickname(
+                        gamertag_modern=user.gamertag_modern,
+                        gamertag=user.gamertag,
+                        xuid=user.xuid,
+                    )
+                    if user
+                    else None
+                )
+            else:
+                link = next((lnk for lnk in links if lnk.platform == single_plat), None)
+                if link is not None:
+                    name = account_nickname(
+                        link.platform,
+                        display_name=link.display_name,
+                        secondary_name=link.secondary_name,
+                        external_id=link.external_id,
+                    )
+        if not name or name == NO_NICKNAME:
+            name = person_name_of(user, links) if user else f"id{tg_id}"
+
+        missing = [a.title_id for a in achievements if not getattr(a, "game_platforms", None)]
+        if missing:
+            plat_map = await self._repo.title_platforms(missing)
+            for a in achievements:
+                if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
+                    a.game_platforms = plat_map[a.title_id]
+
+        progress_map = await self._progress_for(achievements)
+        if len(achievements) == 1:
+            item = achievements[0]
+            text = format_single(
+                name,
+                item,
+                item.title_name,
+                locale=locale,
+                progress=progress_map.get((item.platform, item.title_id, item.trophy_group_id)),
+            )
+            gallery = _gallery([item])
+        else:
+            text = format_digest(
+                name,
+                None,
+                achievements,
+                locale=locale,
+                progress=progress_map,
+            )
+            gallery = _gallery(achievements)
+
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,
-                text=format_digest(
-                    name,
-                    None,
-                    achievements,
-                    locale=locale,
-                    # Same counters as every other game line (#46) — a
-                    # flushed backlog is still one block per game, and the
-                    # figure is as true here as it is live.
-                    progress=await self._progress_for(achievements),
-                ),
-                gallery=_gallery(achievements),
+                text=text,
+                gallery=gallery,
                 items=[
                     (item.xuid, item.title_id, item.achievement_id)
                     for item in achievements

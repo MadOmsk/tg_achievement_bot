@@ -11,15 +11,19 @@ from datetime import datetime
 from bot.db.repo._models import (
     ChatMemberStat,
     ChatPresenceRow,
+    DroppedGame,
     OnlineAutoRefreshRow,
     _iso,
 )
 from bot.db.repo._sql import (
+    LOCALIZED_TITLE_COLUMNS,
+    OWNED_BY_PERSON,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
     earned_at,
     earned_since,
+    pick_name,
     rarity,
     rarity_cache_join,
 )
@@ -129,6 +133,71 @@ class _ChatStatsRepo:
             for row in await cursor.fetchall()
         ]
 
+    async def chat_dropped_games(
+        self,
+        chat_id: int,
+        *,
+        since: datetime,
+        until: datetime | None = None,
+        max_unlocked: int = 5,
+        limit: int = 8,
+        locale: str = "ru",
+    ) -> list[DroppedGame]:
+        """Subscribers' games with few unlocks in a window — Mini App
+        stats' "Ну и кто это будет проходить?" strip.
+
+        Counts only achievements earned inside `[since, until)` (the club's
+        selected month). A person–game pair with 1…`max_unlocked` unlocks
+        in that window floats up, fewest first, then oldest last unlock —
+        the softest progress this month, not abandoned forever. Excluded
+        users stay out; scope is active subscribers only.
+        """
+        date_bound = f"AND {earned_since()}"
+        date_params: list[object] = [_iso(since)]
+        if until is not None:
+            date_bound += f" AND {earned_at()} < ?"
+            date_params.append(_iso(until))
+        cursor = await self._conn.execute(
+            "SELECT u.tg_id, u.username, u.first_name, u.last_name,"
+            "       " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
+            "       psn.display_name AS psn_name,"
+            "       s.title_id, s.platform, t.name, t.icon_url,"
+            "       " + LOCALIZED_TITLE_COLUMNS + ","
+            "       COUNT(*) AS unlocked,"
+            "       MAX(" + earned_at() + ") AS last_earned "
+            "FROM seen_achievements s " + OWNED_BY_PERSON + "JOIN users u ON u.tg_id = al.tg_id "
+            "JOIN subscriptions sub ON sub.chat_id = ? AND sub.tg_id = u.tg_id "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + XBOX_ACCOUNT
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            + f"WHERE u.is_excluded = 0 AND sub.rarity_mode != 'hidden' {date_bound} "
+            "GROUP BY u.tg_id, s.title_id, s.platform "
+            "HAVING unlocked >= 1 AND unlocked <= ? "
+            "ORDER BY unlocked ASC, last_earned ASC LIMIT ?",
+            (chat_id, *date_params, max_unlocked, limit),
+        )
+        return [
+            DroppedGame(
+                tg_id=int(row["tg_id"]),
+                username=row["username"],
+                first_name=row["first_name"],
+                last_name=row["last_name"],
+                gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
+                title_id=row["title_id"],
+                platform=row["platform"],
+                name=pick_name(locale, row["game_ru"], row["game_en"], row["name"]),
+                unlocked=int(row["unlocked"]),
+                last_earned=row["last_earned"],
+                icon_url=row["icon_url"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
     async def chat_member_presence(self, chat_id: int) -> list[ChatPresenceRow]:
         """Every connected, non-excluded member *known to be in this chat*,
         with his last known presence — for /online (SPEC 6.3). "Known to be
@@ -197,13 +266,14 @@ class _ChatStatsRepo:
             "  SELECT u.tg_id, u.username, u.first_name,"
             "         u.last_name, " + XBOX_COLUMNS + ","
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
+            "         xp.device AS xbox_device,"
             "         xp.title_name AS xbox_title_name, xp.updated_at AS xbox_updated_at,"
             "         sp.persona_state AS steam_persona_state, sp.gameid AS steam_gameid,"
             "         sp.game_name AS steam_game_name, sp.updated_at AS steam_updated_at,"
             "         steam.external_id AS steam_external_id,"
             "         steam.display_name AS steam_display_name,"
             "         psn.external_id AS psn_external_id, psn.display_name AS psn_display_name,"
-            "         pp.state AS psn_state, pp.title_id AS psn_title_id,"
+            "         pp.state AS psn_state, pp.title_id AS psn_title_id, pp.device AS psn_device,"
             "         pp.title_name AS psn_title_name, pp.updated_at AS psn_updated_at,"
             "         CASE WHEN xp.state = 'Online' AND xp.title_id IS NOT NULL THEN 2"
             "              WHEN xp.state = 'Online' THEN 1"
@@ -264,7 +334,12 @@ class _ChatStatsRepo:
             "       CASE winner WHEN 'steam' THEN steam_game_name"
             "                   WHEN 'xbox_modern' THEN xbox_title_name"
             "                   WHEN 'psn' THEN psn_title_name ELSE NULL END AS title_name,"
-            "       winner AS platform, steam_display_name, psn_display_name "
+            "       winner AS platform, steam_display_name, psn_display_name,"
+            "       CASE winner"
+            "         WHEN 'xbox_modern' THEN xbox_device"
+            "         WHEN 'psn' THEN psn_device"
+            "         WHEN 'steam' THEN 'PC'"
+            "         ELSE NULL END AS device "
             "FROM final "
             "ORDER BY "
             "  CASE WHEN state = 'Online' AND title_id IS NOT NULL THEN 0 "
@@ -293,6 +368,7 @@ class _ChatStatsRepo:
                 username=row["username"],
                 first_name=row["first_name"],
                 last_name=row["last_name"],
+                device=row["device"],
             )
             for row in await cursor.fetchall()
         ]

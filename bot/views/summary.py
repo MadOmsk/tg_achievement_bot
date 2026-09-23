@@ -12,17 +12,21 @@ at which local hour — and the sending.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from html import escape as html_escape
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup
 
 from bot.db.repo import ChatMemberStat, GameAchievements, Repo
 from bot.i18n import translator
 from bot.services.admin_settings import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.services.naming import person_name, xbox_nickname
-from bot.services.stats import local_now, month_cutoff_utc
+from bot.services.stats import local_now, month_cutoff_utc, month_window_utc
 from bot.util import utcnow
+from bot.views.date_picker import (
+    summary_day_navigation_keyboard,
+    summary_month_navigation_keyboard,
+)
 from bot.views.lists import Listing, games_listing, total_line, truncate_name
 from bot.views.parts import (
     bracketed,
@@ -71,16 +75,6 @@ async def build_summary(
 ) -> tuple[str, InlineKeyboardMarkup | None] | None:
     """One window's leaderboard report — `DAY` or `MONTH`, never both.
 
-    The two shapes are the same message with a different cutoff (owner,
-    2026-09-17): a header, the chat's combined total, the players ranked by
-    what they earned, and which games they earned it in. Each is sent by its
-    own scheduled job and its own command.
-
-    It was two booleans until the combined form went away with `/summary`,
-    and a string is what stops "both" from being expressible at all: with one
-    total line per block and no window in its label, a message carrying both
-    would say "Всего:" twice and leave the reader to guess which was which.
-
     Lists everyone subscribed, zero-scorers included, so it reads as a
     roster; a day nobody unlocked anything still sends (#34). Returns None
     only when the chat has no subscribed members at all.
@@ -88,30 +82,38 @@ async def build_summary(
     _ = translator("daily", locale)
     top_limit = await current_top_limit(repo)
     is_day = window == DAY
-    cutoff = (
-        utcnow() - timedelta(hours=DAY_WINDOW_HOURS) if is_day else month_cutoff_utc(tz_offset_min)
-    )
-    rows = await repo.chat_member_stats(chat_id, cutoff, threshold)
+
+    now_local = local_now(tz_offset_min)
+    now_date = now_local.date()
+
+    if is_day:
+        if today == now_date:
+            cutoff = utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
+            until = None
+        else:
+            start_local = datetime(
+                today.year, today.month, today.day, 0, 0, 0, tzinfo=UTC
+            ) - timedelta(minutes=tz_offset_min or 0)
+            cutoff = start_local
+            until = start_local + timedelta(hours=24)
+    else:
+        cutoff, until = month_window_utc(today.year, today.month, tz_offset_min)
+        if (today.year, today.month) == (now_date.year, now_date.month):
+            until = None
+
+    rows = await repo.chat_member_stats(chat_id, cutoff, threshold, until=until)
     if not rows:
         return None
 
-    # (kind, section_lines, has_more) — kind drives the «показать всех» button.
+    # (kind, section_lines, has_more) — kind drives the leaderboard truncation.
     blocks: list[tuple[str, list[str], bool]] = [
         (window, *_section(_("daily-total-label"), rows, top_limit, locale))
     ]
 
-    # #7: which games the chat actually played, not just who. Both windows
-    # get it (owner, 2026-09-17) — the day report is the same form with a
-    # different cutoff, and it was month-only while the month was the only
-    # report that had a games block at all. Left out when there is nothing
-    # to rank, which a quiet day often is.
-    #
-    # The same call /stats' own games list makes, over every subscriber
-    # instead of one person. `rows` is already the roster of subscribers, so
-    # the scope needs no second query of its own.
     games = await repo.users_games_achievements(
         [row.tg_id for row in rows],
         cutoff,
+        until=until,
         rare_threshold=threshold,
         limit=top_limit,
         locale=locale,
@@ -122,23 +124,24 @@ async def build_summary(
     if not blocks:
         return None
 
-    # The date left the header (owner, 2026-09-17): the message arrives on
-    # the day it is about, and the total line below already names the window.
     header = _("daily-header") if is_day else _("daily-monthly-header")
     lines = [header]
     for _kind, section_lines, _more in blocks:
         lines += ["", *section_lines]
 
-    button_for = {
-        "day": ("daily-show-all-day", "summary:all:day"),
-        "month": ("daily-show-all-month", "summary:all:month"),
-    }
-    buttons = [
-        InlineKeyboardButton(text=_(button_for[kind][0]), callback_data=button_for[kind][1])
-        for kind, _section_lines, has_more in blocks
-        if has_more
-    ]
-    markup = InlineKeyboardMarkup(inline_keyboard=[[b] for b in buttons]) if buttons else None
+    has_more = blocks[0][2]
+    if is_day:
+        markup = summary_day_navigation_keyboard(today, now_date, locale=locale, has_more=has_more)
+    else:
+        markup = summary_month_navigation_keyboard(
+            today.year,
+            today.month,
+            now_date.year,
+            now_date.month,
+            locale=locale,
+            has_more=has_more,
+        )
+
     return "\n".join(lines), markup
 
 
@@ -150,21 +153,41 @@ async def full_leaderboard(
     tz_offset_min: int | None = None,
     *,
     locale: str,
+    target_year: int | None = None,
+    target_month: int | None = None,
+    target_date: date | None = None,
 ) -> str | None:
     """The uncapped list behind a summary's «Показать всех» button (SPEC
     6.3) — re-fetched fresh rather than carried over from the original send,
     same as /hltb's sessions do for their own "current data" reasons."""
     _ = translator("daily", locale)
-    cutoff = (
-        utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
-        if window == "day"
-        else month_cutoff_utc(tz_offset_min)
-    )
-    rows = await repo.chat_member_stats(chat_id, cutoff, threshold)
+    until = None
+    if window == "day":
+        if target_date is not None:
+            start_local = datetime(
+                target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=UTC
+            ) - timedelta(minutes=tz_offset_min or 0)
+            cutoff = start_local
+            until = start_local + timedelta(hours=24)
+        else:
+            cutoff = utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
+        label = (
+            _("daily-window-day")
+            if target_date is None
+            else f"{target_date.day} {_MONTH_KEYS[target_date.month - 1]}"
+        )
+    else:
+        if target_year is not None and target_month is not None:
+            cutoff, until = month_window_utc(target_year, target_month, tz_offset_min)
+            month_str = _(_MONTH_KEYS[target_month - 1])
+            label = _("daily-window-month", month=month_str)
+        else:
+            cutoff = month_cutoff_utc(tz_offset_min)
+            label = month_window_label(tz_offset_min, locale)
+
+    rows = await repo.chat_member_stats(chat_id, cutoff, threshold, until=until)
     if not rows:
         return None
-    # limit=len(rows): never truncate here — this is the "show everything"
-    # view; expandable=False for the same reason (SPEC 6.3).
     section_lines, _full = _section(
         _("daily-leaderboard-total-label"),
         rows,
@@ -172,7 +195,6 @@ async def full_leaderboard(
         locale,
         expandable=False,
     )
-    label = _("daily-window-day") if window == "day" else month_window_label(tz_offset_min, locale)
     return "\n".join([_("daily-leaderboard-full-header", label=label), "", *section_lines])
 
 

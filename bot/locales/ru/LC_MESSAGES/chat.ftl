@@ -39,10 +39,9 @@ chat-recent-row = { $badge } { $gamertag } — { $icon } { $game } · { $name }{
 
 # Group hub and chat actions
 chat-unknown-user = Не знаю такого. Bot API не умеет искать людей по @имени — я запоминаю тех, кто писал в чат. Можно ответить на сообщение человека командой /stats.
-chat-help-text = 🎮 Слежу за достижениями и трофеями тех, кто играет на XBOX, PlayStation и в Steam, и публикую их сюда — с фильтром по редкости, статистикой каждого и итогом дня.
-
-    Команды чата:
-    /app — открыть приложение
+chat-panel-text = 🎮 Слежу за достижениями и трофеями тех, кто играет на XBOX, PlayStation и в Steam, и публикую их сюда — с фильтром по редкости, статистикой каждого и итогом дня.
+chat-help-text = Команды чата:
+    /panel — меню и кнопки управления
     /stats [@кто] — статистика: без аргумента своя, с ником — чужая
     /who — узнать стату конкретного игрока
     /online — кто сейчас в игре
@@ -50,15 +49,26 @@ chat-help-text = 🎮 Слежу за достижениями и трофеям
     /summary_day — сводка за сутки
     /summary_month — сводка с 1 числа месяца
     /hltb — показать сводку игры HowLongToBeat
+    /subscribe — подписаться на публикации
+    /unsubscribe — отписаться от публикаций
+    /help — список команд
 
     Настройки — в личке, /panel.
 chat-help-version = <i>Версия { $version }</i>
 chat-hub-nobody = Пока здесь никто не публикуется.
 chat-hub-publishing = Публикуются: { $names }
-chat-hub-publish-button = ✅ Публиковать мои достижения
+chat-hub-publish-button = 🔔 Настройка уведомлений
+chat-hub-toast-all = Публикую все достижения
+chat-hub-toast-rare = Только редкие
+chat-hub-toast-hidden = Ничего не публикую здесь
 chat-hub-xbox-button = 🔗 XBOX
 chat-hub-steam-button = 🎮 Steam
 chat-hub-psn-button = 🎮 PSN
+chat-hub-who-button = 👤 Игрок
+chat-hub-online-button = 🟢 Онлайн
+chat-hub-recent-button = 🕘 Недавние
+chat-hub-summary-day-button = 📅 Сводка дня
+chat-hub-summary-month-button = 📆 Сводка месяца
 chat-hub-settings-button = ⚙️ Настройки
 chat-hub-open-app = Открыть приложение
 chat-app-hint = Смотри в приложении:

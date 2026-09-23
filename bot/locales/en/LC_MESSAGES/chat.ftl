@@ -39,10 +39,9 @@ chat-recent-row = { $badge } { $gamertag } — { $icon } { $game } · { $name }{
 
 # Group hub and chat actions
 chat-unknown-user = I don't know them. The Bot API can't look people up by @name — I remember the ones who have written in the chat. You can also reply to their message with /stats.
-chat-help-text = 🎮 I watch the achievements and trophies of everyone playing on XBOX, PlayStation and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
-
-    Chat commands:
-    /app — open the app
+chat-panel-text = 🎮 I watch the achievements and trophies of everyone playing on XBOX, PlayStation and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
+chat-help-text = Chat commands:
+    /panel — menu and action buttons
     /stats [@who] — stats: yours with no argument, someone else's with a name
     /who — look up a specific player's stats
     /online — who's in a game right now
@@ -50,15 +49,26 @@ chat-help-text = 🎮 I watch the achievements and trophies of everyone playing 
     /summary_day — the last 24 hours in review
     /summary_month — the month so far in review
     /hltb — a game's HowLongToBeat summary
+    /subscribe — publish my achievements here
+    /unsubscribe — stop publishing here
+    /help — list of commands
 
     Settings are in a DM, /panel.
 chat-help-version = <i>Version { $version }</i>
 chat-hub-nobody = Nobody is publishing here yet.
 chat-hub-publishing = Publishing: { $names }
-chat-hub-publish-button = ✅ Publish my achievements
+chat-hub-publish-button = 🔔 Notification settings
+chat-hub-toast-all = Publishing all achievements
+chat-hub-toast-rare = Only rare achievements
+chat-hub-toast-hidden = Publishing nothing here
 chat-hub-xbox-button = 🔗 XBOX
 chat-hub-steam-button = 🎮 Steam
 chat-hub-psn-button = 🎮 PSN
+chat-hub-who-button = 👤 Who
+chat-hub-online-button = 🟢 Online
+chat-hub-recent-button = 🕘 Recent
+chat-hub-summary-day-button = 📅 Day summary
+chat-hub-summary-month-button = 📆 Month summary
 chat-hub-settings-button = ⚙️ Settings
 chat-hub-open-app = Open the app
 chat-app-hint = Open in the app:

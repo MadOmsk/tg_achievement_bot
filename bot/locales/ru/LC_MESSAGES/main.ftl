@@ -31,6 +31,7 @@ main-cmd-hltb = Сколько идти игру (HowLongToBeat)
 main-cmd-help = Что я умею
 
 # Command menu (group chat scope)
+main-cmd-panel-group = Меню и кнопки чата
 main-cmd-stats-group = Статистика игрока
 main-cmd-online = Онлайн-статус игроков
 main-cmd-who = Узнать стату юзера
@@ -49,9 +50,8 @@ main-already-running =
     Состояние: manage.bat status
 
 # Release announcements (services/release_notify.py)
-main-release-announced =
-    🚀 <b>Бот обновлён до версии { $version }!</b>
-
-    Посмотрите, что нового появилось в этом обновлении:
+main-release-announced = 🚀 <b>Бот обновлён до версии { $version }!</b>
+main-release-summary-header = <b>Кратко о главных изменениях:</b>
+main-release-details-prompt = Посмотрите подробный список изменений в этом обновлении:
 main-release-button = 📖 Патчноутс
 main-test-release-announced = 🧪 <b>Тестовый бот обновлён до версии { $version }!</b>

@@ -31,6 +31,7 @@ main-cmd-hltb = How long is this game (HowLongToBeat)
 main-cmd-help = What I can do
 
 # Command menu (group chat scope)
+main-cmd-panel-group = Chat menu and buttons
 main-cmd-stats-group = A player's stats
 main-cmd-online = Who's online right now
 main-cmd-who = Look up someone's stats
@@ -49,9 +50,8 @@ main-already-running =
     State: manage.bat status
 
 # Release announcements (services/release_notify.py)
-main-release-announced =
-    🚀 <b>Bot has been updated to version { $version }!</b>
-
-    See what's new in this release:
+main-release-announced = 🚀 <b>Bot has been updated to version { $version }!</b>
+main-release-summary-header = <b>Highlights of this release:</b>
+main-release-details-prompt = See what's new in this release:
 main-release-button = 📖 Release Notes
 main-test-release-announced = 🧪 <b>Test bot has been updated to version { $version }!</b>

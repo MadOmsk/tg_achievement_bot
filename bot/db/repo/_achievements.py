@@ -11,7 +11,7 @@ from collections.abc import Sequence
 
 from bot.constants import AccountPlatform, Platform
 from bot.db.repo._models import AchievementRow
-from bot.db.repo._sql import OWNED_BY_PERSON
+from bot.db.repo._sql import OWNED_BY_PERSON, rarity, rarity_cache_join
 from bot.util import utcnow_iso
 
 log = logging.getLogger(__name__)
@@ -130,9 +130,9 @@ class _AchievementsRepo:
         for item in achievements:
             cursor = await self._conn.execute(
                 "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
-                " gamerscore, rarity_percent, platform, is_backfill, is_secret, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at, "
+                "gamerscore, rarity_percent, platform, is_backfill, is_secret, device, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     xuid,
                     item.title_id,
@@ -146,6 +146,7 @@ class _AchievementsRepo:
                     item.platform,
                     1 if is_backfill else 0,
                     1 if item.is_secret else 0,
+                    None if is_backfill else item.device,
                     now,
                 ),
             )
@@ -183,7 +184,7 @@ class _AchievementsRepo:
             if item.title_name and item.title_id not in cached_titles:
                 cached_titles[item.title_id] = item.title_name
         for title_id, name in cached_titles.items():
-            await self.upsert_title(title_id, name, Platform.STEAM)
+            await self.upsert_title(title_id, name, Platform.STEAM, platforms='["PC"]')
         await self._ensure_account(AccountPlatform.STEAM, steam_id)
 
         new_rows: list[AchievementRow] = []
@@ -191,9 +192,9 @@ class _AchievementsRepo:
         for item in achievements:
             cursor = await self._conn.execute(
                 "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
-                " gamerscore, rarity_percent, platform, is_backfill, is_secret, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at, "
+                "gamerscore, rarity_percent, platform, is_backfill, is_secret, device, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     steam_id,
                     item.title_id,
@@ -207,6 +208,7 @@ class _AchievementsRepo:
                     item.platform,
                     1 if is_backfill else 0,
                     1 if item.is_secret else 0,
+                    None if is_backfill else (item.device or "PC"),
                     now,
                 ),
             )
@@ -249,8 +251,8 @@ class _AchievementsRepo:
                 "INSERT OR IGNORE INTO seen_achievements "
                 "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
                 " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
-                " trophy_group_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " trophy_group_id, device, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     account_id,
                     item.title_id,
@@ -266,6 +268,7 @@ class _AchievementsRepo:
                     1 if item.is_secret else 0,
                     item.trophy_type,
                     item.trophy_group_id,
+                    None if is_backfill else item.device,
                     now,
                 ),
             )
@@ -303,7 +306,11 @@ class _AchievementsRepo:
         """The last N unlocks, newest first — for the panel (SPEC 6.2).
         Undated rows never win: an unknown unlock time is not "recent"."""
         cursor = await self._conn.execute(
-            "SELECT s.*, t.name AS game,"
+            "SELECT s.title_id, s.achievement_id, s.name, s.description, s.icon_url,"
+            "       s.gamerscore, "
+            f"      {rarity()} AS rarity_percent,"
+            "       s.platform, s.is_secret, s.trophy_type, s.trophy_group_id,"
+            "       t.name AS game,"
             # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder
             # date for some Xbox 360 achievements, which the parser discards
             # (see services/xbox/models.py). Those rows still count (owner
@@ -313,7 +320,8 @@ class _AchievementsRepo:
             "       COALESCE(s.unlocked_at, s.created_at) AS seen_at "
             "FROM seen_achievements s "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE s.xuid = ? "
+            + rarity_cache_join()
+            + "WHERE s.xuid = ? "
             "ORDER BY seen_at DESC LIMIT ?",
             (xuid, limit),
         )
@@ -382,7 +390,12 @@ class _AchievementsRepo:
         as it is today outside the flood filter entirely.
         """
         cursor = await self._conn.execute(
-            "SELECT s.*, t.name AS game,"
+            "SELECT s.title_id, s.achievement_id, s.name, s.description, s.icon_url,"
+            "       s.gamerscore, "
+            f"      {rarity()} AS rarity_percent,"
+            "       s.platform, s.is_secret, s.trophy_type, s.trophy_group_id,"
+            "       s.xuid, s.device,"
+            "       t.name AS game, t.platforms AS game_platforms,"
             # Plain COALESCE on purpose, unlike every windowed read (#69):
             # `is_backfill = 0` below already excludes the only rows the
             # fallback lies about, so the rule has nothing left to decide here.
@@ -390,7 +403,8 @@ class _AchievementsRepo:
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "LEFT JOIN publications p ON p.chat_id = ? AND p.xuid = s.xuid"
+            + rarity_cache_join()
+            + "LEFT JOIN publications p ON p.chat_id = ? AND p.xuid = s.xuid"
             "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "
             "WHERE al.tg_id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL "
             "ORDER BY COALESCE(s.unlocked_at, s.created_at) ASC",
@@ -412,6 +426,17 @@ class _AchievementsRepo:
                 trophy_type=row["trophy_type"],
                 trophy_group_id=row["trophy_group_id"],
                 xuid=row["xuid"],
+                device=row["device"],
+                game_platforms=row["game_platforms"],
             )
             for row in await cursor.fetchall()
         ]
+
+    async def title_seen_platform(self, title_id: str) -> str | None:
+        """Find the platform of an achievement for this title in seen_achievements."""
+        cursor = await self._conn.execute(
+            "SELECT platform FROM seen_achievements WHERE title_id = ? LIMIT 1",
+            (title_id,),
+        )
+        row = await cursor.fetchone()
+        return str(row["platform"]) if row and row["platform"] else None

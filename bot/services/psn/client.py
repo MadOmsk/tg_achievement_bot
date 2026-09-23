@@ -318,6 +318,7 @@ class PsnPresenceSnapshot:
     # is the current one — a rename is visible here for free, and PSN used
     # to store the nickname once at connect and never again.
     online_id: str | None = None
+    device: str | None = None
 
 
 LEGACY_PROFILE_URL = "https://us-prof.np.community.playstation.net/userProfile/v1/users"
@@ -377,11 +378,13 @@ async def get_presence(client: PSNAWP, account_id: str) -> PsnPresenceSnapshot:
     titles = basic.get("gameTitleInfoList") or []
     title_id = titles[0].get("npTitleId") if titles else None
     title_name = titles[0].get("titleName") if titles else None
+    device = primary.get("platform") or None
     return PsnPresenceSnapshot(
         state=state,
         title_id=title_id,
         title_name=title_name,
         online_id=getattr(user, "online_id", None) or None,
+        device=device,
     )
 
 
@@ -403,15 +406,15 @@ async def trophy_titles_for_account(
 
 
 async def trophies_for_title(
-    client: PSNAWP, account_id: str, title: TrophyTitle
+    client: PSNAWP, account_id: str, title: TrophyTitle, *, earned_only: bool = True
 ) -> list[EarnedTrophy]:
-    """Full detail (name/tier/rarity/hidden/icon) for every *earned* trophy
-    in one game — the per-title body recent_earned_trophies below and the
-    trophy poller (SPEC 9, M-PSN-2) both need. Raises PsnPrivateProfileError
-    if this one game's detail is hidden, or PsnTitleUnavailableError if
-    Sony's own API 404s on it — the caller decides what that means
-    (recent_earned_trophies skips just this game, not the whole screen; the
-    poller does the same, SPEC 9, M-PSN-2)."""
+    """Full detail (name/tier/rarity/hidden/icon) for every trophy in one game.
+    When earned_only is True (default), filters to earned trophies only.
+    Raises PsnPrivateProfileError if this one game's detail is hidden, or
+    PsnTitleUnavailableError if Sony's own API 404s on it — the caller decides
+    what that means (recent_earned_trophies skips just this game, not the whole
+    screen; the poller does the same, SPEC 9, M-PSN-2).
+    """
     try:
         user = await _call(client.user, account_id=account_id)
     except PSNAWPNotFoundError:
@@ -468,7 +471,7 @@ async def trophies_for_title(
             ),
         )
         for trophy in trophies
-        if trophy.earned
+        if (not earned_only or trophy.earned)
     ]
 
 

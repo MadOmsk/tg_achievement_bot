@@ -43,3 +43,7 @@ class ParsedAchievement:
     # PSN only — which group of the title's trophy list this came from:
     # 'default' for the base game, '001'... per DLC (#46).
     trophy_group_id: str | None = None
+    # Specific console/device where earned (#79, NULL for backfill)
+    device: str | None = None
+    # Available platforms for the title (JSON string e.g. '["XboxOne", "XboxSeriesX"]')
+    game_platforms: str | None = None

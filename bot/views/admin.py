@@ -35,6 +35,7 @@ from bot.services.admin_settings import (
     PAGE_SIZE,
     STATUS_ICON,
     TOAST_PREVIEW_MAX_CHARS,
+    VISIBILITY_ICON,
     NumericSetting,
 )
 from bot.services.naming import (
@@ -568,6 +569,7 @@ async def render_user_card(
                 text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
             ),
         )
+    builder.row(InlineKeyboardButton(text=_("admin-delete-user"), callback_data=f"a:udel:{tg_id}"))
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
 
@@ -768,19 +770,17 @@ def _back_home(*, locale: str) -> InlineKeyboardMarkup:
 
 
 def _icon(user: AdminUserRow) -> str:
-    """Platform dots (2026-09-05 follow-up, extended for M-PSN-1) plus
-    Xbox's own login-status icon — Steam and PSN have no per-person token
-    to expire (one shared service credential each), so there's nothing
-    analogous to add for either beyond the dot itself."""
+    """Platform dots plus status icons — Xbox login/token status,
+    Steam and PSN achievement visibility (public = ✅, private = ⚠️)."""
     if user.is_excluded:
         return "🚫"
     parts = []
     if user.xuid:
         parts.append("🟢" + STATUS_ICON.get(user.token_status or "", "—"))
     if user.steam_id:
-        parts.append("⚫")
+        parts.append("⚫" + VISIBILITY_ICON.get(user.steam_achievements_visible, "—"))
     if user.psn_account_id:
-        parts.append("🔵")
+        parts.append("🔵" + VISIBILITY_ICON.get(user.psn_achievements_visible, "—"))
     return "".join(parts)
 
 
@@ -965,5 +965,35 @@ def render_system_wipe_prompt(
     )
     return Screen(
         _("admin-system-wipe-prompt", count=count, title=chat.title or chat.chat_id),
+        builder.as_markup(),
+    )
+
+
+def render_admin_user_delete_confirm_1(name: str, tg_id: int, *, locale: str) -> Screen:
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-delete-confirm-1-yes"), callback_data=f"a:udel1:{tg_id}"
+        ),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
+    )
+    return Screen(
+        _("admin-delete-confirm-1", name=name, tg_id=tg_id),
+        builder.as_markup(),
+    )
+
+
+def render_admin_user_delete_confirm_2(name: str, tg_id: int, *, locale: str) -> Screen:
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-delete-confirm-2-yes"), callback_data=f"a:udel2:{tg_id}"
+        ),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
+    )
+    return Screen(
+        _("admin-delete-confirm-2", name=name, tg_id=tg_id),
         builder.as_markup(),
     )

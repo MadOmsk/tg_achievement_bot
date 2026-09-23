@@ -21,6 +21,7 @@ discipline presence.py/steam_presence.py already follow.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from bot.config import Settings
@@ -34,10 +35,18 @@ log = logging.getLogger(__name__)
 
 
 class PsnPresencePoller:
-    def __init__(self, settings: Settings, repo: Repo, psn_auth: PsnAuth) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repo: Repo,
+        psn_auth: PsnAuth,
+        *,
+        psn_fetcher: object | None = None,
+    ) -> None:
         self._settings = settings
         self._repo = repo
         self._psn_auth = psn_auth
+        self._psn_fetcher = psn_fetcher
 
     async def tick(self) -> None:
         try:
@@ -48,6 +57,7 @@ class PsnPresencePoller:
             return  # dead token etc. — reminded about elsewhere (service_health), not here
 
         due = [t for t in await self._repo.psn_presence_pollable_accounts() if self._is_due(t)]
+        exit_targets: list[PsnPresenceTarget] = []
         for target in due:
             try:
                 snapshot = await get_presence(client, target.account_id)
@@ -60,24 +70,53 @@ class PsnPresencePoller:
                 )
                 continue
             try:
-                await self._handle(target, snapshot)
+                if await self._handle(target, snapshot):
+                    exit_targets.append(target)
             except Exception:
                 log.exception(
                     "unexpected failure saving psn presence account_id=%s", target.account_id
                 )
 
-    async def _handle(self, target: PsnPresenceTarget, snapshot: PsnPresenceSnapshot) -> None:
+        if (
+            exit_targets
+            and self._psn_fetcher is not None
+            and hasattr(self._psn_fetcher, "poll_account")
+        ):
+            await asyncio.gather(
+                *(self._poll_account_background(t) for t in exit_targets),
+                return_exceptions=True,
+            )
+
+    async def _handle(self, target: PsnPresenceTarget, snapshot: PsnPresenceSnapshot) -> bool:
         changed = snapshot.state != target.state or snapshot.title_id != target.title_id
         await self._repo.save_psn_presence_state(
             target.account_id,
             snapshot.state,
             snapshot.title_id,
             snapshot.title_name,
+            device=snapshot.device,
             changed=changed,
         )
         if snapshot.state == "Online":
             await self._repo.touch_last_online(target.tg_id)
         await self._refresh_nickname(target, snapshot.online_id)
+
+        # Final trophy check of the session (#90):
+        # if the user went offline, queue trophy poll so anything earned immediately
+        # before turning off the console is announced without blocking the presence
+        # poller loop or waiting for the slower offline interval.
+        return bool(changed and target.state == "Online" and snapshot.state != "Online")
+
+    async def _poll_account_background(self, target: PsnPresenceTarget) -> None:
+        try:
+            assert self._psn_fetcher is not None
+            await self._psn_fetcher.poll_account(  # type: ignore[union-attr]
+                target.tg_id, target.account_id, target.online_id or target.account_id
+            )
+        except Exception:
+            log.exception("psn exit trophy poll failed for account_id=%s", target.account_id)
+        finally:
+            await self._repo.touch_psn_poll_state(target.account_id)
 
     async def _refresh_nickname(self, target: PsnPresenceTarget, online_id: str | None) -> None:
         """The current online ID came along with the presence request (#51),
