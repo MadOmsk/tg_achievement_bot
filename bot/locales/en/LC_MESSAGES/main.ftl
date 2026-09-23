@@ -31,6 +31,7 @@ main-cmd-hltb = How long is this game (HowLongToBeat)
 main-cmd-help = What I can do
 
 # Command menu (group chat scope)
+main-cmd-panel-group = Chat menu and buttons
 main-cmd-stats-group = A player's stats
 main-cmd-online = Who's online right now
 main-cmd-who = Look up someone's stats

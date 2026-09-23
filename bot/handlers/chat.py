@@ -765,6 +765,19 @@ async def _resolve(message: Message, repo: Repo, argument: str | None) -> User |
 # bot is, and the commands.
 
 
+@router.message(Command("panel"), F.chat.type.in_(GROUP_TYPES))
+async def panel_command(
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
+) -> None:
+    me = await bot.me()
+    bot_username = me.username or ""
+    await message.answer(
+        await hub_text(repo, message.chat.id, i18n),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=True),
+    )
+
+
 @router.message(Command("help"))
 async def help_command(
     message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
@@ -779,9 +792,8 @@ async def help_command(
         )
         return
     await message.answer(
-        await hub_text(repo, message.chat.id, i18n),
+        help_text(i18n),
         parse_mode=ParseMode.HTML,
-        reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=True),
     )
 
 

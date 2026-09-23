@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 from aiogram.enums import ChatType
 
-from bot.handlers.chat import help_command
+from bot.handlers.chat import help_command, panel_command
 from bot.views.chat import hub_keyboard
 
 BOT = "mybot"
@@ -63,15 +63,24 @@ def test_a_blank_url_is_not_an_app() -> None:
     assert len(_buttons(hub_keyboard(BOT, CHAT_ID, mini_app_url="   "))) == 10
 
 
-async def test_help_command_in_a_group_sends_a_link_not_a_web_app(i18n, repo) -> None:
+async def test_panel_command_in_a_group_sends_a_link_not_a_web_app(i18n, repo) -> None:
     message = _FakeMessage(ChatType.SUPERGROUP, CHAT_ID)
 
-    await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
+    await panel_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
 
     buttons = _buttons(message.markups[0])
     app_button = buttons[0]
     assert app_button.web_app is None
     assert app_button.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
+
+
+async def test_help_command_in_a_group_sends_commands_without_markup(i18n, repo) -> None:
+    message = _FakeMessage(ChatType.SUPERGROUP, CHAT_ID)
+
+    await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
+
+    assert message.markups[0] is None
+    assert "/panel" in message.answers[0]
 
 
 async def test_help_command_in_a_dm_opens_the_app_itself(i18n, repo) -> None:

@@ -442,18 +442,9 @@ async def _publish_command_menu(bot: Bot) -> None:
             BotCommand(command="help", description=_("main-cmd-help")),
         ]
         group = [
-            # /stats and /who answer the same question — one about whoever
-            # asked, one about somebody they pick — so they sit together
-            # (owner, 2026-09-18). /online used to fall between them.
-            BotCommand(command="stats", description=_("main-cmd-stats-group")),
-            BotCommand(command="who", description=_("main-cmd-who")),
-            BotCommand(command="online", description=_("main-cmd-online")),
-            BotCommand(command="recent", description=_("main-cmd-recent")),
-            BotCommand(command="summary_day", description=_("main-cmd-summary-day")),
-            BotCommand(command="summary_month", description=_("main-cmd-summary-month")),
-            BotCommand(command="hltb", description=_("main-cmd-hltb")),
+            BotCommand(command="panel", description=_("main-cmd-panel-group")),
             BotCommand(command="subscribe", description=_("main-cmd-subscribe")),
-            BotCommand(command="unsubscribe", description=_("main-cmd-unsubscribe")),
+            BotCommand(command="hltb", description=_("main-cmd-hltb")),
             BotCommand(command="help", description=_("main-cmd-help")),
         ]
         return private, group

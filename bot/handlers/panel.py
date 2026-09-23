@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import time
 
@@ -28,7 +26,6 @@ from bot.services.steam.auth import SteamAuth
 from bot.util import cooldown_minutes_left, parse_iso
 from bot.views.keyboards import (
     DIGEST_NEVER,
-    deep_link_keyboard,
     digest_keyboard,
     disconnect_prompt_keyboard,
     locale_name,
@@ -50,8 +47,6 @@ from bot.views.panel import (
 log = logging.getLogger(__name__)
 
 router = Router(name="panel")
-
-GROUP_HINT_TTL = 30
 
 # The one panel button that goes to the network (SPEC 5.8). Without a cooldown
 # it is a way to hammer Xbox Live by holding a finger on the keyboard.
@@ -82,18 +77,6 @@ async def panel_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContex
         return
     await repo.ensure_user(person_id, _username(message))
     await send_panel(bot, repo, person_id, i18n)
-
-
-@router.message(Command("panel"))
-async def panel_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
-    """Settings never render in a group: an inline keyboard there is clickable
-    by everyone in the chat (SPEC 6.3)."""
-    me = await bot.me()
-    hint = await message.answer(
-        i18n.get("panel-group-hint"),
-        reply_markup=deep_link_keyboard(f"https://t.me/{me.username}?start=panel", i18n),
-    )
-    asyncio.create_task(_delete_later(bot, hint.chat.id, hint.message_id))  # noqa: RUF006
 
 
 @router.callback_query(F.data == "panel:refresh")
@@ -492,12 +475,6 @@ async def panel_delete_account_confirmed(
     else:
         await safe_edit(callback, i18n.get("panel-delete-done"), None)
         await callback.answer(i18n.get("panel-delete-not-found"), show_alert=True)
-
-
-async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:
-    await asyncio.sleep(GROUP_HINT_TTL)
-    with contextlib.suppress(Exception):
-        await bot.delete_message(chat_id, message_id)
 
 
 def _person_id(message: Message) -> int | None:

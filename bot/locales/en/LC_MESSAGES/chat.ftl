@@ -39,9 +39,9 @@ chat-recent-row = { $badge } { $gamertag } — { $icon } { $game } · { $name }{
 
 # Group hub and chat actions
 chat-unknown-user = I don't know them. The Bot API can't look people up by @name — I remember the ones who have written in the chat. You can also reply to their message with /stats.
-chat-help-text = 🎮 I watch the achievements and trophies of everyone playing on XBOX, PlayStation and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
-
-    Chat commands:
+chat-panel-text = 🎮 I watch the achievements and trophies of everyone playing on XBOX, PlayStation and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
+chat-help-text = Chat commands:
+    /panel — menu and action buttons
     /stats [@who] — stats: yours with no argument, someone else's with a name
     /who — look up a specific player's stats
     /online — who's in a game right now
@@ -49,6 +49,9 @@ chat-help-text = 🎮 I watch the achievements and trophies of everyone playing 
     /summary_day — the last 24 hours in review
     /summary_month — the month so far in review
     /hltb — a game's HowLongToBeat summary
+    /subscribe — publish my achievements here
+    /unsubscribe — stop publishing here
+    /help — list of commands
 
     Settings are in a DM, /panel.
 chat-help-version = <i>Version { $version }</i>

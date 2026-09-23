@@ -31,6 +31,7 @@ main-cmd-hltb = Сколько идти игру (HowLongToBeat)
 main-cmd-help = Что я умею
 
 # Command menu (group chat scope)
+main-cmd-panel-group = Меню и кнопки чата
 main-cmd-stats-group = Статистика игрока
 main-cmd-online = Онлайн-статус игроков
 main-cmd-who = Узнать стату юзера

@@ -410,11 +410,8 @@ def hub_keyboard(
 
 
 def help_text(i18n: I18nContext) -> str:
-    """What the bot is for, its commands, and — last line — which build is
-    answering (#56, owner request). The version belongs here rather than in
-    /admin alone: the question it answers is "is this the test bot or the
-    real one", and anyone in the chat can have it."""
-    return i18n.get("chat-help-text") + "\n\n" + i18n.get("chat-help-version", version=version())
+    """The list of chat commands for /help (#19)."""
+    return i18n.get("chat-help-text")
 
 
 async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
@@ -428,7 +425,7 @@ async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
     # The version stays the last line of the whole message — under the
     # subscriber list, not buried above it.
     return (
-        i18n.get("chat-help-text")
+        i18n.get("chat-panel-text")
         + "\n\n"
         + who
         + "\n\n"

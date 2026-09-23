@@ -299,23 +299,23 @@ async def test_online_lists_a_connected_non_publisher_who_was_seen_writing(
 
 @pytest.mark.parametrize("locale", AVAILABLE_LOCALES)
 def test_help_text_mentions_both_platforms_and_the_main_commands(locale: str) -> None:
-    """Rewritten 2026-09-05: no more connect/subscribe walkthrough in the
-    text — the hub's own buttons (hub_keyboard) already cover both,
-    intuitively enough on their own — just what the bot is and the
-    commands people actually come back to use.
+    panel_text = gettext("chat", "chat-panel-text", locale=locale).lower()
+    assert "xbox" in panel_text and "steam" in panel_text
 
-    Checked per locale (#48): the command list is the same in every
-    language, so a translation that quietly dropped one shows up here. Reads
-    the key directly rather than through a module-level HELP_TEXT constant —
-    that constant froze whichever locale was loaded at import time, and
-    nothing in the bot itself used it."""
     help_text = gettext("chat", "chat-help-text", locale=locale)
-    intro = help_text.split("\n\n")[0].lower()
-    assert "xbox" in intro and "steam" in intro
-    for command in ("/stats", "/online", "/who", "/recent", "/summary", "/hltb"):
+    for command in (
+        "/panel",
+        "/stats",
+        "/online",
+        "/who",
+        "/recent",
+        "/summary",
+        "/hltb",
+        "/subscribe",
+        "/unsubscribe",
+        "/help",
+    ):
         assert command in help_text
-    assert "/subscribe" not in help_text
-    assert "/unsubscribe" not in help_text
 
 
 async def test_record_chat_seen_ignores_an_unknown_tg_id(repo: Repo) -> None:
@@ -369,3 +369,25 @@ async def test_hub_callbacks(repo: Repo, i18n) -> None:
 
     await hub_summary_month_callback(callback, repo, bot, i18n)
     assert callback.answer.called
+
+
+async def test_publish_command_menu_publishes_curated_group_commands() -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from aiogram.types import BotCommandScopeAllGroupChats
+
+    from bot.main import _publish_command_menu
+
+    mock_bot = MagicMock()
+    mock_bot.set_my_commands = AsyncMock()
+
+    await _publish_command_menu(mock_bot)
+
+    group_calls = [
+        call
+        for call in mock_bot.set_my_commands.call_args_list
+        if isinstance(call.kwargs.get("scope"), BotCommandScopeAllGroupChats)
+    ]
+    assert len(group_calls) >= 1
+    commands = [cmd.command for cmd in group_calls[0].args[0]]
+    assert commands == ["panel", "subscribe", "hltb", "help"]
