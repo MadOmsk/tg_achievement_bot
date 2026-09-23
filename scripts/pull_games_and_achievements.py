@@ -133,7 +133,7 @@ async def clone_user_tables(source_path: Path, dest_conn: aiosqlite.Connection) 
     return stats
 
 
-def prepare_sync_config() -> SyncConfig:
+def prepare_sync_config(settings: Settings | None = None) -> SyncConfig:
     parser = argparse.ArgumentParser(
         description="Bulk pull games, achievements, and title catalog into database."
     )
@@ -207,16 +207,17 @@ def prepare_sync_config() -> SyncConfig:
     args = parser.parse_args()
 
     # 1. Environment & Settings configuration
-    if args.env_file:
-        env_path = Path(args.env_file).resolve()
-        if not env_path.exists():
-            log.error("Specified env file does not exist: %s", env_path)
-            sys.exit(1)
-        os.environ["BOT_ENV_FILE"] = str(env_path)
-        get_settings.cache_clear()
-        settings = Settings(_env_file=str(env_path))  # type: ignore[call-arg]
-    else:
-        settings = get_settings()
+    if settings is None:
+        if args.env_file:
+            env_path = Path(args.env_file).resolve()
+            if not env_path.exists():
+                log.error("Specified env file does not exist: %s", env_path)
+                sys.exit(1)
+            os.environ["BOT_ENV_FILE"] = str(env_path)
+            get_settings.cache_clear()
+            settings = Settings(_env_file=str(env_path))  # type: ignore[call-arg]
+        else:
+            settings = get_settings()
 
     target_db_path = Path(args.db).resolve() if args.db else settings.db_path.resolve()
 

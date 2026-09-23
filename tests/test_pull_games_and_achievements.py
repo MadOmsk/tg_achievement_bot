@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from cryptography.fernet import Fernet
 
+from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import Database, Repo
 from scripts.pull_games_and_achievements import (
@@ -28,7 +29,9 @@ async def test_noop_publisher() -> None:
     await pub.stop()
 
 
-def test_prepare_sync_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prepare_sync_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
     db_file = tmp_path / "test.db"
     source_db = tmp_path / "src.db"
     source_db.touch()
@@ -55,7 +58,7 @@ def test_prepare_sync_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         ],
     )
 
-    cfg = prepare_sync_config()
+    cfg = prepare_sync_config(settings=settings)
     assert cfg.target_db_path == db_file.resolve()
     assert cfg.clone_source_path == source_db.resolve()
     assert cfg.selected_platforms == {"xbox", "steam"}
