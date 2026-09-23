@@ -29,6 +29,7 @@ def test_hub_keyboard_has_the_expected_buttons_and_carries_the_chat_id() -> None
     assert any(b.callback_data == "hub:recent" for b in buttons)
     assert any(b.callback_data == "hub:summary_day" for b in buttons)
     assert any(b.callback_data == "hub:summary_month" for b in buttons)
+    assert markup.inline_keyboard[-1] == [connect_button, psn_button, steam_button]
 
 
 def test_hub_keyboard_adds_open_app_when_mini_url_is_set() -> None:

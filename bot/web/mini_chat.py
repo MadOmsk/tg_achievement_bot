@@ -18,6 +18,7 @@ from bot.db.repo import (
     UserChatRow,
 )
 from bot.i18n import translator
+from bot.services.achievement_icons import format_achievement_icon_url
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.presence_view import pick_presence
 from bot.services.stats import counters_for, month_window_utc, week_cutoff_utc
@@ -432,7 +433,9 @@ def _feed_item_json(
         "is_secret": row.is_secret,
         "title_id": row.title_id,
         "achievement_id": row.achievement_id,
-        "icon_url": _https_url(row.icon_url),
+        "icon_url": format_achievement_icon_url(
+            row.platform, row.title_id, row.achievement_id, row.icon_url
+        ),
         "game_icon_url": _https_url(row.game_icon_url),
         "description": descriptions.get(
             (row.platform, row.title_id, row.achievement_id), row.description

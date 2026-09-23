@@ -11,6 +11,7 @@ from bot.constants import AccountPlatform, Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleAchievementRow, TitleHistoryRow
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
+from bot.services import achievement_icons
 from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
@@ -36,6 +37,7 @@ class Fetcher:
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
         self._backfill_slots = asyncio.Semaphore(concurrency)
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     def api_usage(self) -> list[tuple[int, int, float]]:
         """(used, limit, window_seconds) — surfaced in the admin panel
@@ -77,6 +79,7 @@ class Fetcher:
             title_id,
             {a.achievement_id: a.rarity_percent for a in parsed if a.rarity_percent is not None},
         )
+        self._pre_cache_icons(platform, title_id, parsed)
         rows = [to_achievement_row(item, device=device) for item in parsed]
         new_rows = await self._repo.insert_new_achievements(xuid, rows, is_backfill=False)
         await self._repo.mark_achievements_polled(xuid)
@@ -150,6 +153,20 @@ class Fetcher:
         if icon_url:
             for item in missing:
                 item.icon_url = icon_url
+
+    def _pre_cache_icons(
+        self, platform: Platform, title_id: str, parsed: list[ParsedAchievement]
+    ) -> None:
+        plat_str = platform.value if hasattr(platform, "value") else str(platform)
+        for item in parsed:
+            if item.icon_url:
+                task = asyncio.create_task(
+                    achievement_icons.pre_cache_icon(
+                        plat_str, title_id, item.achievement_id, item.icon_url
+                    )
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
     async def _bilingual_descriptions(
         self, tg_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
@@ -368,6 +385,7 @@ class Fetcher:
                         if a.rarity_percent is not None
                     },
                 )
+                self._pre_cache_icons(entry.platform, entry.title_id, parsed)
 
                 new_rows = await self._repo.insert_new_achievements(
                     xuid, [to_achievement_row(item) for item in parsed], is_backfill=False

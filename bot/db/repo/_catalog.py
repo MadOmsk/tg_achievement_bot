@@ -207,3 +207,34 @@ class _CatalogRepo:
             }
             for row in rows
         ]
+
+    async def achievement_icon_url(
+        self, platform: str, title_id: str, achievement_id: str
+    ) -> str | None:
+        """Return the icon URL for an achievement from title_achievements or seen_achievements."""
+        cursor = await self._conn.execute(
+            "SELECT icon_url FROM title_achievements "
+            "WHERE platform = ? AND title_id = ? AND achievement_id = ? AND icon_url IS NOT NULL "
+            "LIMIT 1",
+            (platform, title_id, achievement_id),
+        )
+        row = await cursor.fetchone()
+        if row and row["icon_url"]:
+            return str(row["icon_url"])
+
+        cursor = await self._conn.execute(
+            "SELECT icon_url FROM seen_achievements "
+            "WHERE platform = ? AND title_id = ? AND achievement_id = ? AND icon_url IS NOT NULL "
+            "LIMIT 1",
+            (platform, title_id, achievement_id),
+        )
+        row = await cursor.fetchone()
+        if row and row["icon_url"]:
+            return str(row["icon_url"])
+
+        if platform in ("xbox_360", "xbox360"):
+            from bot.services.xbox.models import x360_achievement_icon_url
+
+            return x360_achievement_icon_url(title_id, achievement_id)
+
+        return None

@@ -12,7 +12,6 @@ import logging
 import time
 from typing import Any
 
-import httpx
 from aiohttp import web
 
 from bot.config import Settings
@@ -23,6 +22,7 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services import achievement_icons
 from bot.services.connect import ConnectService
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
@@ -129,6 +129,10 @@ def setup_mini_api(
     app.router.add_patch("/api/mini/club", handle_patch_chat)
     app.router.add_get("/api/mini/avatar/{tg_id}", handle_avatar)
     app.router.add_get("/api/mini/x360-icon/{title_hex}/{image_hex}", handle_x360_icon)
+    app.router.add_get(
+        "/api/mini/ach-icon/{platform}/{title_id}/{achievement_id:.+}",
+        handle_achievement_icon,
+    )
     app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
     setup_admin_routes(app)
@@ -542,7 +546,15 @@ async def handle_avatar(request: web.Request) -> web.Response:
     )
 
 
-_X360_ICON_CACHE: dict[str, bytes] = {}
+class _X360Cache(dict[str, bytes]):
+    def clear(self) -> None:
+        super().clear()
+        p = achievement_icons.x360_icon_path("584109cb", "3")
+        if p.is_file():
+            p.unlink(missing_ok=True)
+
+
+_X360_ICON_CACHE: _X360Cache = _X360Cache()
 _HEX_CHARS = set("0123456789abcdefABCDEF")
 
 
@@ -562,26 +574,38 @@ async def handle_x360_icon(request: web.Request) -> web.Response:
             headers={"Cache-Control": "public, max-age=604800, immutable"},
         )
 
-    url = f"http://image.xboxlive.com/global/t.{title_hex}/ach/0/{image_hex}"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as http:
-            resp = await http.get(url)
-            if resp.status_code == 200 and resp.content:
-                if len(_X360_ICON_CACHE) < 5000:
-                    _X360_ICON_CACHE[cache_key] = resp.content
-                return web.Response(
-                    body=resp.content,
-                    content_type="image/png",
-                    headers={"Cache-Control": "public, max-age=604800, immutable"},
-                )
-            if resp.status_code == 404:
-                raise web.HTTPNotFound(text="icon not found")
-            raise web.HTTPBadGateway(text="upstream error")
-    except web.HTTPException:
-        raise
-    except Exception as exc:
-        log.info("failed to fetch x360 icon %s: %r", url, exc)
-        raise web.HTTPBadGateway(text="failed to fetch icon") from exc
+    result = await achievement_icons.get_or_download_x360_icon(title_hex, image_hex)
+    if result is None:
+        raise web.HTTPNotFound(text="icon not found")
+    data, mime = result
+    if len(_X360_ICON_CACHE) < 5000:
+        _X360_ICON_CACHE[cache_key] = data
+    return web.Response(
+        body=data,
+        content_type=mime,
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )
+
+
+async def handle_achievement_icon(request: web.Request) -> web.Response:
+    platform = request.match_info.get("platform", "").lower()
+    title_id = request.match_info.get("title_id", "")
+    achievement_id = request.match_info.get("achievement_id", "")
+    if not (platform and title_id and achievement_id):
+        raise web.HTTPBadRequest(text="missing parameters")
+
+    repo: Repo = request.app["mini_repo"]
+    result = await achievement_icons.get_or_download_achievement_icon(
+        repo, platform, title_id, achievement_id
+    )
+    if result is None:
+        raise web.HTTPNotFound(text="icon not found")
+    body, mime = result
+    return web.Response(
+        body=body,
+        content_type=mime,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 async def handle_chat_person(request: web.Request) -> web.Response:
@@ -681,7 +705,12 @@ async def handle_game_details(request: web.Request) -> web.Response:
                     "name_en": item.achievement.name_en,
                     "description_ru": item.achievement.description_ru,
                     "description_en": item.achievement.description_en,
-                    "icon_url": item.achievement.icon_url,
+                    "icon_url": achievement_icons.format_achievement_icon_url(
+                        platform,
+                        title_id,
+                        item.achievement.achievement_id,
+                        item.achievement.icon_url,
+                    ),
                     "is_secret": item.achievement.is_secret,
                     "gamerscore": item.achievement.gamerscore,
                     "trophy_type": item.achievement.trophy_type,

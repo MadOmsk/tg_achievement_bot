@@ -347,7 +347,56 @@ def hub_keyboard(
                 ]
             )
 
-    # Platforms row (Row 2)
+    # In groups: add action rows and management
+    settings_btn = InlineKeyboardButton(
+        text=_hub_text(i18n, "chat-hub-settings-button"),
+        url=f"https://t.me/{bot_username}?start=panel",
+    )
+    if is_group:
+        # Action row 1: who, online, recent
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-who-button"),
+                    callback_data="hub:who",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-online-button"),
+                    callback_data="hub:online",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-recent-button"),
+                    callback_data="hub:recent",
+                ),
+            ]
+        )
+        # Action row 2: summary day and month
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-summary-day-button"),
+                    callback_data="hub:summary_day",
+                ),
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-summary-month-button"),
+                    callback_data="hub:summary_month",
+                ),
+            ]
+        )
+        # Action row 3: management (publish toggle + settings)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
+                ),
+                settings_btn,
+            ]
+        )
+    else:
+        # In private chat: settings
+        rows.append([settings_btn])
+
+    # Platforms row (at the bottom)
     xbox_url = (
         f"https://t.me/{bot_username}?start=connect{chat_id}"
         if is_group
@@ -369,55 +418,6 @@ def hub_keyboard(
             ),
         ]
     )
-
-    # In groups: add action rows and management
-    settings_btn = InlineKeyboardButton(
-        text=_hub_text(i18n, "chat-hub-settings-button"),
-        url=f"https://t.me/{bot_username}?start=panel",
-    )
-    if is_group:
-        # Row 3: who, online, recent
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-who-button"),
-                    callback_data="hub:who",
-                ),
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-online-button"),
-                    callback_data="hub:online",
-                ),
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-recent-button"),
-                    callback_data="hub:recent",
-                ),
-            ]
-        )
-        # Row 4: summary day and month
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-summary-day-button"),
-                    callback_data="hub:summary_day",
-                ),
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-summary-month-button"),
-                    callback_data="hub:summary_month",
-                ),
-            ]
-        )
-        # Row 5: management (publish toggle + settings)
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text=_hub_text(i18n, "chat-hub-publish-button"), callback_data="sub:on"
-                ),
-                settings_btn,
-            ]
-        )
-    else:
-        # In private chat: settings
-        rows.append([settings_btn])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

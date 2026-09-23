@@ -27,6 +27,7 @@ from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
+from bot.services.steam.auth import SteamAuth
 from bot.util import parse_utc_offset
 from bot.views.keyboards import (
     TZ_MANUAL,
@@ -71,6 +72,7 @@ async def start_with_payload(
     connect: ConnectService,
     settings: Settings,
     psn_auth: PsnAuth,
+    steam_auth: SteamAuth,
     bot: Bot,
     i18n: I18nContext,
 ) -> None:
@@ -87,11 +89,11 @@ async def start_with_payload(
         # (steam.py's prompt_for_link, 2026-09-05 follow-up) — a deep link
         # can't carry the profile URL itself, but landing here now arms the
         # wait too, so there's nothing left to type but the link itself.
-        await prompt_for_link(bot, repo, settings, person_id)
+        await prompt_for_link(bot, repo, steam_auth, person_id, i18n)
         return
     if command.args == "connectpsn":
         # Same treatment as connectsteam above, for PSN (SPEC 9, M-PSN-1).
-        await prompt_for_psn_link(bot, repo, psn_auth, person_id)
+        await prompt_for_psn_link(bot, repo, psn_auth, person_id, i18n)
         return
     is_connect, origin_chat_id = _parse_connect_payload(command.args or "")
     if is_connect:
