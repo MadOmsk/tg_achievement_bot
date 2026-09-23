@@ -125,7 +125,7 @@ systemctl restart "$SERVICE"
 # stops the process, and either would otherwise look like a green deploy.
 say "waiting for it to come up"
 for _ in $(seq 1 30); do
-  if journalctl -u "$SERVICE" --since "$SINCE" --no-pager | grep -q 'is up ('; then
+  if journalctl -u "$SERVICE" --since "$SINCE" --no-pager | grep 'is up (' >/dev/null 2>&1; then
     journalctl -u "$SERVICE" --since "$SINCE" --no-pager | grep 'is up (' | tail -1
     say "$TARGET deployed"
     exit 0
