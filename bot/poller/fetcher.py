@@ -113,7 +113,15 @@ class Fetcher:
             return None
         if entry is None or not entry.name:
             return None
-        platforms_json = json.dumps(entry.devices) if getattr(entry, "devices", None) else None
+        if entry.platform in (Platform.XBOX_360, "xbox_360"):
+            platforms_json = json.dumps(["Xbox360"])
+        elif getattr(entry, "devices", None):
+            if any(str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices):
+                platforms_json = json.dumps(["Xbox360"])
+            else:
+                platforms_json = json.dumps(entry.devices)
+        else:
+            platforms_json = None
         await self._repo.upsert_title(
             entry.title_id, entry.name, entry.platform, platforms=platforms_json
         )

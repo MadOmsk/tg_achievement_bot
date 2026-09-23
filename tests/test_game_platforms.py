@@ -301,3 +301,71 @@ async def test_ensure_title_device_and_save_title_history_devices(repo: Repo) ->
     await repo.save_title_history("xuid-1", [history_row])
     title_row = await repo.title_platforms(["t-device-1"])
     assert set(json.loads(title_row["t-device-1"])) == {"XboxOne", "XboxSeriesX"}
+
+    # Xbox 360 titles: ensure_title_device seeds with ["Xbox360"] regardless of device
+    await repo.upsert_title("t-360-dev", "Fable II", Platform.XBOX_360)
+    await repo.ensure_title_device("t-360-dev", "Scarlett")
+    title_row_360 = await repo.title_platforms(["t-360-dev"])
+    assert title_row_360["t-360-dev"] == '["Xbox360"]'
+
+    # Xbox 360 titles: save_title_history saves ["Xbox360"] regardless of backward-compat devices
+    history_row_360 = TitleHistoryRow(
+        title_id="t-360-dev",
+        name="Fable II",
+        platform=Platform.XBOX_360,
+        current_gamerscore=10,
+        max_gamerscore=1000,
+        achievements_unlocked=1,
+        achievements_total=10,
+        last_played_at="2026-09-20T12:00:00+00:00",
+        devices=["Xbox360", "XboxOne", "XboxSeries"],
+    )
+    await repo.save_title_history("xuid-1", [history_row_360])
+    title_row_360 = await repo.title_platforms(["t-360-dev"])
+    assert title_row_360["t-360-dev"] == '["Xbox360"]'
+
+
+@pytest.fixture
+def migration_056_sql() -> str:
+    migration_file = Path("bot/db/migrations/056_fix_x360_platforms.sql")
+    return migration_file.read_text(encoding="utf-8")
+
+
+async def test_migration_056_fixes_x360_platforms(tmp_path, migration_056_sql: str) -> None:
+    db_path = tmp_path / "migration_056_test.db"
+    async with aiosqlite.connect(db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        await conn.execute(
+            "CREATE TABLE titles ("
+            "  title_id TEXT PRIMARY KEY,"
+            "  name TEXT NOT NULL,"
+            "  platform TEXT NOT NULL,"
+            "  platforms TEXT"
+            ")"
+        )
+        # Seed titles with backward-compatibility pollution in platforms
+        gow_plats = '["Xbox360", "XboxOne", "XboxSeries"]'
+        conker_plats = '["Xbox360", "PC", "XboxOne", "XboxSeries"]'
+        halo_plats = '["XboxOne", "XboxSeriesX"]'
+        await conn.execute(
+            "INSERT INTO titles VALUES ('t-gow2', 'Gears of War 2', 'xbox_360', ?)", (gow_plats,)
+        )
+        await conn.execute(
+            "INSERT INTO titles VALUES ('t-conker', 'Conker', 'xbox_360', ?)", (conker_plats,)
+        )
+        await conn.execute(
+            "INSERT INTO titles VALUES ('t-halo-inf', 'Halo Infinite', 'xbox_modern', ?)",
+            (halo_plats,),
+        )
+        await conn.commit()
+
+        # Run migration 056
+        await conn.executescript(migration_056_sql)
+        await conn.commit()
+
+        cursor = await conn.execute("SELECT title_id, platforms FROM titles ORDER BY title_id")
+        rows = {r["title_id"]: r["platforms"] for r in await cursor.fetchall()}
+
+        assert rows["t-gow2"] == '["Xbox360"]'
+        assert rows["t-conker"] == '["Xbox360"]'
+        assert rows["t-halo-inf"] == '["XboxOne", "XboxSeriesX"]'

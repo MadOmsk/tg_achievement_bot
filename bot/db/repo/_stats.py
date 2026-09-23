@@ -10,6 +10,7 @@ import json
 from collections.abc import Sequence
 from datetime import datetime
 
+from bot.constants import Platform
 from bot.db.repo._models import TitleHistoryRow, _iso
 from bot.db.repo._sql import (
     OWNED_BY_PERSON,
@@ -50,7 +51,15 @@ class _StatsRepo:
                     now,
                 ),
             )
-            platforms_json = json.dumps(entry.devices) if getattr(entry, "devices", None) else None
+            if getattr(entry, "platform", None) in (Platform.XBOX_360, "xbox_360"):
+                platforms_json = json.dumps(["Xbox360"])
+            elif getattr(entry, "devices", None):
+                if any(str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices):
+                    platforms_json = json.dumps(["Xbox360"])
+                else:
+                    platforms_json = json.dumps(entry.devices)
+            else:
+                platforms_json = None
             await self._conn.execute(
                 "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
                 "VALUES (?, ?, ?, ?, ?) "

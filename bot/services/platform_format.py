@@ -11,10 +11,25 @@ import json
 from collections.abc import Iterable
 
 # Xbox device tokens
-_XBOX_SERIES_TOKENS = {"xboxseriesx", "xboxseriess", "xboxseries", "xboxscarlett"}
-_XBOX_ONE_TOKENS = {"xboxone"}
+_XBOX_SERIES_TOKENS = {
+    "xboxseriesx",
+    "xboxseriess",
+    "xboxseries",
+    "xboxscarlett",
+    "scarlett",
+    "anaconda",
+    "lockhart",
+}
+_XBOX_ONE_TOKENS = {
+    "xboxone",
+    "xboxones",
+    "xboxonex",
+    "durango",
+    "xboxdurango",
+    "scorpio",
+}
 _XBOX_PC_TOKENS = {"windowsonecore", "pc", "win32", "windows"}
-_XBOX_360_TOKENS = {"xbox360", "xbox 360"}
+_XBOX_360_TOKENS = {"xbox360", "xbox 360", "x360"}
 _XBOX_MOBILE_TOKENS = {"mobile", "ios", "android", "windowsphone"}
 _XBOX_CLOUD_TOKENS = {"web", "cloud"}
 
@@ -35,13 +50,13 @@ def normalize_device_name(device: str | None, *, short: bool = False) -> str | N
     if key in _XBOX_ONE_TOKENS:
         return "XOne" if short else "XBOX One"
     if key in _XBOX_PC_TOKENS:
-        return "XBOX PC"
+        return "PC" if short else "XBOX PC"
     if key in _XBOX_360_TOKENS:
         return "X360" if short else "XBOX 360"
     if key in _XBOX_MOBILE_TOKENS:
-        return "XBOX Mobile"
+        return "Mobile" if short else "XBOX Mobile"
     if key in _XBOX_CLOUD_TOKENS:
-        return "XBOX Cloud"
+        return "Cloud" if short else "XBOX Cloud"
 
     if key == "ps5":
         return "PS5" if short else "PlayStation 5"
@@ -88,12 +103,12 @@ def format_game_platforms(
 
     Rules:
     XBOX:
+      360 (native or backwards-compatible on One/Series) -> Full: 'XBOX 360', Short: 'X360'
       Play Anywhere: (One or Series) + PC -> Full: 'XBOX Play Anywhere', Short: 'XPA'
       Cross-gen: One + Series -> Full: 'XBOX One | Series', Short: 'XOne | Series'
       Series only: -> Full: 'XBOX Series X|S', Short: 'XSeries'
       One only: -> Full: 'XBOX One', Short: 'XOne'
-      360 only: -> Full: 'XBOX 360', Short: 'X360'
-      PC only: -> Full: 'XBOX PC', Short: 'XBOX PC'
+      PC only: -> Full: 'XBOX PC', Short: 'PC'
 
     PlayStation:
       PS3 + PS4 + Vita -> Full: 'PlayStation 3 | 4 | Vita', Short: 'PS3 | 4 | Vita'
@@ -108,8 +123,20 @@ def format_game_platforms(
     Steam:
       Steam -> Full: 'Steam', Short: 'Steam'
     """
+    # 0. Xbox 360 titles are ALWAYS Xbox 360, regardless of the play device (back-compat)
+    if fallback_platform and fallback_platform.lower() in {"xbox_360", "x360"}:
+        return "X360" if short else "XBOX 360"
+
     raw_list = _parse_raw_platforms(platforms_raw)
     tokens = {item.lower() for item in raw_list}
+
+    # 1. Xbox 360 titles (including backwards compatibility on Xbox One / Series)
+    if bool(tokens & _XBOX_360_TOKENS):
+        return "X360" if short else "XBOX 360"
+
+    # Check for Steam (Steam always formats as Steam)
+    if (fallback_platform and fallback_platform.lower() == "steam") or "steam" in tokens:
+        return "Steam"
 
     if not tokens and device:
         dev_norm = normalize_device_name(device, short=short)
@@ -119,27 +146,19 @@ def format_game_platforms(
     if not tokens:
         if fallback_platform:
             fb = fallback_platform.lower()
-            if fb in {"xbox_360", "x360"}:
-                return "X360" if short else "XBOX 360"
             if fb in {"xbox_modern", "modern", "xbox"}:
                 return "XBOX"
             if fb == "psn":
                 return "PS" if short else "PlayStation"
-            if fb == "steam":
-                return "Steam"
         return ""
-
-    # Check for Steam (Steam always formats as Steam)
-    if (fallback_platform and fallback_platform.lower() == "steam") or "steam" in tokens:
-        return "Steam"
 
     # Check for Xbox
     has_series = bool(tokens & _XBOX_SERIES_TOKENS)
     has_one = bool(tokens & _XBOX_ONE_TOKENS)
     has_pc = bool(tokens & _XBOX_PC_TOKENS)
-    has_360 = bool(tokens & _XBOX_360_TOKENS)
 
-    if has_series or has_one or has_pc or has_360:
+    # 2. Modern Xbox titles
+    if has_series or has_one or has_pc:
         if (has_series or has_one) and has_pc:
             return "XPA" if short else "XBOX Play Anywhere"
         if has_series and has_one:
@@ -148,10 +167,8 @@ def format_game_platforms(
             return "XSeries" if short else "XBOX Series X|S"
         if has_one:
             return "XOne" if short else "XBOX One"
-        if has_360:
-            return "X360" if short else "XBOX 360"
         if has_pc:
-            return "XBOX PC"
+            return "PC" if short else "XBOX PC"
         return "XBOX"
 
     # Check for PlayStation
