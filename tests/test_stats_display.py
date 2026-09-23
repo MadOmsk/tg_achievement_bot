@@ -12,6 +12,7 @@ from bot.db.repo import (
     GameAchievements,
     Repo,
     SteamSchemaAchievement,
+    TitleAchievementRow,
 )
 from bot.handlers.chat import _send_stats_card
 from bot.util import utcnow
@@ -728,6 +729,125 @@ async def test_xbox_completed_games_count_needs_a_nonzero_total(repo: Repo) -> N
     await repo._conn.commit()
 
     assert await repo.xbox_completed_games_count(XUID) == 1  # only title "1" is fully unlocked
+
+
+async def test_xbox_completed_games_count_from_catalog_and_titles(repo: Repo) -> None:
+    # 1. Game '100' completed via title_achievements catalog (2/2 achievements unlocked)
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="100",
+                achievement_id="a1",
+                name_en="Ach 1",
+                gamerscore=10,
+            ),
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="100",
+                achievement_id="a2",
+                name_en="Ach 2",
+                gamerscore=20,
+            ),
+        ]
+    )
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="100",
+                achievement_id="a1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+            AchievementRow(
+                title_id="100",
+                achievement_id="a2",
+                name="Ach 2",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=20,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 2. Game '200' has catalog of 2 achievements, but user only unlocked 1 -> not completed
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="200",
+                achievement_id="b1",
+                name_en="Ach 1",
+                gamerscore=10,
+            ),
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="200",
+                achievement_id="b2",
+                name_en="Ach 2",
+                gamerscore=20,
+            ),
+        ]
+    )
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="200",
+                achievement_id="b1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 3. Game '300' has titles table with achievements_total=1, user unlocked 1 -> completed
+    await repo.upsert_title("300", "Game 300", platform="xbox_modern", achievements_total=1)
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="300",
+                achievement_id="c1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 4. Game '100' is also in title_history (overlap test: UNION must deduplicate)
+    await repo._conn.execute(
+        "INSERT INTO title_history "
+        "(xuid, title_id, achievements_unlocked, achievements_total, updated_at) "
+        "VALUES (?, '100', 2, 2, '2026-01-01T00:00:00+00:00')",
+        (XUID,),
+    )
+    await repo._conn.commit()
+
+    # Total completed games: Game '100' and Game '300' = 2
+    assert await repo.xbox_completed_games_count(XUID) == 2
 
 
 async def test_psn_platinum_count_only_counts_platinum_rows(repo: Repo) -> None:

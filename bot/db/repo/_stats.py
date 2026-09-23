@@ -316,13 +316,53 @@ class _StatsRepo:
         return int(row[0]) if row else 0
 
     async def xbox_completed_games_count(self, xuid: str) -> int:
-        """Games where every achievement has been earned (#19) — straight
-        from the already-cached title_history, no new tracking needed."""
+        """Games where every achievement has been earned (#19).
+
+        Prior implementation relied exclusively on title_history's
+        achievements_total, but Microsoft's titlehub API returns total=0 for
+        nearly all Xbox One / Series games (#77). We now check against the
+        global title_achievements catalog, falling back to title_history or
+        titles.achievements_total for games not yet in the catalog.
+        """
         cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM title_history "
-            "WHERE xuid = ? AND achievements_total > 0"
-            " AND achievements_unlocked >= achievements_total",
-            (xuid,),
+            """
+            WITH completed_from_catalog AS (
+                SELECT s.title_id
+                FROM seen_achievements s
+                JOIN (
+                    SELECT title_id, COUNT(*) AS catalog_total
+                    FROM title_achievements
+                    WHERE platform IN ('xbox_modern', 'xbox_360')
+                    GROUP BY title_id
+                ) c ON s.title_id = c.title_id
+                WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
+                GROUP BY s.title_id, c.catalog_total
+                HAVING COUNT(DISTINCT s.achievement_id) >= c.catalog_total AND c.catalog_total > 0
+            ),
+            completed_from_titles AS (
+                SELECT s.title_id
+                FROM seen_achievements s
+                JOIN titles t ON s.title_id = t.title_id
+                WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
+                  AND t.achievements_total > 0
+                GROUP BY s.title_id, t.achievements_total
+                HAVING COUNT(DISTINCT s.achievement_id) >= t.achievements_total
+            ),
+            completed_from_history AS (
+                SELECT title_id
+                FROM title_history
+                WHERE xuid = ? AND achievements_total > 0
+                  AND achievements_unlocked >= achievements_total
+            )
+            SELECT COUNT(*) FROM (
+                SELECT title_id FROM completed_from_catalog
+                UNION
+                SELECT title_id FROM completed_from_titles
+                UNION
+                SELECT title_id FROM completed_from_history
+            )
+            """,
+            (xuid, xuid, xuid),
         )
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
