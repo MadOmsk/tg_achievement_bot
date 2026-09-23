@@ -266,7 +266,7 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
     game = html_escape(truncate_name(row.game or _hub_text(i18n, "chat-untitled")))
     icon = PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
     plat = format_game_platforms(row.game_platforms, row.platform, device=row.device, short=True)
-    icon_tag = f"({icon} {plat})" if plat else icon
+    icon_tag = f"({icon} <i>{plat}</i>)" if plat else icon
     # Found live: every Steam row showed a flat "+0 G" — Steam achievements
     # have no gamerscore at all (services/steam/achievements.py), same
     # "0 is 0 on any platform, don't name it" rule the achievement message

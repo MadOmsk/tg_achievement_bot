@@ -78,8 +78,8 @@ def test_recent_row_shows_the_platform_icon_before_the_game_name() -> None:
             unlocked_at="2026-09-02T10:00:00+00:00",
         )
     )
-    assert "(🟢 XBOX) Left 4 Dead 2" in line  # default platform="xbox_modern" from row()
-    assert "(⚫ Steam) Left 4 Dead 2" in steam_line
+    assert "(🟢 <i>XBOX</i>) Left 4 Dead 2" in line  # default platform="xbox_modern" from row()
+    assert "(⚫ <i>Steam</i>) Left 4 Dead 2" in steam_line
 
 
 def test_recent_row_puts_the_game_before_the_achievement_name() -> None:

@@ -49,10 +49,10 @@ async def test_upsert_title_and_query_platforms(repo: Repo) -> None:
     assert len(games) == 1
     assert games[0].platforms == platforms_json
 
-    # Check game listing formatting (shows (icon short_plat))
+    # Check game listing formatting (shows (icon <i>short_plat</i>))
     listing = games_listing(games, "untitled", "ru")
     rendered = listing.render()
-    assert "(🟢 XOne | Series) Halo Infinite" in rendered
+    assert "(🟢 <i>XOne | Series</i>) Halo Infinite" in rendered
 
 
 async def test_backfill_leaves_device_null(repo: Repo) -> None:
@@ -153,9 +153,9 @@ async def test_chat_recent_achievements_includes_device_and_platforms(repo: Repo
     assert recent[0].device == "XboxSeriesX"
     assert recent[0].game_platforms == platforms_json
 
-    # Test recent_list formatting (shows (icon short_plat))
+    # Test recent_list formatting (shows (icon <i>short_plat</i>))
     rendered = recent_list(recent)
-    assert "(🟢 XSeries) Gears 5" in rendered
+    assert "(🟢 <i>XSeries</i>) Gears 5" in rendered
 
     # Test notification formatting (uses Full platform from game_platforms)
     from bot.views.notification import format_single
@@ -210,3 +210,94 @@ async def test_migration_052_applies_cleanly(tmp_path, migration_052_sql: str) -
         assert rows["t-360"] == '["Xbox360"]'
         assert rows["t-one"] == '["XboxOne"]'
         assert rows["t-stm"] == '["PC"]'
+
+
+@pytest.fixture
+def migration_055_sql() -> str:
+    migration_file = Path("bot/db/migrations/055_fix_xbox_platforms.sql")
+    return migration_file.read_text(encoding="utf-8")
+
+
+async def test_migration_055_fixes_xbox_platforms(tmp_path, migration_055_sql: str) -> None:
+    db_path = tmp_path / "migration_055_test.db"
+    async with aiosqlite.connect(db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        await conn.execute(
+            "CREATE TABLE titles ("
+            "  title_id TEXT PRIMARY KEY,"
+            "  name TEXT NOT NULL,"
+            "  platform TEXT NOT NULL,"
+            "  platforms TEXT"
+            ")"
+        )
+        await conn.execute(
+            "CREATE TABLE seen_achievements (  title_id TEXT NOT NULL,  device TEXT)"
+        )
+        # Seed titles with erroneous ["XboxOne"] from migration 052
+        await conn.execute(
+            "INSERT INTO titles VALUES ('t-solitaire', 'Solitaire', 'xbox_modern', '[\"XboxOne\"]')"
+        )
+        await conn.execute(
+            "INSERT INTO titles VALUES ('t-halo', 'Halo Infinite', 'xbox_modern', '[\"XboxOne\"]')"
+        )
+        await conn.execute(
+            "INSERT INTO titles VALUES ('t-unknown', 'Old Game', 'xbox_modern', '[\"XboxOne\"]')"
+        )
+        await conn.execute(
+            "INSERT INTO titles VALUES ('t-360', 'Halo 3', 'xbox_360', '[\"Xbox360\"]')"
+        )
+
+        # Seed recorded devices in seen_achievements
+        await conn.execute("INSERT INTO seen_achievements VALUES ('t-solitaire', 'WindowsOneCore')")
+        await conn.execute("INSERT INTO seen_achievements VALUES ('t-halo', 'XboxSeriesX')")
+        await conn.execute("INSERT INTO seen_achievements VALUES ('t-halo', 'XboxOne')")
+        await conn.commit()
+
+        # Run migration 055
+        await conn.executescript(migration_055_sql)
+        await conn.commit()
+
+        cursor = await conn.execute("SELECT title_id, platforms FROM titles ORDER BY title_id")
+        rows = {r["title_id"]: r["platforms"] for r in await cursor.fetchall()}
+
+        # 360 left untouched
+        assert rows["t-360"] == '["Xbox360"]'
+        # Unknown modern game reset to NULL (which formats as generic XBOX)
+        assert rows["t-unknown"] is None
+        # Solitaire recovered as WindowsOneCore
+        assert rows["t-solitaire"] == '["WindowsOneCore"]'
+        # Halo recovered as both devices
+        halo_devices = json.loads(rows["t-halo"])
+        assert set(halo_devices) == {"XboxSeriesX", "XboxOne"}
+
+
+async def test_ensure_title_device_and_save_title_history_devices(repo: Repo) -> None:
+    from bot.db.repo import TitleHistoryRow
+
+    # ensure_title_device seeds when NULL
+    await repo.upsert_title("t-device-1", "Test Game", Platform.XBOX_MODERN)
+    await repo.ensure_title_device("t-device-1", "WindowsOneCore")
+
+    title_row = await repo.title_platforms(["t-device-1"])
+    assert title_row["t-device-1"] == '["WindowsOneCore"]'
+
+    # Calling it again doesn't overwrite
+    await repo.ensure_title_device("t-device-1", "XboxSeriesX")
+    title_row = await repo.title_platforms(["t-device-1"])
+    assert title_row["t-device-1"] == '["WindowsOneCore"]'
+
+    # save_title_history with TitleHistoryRow passes devices and updates
+    history_row = TitleHistoryRow(
+        title_id="t-device-1",
+        name="Test Game",
+        platform=Platform.XBOX_MODERN,
+        current_gamerscore=10,
+        max_gamerscore=1000,
+        achievements_unlocked=1,
+        achievements_total=10,
+        last_played_at="2026-09-20T12:00:00+00:00",
+        devices=["XboxOne", "XboxSeriesX"],
+    )
+    await repo.save_title_history("xuid-1", [history_row])
+    title_row = await repo.title_platforms(["t-device-1"])
+    assert set(json.loads(title_row["t-device-1"])) == {"XboxOne", "XboxSeriesX"}

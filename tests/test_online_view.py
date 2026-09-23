@@ -36,8 +36,8 @@ def test_playing_shows_the_game() -> None:
 
 def test_playing_shows_the_device() -> None:
     row = presence("Online", "123", "Halo Infinite", device="XboxSeriesX")
-    assert presence_text(row, "ru") == "играет [XBOX Series X|S] — Halo Infinite"
-    assert presence_text(row, "en") == "playing [XBOX Series X|S] — Halo Infinite"
+    assert presence_text(row, "ru") == "играет [<i>XBOX Series X|S</i>] — Halo Infinite"
+    assert presence_text(row, "en") == "playing [<i>XBOX Series X|S</i>] — Halo Infinite"
 
 
 def test_online_not_playing() -> None:

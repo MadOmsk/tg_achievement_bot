@@ -600,6 +600,7 @@ class TitleHistoryRow:
     achievements_unlocked: int | None
     achievements_total: int | None
     last_played_at: str | None
+    devices: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

@@ -398,7 +398,20 @@ async def who_stats_button(
     if isinstance(callback.message, Message):
         text = await build_stats_text(repo, target, callback.message.chat.id, i18n)
         if text is not None:
-            await _send_stats_card(bot, repo, callback.message.chat.id, target, text)
+            settings_row = await repo.get_user_settings(target.tg_id)
+            tz_offset_min = settings_row.tz_offset_min if settings_row else None
+            now_local = local_now(tz_offset_min)
+            markup = stats_navigation_keyboard(
+                target.tg_id,
+                now_local.year,
+                now_local.month,
+                now_local.year,
+                now_local.month,
+                locale=i18n.locale,
+            )
+            await _send_stats_card(
+                bot, repo, callback.message.chat.id, target, text, reply_markup=markup
+            )
         # The picker's own job is done either way — drop it instead of
         # leaving a stale who-is-this prompt behind.
         with contextlib.suppress(Exception):

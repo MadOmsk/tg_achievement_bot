@@ -136,7 +136,7 @@ def game_rows(games: list[GameRow], untitled: str, locale: str) -> list[str]:
     for place, game in enumerate(games, start=1):
         icon = PLATFORM_ICON.get(game.platform or "", "")
         plat = format_game_platforms(game.platforms, game.platform, short=True)
-        tag = f"({icon} {plat}) " if plat else (f"{icon} " if icon else "")
+        tag = f"({icon} <i>{plat}</i>) " if plat else (f"{icon} " if icon else "")
         tail = _game_tail(game, locale)
         escaped_name = html_escape(game.name or untitled)
         rows.append(f"{place}. {tag}{escaped_name} — {tail}")

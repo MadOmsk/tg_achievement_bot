@@ -353,6 +353,16 @@ class _AdminRepo:
         )
         await self._conn.commit()
 
+    async def ensure_title_device(self, title_id: str, device: str) -> None:
+        """If titles.platforms is NULL, seed it with the device from active presence (#79)."""
+        if not device:
+            return
+        await self._conn.execute(
+            "UPDATE titles SET platforms = ? WHERE title_id = ? AND platforms IS NULL",
+            (json.dumps([device]), title_id),
+        )
+        await self._conn.commit()
+
     async def title_name(self, title_id: str) -> str | None:
         cursor = await self._conn.execute("SELECT name FROM titles WHERE title_id = ?", (title_id,))
         row = await cursor.fetchone()

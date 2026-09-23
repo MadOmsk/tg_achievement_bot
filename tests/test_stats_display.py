@@ -224,7 +224,7 @@ def test_games_list_colours_x360_the_same_as_modern_xbox() -> None:
         title_id="t1", platform="xbox_360", name="Fallout 3", count=5, score=100
     )
     line = _games_list([game])
-    assert "(🟢 X360) Fallout 3" in line
+    assert "(🟢 <i>X360</i>) Fallout 3" in line
 
 
 async def test_games_list_is_capped_by_the_configured_limit(repo: Repo) -> None:
@@ -971,3 +971,39 @@ def test_who_label_never_stops_at_the_empty_xbox_dash() -> None:
 
 def test_who_label_last_resort_is_the_id_when_nothing_else_exists() -> None:
     assert "1" in who_label(_presence_row(tg_id=1))
+
+
+async def test_who_stats_button_sends_card_with_reply_markup(repo: Repo) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from aiogram.types import CallbackQuery, Chat, Message
+
+    from bot.handlers.chat import who_stats_button
+
+    await repo.ensure_user(1, "player")
+    await repo.link_xbox_account(1, "xuid-1", "Player", 100)
+
+    chat_message = MagicMock(spec=Message)
+    chat_message.chat = Chat(id=-1001, type="supergroup", title="Chat")
+    chat_message.delete = AsyncMock()
+
+    callback = MagicMock(spec=CallbackQuery)
+    callback.data = "who:stats:1"
+    callback.message = chat_message
+    callback.answer = AsyncMock()
+
+    sent_message = MagicMock(spec=Message, message_id=123)
+    bot = MagicMock()
+    bot.send_message = AsyncMock(return_value=sent_message)
+
+    i18n = MagicMock()
+    i18n.locale = "ru"
+    i18n.get = lambda key, **kwargs: key
+
+    await who_stats_button(callback, repo, bot, i18n)
+
+    callback.answer.assert_called()
+    chat_message.delete.assert_called()
+    bot.send_message.assert_called_once()
+    _, kwargs = bot.send_message.call_args
+    assert kwargs.get("reply_markup") is not None

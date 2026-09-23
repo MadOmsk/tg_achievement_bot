@@ -50,6 +50,7 @@ class FakeHistoryEntry:
         default_factory=lambda: (utcnow() - timedelta(hours=1)).isoformat(timespec="seconds")
     )
     icon_url: str | None = None
+    devices: list[str] = field(default_factory=list)
 
 
 class FakeClient:
