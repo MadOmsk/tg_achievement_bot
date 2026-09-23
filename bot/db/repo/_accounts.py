@@ -658,3 +658,13 @@ class _AccountsRepo:
         for the Steam key and PSN NPSSO (#17). A no-op if the row is absent."""
         await self._conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
         await self._conn.commit()
+
+    async def any_active_xbox_tg_id(self) -> int | None:
+        """Find any user with an active Xbox link and active token (e.g. for catalog queries)."""
+        cursor = await self._conn.execute(
+            "SELECT al.tg_id FROM account_links al "
+            "JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
+            "WHERE al.platform = 'xbox' AND al.is_active = 1 LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        return int(row["tg_id"]) if row else None

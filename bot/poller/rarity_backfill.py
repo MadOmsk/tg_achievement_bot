@@ -119,16 +119,8 @@ class RarityBackfill:
                 if title_id in self._unanswerable:
                     continue
                 remaining -= 1
-                cursor = await self._repo._conn.execute(
-                    "SELECT platform FROM seen_achievements WHERE title_id = ? LIMIT 1",
-                    (title_id,),
-                )
-                p_row = await cursor.fetchone()
-                platform = (
-                    Platform(p_row["platform"])
-                    if p_row and p_row["platform"]
-                    else Platform.XBOX_MODERN
-                )
+                seen_plat = await self._repo.title_seen_platform(title_id)
+                platform = Platform(seen_plat) if seen_plat else Platform.XBOX_MODERN
 
                 title_name = None
                 rarity = {}

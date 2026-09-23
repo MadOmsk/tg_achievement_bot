@@ -239,13 +239,7 @@ class TitleCatalogService:
 
         if not account_id:
             # Fall back to any active PSN link
-            cursor = await self._repo._conn.execute(
-                "SELECT external_id FROM account_links "
-                "WHERE platform = 'psn' AND is_active = 1 LIMIT 1"
-            )
-            row = await cursor.fetchone()
-            if row:
-                account_id = row["external_id"]
+            account_id = await self._repo.any_active_external_id("psn")
 
         if not account_id:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
@@ -372,14 +366,7 @@ class TitleCatalogService:
 
         target_tg_id = tg_id
         if not target_tg_id:
-            cursor = await self._repo._conn.execute(
-                "SELECT al.tg_id FROM account_links al "
-                "JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
-                "WHERE al.platform = 'xbox' AND al.is_active = 1 LIMIT 1"
-            )
-            row = await cursor.fetchone()
-            if row:
-                target_tg_id = int(row["tg_id"])
+            target_tg_id = await self._repo.any_active_xbox_tg_id()
 
         if not target_tg_id:
             return await self._repo.get_title_achievements(platform_str, title_id)

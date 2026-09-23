@@ -431,3 +431,12 @@ class _AchievementsRepo:
             )
             for row in await cursor.fetchall()
         ]
+
+    async def title_seen_platform(self, title_id: str) -> str | None:
+        """Find the platform of an achievement for this title in seen_achievements."""
+        cursor = await self._conn.execute(
+            "SELECT platform FROM seen_achievements WHERE title_id = ? LIMIT 1",
+            (title_id,),
+        )
+        row = await cursor.fetchone()
+        return str(row["platform"]) if row and row["platform"] else None

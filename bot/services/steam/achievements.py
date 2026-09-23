@@ -107,28 +107,37 @@ async def fetch_unlocked(
             repo, anthropic_auth, api_key, steam_id, appid, unlocked
         )
         now = utcnow_iso()
-        cat_rows = [
-            TitleAchievementRow(
-                platform=Platform.STEAM.value,
-                title_id=appid,
-                achievement_id=item.apiname,
-                name_ru=item.name,
-                name_en=item.name,
-                description_ru=descriptions.get(item.apiname, (item.description, None))[0],
-                description_en=descriptions.get(item.apiname, (None, item.description))[1],
-                icon_url=(
-                    schema_by_id.get(item.apiname).icon if schema_by_id.get(item.apiname) else None
-                ),
-                is_secret=(
-                    schema_by_id.get(item.apiname).hidden
-                    if schema_by_id.get(item.apiname)
-                    else False
-                ),
-                rarity_percent=percentages.get(item.apiname),
-                updated_at=now,
+        cached_names_map = await repo.cached_names(
+            [(Platform.STEAM.value, appid, item.apiname) for item in raw]
+        )
+        cat_rows = []
+        for item in raw:
+            cached_pair = cached_names_map.get((Platform.STEAM.value, appid, item.apiname))
+            name_ru = (cached_pair[0] if cached_pair and cached_pair[0] else None) or item.name
+            name_en = cached_pair[1] if cached_pair and cached_pair[1] else None
+            cat_rows.append(
+                TitleAchievementRow(
+                    platform=Platform.STEAM.value,
+                    title_id=appid,
+                    achievement_id=item.apiname,
+                    name_ru=name_ru,
+                    name_en=name_en,
+                    description_ru=descriptions.get(item.apiname, (item.description, None))[0],
+                    description_en=descriptions.get(item.apiname, (None, item.description))[1],
+                    icon_url=(
+                        schema_by_id.get(item.apiname).icon
+                        if schema_by_id.get(item.apiname)
+                        else None
+                    ),
+                    is_secret=(
+                        schema_by_id.get(item.apiname).hidden
+                        if schema_by_id.get(item.apiname)
+                        else False
+                    ),
+                    rarity_percent=percentages.get(item.apiname),
+                    updated_at=now,
+                )
             )
-            for item in raw
-        ]
         await repo.upsert_title_achievements(cat_rows)
 
     result: list[ParsedAchievement] = []

@@ -354,3 +354,38 @@ async def test_get_game_details_with_checklist_and_groups(repo: Repo, settings: 
         assert t1["is_unlocked"] is False
     finally:
         await client.close()
+
+
+async def test_repo_catalog_helper_methods(repo: Repo) -> None:
+    # 1. any_active_external_id
+    assert await repo.any_active_external_id("psn") is None
+    await repo.ensure_user(100, "user100")
+    await repo.link_platform_account(100, Platform.PSN, "psn_ext_1", "PSNUser")
+    assert await repo.any_active_external_id("psn") == "psn_ext_1"
+
+    # 2. any_active_xbox_tg_id
+    assert await repo.any_active_xbox_tg_id() is None
+    await repo.link_xbox_account(100, "xuid_100", "XboxUser", 100)
+    await repo.save_refresh_token(100, b"fake_enc")
+    assert await repo.any_active_xbox_tg_id() == 100
+
+    # 3. title_seen_platform
+    assert await repo.title_seen_platform("game_1") is None
+    await repo.insert_new_achievements(
+        "xuid_100",
+        [
+            AchievementRow(
+                title_id="game_1",
+                achievement_id="a1",
+                name="A1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow_iso(),
+                gamerscore=10,
+                rarity_percent=5.0,
+                platform="xbox_360",
+            )
+        ],
+        is_backfill=False,
+    )
+    assert await repo.title_seen_platform("game_1") == "xbox_360"

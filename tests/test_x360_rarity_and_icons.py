@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -37,7 +38,9 @@ def test_https_url_translates_x360_cdn() -> None:
     assert _https_url(None) is None
 
 
-async def test_handle_x360_icon_success_and_cache() -> None:
+async def test_handle_x360_icon_success_and_cache(tmp_path: Path, monkeypatch) -> None:
+    fake_dir = tmp_path / "achievements"
+    monkeypatch.setattr("bot.services.achievement_icons.ACHIEVEMENTS_DIR", fake_dir)
     _X360_ICON_CACHE.clear()
 
     app = web.Application()

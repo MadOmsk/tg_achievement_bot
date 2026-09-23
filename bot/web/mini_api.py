@@ -568,15 +568,7 @@ async def handle_avatar(request: web.Request) -> web.Response:
     )
 
 
-class _X360Cache(dict[str, bytes]):
-    def clear(self) -> None:
-        super().clear()
-        p = achievement_icons.x360_icon_path("584109cb", "3")
-        if p.is_file():
-            p.unlink(missing_ok=True)
-
-
-_X360_ICON_CACHE: _X360Cache = _X360Cache()
+_X360_ICON_CACHE: dict[str, bytes] = {}
 _HEX_CHARS = set("0123456789abcdefABCDEF")
 
 

@@ -533,6 +533,15 @@ class _PlatformLinksRepo:
         )
         return await cursor.fetchone() is not None
 
+    async def any_active_external_id(self, platform: str) -> str | None:
+        """Find any active external_id linked for this platform (e.g. for catalog queries)."""
+        cursor = await self._conn.execute(
+            "SELECT external_id FROM account_links WHERE platform = ? AND is_active = 1 LIMIT 1",
+            (platform,),
+        )
+        row = await cursor.fetchone()
+        return str(row["external_id"]) if row else None
+
 
 def _as_platform_link(row) -> PlatformLink:
     return PlatformLink(

@@ -157,6 +157,9 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │   ├── auth.py              wrapper over xbox-webapi-python: token storage, refresh
 │   │   │   ├── client.py            Xbox Live requests, rate limiting, retry, backoff
 │   │   │   └── models.py            pydantic response models (incl. rarity from contract 4)
+│   │   ├── achievement_icons.py    local disk storage and caching for achievement icons under data/achievements/ (#99)
+│   │   ├── platform_format.py      mapping and formatting of game platforms and player devices (#79)
+│   │   ├── title_catalog.py        TitleCatalogService: game-level achievement catalog, 24h debounce (#99, #80)
 │   │   ├── rows.py                 ParsedAchievement -> AchievementRow, shared by both pollers and psn/achievements.py
 │   │   ├── description_backfill.py one Xbox title's descriptions in both locales — shared
 │   │   │                           by the one-off script and the self-healing poller (#48)
@@ -260,6 +263,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── backfill_descriptions.py   one-off: bilingual descriptions for everything unlocked
 │   │                               before the description cache existed (#48) — per title,
 │   │                               two locales, then the shared bilingual_descriptions()
+│   ├── cache_achievement_icons.py batch pre-caching of achievement icons into data/achievements/ (#99)
 │   └── render_screen.py           draws any screen in bot/views/ on demand and prints it,
 │                                   or sends it to the owner's DM as a real message (#63) —
 │                                   what replaced the hand-kept mockups in docs/ui/
@@ -271,7 +275,7 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 ├── backups/                     database copies, dumps, and the one-off scripts that
 │                                make them; gitignored — see Operations' own "Backups"
 │                                entry for the rule a dump must never break
-├── data/                        bot.db; gitignored
+├── data/                        bot.db, data/avatars/, data/covers/, data/achievements/; gitignored
 └── logs/                        bot.log, bot.err.log; gitignored
 ```
 
@@ -351,6 +355,11 @@ achievement description just keeps whatever language it was fetched in) —
 neither is fatal to anything else. Clearing a key in the panel disables its
 seed (the panel action is the newer, explicit decision), so a stale env var
 can't resurrect it.
+
+Other admin-managed dynamic settings live in `app_settings` (tunable live via
+`/admin` without restarts), including HLTB limits, summary thresholds, and
+`account_reset_cooldown_hours` (anti-abuse cooldown in hours before re-linking a
+platform after repeated resets, default 24h, 0 = disabled).
 
 ## Data model
 
@@ -624,6 +633,33 @@ every column.
   achievement whose second language genuinely never arrived. Rows are copied,
   never mutated: the publisher renders the same list once per chat, and two
   chats can be in two languages.
+- **Game platforms and device separation** (#79, migration 052):
+  `titles.platforms` stores available platforms for a game as reported by platform
+  APIs (JSON array of strings, e.g. `["XboxOne", "XboxSeriesX"]`, `["PS4", "PSVITA"]`,
+  or `["PC"]`). `seen_achievements.device`, `presence_state.device`, and
+  `psn_presence_state.device` record the specific hardware device on which an
+  achievement was earned or player presence is active (e.g. `XboxSeriesX`, `PS5`).
+  Standardized and rendered via `services/platform_format.py`.
+- **Game achievement catalog** (#99, #80, migration 053):
+  `title_achievements (platform, title_id, achievement_id, name_ru, name_en,
+  description_ru, description_en, icon_url, is_secret, gamerscore, trophy_type,
+  trophy_group_id, rarity_percent, updated_at)`.
+  A global, game-level catalog of achievements per title, decoupled from whether any
+  specific user in the database has unlocked them. `titles.achievements_checked_at`
+  tracks synchronization with a 24-hour debounce so `TitleCatalogService` avoids
+  redundant platform API walks. On bring-up, catalog rows are backfilled from
+  `seen_achievements` and the bilingual/rarity caches. Associated achievement icons
+  are cached on disk under `data/achievements/{platform}/{title_id}/{hash}.{ext}`
+  via `services/achievement_icons.py`.
+- **Platform cooldowns on account reset** (migration 054):
+  `platform_cooldowns (tg_id, platform, external_id, reset_count, last_reset_at)`.
+  Anti-abuse protection against repeated complete account deletions and re-links
+  causing excessive backfill API load. One free re-link is allowed immediately
+  (`reset_count <= 1`); subsequent resets within the cooldown window
+  (`account_reset_cooldown_hours`, default 24h) block re-linking until the window
+  expires. Cooldowns track both `(tg_id, platform)` and `(platform, external_id)` so
+  switching Telegram accounts cannot bypass the lock. Deletions initiated by a
+  super-admin (`is_admin=True`) clear cooldowns immediately.
 
 ## Platform integrations
 

@@ -428,12 +428,17 @@ async def _bilingual_descriptions(
 
     now = utcnow_iso()
     en_names = english_names if "english_names" in locals() else {}
+    ru_names = (
+        {item.trophy_id: item.trophy_name for item in russian_earned}
+        if "russian_earned" in locals()
+        else {}
+    )
     cat_rows = [
         TitleAchievementRow(
             platform=Platform.PSN.value,
             title_id=title.np_communication_id,
             achievement_id=str(item.trophy_id),
-            name_ru=item.trophy_name,
+            name_ru=ru_names.get(item.trophy_id) or (item.trophy_name if not en_names else None),
             name_en=en_names.get(item.trophy_id, item.trophy_name),
             description_ru=cached.get(item.trophy_id),
             description_en=item.trophy_detail,
