@@ -2002,7 +2002,9 @@ Every production release must ship with user-facing and contributor notes in
 `changelog/`:
   * `changelog/<version>.ru.md` — user notes in Russian;
   * `changelog/<version>.en.md` — user notes in English;
-  * `changelog/<version>.contributors.md` — architectural and developer notes.
+  * `changelog/<version>.contributors.md` — architectural and developer notes;
+  * `changelog/<version>.summary.ru.txt` — brief bullet-point summary (5-8 key items) formatted with `•` for the Telegram announcement message in Russian (owner, 2026-09-23);
+  * `changelog/<version>.summary.en.txt` — brief bullet-point summary (5-8 key items) formatted with `•` for the Telegram announcement message in English (owner, 2026-09-23).
 
 The AI assistant must draft and commit these files to `test` **before** merging
 into `main`. That ensures `main` always carries the release notes for its own
@@ -2016,8 +2018,10 @@ On startup, both bots check `app_settings.last_announced_version`:
     never receive broadcast announcements.
   * Each group receives the message rendered in its configured locale
     (`chat_settings.locale`).
-  * **Production bot (`main`)**: announces the update with an inline button
-    linking to the public GitHub release notes for that language
+  * **Production bot (`main`)**: announces the update directly in the chat with a
+    brief list of release highlights (`changelog/<version>.summary.<locale>.txt`,
+    falling back to bullet extraction from the markdown changelog) and an inline
+    button linking to the full public GitHub release notes for that language
     (`https://github.com/MadOmsk/tg_achievement_bot/blob/main/changelog/<version>.<locale>.md`).
   * **Test bot (`test`)**: announces the update to test groups without links or
     buttons.
