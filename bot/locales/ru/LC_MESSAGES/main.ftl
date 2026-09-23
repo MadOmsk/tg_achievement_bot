@@ -50,9 +50,8 @@ main-already-running =
     Состояние: manage.bat status
 
 # Release announcements (services/release_notify.py)
-main-release-announced =
-    🚀 <b>Бот обновлён до версии { $version }!</b>
-
-    Посмотрите, что нового появилось в этом обновлении:
+main-release-announced = 🚀 <b>Бот обновлён до версии { $version }!</b>
+main-release-summary-header = <b>Кратко о главных изменениях:</b>
+main-release-details-prompt = Посмотрите подробный список изменений в этом обновлении:
 main-release-button = 📖 Патчноутс
 main-test-release-announced = 🧪 <b>Тестовый бот обновлён до версии { $version }!</b>

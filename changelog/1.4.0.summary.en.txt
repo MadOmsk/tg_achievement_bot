@@ -1,0 +1,8 @@
+• Complete game achievement catalog and details in Mini App
+• Local disk caching of achievement icons on server
+• Full Xbox 360 support (icons, rarity, backward compatibility)
+• Redesigned group /panel hub and clean /help command list
+• Curated group slash menu (4 essential commands)
+• Interactive date navigation and calendar for stats
+• Unified multi-platform sync and instant dormant wakeup
+• Full account deletion and platform data cleanup

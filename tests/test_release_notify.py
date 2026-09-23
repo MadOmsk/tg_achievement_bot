@@ -12,6 +12,7 @@ from bot.services.release_notify import (
     CHANGELOG_BASE_URL,
     announce_release_if_needed,
     base_version,
+    load_release_summary,
 )
 
 
@@ -131,3 +132,40 @@ async def test_forbidden_error_deactivates_chat(repo: Repo) -> None:
     )
     row = await cursor.fetchone()
     assert row["is_active"] == 0
+
+
+def test_load_release_summary_from_summary_file() -> None:
+    summary_ru = load_release_summary("1.4.0", "ru")
+    assert summary_ru is not None
+    assert "•" in summary_ru
+    assert "Mini App" in summary_ru
+
+    summary_en = load_release_summary("1.4.0", "en")
+    assert summary_en is not None
+    assert "•" in summary_en
+    assert "Mini App" in summary_en
+
+
+def test_load_release_summary_falls_back_to_markdown() -> None:
+    # 1.3.0 has .ru.md but no .summary.ru.txt
+    summary = load_release_summary("1.3.0", "ru")
+    assert summary is not None
+    assert "• Оповещения об обновлениях в чатах" in summary
+
+
+@pytest.mark.asyncio
+async def test_production_announces_with_brief_summary(repo: Repo) -> None:
+    chat_ru = -1005001
+    await repo.upsert_chat(chat_ru, "RU Summary Chat", None)
+    await repo.update_chat_settings(chat_ru, locale="ru")
+
+    bot = FakeBot()
+    delivered = await announce_release_if_needed(
+        bot, repo, "1.4.0.056", is_test=False, sleep_delay=0
+    )
+    assert delivered == 1
+    sent = bot.sent[0]
+    assert "Бот обновлён до версии 1.4.0.056!" in sent["text"]
+    assert "Кратко о главных изменениях:" in sent["text"]
+    assert "• Полный каталог всех достижений игр" in sent["text"]
+    assert "Посмотрите подробный список изменений" in sent["text"]

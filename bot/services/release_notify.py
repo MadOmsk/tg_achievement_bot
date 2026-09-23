@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from pathlib import Path
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
@@ -22,6 +24,7 @@ from bot.services.message_log import stats_category
 log = logging.getLogger(__name__)
 
 CHANGELOG_BASE_URL = "https://github.com/MadOmsk/tg_achievement_bot/blob/main/changelog"
+CHANGELOG_DIR = Path(__file__).resolve().parents[2] / "changelog"
 APP_SETTING_KEY = "last_announced_version"
 
 
@@ -29,6 +32,39 @@ def base_version(full_version: str) -> str:
     """Extract A.B.C from A.B.C.D for changelog file names."""
     parts = full_version.split(".")
     return ".".join(parts[:3]) if len(parts) >= 3 else full_version
+
+
+def load_release_summary(base_ver: str, locale: str) -> str | None:
+    """Load brief release summary from a summary file or extract bullet
+    points from changelog markdown."""
+    summary_file = CHANGELOG_DIR / f"{base_ver}.summary.{locale}.txt"
+    if summary_file.is_file():
+        try:
+            text = summary_file.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+        except OSError:
+            pass
+
+    md_file = CHANGELOG_DIR / f"{base_ver}.{locale}.md"
+    if md_file.is_file():
+        try:
+            content = md_file.read_text(encoding="utf-8")
+            bullets: list[str] = []
+            for line in content.splitlines():
+                line = line.strip()
+                if line.startswith(("- **", "* **")):
+                    match = re.match(r"^[-*]\s+\*\*([^*]+)\*\*", line)
+                    if match:
+                        title = match.group(1).rstrip(".:")
+                        bullets.append(f"• {title}")
+                        if len(bullets) >= 8:
+                            break
+            if bullets:
+                return "\n".join(bullets)
+        except OSError:
+            pass
+    return None
 
 
 async def announce_release_if_needed(
@@ -64,7 +100,17 @@ async def announce_release_if_needed(
             )
             markup = None
         else:
-            text = gettext("main", "main-release-announced", locale=locale, version=current_version)
+            header = gettext(
+                "main", "main-release-announced", locale=locale, version=current_version
+            )
+            details_prompt = gettext("main", "main-release-details-prompt", locale=locale)
+            summary = load_release_summary(base_ver, locale)
+            if summary:
+                summary_header = gettext("main", "main-release-summary-header", locale=locale)
+                text = f"{header}\n\n{summary_header}\n{summary}\n\n{details_prompt}"
+            else:
+                text = f"{header}\n\n{details_prompt}"
+
             btn_text = gettext("main", "main-release-button", locale=locale)
             url = f"{CHANGELOG_BASE_URL}/{base_ver}.{locale}.md"
             markup = InlineKeyboardMarkup(
