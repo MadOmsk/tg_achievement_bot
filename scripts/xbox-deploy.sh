@@ -91,6 +91,10 @@ sudo -u "$RUN_AS" git fetch origin --tags
 sudo -u "$RUN_AS" git merge --ff-only "origin/$BRANCH"
 say "now at $(sudo -u "$RUN_AS" git log --oneline -1)"
 
+if [ -f scripts/xbox-deploy.sh ]; then
+  install -m 0755 scripts/xbox-deploy.sh /usr/local/bin/xbox-deploy
+fi
+
 if [ "$(sha256sum pyproject.toml | cut -d' ' -f1)" != "$BEFORE_PYPROJECT" ]; then
   say "pyproject.toml changed — reinstalling dependencies"
   sudo -u "$RUN_AS" .venv/bin/pip install -q -e .
