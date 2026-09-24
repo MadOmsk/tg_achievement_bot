@@ -685,7 +685,11 @@ CREATE INDEX IF NOT EXISTS idx_title_achievements_title
 -- card is about, not the requester — SPEC 9's own "по 1 шт на юзера").
 CREATE TABLE IF NOT EXISTS tracked_messages (
     chat_id    INTEGER NOT NULL,
-    kind       TEXT    NOT NULL CHECK (kind IN ('panel', 'summary', 'recent', 'stats')),
+    -- 'summary_day'/'summary_month': one slot per report (058); 'summary'
+    -- only for rows the removed /summary left behind.
+    kind       TEXT    NOT NULL CHECK (
+        kind IN ('panel', 'summary', 'summary_day', 'summary_month', 'recent', 'stats')
+    ),
     subject_id INTEGER NOT NULL DEFAULT 0,
     message_id INTEGER NOT NULL,
     updated_at TEXT    NOT NULL,
