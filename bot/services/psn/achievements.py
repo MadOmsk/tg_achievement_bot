@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from psnawp_api import PSNAWP
 from psnawp_api.models.trophies import TrophyTitle
 
-from bot.constants import Platform
+from bot.constants import Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleAchievementRow
 from bot.services.models import ParsedAchievement
 from bot.services.psn.client import (
@@ -254,16 +254,15 @@ async def sync_account(
                 if item.trophy_earn_rate is not None
             },
         )
+        # The device these trophies were earned on (owner, 2026-09-24): what
+        # presence reports while the person is online, and otherwise nothing —
+        # never a guess. A game on a single platform is filled in by
+        # `repo.fill_single_platform_devices` on insert, backfill included.
         target_device: str | None = None
-        if not is_backfill:
-            if len(platforms_list) == 1:
-                target_device = platforms_list[0]
-            elif platforms_list:
-                presence = await repo.psn_presence_of(account_id)
-                if presence and presence.device:
-                    target_device = presence.device
-                if not target_device:
-                    target_device = platforms_list[0]
+        if not is_backfill and len(platforms_list) > 1:
+            presence = await repo.psn_presence_of(account_id)
+            if presence and presence.state == PresenceState.ONLINE and presence.device:
+                target_device = presence.device
 
         rows = [
             to_achievement_row(_to_parsed(title.np_communication_id, item, device=target_device))

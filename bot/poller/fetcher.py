@@ -70,8 +70,6 @@ class Fetcher:
                 # Presence gives no name for a PC title; the name is resolved
                 # further down, and the total must not wait for it.
                 await self._repo.set_title_total(title_id, total)
-        if device:
-            await self._repo.ensure_title_device(title_id, device)
         await self._fill_x360_icon(tg_id, title_id, platform, parsed)
         await self._bilingual_descriptions(tg_id, title_id, platform, parsed)
         # Free: this response carried the percentages, and the shared cache is

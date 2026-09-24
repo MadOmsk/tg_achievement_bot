@@ -353,24 +353,6 @@ class _AdminRepo:
         )
         await self._conn.commit()
 
-    async def ensure_title_device(self, title_id: str, device: str) -> None:
-        """If titles.platforms is NULL, seed it with the device from active presence (#79)."""
-        if not device:
-            return
-        # Xbox 360 titles always keep ["Xbox360"] regardless of presence device
-        await self._conn.execute(
-            "UPDATE titles SET platforms = '[\"Xbox360\"]' "
-            "WHERE title_id = ? AND platforms IS NULL AND platform IN ('xbox_360', 'x360')",
-            (title_id,),
-        )
-        await self._conn.execute(
-            "UPDATE titles SET platforms = ? "
-            "WHERE title_id = ? AND platforms IS NULL "
-            "  AND (platform IS NULL OR platform NOT IN ('xbox_360', 'x360'))",
-            (json.dumps([device]), title_id),
-        )
-        await self._conn.commit()
-
     async def title_name(self, title_id: str) -> str | None:
         cursor = await self._conn.execute("SELECT name FROM titles WHERE title_id = ?", (title_id,))
         row = await cursor.fetchone()

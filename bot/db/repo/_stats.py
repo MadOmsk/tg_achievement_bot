@@ -93,6 +93,8 @@ class _StatsRepo:
                     "DELETE FROM seen_achievements WHERE title_id = ? AND platform = 'xbox_modern'",
                     (entry.title_id,),
                 )
+        # A game's platforms may only now be known, for rows stored before.
+        await self.fill_single_platform_devices([e.title_id for e in entries])
         await self._conn.commit()
 
     async def update_gamerscore(self, tg_id: int, gamerscore: int) -> None:

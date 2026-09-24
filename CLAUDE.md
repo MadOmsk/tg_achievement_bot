@@ -291,8 +291,22 @@ every column. History: #106.
   publish" — not "did not happen" (Statistics rules). `is_secret` renders behind a
   spoiler. `trophy_type` is the PSN tier; `trophy_group_id` is the PSN group
   (`default`, `001`…), `NULL` elsewhere and on PSN rows stored before #46 — which is
-  how the poller knows a game's DLC trophies were never fetched. `device` is the
-  hardware it was earned on (#79).
+  how the poller knows a game's DLC trophies were never fetched.
+- **`device` — what an achievement was earned on — is a fact or `NULL`, never a
+  guess** (#79; owner, 2026-09-24; migration 059). Its sources: Xbox presence while
+  that game is being played (the exit poll uses the device presence last reported);
+  PSN presence while the person is online; otherwise, for a game released on
+  exactly one platform, that platform (`repo.fill_single_platform_devices`, run on
+  insert and again when `save_title_history` learns a game's platforms). A game on
+  several platforms with nothing known stays `NULL` and renders as the platform
+  family. Steam stays `NULL` (PC or Steam Deck cannot be told apart). The column
+  holds either presence codenames (`Scarlett`, `PS5`) or platform names
+  (`XboxSeries`, `PC`) — display normalizes both. How each screen *shows* platform
+  vs device is being redesigned (owner, 2026-09-24) and is not settled yet.
+- **A game's platforms (`titles.platforms`) are what it was released on** — from
+  Xbox titlehub or PSN's title listing, never from presence. Presence codenames
+  found there (`Scarlett`, `Durango`, `WindowsOneCore`, `Web`, …) were device
+  guesses and were cleared by migration 059 for titlehub to refill.
 - `publications` records what was posted to each chat, with its message id.
   `bot_messages` logs every bot message in a group (`is_system`, `is_achievement`,
   `preview`) for cleanup and `/delete_last`; `tracked_messages` holds the one copy a

@@ -89,6 +89,9 @@ class PollTarget:
     updated_at: str | None
     last_online_at: str | None = None
     linked_at: str | None = None
+    # The device presence last reported — what the exit poll of the game just
+    # left was played on.
+    device: str | None = None
 
 
 @dataclass(slots=True)

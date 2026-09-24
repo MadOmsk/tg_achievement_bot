@@ -271,22 +271,10 @@ async def test_migration_055_fixes_xbox_platforms(tmp_path, migration_055_sql: s
         assert set(halo_devices) == {"XboxSeriesX", "XboxOne"}
 
 
-async def test_ensure_title_device_and_save_title_history_devices(repo: Repo) -> None:
+async def test_save_title_history_writes_the_game_platforms(repo: Repo) -> None:
     from bot.db.repo import TitleHistoryRow
 
-    # ensure_title_device seeds when NULL
     await repo.upsert_title("t-device-1", "Test Game", Platform.XBOX_MODERN)
-    await repo.ensure_title_device("t-device-1", "WindowsOneCore")
-
-    title_row = await repo.title_platforms(["t-device-1"])
-    assert title_row["t-device-1"] == '["WindowsOneCore"]'
-
-    # Calling it again doesn't overwrite
-    await repo.ensure_title_device("t-device-1", "XboxSeriesX")
-    title_row = await repo.title_platforms(["t-device-1"])
-    assert title_row["t-device-1"] == '["WindowsOneCore"]'
-
-    # save_title_history with TitleHistoryRow passes devices and updates
     history_row = TitleHistoryRow(
         title_id="t-device-1",
         name="Test Game",
@@ -302,13 +290,8 @@ async def test_ensure_title_device_and_save_title_history_devices(repo: Repo) ->
     title_row = await repo.title_platforms(["t-device-1"])
     assert set(json.loads(title_row["t-device-1"])) == {"XboxOne", "XboxSeriesX"}
 
-    # Xbox 360 titles: ensure_title_device seeds with ["Xbox360"] regardless of device
+    # Xbox 360 titles: saved as ["Xbox360"] regardless of backward-compat devices
     await repo.upsert_title("t-360-dev", "Fable II", Platform.XBOX_360)
-    await repo.ensure_title_device("t-360-dev", "Scarlett")
-    title_row_360 = await repo.title_platforms(["t-360-dev"])
-    assert title_row_360["t-360-dev"] == '["Xbox360"]'
-
-    # Xbox 360 titles: save_title_history saves ["Xbox360"] regardless of backward-compat devices
     history_row_360 = TitleHistoryRow(
         title_id="t-360-dev",
         name="Fable II",
@@ -323,6 +306,161 @@ async def test_ensure_title_device_and_save_title_history_devices(repo: Repo) ->
     await repo.save_title_history("xuid-1", [history_row_360])
     title_row_360 = await repo.title_platforms(["t-360-dev"])
     assert title_row_360["t-360-dev"] == '["Xbox360"]'
+
+
+# The device an achievement was earned on is a fact or nothing (owner, 2026-09-24).
+
+
+def _row(title_id: str, achievement_id: str, platform: Platform, device: str | None = None):
+    return AchievementRow(
+        title_id=title_id,
+        achievement_id=achievement_id,
+        name="A",
+        description=None,
+        icon_url=None,
+        unlocked_at="2026-09-20T12:00:00+00:00",
+        gamerscore=10,
+        rarity_percent=None,
+        platform=platform,
+        device=device,
+    )
+
+
+async def _devices(repo: Repo) -> dict[str, str | None]:
+    cursor = await repo._conn.execute("SELECT title_id, device FROM seen_achievements")
+    return {r["title_id"]: r["device"] for r in await cursor.fetchall()}
+
+
+async def test_a_single_platform_game_gets_its_platform_as_the_device(repo: Repo) -> None:
+    await repo.upsert_title(
+        "t-one", "Series only", Platform.XBOX_MODERN, platforms='["XboxSeries"]'
+    )
+    await repo.upsert_title(
+        "t-many", "Play Anywhere", Platform.XBOX_MODERN, platforms='["PC", "XboxSeries"]'
+    )
+    await repo.insert_new_achievements(
+        "xuid-1",
+        [_row("t-one", "1", Platform.XBOX_MODERN), _row("t-many", "1", Platform.XBOX_MODERN)],
+        is_backfill=True,
+    )
+
+    devices = await _devices(repo)
+    assert devices["t-one"] == "XboxSeries"
+    assert devices["t-many"] is None  # several platforms: not guessed
+
+
+async def test_a_device_presence_reported_is_kept(repo: Repo) -> None:
+    await repo.upsert_title(
+        "t-many", "Play Anywhere", Platform.XBOX_MODERN, platforms='["PC", "XboxSeries"]'
+    )
+    await repo.insert_new_achievements(
+        "xuid-1",
+        [_row("t-many", "1", Platform.XBOX_MODERN, device="Scarlett")],
+        is_backfill=False,
+    )
+
+    assert (await _devices(repo))["t-many"] == "Scarlett"
+
+
+async def test_the_device_fills_in_once_the_game_platforms_arrive(repo: Repo) -> None:
+    from bot.db.repo import TitleHistoryRow
+
+    await repo.insert_new_achievements(
+        "xuid-1", [_row("t-late", "1", Platform.XBOX_MODERN)], is_backfill=True
+    )
+    assert (await _devices(repo))["t-late"] is None
+
+    await repo.save_title_history(
+        "xuid-1",
+        [
+            TitleHistoryRow(
+                title_id="t-late",
+                name="Late",
+                platform=Platform.XBOX_MODERN,
+                current_gamerscore=0,
+                max_gamerscore=0,
+                achievements_unlocked=1,
+                achievements_total=1,
+                last_played_at=None,
+                devices=["PC"],
+            )
+        ],
+    )
+    assert (await _devices(repo))["t-late"] == "PC"
+
+
+async def test_steam_never_gets_a_device(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.insert_new_achievements_steam(
+        1, "76561197960287930", [_row("550", "a", Platform.STEAM)], is_backfill=True
+    )
+    await repo.upsert_title("550", "L4D2", Platform.STEAM, platforms='["PC"]')
+    await repo.fill_single_platform_devices(["550"])
+
+    assert (await _devices(repo))["550"] is None
+
+
+@pytest.fixture
+def migration_059_sql() -> str:
+    return Path("bot/db/migrations/059_device_facts_only.sql").read_text(encoding="utf-8")
+
+
+async def test_migration_059_keeps_facts_and_drops_guesses(
+    tmp_path, migration_059_sql: str
+) -> None:
+    async with aiosqlite.connect(tmp_path / "m059.db") as conn:
+        conn.row_factory = aiosqlite.Row
+        await conn.execute(
+            "CREATE TABLE titles"
+            " (title_id TEXT PRIMARY KEY, name TEXT, platform TEXT, platforms TEXT)"
+        )
+        await conn.execute(
+            "CREATE TABLE seen_achievements (title_id TEXT, platform TEXT, device TEXT)"
+        )
+        await conn.executemany(
+            "INSERT INTO titles VALUES (?, ?, ?, ?)",
+            [
+                ("t-seeded", "Haven", "xbox_modern", '["Scarlett"]'),  # a device, not platforms
+                ("t-xpa", "Well Dweller", "xbox_modern", '["PC", "XboxOne", "XboxSeries"]'),
+                ("t-pc", "Solitaire", "xbox_modern", '["PC"]'),
+                ("t-mc", "Minecraft", "xbox_modern", '["Android"]'),  # a real platform
+                ("t-ps-multi", "Spider-Man", "psn", '["PS4", "PS5"]'),
+                ("t-ps-one", "Astro Bot", "psn", '["PS5"]'),
+                ("t-360", "Halo 3", "xbox_360", '["Xbox360"]'),
+                ("550", "L4D2", "steam", '["PC"]'),
+            ],
+        )
+        await conn.executemany(
+            "INSERT INTO seen_achievements VALUES (?, ?, ?)",
+            [
+                ("t-seeded", "xbox_modern", "Scarlett"),  # presence: a fact
+                ("t-xpa", "xbox_modern", None),
+                ("t-pc", "xbox_modern", None),
+                ("t-ps-multi", "psn", "PS4"),  # possibly guessed
+                ("t-ps-one", "psn", None),
+                ("t-360", "xbox_360", None),
+                ("550", "steam", "PC"),
+            ],
+        )
+        await conn.commit()
+
+        await conn.executescript(migration_059_sql)
+        await conn.commit()
+
+        cursor = await conn.execute("SELECT title_id, platforms FROM titles")
+        titles = {r["title_id"]: r["platforms"] for r in await cursor.fetchall()}
+        cursor = await conn.execute("SELECT title_id, device FROM seen_achievements")
+        devices = {r["title_id"]: r["device"] for r in await cursor.fetchall()}
+
+    assert titles["t-seeded"] is None  # titlehub refills it
+    assert titles["t-mc"] == '["Android"]'
+    assert devices["t-seeded"] == "Scarlett"
+    assert devices["t-xpa"] is None
+    assert devices["t-pc"] == "PC"
+    assert devices["t-ps-multi"] is None
+    assert devices["t-ps-one"] == "PS5"
+    assert devices["t-360"] == "Xbox360"
+    assert devices["550"] is None
 
 
 @pytest.fixture

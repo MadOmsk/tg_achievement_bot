@@ -90,6 +90,27 @@ class _AchievementsRepo:
         await self._conn.commit()
         return deleted
 
+    async def fill_single_platform_devices(self, title_ids: Sequence[str]) -> None:
+        """The device an achievement was earned on, where nothing else says it
+        (owner, 2026-09-24): a game released on exactly one platform can only
+        have been played there. A game on several stays NULL — shown as the
+        platform family, never guessed. Steam is left alone (PC or Steam Deck
+        cannot be told apart). Commits with the caller.
+        """
+        ids = sorted({t for t in title_ids if t})
+        if not ids:
+            return
+        marks = ",".join("?" * len(ids))
+        await self._conn.execute(
+            "UPDATE seen_achievements SET device = ("
+            "  SELECT json_extract(t.platforms, '$[0]') FROM titles t"
+            "  WHERE t.title_id = seen_achievements.title_id) "
+            f"WHERE device IS NULL AND platform <> 'steam' AND title_id IN ({marks}) "
+            "AND EXISTS (SELECT 1 FROM titles t WHERE t.title_id = seen_achievements.title_id"
+            "  AND json_valid(t.platforms) AND json_array_length(t.platforms) = 1)",
+            ids,
+        )
+
     # -------------------------------------------------------- achievements
 
     async def _ensure_account(self, account_platform: str, external_id: str) -> None:
@@ -152,6 +173,7 @@ class _AchievementsRepo:
             )
             if cursor.rowcount:
                 new_rows.append(item)
+        await self.fill_single_platform_devices([a.title_id for a in new_rows])
         await self._conn.commit()
         return new_rows
 
@@ -274,6 +296,7 @@ class _AchievementsRepo:
             )
             if cursor.rowcount:
                 new_rows.append(item)
+        await self.fill_single_platform_devices([a.title_id for a in new_rows])
         await self._conn.commit()
         return new_rows
 
