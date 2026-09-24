@@ -972,10 +972,8 @@ async def delete_last(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
     IsAdmin (admin.py) is the bot's own admin_tg_ids, same as everywhere
     else "admin" means in this project — not generic Telegram chat admins.
 
-    Targets the last *non-system* message (2026-09-05 follow-up) — a system
-    message a few seconds old is already about to clean itself up, and
-    "oops, wrong one just now" is almost always about an actual result
-    (an achievement post, a stats reply), not a prompt or a confirmation.
+    Targets the bot's newest message whatever it is, except an achievement
+    notification, which it never deletes (#101, owner).
 
     The success reply names what it deleted (2026-09-09 user request,
     `bot_messages.preview`) instead of staying silent — the old silent
@@ -983,7 +981,7 @@ async def delete_last(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
     actually moved to the *previous* message rather than repeating or
     getting stuck.
     """
-    target = await repo.last_non_system_bot_message(message.chat.id)
+    target = await repo.last_deletable_bot_message(message.chat.id)
     if target is None:
         await message.answer(i18n.get("chat-delete-last-none"))
         return

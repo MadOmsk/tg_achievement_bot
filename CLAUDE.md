@@ -1258,7 +1258,12 @@ person the same way `/stats`' header does — `@username` > name > gamertag > pl
 name, never a bare id — #40), `/online` (cached presence,
 optionally auto-refreshing), `/recent [N]`, `/summary_day`, `/summary_month`,
 `/hltb`, `/delete_last`
-(deletes the chat's own latest non-system bot message). When a leaderboard is
+(deletes the bot's latest message in the chat, whatever it is — **except an
+achievement notification**, single or digest, which it never takes, #101;
+`bot_messages.is_achievement`, set by the publisher's own
+`achievement_category()`, is what tells them apart — it used to skip system
+messages instead, which made achievement posts exactly what it deleted; the
+admin panel's and the Mini App's own "delete last" share the same query). When a leaderboard is
 capped by `summary_top_limit`, one button appears under it: it replaces the
 message with the same block uncapped, in a plain (not expandable) blockquote —
 the cap exists for the chat's scrollback, and asking for everything is an

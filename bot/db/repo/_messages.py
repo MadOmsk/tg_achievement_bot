@@ -486,6 +486,7 @@ class _MessagesRepo:
         message_id: int,
         *,
         is_system: bool = True,
+        is_achievement: bool = False,
         preview: str | None = None,
     ) -> None:
         """Called from the request middleware (bot/services/message_log.py)
@@ -501,16 +502,24 @@ class _MessagesRepo:
 
         `preview` (2026-09-09) is the first couple of lines of the
         message's own text/caption, for /delete_last's own "Удалено: ..."
-        confirmation (`last_non_system_bot_message` below) — also
+        confirmation (`last_deletable_bot_message` below) — also
         refreshed on an edit, same reasoning as is_system above.
         """
         await self._conn.execute(
-            "INSERT INTO bot_messages (chat_id, message_id, sent_at, is_system, preview) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO bot_messages"
+            " (chat_id, message_id, sent_at, is_system, is_achievement, preview) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(chat_id, message_id) DO UPDATE SET"
             " sent_at = excluded.sent_at, is_system = excluded.is_system,"
-            " preview = excluded.preview",
-            (chat_id, message_id, utcnow_iso(), 1 if is_system else 0, preview),
+            " is_achievement = excluded.is_achievement, preview = excluded.preview",
+            (
+                chat_id,
+                message_id,
+                utcnow_iso(),
+                1 if is_system else 0,
+                1 if is_achievement else 0,
+                preview,
+            ),
         )
         await self._conn.commit()
 
@@ -555,7 +564,7 @@ class _MessagesRepo:
 
     async def last_bot_message(self, chat_id: int) -> int | None:
         """For the admin panel's unconditional 24h wipe — deliberately not
-        filtered by is_system, unlike `last_non_system_bot_message` below."""
+        filtered at all, unlike `last_deletable_bot_message` below."""
         cursor = await self._conn.execute(
             "SELECT message_id FROM bot_messages WHERE chat_id = ? "
             "ORDER BY message_id DESC LIMIT 1",
@@ -564,16 +573,15 @@ class _MessagesRepo:
         row = await cursor.fetchone()
         return row[0] if row else None
 
-    async def last_non_system_bot_message(self, chat_id: int) -> DeletableMessage | None:
-        """For /delete_last (SPEC 6.4's follow-up, narrowed 2026-09-05):
-        skips past trailing system messages (prompts, /help, the hub) to
-        the last actual result — those are what "oops, wrong one just now"
-        is almost always about, and a system message a few seconds old is
-        about to clean itself up regardless. Telegram message_ids are
-        assigned sequentially per chat, so the highest one logged here *is*
-        the most recent, no timestamp-tie ambiguity the way sent_at alone
-        would have (same-second messages are common right after a poll tick
-        publishes more than one).
+    async def last_deletable_bot_message(self, chat_id: int) -> DeletableMessage | None:
+        """For /delete_last and the admin panel's / Mini App's own "delete
+        last" (#101, owner): the bot's newest message in the chat whatever it
+        is — a prompt, /help, a stats reply — except an achievement
+        notification, which is never deleted this way. It used to skip
+        system messages instead, which made achievement posts exactly what it
+        took. Telegram message_ids are assigned sequentially per chat, so the
+        highest one logged here *is* the most recent, no timestamp-tie
+        ambiguity the way sent_at alone would have.
 
         Returns the row's own `preview` alongside the id (2026-09-09) — the
         caller's own confirmation names what it's about to delete, rather
@@ -581,7 +589,8 @@ class _MessagesRepo:
         message with no text/caption, never a reason to fail the delete.
         """
         cursor = await self._conn.execute(
-            "SELECT message_id, preview FROM bot_messages WHERE chat_id = ? AND is_system = 0 "
+            "SELECT message_id, preview FROM bot_messages"
+            " WHERE chat_id = ? AND is_achievement = 0 "
             "ORDER BY message_id DESC LIMIT 1",
             (chat_id,),
         )

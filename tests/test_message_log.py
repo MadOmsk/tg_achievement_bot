@@ -14,6 +14,7 @@ from bot.services.message_log import (
     MessageLogMiddleware,
     _preview_of,
     _sent_messages,
+    achievement_category,
     stats_category,
 )
 
@@ -183,7 +184,7 @@ async def test_system_message_queries_filter_correctly(repo: Repo) -> None:
     now = datetime.now(UTC)
     assert await repo.system_bot_messages_since(CHAT_ID, now - timedelta(minutes=1)) == [1]
     assert await repo.all_system_bot_messages(CHAT_ID) == [1]
-    result = await repo.last_non_system_bot_message(CHAT_ID)
+    result = await repo.last_deletable_bot_message(CHAT_ID)
     assert result is not None
     assert result.message_id == 2
 
@@ -228,31 +229,77 @@ async def test_middleware_logs_the_preview(repo: Repo) -> None:
     with stats_category():
         await middleware(returns_group, object(), object())  # type: ignore[arg-type]
 
-    result = await repo.last_non_system_bot_message(CHAT_ID)
+    result = await repo.last_deletable_bot_message(CHAT_ID)
     assert result is not None
     assert result.message_id == 20
     assert result.preview == "Тестовое сообщение"
 
 
-async def test_last_non_system_bot_message_preview_round_trips(repo: Repo) -> None:
+async def test_last_deletable_bot_message_preview_round_trips(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Test chat", 1)
     await repo.log_bot_message(CHAT_ID, 1, is_system=False, preview="строка один")
 
-    result = await repo.last_non_system_bot_message(CHAT_ID)
+    result = await repo.last_deletable_bot_message(CHAT_ID)
     assert result is not None
     assert result.message_id == 1
     assert result.preview == "строка один"
 
 
-async def test_last_non_system_bot_message_preview_defaults_to_none(repo: Repo) -> None:
+async def test_last_deletable_bot_message_preview_defaults_to_none(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Test chat", 1)
     await repo.log_bot_message(CHAT_ID, 1, is_system=False)
 
-    result = await repo.last_non_system_bot_message(CHAT_ID)
+    result = await repo.last_deletable_bot_message(CHAT_ID)
     assert result is not None
     assert result.preview is None
 
 
-async def test_last_non_system_bot_message_is_none_for_an_untouched_chat(repo: Repo) -> None:
+async def test_last_deletable_bot_message_is_none_for_an_untouched_chat(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Test chat", 1)
-    assert await repo.last_non_system_bot_message(CHAT_ID) is None
+    assert await repo.last_deletable_bot_message(CHAT_ID) is None
+
+
+# /delete_last's target (#101): any message except an achievement notification.
+
+
+async def test_last_deletable_takes_a_system_message_too(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Test chat", 1)
+    await repo.log_bot_message(CHAT_ID, 1, is_system=False)
+    await repo.log_bot_message(CHAT_ID, 2, is_system=True)
+
+    result = await repo.last_deletable_bot_message(CHAT_ID)
+    assert result is not None
+    assert result.message_id == 2
+
+
+async def test_last_deletable_never_takes_an_achievement_notification(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Test chat", 1)
+    await repo.log_bot_message(CHAT_ID, 1, is_system=True)
+    await repo.log_bot_message(CHAT_ID, 2, is_system=False, is_achievement=True)
+    await repo.log_bot_message(CHAT_ID, 3, is_system=False, is_achievement=True)
+
+    result = await repo.last_deletable_bot_message(CHAT_ID)
+    assert result is not None
+    assert result.message_id == 1
+
+
+async def test_only_achievements_left_means_nothing_to_delete(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Test chat", 1)
+    await repo.log_bot_message(CHAT_ID, 1, is_system=False, is_achievement=True)
+
+    assert await repo.last_deletable_bot_message(CHAT_ID) is None
+
+
+async def test_middleware_marks_an_achievement_as_one_and_as_non_system(repo: Repo) -> None:
+    """A whole digest album is marked, not only its first photo."""
+    await repo.upsert_chat(CHAT_ID, "Test chat", 1)
+    middleware = MessageLogMiddleware(repo)
+
+    async def returns_album(_bot: object, _method: object) -> list[Message]:
+        return [group_message(30), group_message(31)]
+
+    with achievement_category():
+        await middleware(returns_album, object(), object())  # type: ignore[arg-type]
+
+    assert await repo.last_deletable_bot_message(CHAT_ID) is None
+    assert await repo.all_system_bot_messages(CHAT_ID) == []

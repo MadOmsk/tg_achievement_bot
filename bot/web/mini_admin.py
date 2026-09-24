@@ -492,7 +492,7 @@ async def handle_admin_chat_action(request: web.Request) -> web.Response:
     action = str(body.get("action") or "")
     since = utcnow() - timedelta(hours=WIPE_WINDOW_HOURS)
     if action == "delete_last":
-        target = await repo.last_non_system_bot_message(chat_id)
+        target = await repo.last_deletable_bot_message(chat_id)
         if target is None:
             return web.json_response({"ok": True, "deleted": 0})
         try:

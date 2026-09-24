@@ -28,7 +28,11 @@ Every logged row also carries `preview` (2026-09-09 user request) — the
 first couple of lines of the message's own text/caption, unconditionally,
 regardless of category. `/delete_last`'s own confirmation is the only
 current reader (`_preview_of` below extracts it, `db/repo/_messages.py`'s
-`last_non_system_bot_message` reads it back).
+`last_deletable_bot_message` reads it back).
+
+And `is_achievement` (#101) — set by `achievement_category()`, which the
+publisher wraps its delivery in: the one kind of message `/delete_last`
+never takes.
 """
 
 from __future__ import annotations
@@ -56,6 +60,7 @@ log = logging.getLogger(__name__)
 _GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
 
 _stats_category: ContextVar[bool] = ContextVar("stats_category_message", default=False)
+_achievement_category: ContextVar[bool] = ContextVar("achievement_message", default=False)
 
 
 @contextmanager
@@ -72,6 +77,18 @@ def stats_category() -> Iterator[None]:
         _stats_category.reset(token)
 
 
+@contextmanager
+def achievement_category() -> Iterator[None]:
+    """An achievement/trophy notification (#101): a "stats" result that
+    /delete_last must also never take — it may remove any other bot message."""
+    token = _achievement_category.set(True)
+    try:
+        with stats_category():
+            yield
+    finally:
+        _achievement_category.reset(token)
+
+
 class MessageLogMiddleware(BaseRequestMiddleware):
     def __init__(self, repo: Repo) -> None:
         self._repo = repo
@@ -84,6 +101,7 @@ class MessageLogMiddleware(BaseRequestMiddleware):
     ) -> TelegramType:
         result = await make_request(bot, method)
         is_system = not _stats_category.get()
+        is_achievement = _achievement_category.get()
         for message in _sent_messages(result):
             if message.chat.type in _GROUP_TYPES:
                 with contextlib.suppress(Exception):
@@ -91,6 +109,7 @@ class MessageLogMiddleware(BaseRequestMiddleware):
                         message.chat.id,
                         message.message_id,
                         is_system=is_system,
+                        is_achievement=is_achievement,
                         preview=_preview_of(message),
                     )
         return result

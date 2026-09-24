@@ -102,7 +102,7 @@ async def test_chat_delete_last_forgets_the_row_even_when_telegram_refuses(
     await chat_delete_last(callback, repo, bot, i18n)  # type: ignore[arg-type]
 
     assert bot.deleted == []
-    assert await repo.last_non_system_bot_message(CHAT_ID) is None
+    assert await repo.last_deletable_bot_message(CHAT_ID) is None
 
 
 async def test_chat_delete_last_with_nothing_to_delete(repo: Repo, i18n) -> None:

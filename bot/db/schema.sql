@@ -452,6 +452,11 @@ CREATE TABLE IF NOT EXISTS bot_messages (
     -- (system) so a call site that forgets to mark itself fails safe by
     -- disappearing rather than by lingering forever.
     is_system  INTEGER NOT NULL DEFAULT 1,
+    -- 1 = an achievement/trophy notification, single or digest (#101) —
+    -- the one kind /delete_last must never take, whatever else it deletes.
+    -- Set by MessageLogMiddleware from services/message_log.py's own
+    -- achievement_category(), which the publisher wraps its delivery in.
+    is_achievement INTEGER NOT NULL DEFAULT 0,
     -- First couple of non-blank lines of the message's own text/caption
     -- (2026-09-09 user request) — /delete_last's own confirmation shows
     -- this back ("Удалено: ...") so repeated deletes in a row are each
