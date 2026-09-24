@@ -83,8 +83,8 @@ systemctl {start|stop|restart|status} xbox-bot
 journalctl -u xbox-bot -f
 ```
 
-Deploys are automatic (#4). Pushing to `test` deploys the test bot; merging
-`test` into `main` deploys production. GitHub Actions runs the tests, both
+Deploys are automatic (#4). Pushing to `prerelease` deploys the test bot; merging
+`prerelease` into `main` deploys production. GitHub Actions runs the tests, both
 ruff checks and a Mini App build first, and only then calls
 `scripts/xbox-deploy.sh` on the server, which backs up the database,
 fast-forwards, restarts and waits for the bot to report itself up.

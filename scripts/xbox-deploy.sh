@@ -44,7 +44,7 @@ case "$TARGET" in
   test)
     APP_DIR=/opt/xbox_bot_test
     SERVICE=xbox-bot-test
-    BRANCH=test
+    BRANCH=prerelease
     DB=data/test.db
     WEB_ROOT=/var/www/xbox-mini-test
     ;;

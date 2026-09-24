@@ -1950,21 +1950,25 @@ Back up with `sqlite3`'s own `backup()`, never `cp`: these databases run in
 WAL mode and a plain copy of one can come back malformed. Name the file for
 what it is and when: `bot-pre042-20260915-084500.db`.
 
-**Two branches, two bots, and the merge is the deploy** (#4, 2026-09-18).
+**Three branches, and the merge is the deploy** (#4, 2026-09-18; `test` renamed
+`prerelease` 2026-09-24, owner).
 
 ```
-push to any branch   →  CI: pytest, both ruff checks, a real Mini App build
-push to `test`       →  CI, then the test bot (8081) deploys itself
-merge `test` → `main`→  CI, then production (8080) deploys itself
+push to any branch            →  CI: pytest, both ruff checks, a real Mini App build
+push to `prerelease`          →  CI, then the test bot (8081) deploys itself
+merge `prerelease` → `main`   →  CI, then production (8080) deploys itself
 ```
 
 There is no branch called `production`: **`main` is it**, and merging into it
-is the release. Work happens on `test`, which is also what the test bot runs,
-so "what is on the test bot" and "what is about to become production" are the
-same question with one answer.
+is the release. Day-to-day work happens on `dev`, run by the local bot on the
+developer's machine; `prerelease` is what the test bot runs and what is about
+to become production — so "what is on the test bot" and "what the next
+release is" are the same question with one answer. The test *bot* keeps its
+name (`xbox-bot-test`, `.env.test`, `data/test.db`, deploy target `test`);
+only the branch it follows is `prerelease`.
 
 Nothing is pushed by hand any more. `.github/workflows/ci.yml` runs on every
-branch and pull request; only `test` and `main` go on to deploy, and only
+branch and pull request; only `prerelease` and `main` go on to deploy, and only
 once both CI jobs are green. The repository is public, so none of this costs
 minutes.
 
@@ -1988,7 +1992,7 @@ host, the user and the host's own fingerprint.
 belongs** (owner, 2026-09-18). The backup is automatic; the rehearsal above —
 copy production's database, run the real `Database.connect()` against the
 copy, count the rows on both sides — stays a person's job, and it happens
-**before merging `test` into `main`**, not after. That is the last moment
+**before merging `prerelease` into `main`**, not after. That is the last moment
 anything is still a decision: once the merge lands, CI deploys production
 without asking.
 
@@ -2013,7 +2017,7 @@ Every production release must ship with user-facing and contributor notes in
   * `changelog/<version>.summary.ru.txt` — brief bullet-point summary (5-8 key items) formatted with `•` for the Telegram announcement message in Russian (owner, 2026-09-23);
   * `changelog/<version>.summary.en.txt` — brief bullet-point summary (5-8 key items) formatted with `•` for the Telegram announcement message in English (owner, 2026-09-23).
 
-The AI assistant must draft and commit these files to `test` **before** merging
+The AI assistant must draft and commit these files to `prerelease` **before** merging
 into `main`. That ensures `main` always carries the release notes for its own
 version, and the announcement links can never point to a 404.
 
@@ -2030,7 +2034,7 @@ On startup, both bots check `app_settings.last_announced_version`:
     falling back to bullet extraction from the markdown changelog) and an inline
     button linking to the full public GitHub release notes for that language
     (`https://github.com/MadOmsk/tg_achievement_bot/blob/main/changelog/<version>.<locale>.md`).
-  * **Test bot (`test`)**: announces the update to test groups without links or
+  * **Test bot (`prerelease`)**: announces the update to test groups without links or
     buttons.
   * Rate-limited to 0.05s between sends; `TelegramForbiddenError` automatically
     marks dead chats inactive via `repo.deactivate_chat(chat_id)`.
@@ -2048,7 +2052,7 @@ own**:
 | unit / port | `xbox-bot` · 8080 | `xbox-bot-test` · 8081 |
 | checkout | `/opt/xbox_achievement_bot` | `/opt/xbox_bot_test` |
 | env / database | `.env` · `data/bot.db` | `.env.test` · `data/test.db` |
-| branch | `main` | `test` |
+| branch | `main` | `prerelease` |
 | Mini App | `xbox.sultanpharm.com/app/` | `test.xbox.sultanpharm.com/app/` |
 | SPA files | `/var/www/xbox-mini` | `/var/www/xbox-mini-test` |
 

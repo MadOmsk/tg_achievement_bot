@@ -144,7 +144,7 @@ def _release_tag() -> str | None:
 def line() -> int:
     """The minor version / line of work: **B**.
 
-    `TRUNK_LINE` on `main`, one above it on every working branch (`test`,
+    `TRUNK_LINE` on `main`, one above it on every working branch (`prerelease`,
     `dev`, …) — production reads `1.4.…` while the test bot already reads
     `1.5.…`, the line its work will ship in (owner, 2026-09-24, restoring
     the rule 2026-09-21 had replaced with one shared minor). A release that
