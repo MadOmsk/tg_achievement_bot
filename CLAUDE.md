@@ -61,6 +61,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 ```text
 .
 ├── .env.example                 template for environment variables; .env itself is gitignored
+├── .env.test.example            the same for the test server (and the dev server's local copy)
+├── .github/workflows/ci.yml     CI on every push; deploys `prerelease` → test server, `main` → prod (#4)
 ├── README.md                    English overview (this repo's front door)
 ├── README.ru.md                 the same overview, in Russian
 ├── CLAUDE.md                    this file
@@ -76,6 +78,8 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── config.py                 settings loaded from the environment (pydantic-settings)
 │   ├── lock.py                   "one process per .env" guard (single instance)
 │   ├── util.py                   small shared helpers (UTC time, secret masking)
+│   ├── constants.py              shared enums for stored and external strings: platforms,
+│   │                             badges, setting keys
 │   ├── version.py                A.B.C.D and the "database is newer than this code"
 │   │                             check that refuses to start (#56)
 │   ├── i18n.py                   Fluent/aiogram_i18n wiring; Russian locale is the default
@@ -91,10 +95,11 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   ├── panel.py               the personal panel, "My chats"
 │   │   ├── admin.py               the admin panel (/admin, self-refreshing), bulk message wipe
 │   │   ├── chat.py                group commands: /subscribe, /stats, /online, /who, /recent,
-│   │   │                          /summary, /delete_last, the group hub
+│   │   │                          /summary_day, /summary_month, /delete_last, the group hub
 │   │   ├── hltb.py                /hltb, HowLongToBeat lookup
 │   │   ├── steam.py               /connect_steam, /disconnect_steam
 │   │   ├── psn.py                 /connect_psn, /disconnect_psn
+│   │   ├── awaiting.py            whose next private message is a profile link, and for which platform
 │   │   └── delivery.py            safe_edit + the notice to an account's previous owner —
 │   │                              the two things in the old keyboards.py that send
 │   │
@@ -142,7 +147,12 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   │   │                           own length limit, cut HTML-safely (#68)
 │   │   ├── presence_view.py        which platform answers "where is this person right
 │   │   │                           now" — /online's own rule, for one person (#1)
-│   │   ├── single_message.py       delete-then-send for /panel, /summary, /recent, a person's /stats
+│   │   ├── single_message.py       delete-then-send for /panel, /summary_day, /summary_month,
+│   │   │                           /recent, a person's /stats
+│   │   ├── descriptions_view.py    an achievement's name/description in the chat's language at
+│   │   │                           render time (#48, #61)
+│   │   ├── relink.py               linking an account somebody else may already hold (#52)
+│   │   ├── release_notify.py       the release announcement to group chats on startup
 │   │   ├── notify.py               notifications to the admin
 │   │   ├── images.py               fetching a picture, bounding it, hashing it, writing it
 │   │   │                           down — shared by avatars and covers
@@ -254,6 +264,11 @@ Full tracked tree (`git ls-files`), with what each piece is for and why:
 │   ├── reconcile_achievements.py  one-off full achievement-history backfill
 │   ├── backfill_hltb_platforms.py one-off: fill in `platforms` on already-cached games
 │   ├── backfill_hltb_descriptions.py one-off: fill in `description_*` on games cached before #2
+│   ├── backfill_psn_levels.py     one-off: cache the PSN trophy level of already-linked accounts (#23)
+│   ├── backfill_rarity.py         one-off: rarity for the Xbox history contract 2 brought without it
+│   │                               (the bot must be stopped — Xbox token rotation)
+│   ├── pull_games_and_achievements.py bulk sync of games, achievements and the catalog
+│   ├── xbox-deploy.sh             what CI runs on the server; installed as /usr/local/bin/xbox-deploy
 │   ├── backfill_psn_previous_ids.py one-off: previous PSN online IDs for renames that
 │   │                               predate the poller noticing them (#51)
 │   ├── backfill_steam_titles.py   one-off: fill in `titles` for already-stored Steam achievements
@@ -311,7 +326,7 @@ in another chat's language. A key missing from a non-default locale falls back t
 `gettext`), so a locale can be filled in file by file without a
 half-translated one ever breaking a screen.
 
-`ru` and `en` both ship complete today (23 files, 500 keys each).
+`ru` and `en` both ship complete — same files, same keys.
 `tests/test_locale_parity.py` enforces that they stay that way — same files,
 same keys, same `$variables` per key, and every key actually renders in every
 locale. It asserts *structure*, never wording: what the English says is a
@@ -457,7 +472,7 @@ every column.
   subject, overwritten in place: a Telegram `file_id` is useless without the
   bot token, and a platform URL is a promise somebody else can break. The row
   keeps the path, relative — the same database is copied between machines
-  whose absolute paths differ. Nothing renders them yet; the mini-app will.
+  whose absolute paths differ. The Mini App shows them (`web/mini_avatars.py`).
 
   Where each URL comes from, all of them inside a response the bot already
   makes: Xbox's `GameDisplayPicRaw` in the profile call read for gamerscore
@@ -754,10 +769,8 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   `poll_title`/`catch_up` call this — both are the only two paths that
   actually publish what they fetch; `backfill`'s own x360 pass
   deliberately skips it, translating history nobody will ever see would
-  be wasted API/LLM cost. `ParsedAchievement.description` still always
-  ends up Russian today (no language switch exists yet) — this only
-  populates the shared cache for future use. PSN now does the same (see
-  its own section below), the last of the three platforms to get it.
+  be wasted API/LLM cost. What the cache is for and how a message picks its
+  language: Data model, "Bilingual achievement descriptions".
 
 ### Steam
 
@@ -809,11 +822,8 @@ The official Steam Web API, one shared API key for the whole bot, no per-user OA
   `achievement_description_cache` — once every achievement in a game has
   been seen once, that extra request never happens again for it. The two
   results feed `services/translate/descriptions.py::bilingual_descriptions`
-  the same way as any other platform would. The bot only ever renders
-  Russian today (no language switch exists yet), so `ParsedAchievement.description`
-  still always gets the Russian side — the English half exists only in the
-  cache for now, unused until that switch is built. Xbox and (2026-09-09)
-  PSN now do the same (see their own sections).
+  the same way as any other platform would (Data model, "Bilingual
+  achievement descriptions").
 - **Delayed exit poll** (`poller/steam_presence.py`, #89): Valve's web API
   (`GetPlayerAchievements`) is heavily cached on Akamai edge CDNs for 2–5 minutes,
   and Steam Cloud syncs on game exit. An immediate poll upon exiting a game or changing
@@ -948,9 +958,6 @@ in `services/psn/client.py` must go through `asyncio.to_thread`.
   Unlike Xbox's own x360-backfill carve-out, this runs during backfill too
   (same shape as Steam's own version) since `sync_account` is already the
   one function both the regular poller and backfill share.
-  `ParsedAchievement.description` still always ends up Russian today (no
-  language switch exists yet) — this only populates the shared cache for
-  future use, completing all three platforms.
 
 Open work (see the linked issues, not this file, for scope/status):
 
@@ -1105,7 +1112,8 @@ announced by the time it runs).
 
 ## User interface
 
-All user-facing bot text is Russian. Code identifiers, comments, and this
+User-facing bot text is Russian by default and English where a chat or a
+person picked it (see Localization). Code identifiers, comments, and this
 documentation are English.
 
 ### Naming people and accounts
@@ -1181,8 +1189,7 @@ link (both links are built from the nickname, not the id).
 **Xbox, PlayStation, Steam** — `constants.platform_display_rank` is the
 single source of it, and anything that renders a list of platforms (a
 header, a keyboard, an admin block) sorts by that rather than listing them
-by hand. The naming chain's own platform fallback (see "Naming people and
-accounts" below) follows the same order — it was Xbox → Steam → PSN when that
+by hand. The naming chain's own platform fallback (above) follows the same order — it was Xbox → Steam → PSN when that
 chain was agreed, and keeping two orders was judged not worth remembering. It had already drifted: `/panel` listed Xbox → Steam → PSN while
 `/stats`, ordering by the column name in SQL, listed Xbox → PSN → Steam —
 both describing themselves as "a fixed order", just not the same one. Found
@@ -1323,7 +1330,7 @@ and passed to Fluent as a *string*, or it comes out thousands-separated like a
 quantity, which it was until 2026-09-13),
 then one block per connected platform in the one display order (Xbox →
 PlayStation → Steam):
-nickname/id, lifetime achievement/trophy count with the same 🏆-completions/level
+nickname/id, lifetime achievement/trophy count with the same completions (🌀/👾/💠)/level
 suffixes `/stats`' own line has, today's count for that platform
 (`achievement_platform_breakdown`), and whatever admin-only diagnostics apply
 (Xbox: login/token status; Steam/PSN: current presence where it exists). Next to
@@ -1463,7 +1470,7 @@ it every PSN row led with 🏆, the "ordinary" rarity badge, which is also
 what a platinum trophy's own icon is. The game and the achievement are
 separated by `·` rather than a comma, which read as part of the title.
 
-Lists (`/stats`, `/recent`, `/summary`, the daily summary) render as sentence-lines
+Lists (`/stats`, `/recent`, the two summaries) render as sentence-lines
 inside a collapsible `<blockquote expandable>`, never a monospace `<pre>` table
 (which renders as a code block — wrong register for a leaderboard or game list).
 
@@ -1479,7 +1486,8 @@ uses it too, see #69's own note in "Lists and tables" below). **No list in
 the project uses a rolling N-day window any more** (2026-09-16, user
 request, #69's own trigger) — `/stats`' games list used to be the one
 exception (a rolling 30 days, labelled "за 30 дней" so it wouldn't be read
-as agreeing with the counters above it); it is now `user_games`, on the same
+as agreeing with the counters above it); it is now the shared games listing
+(`repo.users_games_achievements`), on the same
 calendar-month cutoff as everything else, which is what let it drop its own
 label entirely and share this one.
 
@@ -1511,11 +1519,10 @@ only report that had one. The date left the day header: the message arrives on
 the day it is about. A day on which nobody unlocked
 anything still sends — the roster with everyone at 0 (#34); `build_summary`
 returns `None`, and the chat gets nothing, only when there are no subscribed
-members at all. The month block (only) is followed by its own "Игры за месяц"
-block (#7, user request, `repo.chat_top_games`) — every game the chat's
-subscribed members played that month, ranked by achievements/trophies earned in
-it combined across everyone and every platform, not who earned them
-(`_section`'s own job).
+members at all. The games block (#7) lists every game the chat's subscribed
+members played in the window, ranked by achievements/trophies earned in it
+combined across everyone and every platform — the shared games listing
+(`repo.users_games_achievements`), not who earned them (`_section`'s own job).
 
 ## Lists and tables
 
@@ -1605,24 +1612,10 @@ no answer to record.
   matter what was actually played. `/stats` also stopped firing one query
   per linked account and merging in Python, which applied the cap twice.
 
-- **Which rows fall inside a window** (2026-09-17, owner decision, replacing
-  the 2026-09-16 rule that briefly excluded backfill outright). A real
-  platform timestamp is authoritative whatever the row's origin;
-  `created_at` stands in for it **only** on a live-polled row, where "when
-  the bot saw it" genuinely is about when it was earned. A backfill row with
-  no timestamp is ancient by definition — its `created_at` is when the
-  import ran, which is the whole of #69's mechanism (real production data:
-  15 games and 767 achievements for a month somebody had earned none of).
-
-  `is_backfill` is **not** a filter here, and this is the invariant the
-  short-lived `s.is_backfill = 0` broke: the flag means "do not publish",
-  not "did not happen" (it has said so at the top of `services/stats.py` all
-  along). Filtering on it hid achievements the platform itself had dated
-  inside the window — on the test bot, one person's Steam and Xbox games
-  vanished entirely, leaving a single PSN row, and another's PSN trophies
-  vanished, leaving two Xbox games. A freshly connected account must show
-  its real recent games immediately, whether or not any of it was ever
-  announced in chat.
+- **Which rows fall inside a window** — Statistics rules, "An achievement with
+  no usable unlock time". In short: a platform's own date wins; `created_at`
+  stands in only on a live-polled row; an undated import is outside every
+  window. `is_backfill` means "do not publish", never "did not happen".
 - **`/recent`** is subscribers only — not `/online`'s broader "known member"
   set; excluded people never appear; a secret achievement's name stays behind
   a spoiler. Its row count is the admin's `recent_limit` (owner, 2026-09-17)
@@ -1632,14 +1625,13 @@ no answer to record.
 - **`/online`**: activity beats freshness (see the naming rules above and
   `presence_view.pick_presence`).
 - **Summary leaderboards** keep zero rows: this is a report, not a live feed
-  (#34). The `💎N` rare badge is in the month block only (#9); the platform
+  (#34). Both reports carry the `💎N` rare count (#9's day-only exception was
+  reversed 2026-09-17); the platform
   breakdown is always there.
 - **A game's row reads "what was earned, then what it was worth, in
   brackets"** (owner, 2026-09-17): `🟢 Halo — 12 достижений (+240 G · 💎3)`,
-  `🔵 God of War — 31 трофей (🏆1 · 🥇3 · 🥈7 · 🥉20)`. PSN breaks its
-  trophies down by tier instead of showing a rarity count — the tier already
-  answers "how rare" on Sony's own scale (the same reason a PSN notification
-  shows its tier badge in place of the usual rarity diamond). Every part is
+  `🔵 God of War — 31 трофей (💠1 · 🥇3 · 🥈7 · 🥉20)`. PSN shows its tiers
+  instead of a rarity count (why: the PSN section). Every part is
   dropped when zero, which is not a rare case: a Steam row's gamerscore
   always is, and an Xbox 360 row's rare count always is.
 
@@ -1763,14 +1755,13 @@ both make that count trustworthy; x360's own title-by-title backfill is the one
 remaining soft spot (driven by `title_history`'s own game list, so a title it
 never learned about is a silent gap there specifically). Xbox gamerscore always
 comes from the Xbox profile cache, never from summing title history. A 100%-completed
-game (Xbox/Steam) and a PSN platinum trophy answer the same question — Sony only
-awards a platinum once every other trophy in that game is earned — so both render as
-the same **💠** + count next to the platform's achievement/trophy count, never a
-word, and only when nonzero. The count comes first there ("1 💠"), unlike the badges
-inside a value bracket ("💎10"): one reads as a quantity of a thing, the other as a
-label on a number. It was 🏆 until 2026-09-17 (owner) — which is also what an
-*ordinary* achievement leads with, so the rarest thing in a game and the most
-ordinary one shared a glyph. Cross-platform "today" (24h rolling) and "month"
+game and a PSN platinum answer the same question — Sony only awards a platinum once
+every other trophy in the game is earned — so each renders as a count and a badge
+beside the platform's achievement/trophy count, never a word, and only when nonzero:
+**🌀 Xbox, 👾 Steam, 💠 PSN** (one badge per platform since 2026-09-24; they shared
+💠 before, and 🏆 before that — which is also what an *ordinary* achievement leads
+with). The count comes first there ("1 💠"), unlike the badges inside a value bracket
+("💎10"): one reads as a quantity of a thing, the other as a label on a number. Cross-platform "today" (24h rolling) and "month"
 (calendar month, #14) counters aggregate by `tg_id`.
 Platform breakdowns (e.g. "(🟢 3 · ⚫ 5)") show only where they clarify genuinely
 mixed-platform activity. Excluded users are never polled, published, or
@@ -1866,14 +1857,13 @@ and never will be: that is what an upgrade looks like.
 - Encrypt every stored credential with Fernet: Xbox refresh tokens, the shared PSN
   NPSSO, the shared Steam API key (#17), and (2026-09-09) the shared Anthropic
   API key — all live encrypted in `app_settings` / `tokens`, never plaintext.
-- Losing `FERNET_KEY` now also means re-entering the Steam key, PSN NPSSO, and
-  Anthropic key in the admin panel, on top of every user reconnecting.
+- Losing `FERNET_KEY` forces every user to reconnect and means re-entering the
+  Steam key, PSN NPSSO and Anthropic key in the admin panel — back it up securely.
 - Never log a raw token, API key, NPSSO value, authorization header, or a URL
   carrying a secret in a query parameter (found live: `httpx` logs full request
   URLs at INFO, and Steam's `GetOwnedGames` carries the API key in one) — mask
   before logging any structure that might carry one.
 - A user-facing error must never expose an upstream token error's raw payload.
-- Losing `FERNET_KEY` forces every user to reconnect — back it up securely.
 - A person can disconnect locally at any time, but revoking Microsoft's own consent
   has to happen in the user's own Microsoft account settings — the bot can only link
   to that page, not do it for them.
@@ -1892,10 +1882,14 @@ and never will be: that is what an upgrade looks like.
 
 ## Operations
 
-**Local development** (Windows) is driven by `manage.ps1` (the bot cannot start
-itself): `start` / `stop` / `restart` / `status` / `logs [-Lines N]`. `status` shows
-uptime, whether port 8080 is taken, any stray bot process (two bots sharing one
-`BOT_TOKEN` fight over Telegram's updates), and a database summary.
+**The dev server** (Windows, the `dev` branch) is driven by `manage.ps1` (the bot
+cannot start itself): `start` / `stop` / `restart` / `status` / `logs [-Lines N]`,
+with `-Test` for the instance that reads `.env.test` (port 8081; `-Web` also tunnels
+the Mini App). `status` shows uptime, whether the port is taken, any stray bot
+process (two bots sharing one `BOT_TOKEN` fight over Telegram's updates), and a
+database summary. Local git hooks (`.git/hooks/post-commit`, `post-merge`) restart
+whichever instance is running after every commit or merge — they live outside the
+repository, so a fresh clone does not have them.
 
 `.\manage.ps1 dashboard` (or double-clicking `manage.bat`) opens a live console
 view — the same block as `status`, plus a `bot.log` tail, redrawing every 5 seconds
@@ -1904,12 +1898,12 @@ hotkeys live the whole time. The separate `start`/`stop`/`restart`/`status`/`log
 commands still work too, for a one-line terminal call when the dashboard isn't
 needed.
 
-Never run the local bot and the production bot with the same `BOT_TOKEN` at the same
+Never run the dev server and prod with the same `BOT_TOKEN` at the same
 time — the home PC is for development only, its `.env` should point at `localhost`
 or a temporary tunnel, not the production domain.
 
-**Production** is a VPS (DigitalOcean, Amsterdam), Ubuntu 24.04, behind nginx and
-systemd. App directory `/opt/xbox_achievement_bot`, service `xbox-bot.service`
+**Production** is a VPS (Spaceship / Namecheap since 2026-09-22; DigitalOcean
+before), Ubuntu 24.04, behind nginx and systemd, shared with the test server. App directory `/opt/xbox_achievement_bot`, service `xbox-bot.service`
 (dedicated unprivileged user `botsvc`, autostart on):
 
 ```bash
@@ -2154,7 +2148,8 @@ progress caching, and backfill in isolation.
 
 ## Style
 
-- Code identifiers and comments: English. Bot messages shown to users: Russian.
+- Code identifiers and comments: English. Bot messages shown to users: Russian by
+  default, English per chat/DM — and only ever from `.ftl` files.
 - **GitHub is kept in English** (owner, 2026-09-24): issue titles and bodies,
   issue and PR comments, PR descriptions, commit messages — even when the
   conversation that produced them was in Russian. The repository is public and
@@ -2186,7 +2181,7 @@ progress caching, and backfill in isolation.
     token means everyone always sees themselves, friendship isn't needed at all.
 - **A `filters` table with a `scope` column** — replaced by separate
   `user_settings`/`chat_settings` with an explicit combination rule (AND).
-- **`/compare` and `/top`** — the useful group views are `/stats`, `/summary`,
+- **`/compare` and `/top`** — the useful group views are `/stats`, the two summaries,
   `/recent`, `/online`; a leaderboard-shaped command was judged not worth the
   UI surface.
 - **A separate visibility toggle per platform** (e.g. one for Xbox 360, a second
@@ -2198,6 +2193,6 @@ progress caching, and backfill in isolation.
 - **Global rarity settings that apply to every chat at once** — replaced by an
   explicit per-chat threshold; a shared knob that moved every chat on every edit
   turned out not to be what real multi-chat use wanted.
-- **Live platform API calls from `/stats`, `/summary`, `/online`, or the panel** —
+- **Live platform API calls from `/stats`, the summaries, `/online`, or the panel** —
   every normal read is cache-only; the one deliberate exception is the panel's own
   explicit manual-sync button.
