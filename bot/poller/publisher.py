@@ -21,7 +21,7 @@ from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.services.achievements import passes_filters
 from bot.services.descriptions_view import localize_descriptions
-from bot.services.message_log import stats_category
+from bot.services.message_log import achievement_category
 from bot.services.naming import NO_NICKNAME, account_nickname, person_name_of, xbox_nickname
 from bot.util import parse_iso, utcnow
 from bot.views.notification import format_digest, format_single
@@ -432,9 +432,9 @@ class Publisher:
         # The achievement matters more than the picture(s) (SPEC 7.1) — any
         # failure below falls through to plain text rather than losing the
         # achievement, same principle at every step: gallery, then a single
-        # photo, then text. Every branch is a "stats" result (2026-09-05
-        # follow-up) — never a candidate for message_cleanup.py's auto-delete.
-        with stats_category():
+        # photo, then text. Every branch is an achievement notification — never
+        # auto-deleted (message_cleanup.py) and never taken by /delete_last (#101).
+        with achievement_category():
             if len(job.gallery) >= 2:
                 try:
                     media = [

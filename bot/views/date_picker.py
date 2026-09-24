@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.i18n import translator
+from bot.views.keyboards import close_button
 
 MONTH_NAMES_RU = (
     "Январь",
@@ -166,7 +167,9 @@ def stats_navigation_keyboard(
     if not is_current_or_future:
         buttons.append(InlineKeyboardButton(text="▶️", callback_data=next_cb))
 
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+    rows = [buttons]
+    rows.append([close_button(locale=locale)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def stats_month_calendar_keyboard(
@@ -207,6 +210,7 @@ def stats_month_calendar_keyboard(
     _ = translator("date_picker", locale)
     back_cb = f"st:nav:{target_tg_id}:{now_year}:{now_month}"
     rows.append([InlineKeyboardButton(text=_("date-picker-back"), callback_data=back_cb)])
+    rows.append([close_button(locale=locale)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -257,6 +261,7 @@ def summary_month_navigation_keyboard(
             ]
         )
 
+    rows.append([close_button(locale=locale)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -296,6 +301,7 @@ def summary_month_calendar_keyboard(
     _ = translator("date_picker", locale)
     back_cb = f"sm:nav:{now_year}:{now_month}"
     rows.append([InlineKeyboardButton(text=_("date-picker-back"), callback_data=back_cb)])
+    rows.append([close_button(locale=locale)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -344,6 +350,7 @@ def summary_day_navigation_keyboard(
             ]
         )
 
+    rows.append([close_button(locale=locale)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -371,4 +378,5 @@ def summary_day_calendar_keyboard(
     _ = translator("date_picker", locale)
     back_cb = f"sd:nav:{now_date.isoformat()}"
     rows.append([InlineKeyboardButton(text=_("date-picker-back"), callback_data=back_cb)])
+    rows.append([close_button(locale=locale)])
     return InlineKeyboardMarkup(inline_keyboard=rows)

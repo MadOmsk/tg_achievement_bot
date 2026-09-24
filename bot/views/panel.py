@@ -157,6 +157,7 @@ async def _panel_header_lines(
         tg_id=user.tg_id,
         xuid=user.xuid,
         gamertag=user.gamertag,
+        gamertag_modern=user.gamertag_modern,
         gamerscore=user.gamerscore,
         platform_links=platform_links,
         show_links=False,

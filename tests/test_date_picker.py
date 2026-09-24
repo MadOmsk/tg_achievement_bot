@@ -44,8 +44,8 @@ def test_stats_navigation_keyboard_current_month_hides_next() -> None:
     data = _callback_data(markup)
     texts = _button_texts(markup)
 
-    assert data == ["st:nav:12345:2026:8", "st:cal:12345:2026"]
-    assert texts == ["◀️", "📅 Сентябрь 2026"]
+    assert data == ["st:nav:12345:2026:8", "st:cal:12345:2026", "msg:close"]
+    assert texts == ["◀️", "📅 Сентябрь 2026", "Закрыть"]
 
 
 def test_stats_navigation_keyboard_past_month_shows_next() -> None:
@@ -53,8 +53,8 @@ def test_stats_navigation_keyboard_past_month_shows_next() -> None:
     data = _callback_data(markup)
     texts = _button_texts(markup)
 
-    assert data == ["st:nav:12345:2026:7", "st:cal:12345:2026", "st:nav:12345:2026:9"]
-    assert texts == ["◀️", "📅 Август 2026", "▶️"]
+    assert data == ["st:nav:12345:2026:7", "st:cal:12345:2026", "st:nav:12345:2026:9", "msg:close"]
+    assert texts == ["◀️", "📅 Август 2026", "▶️", "Закрыть"]
 
 
 def test_stats_month_calendar_keyboard_grid() -> None:
@@ -72,8 +72,9 @@ def test_stats_month_calendar_keyboard_grid() -> None:
     assert data[2 + 9] == "noop"
     assert data[2 + 11] == "noop"
 
-    # Back button
-    assert data[-1] == "st:nav:12345:2026:9"
+    # Back button and close button
+    assert data[-2] == "st:nav:12345:2026:9"
+    assert data[-1] == "msg:close"
 
 
 def test_summary_month_navigation_keyboard() -> None:
@@ -97,8 +98,9 @@ def test_summary_day_navigation_keyboard() -> None:
 def test_summary_day_calendar_keyboard_has_14_days() -> None:
     markup = summary_day_calendar_keyboard(date(2026, 9, 21), date(2026, 9, 21), locale="ru")
     data = _callback_data(markup)
-    # 14 days + 1 back button = 15 buttons
-    assert len(data) == 15
+    # 14 days + 1 back button + 1 close button = 16 buttons
+    assert len(data) == 16
     assert data[0] == "sd:nav:2026-09-08"
     assert data[13] == "sd:nav:2026-09-21"
     assert data[14] == "sd:nav:2026-09-21"
+    assert data[15] == "msg:close"

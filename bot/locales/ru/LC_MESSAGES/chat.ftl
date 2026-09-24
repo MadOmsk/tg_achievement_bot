@@ -7,6 +7,7 @@ chat-subscribe-done = Готово. Ачивки { $gamertag } будут при
 chat-unsubscribe-not-subscribed = Ты здесь и не публиковался.
 chat-unsubscribe-confirm-button = Да, отписаться
 chat-cancel-button = Отмена
+chat-close-button = Закрыть
 chat-unsubscribe-prompt = Перестать публиковать твои достижения в этом чате?
 chat-not-your-button = Это не твоя кнопка.
 chat-unsubscribe-done = Больше не публикую твои достижения в этом чате.

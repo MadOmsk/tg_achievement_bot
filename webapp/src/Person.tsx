@@ -55,18 +55,20 @@ export function PersonProfile({
     const count = xbox && p.gamerscore != null ? p.gamerscore : p.achievement_count ?? p.trophy_count;
     if (count == null) return [];
     const extra = xbox
-      ? null
+      ? p.completed_games
+        ? `🌀 ${p.completed_games}`
+        : null
       : p.trophy_level != null
         ? `${t(locale, "level")} ${p.trophy_level}`
         : p.completed_games
-          ? `🏆 ${p.completed_games}`
+          ? `👾 ${p.completed_games}`
           : p.platinum_count
-            ? `🏆 ${p.platinum_count}`
+            ? `💠 ${p.platinum_count}`
             : null;
     const key = xbox ? "xbox" : p.platform === "steam" ? "steam" : "psn";
     const tiers =
       key === "psn" && p.bronze != null
-        ? `🥉 ${p.bronze} · 🥈 ${p.silver ?? 0} · 🥇 ${p.gold ?? 0} · 🏆 ${p.platinum_count ?? 0}`
+        ? `🥉 ${p.bronze} · 🥈 ${p.silver ?? 0} · 🥇 ${p.gold ?? 0} · 💠 ${p.platinum_count ?? 0}`
         : null;
     return [{
       platform: p.platform,

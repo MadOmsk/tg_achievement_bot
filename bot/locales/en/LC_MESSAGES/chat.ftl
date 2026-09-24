@@ -7,6 +7,7 @@ chat-subscribe-done = Done. { $gamertag }'s achievements will land here.
 chat-unsubscribe-not-subscribed = You weren't publishing here anyway.
 chat-unsubscribe-confirm-button = Yes, unsubscribe
 chat-cancel-button = Cancel
+chat-close-button = Close
 chat-unsubscribe-prompt = Stop publishing your achievements in this chat?
 chat-not-your-button = That's not your button.
 chat-unsubscribe-done = I'll stop publishing your achievements in this chat.

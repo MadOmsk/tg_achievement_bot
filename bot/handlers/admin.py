@@ -1012,7 +1012,7 @@ async def chat_delete_last(
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    target = await repo.last_non_system_bot_message(chat_id)
+    target = await repo.last_deletable_bot_message(chat_id)
     if target is None:
         await callback.answer(_("admin-no-bot-messages"), show_alert=True)
         return

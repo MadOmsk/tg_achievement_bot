@@ -296,7 +296,7 @@ class CachedDescription:
 
 @dataclass(slots=True)
 class DeletableMessage:
-    """What `last_non_system_bot_message` returns (2026-09-09 user request)
+    """What `last_deletable_bot_message` returns (2026-09-09 user request)
     — /delete_last needs to show *what* it's about to delete, not just a
     bare id, so its own confirmation can name the message back."""
 

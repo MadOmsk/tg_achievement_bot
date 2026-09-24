@@ -27,6 +27,7 @@ from bot.db.repo import OnlineAutoRefreshRow, Repo
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
 from bot.util import utcnow
+from bot.views.keyboards import with_close_button
 from bot.views.online import render_online_table
 
 log = logging.getLogger(__name__)
@@ -88,6 +89,7 @@ class OnlineAutoRefresh:
                     message_id=row.message_id,
                     text=text,
                     parse_mode=ParseMode.HTML,
+                    reply_markup=with_close_button(None, locale=settings_row.locale),
                 )
         except Exception:
             # Expected, not exceptional: the message was deleted (admin's

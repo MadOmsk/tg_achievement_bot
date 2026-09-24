@@ -93,3 +93,16 @@ async def test_same_subject_replaces_its_own_previous_card(repo: Repo) -> None:
 
     assert bot.deleted == [(CHAT_ID, first_id)]
     assert await repo.tracked_message(CHAT_ID, "stats", 1) == second_id
+
+
+async def test_each_summary_window_keeps_its_own_slot(repo: Repo) -> None:
+    """/summary_day and /summary_month track under their own kinds — the
+    table's CHECK used to reject both, after the report was already sent."""
+    bot = FakeBot()
+
+    day_id = await send_replacing(bot, repo, CHAT_ID, "summary_day", "day")
+    month_id = await send_replacing(bot, repo, CHAT_ID, "summary_month", "month")
+
+    assert bot.deleted == []
+    assert await repo.tracked_message(CHAT_ID, "summary_day") == day_id
+    assert await repo.tracked_message(CHAT_ID, "summary_month") == month_id
