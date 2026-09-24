@@ -68,6 +68,13 @@ BASE_REFS = ("origin/main", "main")
 #: growing, which is the honest answer to "how much has gone out since".
 TAG_PATTERN = "v[0-9]*"
 
+#: What counts as documentation (owner, 2026-09-24): a commit touching only
+#: these does not advance C, and CI does not deploy it — docs travel the whole
+#: dev → prerelease → main chain without a release. Git pathspec, so `*.md`
+#: matches at any depth.
+DOCS_PATHS = ("*.md", "changelog")
+_NOT_DOCS = ("--", ".", *(f":(exclude){path}" for path in DOCS_PATHS))
+
 
 def _git(*args: str) -> str | None:
     try:
@@ -107,6 +114,10 @@ def revision() -> str:
     because one is incomplete would be the opposite of what this file is
     for. A `main` carrying no tag yet answers `0` rather than counting from
     the root commit, which would be a four-digit number meaning nothing.
+
+    Commits that touch only documentation (`DOCS_PATHS`) are not counted on
+    either side: a docs update ships without a release, so it must not move the
+    number the next release gets.
     """
     if is_trunk():
         tag = _release_tag()
@@ -117,13 +128,13 @@ def revision() -> str:
         # and counting it as six would make the number grow by the size of
         # whatever happened to be merged rather than by how many times
         # production changed. Measured on 2026-09-18: 3 against 19.
-        return _git("rev-list", "--count", "--first-parent", f"{tag}..HEAD") or "0"
+        return _git("rev-list", "--count", "--first-parent", f"{tag}..HEAD", *_NOT_DOCS) or "0"
     fork_point = _fork_point()
     if fork_point is None:
         return UNKNOWN_REVISION
     # Every commit, not first-parent: on a working branch the question is how
     # much work has accumulated, and each commit is a piece of it.
-    return _git("rev-list", "--count", f"{fork_point}..HEAD") or "0"
+    return _git("rev-list", "--count", f"{fork_point}..HEAD", *_NOT_DOCS) or "0"
 
 
 def _fork_point() -> str | None:

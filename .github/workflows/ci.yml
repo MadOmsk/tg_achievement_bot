@@ -83,13 +83,48 @@ jobs:
           grep -q 'src="/app/assets/' dist/index.html
           grep -q 'href="/app/assets/' dist/index.html
 
+  changes:
+    name: What changed
+    # Documentation travels dev → prerelease → main without a release (owner,
+    # 2026-09-24): no deploy, no version bump (bot/version.py's DOCS_PATHS), no
+    # release notes, no announcement. The same two patterns as DOCS_PATHS.
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # Anything but an ordinary push onto a known commit counts as code:
+          # a new branch, a force-push to history this clone lacks, a PR.
+          if [ "${{ github.event_name }}" != "push" ] \
+             || [ -z "$BEFORE" ] \
+             || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- . ':(exclude)*.md' ':(exclude)changelog')"
+          if [ -n "$changed" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Documentation only: no deploy."
+          fi
+
   deploy:
     name: Deploy
     # Only after both halves are green: a deploy that ships a failing suite
     # is worse than a manual one, because nobody was watching.
-    needs: [python, webapp]
+    needs: [python, webapp, changes]
     if: >
       github.event_name == 'push' &&
+      needs.changes.outputs.code == 'true' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prerelease')
     runs-on: ubuntu-latest
     # `prerelease` and `main` deploy to different bots on the same box, so they

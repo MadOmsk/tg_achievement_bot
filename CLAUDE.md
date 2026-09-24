@@ -871,7 +871,9 @@ and logged at startup (`… is up (v1.4.3.058)`). History: #112.
 - **C** — commits counted from git at startup, never stored in a file: on a working
   branch since the **merge base** with `main` (so others' merges do not renumber it);
   on `main` since the **newest release tag**, **first parents only** — one per release.
-  `?` without git; `0` on an untagged `main`. **Cutting a release is tagging one.**
+  **Commits that touch only documentation do not count** (`DOCS_PATHS`: any `*.md`
+  and `changelog/`), because docs ship without a release. `?` without git; `0` on an
+  untagged `main`. **Cutting a release is tagging one.**
 - **D** — the newest migration this code ships, not what the database has. A database
   *ahead* of it refuses to start (Data model).
 
@@ -977,6 +979,21 @@ and databases never go near it.
 production **before merging `prerelease` into `main`** — the last moment it is still a
 decision. The test server migrates its own, smaller, differently shaped database and is
 no substitute.
+
+### Documentation-only changes
+
+**Documentation travels `dev` → `prerelease` → `main` without a release** (owner,
+2026-09-24). A change that touches only `*.md` files and `changelog/` gets:
+
+- **no deploy** — CI's `changes` job diffs the push and the `deploy` job skips it
+  (tests and the Mini App build still run, so the required checks report);
+- **no version change** — such commits do not advance C (Versioning), and nothing
+  restarts to announce anything;
+- **no release notes and no minor bump**.
+
+Promote it the usual way (`git push origin dev:prerelease`, then a PR into `main`
+merged as a merge commit); the servers pick the files up on their next real deploy.
+A change that mixes docs with anything else is a normal change.
 
 ### Releases
 
