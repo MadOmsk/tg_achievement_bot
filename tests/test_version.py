@@ -45,27 +45,25 @@ def _on_branch(monkeypatch, name: str | None) -> None:
     monkeypatch.setattr(version_module, "_git", fake)
 
 
-def test_production_and_working_branches_share_the_minor_version(monkeypatch) -> None:
-    """B is the minor release line (TRUNK_LINE). When pushing to test, only C
-    (commit count) and D (migrations) grow — the minor version does not jump to
-    TRUNK_LINE + 1 on a working branch, and only updates when test is merged to
-    main for a release."""
+def test_working_branches_read_one_minor_above_production(monkeypatch) -> None:
+    """Production is on TRUNK_LINE; the test bot already reads the line its
+    work will ship in (owner, 2026-09-24)."""
     _on_branch(monkeypatch, TRUNK)
     assert line() == TRUNK_LINE
     assert is_trunk() is True
     assert is_test() is False
 
     _on_branch(monkeypatch, "test")
-    assert line() == TRUNK_LINE
+    assert line() == TRUNK_LINE + 1
     assert is_trunk() is False
     assert is_test() is True
     line.cache_clear()
 
 
-def test_working_branches_are_recognized_as_test(monkeypatch) -> None:
+def test_every_working_branch_is_a_test_one(monkeypatch) -> None:
     for name in ("test", "feature/whatever", "HEAD", "dev"):
         _on_branch(monkeypatch, name)
-        assert line() == TRUNK_LINE, name
+        assert line() == TRUNK_LINE + 1, name
         assert is_trunk() is False, name
         assert is_test() is True, name
     line.cache_clear()

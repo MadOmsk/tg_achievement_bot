@@ -4,9 +4,9 @@
 an outage:
 
 - **A** — the architecture. Bumped by hand, on a rewrite. It is `1`.
-- **B** — the minor release line (`TRUNK_LINE`). Shared across `main` and
-  working branches. Minor only updates when `test` is merged to `main` for
-  a release; pushing to `test` only advances C (commits) and D (schema).
+- **B** — the minor release line: `TRUNK_LINE` on `main`, one above it on
+  every working branch, so the test bot already reads the line its work will
+  ship in. Only a release that starts a new minor bumps `TRUNK_LINE`.
 - **C** — a count of commits, read from git at startup rather than typed
   into a file (owner's call, 2026-09-16: a short number that grows by one per
   commit reads better than a hash nobody can order at a glance). It measures
@@ -44,8 +44,9 @@ from pathlib import Path
 MAJOR = 1
 
 #: The line of work `main` is on, and the only part of this file a person
-#: edits — on a rewrite, or when the owner decides a release deserves its own
-#: number. Production has been `4` since release 1.4.
+#: edits — when the owner decides a release starts a new minor. Working
+#: branches read one above it (see `line()`). Production has been `4` since
+#: release 1.4.
 TRUNK_LINE = 4
 
 #: The branch that *is* production (2026-09-18): merging into it is the
@@ -143,11 +144,21 @@ def _release_tag() -> str | None:
 def line() -> int:
     """The minor version / line of work: **B**.
 
-    `TRUNK_LINE` on both `main` and working/test branches. Minor version
-    updates only when test is merged into `main` for a new release.
-    When pushing to `test`, only C (commits) and D (schema) grow.
+    `TRUNK_LINE` on `main`, one above it on every working branch (`test`,
+    `dev`, …) — production reads `1.4.…` while the test bot already reads
+    `1.5.…`, the line its work will ship in (owner, 2026-09-24, restoring
+    the rule 2026-09-21 had replaced with one shared minor). A release that
+    starts a new minor bumps `TRUNK_LINE` and tags `vX.Y.0` on `main`; one
+    that does not (1.4.3) leaves both alone.
+
+    A checkout with no git (a tarball, a container) falls back to the trunk's
+    number — `revision()` already renders `?` there, which is the part that
+    says the label is not to be trusted.
     """
-    return TRUNK_LINE
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    if branch is None or branch == TRUNK:
+        return TRUNK_LINE
+    return TRUNK_LINE + 1
 
 
 @cache

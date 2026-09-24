@@ -1816,12 +1816,14 @@ the last line of `/help` and the group hub, and logged at startup —
 `bot @tg_achievement_bot is up (v1.1.53.046)`.
 
 - **A** — the architecture. By hand, on a rewrite. `1`.
-- **B** — the minor release line (`TRUNK_LINE` in `bot/version.py`, owner's rule
-  2026-09-21): shared across `main` and working/test branches (e.g. `1.3.*`).
-  Minor only updates when `test` is merged into `main` for a release; pushing
-  to `test` or working branches must never bump B — only C (commit count) and
-  D (schema version) advance. Test vs. production identity is answered by
-  `is_test()` / `is_trunk()` (branch check), startup announcements, and C.
+- **B** — the minor release line: `TRUNK_LINE` (`bot/version.py`) on `main`,
+  **one above it on every working branch** (owner, 2026-09-24) — production
+  reads `1.4.…` while the test bot already reads `1.5.…`, the line its work
+  will ship in, so "which bot is this" is answerable from the version alone.
+  This restores the rule a 2026-09-21 change had replaced with one shared
+  minor. Nobody edits B per commit: only a release that starts a new minor
+  bumps `TRUNK_LINE` and tags `vX.Y.0` on `main`; a release that does not
+  (1.4.3, owner's call) leaves both alone and ships as the next C.
 - **C** — a count of commits read from git at startup (owner's call,
   2026-09-16: a short number that grows by one per commit beats a hash
   nobody can order at a glance), measuring a different distance on each
