@@ -44,7 +44,7 @@ case "$TARGET" in
   test)
     APP_DIR=/opt/xbox_bot_test
     SERVICE=xbox-bot-test
-    BRANCH=test
+    BRANCH=prerelease
     DB=data/test.db
     WEB_ROOT=/var/www/xbox-mini-test
     ;;
@@ -82,9 +82,11 @@ say "fetching origin"
 # base with main, so a stale origin/main on the test checkout makes the test
 # bot report a version dozens of commits wide (seen: v1.2.42.050 on a
 # checkout identical to main). One extra ref, no extra round trip.
+# --prune: a renamed or deleted branch (test → prerelease, 2026-09-24) must
+# not linger as a stale origin/* ref.
 # --tags as well: the version counts production's releases from the newest
 # release tag, and a server that never fetched one would report 0 forever.
-sudo -u "$RUN_AS" git fetch origin --tags
+sudo -u "$RUN_AS" git fetch --prune origin --tags
 # --ff-only on purpose: a checkout that has drifted from its branch is a
 # question for a person, not something to paper over with a merge commit
 # made by a robot at three in the morning.

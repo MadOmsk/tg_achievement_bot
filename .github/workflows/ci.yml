@@ -90,9 +90,9 @@ jobs:
     needs: [python, webapp]
     if: >
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test')
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/prerelease')
     runs-on: ubuntu-latest
-    # `test` and `main` deploy to different bots on the same box, so they
+    # `prerelease` and `main` deploy to different bots on the same box, so they
     # must not overlap; two pushes to the same branch queue instead of
     # racing each other onto the server.
     concurrency:
