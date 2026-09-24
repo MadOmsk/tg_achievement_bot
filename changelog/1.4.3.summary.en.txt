@@ -1,0 +1,7 @@
+• A “Close” button on the bot’s replies in chat: stats, summaries, /recent, /online, /help
+• Separate completion badges: 🌀 Xbox, 👾 Steam, 💠 PSN platinum
+• Stats and the panel show your current Xbox gamertag
+• /delete_last never removes achievement notifications any more
+• Day and month summaries replace their previous copy again instead of piling up
+• Xbox 360 games and their achievements are detected more accurately
+• Steadier database under load
