@@ -995,6 +995,12 @@ Promote it the usual way (`git push origin dev:prerelease`, then a PR into `main
 merged as a merge commit); the servers pick the files up on their next real deploy.
 A change that mixes docs with anything else is a normal change.
 
+**Never put GitHub's skip-CI marker in a commit message — not even quoted.** GitHub
+honours it anywhere in the text, and `changes` diffs each push against the one
+before it: a skipped push that carried code leaves the servers behind, and the next
+push no longer sees that code. If it happens, deploy by hand with the script CI
+uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
+
 ### Releases
 
 - **Release notes are written before the merge into `main`** and committed to
