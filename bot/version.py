@@ -5,7 +5,7 @@ an outage:
 
 - **A** — the architecture. Bumped by hand, on a rewrite. It is `1`.
 - **B** — the minor release line: `TRUNK_LINE` on `main`, one above it on
-  every working branch, so the test bot already reads the line its work will
+  every working branch, so the test server already reads the line its work will
   ship in. Only a release that starts a new minor bumps `TRUNK_LINE`.
 - **C** — a count of commits, read from git at startup rather than typed
   into a file (owner's call, 2026-09-16: a short number that grows by one per
@@ -87,7 +87,8 @@ def is_trunk() -> bool:
 
 
 def is_test() -> bool:
-    """True if running on a working/test branch rather than production trunk."""
+    """True anywhere but `main`: the dev server (`dev`) and the test server
+    (`prerelease`) alike — announcements there carry no changelog link."""
     return not is_trunk()
 
 

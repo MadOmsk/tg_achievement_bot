@@ -53,15 +53,15 @@ def test_working_branches_read_one_minor_above_production(monkeypatch) -> None:
     assert is_trunk() is True
     assert is_test() is False
 
-    _on_branch(monkeypatch, "test")
+    _on_branch(monkeypatch, "prerelease")
     assert line() == TRUNK_LINE + 1
     assert is_trunk() is False
     assert is_test() is True
     line.cache_clear()
 
 
-def test_every_working_branch_is_a_test_one(monkeypatch) -> None:
-    for name in ("test", "feature/whatever", "HEAD", "dev"):
+def test_every_working_branch_reads_the_next_line(monkeypatch) -> None:
+    for name in ("prerelease", "dev", "feature/whatever", "HEAD"):
         _on_branch(monkeypatch, name)
         assert line() == TRUNK_LINE + 1, name
         assert is_trunk() is False, name
@@ -242,12 +242,12 @@ def test_production_without_a_tag_yet_says_zero(monkeypatch) -> None:
 
 
 def test_a_working_branch_still_counts_from_where_it_left_main(monkeypatch) -> None:
-    """Unchanged, and deliberately not the tag: on the test bot the useful
+    """Unchanged, and deliberately not the tag: on the test server the useful
     number is how far this line of work has come."""
     asked = _git_answers(
         monkeypatch,
         {
-            ("rev-parse", "--abbrev-ref"): "test",
+            ("rev-parse", "--abbrev-ref"): "prerelease",
             ("rev-parse", "--verify"): "origin/main",
             ("merge-base",): "abc123",
             ("rev-list", "--count"): "3",
