@@ -2141,6 +2141,14 @@ progress caching, and backfill in isolation.
 ## Style
 
 - Code identifiers and comments: English. Bot messages shown to users: Russian.
+- **GitHub is kept in English** (owner, 2026-09-24): issue titles and bodies,
+  issue and PR comments, PR descriptions, commit messages — even when the
+  conversation that produced them was in Russian. The repository is public and
+  every existing issue is English; a Russian one reads as out of place and is
+  unsearchable next to the rest. The exceptions are the files deliberately kept
+  in two languages, each with a Russian and an English copy: `README.md` /
+  `README.ru.md`, the release notes `changelog/<v>.ru.md` / `.en.md` and their
+  `.summary.<locale>.txt`, and the bot's own `bot/locales/ru|en/`.
 - Comment *why*, not *what* — especially in the pollers and around token refresh,
   where the reasoning isn't obvious from the code alone.
 - Prefer small, precise changes that preserve existing behavior unless the task is
