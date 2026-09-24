@@ -36,6 +36,31 @@ TZ_SET = "tz:set"
 TZ_MORE = "tz:more"
 TZ_SKIP = "tz:skip"
 TZ_MANUAL = "tz:manual"
+CLOSE_CALLBACK = "msg:close"
+
+
+def close_button(locale: str | None = None, i18n: I18nContext | None = None) -> InlineKeyboardButton:
+    """The universal close button, usable on any inline keyboard."""
+    loc = locale or (i18n.locale if i18n else "ru")
+    return InlineKeyboardButton(
+        text=gettext("chat", "chat-close-button", locale=loc),
+        callback_data=CLOSE_CALLBACK,
+    )
+
+
+def with_close_button(
+    markup: InlineKeyboardMarkup | None,
+    locale: str | None = None,
+    i18n: I18nContext | None = None,
+) -> InlineKeyboardMarkup:
+    """Appends the universal close button to markup, or creates a 1-button markup."""
+    btn = close_button(locale=locale, i18n=i18n)
+    if markup is None:
+        return InlineKeyboardMarkup(inline_keyboard=[[btn]])
+    rows = [list(row) for row in markup.inline_keyboard]
+    if not any(b.callback_data == CLOSE_CALLBACK for row in rows for b in row):
+        rows.append([btn])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _text(i18n: I18nContext | None, key: str, **kwargs: object) -> str:
@@ -339,6 +364,7 @@ def panel_keyboard(
         ]
     )
     rows.append([InlineKeyboardButton(text=i18n.get("kb-sync"), callback_data="panel:sync")])
+    rows.append([close_button(i18n=i18n)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

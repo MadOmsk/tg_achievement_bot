@@ -26,7 +26,7 @@ from bot.constants import (
 )
 from bot.db.repo import PlatformLink, Repo
 from bot.i18n import gettext, translator
-from bot.services.naming import link_nickname
+from bot.services.naming import NO_NICKNAME, link_nickname, xbox_nickname
 from bot.services.platform_format import format_game_platforms
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.util import humanize_ago, thousands
@@ -261,6 +261,9 @@ def plural_trophies(count: int, locale: str) -> str:
 #  to share a glyph. The count comes first here ("1 💠"), unlike the badges
 #  inside a value bracket ("💎10"): this one reads as a quantity of a thing,
 #  those read as a label on a number.
+COMPLETED_BADGE_XBOX = AchievementBadge.COMPLETED_XBOX
+COMPLETED_BADGE_STEAM = AchievementBadge.COMPLETED_STEAM
+COMPLETED_BADGE_PSN = AchievementBadge.PLATINUM
 COMPLETED_BADGE = AchievementBadge.PLATINUM
 
 
@@ -297,6 +300,7 @@ async def platform_header_lines(
     platform_links: list[PlatformLink],
     show_links: bool,
     locale: str,
+    gamertag_modern: str | None = None,
 ) -> list[str]:
     """The per-platform header lines shared by /stats' card and /panel's own
     header (2026-09-08, user request: "пусть одни одинаково формируются" —
@@ -312,8 +316,9 @@ async def platform_header_lines(
     """
     lines = []
     if xuid:
+        nick = xbox_nickname(gamertag_modern=gamertag_modern, gamertag=gamertag, xuid=xuid)
         gamertag_html = html_escape(
-            gamertag or gettext("chat", "chat-stats-no-gamertag", locale=locale)
+            nick if nick != NO_NICKNAME else gettext("chat", "chat-stats-no-gamertag", locale=locale)
         )
         if show_links and gamertag:
             gamertag_html = link_html(xbox_profile_url(gamertag), gamertag_html)
@@ -325,7 +330,7 @@ async def platform_header_lines(
         xbox_completed = await repo.xbox_completed_games_count(xuid)
         parts = [plural_achievements(xbox_count, locale)]
         if xbox_completed:
-            parts.append(f"{xbox_completed} {COMPLETED_BADGE}")
+            parts.append(f"{xbox_completed} {COMPLETED_BADGE_XBOX}")
         parts.append(f"gamerscore {thousands(gamerscore or 0)}")
         lines.append(
             f"{PLATFORM_ICON[Platform.XBOX_MODERN]} XBOX: {gamertag_html}  ·  "
@@ -362,7 +367,7 @@ async def platform_header_lines(
             # is earned, so this count already *is* that.
             platinum = await repo.psn_platinum_count(tg_id)
             if platinum:
-                link_parts.append(f"{platinum} {COMPLETED_BADGE}")
+                link_parts.append(f"{platinum} {COMPLETED_BADGE_PSN}")
             # PSN's own account-wide level (Follow-up 2026-09-06) — cached
             # by poller/psn_fetcher.py, never fetched here (SPEC 1.5's
             # cache-only rule); absent until the poller has had a chance to
@@ -378,7 +383,7 @@ async def platform_header_lines(
         elif link.platform == Platform.STEAM:
             completed = await repo.steam_completed_games_count(tg_id)
             if completed:
-                link_parts.append(f"{completed} {COMPLETED_BADGE}")
+                link_parts.append(f"{completed} {COMPLETED_BADGE_STEAM}")
         lines.append(f"{icon} {label}: {name_html}  ·  " + "  ·  ".join(link_parts))
 
     return lines

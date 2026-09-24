@@ -23,6 +23,7 @@ from bot.db.repo import (
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
+from bot.views.keyboards import close_button
 from bot.services.mini_app import mini_app_group_url, mini_app_open_url
 from bot.services.naming import (
     person_name,
@@ -144,6 +145,7 @@ async def build_stats_text(
         tg_id=target.tg_id,
         xuid=target.xuid,
         gamertag=target.gamertag,
+        gamertag_modern=target.gamertag_modern,
         gamerscore=target.gamerscore,
         platform_links=platform_links,
         show_links=show_links,
@@ -405,6 +407,7 @@ def hub_keyboard(
             ),
         ]
     )
+    rows.append([close_button(i18n=i18n)])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -434,12 +437,10 @@ async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:
 
 
 def render_who_picker(rows: list[ChatPresenceRow], i18n: I18nContext) -> InlineKeyboardMarkup:
-    """Everyone the chat has seen write, three to a row. The cancel button is
+    """Everyone the chat has seen write, three to a row. The close button is
     not decoration: found live, there was no way out of this prompt except
     picking somebody, and it never went away after a pick either."""
     return InlineListing(
         rows=button_rows(rows, who_label, lambda row: f"who:stats:{row.tg_id}", per_row=3),
-        tail=[
-            InlineKeyboardButton(text=i18n.get("chat-cancel-button"), callback_data="who:cancel")
-        ],
+        tail=[close_button(i18n=i18n)],
     ).markup()

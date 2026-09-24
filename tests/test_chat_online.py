@@ -16,7 +16,7 @@ CHAT_ID = -100500
 def test_hub_keyboard_has_the_expected_buttons_and_carries_the_chat_id() -> None:
     markup = hub_keyboard("mybot", CHAT_ID)
     buttons = [b for row in markup.inline_keyboard for b in row]
-    assert len(buttons) == 10
+    assert len(buttons) == 11
     connect_button = next(b for b in buttons if b.text == "🔗 XBOX")
     assert connect_button.url is not None
     assert f"start=connect{CHAT_ID}" in connect_button.url
@@ -29,13 +29,14 @@ def test_hub_keyboard_has_the_expected_buttons_and_carries_the_chat_id() -> None
     assert any(b.callback_data == "hub:recent" for b in buttons)
     assert any(b.callback_data == "hub:summary_day" for b in buttons)
     assert any(b.callback_data == "hub:summary_month" for b in buttons)
-    assert markup.inline_keyboard[-1] == [connect_button, psn_button, steam_button]
+    assert markup.inline_keyboard[-2] == [connect_button, psn_button, steam_button]
+    assert markup.inline_keyboard[-1][0].callback_data == "msg:close"
 
 
 def test_hub_keyboard_adds_open_app_when_mini_url_is_set() -> None:
     markup = hub_keyboard("mybot", CHAT_ID, mini_app_url="https://app.example/")
     buttons = [b for row in markup.inline_keyboard for b in row]
-    assert len(buttons) == 11
+    assert len(buttons) == 12
     open_app = next(b for b in buttons if b.text == "Открыть приложение")
     assert open_app.url == f"https://t.me/mybot?startapp=c{CHAT_ID}"
     assert markup.inline_keyboard[0] == [open_app]

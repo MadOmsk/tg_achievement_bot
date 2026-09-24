@@ -89,6 +89,8 @@ class AchievementBadge(StrEnum):
     # also the badge an *ordinary* achievement leads with, so the rarest
     # thing in a game and the most ordinary one shared a glyph.
     PLATINUM = "💠"
+    COMPLETED_XBOX = "🌀"
+    COMPLETED_STEAM = "👾"
     GOLD = "🥇"
     SILVER = "🥈"
     BRONZE = "🥉"

@@ -37,10 +37,10 @@ def test_not_connected_keyboard_offers_all_platforms() -> None:
     (2026-09-05 follow-up, extended for PSN)."""
     markup = panel_keyboard(None, connected=False)
     data = _callback_data(markup)
-    assert data[-5:-2] == ["relogin", "psn:connect", "steam:connect"]
+    assert data[-6:-3] == ["relogin", "psn:connect", "steam:connect"]
     # #33: uniform "🎮 Подключить X" wording, not "🔗 XBOX" / "🎮 Steam".
     texts = _button_texts(markup)
-    assert texts[-5:-2] == [
+    assert texts[-6:-3] == [
         "🎮 Подключить Xbox",
         "🎮 Подключить PSN",
         "🎮 Подключить Steam",
@@ -100,7 +100,7 @@ def test_not_connected_keyboard_offers_steam_disconnect_once_connected() -> None
     """Steam-only, no XBOX at all — still gets a real disconnect option for
     the platform it does have, not nothing (2026-09-05 follow-up)."""
     markup = panel_keyboard(None, connected=False, steam_connected=True)
-    assert _callback_data(markup)[-5:-2] == ["relogin", "psn:connect", "steam:disconnectprompt"]
+    assert _callback_data(markup)[-6:-3] == ["relogin", "psn:connect", "steam:disconnectprompt"]
 
 
 def test_connected_keyboard_offers_steam_connect_or_disconnect_not_both() -> None:

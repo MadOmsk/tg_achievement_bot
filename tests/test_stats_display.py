@@ -17,7 +17,12 @@ from bot.db.repo import (
 from bot.handlers.chat import _send_stats_card
 from bot.util import utcnow
 from bot.views.chat import _games_list, build_stats_text, who_label
-from bot.views.parts import COMPLETED_BADGE
+from bot.views.parts import (
+    COMPLETED_BADGE,
+    COMPLETED_BADGE_PSN,
+    COMPLETED_BADGE_STEAM,
+    COMPLETED_BADGE_XBOX,
+)
 
 CHAT_ID = -100500
 
@@ -611,7 +616,7 @@ async def test_xbox_line_shows_completed_games_when_there_are_any(repo: Repo) ->
 
     assert text is not None
     xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
-    assert f"1 {COMPLETED_BADGE}" in xbox_line
+    assert f"1 {COMPLETED_BADGE_XBOX}" in xbox_line
 
 
 async def test_psn_line_shows_platinum_count_when_there_are_any(repo: Repo) -> None:
@@ -643,7 +648,7 @@ async def test_psn_line_shows_platinum_count_when_there_are_any(repo: Repo) -> N
 
     assert text is not None
     psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
-    assert f"1 {COMPLETED_BADGE}" in psn_line
+    assert f"1 {COMPLETED_BADGE_PSN}" in psn_line
 
 
 async def test_steam_line_shows_completed_games_when_there_are_any(repo: Repo) -> None:
@@ -679,7 +684,7 @@ async def test_steam_line_shows_completed_games_when_there_are_any(repo: Repo) -
 
     assert text is not None
     steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
-    assert f"1 {COMPLETED_BADGE}" in steam_line
+    assert f"1 {COMPLETED_BADGE_STEAM}" in steam_line
 
 
 async def test_games_list_does_not_truncate_long_names() -> None:
@@ -1127,3 +1132,24 @@ async def test_who_stats_button_sends_card_with_reply_markup(repo: Repo) -> None
     bot.send_message.assert_called_once()
     _, kwargs = bot.send_message.call_args
     assert kwargs.get("reply_markup") is not None
+
+
+async def test_stats_card_uses_gamertag_modern_for_xbox_line(repo: Repo) -> None:
+    await repo.ensure_user(1, "lostinawave")
+    await repo.link_xbox_account(1, "2535472202229574", "BoAKoAaB", 500)
+    # Set display_name (gamertag_modern) in accounts
+    await repo._conn.execute(
+        "UPDATE accounts SET display_name = 'волкодав' WHERE platform = 'xbox' AND external_id = '2535472202229574'"
+    )
+    await repo._conn.commit()
+
+    user = await repo.get_user(1)
+    assert user is not None
+    assert user.gamertag == "BoAKoAaB"
+    assert user.gamertag_modern == "волкодав"
+
+    text = await build_stats_text(repo, user, CHAT_ID)
+    assert text is not None
+    xbox_line = text.split("\n")[1]
+    assert "волкодав" in xbox_line
+    assert "BoAKoAaB" not in xbox_line

@@ -57,7 +57,12 @@ from bot.views.date_picker import (
     summary_day_calendar_keyboard,
     summary_month_calendar_keyboard,
 )
-from bot.views.keyboards import next_rarity_mode
+from bot.views.keyboards import (
+    CLOSE_CALLBACK,
+    close_button,
+    next_rarity_mode,
+    with_close_button,
+)
 from bot.views.online import render_online_table
 from bot.views.summary import DAY, MONTH, build_summary, full_leaderboard
 
@@ -278,12 +283,18 @@ async def stats(
     target = await _resolve(message, repo, command.args)
     if target is None:
         with stats_category():
-            await message.answer(i18n.get("chat-unknown-user"))
+            await message.answer(
+                i18n.get("chat-unknown-user"),
+                reply_markup=with_close_button(None, i18n=i18n),
+            )
         return
     text = await build_stats_text(repo, target, message.chat.id, i18n)
     if text is None:
         with stats_category():
-            await message.answer(i18n.get("chat-stats-nothing-connected"))
+            await message.answer(
+                i18n.get("chat-stats-nothing-connected"),
+                reply_markup=with_close_button(None, i18n=i18n),
+            )
         return
 
     settings_row = await repo.get_user_settings(target.tg_id)
@@ -311,7 +322,10 @@ async def _run_online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
     rows = await repo.chat_member_presence(message.chat.id)
     if not rows:
         with stats_category():
-            await message.answer(i18n.get("chat-online-empty"))
+            await message.answer(
+                i18n.get("chat-online-empty"),
+                reply_markup=with_close_button(None, i18n=i18n),
+            )
         return
 
     # A fresh /online replaces whatever was posted/auto-refreshing before
@@ -331,7 +345,11 @@ async def _run_online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
     updated_label = local_now(settings_row.tz_offset_min).strftime("%H:%M")
     text = render_online_table(rows, updated_label, settings_row.locale)
     with stats_category():
-        sent = await message.answer(text, parse_mode=ParseMode.HTML)
+        sent = await message.answer(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=with_close_button(None, locale=settings_row.locale),
+        )
 
     # Follow-up 2026-09-05: /online now keeps itself fresh for a while
     # instead of being a one-off snapshot — skipped entirely when the admin
@@ -373,9 +391,13 @@ async def who(message: Message, repo: Repo, i18n: I18nContext) -> None:
     await _run_who(message, repo, i18n)
 
 
-@router.callback_query(F.data == "who:cancel")
-async def who_cancel(callback: CallbackQuery) -> None:
+@router.callback_query(F.data.in_({CLOSE_CALLBACK, "ui:close", "who:cancel"}))
+async def msg_close(callback: CallbackQuery, repo: Repo) -> None:
     if isinstance(callback.message, Message):
+        with contextlib.suppress(Exception):
+            online_row = await repo.get_online_auto_refresh(callback.message.chat.id)
+            if online_row and online_row.message_id == callback.message.message_id:
+                await repo.delete_online_auto_refresh(callback.message.chat.id)
         with contextlib.suppress(Exception):
             await callback.message.delete()
     await callback.answer()
@@ -461,7 +483,10 @@ async def _run_summary_command(
     text, markup = await _summary(repo, message.chat.id, window=window)
     if text is None:
         with stats_category():
-            await message.answer(i18n.get("chat-summary-empty"))
+            await message.answer(
+                i18n.get("chat-summary-empty"),
+                reply_markup=with_close_button(None, i18n=i18n),
+            )
         return
     # Replaces this command's own previous copy outright (Follow-up
     # 2026-09-06) — an "nothing new" reply just above is left untouched on
@@ -479,7 +504,7 @@ async def _run_summary_command(
             f"summary_{window}",
             text,
             parse_mode=ParseMode.HTML,
-            reply_markup=markup,
+            reply_markup=with_close_button(markup, i18n=i18n),
         )
 
 
@@ -706,7 +731,11 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
     await callback.answer()
     if text is not None:
         with stats_category():
-            await callback.message.answer(text, parse_mode=ParseMode.HTML)
+            await callback.message.answer(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=with_close_button(None, i18n=i18n),
+            )
 
 
 async def _run_recent(
@@ -722,12 +751,23 @@ async def _run_recent(
     rows = await repo.chat_recent(message.chat.id, limit, locale=i18n.locale)
     if not rows:
         with stats_category():
-            await message.answer(i18n.get("chat-recent-empty"))
+            await message.answer(
+                i18n.get("chat-recent-empty"),
+                reply_markup=with_close_button(None, i18n=i18n),
+            )
         return
     text = i18n.get("chat-recent-header") + "\n" + recent_list(rows, i18n)
     # Replaces the chat's previous /recent outright (Follow-up 2026-09-06).
     with stats_category():
-        await send_replacing(bot, repo, message.chat.id, "recent", text, parse_mode=ParseMode.HTML)
+        await send_replacing(
+            bot,
+            repo,
+            message.chat.id,
+            "recent",
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=with_close_button(None, i18n=i18n),
+        )
 
 
 @router.message(Command("recent"))
@@ -794,6 +834,7 @@ async def help_command(
     await message.answer(
         help_text(i18n),
         parse_mode=ParseMode.HTML,
+        reply_markup=with_close_button(None, i18n=i18n),
     )
 
 

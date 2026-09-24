@@ -604,6 +604,7 @@ export function meScoreLines(
       count: me.xbox.gamerscore ?? me.xbox.achievement_count,
       day: me.xbox.day,
       month: me.xbox.month,
+      extra: me.xbox.completed_games ? `🌀 ${me.xbox.completed_games}` : null,
       unit: me.xbox.gamerscore != null ? "G" : null,
     });
   }
@@ -623,7 +624,7 @@ export function meScoreLines(
       count: me.steam.achievement_count,
       day: me.steam.day,
       month: me.steam.month,
-      extra: me.steam.completed_games ? `🏆 ${me.steam.completed_games}` : null,
+      extra: me.steam.completed_games ? `👾 ${me.steam.completed_games}` : null,
     });
   }
   return lines;
