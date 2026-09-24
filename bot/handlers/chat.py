@@ -59,7 +59,6 @@ from bot.views.date_picker import (
 )
 from bot.views.keyboards import (
     CLOSE_CALLBACK,
-    close_button,
     next_rarity_mode,
     with_close_button,
 )

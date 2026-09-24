@@ -90,8 +90,7 @@ class _StatsRepo:
                     (entry.title_id,),
                 )
                 await self._conn.execute(
-                    "DELETE FROM seen_achievements "
-                    "WHERE title_id = ? AND platform = 'xbox_modern'",
+                    "DELETE FROM seen_achievements WHERE title_id = ? AND platform = 'xbox_modern'",
                     (entry.title_id,),
                 )
         await self._conn.commit()

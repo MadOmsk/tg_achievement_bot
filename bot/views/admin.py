@@ -62,7 +62,6 @@ from bot.views.keyboards import (
 )
 from bot.views.lists import Listing, truncate_name
 from bot.views.parts import (
-    COMPLETED_BADGE,
     COMPLETED_BADGE_PSN,
     COMPLETED_BADGE_STEAM,
     COMPLETED_BADGE_XBOX,

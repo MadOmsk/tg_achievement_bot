@@ -18,7 +18,6 @@ from bot.handlers.chat import _send_stats_card
 from bot.util import utcnow
 from bot.views.chat import _games_list, build_stats_text, who_label
 from bot.views.parts import (
-    COMPLETED_BADGE,
     COMPLETED_BADGE_PSN,
     COMPLETED_BADGE_STEAM,
     COMPLETED_BADGE_XBOX,
@@ -1139,7 +1138,8 @@ async def test_stats_card_uses_gamertag_modern_for_xbox_line(repo: Repo) -> None
     await repo.link_xbox_account(1, "2535472202229574", "BoAKoAaB", 500)
     # Set display_name (gamertag_modern) in accounts
     await repo._conn.execute(
-        "UPDATE accounts SET display_name = 'волкодав' WHERE platform = 'xbox' AND external_id = '2535472202229574'"
+        "UPDATE accounts SET display_name = 'волкодав' "
+        "WHERE platform = 'xbox' AND external_id = '2535472202229574'"
     )
     await repo._conn.commit()
 

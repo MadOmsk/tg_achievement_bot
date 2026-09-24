@@ -23,7 +23,6 @@ from bot.db.repo import (
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
-from bot.views.keyboards import close_button
 from bot.services.mini_app import mini_app_group_url, mini_app_open_url
 from bot.services.naming import (
     person_name,
@@ -36,6 +35,7 @@ from bot.services.stats import counters_for, local_now, month_cutoff_utc
 from bot.util import humanize_ago, thousands
 from bot.version import version
 from bot.views.inline_lists import InlineListing, button_rows
+from bot.views.keyboards import close_button
 from bot.views.lists import Listing, games_listing, truncate_name
 from bot.views.parts import (
     PLATFORM_ICON,

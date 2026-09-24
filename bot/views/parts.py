@@ -317,9 +317,8 @@ async def platform_header_lines(
     lines = []
     if xuid:
         nick = xbox_nickname(gamertag_modern=gamertag_modern, gamertag=gamertag, xuid=xuid)
-        gamertag_html = html_escape(
-            nick if nick != NO_NICKNAME else gettext("chat", "chat-stats-no-gamertag", locale=locale)
-        )
+        no_gamertag = gettext("chat", "chat-stats-no-gamertag", locale=locale)
+        gamertag_html = html_escape(nick if nick != NO_NICKNAME else no_gamertag)
         if show_links and gamertag:
             gamertag_html = link_html(xbox_profile_url(gamertag), gamertag_html)
         # A lifetime Xbox count (2026-09-08, user request) — see

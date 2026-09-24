@@ -23,7 +23,6 @@ kb-rarity-all = all of them
 # Connection controls
 kb-disconnect-confirm = Yes, disconnect
 kb-cancel = Cancel
-kb-close = Close
 # /panel's own connect buttons (#33) — "Connect X" with a 🎮 icon,
 # uniformly for all three; deliberately wordier than the group hub's own
 # short platform-name buttons (chat-hub-*-button), and distinct from

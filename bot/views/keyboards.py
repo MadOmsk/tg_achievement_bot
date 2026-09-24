@@ -39,7 +39,9 @@ TZ_MANUAL = "tz:manual"
 CLOSE_CALLBACK = "msg:close"
 
 
-def close_button(locale: str | None = None, i18n: I18nContext | None = None) -> InlineKeyboardButton:
+def close_button(
+    locale: str | None = None, i18n: I18nContext | None = None
+) -> InlineKeyboardButton:
     """The universal close button, usable on any inline keyboard."""
     loc = locale or (i18n.locale if i18n else "ru")
     return InlineKeyboardButton(
