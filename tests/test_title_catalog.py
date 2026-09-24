@@ -389,3 +389,75 @@ async def test_repo_catalog_helper_methods(repo: Repo) -> None:
         is_backfill=False,
     )
     assert await repo.title_seen_platform("game_1") == "xbox_360"
+
+
+async def test_refresh_xbox_updates_platform_to_360(repo: Repo) -> None:
+    # Game was initially seeded as xbox_modern in titles and seen_achievements
+    await repo.ensure_user(200, "user200")
+    await repo.link_xbox_account(200, "xuid_200", "XboxUser200", 200)
+    await repo.save_refresh_token(200, b"fake_enc")
+    await repo.upsert_title("t_x360_fallback", "Gears 3", Platform.XBOX_MODERN)
+    await repo.insert_new_achievements(
+        "xuid_200",
+        [
+            AchievementRow(
+                title_id="t_x360_fallback",
+                achievement_id="ach_1",
+                name="Gears Ach",
+                description="Desc",
+                icon_url=None,
+                unlocked_at=utcnow_iso(),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=True,
+    )
+
+    # Initial state
+    rec = await repo.title_record("t_x360_fallback")
+    assert rec is not None
+    assert rec["platform"] == "xbox_modern"
+    assert await repo.title_seen_platform("t_x360_fallback") == "xbox_modern"
+
+    # Mock client returns Xbox 360 achievements (contract 3 fallback)
+    mock_xbox_client = AsyncMock()
+    parsed_x360 = [
+        ParsedAchievement(
+            achievement_id="ach_1",
+            title_id="t_x360_fallback",
+            title_name="Gears of War 3",
+            name="Gears Ach",
+            description="Desc",
+            icon_url=None,
+            unlocked_at=None,
+            gamerscore=10,
+            rarity_percent=None,
+            platform=Platform.XBOX_360,
+        )
+    ]
+    mock_xbox_client.title_achievements_with_total.return_value = (parsed_x360, 1)
+    mock_xbox_client.title_achievements.return_value = parsed_x360
+
+    service = TitleCatalogService(repo=repo, xbox_client=mock_xbox_client)
+    # Query with xbox_modern (as stored in titles)
+    rows = await service.ensure_title_achievements_fresh(
+        Platform.XBOX_MODERN, "t_x360_fallback", tg_id=200, force=True
+    )
+    assert len(rows) == 1
+    assert rows[0].platform == "xbox_360"
+
+    # Verify database updated
+    rec_after = await repo.title_record("t_x360_fallback")
+    assert rec_after is not None
+    assert rec_after["platform"] == "xbox_360"
+    assert rec_after["platforms"] == '["Xbox360"]'
+    assert await repo.title_seen_platform("t_x360_fallback") == "xbox_360"
+
+    stored_achs = await repo.get_title_achievements("xbox_360", "t_x360_fallback")
+    assert len(stored_achs) == 1
+    assert stored_achs[0].platform == "xbox_360"
+    # Old xbox_modern catalog row should NOT exist
+    stored_old = await repo.get_title_achievements("xbox_modern", "t_x360_fallback")
+    assert len(stored_old) == 0

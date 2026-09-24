@@ -10,7 +10,6 @@ import json
 from collections.abc import Sequence
 from datetime import datetime
 
-from bot.constants import Platform
 from bot.db.repo._models import TitleHistoryRow, _iso
 from bot.db.repo._sql import (
     OWNED_BY_PERSON,
@@ -51,24 +50,50 @@ class _StatsRepo:
                     now,
                 ),
             )
-            if getattr(entry, "platform", None) in (Platform.XBOX_360, "xbox_360"):
+            entry_plat = getattr(entry, "platform", None)
+            plat_val = entry_plat.value if hasattr(entry_plat, "value") else str(entry_plat or "")
+            if plat_val in ("xbox_360", "x360"):
                 platforms_json = json.dumps(["Xbox360"])
+                effective_entry_plat = "xbox_360"
             elif getattr(entry, "devices", None):
                 if any(str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices):
                     platforms_json = json.dumps(["Xbox360"])
+                    effective_entry_plat = "xbox_360"
                 else:
                     platforms_json = json.dumps(entry.devices)
+                    effective_entry_plat = plat_val or None
             else:
                 platforms_json = None
+                effective_entry_plat = plat_val or None
+
             await self._conn.execute(
                 "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
                 "VALUES (?, ?, ?, ?, ?) "
                 "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
-                " platform = COALESCE(excluded.platform, titles.platform),"
-                " platforms = COALESCE(excluded.platforms, titles.platforms),"
+                " platform = CASE "
+                "   WHEN titles.platform = 'xbox_360' THEN 'xbox_360' "
+                "   WHEN excluded.platform = 'xbox_360' THEN 'xbox_360' "
+                "   ELSE COALESCE(excluded.platform, titles.platform) "
+                " END,"
+                " platforms = CASE "
+                "   WHEN titles.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
+                "   WHEN excluded.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
+                "   ELSE COALESCE(excluded.platforms, titles.platforms) "
+                " END,"
                 " updated_at = excluded.updated_at",
-                (entry.title_id, entry.name, entry.platform, platforms_json, now),
+                (entry.title_id, entry.name, effective_entry_plat, platforms_json, now),
             )
+            if effective_entry_plat == "xbox_360":
+                await self._conn.execute(
+                    "UPDATE OR IGNORE seen_achievements SET platform = 'xbox_360' "
+                    "WHERE title_id = ? AND platform = 'xbox_modern'",
+                    (entry.title_id,),
+                )
+                await self._conn.execute(
+                    "DELETE FROM seen_achievements "
+                    "WHERE title_id = ? AND platform = 'xbox_modern'",
+                    (entry.title_id,),
+                )
         await self._conn.commit()
 
     async def update_gamerscore(self, tg_id: int, gamerscore: int) -> None:

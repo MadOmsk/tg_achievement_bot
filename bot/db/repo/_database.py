@@ -63,6 +63,7 @@ class Database:
         # by default in SQLite and our ON DELETE CASCADE depends on them.
         await self._conn.execute("PRAGMA journal_mode = WAL")
         await self._conn.execute("PRAGMA foreign_keys = ON")
+        await self._conn.execute("PRAGMA busy_timeout = 30000")
         try:
             # Whether this file had anything in it *before* schema.sql ran —
             # see _apply_migrations for why that one bit matters.

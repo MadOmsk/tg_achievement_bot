@@ -386,6 +386,22 @@ class TitleCatalogService:
         except XboxApiError:
             return await self._repo.get_title_achievements(platform_str, title_id)
 
+        effective_platform = platform_enum
+        if achievements_en:
+            effective_platform = achievements_en[0].platform
+        effective_platform_str = effective_platform.value
+
+        if effective_platform_str != platform_str:
+            log.info(
+                "title %s platform mismatch: was %s, detected as %s; updating",
+                title_id,
+                platform_str,
+                effective_platform_str,
+            )
+            await self._repo.update_title_platform(title_id, effective_platform_str)
+            platform_str = effective_platform_str
+            platform_enum = effective_platform
+
         stored_count = await self._repo.title_achievements_count(platform_str, title_id)
         if not force and stored_count > 0 and stored_count == api_total:
             await self._repo.set_title_achievements_checked_at(title_id)
@@ -456,6 +472,7 @@ class TitleCatalogService:
             achievements_en[0].title_name or title_id if achievements_en else title_id,
             platform_enum,
             achievements_total=len(rows) or api_total,
+            platforms='["Xbox360"]' if platform_enum == Platform.XBOX_360 else None,
         )
         await self._repo.set_title_achievements_checked_at(title_id)
         return rows

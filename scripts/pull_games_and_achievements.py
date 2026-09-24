@@ -361,12 +361,22 @@ async def run_sync(cfg: SyncConfig) -> None:
                     continue
 
                 if cfg.skip_achievements:
-                    history = await xbox_client.title_history(link.tg_id)
+                    history = await xbox_client.title_history(link.tg_id, max_items=2000)
                     await fetcher._save_history(link.tg_id, link.external_id, history)
                     log.info("Xbox: saved %d titles for %s", len(history), name)
                 else:
                     total_achs = await fetcher.backfill(link.tg_id, link.external_id)
                     log.info("Xbox: backfilled %d achievements for %s", total_achs, name)
+                    try:
+                        history = await xbox_client.title_history(link.tg_id, max_items=2000)
+                        await fetcher._save_history(link.tg_id, link.external_id, history)
+                        log.info(
+                            "Xbox: deep title_history refreshed %d titles for %s",
+                            len(history),
+                            name,
+                        )
+                    except Exception as e:
+                        log.warning("Xbox deep history failed for %s: %s", name, e)
             except Exception as exc:
                 log.warning("Xbox pull failed for %s: %s", name, exc, exc_info=True)
 
@@ -466,9 +476,14 @@ async def run_sync(cfg: SyncConfig) -> None:
         if cfg.limit_titles:
             titles_to_sync = titles_to_sync[: cfg.limit_titles]
 
+        total_titles = len(titles_to_sync)
+        completed = 0
+        lock = asyncio.Lock()
+        catalog_start_time = time.monotonic()
+
         log.info(
             "Starting catalog sync for %d titles (concurrency=%d, force=%s)...",
-            len(titles_to_sync),
+            total_titles,
             cfg.concurrency,
             cfg.force,
         )
@@ -476,6 +491,7 @@ async def run_sync(cfg: SyncConfig) -> None:
         sem = asyncio.Semaphore(max(1, cfg.concurrency))
 
         async def sync_one(tid: str, plat_str: str, title_title: str) -> None:
+            nonlocal completed
             async with sem:
                 try:
                     achs = await catalog_service.ensure_title_achievements_fresh(
@@ -485,16 +501,37 @@ async def run_sync(cfg: SyncConfig) -> None:
                     )
                     catalog_results["success"] += 1
                     catalog_results["achievements"] += len(achs)
-                    log.info(
-                        "Catalog [%s] %s (%s): %d achievements",
-                        plat_str,
-                        title_title,
-                        tid,
-                        len(achs),
-                    )
+                    ach_count = len(achs)
                 except Exception as exc:
                     catalog_results["failed"] += 1
+                    ach_count = 0
                     log.warning("Catalog [%s] %s (%s) failed: %s", plat_str, title_title, tid, exc)
+
+                async with lock:
+                    completed += 1
+                    cur_completed = completed
+
+                remaining = total_titles - cur_completed
+                time_spent = time.monotonic() - catalog_start_time
+                avg_rate = cur_completed / time_spent if time_spent > 0 else 0
+                eta_sec = remaining / avg_rate if avg_rate > 0 else 0
+                eta_min = int(eta_sec // 60)
+                eta_rem_sec = int(eta_sec % 60)
+                eta_str = f"{eta_min}m {eta_rem_sec}s" if avg_rate > 0 else "estimating..."
+
+                log.info(
+                    "Catalog [%d/%d, left: %d, ETA: %s] [%s] %s (%s): %d achs (ok=%d, fail=%d)",
+                    cur_completed,
+                    total_titles,
+                    remaining,
+                    eta_str,
+                    plat_str,
+                    title_title,
+                    tid,
+                    ach_count,
+                    catalog_results["success"],
+                    catalog_results["failed"],
+                )
                 await asyncio.sleep(0.1)
 
         await asyncio.gather(*(sync_one(t[0], t[1], t[2]) for t in titles_to_sync))
