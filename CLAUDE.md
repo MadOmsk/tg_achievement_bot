@@ -1950,22 +1950,31 @@ Back up with `sqlite3`'s own `backup()`, never `cp`: these databases run in
 WAL mode and a plain copy of one can come back malformed. Name the file for
 what it is and when: `bot-pre042-20260915-084500.db`.
 
-**Three branches, and the merge is the deploy** (#4, 2026-09-18; `test` renamed
-`prerelease` 2026-09-24, owner).
+**Three branches, three servers, and the merge is the deploy** (#4,
+2026-09-18; `test` renamed `prerelease` and the terms fixed by the owner,
+2026-09-24). A *branch* and a *server* are named separately, and "test" is
+only ever a server:
+
+| branch | server | where it runs | how it updates |
+|---|---|---|---|
+| `dev` | **dev server** | the developer's machine (`manage.ps1 … -Test`) | a local git hook restarts it after every commit / merge |
+| `prerelease` | **test server** | the VPS: `xbox-bot-test` · 8081 | CI deploys on every push |
+| `main` | **prod** | the VPS: `xbox-bot` · 8080 | CI deploys on the merge |
 
 ```
 push to any branch            →  CI: pytest, both ruff checks, a real Mini App build
-push to `prerelease`          →  CI, then the test bot (8081) deploys itself
-merge `prerelease` → `main`   →  CI, then production (8080) deploys itself
+push to `prerelease`          →  CI, then the test server deploys itself
+merge `prerelease` → `main`   →  CI, then prod deploys itself
 ```
 
 There is no branch called `production`: **`main` is it**, and merging into it
-is the release. Day-to-day work happens on `dev`, run by the local bot on the
-developer's machine; `prerelease` is what the test bot runs and what is about
-to become production — so "what is on the test bot" and "what the next
-release is" are the same question with one answer. The test *bot* keeps its
-name (`xbox-bot-test`, `.env.test`, `data/test.db`, deploy target `test`);
-only the branch it follows is `prerelease`.
+is the release. Day-to-day work happens on `dev`; `prerelease` is what the
+test server runs and what is about to become prod — so "what is on the test
+server" and "what the next release is" are the same question with one answer.
+The test server keeps its own names (`xbox-bot-test`, `.env.test`,
+`data/test.db`, deploy target `test`) — those name the server, not a branch.
+The dev server still starts with `-Test` and reads a local `.env.test`: a
+historical name, not a third meaning of "test".
 
 Nothing is pushed by hand any more. `.github/workflows/ci.yml` runs on every
 branch and pull request; only `prerelease` and `main` go on to deploy, and only
@@ -2041,12 +2050,13 @@ On startup, both bots check `app_settings.last_announced_version`:
   * After the broadcast completes, `app_settings.last_announced_version` is
     updated to the current version.
 
-### The two bots, and the two Mini Apps
+### The two servers on the VPS, and their two Mini Apps
 
-One box, two instances, and since 2026-09-18 **each has a hostname of its
-own**:
+One box, two instances — prod and the test server (the dev server is the
+developer's own machine, above) — and since 2026-09-18 **each has a hostname
+of its own**:
 
-| | production | test |
+| | prod | test server |
 |---|---|---|
 | bot | `@xbox_achievement_bot` | `@tg_achievement_bot` |
 | unit / port | `xbox-bot` · 8080 | `xbox-bot-test` · 8081 |
