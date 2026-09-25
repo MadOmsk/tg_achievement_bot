@@ -13,6 +13,7 @@ waiting for whoever links it next.
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 
 from bot.constants import AccountPlatform
 from bot.db.repo._models import PlatformLink, SteamSchemaAchievement, TitleProgress
@@ -349,6 +350,49 @@ class _PlatformLinksRepo:
             (title_id,),
         )
         return await cursor.fetchone() is not None
+
+    async def psn_titles_missing_groups(
+        self, limit: int, skip: Collection[tuple[str, str]] = ()
+    ) -> list[tuple[int, str, str, str | None]]:
+        """`(tg_id, account_id, title_id, platforms)` for PSN games in which a
+        linked account still holds trophies with no group (#115) — stored
+        before #46. Only accounts somebody holds: nobody sees the others."""
+        cursor = await self._conn.execute(
+            "SELECT al.tg_id, s.xuid AS account_id, s.title_id, t.platforms "
+            "FROM seen_achievements s "
+            "JOIN account_links al ON al.platform = s.account_platform"
+            " AND al.external_id = s.xuid AND al.is_active = 1 "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            "WHERE s.account_platform = ? AND s.trophy_group_id IS NULL "
+            "GROUP BY s.xuid, s.title_id "
+            "ORDER BY MAX(COALESCE(s.unlocked_at, s.created_at)) DESC",
+            (AccountPlatform.PSN,),
+        )
+        found: list[tuple[int, str, str, str | None]] = []
+        for row in await cursor.fetchall():
+            if (row["account_id"], row["title_id"]) in skip:
+                continue
+            found.append((row["tg_id"], row["account_id"], row["title_id"], row["platforms"]))
+            if len(found) >= limit:
+                break
+        return found
+
+    async def set_psn_trophy_groups(
+        self, account_id: str, title_id: str, groups: dict[str, str]
+    ) -> int:
+        """Fill in the group of this account's ungrouped trophies in one game;
+        a row that already has one keeps it. Returns the rows changed."""
+        changed = 0
+        for achievement_id, group_id in groups.items():
+            cursor = await self._conn.execute(
+                "UPDATE seen_achievements SET trophy_group_id = ? "
+                "WHERE account_platform = ? AND xuid = ? AND title_id = ?"
+                " AND achievement_id = ? AND trophy_group_id IS NULL",
+                (group_id, AccountPlatform.PSN, account_id, title_id, achievement_id),
+            )
+            changed += cursor.rowcount
+        await self._conn.commit()
+        return changed
 
     async def psn_title_needs_widening(self, external_id: str, title_id: str) -> bool:
         """Does this account already hold trophies for this game that were

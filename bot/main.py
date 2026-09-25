@@ -50,6 +50,7 @@ from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
+from bot.poller.psn_trophy_groups import PsnTrophyGroups
 from bot.poller.publisher import Publisher
 from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
@@ -215,6 +216,7 @@ async def run(settings: Settings) -> None:
         CoverRefresh(repo, client),
         steam_catch_up,
         TitlePlatformsRefresh(repo, client),
+        PsnTrophyGroups(repo, psn_auth),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

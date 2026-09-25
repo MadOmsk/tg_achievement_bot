@@ -153,6 +153,7 @@ name, or when the tree goes stale.
 │   │   ├── daily.py              scheduled summaries and the two on-demand summary commands (#14)
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
 │   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
+│   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
 │   │   ├── reminders.py          reminders for a dead Xbox login
@@ -489,6 +490,14 @@ for this; psnawp uses the private one the PlayStation App uses.
   pass digs up publishes under the 24-hour relink cap (`PsnSyncOutcome.catch_up_rows`)
   instead of as fresh unlocks. Decided per account, never from the shared
   `title_groups`.
+- **Trophies stored before #46 get their group back** (#115,
+  `poller/psn_trophy_groups.py` → `regroup_title`): a game with some grouped rows is
+  never widened, so its older rows stayed ungrouped and the card's group counter
+  undercounted. One request per (account, game); earned trophies never stored go in
+  as backfill — history, not news. Only accounts somebody holds.
+- **A game known only from the database is a `TitleRef`** (`title_ref(id,
+  platforms)`), never a hand-built psnawp `TrophyTitle` (a TypeError). Its platform
+  picks Sony's trophy service, so it is the game's newest console, not a default.
 - **`trophy_earn_rate` arrives as a string** despite its `float | None` annotation —
   coerce it (`services/psn/client.py::_as_float`).
 - **The PSN level** (`accounts.psn_trophy_level`) is refreshed after a backfill and

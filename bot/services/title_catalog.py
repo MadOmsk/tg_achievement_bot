@@ -7,6 +7,7 @@ and reconciling DLC / new achievements.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import timedelta
 
@@ -18,7 +19,7 @@ from bot.services.psn.client import (
     PsnApiError,
     PsnPrivateProfileError,
     PsnTitleUnavailableError,
-    TrophyTitle,
+    title_ref,
     trophies_for_title,
     trophy_groups_for_title,
 )
@@ -225,7 +226,7 @@ class TitleCatalogService:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
 
         try:
-            client = await self._psn_auth.client()
+            client = await self._psn_auth.get_client()
             translation_client = await self._psn_auth.get_translation_client()
         except Exception:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
@@ -244,10 +245,13 @@ class TitleCatalogService:
         if not account_id:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
 
-        dummy_title = TrophyTitle(
-            np_communication_id=np_communication_id,
+        stored_platforms = (await self._repo.title_platforms([np_communication_id])).get(
+            np_communication_id
+        )
+        dummy_title = title_ref(
+            np_communication_id,
+            json.loads(stored_platforms) if stored_platforms else None,
             title_name="?",
-            title_platform=[],
         )
 
         # Structure / Groups fetch (Issue #80 fix: updates title_groups)

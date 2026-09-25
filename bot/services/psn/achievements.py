@@ -36,6 +36,7 @@ from bot.services.psn.client import (
     PsnApiError,
     PsnPrivateProfileError,
     PsnTitleUnavailableError,
+    TitleRef,
     trophies_for_title,
     trophy_groups_for_title,
     trophy_titles_for_account,
@@ -283,6 +284,28 @@ async def sync_account(
             outcome.new_rows.extend(inserted)
 
     return outcome
+
+
+async def regroup_title(
+    repo: Repo, client: PSNAWP, tg_id: int, account_id: str, title: TitleRef
+) -> int:
+    """Give this account's trophies in one game the group they belong to
+    (#115), for rows stored before #46 when only the base group was fetched.
+
+    One request, the game's whole earned list with `trophy_group_id="all"`.
+    Earned trophies the bot never stored — DLC ones, invisible before #46 —
+    go in as backfill: they were earned long ago and a first sight of them
+    is not news, which is also what keeps the ordinary scan from announcing
+    them the day this game next moves. Returns how many rows gained a group.
+    """
+    earned = await trophies_for_title(client, account_id, title)
+    rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
+    await repo.insert_new_achievements_psn(tg_id, account_id, rows, is_backfill=True)
+    return await repo.set_psn_trophy_groups(
+        account_id,
+        title.np_communication_id,
+        {str(item.trophy_id): item.trophy_group_id for item in earned if item.trophy_group_id},
+    )
 
 
 def _to_parsed(
