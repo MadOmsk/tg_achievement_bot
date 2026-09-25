@@ -74,6 +74,19 @@ class PresenceSnapshot:
 
 
 @dataclass(slots=True)
+class X360TitleSummary:
+    """One Xbox 360 game from the achievements service's own title history
+    (#91, #92) — which, unlike titlehub, never forgets a game: it lists every
+    360 title the player has achievements in, with the game's own totals."""
+
+    title_id: str
+    name: str
+    total_achievements: int
+    total_gamerscore: int
+    current_achievements: int
+
+
+@dataclass(slots=True)
 class TitleHistoryEntry:
     title_id: str
     name: str
@@ -308,6 +321,54 @@ class XboxClient:
                 break
             params = {"maxItems": str(PAGE_SIZE), "continuationToken": token}
         return collected
+
+    async def all_x360_achievements(self, tg_id: int) -> list[ParsedAchievement]:
+        """Every Xbox 360 achievement the player earned, for backfill (#91).
+
+        Contract 1 with no titleId: what contract 2 above is for modern
+        games, page by page — 2,544 rows in three requests on one account,
+        which is exactly what production holds for it. It used to be one
+        request per game found in titlehub, and titlehub forgets games it has
+        not seen played for a while: those were never found at all.
+        """
+        collected: list[ParsedAchievement] = []
+        params = {"maxItems": str(PAGE_SIZE)}
+        for _ in range(100):
+            payload = await self._get_achievements(tg_id, "1", params)
+            collected.extend(parse_achievements(payload, Platform.XBOX_360))
+            token = continuation_token(payload)
+            if not token:
+                break
+            params = {"maxItems": str(PAGE_SIZE), "continuationToken": token}
+        return collected
+
+    async def x360_title_summaries(self, tg_id: int) -> list[X360TitleSummary]:
+        """Every Xbox 360 game the player has achievements in, with its
+        name and its whole size (#91, #92) — `history/titles`, contract 1.
+        Titlehub dropped games this lists (330 here against titlehub's 342
+        mixed-generation window of 200), and it is the one place a forgotten
+        game's total still exists, which a completion needs."""
+        summaries: list[X360TitleSummary] = []
+        params = {"maxItems": str(PAGE_SIZE)}
+        for _ in range(100):
+            payload = await self._get_achievements(tg_id, "1", params, endpoint="history/titles")
+            for item in payload.get("titles") or []:
+                if not item.get("titleId"):
+                    continue
+                summaries.append(
+                    X360TitleSummary(
+                        title_id=str(item["titleId"]),
+                        name=item.get("name") or str(item["titleId"]),
+                        total_achievements=int(item.get("totalAchievements") or 0),
+                        total_gamerscore=int(item.get("totalGamerscore") or 0),
+                        current_achievements=int(item.get("currentAchievements") or 0),
+                    )
+                )
+            token = continuation_token(payload)
+            if not token:
+                break
+            params = {"maxItems": str(PAGE_SIZE), "continuationToken": token}
+        return summaries
 
     async def _get_achievements(
         self,

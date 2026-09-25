@@ -16,7 +16,12 @@ from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.auth import TokenRefreshError
-from bot.services.xbox.client import TitleHistoryEntry, XboxApiError, XboxClient
+from bot.services.xbox.client import (
+    TitleHistoryEntry,
+    X360TitleSummary,
+    XboxApiError,
+    XboxClient,
+)
 from bot.services.xbox.models import ParsedAchievement
 from bot.util import parse_iso, utcnow, utcnow_iso
 
@@ -25,6 +30,10 @@ log = logging.getLogger(__name__)
 # How far back backfill reads the title history (#121). Microsoft answers a
 # thousand-title account inside title_history's own deadline (~46s measured).
 BACKFILL_HISTORY_ITEMS = 2000
+
+# Set once every linked Xbox account's 360 history has been read through the
+# achievements service's own lists (#91, #92).
+X360_TOPUP_KEY = "xbox_x360_topup_91"
 
 
 class Fetcher:
@@ -360,36 +369,97 @@ class Fetcher:
             # account, where an Xbox 360 game with 33 unlocked achievements was
             # absent from the full list. Without this second pass the first
             # session in such a game would look like 33 fresh unlocks.
-            # The whole history, not the 200 most recent the pollers read:
-            # an Xbox 360 game is found only here, and a long-standing account
-            # has hundreds — 342 of 1096 titles on one, of which the default
-            # window held 13 (#121).
+            #
+            # The whole history, not the 200 most recent the pollers read: the
+            # per-title fallback below finds a 360 game only through it (#121).
             history = await self._client.title_history(tg_id, max_items=BACKFILL_HISTORY_ITEMS)
-            for entry in history:
-                if entry.platform != Platform.XBOX_360:
-                    continue
-                try:
-                    parsed = await self._client.title_achievements(
-                        tg_id, entry.title_id, Platform.XBOX_360
-                    )
-                except XboxApiError as exc:
-                    log.info("x360 backfill of %s skipped: %s", entry.title_id, exc)
-                    continue
-                await self._repo.cache_rarity(
-                    Platform.XBOX_360,
-                    entry.title_id,
-                    {
-                        a.achievement_id: a.rarity_percent
-                        for a in parsed
-                        if a.rarity_percent is not None
-                    },
-                )
-                rows.extend(to_achievement_row(item) for item in parsed)
+            rows.extend(await self._x360_rows(tg_id, history))
 
             await self._repo.insert_new_achievements(xuid, rows, is_backfill=True)
             await self._save_history(tg_id, xuid, history)
             log.info("backfill for tg_id=%s stored %s achievements", tg_id, len(rows))
             return len(rows)
+
+    async def _x360_rows(
+        self, tg_id: int, history: list[TitleHistoryEntry]
+    ) -> list[AchievementRow]:
+        """Every Xbox 360 achievement the player earned (#91): the whole
+        list in a few pages, and each game's name and size from the
+        achievements service's own history (#92) — which, unlike titlehub,
+        does not forget a game. Falls back to asking game by game through
+        titlehub's history if that answer is refused."""
+        try:
+            summaries = await self._client.x360_title_summaries(tg_id)
+            parsed = await self._client.all_x360_achievements(tg_id)
+        except XboxApiError as exc:
+            log.info("x360 history for tg_id=%s unavailable, per title instead: %s", tg_id, exc)
+            return await self._x360_rows_per_title(tg_id, history)
+        await self._store_x360_titles(summaries)
+        return [to_achievement_row(item) for item in parsed]
+
+    async def _store_x360_titles(self, summaries: list[X360TitleSummary]) -> None:
+        """A 360 game's name and total, even for a game titlehub forgot —
+        the total is what lets a finished one count as completed (#92)."""
+        for summary in summaries:
+            await self._repo.upsert_title(
+                summary.title_id,
+                summary.name,
+                Platform.XBOX_360,
+                achievements_total=summary.total_achievements or None,
+                platforms='["Xbox360"]',
+            )
+
+    async def _x360_rows_per_title(
+        self, tg_id: int, history: list[TitleHistoryEntry]
+    ) -> list[AchievementRow]:
+        rows: list[AchievementRow] = []
+        for entry in history:
+            if entry.platform != Platform.XBOX_360:
+                continue
+            try:
+                parsed = await self._client.title_achievements(
+                    tg_id, entry.title_id, Platform.XBOX_360
+                )
+            except XboxApiError as exc:
+                log.info("x360 backfill of %s skipped: %s", entry.title_id, exc)
+                continue
+            await self._repo.cache_rarity(
+                Platform.XBOX_360,
+                entry.title_id,
+                {
+                    a.achievement_id: a.rarity_percent
+                    for a in parsed
+                    if a.rarity_percent is not None
+                },
+            )
+            rows.extend(to_achievement_row(item) for item in parsed)
+        return rows
+
+    async def fill_x360_gaps_once(self, targets: list[tuple[int, str]]) -> None:
+        """Every linked Xbox account's 360 history through the achievements
+        service's own lists, once per database (#91, #92): games titlehub had
+        forgotten by the time the account was backfilled, and the totals that
+        let finished ones count. Stored as history, never published. The mark
+        is not set if Xbox failed for somebody, so the next start tries again.
+        """
+        if await self._repo.get_app_setting(X360_TOPUP_KEY):
+            return
+        complete = True
+        for tg_id, xuid in targets:
+            try:
+                summaries = await self._client.x360_title_summaries(tg_id)
+                parsed = await self._client.all_x360_achievements(tg_id)
+            except (XboxApiError, TokenRefreshError) as exc:
+                log.info("x360 top-up for tg_id=%s skipped: %s", tg_id, exc)
+                complete = False
+                continue
+            await self._store_x360_titles(summaries)
+            added = await self._repo.insert_new_achievements(
+                xuid, [to_achievement_row(item) for item in parsed], is_backfill=True
+            )
+            log.info("x360 top-up for tg_id=%s stored %s achievements", tg_id, len(added))
+        if complete:
+            await self._repo.set_app_setting(X360_TOPUP_KEY, utcnow_iso())
 
     async def catch_up(
         self,

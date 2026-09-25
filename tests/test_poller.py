@@ -8,7 +8,7 @@ from datetime import timedelta
 from bot.db.repo import AchievementRow, Repo
 from bot.poller.fetcher import Fetcher
 from bot.poller.reminders import MAX_REMINDERS, REMINDER_INTERVAL_HOURS, ReminderJob
-from bot.services.xbox.client import XboxProfileSnapshot
+from bot.services.xbox.client import X360TitleSummary, XboxApiError, XboxProfileSnapshot
 from bot.services.xbox.models import ParsedAchievement
 from bot.util import utcnow
 
@@ -54,10 +54,15 @@ class FakeHistoryEntry:
 
 
 class FakeClient:
-    def __init__(self, by_title=None, everything=None, history=None) -> None:
+    def __init__(
+        self, by_title=None, everything=None, history=None, x360=None, x360_titles=None
+    ) -> None:
         self.by_title = by_title or {}
         self.everything = everything or []
         self.history = history or []
+        # The achievements service's own 360 lists (#91); None: it refuses.
+        self.x360 = x360 if x360 is not None else []
+        self.x360_titles = x360_titles if x360_titles is not None else []
         self.title_calls: list[tuple[str, str]] = []
         self.resolved: list[str] = []
         self.resolvable: dict[str, FakeHistoryEntry] = {}
@@ -80,6 +85,16 @@ class FakeClient:
 
     async def title_history(self, tg_id, max_items: int = 200):
         return self.history
+
+    async def all_x360_achievements(self, tg_id):
+        if self.x360 == "refused":
+            raise XboxApiError("history refused")
+        return self.x360
+
+    async def x360_title_summaries(self, tg_id):
+        if self.x360 == "refused":
+            raise XboxApiError("history refused")
+        return self.x360_titles
 
     async def profile(self, tg_id):
         # One request, three cacheable facts (#51) — the two gamertags were
@@ -144,21 +159,30 @@ async def test_backfill_publishes_nothing(repo: Repo, cipher) -> None:
 
 async def test_backfill_covers_x360_titles_separately(repo: Repo, cipher) -> None:
     """Contract 2 does not list Xbox 360 achievements — verified live. Without
-    the extra pass the first x360 session would look like fresh unlocks."""
+    the extra pass the first x360 session would look like fresh unlocks.
+    Since #91 the pass reads the achievements service's own 360 lists, which
+    also know the games titlehub forgot, and their totals (#92)."""
     await _connected_user(repo, cipher)
     client = FakeClient(
         everything=[parsed("m1")],
-        by_title={"360": [parsed("x1", title_id="360", platform="xbox_360")]},
-        history=[
-            FakeHistoryEntry("1", "Modern Game", "xbox_modern"),
-            FakeHistoryEntry("360", "Gears of War 3", "xbox_360"),
+        x360=[
+            parsed("x1", title_id="360", platform="xbox_360"),
+            parsed("f1", title_id="forgotten", platform="xbox_360"),
         ],
+        x360_titles=[
+            X360TitleSummary("360", "Gears of War 3", 82, 1000, 1),
+            X360TitleSummary("forgotten", "Old Game", 1, 10, 1),
+        ],
+        history=[FakeHistoryEntry("1", "Modern Game", "xbox_modern")],  # titlehub forgot both
     )
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     await fetcher.backfill(TG_ID, XUID)
 
-    assert client.title_calls == [("360", "xbox_360")]
+    assert client.title_calls == []  # no game-by-game requests any more
+    assert await repo.title_name("forgotten") == "Old Game"
+    # Its total is known, so a finished forgotten game counts as completed.
+    assert await repo.xbox_completed_games_count(XUID) == 1
     # Now the same x360 achievement arrives from a real session: already seen.
     assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", "Gears 3") == 0
 
@@ -410,3 +434,35 @@ async def test_catch_up_skips_games_untouched_since_last_poll(repo: Repo, cipher
 
     assert (titles, published) == (0, 0)
     assert client.title_calls == []
+
+
+async def test_backfill_asks_game_by_game_when_the_360_lists_are_refused(
+    repo: Repo, cipher
+) -> None:
+    await _connected_user(repo, cipher)
+    client = FakeClient(
+        everything=[parsed("m1")],
+        x360="refused",
+        by_title={"360": [parsed("x1", title_id="360", platform="xbox_360")]},
+        history=[FakeHistoryEntry("360", "Gears of War 3", "xbox_360")],
+    )
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    assert await fetcher.backfill(TG_ID, XUID) == 2
+    assert client.title_calls == [("360", "xbox_360")]
+
+
+async def test_x360_gaps_are_filled_once(repo: Repo, cipher) -> None:
+    await _connected_user(repo, cipher)
+    client = FakeClient(
+        x360=[parsed("f1", title_id="forgotten", platform="xbox_360")],
+        x360_titles=[X360TitleSummary("forgotten", "Old Game", 1, 10, 1)],
+    )
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.fill_x360_gaps_once([(TG_ID, XUID)])
+    client.x360 = "refused"  # a second call would raise: it must not happen
+    await fetcher.fill_x360_gaps_once([(TG_ID, XUID)])
+
+    assert await repo.has_any_achievements(XUID)
+    assert await repo.title_name("forgotten") == "Old Game"

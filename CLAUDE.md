@@ -429,6 +429,13 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   `startup_catch_up` bounds each account at 120s (`STARTUP_CATCH_UP_DEADLINE_SECONDS`)
   so one slow account cannot hold up the rest. Errors format with `{exc!r}`: a
   connection-level httpx error often stringifies to nothing.
+- **Xbox 360 history comes from the achievements service's own lists** (#91, #92):
+  contract 1 `/achievements` with no titleId gives every 360 unlock page by page, and
+  `/history/titles` every 360 game with its name and total. Titlehub forgets games not
+  played for a while; these do not. Backfill uses them (game by game through titlehub
+  only if refused), and linked accounts are topped up once at startup
+  (`Fetcher.fill_x360_gaps_once`, marked in `app_settings`). A forgotten game's total
+  on `titles.achievements_total` is what lets a finished one count as 🌀.
 - **Descriptions.** The contract-2 backfill brings the whole library in one request
   but in no language, so `poller/description_backfill.py` fills the bilingual cache
   a few titles per tick — a poller rather than a script because of the one-process

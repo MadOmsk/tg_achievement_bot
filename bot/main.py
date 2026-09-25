@@ -364,6 +364,10 @@ async def run(settings: Settings) -> None:
                 )
             except Exception:
                 log.exception("catch-up for tg_id=%s failed", target.tg_id)
+        # Once per database: 360 games titlehub forgot, and their totals (#91, #92).
+        await fetcher.fill_x360_gaps_once(
+            [(target.tg_id, target.xuid) for target in await repo.pollable_users()]
+        )
 
         if await steam_auth.get_key() is not None:
             for steam_target in await repo.steam_pollable_users():
