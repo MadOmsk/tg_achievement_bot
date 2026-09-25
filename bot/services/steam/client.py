@@ -454,6 +454,9 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
     raise SteamApiError("Steam request gave up")  # pragma: no cover — loop always returns/raises
 
 
+_STEAM_APP_CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps"
+
+
 def cover_url(appid: str) -> str:
     """A game's cover art, derived rather than fetched (2026-09-18).
 
@@ -464,11 +467,18 @@ def cover_url(appid: str) -> str:
     `library_600x900` rather than `header.jpg`: the header is a 460×215
     banner, and the Mini App crops a cover into a 42×42 square
     (`object-fit: cover`), which throws away most of a wide image. The
-    portrait capsule survives that crop with the art still recognisable. A
-    game too old to have one simply 404s, which the caller treats as "no
-    cover", the same as any other platform having nothing to give.
+    portrait capsule survives that crop with the art still recognisable.
     """
-    return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg"
+    return f"{_STEAM_APP_CDN}/{appid}/library_600x900.jpg"
+
+
+def cover_urls(appid: str) -> tuple[str, str]:
+    """Where to look for a game's cover, best first (#117): the portrait
+    capsule, then the header banner. A game older than the library view
+    (appids 13500-13570 on the dev server, for one) has no portrait capsule
+    and 404s on it, but every Steam game has a header — a wide picture
+    cropped square beats no picture."""
+    return cover_url(appid), f"{_STEAM_APP_CDN}/{appid}/header.jpg"
 
 
 async def avatar_url(api_key: str, steam_id: str) -> str | None:

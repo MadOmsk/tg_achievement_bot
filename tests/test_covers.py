@@ -13,7 +13,7 @@ from bot.db.repo import AchievementRow, Repo
 from bot.poller import covers as covers_poller
 from bot.poller.covers import CoverRefresh
 from bot.services import covers
-from bot.services.steam.client import cover_url
+from bot.services.steam.client import cover_url, cover_urls
 
 STEAM_APPID = "440"
 XBOX_TITLE = "1234567890"
@@ -87,6 +87,32 @@ async def test_a_steam_cover_is_stored_without_asking_anyone(
     assert client.asked == []  # Steam needs no token and no request
     assert urls == [cover_url(STEAM_APPID)]
     assert await repo.titles_needing_cover(10) == [], "a title with a cover is done forever"
+
+
+async def test_an_old_steam_game_falls_back_to_its_header(
+    repo: Repo, monkeypatch, tmp_path
+) -> None:
+    """No portrait capsule before the library view existed (#117): the header
+    banner every Steam game has is the cover then — even over a portrait URL
+    an earlier visit stored."""
+    await repo.upsert_title(
+        STEAM_APPID, "Old Game", Platform.STEAM, icon_url=cover_url(STEAM_APPID)
+    )
+    tried: list[str] = []
+
+    async def download(url, name):
+        tried.append(url)
+        if url.endswith("library_600x900.jpg"):
+            return None
+        return ("covers/old.jpg", "hash")
+
+    monkeypatch.setattr(covers_poller.covers, "download", download)
+
+    await CoverRefresh(repo, _FakeXbox()).tick()  # type: ignore[arg-type]
+
+    assert tried == list(cover_urls(STEAM_APPID))
+    assert await repo.title_icon_url(STEAM_APPID) == cover_urls(STEAM_APPID)[1]
+    assert await repo.titles_needing_cover(10) == []
 
 
 async def test_an_xbox_cover_is_looked_up_through_an_owner(

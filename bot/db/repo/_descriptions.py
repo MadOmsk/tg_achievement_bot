@@ -210,9 +210,11 @@ class _DescriptionsRepo:
         titles as the next tick can actually fetch, and stops there.
 
         `tg_id` is any one owner of the title — the description belongs to
-        the game, not the person, so whoever the group-by happens to pick is
-        as good as any other; the caller falls back to another owner itself
-        if that one's token turns out to be dead.
+        the game, not the person, so on Xbox (the one caller) whoever the
+        group-by picks is as good as any other; the caller falls back to
+        another owner itself if that one's token turns out to be dead. Not
+        so on PSN, where an answer holds only the asker's own trophies (#50):
+        scripts/backfill_descriptions.py walks every owner there.
         """
         placeholders = ", ".join("?" * len(platforms))
         cursor = await self._conn.execute(

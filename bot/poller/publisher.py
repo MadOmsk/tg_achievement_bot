@@ -14,12 +14,13 @@ from datetime import timedelta
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InputMediaPhoto
 
 from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.services.achievements import passes_filters
+from bot.services.chat_gone import chat_is_gone
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import achievement_category
 from bot.services.naming import NO_NICKNAME, account_nickname, person_name_of, xbox_nickname
@@ -413,8 +414,11 @@ class Publisher:
     async def _send(self, job: PublishJob) -> None:
         try:
             message_id = await self._deliver(job)
-        except TelegramForbiddenError:
-            # Kicked out of the group — stop trying forever (SPEC 5.5).
+        except (TelegramForbiddenError, TelegramBadRequest) as exc:
+            if not chat_is_gone(exc):
+                raise
+            # Kicked out of the group, or the group is gone — stop trying
+            # forever (SPEC 5.5, #116).
             log.info("chat %s is not available any more, deactivating", job.chat_id)
             await self._repo.deactivate_chat(job.chat_id)
             return
@@ -450,7 +454,9 @@ class Publisher:
                     return messages[0].message_id if messages else None
                 except (TelegramForbiddenError, TelegramRetryAfter):
                     raise
-                except Exception:
+                except Exception as exc:
+                    if chat_is_gone(exc):
+                        raise
                     log.info("gallery for chat %s did not go through, sending text", job.chat_id)
             elif len(job.gallery) == 1:
                 url, secret = job.gallery[0]
@@ -465,7 +471,9 @@ class Publisher:
                     return message.message_id
                 except (TelegramForbiddenError, TelegramRetryAfter):
                     raise
-                except Exception:
+                except Exception as exc:
+                    if chat_is_gone(exc):
+                        raise
                     log.info("icon for chat %s did not go through, sending text", job.chat_id)
 
             message = await self._bot.send_message(job.chat_id, job.text, parse_mode=ParseMode.HTML)

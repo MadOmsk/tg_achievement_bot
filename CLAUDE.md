@@ -379,7 +379,8 @@ every column. History: #106.
   `data/avatars/`, covers to `data/covers/`, paths stored relative. Avatar URLs come
   from calls the bot already makes (Xbox `GameDisplayPicRaw`, Steam `avatarfull`, PSN
   `avatars`); `poller/avatars.py` re-checks each subject weekly and skips unchanged
-  ones. Covers: Steam's is a fixed CDN path (`library_600x900`, portrait), PSN's
+  ones. Covers: Steam's is a fixed CDN path (`library_600x900`, portrait, else
+  `header.jpg` for games older than the library view, #117), PSN's
   rides in the trophy listing, Xbox's costs a titlehub call — `poller/covers.py`
   rations three a minute and visits each title **once** (art does not change).
 

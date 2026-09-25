@@ -229,10 +229,19 @@ async def run_psn(
 ) -> None:
     """PSN needs the `TrophyTitle` object itself, not just an id — the
     account's title list is fetched once per account by the caller and
-    passed in here."""
+    passed in here.
+
+    Unlike Xbox and Steam, a PSN answer holds only the trophies *that*
+    account earned (#50), so the first owner to answer is not the end of it:
+    the ids still missing are asked of the next owner, until none are left.
+    """
     primary = await psn_auth.get_client()
     translation = await psn_auth.get_translation_client()
+    remaining = set(work.achievement_ids)
+    answered = False
     for _tg_id, account_id in work.owners:
+        if not remaining:
+            return
         title = (titles_by_account.get(account_id) or {}).get(work.title_id)
         if title is None:
             continue
@@ -242,16 +251,38 @@ async def run_psn(
         except PsnApiError as exc:
             log.warning("  %s: account %s failed (%s)", work.title_id, account_id, exc)
             continue
+        answered = True
         russian_by_id = {str(t.trophy_id): t.trophy_detail for t in russian}
+        # No Russian entry is "no native translation", not "no description"
+        # (#50): the English text goes through as both halves.
         native = {
-            str(item.trophy_id): (russian_by_id.get(str(item.trophy_id)), item.trophy_detail)
+            str(item.trophy_id): (
+                russian_by_id.get(str(item.trophy_id)) or item.trophy_detail,
+                item.trophy_detail,
+            )
             for item in english
-            if item.trophy_detail
+            if item.trophy_detail and str(item.trophy_id) in remaining
         }
-        await _record(repo, anthropic_auth, work, native, totals)
-        return
-    totals.failed += 1
-    log.warning("  %s/%s: no account could supply this title", work.platform, work.title_id)
+        if native:
+            await _record(
+                repo,
+                anthropic_auth,
+                TitleWork(work.platform, work.title_id, set(native), work.owners),
+                native,
+                totals,
+            )
+            remaining -= set(native)
+    if not answered:
+        totals.failed += 1
+        log.warning("  %s/%s: no account could supply this title", work.platform, work.title_id)
+    elif remaining:
+        totals.skipped += 1
+        log.info(
+            "  %s/%s: %s trophies no owner could supply",
+            work.platform,
+            work.title_id,
+            len(remaining),
+        )
 
 
 async def main() -> None:
