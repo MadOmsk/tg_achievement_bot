@@ -1,0 +1,196 @@
+.avatar-dot.has-plat.is-fill .plat-logo {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.avatar-dot.has-plat.is-fill .plat-logo-svg {
+  transform: scale(1.08);
+  transform-origin: center;
+}
+
+.avatar-dot .plat-logo {
+  color: inherit;
+}
+
+.game-card-title .plat-dot {
+  flex: 0 0 auto;
+}
+
+.hero-game-name .plat-dot {
+  flex: 0 0 auto;
+}
+
+.plat-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+}
+
+.feed-plat .plat-dot {
+  color: var(--muted);
+  text-shadow: none;
+}
+
+/* Same visual height across Xbox / PSN / Steam — header cup, its sheet, admin people. */
+.score-plats .plat-logo,
+.admin-plats .plat-logo {
+  height: 18px !important;
+  width: auto !important;
+  min-width: 0;
+}
+
+.score-plats .plat-logo.is-xbox,
+.score-plats .plat-logo.is-steam,
+.admin-plats .plat-logo.is-xbox,
+.admin-plats .plat-logo.is-steam {
+  width: 18px !important;
+}
+
+.score-plats .plat-logo.is-psn,
+.admin-plats .plat-logo.is-psn {
+  width: 26px !important;
+}
+
+.score-row .plat-logo {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px;
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+}
+
+.score-row .plat-logo.is-xbox,
+.score-row .plat-logo.is-steam,
+.score-row .plat-logo.is-psn {
+  width: 22px !important;
+  height: 22px !important;
+}
+
+.score-plats .plat-logo .plat-logo-svg,
+.admin-plats .plat-logo .plat-logo-svg,
+.score-row .plat-logo .plat-logo-svg {
+  width: 100%;
+  height: 100%;
+  transform: none;
+}
+
+.score-row .plat-logo.is-psn .plat-logo-svg {
+  /* PSN mark is wider — scale to the same box as Xbox/Steam. */
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+}
+
+.plat-logo-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.plat-logo.is-psn {
+  overflow: visible;
+}
+
+.plat-logo.is-psn .plat-logo-svg {
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+}
+
+.plat-dot.is-logo {
+  gap: 0;
+  line-height: 0;
+}
+
+.plat-dot.is-logo .plat-logo {
+  height: 14px !important;
+  width: 14px !important;
+  min-width: 14px;
+  display: grid;
+  place-items: center;
+}
+
+.plat-dot.is-logo .plat-logo.is-psn {
+  width: 18px !important;
+  min-width: 18px;
+}
+
+.plat-dot.is-logo .plat-logo-svg,
+.plat-dot.is-logo .plat-logo.is-psn .plat-logo-svg {
+  width: 100%;
+  height: 100%;
+  transform: none;
+}
+
+.feed-copy .plat-dot {
+  color: var(--muted);
+  text-shadow: none;
+}
+
+.feed-row .unlock-title .plat-dot {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  gap: 4px;
+  opacity: 0.85;
+}
+
+.feed-row .unlock-title .plat-logo,
+.feed-row .unlock-title .plat-logo-svg {
+  width: 14px;
+  height: 14px;
+}
+
+.feed-row .unlock-game .plat-dot {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.unlock-title .plat-dot {
+  flex: 0 0 auto;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(238, 241, 246, 0.88);
+  font-size: 0.76rem;
+  line-height: 1.2;
+  cursor: default;
+}
+
+button.chip:not(:has(.avatar-wrap)) {
+  padding: 6px 12px;
+}
+
+.plat-card-main > .plat-logo {
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+
+.game-filter-chips .chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.game-filter-chips .chip.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.game-filter-chips .chip.is-secret-chip.is-active {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: rgba(168, 85, 247, 0.35);
+  color: #e9d5ff;
+}

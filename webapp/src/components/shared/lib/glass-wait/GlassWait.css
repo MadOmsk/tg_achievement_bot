@@ -1,0 +1,51 @@
+.glass-wait {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  width: 100%;
+}
+
+.search-bar.is-busy .glass-wait {
+  width: auto;
+  min-height: 0;
+  gap: 6px;
+}
+
+.unlock-card-copy .glass-wait {
+  position: relative;
+  z-index: 1;
+  justify-content: flex-start;
+  min-height: 28px;
+  margin-top: 10px;
+  gap: 7px;
+}
+
+.unlock-card-copy .glass-wait .glass-orb {
+  width: 7px;
+  height: 7px;
+}
+
+.glass-wait.is-tall {
+  min-height: 120px;
+}
+
+.spinner-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 8px;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--stroke);
+  border-top-color: var(--mint);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}

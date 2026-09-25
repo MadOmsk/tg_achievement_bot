@@ -1,0 +1,393 @@
+.picker-sheet h2 {
+  margin: 0 0 8px;
+  flex: 0 0 auto;
+  font-size: 1.14rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  border-radius: 0;
+  cursor: pointer;
+  text-align: left;
+  padding: 14px 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text);
+}
+
+.picker-row:last-child {
+  border-bottom: 0;
+}
+
+.picker-row.is-person {
+  justify-content: flex-start;
+}
+
+.picker-row.is-game {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  justify-content: flex-start;
+  cursor: default;
+}
+
+button.picker-row.is-game {
+  cursor: pointer;
+}
+
+.picker-game-art img,
+.picker-game-art .cover-ph {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.picker-row.is-game strong {
+  text-transform: none;
+}
+
+.picker-row.is-person strong {
+  text-transform: none;
+}
+
+.picker-row > span:not(.picker-row-copy) {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.picker-row-copy p {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.picker-row-copy i {
+  font-style: normal;
+}
+
+.picker-row.is-on {
+  background: none;
+  box-shadow: none;
+}
+
+.picker-row.is-on strong {
+  color: var(--mint-2);
+}
+
+.picker-row.is-on > span:not(.picker-row-copy) {
+  color: rgba(238, 241, 246, 0.72);
+}
+
+.games-sheet .picker-row.is-game {
+  gap: 14px;
+  padding: 14px 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.games-sheet .picker-game-art img,
+.games-sheet .picker-game-art .cover-ph,
+.games-sheet .picker-game-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+.games-sheet .picker-row-copy {
+  gap: 4px;
+  justify-content: center;
+}
+
+.games-sheet .picker-row-copy strong {
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.games-sheet .picker-row-copy p {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(238, 241, 246, 0.55);
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.unlock-card-art .cover-ph > img,
+.picker-game-art .cover-ph > img,
+.hero-game .cover-ph > img,
+.feed-cover.cover-ph > img,
+.sheet-body .hero-game .cover-ph > img,
+.sheet-body .hero-game-art > img {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  width: auto;
+  max-width: none;
+  transform: translateX(-50%);
+  object-fit: unset;
+  object-position: unset;
+}
+
+.unlock-card-copy h2 .plat-dot {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  opacity: 0.88;
+}
+
+.sheet-secret-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  box-sizing: border-box;
+  background: none;
+  pointer-events: none;
+}
+
+.section-head .see-all svg {
+  display: block;
+  opacity: 0.9;
+}
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(6, 8, 14, 0.42);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  animation: veil-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sheet.is-compact {
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top, 0px)) 28px 12dvh;
+}
+
+.sheet-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 28rem;
+  transform-origin: 50% 100%;
+  animation: sheet-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sheet.is-compact .sheet-stack {
+  width: auto;
+  max-width: min(28rem, calc(100vw - 56px));
+  transform-origin: 50% 50%;
+  animation: sheet-pop 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sheet.is-leave .sheet-stack {
+  animation: sheet-sink 0.26s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.sheet.is-compact.is-leave .sheet-stack {
+  animation: sheet-pop-out 0.22s ease both;
+}
+
+.sheet-dismiss {
+  flex: 0 0 auto;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 1.35rem;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.65);
+  transition: color 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sheet-body.is-tall {
+  height: 58dvh;
+  max-height: 58dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Friends / month / games: fixed mid height. Achievement unlock grows
+   with its description instead — see :has(.sheet-unlock) below. */
+.sheet-body.is-mid {
+  height: 64dvh;
+  max-height: 64dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sheet-body.is-mid .sheet-unlock {
+  flex: 1 1 auto;
+  min-height: 64dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.sheet-body.is-mid:has(.sheet-unlock) {
+  height: auto;
+  min-height: 64dvh;
+  max-height: min(92dvh, 920px);
+  padding: 0;
+  background: #0a0c12;
+  border-color: transparent;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet-body.is-mid:has(.sheet-hltb) {
+  height: 72dvh;
+  max-height: 72dvh;
+  padding: 0;
+  background: #0a0c12;
+  border-color: transparent;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet-body.is-compact {
+  width: 100%;
+  max-width: 22rem;
+  max-height: min(44dvh, 340px);
+  margin: 0;
+  border-radius: 22px;
+  padding-bottom: 12px;
+}
+
+.sheet-body.is-photo {
+  padding: 0 0 calc(18px + var(--safe-bottom));
+  overflow: auto;
+  background: #0a0c12;
+  border: 0;
+  border-radius: 28px 28px 0 0;
+}
+
+.sheet-body.is-photo .sheet-hero {
+  --hero-art: 100%;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+
+.sheet-content {
+  padding: 18px 18px 0;
+}
+
+.sheet-content.score-sheet,
+.sheet-content.picker-sheet {
+  padding: 22px 18px 4px;
+}
+
+.sheet-body.is-mid > .sheet-content.picker-sheet,
+.sheet-body.is-mid > .picker-sheet {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@keyframes veil-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes veil-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-sink {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4%);
+  }
+}
+
+@keyframes sheet-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sheet-pop-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}

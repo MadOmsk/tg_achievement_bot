@@ -1,0 +1,134 @@
+.admin-plats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  color: inherit;
+}
+
+.admin-limits .admin-limit-row {
+  cursor: text;
+}
+
+.admin-limit-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-limit-copy strong {
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.admin-limit-copy small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.admin-limit-input {
+  flex: 0 0 auto;
+  width: 4.6rem;
+  min-height: 36px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.admin-limit-input::-webkit-outer-spin-button,
+.admin-limit-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.admin-limit-input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(155, 182, 255, 0.45);
+}
+
+.admin-secret-input {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+}
+
+.admin-secret-input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(155, 182, 255, 0.45);
+}
+
+.admin-user-row {
+  align-items: center;
+}
+
+.admin-user-row.is-off {
+  opacity: 0.55;
+}
+
+.admin-user-row .admin-limit-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-user-row .admin-plats {
+  gap: 6px;
+}
+
+.admin-chat-state {
+  flex: 0 0 auto;
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.admin-chat-state.is-on {
+  color: #7ddea8;
+}
+
+.connect-form-head strong {
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.stat-tile strong {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.stat-tile small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

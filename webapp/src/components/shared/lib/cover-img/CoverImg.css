@@ -1,0 +1,236 @@
+/* Missing / broken cover or achievement art — this component's own
+ * base look (moved back here from screens/Club.css, where it had been
+ * misattributed by an earlier automated pass — CoverImg is what renders
+ * it, every time). */
+.cover-ph {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+  background:
+    radial-gradient(90% 80% at 22% 8%, rgba(155, 182, 255, 0.3), transparent 55%),
+    radial-gradient(75% 70% at 95% 95%, rgba(72, 52, 120, 0.28), transparent 52%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+/* .cover-ph > img itself — the default "fill the box" look for the actual
+ * <img> — lives in components/shared/styles/shared.css, not here, deliberately: it needs to
+ * lose to context-specific sizing at the same specificity (.stat-game-tile
+ * img, .picker-game-art img, …) while still beating imgClassName="cover"
+ * (a plain, lower-specificity class straight on the <img>), and that only
+ * holds if it loads before every one of those overrides — see its own
+ * comment there. */
+
+.games-sheet .picker-game-art .cover-ph-mark {
+  opacity: 0.85;
+}
+
+.games-sheet .picker-game-art .cover-ph-mark svg {
+  width: 22px;
+  height: 22px;
+}
+
+.cover-ph-mark {
+  display: grid;
+  place-items: center;
+  opacity: 0.78;
+  color: rgba(188, 206, 255, 0.78);
+  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.45));
+}
+
+/* Empty game / achievement art — dark field with a soft corner glow. */
+.cover-ph.is-achievement.is-empty,
+.cover-ph.is-game.is-empty {
+  background:
+    radial-gradient(90% 80% at 18% 10%, rgba(155, 182, 255, 0.34), transparent 58%),
+    radial-gradient(70% 65% at 92% 88%, rgba(90, 60, 160, 0.28), transparent 55%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+/* Beside a game title the empty cover used to read as a second dark
+   plate; keep it quieter when it sits inside the hero-game row. */
+.hero-game .cover-ph.is-game.is-empty {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.hero-game .cover-ph.is-game.is-empty .cover-ph-mark {
+  color: rgba(230, 236, 255, 0.72);
+  filter: none;
+  opacity: 0.9;
+}
+
+.cover-ph.is-achievement.is-empty .cover-ph-mark,
+.cover-ph.is-game.is-empty .cover-ph-mark {
+  color: rgba(210, 222, 255, 0.9);
+  opacity: 1;
+  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.5));
+}
+
+.cover-ph.is-empty.profile-hero-art.is-achievement .cover-ph-mark {
+  opacity: 1;
+}
+
+/* Large post / sheet hero: keep the glyph readable over the wash. */
+.cover-ph.is-empty.profile-hero-art {
+  display: grid;
+  place-items: center;
+}
+
+.cover-ph.is-empty.profile-hero-art .cover-ph-mark {
+  opacity: 0.92;
+  transform: none;
+}
+
+.cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
+  width: 64px;
+  height: 64px;
+}
+
+/*
+ * Unlock cards stretch art behind the caption. Match the stage box so the
+ * glyph centers in the photo, not the full art+caption stack.
+ */
+.unlock-card-art .cover-ph.is-empty.profile-hero-art {
+  place-items: stretch;
+}
+
+.unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+  transform: none;
+  display: grid;
+  place-items: center;
+  opacity: 0.98;
+  padding: 0;
+}
+
+.unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
+  width: 72px;
+  height: 72px;
+}
+
+/* Square home/profile carousel — center the glyph in the slide. */
+.unlock-slider .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark {
+  inset: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+  max-height: none;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.unlock-slider .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
+  width: 64px;
+  height: 64px;
+}
+
+.game-card-art.is-empty .cover-ph-mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 0 12%;
+  box-sizing: border-box;
+  opacity: 0.9;
+  color: rgba(210, 222, 255, 0.9);
+  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.5));
+}
+
+.game-card-art.is-empty .cover-ph-mark svg {
+  width: 112px;
+  height: 112px;
+}
+
+/* .picker-game-art's own version of this used to be one literal duplicate
+ * selector shared with components/shared/styles/shared.css's own hero/feed-cover darkening
+ * (same rule, two slightly different values, 0.95 vs 0.96) — see that
+ * file's own comment. */
+.cover-ph:has(> .plat-logo).has-img > img {
+  filter: brightness(0.95);
+}
+
+/*
+ * Feed posts: empty achievement art — small cup, true center of the photo.
+ */
+.feed-posts .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark {
+  inset: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.feed-posts .unlock-card-art .cover-ph.is-empty.profile-hero-art .cover-ph-mark svg {
+  width: 64px;
+  height: 64px;
+}
+
+.feed-cover.is-achievement.is-empty .cover-ph-mark svg {
+  width: 30px;
+  height: 30px;
+}
+
+/* Blurred caption wash — no second art layer; the hero under the panel shows through. */
+.cover-ph.has-img {
+  background: #0a0c12;
+}
+
+.cover,
+.feed-cover {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 16px;
+  background: rgba(155, 182, 255, 0.1);
+}
+
+.feed-cover .cover {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  width: auto;
+  max-width: none;
+  border-radius: 0;
+  transform: translateX(-50%) scale(1.2);
+  object-fit: unset;
+}
+
+/* "+DLC" corner badge on a game's cover (HeroGame, GameCard) — replaces the
+ * old "incl. DLC" text line, so the count is never shifted by it. */
+.dlc-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  z-index: 3;
+  padding: 1px 4px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  background: rgba(8, 10, 16, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.game-card-art .dlc-badge {
+  top: 12px;
+  right: 12px;
+  padding: 3px 8px;
+  border-radius: 9px;
+  font-size: 0.68rem;
+}

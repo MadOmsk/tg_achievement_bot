@@ -1,0 +1,44 @@
+.skel {
+  display: block;
+  border-radius: 18px;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.05) 20%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0.05) 80%
+  );
+  background-size: 200% 100%;
+  animation: sheen 1.35s ease-in-out infinite;
+}
+
+.skel.line {
+  height: 14px;
+  margin: 8px 0;
+}
+
+.skel.hero {
+  height: 220px;
+  border-radius: 28px;
+  margin-bottom: 22px;
+}
+
+.skel.circle {
+  border-radius: 50%;
+}
+
+.skel-row {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+@keyframes sheen {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}

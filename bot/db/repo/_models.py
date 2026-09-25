@@ -571,30 +571,6 @@ class GameAchievements:
 
 
 @dataclass(slots=True)
-class DroppedGame:
-    """A subscriber's game with few unlocks in the stats month — Mini App
-    "Ну и кто это будет проходить?" strip. Raw identity fields feed `person_name`;
-    the Mini layer builds the display string so naming stays in one chain
-    (#51). `unlocked` is the count *inside the month window*, not lifetime.
-    """
-
-    tg_id: int
-    username: str | None
-    first_name: str | None
-    last_name: str | None
-    gamertag: str | None
-    gamertag_modern: str | None
-    steam_name: str | None
-    psn_name: str | None
-    title_id: str
-    platform: str
-    name: str | None
-    unlocked: int
-    last_earned: str
-    icon_url: str | None = None
-
-
-@dataclass(slots=True)
 class TitleHistoryRow:
     title_id: str
     name: str

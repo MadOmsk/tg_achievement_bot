@@ -1,0 +1,76 @@
+.home-me .avatar-wrap {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.home-chrome .account-who .avatar-wrap {
+  display: none;
+}
+
+.person-bar .avatar-wrap {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.person-bar .avatar-wrap:focus,
+.person-bar .avatar-wrap:focus-visible,
+.person-bar .avatar-wrap:active {
+  outline: none;
+  box-shadow: none;
+}
+
+.avatar-wrap {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.avatar-dot.has-plat {
+  width: 34%;
+  height: 34%;
+  min-width: 12px;
+  min-height: 12px;
+  max-width: 18px;
+  max-height: 18px;
+}
+
+.avatar-dot.has-plat.is-fill {
+  padding: 0;
+  color: #062012;
+}
+
+.friend .avatar-wrap {
+  margin-bottom: 8px;
+}
+
+.avatar.is-zoomable {
+  cursor: zoom-in;
+}
+
+/* The photo on its own, over a dimmed and blurred screen; any tap closes it. */
+.avatar-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  border: 0;
+  background: rgba(6, 8, 14, 0.72);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  cursor: zoom-out;
+  animation: veil-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.avatar-zoom > img {
+  display: block;
+  width: min(86vw, 24rem);
+  height: min(86vw, 24rem);
+  border-radius: 50%;
+  object-fit: cover;
+  pointer-events: none;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}

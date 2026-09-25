@@ -187,17 +187,22 @@ async def build_summary_payload(
         [s.tg_id for s in subscribers],
         since,
         rare_threshold=threshold,
-        limit=15,
+        limit=0,
         locale=locale,
         until=until,
-        order="recent",
+        order="count",
     )
-    dropped = await repo.chat_dropped_games(
-        chat_id,
-        since=since,
-        until=until,
-        locale=locale,
+    # Same calendar-month window as games/month leaders — finds and
+    # "hunting together" on the Mini App stats tab read this list, not a
+    # separate feed fetch that can drift to another month.
+    recent_rows = await repo.chat_recent(
+        chat_id, FEED_DEFAULT, locale=locale, since=since, until=until
     )
+    rare_rows = await repo.chat_ultra_rares(
+        chat_id, since=since, until=until, max_percent=0.5, locale=locale
+    )
+    descriptions = await _localized_feed_descriptions(repo, [*recent_rows, *rare_rows], locale)
+    progress = await _feed_progress(repo, [*recent_rows, *rare_rows])
     label = (
         _month_label(month_num, locale)
         if key != current
@@ -224,27 +229,8 @@ async def build_summary_payload(
             }
             for g in games
         ],
-        "dropped": [
-            {
-                "tg_id": d.tg_id,
-                "person": person_label(
-                    tg_id=d.tg_id,
-                    first_name=d.first_name,
-                    last_name=d.last_name,
-                    username=d.username,
-                    gamertag=d.gamertag,
-                    gamertag_modern=d.gamertag_modern,
-                    steam_name=d.steam_name,
-                    psn_name=d.psn_name,
-                ),
-                "title_id": d.title_id,
-                "platform": d.platform,
-                "name": d.name,
-                "last_earned": d.last_earned,
-                "icon_url": _https_url(d.icon_url),
-            }
-            for d in dropped
-        ],
+        "recent": [_feed_item_json(row, descriptions, progress, locale) for row in recent_rows],
+        "rares": [_feed_item_json(row, descriptions, progress, locale) for row in rare_rows],
     }
 
 
