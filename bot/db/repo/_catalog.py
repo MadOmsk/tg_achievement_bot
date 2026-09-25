@@ -5,7 +5,7 @@ from __future__ import annotations
 import aiosqlite
 
 from bot.db.repo._models import TitleAchievementRow, TitleAchievementWithUnlock
-from bot.util import utcnow_iso
+from bot.util import looks_russian, utcnow_iso
 
 
 class _CatalogRepo:
@@ -26,15 +26,12 @@ class _CatalogRepo:
         now = utcnow_iso()
         for r in rows:
             updated_at = r.updated_at or now
-            # The platform answers a Russian request with its English when it
-            # has no Russian, and storing that as `description_ru` made every
-            # reader take it for a translation (#127). Only the translator
-            # (cache_description) may say a Russian side equals the English.
-            description_ru = (
-                None
-                if r.description_ru and r.description_ru == r.description_en
-                else r.description_ru
-            )
+            # The platform answers a Russian request with its English (or a
+            # placeholder) when it has no Russian, and storing that as
+            # `description_ru` made every reader take it for a translation
+            # (#127). A Russian side is kept only when it reads as Russian;
+            # the translator settles the rest.
+            description_ru = r.description_ru if looks_russian(r.description_ru) else None
             await self._conn.execute(
                 "INSERT INTO title_achievements ("
                 "  platform, title_id, achievement_id, name_ru, name_en,"

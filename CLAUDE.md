@@ -379,9 +379,12 @@ every column. History: #106.
     is trusted only when `description_source` is set** (#127): a platform with no
     Russian answers the Russian request with its English, and a catalog refresh
     that stored it under `description_ru` once made every poll skip the
-    translator. So no writer but the translator stores a Russian side equal to
-    the English, and `poller/description_backfill.py` translates Steam/PSN rows
-    from the English already stored, without a platform request.
+    translator. **Russian means Cyrillic** (`util.looks_russian`, owner): text with
+    Cyrillic, or with no letters at all ("100%"). Anything else — the English off by
+    a period, "<Translated text>", another language — goes to the translator; the
+    old test, "differs from the English", let all of those through as native.
+    `poller/description_backfill.py` translates Steam/PSN rows from the English
+    already stored, without a platform request.
   - **Names**: the platform's own two strings, **never translated**, from the same
     two locale requests. Each platform's main call fixes one language (Xbox/PSN
     English, Steam Russian), which is why both are kept.

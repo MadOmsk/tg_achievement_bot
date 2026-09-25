@@ -17,6 +17,7 @@ import logging
 from bot.db.repo import Repo
 from bot.services.translate.auth import AnthropicAuth, AnthropicNotConfiguredError
 from bot.services.translate.client import translate_descriptions
+from bot.util import looks_russian
 
 log = logging.getLogger(__name__)
 
@@ -65,11 +66,12 @@ async def bilingual_descriptions(
         if cached is not None:
             result[achievement_id] = (cached.description_ru, cached.description_en)
             continue
-        if (
-            description_ru is not None
-            and description_en is not None
-            and description_ru.strip() == description_en.strip()
-        ):
+        # Not Russian unless it reads as Russian (#127): the platform's
+        # English under the Russian request, a placeholder, or nothing at all
+        # all go to the translator. Equal-to-the-English used to be the test,
+        # and missed every Russian side that differed from the English by a
+        # comma or was a placeholder string.
+        if description_en is not None and not looks_russian(description_ru):
             needs_translation[achievement_id] = description_en
             continue
         await repo.cache_description(

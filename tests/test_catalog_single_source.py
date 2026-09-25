@@ -182,17 +182,33 @@ async def test_migration_065_drops_the_copies(tmp_path) -> None:
             INSERT INTO title_achievements VALUES
                 ('copy', 'Win', 'Win', NULL),
                 ('llm', 'Победи', 'Win', 'llm'),
-                ('same', 'OK', 'OK', 'native'),
-                ('real', 'Победи', 'Win', NULL);
+                ('neutral', '100%', '100%', 'native'),
+                ('real', 'Победи', 'Win', NULL),
+                -- what "differs from the English" let through as Russian (#127)
+                ('period', 'Pass the first round.', 'Pass the first round', 'native'),
+                ('placeholder', '<Translated text>', 'Collected 5 3D glasses', NULL),
+                ('korean', '각 문명을 한 번씩 물리치십시오.', 'Beat each civilization', NULL);
             """
         )
         await conn.executescript(sql)
-        rows = dict(
-            await (
-                await conn.execute("SELECT achievement_id, description_ru FROM title_achievements")
+        rows = {
+            r[0]: (r[1], r[2])
+            for r in await (
+                await conn.execute(
+                    "SELECT achievement_id, description_ru, description_source"
+                    " FROM title_achievements"
+                )
             ).fetchall()
-        )
-    assert rows == {"copy": None, "llm": "Победи", "same": "OK", "real": "Победи"}
+        }
+    assert rows == {
+        "copy": (None, None),
+        "llm": ("Победи", "llm"),
+        "neutral": ("100%", "native"),
+        "real": ("Победи", None),
+        "period": (None, None),  # re-queued for the translator
+        "placeholder": (None, None),
+        "korean": (None, None),
+    }
 
 
 async def test_the_walker_translates_steam_from_stored_text(
@@ -237,3 +253,41 @@ async def test_the_walker_translates_steam_from_stored_text(
 
     cached = await repo.get_cached_description("steam", "550", "WIN")
     assert cached is not None and cached.description_ru == "[ru] Win the game"
+
+
+async def test_a_russian_side_must_read_as_russian(repo: Repo, monkeypatch, cipher) -> None:
+    """Owner, 2026-09-25 (#127): not "differs from the English" but "has
+    Cyrillic" — English off by a period, a placeholder or another language go
+    to the translator; text with no letters needs no translation."""
+    from bot.services.translate import descriptions as descriptions_module
+    from bot.services.translate.auth import AnthropicAuth
+    from bot.services.translate.descriptions import bilingual_descriptions
+
+    asked: dict[str, str] = {}
+
+    async def _fake_translate(api_key, texts, *, target_language):
+        asked.update(texts)
+        return {aid: f"[ru] {text}" for aid, text in texts.items()}
+
+    monkeypatch.setattr(descriptions_module, "translate_descriptions", _fake_translate)
+    auth = AnthropicAuth(repo, cipher, env_key="fake-key")
+    await auth.get_key()
+
+    result = await bilingual_descriptions(
+        repo,
+        auth,
+        "xbox_modern",
+        "g",
+        {
+            "period": ("Pass the first round.", "Pass the first round"),
+            "placeholder": ("<Translated text>", "Collected 5 glasses"),
+            "korean": ("한 번씩 물리치십시오.", "Beat each one"),
+            "neutral": ("100%", "100%"),
+            "real": ("Победи", "Win"),
+        },
+    )
+
+    assert set(asked) == {"period", "placeholder", "korean"}
+    assert result["real"] == ("Победи", "Win")
+    assert result["neutral"] == ("100%", "100%")
+    assert result["period"][0] == "[ru] Pass the first round"
