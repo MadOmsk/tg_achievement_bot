@@ -1,0 +1,22 @@
+:root {
+  --bg: #0a0c12;
+  --text: #eef1f6;
+  --muted: rgba(186, 196, 214, 0.62);
+  --mint: #9bb6ff;
+  --mint-2: #d0dcff;
+  --mint-dim: rgba(155, 182, 255, 0.16);
+  --ink: #0c1018;
+  --danger: #ff6b7a;
+  --xbox: #3ee0a0;
+  --steam: #7ad7ff;
+  --psn: #64d2ff;
+  --glass: rgba(255, 255, 255, 0.045);
+  --glass-2: rgba(255, 255, 255, 0.03);
+  --stroke: rgba(255, 255, 255, 0.08);
+  --hair: rgba(255, 255, 255, 0.06);
+  --radius: 20px;
+  --font: "Segoe UI Variable", "Segoe UI", "Noto Sans", system-ui, sans-serif;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --blur: blur(34px) saturate(1.35);
+}

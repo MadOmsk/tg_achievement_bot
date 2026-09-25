@@ -1,0 +1,2249 @@
+/* Cross-cutting visual families used well beyond any single feature
+ * directory — hero-game/profile-hero (components/game/GameHero AND
+ * components/person/HeroGame AND components/hltb/GameSheet AND
+ * components/shared/lib/Sheet), unlock-card/game-card (person AND
+ * game AND hltb) and feed-row (club AND game AND person). Splitting
+ * this further would mean picking a single, arbitrary owner for a
+ * pattern several unrelated screens genuinely share — see CLAUDE.md's
+ * own note on #64 for why that was rejected there too. */
+
+/* CoverImg's own default fill for the <img> it renders (the rest of its
+ * base look is co-located at components/shared/lib/CoverImg/CoverImg.css —
+ * this one piece has to sit here instead, and early in this file, so it
+ * loads before every context below that sizes its own cover art
+ * differently (.stat-game-tile img, .picker-game-art img, .hero-game-art
+ * > img, …) and so those context rules — same specificity, a later
+ * component-level file — still win the way they always have. It still
+ * outranks a plain imgClassName="cover"/"feed-cover" on the same <img>,
+ * which has one fewer class in its selector and so loses regardless of
+ * where either rule loads. */
+.cover-ph > img {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  width: auto;
+  max-width: none;
+  transform: translateX(-50%);
+  object-fit: unset;
+  object-position: unset;
+}
+
+/* ---- person.css ---- */
+
+.person-stage {
+  position: relative;
+  z-index: 0;
+  margin: 0 -18px 28px;
+}
+
+.person-stage .empty {
+  margin: 0;
+  padding: 18px 18px 24px;
+}
+
+/* Game carousel — cover stays open; a thin foot carries the facts. */
+.game-card {
+  height: 100%;
+}
+
+.game-card-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.game-card-art.has-img {
+  display: block;
+  background: #0a0c12;
+}
+
+.game-card-art.has-img > img {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  width: auto;
+  max-width: none;
+  transform: translateX(-50%);
+}
+
+.game-card-art.is-empty {
+  display: block;
+  background:
+    radial-gradient(90% 80% at 18% 10%, rgba(155, 182, 255, 0.34), transparent 58%),
+    radial-gradient(70% 65% at 92% 88%, rgba(90, 60, 160, 0.28), transparent 55%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+/* Title + progress over the cover's bottom edge (the base rule went missing
+ * in an earlier reshuffle — only its state modifiers survived). */
+.game-card-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 28px 16px;
+  background: linear-gradient(
+    to top,
+    rgba(8, 10, 16, 0.78) 0%,
+    rgba(8, 10, 16, 0.38) 38%,
+    rgba(8, 10, 16, 0) 68%
+  );
+  pointer-events: none;
+  text-align: left;
+}
+
+/* Title left, count right on one line; the bar sits under both. */
+.game-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.game-card-count {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.game-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  min-width: 0;
+  flex: 1 1 auto;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  font-size: 1.18rem;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-align: left;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+.game-card-title span {
+  min-width: 0;
+  flex: 0 1 auto;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: left;
+}
+
+.game-card-progress {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.hero-game-art.cover-ph:has(> .plat-logo)::after,
+.feed-cover.cover-ph:has(> .plat-logo)::after {
+  background:
+    radial-gradient(
+      ellipse 88% 72% at 100% 0%,
+      rgba(0, 0, 0, 0.42) 0%,
+      rgba(0, 0, 0, 0.16) 44%,
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 78% 66% at 100% 100%,
+      rgba(0, 0, 0, 0.32) 0%,
+      rgba(0, 0, 0, 0.1) 48%,
+      transparent 70%
+    );
+}
+
+.hero-game-art.cover-ph:has(> .plat-logo).has-img > img,
+.feed-cover.cover-ph:has(> .plat-logo).has-img > img,
+.picker-game-art:has(.plat-logo) .cover-ph.has-img > img {
+  filter: brightness(0.96);
+}
+
+.hero-game-mid {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.hero-game-mid .hero-game-group {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: rgba(245, 248, 252, 0.74);
+  font-size: 0.62rem;
+  font-weight: 550;
+  line-height: 1.1;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.75),
+    0 2px 6px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-card-progress {
+  display: block;
+  width: 100%;
+  margin-top: 0;
+}
+
+.game-card-progress .hero-game-bar-row,
+.game-card-veil .game-card-progress .hero-game-bar-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+}
+
+.game-card-progress .hero-game-bar,
+.game-card-veil .game-card-progress .hero-game-bar {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.game-card-progress .hero-game-bar,
+.unlock-card .hero-game-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.game-card-veil .game-card-progress .hero-game-bar {
+  height: 7px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.game-card-progress .hero-game-bar-fill,
+.unlock-card .hero-game-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgba(170, 195, 230, 0.45) 0%,
+    rgba(230, 238, 250, 0.88) 55%,
+    rgba(255, 255, 255, 1) 100%
+  );
+  box-shadow:
+    0 0 10px rgba(210, 225, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.game-card-progress .hero-game-bar-row.is-done .hero-game-bar,
+.unlock-card .hero-game-bar-row.is-done .hero-game-bar {
+  background: rgba(100, 185, 210, 0.16);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(140, 210, 230, 0.18);
+}
+
+.game-card-progress .hero-game-bar-row.is-done .hero-game-bar-fill,
+.unlock-card .hero-game-bar-row.is-done .hero-game-bar-fill {
+  background: linear-gradient(
+    90deg,
+    rgba(90, 185, 215, 0.55) 0%,
+    rgba(160, 225, 245, 0.9) 55%,
+    rgba(220, 245, 255, 1) 100%
+  );
+  box-shadow:
+    0 0 10px rgba(120, 210, 235, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.unlock-slide-art .cover-ph,
+.unlock-slide-art .game-card-art,
+.unlock-slide-art .profile-hero-art {
+  width: 100%;
+  height: 100%;
+}
+
+.unlock-slider .unlock-card-art .profile-hero-layers.unlock-slide-art {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  --parallax: 0px;
+  transform: none;
+}
+
+.unlock-slider .game-card-art {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.unlock-slider .game-card-veil {
+  padding-bottom: 36px;
+  align-items: stretch;
+}
+
+.unlock-slider .game-card-veil .game-card-progress {
+  width: 100%;
+}
+
+.unlock-slider .profile-hero-art {
+  filter: none;
+  animation: none;
+  transform: none;
+}
+
+.profile-hero {
+  --hero-lift: 0px;
+  --hero-art: min(92vw, 520px);
+  --parallax: 0px;
+  position: relative;
+  z-index: 0;
+  display: block;
+  width: auto;
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+  margin: 0 -18px 28px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #0a0c12;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-hero-layers {
+  position: absolute;
+  inset: -18%;
+  pointer-events: none;
+  will-change: transform;
+  transform: translate3d(0, var(--parallax, 0px), 0);
+}
+
+/* Combined with .cover-ph on purpose, not left to load order: every caller
+ * reaches this through CoverImg (see components/shared/lib/CoverImg), which
+ * always renders that class alongside it, and CoverImg's own base rule sets
+ * `position: relative` at the same specificity — a plain `.profile-hero-art`
+ * selector would win or lose depending on which file the bundler happens to
+ * emit last. */
+.cover-ph.profile-hero-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  animation: hero-art-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.profile-hero-art.has-img {
+  display: block;
+}
+
+.profile-hero-art.has-img > img {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  width: auto;
+  max-width: none;
+  transform: translateX(-50%);
+  object-fit: unset;
+}
+
+.profile-hero .profile-hero-art,
+.sheet-hero .profile-hero-art,
+.unlock-card .profile-hero-art,
+.unlock-slider .profile-hero-art {
+  filter: none;
+  transform: none;
+}
+
+.sheet-hero .profile-hero-art {
+  animation: none;
+}
+
+.unlock-card-copy h2 .plat-logo,
+.unlock-card-copy h2 .plat-logo-svg {
+  width: 14px;
+  height: 14px;
+}
+
+.profile-hero-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  /* Soft top + bottom scrims — a touch denser so names stay readable. */
+  background:
+    linear-gradient(
+      180deg,
+      rgba(8, 10, 16, 0.62) 0%,
+      rgba(8, 10, 16, 0.3) 24%,
+      rgba(8, 10, 16, 0.08) 48%,
+      rgba(8, 10, 16, 0) 70%
+    ),
+    linear-gradient(
+      to top,
+      rgba(8, 10, 16, 0.68) 0%,
+      rgba(8, 10, 16, 0.32) 28%,
+      rgba(8, 10, 16, 0.08) 54%,
+      rgba(8, 10, 16, 0) 80%
+    );
+}
+
+.unlock-card-head .hero-corner {
+  position: static;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.hero-corner {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.hero-mark {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 0;
+  color: #fff;
+  font-size: 1.02rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.72);
+}
+
+.profile-hero-copy {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100%;
+  height: 100%;
+  padding: 28px 18px 16px;
+  pointer-events: none;
+}
+
+.hero-game {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.unlock-card-stage .hero-game,
+.profile-hero .hero-game,
+.sheet-hero .hero-game {
+  position: absolute;
+  top: auto;
+  bottom: 14px;
+  left: 14px;
+  right: 14px;
+  z-index: 4;
+  width: auto;
+  max-width: none;
+  pointer-events: none;
+}
+
+.hero-game .cover-ph,
+.hero-game-art {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  flex: 0 0 48px;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.35);
+}
+
+.hero-game-art .cover-ph-mark svg {
+  width: 20px;
+  height: 20px;
+}
+
+.hero-game-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  height: 48px;
+  min-height: 48px;
+  /* Title on the cover's top edge, progress bar on its bottom edge. */
+  justify-content: space-between;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* On the big cards the game's title, count and bar stay one group, centred
+ * beside the cover (the compact list in the profile aligns them to its edges). */
+.unlock-card .hero-game-text,
+.unlock-card .hero-game.has-mid .hero-game-text {
+  justify-content: center;
+  gap: 8px;
+}
+
+/* The DLC / group line sits vertically midway between the title and the bar
+ * (equal gaps above and below), left-aligned with the title. */
+
+.hero-game.has-mid .hero-game-text {
+  gap: 4px;
+  justify-content: space-between;
+  height: auto;
+  min-height: 48px;
+}
+
+.hero-game-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.hero-game-head .hero-game-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.hero-game-head .hero-game-count {
+  order: 0;
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 0;
+  line-height: 1.2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+}
+
+.hero-game-text > .hero-game-bar-row {
+  margin-top: 0;
+}
+
+.hero-game-text > .hero-game-bar-row .hero-game-bar {
+  width: 100%;
+}
+
+.hero-game-title,
+.hero-game strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.75),
+    0 2px 8px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-game-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.hero-game-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.hero-game-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgba(200, 210, 225, 0.5) 0%,
+    rgba(245, 248, 252, 0.92) 100%
+  );
+  box-shadow: none;
+  transition: width 0.25s ease;
+}
+
+.hero-game-count {
+  flex: 0 0 auto;
+  color: rgba(245, 248, 252, 0.82);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+}
+
+.hero-game-bar-row .hero-game-bar {
+  order: 0;
+}
+
+.feed-row-progress .hero-game-bar-row {
+  width: 100%;
+  margin: 0;
+  gap: 8px;
+}
+
+.feed-row-progress .hero-game-bar {
+  height: 3px;
+  margin-bottom: 0;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.feed-row-progress .hero-game-bar-fill {
+  background: linear-gradient(
+    90deg,
+    rgba(160, 175, 200, 0.4) 0%,
+    rgba(210, 220, 236, 0.75) 100%
+  );
+  box-shadow: none;
+}
+
+.hero-game-bar-row.is-done .hero-game-bar {
+  background: rgba(120, 190, 210, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(140, 200, 220, 0.1);
+}
+
+.hero-game-bar-row.is-done .hero-game-bar-fill {
+  background: linear-gradient(
+    90deg,
+    rgba(95, 185, 215, 0.55) 0%,
+    rgba(175, 230, 245, 0.95) 100%
+  );
+  box-shadow: none;
+}
+
+/* Count stays the same colour as an unfinished bar — only the fill shifts. */
+.hero-game-bar-row.is-done .hero-game-count {
+  color: var(--muted);
+}
+
+.feed-row-progress .hero-game-bar-row.is-done .hero-game-bar {
+  background: rgba(120, 180, 200, 0.1);
+  box-shadow: none;
+}
+
+.feed-row-progress .hero-game-bar-row.is-done .hero-game-bar-fill {
+  background: linear-gradient(
+    90deg,
+    rgba(100, 170, 195, 0.4) 0%,
+    rgba(155, 205, 225, 0.8) 100%
+  );
+  box-shadow: none;
+}
+
+.hero-game-group {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.68rem;
+  font-weight: 550;
+  line-height: 1.2;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.75),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-game-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  width: fit-content;
+}
+
+.hero-game-name .hero-game-title {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.profile-hero-copy h2 {
+  margin: 0;
+  font-size: 1.34rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #fff;
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.7);
+  animation: hero-copy-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
+}
+
+.profile-hero-copy p {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.62);
+  font-size: 0.9rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  animation: hero-copy-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+}
+
+.achievements-head {
+  margin: 22px 0 12px;
+}
+
+.friend strong {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  font-size: 0.8rem;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.friend p {
+  width: 100%;
+  max-width: 100%;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  min-height: 2.5em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.score-sheet h2 {
+  margin: 0 0 8px;
+}
+
+.score-row strong {
+  flex: 0 0 auto;
+  color: #fff;
+  font-size: 1.45rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.feed-posts .unlock-card-foot .hero-game,
+.feed-posts .unlock-card-foot .unlock-card-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.feed-posts .unlock-card-foot .hero-game {
+  position: relative;
+  align-self: stretch;
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.feed-posts .unlock-card-foot .hero-game-text {
+  min-width: 0;
+  flex: 1 1 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.feed-posts .unlock-card-foot .hero-game-title {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-posts .unlock-card-stage .hero-game {
+  display: none;
+}
+
+.feed-posts .profile-hero-layers {
+  inset: 0;
+}
+
+.feed-posts .unlock-slider.is-feed .profile-hero-art,
+.feed-posts .profile-hero-art {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  filter: none;
+  transform: none;
+  animation: none;
+  object-fit: unset;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-card-foot .hero-game,
+.feed-posts .unlock-slider.is-feed .unlock-card-foot .hero-game-text,
+.feed-posts .unlock-slider.is-feed .unlock-card-foot .hero-game-title {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sheet-hero .feed-post-lead .hero-game {
+  position: static;
+  max-width: 100%;
+}
+
+.feed-post-lead .hero-game {
+  position: static;
+  max-width: 100%;
+}
+
+.feed-post-lead .hero-game img,
+.feed-post-lead .hero-game-art,
+.feed-post-lead .hero-game .cover-ph {
+  width: 48px;
+  height: 48px;
+  flex-basis: 48px;
+  border-radius: 12px;
+}
+
+.feed-post-lead .hero-game-text {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.feed-post-who strong,
+.feed-post-who p {
+  display: block;
+  margin: 0;
+  color: #fff;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.65);
+}
+
+.feed-post-who strong {
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.feed-post-who p {
+  margin-top: 2px;
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.feed-row .feed-cover,
+.feed-row .feed-cover.cover-ph {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+}
+
+.unlock-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Secret art: beat feed/slider `filter: none` resets (same or lower specificity). */
+.unlock-card.is-secret .profile-hero-art,
+.feed-posts .unlock-card.is-secret .profile-hero-art,
+.feed-posts .unlock-slider.is-feed .unlock-card.is-secret .profile-hero-art,
+.profile-hero.is-secret .profile-hero-art,
+.sheet-hero.is-secret .profile-hero-art {
+  filter: blur(10px) saturate(0.35) brightness(0.55) !important;
+  transform: scale(1.12) !important;
+}
+
+.feed-row.is-secret .cover,
+.feed-row.is-secret .feed-cover.has-img > img {
+  filter: blur(3px) saturate(0.9);
+  /* Keep the centring translate the cover image already has, or the picture
+   * slides sideways and leaves a dark strip on the left. */
+  transform: translateX(-50%) scale(1.08);
+}
+
+.unlock-card.is-secret .profile-hero-wash,
+.profile-hero.is-secret .profile-hero-wash,
+.sheet-hero.is-secret .profile-hero-wash {
+  background: linear-gradient(
+    180deg,
+    rgba(6, 8, 14, 0.42) 0%,
+    rgba(6, 8, 14, 0.22) 40%,
+    rgba(6, 8, 14, 0.55) 100%
+  );
+}
+
+.profile-hero.is-secret h2,
+.sheet-hero.is-secret h2 {
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.sheet-body.is-mid .sheet-hltb .profile-hero-layers {
+  inset: 0;
+}
+
+.sheet-body.is-mid .sheet-hltb .profile-hero-art {
+  width: 100%;
+  height: 100%;
+  transform: none;
+  object-fit: unset;
+}
+
+.sheet-body.is-mid .sheet-hltb .profile-hero-art.has-img > img,
+.sheet-body.is-mid .sheet-hltb .unlock-card-art .cover-ph > img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  transform: none;
+  object-fit: cover;
+  object-position: center top;
+}
+
+.sheet-body.is-mid .sheet-hltb .profile-hero-wash {
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 16, 0.42) 0%,
+    rgba(8, 10, 16, 0.12) 18%,
+    rgba(8, 10, 16, 0) 36%,
+    rgba(8, 10, 16, 0) 100%
+  );
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game,
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .unlock-card-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game {
+  position: relative;
+  align-self: stretch;
+  flex: 0 1 auto;
+  width: calc(100% - 28px);
+  max-width: calc(100% - 28px);
+  min-width: 0;
+  margin: 0 14px;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game-art,
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game .cover-ph {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.35);
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game-text {
+  min-width: 0;
+  flex: 1 1 0;
+  max-width: 100%;
+  height: 48px;
+  min-height: 48px;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-stage .hero-game {
+  display: none;
+}
+
+.sheet-body.is-mid .sheet-unlock .profile-hero-layers {
+  inset: 0;
+}
+
+.sheet-body.is-mid .sheet-unlock .profile-hero-art {
+  width: 100%;
+  height: 100%;
+  transform: none;
+  object-fit: unset;
+}
+
+.sheet-body.is-mid .sheet-unlock .profile-hero-art.has-img > img {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  width: auto;
+  max-width: none;
+  transform: translateX(-50%);
+  object-fit: unset;
+}
+
+.sheet-body.is-photo .sheet-hero .profile-hero-copy {
+  min-height: 100%;
+  height: 100%;
+  padding: 56px 18px calc(14px + var(--safe-bottom));
+}
+
+.sheet-hero .profile-hero-copy {
+  min-height: var(--hero-art);
+  padding: 72px 20px 24px;
+}
+
+.sheet-hero .profile-hero-copy h2 {
+  font-size: 1.32rem;
+}
+
+.sheet-hero .profile-hero-copy p {
+  -webkit-line-clamp: 8;
+}
+
+.sheet-content h1,
+.sheet-content h2 {
+  margin: 0 0 12px;
+  font-size: 1.14rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.person-wait {
+  min-height: 46vh;
+  display: grid;
+  place-items: center;
+}
+
+@keyframes hero-art-in {
+  from {
+    opacity: 0;
+    transform: scale(1.14);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes hero-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- unlock.css ---- */
+
+.person-stage .unlock-slider {
+  margin: 0;
+  aspect-ratio: 1 / 1;
+}
+
+.game-card .unlock-card-art {
+  grid-area: 1 / 1;
+  height: 100%;
+  background: #0a0c12;
+}
+
+.unlock-card.game-card[role="button"] {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.unlock-card.game-card[role="button"]:focus,
+.unlock-card.game-card[role="button"]:focus-visible,
+.unlock-card.game-card[role="button"]:active {
+  outline: none;
+  background: #0a0c12;
+}
+
+.unlock-slider {
+  position: relative;
+  z-index: 0;
+  height: auto;
+  margin: 0 -18px 28px;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 0;
+}
+
+/* Swiper, at its defaults: the wrapper is a flex row, every slide one
+ * full-width item. */
+.unlock-swiper {
+  width: 100%;
+  height: 100%;
+}
+
+.unlock-slider .swiper-wrapper {
+  height: 100%;
+}
+
+.unlock-slide,
+.unlock-slide.swiper-slide {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+.unlock-slide-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.unlock-slider .unlock-card {
+  height: 100%;
+  margin: 0;
+}
+
+.unlock-slider .unlock-card-art {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.unlock-slider .unlock-card-stage {
+  aspect-ratio: auto;
+  min-height: 0;
+}
+
+.unlock-slider .unlock-card-copy {
+  height: auto;
+}
+
+.unlock-slider .unlock-card-copy,
+.unlock-slider .game-card-veil {
+  transform: none;
+}
+
+.unlock-slider .unlock-card-copy {
+  opacity: 1;
+}
+
+.unlock-slider .unlock-dots {
+  bottom: 10px;
+}
+
+.unlock-slider.is-game .unlock-dots {
+  bottom: 14px;
+}
+
+.unlock-slider.is-game .unlock-dots button {
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+.unlock-slider.is-game .unlock-dots button.is-on {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-card-copy {
+  padding-bottom: 28px;
+}
+
+.unlock-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+
+.unlock-dots.is-live {
+  opacity: 1;
+  pointer-events: none;
+}
+
+.unlock-dots button {
+  pointer-events: auto;
+  width: 5px;
+  height: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+  transition:
+    width 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.35s ease,
+    border-radius 0.35s ease;
+}
+
+.unlock-dots button.is-on {
+  width: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.unlock-card {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #0a0c12;
+  color: inherit;
+  text-align: left;
+}
+
+.unlock-card.is-open {
+  cursor: pointer;
+}
+
+.unlock-card-art {
+  --parallax: 0px;
+  grid-area: 1 / 1 / -1 / 1;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: #0a0c12;
+}
+
+.unlock-card-stage {
+  grid-area: 1 / 1;
+  position: relative;
+  z-index: 4;
+  aspect-ratio: 4 / 5;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.unlock-card-copy {
+  grid-area: 2 / 1;
+  position: relative;
+  z-index: 5;
+  overflow: hidden;
+  padding: 12px 16px 16px;
+  background: transparent;
+  border-top: 0;
+  backdrop-filter: blur(42px) saturate(1.25);
+  -webkit-backdrop-filter: blur(42px) saturate(1.25);
+}
+
+.unlock-card-copy h2,
+.unlock-card-copy p {
+  position: relative;
+  z-index: 1;
+}
+
+.unlock-card-copy h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.28;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45);
+}
+
+.unlock-card-copy h2 span {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.unlock-card-copy p {
+  margin: 7px 0 0;
+  color: rgba(238, 241, 246, 0.9);
+  font-size: 0.9rem;
+  line-height: 1.38;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.unlock-card-head {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.unlock-card-stage::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Soft wash from the copy edge upward over the game row — not a plate. */
+  height: 62%;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgba(8, 10, 16, 0.62) 0%,
+    rgba(8, 10, 16, 0.36) 38%,
+    rgba(8, 10, 16, 0.14) 68%,
+    rgba(8, 10, 16, 0) 100%
+  );
+}
+
+.section-head button {
+  border: 0;
+  background: transparent;
+  color: rgba(238, 241, 246, 0.86);
+  cursor: pointer;
+  padding: 4px 0;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.feed-posts .unlock-card {
+  position: relative;
+  aspect-ratio: auto;
+  display: flex;
+  flex-direction: column;
+  grid-template-rows: unset;
+  min-width: 0;
+  height: auto;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 12px 28px rgba(0, 0, 0, 0.32);
+}
+
+.feed-posts .unlock-card-art {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+  min-width: 0;
+}
+
+.feed-posts .unlock-card-stage {
+  display: none;
+}
+
+.feed-posts .unlock-card-foot {
+  grid-area: unset;
+  align-self: stretch;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0 14px;
+  position: relative;
+  margin-top: calc(100% - 82px);
+}
+
+.feed-posts .unlock-card-foot::before {
+  content: none;
+}
+
+.feed-posts .unlock-card-copy {
+  margin: 0 -14px;
+  padding: 12px 16px 12px;
+  min-width: 0;
+  max-width: none;
+  box-sizing: border-box;
+  background: transparent;
+  border-top: 0;
+  overflow: visible;
+  backdrop-filter: blur(42px) saturate(1.25);
+  -webkit-backdrop-filter: blur(42px) saturate(1.25);
+}
+
+.feed-posts .unlock-card-copy p {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  white-space: normal;
+}
+
+.feed-posts .unlock-card-stage::after {
+  content: none;
+}
+
+.feed-posts .unlock-slider.is-feed {
+  position: relative;
+  margin: 0;
+  aspect-ratio: auto;
+  height: auto;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Every slide is as tall as the tallest one: the wrapper takes its height
+ * from its content and its flex items stretch to it. The padding is room
+ * for the cards' drop shadow, which the carousel's own clipping would eat. */
+.feed-posts .unlock-slider.is-feed .unlock-swiper {
+  height: auto;
+  padding-bottom: 24px;
+  margin-bottom: -24px;
+}
+
+.feed-posts .unlock-slider.is-feed .swiper-wrapper {
+  height: auto;
+  align-items: stretch;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-slide.swiper-slide {
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  box-sizing: border-box;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-card {
+  height: 100%;
+  min-height: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 12px 28px rgba(0, 0, 0, 0.32);
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-card-foot {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-card-copy {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-card-copy h2,
+.feed-posts .unlock-slider.is-feed .unlock-card-copy p {
+  flex: 0 0 auto;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-dots {
+  position: absolute;
+  bottom: 12px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-dots button {
+  width: 5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.feed-posts .unlock-slider.is-feed .unlock-dots button.is-on {
+  width: 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.unlock,
+.feed-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 22px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  align-items: stretch;
+}
+
+.feed-row {
+  grid-template-columns: 56px 1fr;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 17px;
+  align-items: center;
+}
+
+.feed-row .unlock-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.95rem;
+  font-weight: 550;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  min-height: 0;
+}
+
+.feed-row .unlock-title span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* One line: a long name is cut with an ellipsis instead of wrapping. */
+  white-space: nowrap;
+}
+
+.feed-row .unlock-game {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+}
+
+.feed-row .unlock-game-lead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.feed-row .unlock-game-name {
+  display: block;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The count above the bar, right-aligned by .unlock-game's own
+ * space-between — the bar below carries no count of its own
+ * (ProgressBar's hideCount). */
+.feed-row .unlock-game-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.unlock-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: 650;
+}
+
+.unlock-game {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+button.chip {
+  cursor: pointer;
+  color: inherit;
+  font-size: 0.8rem;
+  padding: 6px 12px 6px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--stroke);
+}
+
+button.chip.is-on {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+
+.sheet-body.is-mid .sheet-hltb .unlock-card {
+  position: relative;
+  flex: 1 0 auto;
+  width: 100%;
+  min-height: 64dvh;
+  height: auto;
+  aspect-ratio: auto;
+  display: flex;
+  flex-direction: column;
+  grid-template-rows: unset;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.sheet-body.is-mid .sheet-hltb .unlock-card-art {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  aspect-ratio: auto;
+}
+
+.sheet-body.is-mid .sheet-hltb .unlock-card-head {
+  top: 16px;
+  left: 16px;
+  right: 16px;
+}
+
+.sheet-body.is-mid .sheet-hltb .unlock-card-foot {
+  grid-area: unset;
+  margin-top: auto;
+  align-self: stretch;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0;
+  position: relative;
+}
+
+.sheet-body.is-mid .sheet-hltb .unlock-card-foot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: -12px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgba(8, 10, 16, 0.72) 0%,
+    rgba(8, 10, 16, 0.48) 28%,
+    rgba(8, 10, 16, 0.26) 55%,
+    rgba(8, 10, 16, 0.1) 78%,
+    rgba(8, 10, 16, 0) 100%
+  );
+}
+
+.sheet-body.is-mid .sheet-hltb .unlock-card-copy {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 12px 16px calc(14px + var(--safe-bottom));
+  box-sizing: border-box;
+  background: transparent;
+  border-top: 0;
+  overflow: visible;
+  backdrop-filter: blur(42px) saturate(1.25);
+  -webkit-backdrop-filter: blur(42px) saturate(1.25);
+}
+
+.sheet-body.is-mid .sheet-hltb .unlock-card-copy p {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  white-space: normal;
+}
+
+.sheet-body.is-mid .sheet-hltb .unlock-card-copy p:not(.hltb-copy-meta) {
+  color: rgba(238, 241, 246, 0.9);
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card {
+  position: relative;
+  flex: 1 0 auto;
+  width: 100%;
+  min-height: 64dvh;
+  height: auto;
+  aspect-ratio: auto;
+  display: flex;
+  flex-direction: column;
+  grid-template-rows: unset;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-art {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  aspect-ratio: auto;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-stage {
+  display: none;
+}
+
+/* The drawer card is a column too: the un-stretched picture takes what the
+ * game row and the description leave. */
+.sheet-body.is-mid .sheet-unlock .unlock-card-fit {
+  grid-area: auto;
+  flex: 1 1 auto;
+  min-height: 40dvh;
+  /* Runs on under the game row (which is drawn over it) so the row sits on
+   * the picture, not on the description panel's blur. */
+  margin-bottom: -64px;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot {
+  grid-area: unset;
+  margin-top: auto;
+  align-self: stretch;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0 0 calc(14px + var(--safe-bottom));
+  position: relative;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: -12px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgba(8, 10, 16, 0.72) 0%,
+    rgba(8, 10, 16, 0.48) 28%,
+    rgba(8, 10, 16, 0.26) 55%,
+    rgba(8, 10, 16, 0.1) 78%,
+    rgba(8, 10, 16, 0) 100%
+  );
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-copy {
+  padding: 12px 16px 8px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border-top: 0;
+  overflow: visible;
+  backdrop-filter: blur(42px) saturate(1.25);
+  -webkit-backdrop-filter: blur(42px) saturate(1.25);
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-copy p {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  white-space: normal;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-stage::after {
+  content: none;
+}
+
+.sheet-body.is-photo .unlock-card-copy {
+  padding: 16px 18px 14px;
+}
+
+.sheet-body.is-photo .unlock-card-copy p {
+  -webkit-line-clamp: 8;
+}
+
+.sheet-content .unlock-game {
+  margin: 0 0 16px;
+}
+
+.ios-row > span:first-child {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+
+/* ---- feed.css ---- */
+
+.unlock-card-head .feed-post-lead {
+  position: static;
+  max-width: none;
+  min-width: 0;
+  flex: 1;
+}
+
+.feed-row-progress {
+  /* A normal flow child of .feed-copy, not an absolutely-positioned
+   * overlay — it lines up with the text column (same left edge as the
+   * game name above it, never reaching under the cover) and, being that
+   * column's own full width, still reaches the card's own right edge. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: none;
+  margin-top: 0;
+  line-height: 1;
+  min-height: 0;
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feed {
+  gap: 0;
+}
+
+.feed-day {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feed-day + .feed-day {
+  margin-top: 14px;
+}
+
+.feed-day-label {
+  margin: 0 2px 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+button.feed-day-label {
+  align-self: flex-start;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 650;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A small caret: the label opens a date picker. */
+button.feed-day-label::after {
+  content: "";
+  display: inline-block;
+  margin: 0 0 2px 6px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  padding: 2.5px;
+  transform: rotate(45deg);
+  opacity: 0.7;
+}
+
+.feed-day {
+  scroll-margin-top: 84px;
+}
+
+/* The feed tab: days one under another, each with its own label. */
+.feed-days {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.feed-posts {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* clip, not hidden: hidden would make this a scroll container of its own
+   * (overflow-y turns to auto), and the day block scrolled inside the page. */
+  overflow-x: clip;
+}
+
+.feed-post-lead {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: calc(100% - 7.5rem);
+}
+
+.sheet-hero .feed-post-lead {
+  top: 16px;
+  left: 16px;
+}
+
+.feed-post-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.feed-copy {
+  position: relative;
+  min-width: 0;
+  height: 62px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.feed-row .feed-copy {
+  /* As tall as the cover: the title sits on the cover's top edge and the
+   * foot (game + count, then the bar) on its bottom edge. A title that
+   * wraps to two lines just grows the column. */
+  height: auto;
+  min-height: 56px;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.feed-copy-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  width: 100%;
+}
+
+.feed-copy-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.feed-row .feed-cover {
+  align-self: center;
+}
+
+.feed-plat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  line-height: 1;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.feed-row .feed-plat {
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: rgba(186, 196, 214, 0.82);
+}
+
+.feed-cover {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.feed-cover.cover-ph {
+  background:
+    radial-gradient(90% 80% at 22% 8%, rgba(155, 182, 255, 0.3), transparent 55%),
+    radial-gradient(75% 70% at 95% 95%, rgba(72, 52, 120, 0.28), transparent 52%),
+    linear-gradient(155deg, #1a2236 0%, #0c1018 100%);
+}
+
+.feed-cover.has-img {
+  background: #0a0c12;
+}
+
+.feed-lock {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(8, 10, 16, 0.1);
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.6));
+}
+
+.feed-row .feed-game-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* Finished games: quiet cyan edge only — text/count stay as usual. */
+.feed-row.is-done {
+  border-color: rgba(145, 195, 215, 0.28);
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 180, 200, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.feed-row.is-done .feed-plat.is-plat {
+  opacity: 0.92;
+}
+
+.feed-row.is-locked-row:hover {
+  opacity: 0.85;
+}
+
+/* Alignment tweak for the shared .btn (see components/shared/styles/base.css) inside
+ * UnlockCard's own secret-reveal veil. */
+.sheet-secret-veil .btn {
+  pointer-events: auto;
+  min-width: 148px;
+  min-height: 48px;
+  padding: 10px 22px;
+  font-size: 1rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+/* ---- the un-stretched picture over a card's stretched backdrop ----
+ * Big cards (feed post, drawer card, gallery slide, HLTB card) stretch the
+ * art over the whole card, so the part behind the description is hidden and
+ * the sides are cropped. .unlock-card-fit adds the same picture on top,
+ * fitted into just the block that stays visible above the description; the
+ * stretched copy underneath turns into a blurred backdrop. */
+.unlock-card-fit {
+  grid-area: 1 / 1;
+  position: relative;
+  /* No z-index of its own: the picture stays under the art's scrim, but the
+   * reveal button inside it (z-index 3) rises above that scrim. */
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The feed post is a flex column with the art behind everything: the
+ * visible block above the description is the square at its top. */
+.feed-posts .unlock-card-fit {
+  /* A square by width (padding-bottom is a % of the card's width), minus
+   * the last 26px, which the description panel overlaps: 82px foot lift
+   * minus the 56px game row above the panel. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  padding-bottom: calc(100% - 26px);
+}
+
+.unlock-card.has-fit .cover-ph.profile-hero-art.has-img > img,
+.unlock-card.has-fit .cover-ph.game-card-art.has-img > img {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.18);
+  filter: blur(20px) brightness(0.68) saturate(1.2);
+}
+
+.unlock-card.is-secret .unlock-card-fit .fit-layer {
+  filter: blur(14px) saturate(0.8);
+}
+
+/* The fitted block owns the empty-art glyph, so it sits in the middle of
+ * the visible picture rather than of the whole card. */
+.unlock-card.has-fit .unlock-card-art .cover-ph.is-empty > .cover-ph-mark {
+  display: none;
+}
+
+.hltb-marks {
+  position: relative;
+  z-index: 3;
+}
+
+/* Spoiler text: the real string, smudged — the glyphs are transparent and
+ * only their blurred shadow shows, so nothing is clipped by the ellipsis
+ * boxes around titles the way a filter blur would be. */
+.secret-blur {
+  color: transparent !important;
+  text-shadow: 0 0 9px rgba(238, 241, 246, 0.9) !important;
+  padding: 3px 10px;
+  margin: -3px -10px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* A blurred description is a block, not an inline run inside a clipped box:
+ * it keeps the paragraph's own margins and just smudges the glyphs. */
+.unlock-card-copy p.secret-blur {
+  padding: 0;
+  margin: 7px 0 0;
+}
+
+/* A plate inside a sheet keeps the list's own line spacing; the sheet's
+ * generic .unlock-game bottom margin is for the single-card layout. */
+.sheet-content .feed-row .unlock-game {
+  margin: 0;
+}
+
+/* The game block on a big card (title, count, bar) opens the game's page. */
+.game-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.game-card-link.is-link,
+.unlock-card .hero-game.is-link {
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A barely-there shade under the game's avatar, name and bar on the big
+ * cards, fading upwards from the bottom edge, so they stay legible over any
+ * picture. It is a pseudo-element wider than the block (the card clips it),
+ * so the block's own spacing is left exactly as each card sets it. */
+.unlock-card .hero-game {
+  overflow: visible !important;
+}
+
+.unlock-card .hero-game::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: -60px;
+  right: -60px;
+  top: -28px;
+  bottom: -10px;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgba(8, 10, 16, 0.4) 0%,
+    rgba(8, 10, 16, 0.18) 55%,
+    rgba(8, 10, 16, 0) 100%
+  );
+}
+
+/* Inside a carousel the description panel is a flat tint, not a live
+ * backdrop blur: blurring what is behind a layer that moves is the costly
+ * part of swiping, and the panel is dark enough that it reads the same. */
+.unlock-slider .unlock-card-copy,
+.unlock-slider .hero-mark,
+.unlock-slider .dlc-badge {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.unlock-slider .unlock-card-copy {
+  background: rgba(10, 12, 18, 0.62);
+}
+
+.game-card.is-link {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}

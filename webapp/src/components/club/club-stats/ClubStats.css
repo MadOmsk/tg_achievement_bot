@@ -1,0 +1,174 @@
+/* Combined selector, not load-order reliance: this always renders together
+ * with .picker-list (see GamesSheet.tsx), whose own padding-bottom this is
+ * meant to override. */
+.picker-list.games-sheet-list {
+  padding-bottom: 12px;
+}
+
+.cover-ph:has(> .plat-logo)::after,
+.picker-game-art:has(.plat-logo)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      ellipse 78% 64% at 100% 0%,
+      rgba(0, 0, 0, 0.48) 0%,
+      rgba(0, 0, 0, 0.2) 40%,
+      transparent 74%
+    ),
+    radial-gradient(
+      ellipse 68% 58% at 100% 100%,
+      rgba(0, 0, 0, 0.36) 0%,
+      rgba(0, 0, 0, 0.12) 46%,
+      transparent 72%
+    );
+  pointer-events: none;
+}
+
+/* .picker-game-art needs its own version of the background above: it used
+ * to be one literal duplicate selector shared with components/shared/styles/shared.css's own
+ * hero/feed-cover vignette (same rule, two different gradients), and which
+ * one won was pure luck of file order. Structural properties (content,
+ * position, …) stay in the shared rule above; only the gradient itself is
+ * carried over here, at higher specificity so it wins deterministically. */
+.picker-game-art.picker-game-art:has(.plat-logo)::after {
+  background:
+    radial-gradient(
+      ellipse 88% 72% at 100% 0%,
+      rgba(0, 0, 0, 0.42) 0%,
+      rgba(0, 0, 0, 0.16) 44%,
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 78% 66% at 100% 100%,
+      rgba(0, 0, 0, 0.32) 0%,
+      rgba(0, 0, 0, 0.1) 48%,
+      transparent 70%
+    );
+}
+
+/* The two headline figures: a framed tile each. */
+.stat-hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.stat-hero:has(.stat-tile:only-child) {
+  grid-template-columns: 1fr;
+}
+
+.stat-tile {
+  min-width: 0;
+  padding: 16px 14px 14px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--stroke);
+}
+
+.stat-tile p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stat-tile strong {
+  display: block;
+  margin: 8px 0 6px;
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.stat-tile small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* Drawers opened from the stats lists (rare finds, hunts). */
+.stats-sheet-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(12px + var(--safe-bottom));
+}
+
+/* "What we played": one horizontal strip of covers, name and count under each. */
+.stat-games-block {
+  margin: 0 0 18px;
+}
+
+.stat-games {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  margin: 0 -18px;
+  /* Room under the heading, matched to the friends strip on the home page. */
+  padding: 8px 18px 10px;
+  scrollbar-width: none;
+}
+
+.stat-games::-webkit-scrollbar {
+  display: none;
+}
+
+.stat-game-tile {
+  flex: 0 0 108px;
+  width: 108px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stat-game-tile .cover-ph.stat-game-art {
+  display: grid;
+  place-items: center;
+  width: 108px;
+  height: 108px;
+  border-radius: 16px;
+}
+
+.stat-game-tile .cover-ph.stat-game-art .cover-ph-mark svg {
+  width: 36px;
+  height: 36px;
+}
+
+.stat-game-tile strong,
+.stat-game-tile p {
+  display: block;
+  margin: 8px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-game-tile strong {
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.stat-game-tile p {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}

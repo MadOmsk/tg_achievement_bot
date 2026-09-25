@@ -234,7 +234,7 @@ class TitleCatalogService:
         # Determine account_id to query
         account_id: str | None = None
         if tg_id:
-            link = await self._repo.active_link_of(tg_id, "psn")
+            link = await self._repo.get_platform_link(tg_id, "psn")
             if link:
                 account_id = link.external_id
 

@@ -1,0 +1,276 @@
+.plat-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.plat-note.is-error {
+  background: rgba(255, 107, 122, 0.12);
+  border: 1px solid rgba(255, 107, 122, 0.28);
+  color: #ffb4bc;
+}
+
+.plat-note.is-warn {
+  background: rgba(255, 196, 90, 0.1);
+  border: 1px solid rgba(255, 196, 90, 0.24);
+  color: #ffd89a;
+}
+
+.plat-note.is-info {
+  background: rgba(155, 182, 255, 0.12);
+  border: 1px solid rgba(155, 182, 255, 0.22);
+  color: var(--mint-2);
+}
+
+.plat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 12px 0;
+}
+
+.plat-card + .plat-card {
+  border-top: 1px solid var(--hair);
+}
+
+.plat-card-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.plat-card-icons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: auto;
+  min-width: 6.75rem;
+  padding-right: 4px;
+  box-sizing: border-box;
+}
+
+.plat-card-icons a,
+.plat-card-icons button,
+.plat-card-icons span {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--mint-2);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.plat-card-icons a:active,
+.plat-card-icons button:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.plat-card-icons .is-danger {
+  color: #ff8f8f;
+}
+
+.plat-card-icons .is-disabled {
+  opacity: 0.28;
+  cursor: default;
+  pointer-events: none;
+}
+
+.plat-card-nick {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plat-card .plat-note {
+  margin: 10px 0 0;
+}
+
+.input,
+.input.wide {
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  padding: 12px 14px;
+  min-height: 44px;
+  background: rgba(0, 0, 0, 0.22);
+  color: inherit;
+}
+
+.sheet.is-leave {
+  animation: veil-out 0.26s ease both;
+  pointer-events: none;
+}
+
+.sheet-dismiss:active {
+  color: #fff;
+  opacity: 0.7;
+  transform: scale(0.94);
+}
+
+.unlock-card-copy .hltb-copy-meta {
+  position: relative;
+  z-index: 1;
+  margin: 6px 0 0;
+  color: rgba(238, 241, 246, 0.62);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.list button {
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 18px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.settings-hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.ios-row .ios-value {
+  flex: 0 1 auto;
+  max-width: 62%;
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 650;
+  font-size: 0.9rem;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ios-row.danger {
+  color: #ff8a96;
+}
+
+.ios-row:disabled {
+  opacity: 0.45;
+}
+
+.ios-row .input {
+  width: 96px;
+  min-height: 36px;
+  padding: 6px 10px;
+}
+
+.connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 18px;
+}
+
+.connect-form-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 4px;
+}
+
+.connect-form-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.connect-form .input {
+  width: 100%;
+  margin: 0;
+  min-height: 48px;
+  padding: 14px 16px;
+}
+
+.connect-form .plat-note {
+  margin: -8px 0 0;
+}
+
+.segment button {
+  border: 0;
+  min-height: 28px;
+  padding: 4px 12px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.segment button.is-on {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.game-filter-chips .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.feed-row.is-locked-row {
+  opacity: 0.65;
+}
+
+/* Alignment tweaks for the shared .btn (see components/shared/styles/base.css) inside
+ * this screen's own platform cards and connect form. */
+/* Keep the action strip ≈ the Russian «Подключить» button footprint. */
+.plat-card-main > .btn.sm {
+  min-width: 6.75rem;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.plat-card-main .btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.plat-card-main .btn.danger {
+  border-color: rgba(255, 107, 122, 0.28);
+  background: rgba(255, 107, 122, 0.14);
+  color: #ff8a96;
+}
+
+.connect-form .btn {
+  width: 100%;
+  margin-top: 4px;
+  min-height: 48px;
+}

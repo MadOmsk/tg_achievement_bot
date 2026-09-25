@@ -1,0 +1,440 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  fetchGame,
+  type FeedItem,
+  type GameAchievement,
+  type GameDetails,
+  type GameRef,
+} from "../../../api";
+import { t, type Locale } from "../../../i18n";
+import {
+  CoverImg,
+  GlassWait,
+  Icon,
+  ScoreCup,
+  Sheet,
+  type ScoreCupLine,
+} from "../../shared/lib";
+import { UnlockCard } from "../../person";
+import {
+  COMPLETION_BADGES,
+  PLATFORMS,
+  TROPHY_BADGES,
+} from "../../shared/constants";
+import {
+  groupLabel,
+  pickLocale,
+  trophyBadge,
+  type FilterType,
+} from "../utils";
+import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
+import { GameHero } from "../game-hero/GameHero";
+
+export function TitleSheet({
+  game,
+  data,
+  locale,
+  showSecrets: initialShowSecrets = false,
+  meId,
+  onClose,
+}: {
+  game: GameRef;
+  data: string;
+  locale: Locale;
+  showSecrets?: boolean;
+  meId: number;
+  onClose: () => void;
+}) {
+  const [details, setDetails] = useState<GameDetails | null>(null);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // Whose progress is on the page: the person whose card it was opened from
+  // (or yours when it was opened from your own). "Compare" adds yours beside
+  // theirs, in the one list.
+  const other =
+    game.person && game.person.tg_id !== meId ? game.person : null;
+  const viewed = other;
+  const [compare, setCompare] = useState(false);
+  const [myDetails, setMyDetails] = useState<GameDetails | null>(null);
+  // Your own page opens on what you still have to earn; somebody else's on
+  // what they have earned. The lock flips between the two.
+  const [showEarned, setShowEarned] = useState(Boolean(other));
+  const filter: FilterType = showEarned ? "unlocked" : "locked";
+  const showAllSecrets = initialShowSecrets;
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
+  const [selectedAch, setSelectedAch] = useState<GameAchievement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBusy(true);
+    setError(null);
+    void fetchGame(data, game.platform, game.title_id, {
+      tgId: viewed?.tg_id,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        setDetails(res);
+        setBusy(false);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(String(err));
+        setBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, game.platform, game.title_id, viewed?.tg_id]);
+
+  useEffect(() => {
+    if (!compare || myDetails) return;
+    let cancelled = false;
+    void fetchGame(data, game.platform, game.title_id)
+      .then((res) => {
+        if (!cancelled) setMyDetails(res);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setCompare(false);
+        setError(String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [compare, myDetails, data, game.platform, game.title_id]);
+
+  const title = useMemo<string>(() => {
+    return (
+      pickLocale(
+        locale,
+        details?.name_ru,
+        details?.name_en,
+        details?.name || game.name,
+      ) ||
+      game.name ||
+      ""
+    );
+  }, [details, game.name, locale]);
+
+  // The picture of the card the page was opened from wins over the one in the
+  // details: it is the one already on screen and known to load, and the
+  // header must not change (or lose it) when the details arrive.
+  const cover = game.cover || game.icon_url || details?.icon_url || null;
+  const achievements = useMemo(() => details?.achievements ?? [], [details]);
+  const unlocked =
+    details?.achievements_unlocked ??
+    achievements.filter((a) => a.is_unlocked).length;
+  const total = details?.achievements_total ?? achievements.length;
+  const pct =
+    total > 0
+      ? Math.round((unlocked / total) * 100)
+      : details?.completion_percent ?? 0;
+  const isCompleted = total > 0 && unlocked >= total;
+
+  const scoreLines = useMemo<ScoreCupLine[]>(() => {
+    const isXbox = game.platform.startsWith(PLATFORMS.XBOX);
+    const isPsn = game.platform === PLATFORMS.PSN;
+    const isSteam = game.platform === PLATFORMS.STEAM;
+
+    let earnedGs = 0;
+    let totalGs = 0;
+    let bronze = 0;
+    let silver = 0;
+    let gold = 0;
+    let platinum = 0;
+
+    for (const ach of achievements) {
+      if (ach.gamerscore != null) {
+        totalGs += ach.gamerscore;
+        if (ach.is_unlocked) earnedGs += ach.gamerscore;
+      }
+      if (ach.trophy_type) {
+        const tt = ach.trophy_type.toLowerCase();
+        if (tt === "bronze" && ach.is_unlocked) bronze++;
+        else if (tt === "silver" && ach.is_unlocked) silver++;
+        else if (tt === "gold" && ach.is_unlocked) gold++;
+        else if (tt === "platinum" && ach.is_unlocked) platinum++;
+      }
+    }
+
+    const tiers = isPsn
+      ? `${TROPHY_BADGES.BRONZE} ${bronze} · ${TROPHY_BADGES.SILVER} ${silver} · ${TROPHY_BADGES.GOLD} ${gold} · ${TROPHY_BADGES.PLATINUM} ${platinum}`
+      : null;
+
+    const extra = isXbox
+      ? isCompleted
+        ? `${COMPLETION_BADGES.XBOX} ${t(locale, "gameDone")}`
+        : `${unlocked}/${total} (${pct}%)`
+      : isSteam
+        ? isCompleted
+          ? `${COMPLETION_BADGES.STEAM} ${t(locale, "gameDone")}`
+          : `${unlocked}/${total} (${pct}%)`
+        : isCompleted
+          ? `${COMPLETION_BADGES.PSN} ${t(locale, "gameDone")}`
+          : `${unlocked}/${total} (${pct}%)`;
+
+    return [
+      {
+        platform: game.platform,
+        count: isXbox && totalGs > 0 ? earnedGs : unlocked,
+        unit: isXbox && totalGs > 0 ? "G" : null,
+        extra,
+        tiers,
+      },
+    ];
+  }, [achievements, game.platform, isCompleted, locale, pct, total, unlocked]);
+
+  const toggleReveal = useCallback((achId: string) => {
+    setRevealedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(achId)) next.delete(achId);
+      else next.add(achId);
+      return next;
+    });
+  }, []);
+
+  const groups = details?.groups ?? [];
+  const showGroups = groups.length > 1;
+
+  // Compare: yours, by achievement id.
+  const myUnlockedIds = useMemo(
+    () =>
+      new Set(
+        (myDetails?.achievements ?? [])
+          .filter((a) => a.is_unlocked)
+          .map((a) => a.achievement_id),
+      ),
+    [myDetails],
+  );
+  const comparing = compare && Boolean(myDetails) && Boolean(other);
+
+  const filteredAchievements = useMemo(() => {
+    return achievements.filter((ach) => {
+      if (comparing) return true;
+      if (filter === "unlocked") return ach.is_unlocked;
+      if (filter === "locked") return !ach.is_unlocked;
+      return true;
+    });
+  }, [achievements, filter, comparing]);
+
+  const byGroup = useMemo(() => {
+    const rows = filteredAchievements;
+    if (!showGroups) return [{ id: "", label: "", rows }];
+
+    const order = groups.map((g) => g.group_id);
+    const map = new Map<string, GameAchievement[]>();
+    for (const id of order) map.set(id, []);
+    const orphan: GameAchievement[] = [];
+
+    for (const row of rows) {
+      const gid = row.trophy_group_id || "default";
+      const bucket = map.get(gid);
+      if (bucket) bucket.push(row);
+      else orphan.push(row);
+    }
+
+    const sections = order.map((id) => {
+      const g = groups.find((x) => x.group_id === id)!;
+      return {
+        id,
+        label: groupLabel(g, locale, title),
+        rows: map.get(id) ?? [],
+      };
+    });
+
+    if (orphan.length) {
+      sections.push({
+        id: "_",
+        label: t(locale, "otherGroup"),
+        rows: orphan,
+      });
+    }
+
+    return sections.filter((s) => s.rows.length > 0);
+  }, [filteredAchievements, groups, locale, showGroups, title]);
+
+  const selectedFeedItem = useMemo<FeedItem | null>(() => {
+    if (!selectedAch) return null;
+    return {
+      tg_id: 0,
+      person: "",
+      name:
+        pickLocale(
+          locale,
+          selectedAch.name_ru,
+          selectedAch.name_en,
+          selectedAch.achievement_id,
+        ) || t(locale, "secret"),
+      game: title,
+      gamerscore: selectedAch.gamerscore || 0,
+      rarity_percent: selectedAch.rarity_percent,
+      platform: game.platform,
+      unlocked_at: selectedAch.unlocked_at,
+      is_secret: selectedAch.is_secret,
+      title_id: game.title_id,
+      achievement_id: selectedAch.achievement_id,
+      icon_url: selectedAch.icon_url,
+      game_icon_url: cover,
+      description: pickLocale(
+        locale,
+        selectedAch.description_ru,
+        selectedAch.description_en,
+      ),
+      trophy_type: selectedAch.trophy_type,
+      tier_badge: trophyBadge(selectedAch.trophy_type),
+      progress: {
+        unlocked,
+        total,
+      },
+    };
+  }, [
+    cover,
+    game.platform,
+    game.title_id,
+    locale,
+    selectedAch,
+    title,
+    total,
+    unlocked,
+  ]);
+
+  const content = (
+    <>
+      <header className="account-bar person-bar">
+        <div className="account-top">
+          <div className="account-who">
+            <button
+              type="button"
+              className="person-back"
+              onClick={onClose}
+              aria-label={t(locale, "back")}
+            >
+              <Icon name="back" size={28} />
+            </button>
+            <CoverImg src={cover} kind="game" className="person-avatar" />
+            <span className="game-bar-title">
+              <strong>{title}</strong>
+              {viewed && <small>{viewed.name}</small>}
+            </span>
+          </div>
+          <ScoreCup locale={locale} lines={scoreLines} />
+        </div>
+      </header>
+
+      <GameHero cover={cover} />
+
+      <div className="section-head achievements-head">
+        <h1 className="kicker" style={{ margin: 0 }}>
+          {t(locale, "homeAchievements")} (
+          {comparing ? `${myUnlockedIds.size} · ${unlocked}` : unlocked}/{total})
+        </h1>
+
+        <span className="game-head-actions">
+        {other && (
+          <button
+            type="button"
+            className={compare ? "game-who-chip is-on" : "game-who-chip"}
+            aria-pressed={compare}
+            onClick={() => setCompare((on) => !on)}
+          >
+            {t(locale, "compare")}
+          </button>
+        )}
+        {(!busy && achievements.length > 0 && !comparing) && (
+          <button
+            type="button"
+            className="game-lock-chip"
+            aria-label={t(locale, showEarned ? "showLocked" : "showEarned")}
+            onClick={() => setShowEarned((on) => !on)}
+          >
+            <Icon name={showEarned ? "unlock" : "lock"} size={18} />
+          </button>
+        )}
+        </span>
+      </div>
+
+      {busy && <GlassWait />}
+      {error && (
+        <p className="empty">
+          {t(locale, "error")}: {error}
+        </p>
+      )}
+      {(!busy && !error && achievements.length === 0) && (
+        <p className="empty">{t(locale, "gameEmpty")}</p>
+      )}
+
+      {(!busy &&
+      !error &&
+      achievements.length > 0 &&
+      filteredAchievements.length === 0) && (
+        <p className="empty">{t(locale, "emptyFilter")}</p>
+      )}
+
+      {(!busy && details) && (
+        <div className="feed">
+          {byGroup.map((section, i) => (
+            <section key={section.id || `group-${i}`} className="feed-day">
+              {section.label && (
+                <p className="feed-day-label">{section.label}</p>
+              )}
+              {section.rows.map((row) => {
+                const iHave = myUnlockedIds.has(row.achievement_id);
+                const isRevealed =
+                  showAllSecrets ||
+                  row.is_unlocked ||
+                  (comparing && iHave) ||
+                  revealedIds.has(row.achievement_id);
+                return (
+                  <GameAchievementRow
+                    key={row.achievement_id}
+                    row={row}
+                    isRevealed={isRevealed}
+                    locale={locale}
+                    onToggleReveal={toggleReveal}
+                    onSelect={setSelectedAch}
+                    compare={
+                      comparing && other
+                        ? {
+                            me: { id: meId, name: t(locale, "you"), has: iHave },
+                            them: {
+                              id: other.tg_id,
+                              name: other.name,
+                              has: row.is_unlocked,
+                            },
+                          }
+                        : undefined
+                    }
+                  />
+                );
+              })}
+            </section>
+          ))}
+        </div>
+      )}
+
+      {selectedFeedItem && (
+        <Sheet
+          mid
+          onClose={() => setSelectedAch(null)}
+          closeLabel={t(locale, "close")}
+          noClose
+        >
+          <div className="sheet-unlock">
+            <UnlockCard
+              item={selectedFeedItem}
+              locale={locale}
+              secret={false}
+              author={false}
+              gameInCopy
+              onReveal={() => {}}
+            />
+          </div>
+        </Sheet>
+      )}
+    </>
+  );
+
+  return <div className="game-page" data-no-pull>
+      {content}
+    </div>;
+}

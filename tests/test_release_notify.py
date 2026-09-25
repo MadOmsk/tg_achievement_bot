@@ -154,6 +154,25 @@ async def test_a_chat_that_no_longer_exists_is_deactivated(repo: Repo) -> None:
     assert {r["chat_id"]: r["is_active"] for r in await cursor.fetchall()} == {gone: 0, alive: 1}
 
 
+@pytest.mark.asyncio
+async def test_the_test_bot_leaves_unreachable_chats_active(repo: Repo) -> None:
+    """A test bot on a copy of production's database is not a member of those
+    chats; "chat not found" there must not switch them off."""
+    unreachable = -1004004
+    await repo.upsert_chat(unreachable, "Production Chat", None)
+
+    bot = FakeBot(missing={unreachable})
+    delivered = await announce_release_if_needed(
+        bot, repo, "1.3.0.050", is_test=True, sleep_delay=0
+    )
+
+    assert delivered == 0
+    cursor = await repo._conn.execute(
+        "SELECT is_active FROM chats WHERE chat_id = ?", (unreachable,)
+    )
+    assert (await cursor.fetchone())["is_active"] == 1
+
+
 def test_load_release_summary_from_summary_file() -> None:
     summary_ru = load_release_summary("1.4.0", "ru")
     assert summary_ru is not None

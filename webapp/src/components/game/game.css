@@ -1,0 +1,185 @@
+/* Shared by TitleSheet, GameHero and GameFilterChips — everything
+ * under components/game/ that isn't already a components/shared/lib
+ * primitive. */
+
+.game-cover {
+  position: relative;
+  /* Out to the page edges, square corners. */
+  margin: 0 -18px 18px;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: #0a0c12;
+}
+
+.game-cover .game-cover-back.cover-ph {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+}
+
+.game-cover .game-cover-back.cover-ph.has-img > img {
+  position: absolute;
+  inset: 0;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transform: scale(1.18);
+  object-fit: cover;
+  filter: blur(20px) brightness(0.68) saturate(1.2);
+}
+
+/* No glyph on the backdrop: the fitted layer carries it when there is no picture. */
+.game-cover .game-cover-back.cover-ph.is-empty > .cover-ph-mark {
+  display: none;
+}
+
+
+/* The game's own page: a full-screen layer over the app, scrolling on its
+ * own, with the same sticky top bar the profile has. */
+.game-page {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 18px calc(28px + var(--safe-bottom));
+  background:
+    radial-gradient(880px 520px at 6% -14%, rgba(120, 150, 230, 0.22), transparent 58%),
+    linear-gradient(180deg, #121620 0%, #0a0c12 48%, #07080c 100%);
+}
+
+/* The bar brings its own top padding (and the sticky offset is measured
+ * from the layer's edge), so it starts flush with the top. */
+.game-page .person-bar {
+  margin-top: 0;
+}
+
+.game-page > *:not(.person-bar):not(.game-cover) {
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Where the profile has its month chip, the game has a lock: it flips the
+ * list between what is still to earn and what is already earned. */
+.game-lock-chip {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: rgba(238, 241, 246, 0.9);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+
+/* The game's small cover in the page's top bar (same slot as the person's
+ * avatar). It had no rules at all, so the picture had no size and vanished
+ * as soon as it loaded. */
+.person-bar .cover-ph.person-avatar {
+  /* Exactly the profile bar's avatar box (48px), so the title stays where
+   * it was when a profile turns into a game page. */
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+.person-bar .cover-ph.person-avatar > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.person-bar .cover-ph.person-avatar .cover-ph-mark svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Title and, under it, whose progress the page shows. */
+.person-bar .game-bar-title {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 1px;
+}
+
+/* Title and, under it, whose progress: a pair centred together on the
+ * avatar, and as wide as the bar allows so a long nick is not cut short. */
+.person-bar .game-bar-title small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Flips the list between the person's progress and yours. */
+.game-head-actions .game-who-chip.is-on {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+/* Each person's mark on an achievement: their avatar, lit when they
+ * have it, dimmed and grey when they do not. */
+.compare-marks {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.compare-mark {
+  position: relative;
+  display: inline-flex;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.compare-mark.is-has {
+  opacity: 1;
+  filter: none;
+}
+.game-head-actions .game-who-chip {
+  max-width: 11rem;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  color: rgba(238, 241, 246, 0.94);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The list heading spaced like the home page's "Friends": 28px above it,
+ * 16px below (its own row is taller than the text because of the buttons). */
+.game-page .achievements-head {
+  margin: 28px 0 16px;
+  /* As tall as its buttons from the start: they appear only once the list
+   * has loaded, and the heading's spacing used to grow when they did. */
+  min-height: 32px;
+  align-items: center;
+}

@@ -1,0 +1,10 @@
+/* Composition root: the only styles that are genuinely global, in cascade
+ * order (general -> specific). Everything else lives next to the component
+ * or screen it belongs to and is pulled in by that file's own `import
+ * "./X.css"` — see shared.css's own header for the handful of visual
+ * patterns that don't have one single owner. */
+@import "./tokens.css";
+@import "./base.css";
+@import "./layout.css";
+@import "./motion.css";
+@import "./shared.css";

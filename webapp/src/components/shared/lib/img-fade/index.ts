@@ -1,0 +1,1 @@
+export { useImgFade } from "./useImgFade";

@@ -1,0 +1,51 @@
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  margin: 0 4px 0 -8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.icon-btn:focus,
+.icon-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.page-head .icon-btn + h1 {
+  flex: 1;
+}
+
+.chip .mark {
+  margin-right: 0;
+}
+
+.mark {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.mark.xbox {
+  background: var(--xbox);
+}
+
+.mark.steam {
+  background: var(--steam);
+}
+
+.mark.psn {
+  background: var(--psn);
+}

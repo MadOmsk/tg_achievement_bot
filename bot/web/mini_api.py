@@ -46,6 +46,7 @@ from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import load_avatar_bytes
 from bot.web.mini_chat import (
+    _https_url,
     build_feed_payload,
     build_online_payload,
     build_person_payload,
@@ -686,13 +687,35 @@ async def handle_game_details(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     catalog_service: TitleCatalogService = request.app["mini_title_catalog"]
 
+    # Whose progress: the caller's own unless another club member is named.
+    viewed_id = user.tg_id
+    raw_viewed = request.query.get("tg_id")
+    if raw_viewed:
+        try:
+            viewed_id = int(raw_viewed)
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text="bad tg_id") from exc
+    if viewed_id != user.tg_id:
+        if await repo.get_user(viewed_id) is None:
+            raise web.HTTPNotFound(text="person not found")
+        mine = {c.chat_id for c in await repo.user_chats(user.tg_id)}
+        theirs = {c.chat_id for c in await repo.user_chats(viewed_id)}
+        if not mine & theirs:
+            raise web.HTTPForbidden(text="not a member")
+
     checklist = await catalog_service.get_title_checklist_for_user(
-        platform, title_id, tg_id=user.tg_id, force=force
+        platform, title_id, tg_id=viewed_id, force=force
     )
     title_info = await repo.title_record(title_id) or {}
 
-    total = len(checklist)
+    listed = len(checklist)
     unlocked = sum(1 for item in checklist if item.is_unlocked)
+    # The platform's own count (from the title list) can be larger than what the
+    # catalog holds: a game nobody's account could refresh yet has only the
+    # achievements somebody unlocked, and "9 of 9" would be a lie about it.
+    known_total = int(title_info.get("achievements_total") or 0)
+    total = max(listed, known_total)
+    partial = listed < total
     percent = round((unlocked / total) * 100, 1) if total > 0 else 0.0
 
     groups = await repo.get_title_groups(title_id) if platform == Platform.PSN else []
@@ -705,9 +728,12 @@ async def handle_game_details(request: web.Request) -> web.Response:
             "name": title_info.get("name"),
             "name_ru": title_info.get("name_ru"),
             "name_en": title_info.get("name_en"),
-            "icon_url": title_info.get("icon_url"),
+            # Same https rewrite the feed applies: a plain-http cover is mixed
+            # content, and the page used to swap its good picture for it.
+            "icon_url": _https_url(title_info.get("icon_url")),
             "cover_path": title_info.get("cover_path"),
-            "achievements_total": total or title_info.get("achievements_total") or 0,
+            "achievements_total": total,
+            "catalog_partial": partial,
             "achievements_unlocked": unlocked,
             "completion_percent": percent,
             "achievements_checked_at": title_info.get("achievements_checked_at"),

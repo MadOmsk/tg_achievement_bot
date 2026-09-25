@@ -1,0 +1,142 @@
+button.account-who:focus,
+button.account-who:focus-visible,
+button.home-me:focus,
+button.home-me:focus-visible,
+button.person-back:focus,
+button.person-back:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.home-chrome .account-bar {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+}
+
+.account-bar {
+  position: relative;
+  z-index: 3;
+  margin-bottom: 18px;
+}
+
+.is-home .account-bar {
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+}
+
+.is-person .account-bar {
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+}
+
+.person-bar {
+  position: sticky;
+  top: 0;
+  z-index: 16;
+  margin: calc(-1 * (14px + var(--safe-top))) -18px 0;
+  padding: calc(10px + var(--safe-top)) 18px 10px;
+  background: rgba(10, 12, 18, 0.88);
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+}
+
+.account-bar.person-bar {
+  margin: calc(-1 * (14px + var(--safe-top))) -18px 0;
+}
+
+.person-back {
+  width: 36px;
+  height: 36px;
+  /* The arrow is drawn inside its box with ~8px to spare on the left: pull
+   * it out so its visible edge sits on the page gutter (like the icon on
+   * the right), and close the gap to the avatar to match the avatar-name one. */
+  margin: 0 -2px 0 -10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.person-back:focus,
+.person-back:focus-visible,
+.person-back:active {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.person-back:active {
+  opacity: 0.7;
+}
+
+.person-back svg {
+  display: block;
+  margin-left: -1px;
+}
+
+.account-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-who:focus,
+.account-who:focus-visible,
+.account-who:active {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.person-bar .account-who,
+.person-bar .account-who strong,
+.person-bar .avatar-wrap,
+.person-bar .avatar,
+.person-bar .avatar img {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.account-who strong {
+  display: block;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-btn svg {
+  display: block;
+}
+
+.picker-row strong {
+  font-size: 1.02rem;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.picker-row-copy strong,
+.picker-row-copy p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock button:focus,
+.dock button:focus-visible {
+  outline: none;
+}

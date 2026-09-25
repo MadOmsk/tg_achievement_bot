@@ -1,0 +1,97 @@
+.home-chrome .score-cup {
+  position: absolute;
+  top: calc(10px + var(--safe-top));
+  right: 18px;
+  z-index: 5;
+}
+
+.home-chrome.is-compact .score-cup {
+  display: none;
+}
+
+.home-chrome.is-compact .score-connect {
+  display: none;
+}
+
+.score-cup {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.score-cup-btn {
+  display: flex;
+  align-items: center;
+  width: auto;
+  height: 40px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.score-plats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.score-connect {
+  border: 0;
+  background: none;
+  color: var(--mint-2);
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+  padding: 8px 2px;
+}
+
+.score-sheet {
+  padding: 22px 18px 4px;
+}
+
+.score-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.score-row:last-child {
+  border-bottom: 0;
+}
+
+.score-row strong small {
+  margin-left: 4px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.score-row em {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-row .score-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.score-row i {
+  font-style: normal;
+}
+
+.score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}

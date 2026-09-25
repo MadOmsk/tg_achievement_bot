@@ -11,19 +11,15 @@ from datetime import datetime
 from bot.db.repo._models import (
     ChatMemberStat,
     ChatPresenceRow,
-    DroppedGame,
     OnlineAutoRefreshRow,
     _iso,
 )
 from bot.db.repo._sql import (
-    LOCALIZED_TITLE_COLUMNS,
-    OWNED_BY_PERSON,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
     earned_at,
     earned_since,
-    pick_name,
     rarity,
     rarity_cache_join,
 )
@@ -129,71 +125,6 @@ class _ChatStatsRepo:
                     int(row["silver"] or 0),
                     int(row["bronze"] or 0),
                 ),
-            )
-            for row in await cursor.fetchall()
-        ]
-
-    async def chat_dropped_games(
-        self,
-        chat_id: int,
-        *,
-        since: datetime,
-        until: datetime | None = None,
-        max_unlocked: int = 5,
-        limit: int = 8,
-        locale: str = "ru",
-    ) -> list[DroppedGame]:
-        """Subscribers' games with few unlocks in a window — Mini App
-        stats' "Ну и кто это будет проходить?" strip.
-
-        Counts only achievements earned inside `[since, until)` (the club's
-        selected month). A person–game pair with 1…`max_unlocked` unlocks
-        in that window floats up, fewest first, then oldest last unlock —
-        the softest progress this month, not abandoned forever. Excluded
-        users stay out; scope is active subscribers only.
-        """
-        date_bound = f"AND {earned_since()}"
-        date_params: list[object] = [_iso(since)]
-        if until is not None:
-            date_bound += f" AND {earned_at()} < ?"
-            date_params.append(_iso(until))
-        cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, u.last_name,"
-            "       " + XBOX_COLUMNS + ","
-            "       steam.display_name AS steam_name,"
-            "       psn.display_name AS psn_name,"
-            "       s.title_id, s.platform, t.name, t.icon_url,"
-            "       " + LOCALIZED_TITLE_COLUMNS + ","
-            "       COUNT(*) AS unlocked,"
-            "       MAX(" + earned_at() + ") AS last_earned "
-            "FROM seen_achievements s " + OWNED_BY_PERSON + "JOIN users u ON u.tg_id = al.tg_id "
-            "JOIN subscriptions sub ON sub.chat_id = ? AND sub.tg_id = u.tg_id "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            + XBOX_ACCOUNT
-            + active_account("steam", "steam")
-            + active_account("psn", "psn")
-            + f"WHERE u.is_excluded = 0 AND sub.rarity_mode != 'hidden' {date_bound} "
-            "GROUP BY u.tg_id, s.title_id, s.platform "
-            "HAVING unlocked >= 1 AND unlocked <= ? "
-            "ORDER BY unlocked ASC, last_earned ASC LIMIT ?",
-            (chat_id, *date_params, max_unlocked, limit),
-        )
-        return [
-            DroppedGame(
-                tg_id=int(row["tg_id"]),
-                username=row["username"],
-                first_name=row["first_name"],
-                last_name=row["last_name"],
-                gamertag=row["gamertag"],
-                gamertag_modern=row["gamertag_modern"],
-                steam_name=row["steam_name"],
-                psn_name=row["psn_name"],
-                title_id=row["title_id"],
-                platform=row["platform"],
-                name=pick_name(locale, row["game_ru"], row["game_en"], row["name"]),
-                unlocked=int(row["unlocked"]),
-                last_earned=row["last_earned"],
-                icon_url=row["icon_url"],
             )
             for row in await cursor.fetchall()
         ]
