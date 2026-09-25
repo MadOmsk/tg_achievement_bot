@@ -1,0 +1,5 @@
+• Mini App: a game page — every achievement, earned or not, and a comparison with a friend
+• Tap a day in the feed or a profile to open a calendar and jump to that day
+• New carousels in the feed and galleries, and a lighter feed
+• Stats: finds (rarer than 0.5%) and hunts, and the month's games strip is back
+• Secret achievements show their score, rarity and game
