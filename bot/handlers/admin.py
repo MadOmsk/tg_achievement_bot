@@ -94,6 +94,7 @@ from bot.views.admin import (
 )
 from bot.views.admin_home import render_admin_home
 from bot.views.keyboards import (
+    DIGEST_CHOICES,
     format_offset,
     next_locale,
     next_rarity_mode,
@@ -950,6 +951,29 @@ async def chats_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> 
 async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
+    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
+
+
+@router.callback_query(F.data.startswith("a:mdig:"))
+async def chat_digest_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.rsplit(":", 1)[1])
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="digest")
+    )
+
+
+@router.callback_query(F.data.startswith("a:cdig:"))
+async def chat_digest_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """The chat's digest size (#126)."""
+    assert callback.data is not None
+    chat_id_raw, value_raw = callback.data.split(":")[2:]
+    chat_id, value = int(chat_id_raw), int(value_raw)
+    if value not in DIGEST_CHOICES:
+        await callback.answer()
+        return
+    await repo.update_chat_settings(chat_id, digest_threshold=value)
+    await callback.answer()
     await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
 
 

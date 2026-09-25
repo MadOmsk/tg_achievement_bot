@@ -258,6 +258,7 @@ admin-chat-card =
     State:         { $state }
     Publishing:    { $subscribers } people
     Rare below:    { $threshold }
+    Digest:        { $digest }
     Daily summary: { $summary }, at { $time }
     Timezone:      { $offset }
     Min G:         { $min_score }
@@ -270,6 +271,9 @@ admin-chat-flood-off = off
 admin-no-subscribers = No subscribers yet.
 admin-subscribers-list = Subscribed: { $names }
 admin-chat-threshold-button = Rarity threshold: { $threshold } ▸
+admin-chat-digest-button = Digest: { $digest } ▸
+admin-digest-from = from { $value } ach.
+admin-digest-never = never
 admin-chat-summary-button = Daily summary: { $state }
 admin-chat-time-button = Summary time: { $time } ({ $offset }) ▸
 admin-chat-flood-toggle-button = Anti-flood filter: { $state }

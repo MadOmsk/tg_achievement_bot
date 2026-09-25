@@ -69,18 +69,11 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     chat_id     INTEGER NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
     tg_id       INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
     created_at  TEXT NOT NULL,
-    -- Per (person, chat), not one global value on the person (moved off
-    -- user_settings — same reasoning as 'all'/'rare'/'hidden' documented
-    -- there originally, now scoped down: what counts as worth publishing
-    -- can differ between a close-friends chat and a big public one).
-    -- New subscriptions default to 'all', same as user_settings used to.
-    rarity_mode TEXT NOT NULL DEFAULT 'all'
-                CHECK (rarity_mode IN ('all', 'rare', 'hidden')),
-    -- Per (person, chat), same move as rarity_mode above and for the same
-    -- reason (Follow-up, 2026-09-05) — how many achievements at once
-    -- deserve one summary message instead of separate ones can reasonably
-    -- differ between a quiet chat and a busy one.
-    digest_threshold INTEGER NOT NULL DEFAULT 3,
+    -- Which achievements go out is the person's (user_settings.rarity_mode),
+    -- and how many at once make a digest is the chat's
+    -- (chat_settings.digest_threshold) — both used to live here, per
+    -- subscription, until #126: a person in many chats set the same thing
+    -- in each.
     PRIMARY KEY (chat_id, tg_id)
 );
 
@@ -95,16 +88,15 @@ CREATE TABLE IF NOT EXISTS chat_seen (
 
 CREATE TABLE IF NOT EXISTS user_settings (
     tg_id            INTEGER PRIMARY KEY REFERENCES users(tg_id) ON DELETE CASCADE,
-    -- rarity_mode and digest_threshold used to live here, one value for
-    -- every chat a person publishes to. Both moved to subscriptions (one
-    -- per chat, not one for all of them — Follow-ups, SPEC 9 M-Steam-2e
-    -- and 2026-09-05) — a chat with close friends and a big public one can
-    -- reasonably want different answers to both "what's worth showing" and
-    -- "how many at once is a lot". rarity_mode is still one mode for every
-    -- platform though (Xbox modern, Xbox 360, Steam — M-Steam-2e, SPEC
-    -- 1.4): a platform with no rarity_percent at all (currently only Xbox
-    -- 360) is exempt from the rarity check under 'rare' rather than
-    -- getting a switch of its own.
+    -- Which achievements this person publishes, in every chat they are
+    -- subscribed to (#126): 'all', 'rare' (at or below each chat's own
+    -- threshold), or 'hidden' — nothing published, and left out of chats'
+    -- summaries and /recent. One value for every platform: a platform with no
+    -- rarity at all (Xbox 360) is exempt from 'rare' rather than getting a
+    -- switch of its own. It was per subscription until #126 — somebody in
+    -- many chats had to set the same thing in each.
+    rarity_mode      TEXT    NOT NULL DEFAULT 'all'
+                     CHECK (rarity_mode IN ('all', 'rare', 'hidden')),
     muted_title_ids  TEXT    NOT NULL DEFAULT '[]',
     tz_offset_min    INTEGER,                      -- minutes from UTC, NULL = global timezone
     -- Whether other people's /stats and /who cards get a clickable link in
@@ -130,18 +122,19 @@ CREATE TABLE IF NOT EXISTS user_settings (
 -- explicit per chat (SPEC 5.5, 5.7) — briefly shared via app_settings with a
 -- NULL-means-"follow the global value" fallback, reverted once real multi-
 -- chat use showed chats want genuinely different values, not one shared
--- knob that moves every chat at once on every edit. No *admin-controlled*
--- rarity mode column here — that used to gate publication alongside the
--- person's own choice (an AND of the two), dropped as redundant. The
--- person's own choice does live per chat, just not here: `subscriptions.
--- rarity_mode` (SPEC 9, M-Steam-2e's follow-up) — this table only supplies
--- the threshold number for what "rare" means once someone picks it.
+-- knob that moves every chat at once on every edit. The person picks the
+-- rarity *mode* (user_settings.rarity_mode); this table supplies the
+-- threshold that "rare" means in this chat.
 CREATE TABLE IF NOT EXISTS chat_settings (
     chat_id                INTEGER PRIMARY KEY REFERENCES chats(chat_id) ON DELETE CASCADE,
     min_gamerscore          INTEGER NOT NULL DEFAULT 0,
     daily_summary           INTEGER NOT NULL DEFAULT 1,
     muted_title_ids         TEXT    NOT NULL DEFAULT '[]',
     rare_threshold_percent  REAL    NOT NULL DEFAULT 10,
+    -- This many achievements of one person at once make one digest instead
+    -- of separate cards; 99 = never (#126 — it was the person's, per
+    -- subscription, before).
+    digest_threshold        INTEGER NOT NULL DEFAULT 3,
     daily_summary_time      TEXT    NOT NULL DEFAULT '20:00',
     -- Offset, not a zone name — same reasoning as user_settings.tz_offset_min:
     -- unambiguous, and Russia has had no DST since 2014 so a fixed offset

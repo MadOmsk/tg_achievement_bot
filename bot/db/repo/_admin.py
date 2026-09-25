@@ -174,7 +174,7 @@ class _AdminRepo:
             "SELECT c.chat_id, c.title, c.is_active, s.min_gamerscore,"
             "       s.daily_summary, s.muted_title_ids, s.rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
-            "       s.locale,"
+            "       s.locale, s.digest_threshold,"
             "       (SELECT COUNT(*) FROM subscriptions WHERE chat_id = c.chat_id) AS subs "
             "FROM chats c JOIN chat_settings s ON s.chat_id = c.chat_id "
             "ORDER BY c.is_active DESC, c.title"
@@ -191,6 +191,7 @@ class _AdminRepo:
                 flood_limit=row["flood_limit"],
                 flood_window_minutes=row["flood_window_minutes"],
                 locale=row["locale"],
+                digest_threshold=row["digest_threshold"],
                 is_active=bool(row["is_active"]),
                 daily_summary=bool(row["daily_summary"]),
                 subscribers=int(row["subs"]),
@@ -208,6 +209,7 @@ class _AdminRepo:
             "flood_limit",
             "flood_window_minutes",
             "locale",
+            "digest_threshold",
         }
         unknown = set(fields) - allowed
         if unknown:

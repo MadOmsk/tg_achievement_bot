@@ -61,6 +61,8 @@ async def build_me_payload(
             "tz_offset_min": tz_offset,
             "show_profile_links": show_links,
             "show_secrets": show_secrets,
+            # Which achievements go out, in every chat (#126).
+            "rarity_mode": settings_row.rarity_mode if settings_row else "all",
         },
         "xbox": await _xbox_block(
             repo,
@@ -98,8 +100,6 @@ async def build_me_payload(
                 "chat_id": c.chat_id,
                 "title": c.title,
                 "is_subscribed": c.is_subscribed,
-                "rarity_mode": c.rarity_mode,
-                "digest_threshold": c.digest_threshold,
             }
             for c in chats
         ],

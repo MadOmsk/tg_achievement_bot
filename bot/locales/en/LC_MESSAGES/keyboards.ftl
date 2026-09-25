@@ -16,7 +16,7 @@ kb-digest-from-n =
         [one] from { $threshold } achievement
        *[other] from { $threshold } achievements
     }
-kb-rarity-hidden = don't show
+kb-rarity-hidden = none
 kb-rarity-rare = rare only
 kb-rarity-all = all of them
 
@@ -37,6 +37,7 @@ kb-xbox-reconnect = 🔄 Connect again
 # Panel controls
 kb-timezone-row = Timezone: { $offset } ▸
 kb-my-chats = 💬 My chats ▸
+kb-rarity-row = Achievements: { $mode } ▸
 kb-sync = 🔄 Sync now
 kb-profile-visible = Profile visible to others: { $visible } ▸
 kb-profile-visible-yes = yes

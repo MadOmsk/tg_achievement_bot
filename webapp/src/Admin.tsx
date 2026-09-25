@@ -22,7 +22,7 @@ import {
   type AdminUserCard,
   type AdminUserRow,
 } from "./api";
-import { formatOffset, rarityLabel, t, type Locale } from "./i18n";
+import { digestLabel, formatOffset, rarityLabel, t, type Locale } from "./i18n";
 import { TIMEZONES } from "./Me";
 import { BackHead, GlassWait, PlatformLogo, Toggle } from "./ui";
 
@@ -658,6 +658,22 @@ function AdminChatCard({
               }
             }}
           />
+        </label>
+        <label className="ios-row admin-limit-row">
+          <span className="admin-limit-copy">
+            <strong>{t(locale, "digest")}</strong>
+          </span>
+          <select
+            className="tz-select"
+            value={chat.digest_threshold}
+            onChange={(e) => onPatch({ digest_threshold: Number(e.target.value) })}
+          >
+            {[2, 3, 4, 5, 6, 8, 10, 99].map((n) => (
+              <option key={n} value={n}>
+                {digestLabel(n, locale)}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="ios-row admin-limit-row">
           <span className="admin-limit-copy">

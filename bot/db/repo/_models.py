@@ -73,6 +73,8 @@ class UserSettings:
     # chat_settings.locale instead. Defaulted rather than required so the
     # many test/call sites that build a UserSettings by hand keep working.
     locale: str = "ru"
+    # Which achievements this person publishes, in every chat (#126).
+    rarity_mode: str = RarityMode.ALL
 
 
 @dataclass(slots=True)
@@ -241,15 +243,12 @@ class ChatTarget:
     # publisher already loops over these, and a second query per chat on the
     # hot publication path would buy nothing.
     locale: str = "ru"
-    # The person's own choice for *this* chat (SPEC 9, M-Steam-2e's
-    # follow-up — moved off user_settings, one value for every chat, onto
-    # subscriptions, one value per chat). Defaults to 'all' only for call
-    # sites (admin_chats) that have no one specific subscriber in mind.
+    # The publishing person's own mode, for every chat they are in (#126) —
+    # carried here because the publisher reads it per target. 'all' for call
+    # sites (admin_chats) with no one person in mind.
     rarity_mode: str = RarityMode.ALL
-    # N+ achievements in one game at once collapse into a summary message
-    # instead of separate ones — per (person, chat), same follow-up as
-    # rarity_mode above and for the same reason (2026-09-05). Default only
-    # applies to call sites (admin_chats) with no one specific subscriber.
+    # N+ achievements of one person at once make one digest instead of
+    # separate cards — the chat's, set by an admin (#126).
     digest_threshold: int = 3
     # Filled in by the admin panel only; the publisher never looks at them.
     is_active: bool = True
@@ -317,8 +316,6 @@ class UserChatRow:
     chat_id: int
     title: str | None
     is_subscribed: bool
-    rarity_mode: str | None  # only meaningful while subscribed; None otherwise
-    digest_threshold: int | None  # same — per subscription, None while not subscribed
 
 
 @dataclass(slots=True)
@@ -739,6 +736,7 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         show_profile_links=bool(row["show_profile_links"]),
         show_secrets=bool(row["show_secrets"]) if "show_secrets" in keys else False,
         locale=row["locale"],
+        rarity_mode=row["rarity_mode"] if "rarity_mode" in keys else RarityMode.ALL,
     )
 
 

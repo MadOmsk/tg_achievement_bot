@@ -25,22 +25,19 @@ from bot.services.steam import client as steam_client  # noqa: F401
 from bot.services.steam.auth import SteamAuth
 from bot.util import cooldown_minutes_left, parse_iso
 from bot.views.keyboards import (
-    DIGEST_NEVER,
-    digest_keyboard,
     disconnect_prompt_keyboard,
     locale_name,
     next_locale,
-    next_rarity_mode,
     timezone_keyboard,
 )
 from bot.views.panel import (
-    find_user_chat,
     render_chat_card,
     render_chat_delete_prompt,
     render_chat_list,
     render_panel,
     render_panel_delete_confirm_1,
     render_panel_delete_confirm_2,
+    render_rarity_picker,
     render_unsub_prompt,
 )
 
@@ -271,6 +268,28 @@ async def panel_toggle_profile_links(
     await safe_edit(callback, screen.text, screen.keyboard)
 
 
+@router.callback_query(F.data == "panel:rarity")
+async def panel_rarity(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """The person's rarity mode, for every chat at once (#126)."""
+    screen = await render_rarity_picker(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("panel:rarityset:"))
+async def panel_rarity_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    mode = callback.data.rsplit(":", 1)[1]
+    if mode not in (RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN):
+        await callback.answer()
+        return
+    await repo.ensure_user(callback.from_user.id, callback.from_user.username)
+    await repo.update_user_settings(callback.from_user.id, rarity_mode=mode)
+    await callback.answer(i18n.get(f"chat-hub-toast-{mode}"))
+    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+
+
 @router.callback_query(F.data == "panel:locale")
 async def panel_toggle_locale(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """Flips this person's own language (#48) — one tap, same weight as the
@@ -331,54 +350,6 @@ async def _redraw_chat_card(
 async def panel_chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw_chat_card(callback, repo, chat_id, i18n)
-
-
-@router.callback_query(F.data.startswith("panel:chatrarity:"))
-async def panel_chat_rarity_cycle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """One tap advances this chat's mode to the next one (SPEC 9, M-Steam-2e's
-    follow-up — moved off the main panel, per chat now)."""
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_user_chat(repo, callback.from_user.id, chat_id)
-    if chat is None or not chat.is_subscribed:
-        await callback.answer()
-        return
-    mode = next_rarity_mode(chat.rarity_mode or RarityMode.ALL)
-    await repo.update_subscription_rarity_mode(chat_id, callback.from_user.id, mode)
-    await _redraw_chat_card(callback, repo, chat_id, i18n)
-
-
-@router.callback_query(F.data.startswith("panel:chatdigest:"))
-async def panel_chat_digest_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """Per chat now, not the main panel screen (Follow-up, 2026-09-05, same
-    move as the rarity toggle above it)."""
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_user_chat(repo, callback.from_user.id, chat_id)
-    if chat is None or not chat.is_subscribed:
-        await callback.answer()
-        return
-    current = chat.digest_threshold or 3
-    await safe_edit(
-        callback,
-        i18n.get("panel-digest-menu"),
-        digest_keyboard(current, chat_id, i18n),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("panel:cdigestset:"))
-async def panel_chat_digest_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    assert callback.data is not None
-    _, _, chat_id_raw, value_raw = callback.data.split(":")
-    chat_id, value = int(chat_id_raw), int(value_raw)
-    await repo.update_subscription_digest_threshold(chat_id, callback.from_user.id, value)
-    await callback.answer(
-        i18n.get("panel-digest-set-never-toast")
-        if value >= DIGEST_NEVER
-        else i18n.get("panel-digest-set-from-toast", value=value)
-    )
     await _redraw_chat_card(callback, repo, chat_id, i18n)
 
 

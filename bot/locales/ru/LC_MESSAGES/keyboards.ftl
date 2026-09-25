@@ -10,7 +10,7 @@ kb-tz-skip = Пропустить
 kb-connect-xbox = Подключить XBOX
 kb-digest-never = никогда
 kb-digest-from-n = от { $threshold } достижений
-kb-rarity-hidden = не показывать
+kb-rarity-hidden = никакие
 kb-rarity-rare = только редкие
 kb-rarity-all = любые
 
@@ -31,6 +31,7 @@ kb-xbox-reconnect = 🔄 Подключить заново
 # Panel controls
 kb-timezone-row = Часовой пояс: { $offset } ▸
 kb-my-chats = 💬 Мои чаты ▸
+kb-rarity-row = Ачивки: { $mode } ▸
 kb-sync = 🔄 Синхронизировать
 kb-profile-visible = Профиль виден другим: { $visible } ▸
 kb-profile-visible-yes = да

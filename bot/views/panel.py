@@ -20,10 +20,10 @@ from bot.util import humanize_ago
 from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows
 from bot.views.keyboards import (
-    format_digest,
     format_offset,
     format_rarity,
     panel_keyboard,
+    rarity_keyboard,
 )
 from bot.views.parts import family_tag, platform_header_lines, visibility_status_text
 
@@ -73,28 +73,8 @@ async def render_chat_card(repo: Repo, tg_id: int, chat_id: int, *, locale: str)
             + "\n\n"
             + i18n.get("panel-publication-enabled")
         )
-        # Per-chat, not one shared value any more (SPEC 9, M-Steam-2e's
-        # follow-up) — only shown while actually publishing here, same as
-        # min_gamerscore/muted_title_ids having nothing to apply to
-        # otherwise.
-        builder.row(
-            InlineKeyboardButton(
-                text=i18n.get(
-                    "panel-achievements-mode",
-                    mode=format_rarity(chat.rarity_mode or RarityMode.ALL, i18n),
-                ),
-                callback_data=f"panel:chatrarity:{chat_id}",
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=i18n.get(
-                    "panel-digest-row",
-                    threshold=format_digest(chat.digest_threshold or 3, i18n),
-                ),
-                callback_data=f"panel:chatdigest:{chat_id}",
-            )
-        )
+        # Nothing to tune per chat any more (#126): which achievements go out
+        # is the person's, how many make a digest is the chat's admin's.
         builder.row(
             InlineKeyboardButton(
                 text=i18n.get("panel-unsubscribe"), callback_data=f"panel:chatunsub:{chat_id}"
@@ -191,6 +171,7 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         steam_id=steam_link.external_id if steam_link else None,
         psn_id=psn_link.display_name if psn_link else None,
         show_profile_links=bool(settings_row and settings_row.show_profile_links),
+        rarity_mode=settings_row.rarity_mode if settings_row else RarityMode.ALL,
     )
 
     if user is None:
@@ -238,6 +219,12 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         i18n.get(
             "panel-publication-row",
             status=await _publication_status(repo, user.tg_id, user.is_excluded, i18n),
+        )
+    )
+    lines.append(
+        i18n.get(
+            "panel-rarity-row",
+            mode=format_rarity(settings_row.rarity_mode if settings_row else RarityMode.ALL, i18n),
         )
     )
     if user.xuid or steam_link is not None or psn_link is not None:
@@ -387,3 +374,11 @@ async def render_panel_delete_confirm_2(*, locale: str) -> Screen:
     )
     builder.row(InlineKeyboardButton(text=i18n.get("kb-cancel"), callback_data="panel:refresh"))
     return Screen(i18n.get("panel-delete-confirm-2"), builder.as_markup())
+
+
+async def render_rarity_picker(repo: Repo, tg_id: int, *, locale: str) -> Screen:
+    """Which achievements this person publishes, in every chat (#126)."""
+    i18n = await i18n_for(locale)
+    settings_row = await repo.get_user_settings(tg_id)
+    current = settings_row.rarity_mode if settings_row else RarityMode.ALL
+    return Screen(i18n.get("panel-rarity-prompt"), rarity_keyboard(current, i18n))

@@ -33,7 +33,7 @@ from bot.services.steam.auth import SteamAuth, SteamKeyInvalidError
 from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED
 from bot.services.translate.auth import AnthropicAuth, AnthropicKeyInvalidError
 from bot.util import utcnow
-from bot.views.keyboards import next_rarity_mode
+from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 
 log = logging.getLogger(__name__)
 
@@ -232,6 +232,7 @@ def serialize_admin_chat(chat: Any) -> dict[str, Any]:
         "min_gamerscore": chat.min_gamerscore,
         "flood_limit": chat.flood_limit,
         "flood_window_minutes": chat.flood_window_minutes,
+        "digest_threshold": chat.digest_threshold,
         "locale": chat.locale,
     }
 
@@ -459,6 +460,11 @@ async def handle_admin_chat_patch(request: web.Request) -> web.Response:
         fields["flood_window_minutes"] = window
     if "min_gamerscore" in body:
         fields["min_gamerscore"] = int(body["min_gamerscore"])
+    if "digest_threshold" in body:
+        digest = int(body["digest_threshold"])
+        if digest not in DIGEST_CHOICES:
+            raise web.HTTPBadRequest(text="bad digest_threshold")
+        fields["digest_threshold"] = digest
     if "daily_summary" in body:
         fields["daily_summary"] = 1 if body["daily_summary"] else 0
     if "daily_summary_time" in body:

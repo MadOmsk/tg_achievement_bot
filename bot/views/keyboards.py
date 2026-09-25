@@ -160,14 +160,13 @@ def format_digest(threshold: int, i18n: I18nContext) -> str:
     return i18n.get("kb-digest-from-n", threshold=threshold)
 
 
-# One mode governs every connected platform at once within a given chat
-# (SPEC 9, M-Steam-2e and its follow-up — per chat now, not one shared
-# value for all of them, panel.py's "Мои чаты" chat card) — show
-# everything, show only the rare ones, or nothing. A click cycles to the
-# next one rather than opening a submenu — one tap, not two, for a
-# three-way toggle. Used to have a separate Xbox 360 show/hide switch next
-# to this one; folded in here instead of growing a second platform-specific
-# toggle when Steam arrived (services/achievements.py::passes_filters).
+# One mode governs every connected platform and every chat a person
+# publishes to (#126 — it was per chat for a while, and somebody in many
+# chats set the same thing in each) — everything, only the rare ones by
+# each chat's own threshold, or nothing. Used to have a separate Xbox 360
+# show/hide switch next to this one; folded in here instead of growing a
+# platform-specific toggle when Steam arrived
+# (services/achievements.py::passes_filters).
 RARITY_CHOICES = (RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN)
 
 
@@ -274,6 +273,7 @@ def panel_keyboard(
     steam_id: str | None = None,
     psn_id: str | None = None,
     show_profile_links: bool = False,
+    rarity_mode: str = RarityMode.ALL,
 ) -> InlineKeyboardMarkup:
     i18n = i18n or static_i18n("keyboards")
 
@@ -332,6 +332,13 @@ def panel_keyboard(
             )
         ],
         [InlineKeyboardButton(text=i18n.get("kb-my-chats"), callback_data="panel:chatlist")],
+        # Which achievements go out, in every chat at once (#126).
+        [
+            InlineKeyboardButton(
+                text=i18n.get("kb-rarity-row", mode=format_rarity(rarity_mode, i18n)),
+                callback_data="panel:rarity",
+            )
+        ],
         # Off by default (Follow-up 2026-09-06) — gates the clickable link
         # /stats and /who put in this person's nickname; the panel's own
         # "👤 Профиль" buttons below stay visible regardless (this screen is
@@ -368,26 +375,6 @@ def panel_keyboard(
     rows.append([InlineKeyboardButton(text=i18n.get("kb-sync"), callback_data="panel:sync")])
     rows.append([close_button(i18n=i18n)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def digest_keyboard(current: int, chat_id: int, i18n: I18nContext) -> InlineKeyboardMarkup:
-    """Per chat now, not the main panel screen (Follow-up, 2026-09-05, same
-    move as rarity_mode before it) — "Назад" goes back to that chat's own
-    card, not the panel root."""
-    builder = InlineKeyboardBuilder()
-    for value in DIGEST_CHOICES:
-        mark = "• " if value == current else ""
-        label = i18n.get("kb-digest-never") if value >= DIGEST_NEVER else str(value)
-        builder.add(
-            InlineKeyboardButton(
-                text=f"{mark}{label}", callback_data=f"panel:cdigestset:{chat_id}:{value}"
-            )
-        )
-    builder.adjust(4)
-    builder.row(
-        InlineKeyboardButton(text=i18n.get("kb-back"), callback_data=f"panel:chat:{chat_id}")
-    )
-    return builder.as_markup()
 
 
 def deep_link_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
@@ -458,3 +445,18 @@ def switch_prompt(
         )
     parts.append(i18n.get("connect-switch-question", incoming=incoming_name))
     return "\n\n".join(parts)
+
+
+def rarity_keyboard(current: str, i18n: I18nContext) -> InlineKeyboardMarkup:
+    """The person's rarity mode, for every chat at once (#126)."""
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=("✅ " if mode == current else "") + format_rarity(mode, i18n).capitalize(),
+                callback_data=f"panel:rarityset:{mode}",
+            )
+        ]
+        for mode in RARITY_CHOICES
+    ]
+    rows.append([InlineKeyboardButton(text=i18n.get("kb-back"), callback_data="panel:refresh")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

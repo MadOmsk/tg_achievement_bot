@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ChatRow, MeResponse } from "./api";
-import { digestLabel, rarityLabel, t, type Locale } from "./i18n";
+import { rarityLabel, t, type Locale } from "./i18n";
 import { BackHead, Icon, PlatformLogo, Toggle } from "./ui";
 
 export const TIMEZONES: Array<{ min: number; ru: string; en: string }> = [
@@ -190,7 +190,6 @@ function PlatformCard({
   );
 }
 
-const DIGEST_CHOICES = [2, 3, 4, 5, 6, 8, 10, 99] as const;
 
 export function Settings({
   me,
@@ -215,6 +214,7 @@ export function Settings({
     tz_offset_min?: number | null;
     show_profile_links?: boolean;
     show_secrets?: boolean;
+    rarity_mode?: string;
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onAdmin?: () => void;
@@ -239,6 +239,19 @@ export function Settings({
           onBack={() => setPane("root")}
         />
         <div className="glass-card">
+          {/* One mode for every chat this person publishes to (#126). */}
+          <label className="ios-row">
+            <span>{t(locale, "rarity")}</span>
+            <select
+              className="tz-select"
+              value={me.settings.rarity_mode ?? "all"}
+              onChange={(e) => onPatch({ rarity_mode: e.target.value })}
+            >
+              <option value="all">{rarityLabel("all", locale)}</option>
+              <option value="rare">{rarityLabel("rare", locale)}</option>
+              <option value="hidden">{rarityLabel("hidden", locale)}</option>
+            </select>
+          </label>
           <div className="ios-row">
             <span>{t(locale, "showSecrets")}</span>
             <Toggle
@@ -390,40 +403,6 @@ function ChatSettingsCard({
           }
         />
       </div>
-      {chat.is_subscribed ? (
-        <>
-          <label className="ios-row">
-            <span>{t(locale, "rarity")}</span>
-            <select
-              className="tz-select"
-              value={chat.rarity_mode ?? "all"}
-              onChange={(e) =>
-                onPatch(chat.chat_id, { rarity_mode: e.target.value })
-              }
-            >
-              <option value="all">{rarityLabel("all", locale)}</option>
-              <option value="rare">{rarityLabel("rare", locale)}</option>
-              <option value="hidden">{rarityLabel("hidden", locale)}</option>
-            </select>
-          </label>
-          <label className="ios-row">
-            <span>{t(locale, "digest")}</span>
-            <select
-              className="tz-select"
-              value={chat.digest_threshold ?? 3}
-              onChange={(e) =>
-                onPatch(chat.chat_id, { digest_threshold: Number(e.target.value) })
-              }
-            >
-              {DIGEST_CHOICES.map((n) => (
-                <option key={n} value={n}>
-                  {digestLabel(n, locale)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </>
-      ) : null}
     </div>
   );
 }

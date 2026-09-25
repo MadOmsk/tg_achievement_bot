@@ -40,8 +40,8 @@ admin controls, and predictable behavior, not public SaaS scale.
   process only answers `/api/mini/*` next to `/auth/callback`). Slash commands and
   chat notifications stay — the Mini App is an extra door, not a replacement.
 - No `/compare` or `/top` (see the appendix).
-- No per-platform visibility toggles: one `rarity_mode` per person per chat, for
-  every platform (see the appendix).
+- No per-platform visibility toggles: one `rarity_mode` per person, for every
+  platform and every chat (see the appendix; #20 revisits it per account).
 - No live platform API calls from normal read-only commands or panels.
 - No multi-tenant hosting model.
 
@@ -321,13 +321,15 @@ every column. History: #106.
 
 ### Chats and settings
 
-- `chats` + `subscriptions` (who publishes where; `rarity_mode` and
-  `digest_threshold` are per person *per chat*). `chat_settings`: rarity threshold,
-  summary time, timezone, muted games, minimum gamerscore, daily-summary switch,
-  anti-flood `flood_limit`/`flood_window_minutes`, `locale`. `user_settings`:
-  timezone, muted games, `show_profile_links` (off by default; new users start from
+- `chats` + `subscriptions` (who publishes where — nothing else: #126 moved the
+  per-subscription settings out). `chat_settings`: rarity threshold, **digest size**
+  (`digest_threshold`, 99 = never), summary time, timezone, muted games, minimum
+  gamerscore, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
+  `locale`. `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
+  new people start from `app_settings['default_rarity_mode']`), timezone, muted games,
+  `show_profile_links` (off by default; new users start from
   `app_settings['default_show_profile_links']`), `show_secrets` (Mini App only),
-  `locale`.
+  `locale`. Somebody in many chats used to set the mode in each (#126).
 - **Anti-flood state**: `notification_throttle (tg_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
@@ -577,15 +579,16 @@ History: #108.
 History: #108.
 
 An achievement is published to a chat only if every check passes: the person is
-subscribed there; not admin-excluded; `rarity_mode` isn't `hidden`; in `rare` mode a
+subscribed there; not admin-excluded; the person's `rarity_mode` isn't `hidden`; in
+`rare` mode a
 known rarity is at or below the chat's threshold (a platform with no rarity at all —
 Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
 isn't muted there; it wasn't already published there.
 
 - **The threshold is always `chat_settings.rare_threshold_percent`**, set per chat by
   an admin. Never hardcode a percentage; a person picks only a mode.
-- **Digests**: at `subscriptions.digest_threshold` items a batch becomes one grouped
-  message, grouped by platform and title. Every item is listed, never "и ещё N". The
+- **Digests**: at the chat's `digest_threshold` items (set by an admin, #126) a batch
+  becomes one grouped message, grouped by platform and title. Every item is listed, never "и ещё N". The
   gallery dedupes by image URL.
 - **Nothing may fail for being too long** (#68): `services/message_limits.py` is a
   request middleware that cuts any outgoing text to Telegram's limit (4096 message,
@@ -661,10 +664,11 @@ keyboard.
   with links off. Body: login state per platform (Xbox token; Steam/PSN visibility as
   last checked), where achievements publish, presence as **one row**
   (`presence_view.pick_presence`, the same rule `/online` uses — names the platform
-  only while online), timezone. Keyboard: one row per platform in the display order
-  — `[Profile, Disconnect]` or one wide "🎮 Подключить X" (#33) — then timezone, My
-  chats, sync, `show_profile_links`, language (#48, DMs only), per-chat subscription
-  cards. Nothing on it is Xbox-gated. Own profile links always show (only the owner
+  only while online), the rarity mode, timezone. Keyboard: one row per platform in
+  the display order — `[Profile, Disconnect]` or one wide "🎮 Подключить X" (#33) —
+  then timezone, My chats (subscribe / unsubscribe per chat — nothing else is per
+  chat), the rarity mode for every chat (#126), sync, `show_profile_links`, language
+  (#48, DMs only). Nothing on it is Xbox-gated. Own profile links always show (only the owner
   sees it). It never calls a platform API except the explicit sync button.
 
 ### Group chat
@@ -706,8 +710,8 @@ keyboard.
   the chat list and per-chat cards; exclusion; bot-message cleanup.
 - **The per-chat card** keeps its settings in three sub-screens — daily summary,
   anti-flood, message cleanup — each redrawing in place with the card's text above.
-  Settings: rarity threshold, summary time, timezone, mutes, minimum gamerscore,
-  summary switch, anti-flood, language (#48).
+  Settings: rarity threshold, digest size (#126), summary time, timezone, mutes,
+  minimum gamerscore, summary switch, anti-flood, language (#48).
 - **The per-user card**: the Telegram identity in full (`tg_id` passed to Fluent as a
   string, never `@N`), then one block per platform in the display order — nickname,
   lifetime count with completions (🌀/👾/💠) and level, today's count, diagnostics.

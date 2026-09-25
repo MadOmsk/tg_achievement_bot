@@ -41,18 +41,10 @@ panel-back = ‹ Назад
 panel-chat-card-title = 💬 { $title }
 panel-publication-enabled = Публикация: ✅ включена
 panel-publication-disabled = Публикация: ⏸ выключена
-panel-achievements-mode = Ачивки: { $mode }
-panel-digest-row = Сводка: { $threshold } ▸
 panel-unsubscribe = Отписаться
 panel-subscribe = Подписаться
 panel-remove-from-list = Удалить из списка
 panel-back-to-chat-list = ‹ К списку чатов
-panel-digest-menu =
-    Сводка вместо отдельных сообщений
-
-    Если за один раз в одной игре выбито столько достижений или больше — в этот чат уйдёт одно сводное сообщение.
-panel-digest-set-never-toast = Никогда
-panel-digest-set-from-toast = От { $value }
 panel-subscribed-toast = Подписал
 panel-unsub-prompt = Перестать публиковать твои достижения в «{ $title }»?
 panel-unsub-yes = Да, отписаться
@@ -90,6 +82,11 @@ panel-visibility-visible = ✅ ачивки видны
 panel-visibility-hidden = ⚠️ ачивки скрыты
 panel-visibility-unknown = ❓ не проверено
 panel-publication-row = Публикация:  { $status }
+panel-rarity-row = Ачивки:      { $mode }
+panel-rarity-prompt =
+    Какие ачивки публиковать — во всех твоих чатах сразу.
+
+    «Только редкие» считаются по порогу редкости каждого чата.
 panel-now-playing-row = Сейчас:      { $playing }
 panel-timezone-row = Часовой пояс: { $offset }
 panel-reconnect-hint = Доступ к XBOX истёк — жми «Подключить заново» ниже.

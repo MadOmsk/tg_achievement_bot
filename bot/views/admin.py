@@ -12,6 +12,8 @@ reason: poller/admin_refresh.py redraws it on a timer.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -56,6 +58,8 @@ from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
     COMMON_OFFSETS_HOURS,
+    DIGEST_CHOICES,
+    DIGEST_NEVER,
     format_offset,
     format_rarity,
     locale_name,
@@ -607,6 +611,12 @@ async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeybo
     return _("admin-chats-header"), keyboard
 
 
+def _digest_label(threshold: int, _: Callable[..., str]) -> str:
+    if threshold >= DIGEST_NEVER:
+        return _("admin-digest-never")
+    return _("admin-digest-from", value=threshold)
+
+
 async def render_chat_card(
     repo: Repo, chat_id: int, *, locale: str, section: str | None = None
 ) -> tuple[str, InlineKeyboardMarkup]:
@@ -641,6 +651,7 @@ async def render_chat_card(
         offset=zone_label,
         min_score=chat.min_gamerscore,
         flood=flood_label,
+        digest=_digest_label(chat.digest_threshold, _),
         locale_name=locale_name(chat.locale),
         names=(
             _("admin-subscribers-list", names=", ".join(names))
@@ -691,6 +702,32 @@ async def render_chat_card(
         builder.row(back_to_card)
         return text, builder.as_markup()
 
+    if section == "digest":
+        # How many achievements of one person at once make one digest —
+        # the chat's, since #126 (it was each person's, per subscription).
+        builder.row(
+            *[
+                InlineKeyboardButton(
+                    text=("✅ " if value == chat.digest_threshold else "")
+                    + (_("admin-digest-never") if value >= DIGEST_NEVER else str(value)),
+                    callback_data=f"a:cdig:{chat_id}:{value}",
+                )
+                for value in DIGEST_CHOICES[:4]
+            ]
+        )
+        builder.row(
+            *[
+                InlineKeyboardButton(
+                    text=("✅ " if value == chat.digest_threshold else "")
+                    + (_("admin-digest-never") if value >= DIGEST_NEVER else str(value)),
+                    callback_data=f"a:cdig:{chat_id}:{value}",
+                )
+                for value in DIGEST_CHOICES[4:]
+            ]
+        )
+        builder.row(back_to_card)
+        return text, builder.as_markup()
+
     if section == "messages":
         # One wipe action per row here: these are the destructive ones, and a
         # cramped row of four 🗑 buttons was exactly what made them easy to
@@ -720,6 +757,12 @@ async def render_chat_card(
         InlineKeyboardButton(
             text=_("admin-chat-threshold-button", threshold=threshold_label),
             callback_data=f"a:crt:{chat_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-chat-digest-button", digest=_digest_label(chat.digest_threshold, _)),
+            callback_data=f"a:mdig:{chat_id}",
         )
     )
     builder.row(

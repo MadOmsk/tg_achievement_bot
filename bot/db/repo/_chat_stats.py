@@ -24,6 +24,7 @@ from bot.db.repo._sql import (
     earned_at,
     earned_since,
     pick_name,
+    publishes,
     rarity,
     rarity_cache_join,
 )
@@ -172,7 +173,7 @@ class _ChatStatsRepo:
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + f"WHERE u.is_excluded = 0 AND sub.rarity_mode != 'hidden' {date_bound} "
+            + f"WHERE u.is_excluded = 0 AND {publishes()} {date_bound} "
             "GROUP BY u.tg_id, s.title_id, s.platform "
             "HAVING unlocked >= 1 AND unlocked <= ? "
             "ORDER BY unlocked ASC, last_earned ASC LIMIT ?",

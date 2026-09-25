@@ -22,7 +22,13 @@ const me: MeResponse = {
   last_name: null,
   is_admin: true,
   is_excluded: false,
-  settings: { locale: "ru", tz_offset_min: 180, show_profile_links: false, show_secrets: false },
+  settings: {
+    locale: "ru",
+    tz_offset_min: 180,
+    show_profile_links: false,
+    show_secrets: false,
+    rarity_mode: "all",
+  },
   xbox: {
     linked: true,
     gamertag: "RideTheSun",
@@ -51,8 +57,6 @@ const me: MeResponse = {
       chat_id: -100,
       title: "Тусовка",
       is_subscribed: true,
-      rarity_mode: "all",
-      digest_threshold: 3,
     },
   ],
   publication: { excluded: false, chat_titles: ["Тусовка"] },
@@ -272,6 +276,7 @@ const adminChat: AdminChatRow = {
   min_gamerscore: 0,
   flood_limit: 3,
   flood_window_minutes: 60,
+  digest_threshold: 3,
   locale: "ru",
 };
 
@@ -492,16 +497,8 @@ export function previewResponse(path: string, init?: RequestInit): unknown {
     if (!chat) return { ok: true, chat: null };
     if (body.action === "subscribe") {
       chat.is_subscribed = true;
-      chat.rarity_mode = chat.rarity_mode ?? "all";
-      chat.digest_threshold = chat.digest_threshold ?? 3;
     } else if (body.action === "unsubscribe") {
       chat.is_subscribed = false;
-      chat.rarity_mode = null;
-      chat.digest_threshold = null;
-    } else if (body.action === "set_rarity") {
-      chat.rarity_mode = String(body.rarity_mode ?? "all");
-    } else if (body.action === "set_digest") {
-      chat.digest_threshold = Number(body.digest_threshold ?? 3);
     }
     return { ok: true, chat: { ...chat } };
   }

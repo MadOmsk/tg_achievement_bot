@@ -9,8 +9,6 @@ export type ChatRow = {
   chat_id: number;
   title: string | null;
   is_subscribed: boolean;
-  rarity_mode: string | null;
-  digest_threshold: number | null;
 };
 
 export type MeResponse = {
@@ -25,6 +23,8 @@ export type MeResponse = {
     tz_offset_min: number | null;
     show_profile_links: boolean;
     show_secrets: boolean;
+    /** Which achievements go out, in every chat (#126). */
+    rarity_mode: string;
   };
   xbox: {
     linked: boolean;
@@ -154,6 +154,7 @@ export function patchSettings(
     tz_offset_min: number | null;
     show_profile_links: boolean;
     show_secrets: boolean;
+    rarity_mode: string;
   }>,
 ): Promise<MeResponse> {
   return api(initData, "/api/mini/settings", {
@@ -464,6 +465,8 @@ export type AdminChatRow = {
   min_gamerscore: number;
   flood_limit: number;
   flood_window_minutes: number;
+  /** One person's achievements at once that make one digest; 99 = never (#126). */
+  digest_threshold: number;
   locale: string;
 };
 

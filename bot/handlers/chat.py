@@ -882,21 +882,16 @@ async def subscribe_button(
 
     await repo.upsert_chat(message.chat.id, message.chat.title, callback.from_user.id)
     async with _subscription_lock(message.chat.id, callback.from_user.id):
-        current_mode = await repo.get_subscription_rarity_mode(
-            message.chat.id, callback.from_user.id
-        )
-        if current_mode is None:
+        # Subscribing here, or — once subscribed — cycling the person's own
+        # rarity mode, which since #126 applies to every chat they are in.
+        settings_row = await repo.get_user_settings(callback.from_user.id)
+        current_mode = settings_row.rarity_mode if settings_row else RarityMode.ALL
+        if not await repo.is_subscribed(message.chat.id, callback.from_user.id):
             await repo.subscribe(message.chat.id, callback.from_user.id)
-            current_mode = (
-                await repo.get_subscription_rarity_mode(message.chat.id, callback.from_user.id)
-                or RarityMode.ALL
-            )
             toast = i18n.get(f"chat-hub-toast-{current_mode}")
         else:
             new_mode = next_rarity_mode(current_mode)
-            await repo.update_subscription_rarity_mode(
-                message.chat.id, callback.from_user.id, new_mode
-            )
+            await repo.update_user_settings(callback.from_user.id, rarity_mode=new_mode)
             toast = i18n.get(f"chat-hub-toast-{new_mode}")
 
     await callback.answer(toast)

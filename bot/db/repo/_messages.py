@@ -32,6 +32,7 @@ from bot.db.repo._sql import (
     earned_date_is_real,
     earned_since,
     pick_name,
+    publishes,
     rarity,
     rarity_cache_join,
 )
@@ -101,7 +102,8 @@ class _MessagesRepo:
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + "WHERE s.chat_id = ? AND u.is_excluded = 0 AND s.rarity_mode != 'hidden'",
+            + "WHERE s.chat_id = ? AND u.is_excluded = 0 AND "
+            + publishes(),
             (chat_id,),
         )
         return [

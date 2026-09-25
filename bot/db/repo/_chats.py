@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 
-from bot.constants import RarityMode
 from bot.db.repo._models import ChatDailySettings, ChatTarget, UserChatRow
 from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.util import utcnow_iso
@@ -53,17 +52,9 @@ class _ChatsRepo:
         return await cursor.fetchone() is not None
 
     async def subscribe(self, chat_id: int, tg_id: int) -> None:
-        # rarity_mode is explicit here, not left to the column's own
-        # DEFAULT 'all' — an admin-configurable starting point
-        # (app_settings['default_rarity_mode'], handlers/admin.py) now
-        # decides it instead of a value baked into the schema. The column
-        # default stays 'all' regardless, as a safety net for any insert
-        # that (today or in the future) doesn't go through this method.
-        default_rarity_mode = await self.get_app_setting("default_rarity_mode", RarityMode.ALL)
         await self._conn.execute(
-            "INSERT OR IGNORE INTO subscriptions (chat_id, tg_id, created_at, rarity_mode) "
-            "VALUES (?, ?, ?, ?)",
-            (chat_id, tg_id, utcnow_iso(), default_rarity_mode),
+            "INSERT OR IGNORE INTO subscriptions (chat_id, tg_id, created_at) VALUES (?, ?, ?)",
+            (chat_id, tg_id, utcnow_iso()),
         )
         await self._conn.commit()
 
@@ -79,25 +70,13 @@ class _ChatsRepo:
         )
         return await cursor.fetchone() is not None
 
-    async def get_subscription_rarity_mode(self, chat_id: int, tg_id: int) -> str | None:
-        """The person's current rarity mode for this chat, or None if not subscribed (#54)."""
-        cursor = await self._conn.execute(
-            "SELECT rarity_mode FROM subscriptions WHERE chat_id = ? AND tg_id = ?",
-            (chat_id, tg_id),
-        )
-        row = await cursor.fetchone()
-        return row["rarity_mode"] if row else None
-
     async def user_chats(self, tg_id: int) -> list[UserChatRow]:
         """Every chat this person has ever touched (SPEC 6.2's "Мои чаты") —
         subscribed at some point, or just seen writing there, same membership
         `/online` uses (SPEC 6.3). A chat the bot got kicked from is left out:
-        nothing to manage there any more. `rarity_mode`/`digest_threshold`
-        come along too (SPEC 9, M-Steam-2e's follow-up, and 2026-09-05's for
-        digest_threshold — both live per subscription now), NULL when not
-        currently subscribed."""
+        nothing to manage there any more."""
         cursor = await self._conn.execute(
-            "SELECT c.chat_id, c.title, s.rarity_mode, s.digest_threshold "
+            "SELECT c.chat_id, c.title, s.chat_id AS subscribed "
             "FROM chats c "
             "LEFT JOIN subscriptions s ON s.chat_id = c.chat_id AND s.tg_id = ? "
             "WHERE c.is_active = 1 AND c.chat_id IN ("
@@ -105,7 +84,7 @@ class _ChatsRepo:
             "  UNION "
             "  SELECT chat_id FROM chat_seen WHERE tg_id = ?"
             ") "
-            "ORDER BY CASE WHEN s.rarity_mode IS NOT NULL THEN 0 ELSE 1 END,"
+            "ORDER BY CASE WHEN s.chat_id IS NOT NULL THEN 0 ELSE 1 END,"
             "  (SELECT MAX(cs.last_seen_at) FROM chat_seen cs"
             "    WHERE cs.chat_id = c.chat_id AND cs.tg_id = ?) DESC,"
             "  c.title",
@@ -115,36 +94,10 @@ class _ChatsRepo:
             UserChatRow(
                 chat_id=row["chat_id"],
                 title=row["title"],
-                is_subscribed=row["rarity_mode"] is not None,
-                rarity_mode=row["rarity_mode"],
-                digest_threshold=row["digest_threshold"],
+                is_subscribed=row["subscribed"] is not None,
             )
             for row in await cursor.fetchall()
         ]
-
-    async def update_subscription_rarity_mode(
-        self, chat_id: int, tg_id: int, rarity_mode: str
-    ) -> None:
-        """The person's own rarity choice for one specific chat (SPEC 9,
-        M-Steam-2e's follow-up — panel.py's "Мои чаты" card, not the main
-        panel screen any more)."""
-        await self._conn.execute(
-            "UPDATE subscriptions SET rarity_mode = ? WHERE chat_id = ? AND tg_id = ?",
-            (rarity_mode, chat_id, tg_id),
-        )
-        await self._conn.commit()
-
-    async def update_subscription_digest_threshold(
-        self, chat_id: int, tg_id: int, digest_threshold: int
-    ) -> None:
-        """The person's own digest threshold for one specific chat
-        (Follow-up, 2026-09-05 — panel.py's "Мои чаты" card, not the main
-        panel screen any more, same move as rarity_mode above)."""
-        await self._conn.execute(
-            "UPDATE subscriptions SET digest_threshold = ? WHERE chat_id = ? AND tg_id = ?",
-            (digest_threshold, chat_id, tg_id),
-        )
-        await self._conn.commit()
 
     async def forget_chat_membership(self, chat_id: int, tg_id: int) -> None:
         """ "Delete" a chat from a person's own list (SPEC 6.2) — resets him to
@@ -169,11 +122,12 @@ class _ChatsRepo:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, s.min_gamerscore, s.muted_title_ids,"
             "       s.rare_threshold_percent, s.daily_summary_time, s.tz_offset_min,"
-            "       s.flood_limit, s.flood_window_minutes, s.locale,"
-            "       sub.rarity_mode, sub.digest_threshold "
+            "       s.flood_limit, s.flood_window_minutes, s.locale, s.digest_threshold,"
+            "       COALESCE(us.rarity_mode, 'all') AS rarity_mode "
             "FROM subscriptions sub "
             "JOIN chats c ON c.chat_id = sub.chat_id "
             "JOIN chat_settings s ON s.chat_id = c.chat_id "
+            "LEFT JOIN user_settings us ON us.tg_id = sub.tg_id "
             "WHERE sub.tg_id = ? AND c.is_active = 1",
             (tg_id,),
         )

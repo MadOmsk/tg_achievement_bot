@@ -86,7 +86,7 @@ async def test_subscribe_button_first_press_subscribes_with_admin_default_all(
     await subscribe_button(callback, repo, bot, i18n, settings)
 
     assert await repo.is_subscribed(CHAT_ID, TG_ID)
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) == RarityMode.ALL
+    assert await _mode(repo) == RarityMode.ALL
     callback.answer.assert_called_once_with("Публикую все достижения")
     message.edit_text.assert_called_once()
 
@@ -103,7 +103,7 @@ async def test_subscribe_button_first_press_subscribes_with_admin_default_rare(
     await subscribe_button(callback, repo, bot, i18n, settings)
 
     assert await repo.is_subscribed(CHAT_ID, TG_ID)
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) == RarityMode.RARE
+    assert await _mode(repo) == RarityMode.RARE
     callback.answer.assert_called_once_with("Только редкие")
 
 
@@ -117,7 +117,7 @@ async def test_subscribe_button_cycles_all_rare_hidden_all(
     # 1. Initial subscription -> ALL
     callback1, _ = _make_callback()
     await subscribe_button(callback1, repo, bot, i18n, settings)
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) == RarityMode.ALL
+    assert await _mode(repo) == RarityMode.ALL
     callback1.answer.assert_called_once_with("Публикую все достижения")
     subs1 = await repo.chat_subscribers(CHAT_ID)
     assert any(s.tg_id == TG_ID for s in subs1)
@@ -125,7 +125,7 @@ async def test_subscribe_button_cycles_all_rare_hidden_all(
     # 2. Press again -> RARE
     callback2, _ = _make_callback()
     await subscribe_button(callback2, repo, bot, i18n, settings)
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) == RarityMode.RARE
+    assert await _mode(repo) == RarityMode.RARE
     callback2.answer.assert_called_once_with("Только редкие")
     subs2 = await repo.chat_subscribers(CHAT_ID)
     assert any(s.tg_id == TG_ID for s in subs2)
@@ -133,25 +133,32 @@ async def test_subscribe_button_cycles_all_rare_hidden_all(
     # 3. Press again -> HIDDEN
     callback3, _ = _make_callback()
     await subscribe_button(callback3, repo, bot, i18n, settings)
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) == RarityMode.HIDDEN
-    callback3.answer.assert_called_once_with("Ничего не публикую здесь")
+    assert await _mode(repo) == RarityMode.HIDDEN
+    callback3.answer.assert_called_once_with("Ничего не публикую")
     subs3 = await repo.chat_subscribers(CHAT_ID)
     assert not any(s.tg_id == TG_ID for s in subs3)  # Excluded from hub publishing roster!
 
     # 4. Press again -> ALL
     callback4, _ = _make_callback()
     await subscribe_button(callback4, repo, bot, i18n, settings)
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) == RarityMode.ALL
+    assert await _mode(repo) == RarityMode.ALL
     callback4.answer.assert_called_once_with("Публикую все достижения")
     subs4 = await repo.chat_subscribers(CHAT_ID)
     assert any(s.tg_id == TG_ID for s in subs4)  # Back in roster!
 
 
-async def test_get_subscription_rarity_mode_unsubscribed(repo: Repo) -> None:
+async def test_the_mode_outlives_a_subscription(repo: Repo) -> None:
+    """The mode is the person's since #126: unsubscribing from one chat
+    leaves it as it was for every other."""
     await repo.upsert_chat(CHAT_ID, "Chat", 1)
     await repo.ensure_user(TG_ID, "tester")
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) is None
     await repo.subscribe(CHAT_ID, TG_ID)
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) == RarityMode.ALL
+    await repo.update_user_settings(TG_ID, rarity_mode=RarityMode.RARE)
     await repo.unsubscribe(CHAT_ID, TG_ID)
-    assert await repo.get_subscription_rarity_mode(CHAT_ID, TG_ID) is None
+    assert await _mode(repo) == RarityMode.RARE
+
+
+async def _mode(repo: Repo) -> str:
+    settings_row = await repo.get_user_settings(TG_ID)
+    assert settings_row is not None
+    return settings_row.rarity_mode

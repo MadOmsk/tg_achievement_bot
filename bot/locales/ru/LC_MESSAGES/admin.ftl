@@ -258,6 +258,7 @@ admin-chat-card =
     Состояние:    { $state }
     Публикуется:  { $subscribers } чел.
     Порог редк.:  { $threshold }
+    Дайджест:     { $digest }
     Итог дня:     { $summary }, в { $time }
     Часовой пояс: { $offset }
     Мин. G:       { $min_score }
@@ -270,6 +271,9 @@ admin-chat-flood-off = выключен
 admin-no-subscribers = Подписанных пока нет.
 admin-subscribers-list = Подписаны: { $names }
 admin-chat-threshold-button = Порог редкости: { $threshold } ▸
+admin-chat-digest-button = Дайджест: { $digest } ▸
+admin-digest-from = от { $value } ач.
+admin-digest-never = никогда
 admin-chat-summary-button = Итог дня: { $state }
 admin-chat-time-button = Время итога: { $time } ({ $offset }) ▸
 admin-chat-flood-toggle-button = Антиспам-фильтр: { $state }

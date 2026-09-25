@@ -10,7 +10,7 @@ const ru = {
   notifications: "Уведомления",
   myChats: "Чаты",
   myChatsHint:
-    "Где публиковать твои ачивки: включи чат, выбери редкость и дайджест.",
+    "Где публиковать твои ачивки. Какие именно — в настройке «Редкость».",
   admin: "Админ",
   language: "Язык",
   timezone: "Часовой пояс",
@@ -209,7 +209,7 @@ const en: Record<keyof typeof ru, string> = {
   notifications: "Notifications",
   myChats: "Chats",
   myChatsHint:
-    "Where to post your unlocks: turn a chat on, pick rarity and digest.",
+    "Where to post your unlocks. Which ones — see the Rarity setting.",
   admin: "Admin",
   language: "Language",
   timezone: "Timezone",

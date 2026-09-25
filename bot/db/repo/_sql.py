@@ -128,6 +128,16 @@ def earned_since(prefix: str = "s.") -> str:
     return f"{earned_date_is_real(prefix)} AND {earned_at(prefix)} >= ?"
 
 
+# A person whose rarity mode is "none" publishes nothing, and is left out of a
+# chat's lists that are about what gets published (#126: the mode is the
+# person's, not the subscription's). Takes the users alias.
+def publishes(user_alias: str = "u") -> str:
+    return (
+        "NOT EXISTS (SELECT 1 FROM user_settings us_mode"
+        f" WHERE us_mode.tg_id = {user_alias}.tg_id AND us_mode.rarity_mode = 'hidden')"
+    )
+
+
 # --------------------------------------------------------------- names (#61)
 
 # The catalog row holding an achievement's name in both languages (#61, #119),

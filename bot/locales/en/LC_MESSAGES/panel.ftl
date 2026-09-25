@@ -41,18 +41,10 @@ panel-back = ‹ Back
 panel-chat-card-title = 💬 { $title }
 panel-publication-enabled = Publishing: ✅ on
 panel-publication-disabled = Publishing: ⏸ off
-panel-achievements-mode = Achievements: { $mode }
-panel-digest-row = Digest: { $threshold } ▸
 panel-unsubscribe = Unsubscribe
 panel-subscribe = Subscribe
 panel-remove-from-list = Remove from the list
 panel-back-to-chat-list = ‹ Back to the chat list
-panel-digest-menu =
-    One digest instead of separate messages
-
-    If this many achievements or more are unlocked at once in one game, this chat gets a single combined message.
-panel-digest-set-never-toast = Never
-panel-digest-set-from-toast = From { $value }
 panel-subscribed-toast = Subscribed
 panel-unsub-prompt = Stop publishing your achievements in “{ $title }”?
 panel-unsub-yes = Yes, unsubscribe
@@ -93,6 +85,11 @@ panel-visibility-visible = ✅ achievements visible
 panel-visibility-hidden = ⚠️ achievements hidden
 panel-visibility-unknown = ❓ not checked
 panel-publication-row = Publishing:   { $status }
+panel-rarity-row = Achievements: { $mode }
+panel-rarity-prompt =
+    Which achievements to publish — in all your chats at once.
+
+    "Rare only" follows each chat's own rarity threshold.
 panel-now-playing-row = Now:          { $playing }
 panel-timezone-row = Timezone:     { $offset }
 panel-reconnect-hint = Your XBOX access has expired — press “Connect again” below.

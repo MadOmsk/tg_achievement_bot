@@ -65,9 +65,13 @@ class _AccountsRepo:
         # column default stays 0 regardless, as a safety net for any insert
         # that (today or in the future) doesn't go through this method.
         default_show_links = await self.get_int_setting("default_show_profile_links", 0)
+        # The rarity mode too (#126): it moved here from the subscription, and
+        # the admin's default for new people moved with it.
+        default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
         await self._conn.execute(
-            "INSERT OR IGNORE INTO user_settings (tg_id, show_profile_links) VALUES (?, ?)",
-            (tg_id, default_show_links),
+            "INSERT OR IGNORE INTO user_settings (tg_id, show_profile_links, rarity_mode)"
+            " VALUES (?, ?, ?)",
+            (tg_id, default_show_links, default_rarity_mode or "all"),
         )
         await self._conn.commit()
 
@@ -607,7 +611,7 @@ class _AccountsRepo:
         return row["locale"] if row else DEFAULT_LOCALE
 
     async def update_user_settings(self, tg_id: int, **fields: Any) -> None:
-        allowed = {"tz_offset_min", "show_profile_links", "show_secrets", "locale"}
+        allowed = {"tz_offset_min", "show_profile_links", "show_secrets", "locale", "rarity_mode"}
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"unknown user_settings fields: {sorted(unknown)}")

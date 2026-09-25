@@ -46,10 +46,10 @@ async def _setup_chat(
     await repo.update_chat_settings(
         CHAT_ID, flood_limit=flood_limit, flood_window_minutes=flood_window_minutes
     )
-    # digest_threshold is a separate, unrelated mechanism (lives on the
-    # subscription) — pushed out of reach so these tests aren't accidentally
+    # digest_threshold is a separate, unrelated mechanism (the chat's since
+    # #126) — pushed out of reach so these tests aren't accidentally
     # exercising it too when several achievements land in one publish() call.
-    await repo.update_subscription_digest_threshold(CHAT_ID, TG_ID, 99)
+    await repo.update_chat_settings(CHAT_ID, digest_threshold=99)
 
 
 async def test_flood_filter_allows_the_limit_then_buffers_the_rest(repo: Repo) -> None:
@@ -112,7 +112,7 @@ async def test_flood_filter_never_starts_a_timer_for_a_filtered_out_achievement(
     rarity_mode=hidden means nothing is ever notified here, so nothing
     should ever touch notification_throttle either."""
     await _setup_chat(repo, flood_limit=1)
-    await repo.update_subscription_rarity_mode(CHAT_ID, TG_ID, RarityMode.HIDDEN)
+    await repo.update_user_settings(TG_ID, rarity_mode=RarityMode.HIDDEN)
     publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
     item = achievement("z1")
     await repo.insert_new_achievements(XUID, [item], is_backfill=False)
