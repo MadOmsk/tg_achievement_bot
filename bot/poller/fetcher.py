@@ -22,6 +22,10 @@ from bot.util import parse_iso, utcnow, utcnow_iso
 
 log = logging.getLogger(__name__)
 
+# How far back backfill reads the title history (#121). Microsoft answers a
+# thousand-title account inside title_history's own deadline (~46s measured).
+BACKFILL_HISTORY_ITEMS = 2000
+
 
 class Fetcher:
     def __init__(
@@ -342,7 +346,11 @@ class Fetcher:
             # account, where an Xbox 360 game with 33 unlocked achievements was
             # absent from the full list. Without this second pass the first
             # session in such a game would look like 33 fresh unlocks.
-            history = await self._client.title_history(tg_id)
+            # The whole history, not the 200 most recent the pollers read:
+            # an Xbox 360 game is found only here, and a long-standing account
+            # has hundreds — 342 of 1096 titles on one, of which the default
+            # window held 13 (#121).
+            history = await self._client.title_history(tg_id, max_items=BACKFILL_HISTORY_ITEMS)
             for entry in history:
                 if entry.platform != Platform.XBOX_360:
                     continue

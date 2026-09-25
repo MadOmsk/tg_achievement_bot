@@ -31,6 +31,7 @@ MODERN_PAYLOAD = {
     ]
 }
 
+# Contract 1: what the caller earned, no rarity (the real shape, #121).
 X360_PAYLOAD = {
     "achievements": [
         {
@@ -40,10 +41,13 @@ X360_PAYLOAD = {
             "gamerscore": 25,
             "unlocked": True,
             "timeUnlocked": "2026-01-01T00:00:00.0000000Z",
+            "imageId": 12,
         }
     ]
 }
 
+# Contract 3: the whole game with rarity — and every item "unlocked": false,
+# because it describes the game, not the caller (verified live, #121).
 X360_C3_PAYLOAD = {
     "achievements": [
         {
@@ -51,12 +55,23 @@ X360_C3_PAYLOAD = {
             "titleId": 222,
             "name": "Old school",
             "gamerscore": 25,
-            "unlocked": True,
-            "timeUnlocked": "2026-01-01T00:00:00.0000000Z",
+            "unlocked": False,
+            "timeUnlocked": "2002-11-15T00:00:00.0000000Z",
             "imageId": 12,
             "rarity": {"currentPercentage": 4.5},
             "isSecret": False,
-        }
+        },
+        {
+            "id": 8,
+            "titleId": 222,
+            "name": "Not yet",
+            "gamerscore": 10,
+            "unlocked": False,
+            "timeUnlocked": "2002-11-15T00:00:00.0000000Z",
+            "imageId": 13,
+            "rarity": {"currentPercentage": 40.0},
+            "isSecret": False,
+        },
     ]
 }
 
@@ -117,12 +132,13 @@ async def test_modern_title_uses_contract_4_only() -> None:
 async def test_back_compat_title_uses_contract_3() -> None:
     """Presence reports the console, not the game. A 360 title played on a
     Series X arrives as "xbox_modern" and contract 4 answers with an empty list —
-    client retries with contract 3 on /titleachievements, discovering rarity and icons."""
-    session = StubSession({"4": {"achievements": []}, "3": X360_C3_PAYLOAD})
+    the client asks the Xbox 360 contracts: what was earned from contract 1,
+    its rarity from contract 3 (#121)."""
+    session = StubSession({"4": {"achievements": []}, "3": X360_C3_PAYLOAD, "1": X360_PAYLOAD})
 
     parsed = await _client(session).title_achievements(1, "222", "xbox_modern")
 
-    assert session.contracts == ["4", "3"]
+    assert session.contracts == ["4", "3", "1"]
     assert len(parsed) == 1
     assert parsed[0].platform == "xbox_360"
     assert parsed[0].rarity_percent == 4.5
@@ -144,12 +160,33 @@ async def test_back_compat_title_falls_back_to_contract_1() -> None:
 
 
 async def test_known_x360_console_uses_contract_3() -> None:
-    session = StubSession({"3": X360_C3_PAYLOAD})
+    session = StubSession({"3": X360_C3_PAYLOAD, "1": X360_PAYLOAD})
     parsed = await _client(session).title_achievements(1, "222", "xbox_360")
 
-    assert session.contracts == ["3"]
+    assert session.contracts == ["3", "1"]
+    assert [a.achievement_id for a in parsed] == ["7"]
     assert parsed[0].platform == "xbox_360"
     assert parsed[0].rarity_percent == 4.5
+
+
+async def test_x360_earned_come_from_contract_1_and_the_total_from_contract_3() -> None:
+    """Contract 3 alone kept nothing as earned — every item there reads
+    "unlocked": false — so no Xbox 360 unlock was stored or published (#121)."""
+    session = StubSession({"3": X360_C3_PAYLOAD, "1": X360_PAYLOAD})
+
+    parsed, total = await _client(session).title_achievements_with_total(1, "222", "xbox_360")
+
+    assert [a.achievement_id for a in parsed] == ["7"]
+    assert total == 2  # the whole game, not the one earned
+
+
+async def test_x360_full_list_comes_from_contract_3_alone() -> None:
+    session = StubSession({"3": X360_C3_PAYLOAD})
+
+    parsed = await _client(session).title_achievements(1, "222", "xbox_360", earned_only=False)
+
+    assert session.contracts == ["3"]
+    assert [a.achievement_id for a in parsed] == ["7", "8"]
 
 
 async def test_known_x360_console_falls_back_to_contract_1_and_skips_contract_4() -> None:
@@ -166,7 +203,7 @@ async def test_title_rarity_with_name_x360_contract_3() -> None:
     rarity, name = await _client(session).title_rarity_with_name(1, "222")
 
     assert session.contracts == ["4", "3"]
-    assert rarity == {"7": 4.5}
+    assert rarity == {"7": 4.5, "8": 40.0}  # the whole game, earned or not
     assert name is None
 
 

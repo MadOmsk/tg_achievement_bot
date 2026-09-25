@@ -207,14 +207,8 @@ class XboxClient:
         """
         params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         if platform == Platform.XBOX_360:
-            payload = await self._get_achievements(
-                tg_id, "3", params, language=language, endpoint="titleachievements"
-            )
-            if not payload.get("achievements"):
-                payload = await self._get_achievements(tg_id, "1", params, language=language)
-            return (
-                parse_achievements(payload, Platform.XBOX_360, title_id, earned_only=earned_only),
-                _total_in(payload),
+            return await self._x360_achievements(
+                tg_id, title_id, params, language=language, earned_only=earned_only
             )
 
         payload = await self._get_achievements(tg_id, "4", params, language=language)
@@ -226,16 +220,48 @@ class XboxClient:
                 _total_in(payload),
             )
 
-        log.info("title %s looks like Xbox 360, retrying on contract 3", title_id)
-        payload = await self._get_achievements(
+        log.info("title %s looks like Xbox 360, asking the Xbox 360 contracts", title_id)
+        return await self._x360_achievements(
+            tg_id, title_id, params, language=language, earned_only=earned_only
+        )
+
+    async def _x360_achievements(
+        self,
+        tg_id: int,
+        title_id: str,
+        params: dict[str, str],
+        *,
+        language: str,
+        earned_only: bool,
+    ) -> tuple[list[ParsedAchievement], int]:
+        """An Xbox 360 game takes two contracts, each knowing half (#121).
+
+        Contract 3 (`/titleachievements`) lists the whole game with rarity,
+        but it describes the game, not the caller: every item reads
+        `unlocked: false`. Contract 1 (`/achievements`) lists what the caller
+        earned, without rarity. Reading only contract 3 — what 1a85e94 did —
+        kept nothing as earned: no Xbox 360 unlock was stored, backfilled or
+        published from then on (Gears of War 3: 82 listed, 0 kept, 34 earned).
+
+        So the earned ones come from contract 1, their rarity and the game's
+        total from contract 3; the full list (`earned_only=False`, the
+        catalog) from contract 3 alone.
+        """
+        listing = await self._get_achievements(
             tg_id, "3", params, language=language, endpoint="titleachievements"
         )
-        if not payload.get("achievements"):
-            payload = await self._get_achievements(tg_id, "1", params, language=language)
-        return (
-            parse_achievements(payload, Platform.XBOX_360, title_id, earned_only=earned_only),
-            _total_in(payload),
-        )
+        total = _total_in(listing)
+        if not earned_only and listing.get("achievements"):
+            return parse_achievements(
+                listing, Platform.XBOX_360, title_id, earned_only=False
+            ), total
+        mine = await self._get_achievements(tg_id, "1", params, language=language)
+        earned = parse_achievements(mine, Platform.XBOX_360, title_id, earned_only=earned_only)
+        rarity, _ = parse_rarity_with_title(listing)
+        for item in earned:
+            if item.rarity_percent is None:
+                item.rarity_percent = rarity.get(item.achievement_id)
+        return earned, total or _total_in(mine)
 
     async def title_rarity(self, tg_id: int, title_id: str) -> dict[str, float]:
         """Every achievement's rarity for one modern or back-compat title, earned or not."""
