@@ -1092,7 +1092,10 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   tracked in `app_settings.last_announced_version`: to active group chats only, in each
   chat's locale. Prod sends the summary bullets and a button to the full notes on
   GitHub; the test and dev servers send no links. 0.05s between sends; a chat that
-  forbids the bot is deactivated.
+  forbids the bot (or no longer exists) is deactivated — except on the test bot,
+  which usually runs on a copy of production's database and is simply not a
+  member of those chats: it only logs, so a version bump cannot empty the copy's
+  chat list and, with it, the Mini App.
 
 ### Backups
 
