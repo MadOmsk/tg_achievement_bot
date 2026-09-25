@@ -43,6 +43,11 @@ class Fetcher:
         self._anthropic_auth = anthropic_auth
         self._backfill_slots = asyncio.Semaphore(concurrency)
         self._background_tasks: set[asyncio.Task[None]] = set()
+        # Titles every contract answered empty for — apps, and PC titles
+        # without achievements, that presence still reports as being played
+        # (#122). Asked once per process: without this each costs three
+        # requests every achievement debounce for as long as somebody is in it.
+        self._no_achievements: set[str] = set()
 
     def api_usage(self) -> list[tuple[int, int, float]]:
         """(used, limit, window_seconds) — surfaced in the admin panel
@@ -60,7 +65,16 @@ class Fetcher:
         device: str | None = None,
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
+        # Presence sometimes reports a title id of 0 — no game at all (#122).
+        if not title_id or title_id == "0" or title_id in self._no_achievements:
+            return 0
         parsed, total = await self._client.title_achievements_with_total(tg_id, title_id, platform)
+        if not parsed and not total:
+            # Not "nothing new": nothing listed by any contract, so the title
+            # has no achievements to earn (a game always lists its whole set).
+            log.info("title %s has no achievements, not asking again", title_id)
+            self._no_achievements.add(title_id)
+            return 0
         # The size of the set those unlocks came from — the "47/50" counter's
         # own denominator (#46). titlehub reports it for Xbox 360 and returns
         # 0 for most modern titles, so for those this response is the only
