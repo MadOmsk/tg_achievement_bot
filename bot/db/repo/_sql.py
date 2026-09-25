@@ -130,13 +130,14 @@ def earned_since(prefix: str = "s.") -> str:
 
 # --------------------------------------------------------------- names (#61)
 
-# The caches that hold a name in both languages, joined to a `seen_achievements
-# s` (and its `titles t`). A list renders from SQL rather than through the
+# The catalog row holding an achievement's name in both languages (#61, #119),
+# joined to a `seen_achievements s` (and its `titles t`). A list renders from
+# SQL rather than through the
 # publisher's own localization pass, so without these joins /recent, /stats'
 # game list and the monthly "Игры за месяц" showed the language the platform
 # happened to answer in while the notification beside them showed the chat's.
 NAME_CACHE_JOIN = (
-    "LEFT JOIN achievement_name_cache nc ON nc.platform = s.platform"
+    "LEFT JOIN title_achievements nc ON nc.platform = s.platform"
     "   AND nc.title_id = s.title_id AND nc.achievement_id = s.achievement_id "
 )
 
@@ -168,24 +169,24 @@ def pick_name(
 # --------------------------------------------------------------- rarity (#69's tail)
 
 
-# The shared cache joined to a `seen_achievements s`. Same shape and the same
-# reasoning as NAME_CACHE_JOIN above: the row carries whatever the platform
-# said the first time somebody here earned the achievement, which on Xbox is
-# usually nothing at all — rarity rides only on contract 4, and backfill uses
-# contract 2. The cache is a fact about the achievement and is refreshed;
-# the row is a snapshot and is not.
+# The catalog row joined to a `seen_achievements s`, for its percentage. Same
+# shape and the same reasoning as NAME_CACHE_JOIN above: the row carries
+# whatever the platform said the first time somebody here earned the
+# achievement, which on Xbox is usually nothing at all — rarity rides only on
+# contract 4, and backfill uses contract 2. The catalog holds a fact about the
+# achievement and is refreshed; the row is a snapshot and is not.
 def rarity_cache_join(prefix: str = "s.") -> str:
     """Takes the table's alias because one caller has none: the value
     breakdown reaches its person through OWNED_BY_PERSON_EXISTS, which names
     `seen_achievements` in full and stops resolving the moment the table is
     aliased."""
     return (
-        f"LEFT JOIN achievement_rarity_cache rc ON rc.platform = {prefix}platform"
+        f"LEFT JOIN title_achievements rc ON rc.platform = {prefix}platform"
         f"   AND rc.title_id = {prefix}title_id"
         f"   AND rc.achievement_id = {prefix}achievement_id "
     )
 
 
 def rarity(prefix: str = "s.") -> str:
-    """The percentage to believe: the cache first, the row as the fallback."""
+    """The percentage to believe: the catalog first, the row as the fallback."""
     return f"COALESCE(rc.rarity_percent, {prefix}rarity_percent)"

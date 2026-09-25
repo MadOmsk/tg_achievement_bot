@@ -4,7 +4,7 @@
 `seen_achievements.description` is a snapshot: whatever language the platform
 client happened to store when that person unlocked the achievement (always
 Russian, historically). The bilingual cache
-(`achievement_description_cache`) is the real source — it holds both sides,
+(the catalog, `title_achievements`) is the real source — it holds both sides,
 is shared across everyone who ever unlocks the same achievement, and is
 filled in by all three platform clients.
 

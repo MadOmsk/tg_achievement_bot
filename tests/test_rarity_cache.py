@@ -205,12 +205,12 @@ async def test_coverage_counts_what_is_left(repo: Repo) -> None:
 
 
 async def test_an_old_cache_entry_is_still_used(repo: Repo) -> None:
-    """`checked_at` orders the refresh queue; it is not an expiry. A
+    """A percentage never expires. A
     year-old percentage is worth more than none (owner, 2026-09-17)."""
     await _person_with_uncached_history(repo)
     await repo.cache_rarity(Platform.XBOX_MODERN, TITLE, {"a1": 2.0})
     await repo._conn.execute(
-        "UPDATE achievement_rarity_cache SET checked_at = ?",
+        "UPDATE title_achievements SET updated_at = ?",
         ((utcnow() - timedelta(days=400)).isoformat(timespec="seconds"),),
     )
     await repo._conn.commit()

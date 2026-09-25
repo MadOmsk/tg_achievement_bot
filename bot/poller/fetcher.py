@@ -208,7 +208,7 @@ class Fetcher:
         would just be wasted API/LLM cost for nothing.
 
         A second `ru-RU` request, only for achievements not already in
-        achievement_description_cache — once every achievement in a game
+        the catalog — once every achievement in a game
         has been seen once, from any account, this never runs again for
         it. Xbox's own English text is left as `.description` for anything
         the bilingual lookup couldn't resolve (no cache hit and the second

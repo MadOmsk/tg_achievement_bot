@@ -1,7 +1,7 @@
 """One-time backfill: bilingual descriptions for everything unlocked before
 the description cache existed (#48).
 
-All three platform clients have been filling `achievement_description_cache`
+All three platform clients have been filling the catalog's descriptions
 since 2026-09-09, but only for achievements unlocked *since* — every row
 already in `seen_achievements` at that point carries a single-language
 snapshot and nothing else. A chat set to English therefore still sees
@@ -231,27 +231,24 @@ async def run_psn(
     account's title list is fetched once per account by the caller and
     passed in here.
 
-    Unlike Xbox and Steam, a PSN answer holds only the trophies *that*
-    account earned (#50), so the first owner to answer is not the end of it:
-    the ids still missing are asked of the next owner, until none are left.
+    Asked for the whole trophy list (`earned_only=False`), one owner is
+    enough: Sony lists every trophy of a game, earned or not, to anyone who
+    has played it. Asking only for earned ones is what once left a trophy
+    only a second owner had without a description (#50). The next owner is
+    tried only when one fails.
     """
     primary = await psn_auth.get_client()
     translation = await psn_auth.get_translation_client()
-    remaining = set(work.achievement_ids)
-    answered = False
     for _tg_id, account_id in work.owners:
-        if not remaining:
-            return
         title = (titles_by_account.get(account_id) or {}).get(work.title_id)
         if title is None:
             continue
         try:
-            english = await trophies_for_title(primary, account_id, title)
-            russian = await trophies_for_title(translation, account_id, title)
+            english = await trophies_for_title(primary, account_id, title, earned_only=False)
+            russian = await trophies_for_title(translation, account_id, title, earned_only=False)
         except PsnApiError as exc:
             log.warning("  %s: account %s failed (%s)", work.title_id, account_id, exc)
             continue
-        answered = True
         russian_by_id = {str(t.trophy_id): t.trophy_detail for t in russian}
         # No Russian entry is "no native translation", not "no description"
         # (#50): the English text goes through as both halves.
@@ -261,28 +258,12 @@ async def run_psn(
                 item.trophy_detail,
             )
             for item in english
-            if item.trophy_detail and str(item.trophy_id) in remaining
+            if item.trophy_detail
         }
-        if native:
-            await _record(
-                repo,
-                anthropic_auth,
-                TitleWork(work.platform, work.title_id, set(native), work.owners),
-                native,
-                totals,
-            )
-            remaining -= set(native)
-    if not answered:
-        totals.failed += 1
-        log.warning("  %s/%s: no account could supply this title", work.platform, work.title_id)
-    elif remaining:
-        totals.skipped += 1
-        log.info(
-            "  %s/%s: %s trophies no owner could supply",
-            work.platform,
-            work.title_id,
-            len(remaining),
-        )
+        await _record(repo, anthropic_auth, work, native, totals)
+        return
+    totals.failed += 1
+    log.warning("  %s/%s: no account could supply this title", work.platform, work.title_id)
 
 
 async def main() -> None:

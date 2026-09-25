@@ -351,28 +351,33 @@ every column. History: #106.
   total)`: the base game plus one row per DLC, refreshed when the stored count stops
   matching Sony's total. Per-account progress inside a group is counted from
   `seen_achievements`, never asked of Sony.
-- **The achievement catalog** — `title_achievements` (#99, migration 053): every
-  achievement of a game, earned by anyone or not, with both names, both
-  descriptions, icon, secrecy, value and rarity. `TitleCatalogService` refreshes a
-  title at most every 24h (`titles.achievements_checked_at`). Icons are cached under
-  `data/achievements/{platform}/{title_id}/`.
-- **Descriptions in both languages** — `achievement_description_cache (platform,
-  title_id, achievement_id, description_ru, description_en, source)`, shared by
-  everyone who unlocks the achievement, so a translation is paid for once. `source`:
-  `native` (the platform gave two different strings), `llm` (it gave the same text
-  twice, so `services/translate` filled the gap), `fallback` (no Anthropic key: the
-  platform's text is stored with `description_ru` NULL, shown untranslated, and
-  re-offered to the translator once a key exists). Only
-  `services/translate/descriptions.py::bilingual_descriptions` writes it.
-- **Names in both languages** — `achievement_name_cache`: the platform's own two
-  strings, **never translated**, filled from the same two locale requests. Each
-  platform's main call fixes one language (Xbox/PSN English, Steam Russian), which
-  is why it exists.
+- **The achievement catalog** — `title_achievements` (#99, migration 053) — is
+  **the one store of an achievement's names, descriptions and rarity** (#119): the
+  three cache tables that predated it were merged into it (migration 062), because
+  a fact one side learned was invisible to the other. Keyed by the achievement,
+  never by who earned it, so a translation is paid for once.
+  - `TitleCatalogService` refreshes a title's full list at most every 24h
+    (`titles.achievements_checked_at`); those rows are `listed = 1`. A poll that
+    learned only a percentage, a name or a description upserts just that column
+    and leaves `listed = 0` — **only listed rows count as the game's list** (its
+    size, the Mini App, 100% completions), or one person's unlocks would pass for
+    the whole game.
+  - **Descriptions**: `description_source` says how they came — `native` (the
+    platform gave two different strings), `llm` (it gave the same text twice, so
+    `services/translate` filled the gap), `fallback` (no Anthropic key: shown
+    untranslated, `description_ru` NULL, re-offered to the translator), NULL (never
+    through the translator yet: rendered as it is, and still queued). Only
+    `services/translate/descriptions.py::bilingual_descriptions` sets it, and a
+    catalog refresh never overwrites a description that has one.
+  - **Names**: the platform's own two strings, **never translated**, from the same
+    two locale requests. Each platform's main call fixes one language (Xbox/PSN
+    English, Steam Russian), which is why both are kept.
+  - Icons are cached under `data/achievements/{platform}/{title_id}/`.
 - **What a message renders from**: `services/descriptions_view.py` swaps in the
-  reader's language from those caches per chat, falling back to the other language
+  reader's language from the catalog per chat, falling back to the other language
   and then to `seen_achievements`' own snapshot. Rows are copied, never mutated —
   the publisher renders the same list once per chat.
-- **Rarity** — `achievement_rarity_cache`: see Lists and tables.
+- **Rarity**: see Lists and tables.
 - **Pictures are downloaded, not linked** (#55): a Telegram `file_id` is useless
   without the bot token and a platform URL can break. Telegram photos
   (`users.photo_*`) and account avatars (`accounts.avatar_url/path/hash`) go to
@@ -845,14 +850,14 @@ Pickers of fixed options (timezones, digest thresholds, hours) are not lists.
   behind a spoiler.
 - **`/online`**: activity beats freshness (`presence_view.pick_presence`).
 - **Summary leaderboards keep zero rows** — a report, not a feed (#34).
-- **Rarity is read from `achievement_rarity_cache`** (`platform, title_id,
-  achievement_id`), through `_sql.py`'s `rarity()` / `rarity_cache_join()`, with
+- **Rarity is read from the catalog** (`title_achievements.rarity_percent`, #119),
+  through `_sql.py`'s `rarity()` / `rarity_cache_join()`, with
   `seen_achievements.rarity_percent` as the fallback — rarity is a fact about the
   achievement, and the row is a never-updated snapshot. Xbox rarity comes only with
   contract 4, so the contract-2 history is filled by `poller/rarity_backfill.py` (and
   `scripts/backfill_rarity.py`, bot stopped) — one request per title covers every
-  owner. Every platform's poll also writes the cache. `checked_at` orders the refresh
-  queue and is not an expiry. Xbox 360 has no rarity: no 💎 there, and `rare` mode
+  owner. Every platform's poll also writes it. Nothing expires: a year-old
+  percentage is worth more than none. Xbox 360 has no rarity: no 💎 there, and `rare` mode
   lets its achievements through.
 - **The admin's user list** is text and buttons on purpose: columns to read, rows to
   tap. **The chat list** is buttons only — a row fits on its button.

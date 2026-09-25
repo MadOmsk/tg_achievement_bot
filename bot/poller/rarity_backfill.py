@@ -10,7 +10,7 @@ the 💎 on their own row, because nothing ever told the bot how rare they are.
 Re-polling cannot fix the rows themselves — every insert is
 `INSERT OR IGNORE` and nothing in the project UPDATEs `seen_achievements`,
 so a row stored without a percentage keeps none forever. It fills
-`achievement_rarity_cache` instead, which the reading side prefers over the
+the catalog (`title_achievements`) instead, which the reading side prefers over the
 row (db/repo/_sql.py's own `rarity()`), the same way names and descriptions
 have worked since #48.
 

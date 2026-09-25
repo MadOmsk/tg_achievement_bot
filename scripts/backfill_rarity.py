@@ -8,7 +8,7 @@ never be rare, anywhere, because nothing ever told the bot how rare they are.
 
 The rows themselves cannot be repaired — every insert is `INSERT OR IGNORE`
 and nothing in the project UPDATEs `seen_achievements`. This fills
-`achievement_rarity_cache` instead, which the reading side prefers over the
+the catalog (`title_achievements`) instead, which the reading side prefers over the
 row (`db/repo/_sql.py::rarity`).
 
 **One request per title, not per person.** A contract-4 reply lists every

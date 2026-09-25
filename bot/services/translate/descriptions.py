@@ -21,7 +21,7 @@ from bot.services.translate.client import translate_descriptions
 log = logging.getLogger(__name__)
 
 # Stored, shown, and still waiting for a translation — see schema.sql's own
-# comment on `achievement_description_cache.source`.
+# comment on `title_achievements.description_source`.
 FALLBACK = "fallback"
 
 

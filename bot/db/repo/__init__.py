@@ -34,11 +34,11 @@ Layout:
     _flood.py       anti-flood throttle state (notification_throttle,
                     2026-09-09) — added after the split, not part of the
                     original repo.py breakup.
-    _descriptions.py  bilingual achievement/trophy description cache
-                    (achievement_description_cache, 2026-09-09) — shared
-                    across every platform, unlike _platform_links.py's own
-                    Steam-specific schema/rarity caches. Also added after
-                    the split.
+    _descriptions.py  an achievement's names, descriptions and rarity in
+                    the catalog (title_achievements; its own cache tables
+                    until #119) — shared across every platform, unlike
+                    _platform_links.py's Steam-specific schema/rarity
+                    caches. Also added after the split.
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no

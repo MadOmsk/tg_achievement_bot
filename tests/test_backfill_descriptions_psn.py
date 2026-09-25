@@ -1,4 +1,4 @@
-"""PSN descriptions: every owner is asked until no trophy is missing (#50)."""
+"""PSN descriptions: one owner, the game's whole trophy list (#50)."""
 
 from __future__ import annotations
 
@@ -32,26 +32,27 @@ class _Auth:
         return "ru"
 
 
-async def test_a_trophy_only_the_second_owner_earned_is_still_fetched(monkeypatch) -> None:
-    earned = {"acc-a": [1, 2], "acc-b": [1, 11]}  # trophy 11 is only B's
-    asked: list[str] = []
+async def test_one_owner_answers_for_a_trophy_only_another_earned(monkeypatch) -> None:
+    """Trophy 11 is only B's, but A's answer lists it too when asked for the
+    whole list — so A is the only one asked."""
+    asked: list[tuple[str, bool]] = []
 
-    async def trophies_for_title(client, account_id, title):
+    async def trophies_for_title(client, account_id, title, *, earned_only=True):
         if client == "en":
-            asked.append(account_id)
-        return [_trophy(n, f"{client} {n}") for n in earned[account_id]]
+            asked.append((account_id, earned_only))
+        return [_trophy(n, f"{client} {n}") for n in (1, 2, 11)]
 
-    recorded: list[set[str]] = []
+    recorded: list[dict] = []
 
     async def record(repo, anthropic_auth, work, native, totals):
-        recorded.append(set(native))
+        recorded.append(native)
 
     monkeypatch.setattr(script, "trophies_for_title", trophies_for_title)
     monkeypatch.setattr(script, "_record", record)
-    work = script.TitleWork("psn", GAME, {"2", "11"}, [(1, "acc-a"), (2, "acc-b"), (3, "acc-c")])
-    titles = {acc: {GAME: object()} for acc in ("acc-a", "acc-b", "acc-c")}
+    work = script.TitleWork("psn", GAME, {"2", "11"}, [(1, "acc-a"), (2, "acc-b")])
+    titles = {acc: {GAME: object()} for acc in ("acc-a", "acc-b")}
 
     await script.run_psn(None, None, _Auth(), work, titles, script.Totals())  # type: ignore[arg-type]
 
-    assert recorded == [{"2"}, {"11"}]
-    assert asked == ["acc-a", "acc-b"]  # C is never asked: nothing was left
+    assert asked == [("acc-a", False)]
+    assert recorded[0]["11"] == ("ru 11", "en 11")
