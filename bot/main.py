@@ -50,6 +50,7 @@ from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
+from bot.poller.psn_trophy_groups import PsnTrophyGroups
 from bot.poller.publisher import Publisher
 from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
@@ -59,6 +60,7 @@ from bot.poller.steam_catch_up import SteamCatchUpPoller
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
+from bot.poller.title_platforms import TitlePlatformsRefresh
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.message_limits import MessageLimitMiddleware
@@ -213,6 +215,8 @@ async def run(settings: Settings) -> None:
         CatchUpPoller(settings, repo, fetcher),
         CoverRefresh(repo, client),
         steam_catch_up,
+        TitlePlatformsRefresh(repo, client),
+        PsnTrophyGroups(repo, psn_auth),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:
@@ -376,6 +380,9 @@ async def run(settings: Settings) -> None:
                     )
                 except Exception:
                     log.exception("steam catch-up for tg_id=%s failed", steam_target.tg_id)
+            await steam_fetcher.fill_library_gaps_once(
+                [(t.tg_id, t.steam_id) for t in await repo.steam_pollable_users()]
+            )
 
     await publisher.start()
     # Force-exit every anti-flood window still open from before this restart

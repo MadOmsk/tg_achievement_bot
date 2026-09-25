@@ -243,3 +243,57 @@ async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypa
     stored = await fetcher.backfill(TG_ID, STEAM_ID)
 
     assert stored == 1  # only the fine game's achievement made it in
+
+
+async def test_library_gaps_are_filled_once_and_silently(
+    repo: Repo, steam_auth, monkeypatch
+) -> None:
+    """Free-to-play games were left out of the library until #120: what is
+    stored for them is history — only games with nothing stored are asked
+    about, nothing is published, and it runs once per database."""
+    await _linked_user(repo)
+    await repo.insert_new_achievements_steam(
+        TG_ID, STEAM_ID, [_row_for("550", "a1")], is_backfill=True
+    )
+    asked: list[str] = []
+
+    async def fake_get_owned_games(api_key, steam_id):
+        return [
+            OwnedGame(appid="550", name="L4D2", playtime_forever=100),
+            OwnedGame(appid="1085660", name="Destiny 2", playtime_forever=900),
+            OwnedGame(appid="4000", name="Garry's Mod", playtime_forever=50, has_stats=False),
+        ]
+
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
+        asked.append(appid)
+        return [parsed("d1", appid), parsed("d2", appid)]
+
+    monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
+    monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    publisher = FakePublisher()
+    fetcher = SteamFetcher(repo, steam_auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.fill_library_gaps_once([(TG_ID, STEAM_ID)])
+    await fetcher.fill_library_gaps_once([(TG_ID, STEAM_ID)])
+
+    # L4D2 already had rows, Garry's Mod has no achievements at all, and
+    # the second call is a no-op.
+    assert asked == ["1085660"]
+    assert publisher.published == []
+    assert await repo.steam_titles_with_achievements(STEAM_ID) == {"550", "1085660"}
+
+
+def _row_for(appid: str, achievement_id: str) -> AchievementRow:
+    return AchievementRow(
+        title_id=appid,
+        achievement_id=achievement_id,
+        name="A",
+        description=None,
+        icon_url=None,
+        unlocked_at=None,
+        gamerscore=0,
+        rarity_percent=None,
+        platform="steam",
+    )

@@ -35,7 +35,7 @@ class _PollingRepo:
         cursor = await self._conn.execute(
             "SELECT u.tg_id, xb.external_id AS xuid, p.state, p.title_id, p.title_name,"
             "       p.changed_at, p.last_ach_poll_at, p.updated_at, u.last_online_at,"
-            "       xb_link.linked_at "
+            "       xb_link.linked_at, p.device "
             "FROM users u " + XBOX_ACCOUNT + "JOIN tokens t ON t.tg_id = u.tg_id "
             "LEFT JOIN presence_state p ON p.xuid = xb.external_id "
             "WHERE xb.external_id IS NOT NULL AND u.is_excluded = 0 AND t.status = 'active'"
@@ -52,6 +52,7 @@ class _PollingRepo:
                 updated_at=row["updated_at"],
                 last_online_at=row["last_online_at"],
                 linked_at=row["linked_at"],
+                device=row["device"],
             )
             for row in await cursor.fetchall()
         ]

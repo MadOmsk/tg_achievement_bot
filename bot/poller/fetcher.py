@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from datetime import datetime, timedelta
 
@@ -12,14 +11,20 @@ from bot.db.repo import AchievementRow, Repo, TitleAchievementRow, TitleHistoryR
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
 from bot.services import achievement_icons
+from bot.services.platform_format import game_platforms_json
 from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
+from bot.services.xbox.auth import TokenRefreshError
 from bot.services.xbox.client import TitleHistoryEntry, XboxApiError, XboxClient
 from bot.services.xbox.models import ParsedAchievement
 from bot.util import parse_iso, utcnow, utcnow_iso
 
 log = logging.getLogger(__name__)
+
+# How far back backfill reads the title history (#121). Microsoft answers a
+# thousand-title account inside title_history's own deadline (~46s measured).
+BACKFILL_HISTORY_ITEMS = 2000
 
 
 class Fetcher:
@@ -38,6 +43,11 @@ class Fetcher:
         self._anthropic_auth = anthropic_auth
         self._backfill_slots = asyncio.Semaphore(concurrency)
         self._background_tasks: set[asyncio.Task[None]] = set()
+        # Titles every contract answered empty for — apps, and PC titles
+        # without achievements, that presence still reports as being played
+        # (#122). Asked once per process: without this each costs three
+        # requests every achievement debounce for as long as somebody is in it.
+        self._no_achievements: set[str] = set()
 
     def api_usage(self) -> list[tuple[int, int, float]]:
         """(used, limit, window_seconds) — surfaced in the admin panel
@@ -55,7 +65,16 @@ class Fetcher:
         device: str | None = None,
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
+        # Presence sometimes reports a title id of 0 — no game at all (#122).
+        if not title_id or title_id == "0" or title_id in self._no_achievements:
+            return 0
         parsed, total = await self._client.title_achievements_with_total(tg_id, title_id, platform)
+        if not parsed and not total:
+            # Not "nothing new": nothing listed by any contract, so the title
+            # has no achievements to earn (a game always lists its whole set).
+            log.info("title %s has no achievements, not asking again", title_id)
+            self._no_achievements.add(title_id)
+            return 0
         # The size of the set those unlocks came from — the "47/50" counter's
         # own denominator (#46). titlehub reports it for Xbox 360 and returns
         # 0 for most modern titles, so for those this response is the only
@@ -70,8 +89,6 @@ class Fetcher:
                 # Presence gives no name for a PC title; the name is resolved
                 # further down, and the total must not wait for it.
                 await self._repo.set_title_total(title_id, total)
-        if device:
-            await self._repo.ensure_title_device(title_id, device)
         await self._fill_x360_icon(tg_id, title_id, platform, parsed)
         await self._bilingual_descriptions(tg_id, title_id, platform, parsed)
         # Free: this response carried the percentages, and the shared cache is
@@ -90,6 +107,7 @@ class Fetcher:
 
         log.info("tg_id=%s unlocked %s new achievements in %s", tg_id, len(new_rows), title_id)
         resolved = await self.ensure_title_name(tg_id, title_id, title_name)
+        await self.ensure_title_platforms(tg_id, title_id)
         await self._publisher.publish(tg_id, xuid, gamertag, new_rows, resolved)
         return len(new_rows)
 
@@ -113,19 +131,38 @@ class Fetcher:
             return None
         if entry is None or not entry.name:
             return None
-        if entry.platform in (Platform.XBOX_360, "xbox_360"):
-            platforms_json = json.dumps(["Xbox360"])
-        elif getattr(entry, "devices", None):
-            if any(str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices):
-                platforms_json = json.dumps(["Xbox360"])
-            else:
-                platforms_json = json.dumps(entry.devices)
-        else:
-            platforms_json = None
+        platforms_json = game_platforms_json(
+            entry.devices, is_x360=entry.platform == Platform.XBOX_360
+        )
         await self._repo.upsert_title(
             entry.title_id, entry.name, entry.platform, platforms=platforms_json
         )
         return entry.name
+
+    async def ensure_title_platforms(self, tg_id: int, title_id: str) -> None:
+        """A game's platforms before its achievements are announced (#114):
+        they decide which version of the game the card names, and without
+        them a Smart Delivery or Play Anywhere game can only say "XBOX".
+
+        Asked only while the lookup is due (repo.platforms_lookup_due): an
+        answer is stored for good, and three failures stop the asking —
+        the card then names the version native to the device played on.
+        poller/title_platforms.py works through the games nobody is
+        publishing in.
+        """
+        if not await self._repo.platforms_lookup_due(title_id):
+            return
+        try:
+            entry = await self._client.resolve_title(tg_id, title_id)
+        except (XboxApiError, TokenRefreshError) as exc:
+            log.info("could not look up platforms of title %s: %s", title_id, exc)
+            entry = None
+        found = (
+            game_platforms_json(entry.devices, is_x360=entry.platform == Platform.XBOX_360)
+            if entry
+            else None
+        )
+        await self._repo.record_platforms_lookup(title_id, found)
 
     async def ensure_title_icon(self, tg_id: int, title_id: str) -> str | None:
         """Box art as a stand-in for an Xbox 360 achievement icon (SPEC 7.1)
@@ -189,7 +226,7 @@ class Fetcher:
         would just be wasted API/LLM cost for nothing.
 
         A second `ru-RU` request, only for achievements not already in
-        achievement_description_cache — once every achievement in a game
+        the catalog — once every achievement in a game
         has been seen once, from any account, this never runs again for
         it. Xbox's own English text is left as `.description` for anything
         the bilingual lookup couldn't resolve (no cache hit and the second
@@ -323,7 +360,11 @@ class Fetcher:
             # account, where an Xbox 360 game with 33 unlocked achievements was
             # absent from the full list. Without this second pass the first
             # session in such a game would look like 33 fresh unlocks.
-            history = await self._client.title_history(tg_id)
+            # The whole history, not the 200 most recent the pollers read:
+            # an Xbox 360 game is found only here, and a long-standing account
+            # has hundreds — 342 of 1096 titles on one, of which the default
+            # window held 13 (#121).
+            history = await self._client.title_history(tg_id, max_items=BACKFILL_HISTORY_ITEMS)
             for entry in history:
                 if entry.platform != Platform.XBOX_360:
                     continue
@@ -406,6 +447,7 @@ class Fetcher:
                     if _publishable(row, publish_after, entry.last_played_at)
                 ]
                 if fresh:
+                    await self.ensure_title_platforms(tg_id, entry.title_id)
                     await self._publisher.publish(tg_id, xuid, gamertag, fresh, entry.name)
                     published += len(fresh)
 

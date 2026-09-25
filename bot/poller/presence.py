@@ -77,7 +77,12 @@ class PresencePoller:
             # The final request of the session: the last achievement is often
             # unlocked right before quitting (SPEC 5.3).
             await self._poll_achievements(
-                target, gamertag, target.title_id, target.title_name, force=True
+                target,
+                gamertag,
+                target.title_id,
+                target.title_name,
+                force=True,
+                device=target.device,
             )
             await self._fetcher.refresh_title_history(target.tg_id, target.xuid)
 
@@ -100,11 +105,15 @@ class PresencePoller:
         *,
         force: bool,
         platform_hint: PresenceSnapshot | None = None,
+        device: str | None = None,
     ) -> None:
         if not force and not self._debounce_passed(target):
             return
         platform = platform_hint.platform if platform_hint else Platform.XBOX_MODERN
-        device = platform_hint.device if platform_hint else None
+        # Only ever what presence reported for this session (owner, 2026-09-24):
+        # no device is better than a guessed one.
+        if platform_hint:
+            device = platform_hint.device
         await self._fetcher.poll_title(
             target.tg_id, target.xuid, gamertag, title_id, platform, title_name, device=device
         )

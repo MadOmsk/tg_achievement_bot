@@ -138,14 +138,15 @@ async def fetch_unlocked(
                     updated_at=now,
                 )
             )
-        await repo.upsert_title_achievements(cat_rows)
+        # GetPlayerAchievements lists the whole game, earned or not.
+        await repo.upsert_title_achievements(cat_rows, complete=True)
 
     result: list[ParsedAchievement] = []
     for item in unlocked:
         schema_item = schema_by_id.get(item.apiname)
         # The bot only ever renders Russian today (no language switch exists
         # yet) — the English half is only ever written to
-        # achievement_description_cache, for whenever that switch does
+        # the catalog, for whenever that switch does
         # (2026-09-09). Falls back to whatever this call itself fetched
         # (already Russian) if bilingual lookup found nothing to add.
         description_ru, _description_en = descriptions.get(
@@ -178,7 +179,7 @@ async def _bilingual_descriptions(
     unlocked: list[RawAchievement],
 ) -> dict[str, tuple[str | None, str | None]]:
     """A second `l=english` request, only when at least one of this batch's
-    achievements isn't already in achievement_description_cache — the
+    achievements isn't already in the catalog — the
     common case, once someone has ever unlocked a given achievement before,
     is that every one of them already is, and the extra Steam call (and any
     LLM call behind it) is skipped entirely, forever, for that achievement.

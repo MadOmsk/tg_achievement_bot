@@ -118,7 +118,8 @@ name, or when the tree goes stale.
 │   │   ├── profile_links.py      one profile-URL builder per platform
 │   │   ├── presence_view.py      "where is this person right now" — /online's rule, for one person
 │   │   ├── descriptions_view.py  an achievement's name/description in the reader's language (#48, #61)
-│   │   ├── platform_format.py    game platforms and devices, formatted (#79)
+│   │   ├── platform_format.py    which platform a screen names: version played, release
+│   │   │                         platforms, device (#79, #114)
 │   │   ├── title_catalog.py      the game-level achievement catalog, 24h debounce (#99, #80)
 │   │   ├── achievement_icons.py  achievement icons on disk under data/achievements/ (#99)
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
@@ -151,6 +152,8 @@ name, or when the tree goes stale.
 │   │   ├── flood_flush.py        the anti-flood read/flush side
 │   │   ├── daily.py              scheduled summaries and the two on-demand summary commands (#14)
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
+│   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
+│   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
 │   │   ├── reminders.py          reminders for a dead Xbox login
@@ -170,6 +173,7 @@ name, or when the tree goes stale.
 │
 ├── scripts/                     one-off operational helpers, outside the running bot
 │   ├── render_screen.py          draws any screen, prints it or sends it to the owner's DM (#63)
+│   ├── check_integrity.py        stored achievements vs what each platform reports, read-only (#120)
 │   ├── xbox-deploy.sh            what CI runs on the server (/usr/local/bin/xbox-deploy)
 │   ├── db_status.py              summary for `manage.ps1 status`
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
@@ -291,8 +295,24 @@ every column. History: #106.
   publish" — not "did not happen" (Statistics rules). `is_secret` renders behind a
   spoiler. `trophy_type` is the PSN tier; `trophy_group_id` is the PSN group
   (`default`, `001`…), `NULL` elsewhere and on PSN rows stored before #46 — which is
-  how the poller knows a game's DLC trophies were never fetched. `device` is the
-  hardware it was earned on (#79).
+  how the poller knows a game's DLC trophies were never fetched.
+- **`device` — what an achievement was earned on — is a fact or `NULL`, never a
+  guess** (#79; owner, 2026-09-24; migration 059). Its sources: Xbox presence while
+  that game is being played (the exit poll uses the device presence last reported);
+  PSN presence while the person is online, on a game released on several
+  platforms; otherwise `NULL` — a single-platform game needs none, its version is
+  known from the game (#114). Steam stays `NULL` (PC or Steam Deck cannot be told
+  apart). Presence codenames (`Scarlett`, `Durango`, `Web`, `PS5`) —
+  `services/platform_format.py` normalizes them.
+- **A game's platforms (`titles.platforms`) are what it was released on** — from
+  Xbox titlehub or PSN's title listing, never from presence. Presence codenames
+  found there (`Scarlett`, `Durango`, `WindowsOneCore`, `Web`, …) were device
+  guesses and were cleared by migration 059 for titlehub to refill. An Xbox game
+  without them is looked up in titlehub (#114, migration 060): before its
+  achievements publish (`Fetcher.ensure_title_platforms`) and by
+  `poller/title_platforms.py` for the rest, at most three times an hour apart
+  (`platforms_attempts`, `platforms_checked_at`); after the third failure
+  `platforms` is `'[]'` — known to be unknown.
 - `publications` records what was posted to each chat, with its message id.
   `bot_messages` logs every bot message in a group (`is_system`, `is_achievement`,
   `preview`) for cleanup and `/delete_last`; `tracked_messages` holds the one copy a
@@ -332,35 +352,42 @@ every column. History: #106.
   total)`: the base game plus one row per DLC, refreshed when the stored count stops
   matching Sony's total. Per-account progress inside a group is counted from
   `seen_achievements`, never asked of Sony.
-- **The achievement catalog** — `title_achievements` (#99, migration 053): every
-  achievement of a game, earned by anyone or not, with both names, both
-  descriptions, icon, secrecy, value and rarity. `TitleCatalogService` refreshes a
-  title at most every 24h (`titles.achievements_checked_at`). Icons are cached under
-  `data/achievements/{platform}/{title_id}/`.
-- **Descriptions in both languages** — `achievement_description_cache (platform,
-  title_id, achievement_id, description_ru, description_en, source)`, shared by
-  everyone who unlocks the achievement, so a translation is paid for once. `source`:
-  `native` (the platform gave two different strings), `llm` (it gave the same text
-  twice, so `services/translate` filled the gap), `fallback` (no Anthropic key: the
-  platform's text is stored with `description_ru` NULL, shown untranslated, and
-  re-offered to the translator once a key exists). Only
-  `services/translate/descriptions.py::bilingual_descriptions` writes it.
-- **Names in both languages** — `achievement_name_cache`: the platform's own two
-  strings, **never translated**, filled from the same two locale requests. Each
-  platform's main call fixes one language (Xbox/PSN English, Steam Russian), which
-  is why it exists.
+- **The achievement catalog** — `title_achievements` (#99, migration 053) — is
+  **the one store of an achievement's names, descriptions and rarity** (#119): the
+  three cache tables that predated it were merged into it (migration 062), because
+  a fact one side learned was invisible to the other. Keyed by the achievement,
+  never by who earned it, so a translation is paid for once.
+  - `TitleCatalogService` refreshes a title's full list at most every 24h
+    (`titles.achievements_checked_at`); those rows, and Steam's per-game response,
+    are the whole list and are written `complete=True` → `listed = 1`. Everything
+    else — a percentage, a name, a description, a live Xbox/PSN poll's earned-only
+    rows, the seed migration 053 took from what people had earned — leaves
+    `listed = 0`. **Only listed rows count as the game's list** (its size, the Mini
+    App, 100% completions), or one person's unlocks would pass for the whole game.
+  - **Descriptions**: `description_source` says how they came — `native` (the
+    platform gave two different strings), `llm` (it gave the same text twice, so
+    `services/translate` filled the gap), `fallback` (no Anthropic key: shown
+    untranslated, `description_ru` NULL, re-offered to the translator), NULL (never
+    through the translator yet: rendered as it is, and still queued). Only
+    `services/translate/descriptions.py::bilingual_descriptions` sets it, and a
+    catalog refresh never overwrites a description that has one.
+  - **Names**: the platform's own two strings, **never translated**, from the same
+    two locale requests. Each platform's main call fixes one language (Xbox/PSN
+    English, Steam Russian), which is why both are kept.
+  - Icons are cached under `data/achievements/{platform}/{title_id}/`.
 - **What a message renders from**: `services/descriptions_view.py` swaps in the
-  reader's language from those caches per chat, falling back to the other language
+  reader's language from the catalog per chat, falling back to the other language
   and then to `seen_achievements`' own snapshot. Rows are copied, never mutated —
   the publisher renders the same list once per chat.
-- **Rarity** — `achievement_rarity_cache`: see Lists and tables.
+- **Rarity**: see Lists and tables.
 - **Pictures are downloaded, not linked** (#55): a Telegram `file_id` is useless
   without the bot token and a platform URL can break. Telegram photos
   (`users.photo_*`) and account avatars (`accounts.avatar_url/path/hash`) go to
   `data/avatars/`, covers to `data/covers/`, paths stored relative. Avatar URLs come
   from calls the bot already makes (Xbox `GameDisplayPicRaw`, Steam `avatarfull`, PSN
   `avatars`); `poller/avatars.py` re-checks each subject weekly and skips unchanged
-  ones. Covers: Steam's is a fixed CDN path (`library_600x900`, portrait), PSN's
+  ones. Covers: Steam's is a fixed CDN path (`library_600x900`, portrait, else
+  `header.jpg` for games older than the library view, #117), PSN's
   rides in the trophy listing, Xbox's costs a titlehub call — `poller/covers.py`
   rations three a minute and visits each title **once** (art does not change).
 
@@ -427,7 +454,14 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   no icon and no spoiler. One retry per game per process. Global rarity is cached
   with an expiry (it drifts).
 - **Backfill** scans owned games with playtime, one call per game, under a two-level
-  concurrency limit (people at once, games per person at once).
+  concurrency limit (people at once, games per person at once). `GetOwnedGames`
+  asks for `include_played_free_games` (#120): without it every free-to-play game
+  was left out. Accounts linked before that are topped up once at startup
+  (`SteamFetcher.fill_library_gaps_once`, marked in `app_settings`), as history.
+- **Games Valve folded into another are listed beside their host** (#123,
+  `steam/client.py::FOLDED_APPS`): Half-Life 2's episodes became part of Half-Life 2
+  in 2024, their achievements stayed on apps 380/420, and no API lists those apps
+  any more. A table, because nothing else can know.
 - **Descriptions**: `GetPlayerAchievements` is fetched with `l=english` beside
   `l=russian` only when some achievement in the batch is not cached yet.
 - **Exit poll is delayed 180s** (`STEAM_DELAYED_EXIT_POLL_SECONDS`, #89): `GetPlayerAchievements` sits behind a CDN
@@ -471,6 +505,16 @@ for this; psnawp uses the private one the PlayStation App uses.
   pass digs up publishes under the 24-hour relink cap (`PsnSyncOutcome.catch_up_rows`)
   instead of as fresh unlocks. Decided per account, never from the shared
   `title_groups`.
+- **Trophies stored before #46 get their group back** (#115,
+  `poller/psn_trophy_groups.py` → `regroup_title`): a game with some grouped rows is
+  never widened, so its older rows stayed ungrouped and the card's group counter
+  undercounted. One request per (account, game); earned trophies never stored go in
+  as backfill — history, not news. Only accounts somebody holds. The same walker
+  takes a game with progress and no trophies stored (#120): the scan records
+  progress even when the fetch failed, and then never asks again.
+- **A game known only from the database is a `TitleRef`** (`title_ref(id,
+  platforms)`), never a hand-built psnawp `TrophyTitle` (a TypeError). Its platform
+  picks Sony's trophy service, so it is the game's newest console, not a default.
 - **`trophy_earn_rate` arrives as a string** despite its `float | None` annotation —
   coerce it (`services/psn/client.py::_as_float`).
 - **The PSN level** (`accounts.psn_trophy_level`) is refreshed after a backfill and
@@ -682,7 +726,7 @@ History: #110.
 - Header: the name in bold + "получает достижение" / "получает трофей" (PSN), or
   **"получает секретное …"** for a secret one (#16) — the header is the one line never
   hidden, and a spoiler with no explanation reads as a glitch.
-- **Game line**, italic: game, platform, and the person's progress `47/50` when the
+- **Game line**, italic: game, the version played (below), and the person's progress `47/50` when the
   total is known (#46). Totals: Xbox 360 from `title_history`; modern Xbox from
   titlehub or, when titlehub says 0, the size of the per-title response stored in
   `titles.achievements_total` (Microsoft's count wins where it exists); Steam from the
@@ -692,15 +736,47 @@ History: #110.
   and progress inside it (`CTNS: The Heist · 3/7`). A name equal to the game's reads
   "Основная игра"; a name starting with the game's keeps only the rest; never a "DLC"
   prefix (a group is not always one) — `services/achievements.py::_group_label`.
-- Then the badge and the name in quotes, gamerscore (if nonzero) and rarity (if
-  known), then the description — behind a spoiler if secret.
+- Then the badge and the name in quotes, gamerscore (if nonzero) and rarity as a
+  bare percentage (if known — no word, owner 2026-09-25), then the description —
+  behind a spoiler if secret.
 - **Badges**: `rarity_badge()` — 💎 at or below the chat's rare threshold, 🏆
   otherwise (including unknown). PSN shows its tier instead (see PSN).
+
+### Which platform a screen names (#114, owner, 2026-09-24)
+
+Three questions, one function each in `services/platform_format.py`:
+
+- **The version played** (`played_version`) — the card and digest (full name),
+  `/recent` (short). The game's *original* platform, picked by the device it ran
+  on: a 360 game is 360 even through backward compatibility, a One-only game on a
+  Series is One, Smart Delivery is the console's own version, a Play Anywhere game
+  on PC is PC. The cloud runs the console version and adds ☁ (a phone without a
+  native version is the cloud). PSN the same: a PS4 game on PS5 is PS4, a
+  cross-buy game is the version played. Play Anywhere is never a version played.
+- **The release platforms** (`game_platforms_label`) — the games lists, short:
+  here XPA exists.
+- **The device** (`device_label`) — `/online`, short.
+
+Unknown is never guessed: a game on several platforms with no device, or nothing
+known at all, is its family — **XBOX**, **PSN**, **Steam**. A game whose platforms
+could not be found (`'[]'`, see Data model) names the device's own version.
+
+| | full | short |
+|---|---|---|
+| Xbox | `XBOX Series X\|S`, `XBOX One`, `XBOX 360`, `XBOX PC`, `XBOX Mobile`, `XBOX Play Anywhere`, `XBOX One \| Series` | `Series X\|S`, `One`, `360`, `PC`, `Mobile`, `XPA`, `One \| Series` |
+| cloud | `XBOX Series X\|S ☁` | `Series X\|S ☁` |
+| PSN | `PlayStation 5`, `PlayStation 4 \| 5`, `PlayStation 3 \| 4 \| Vita`, `PlayStation Vita` | `PS5`, `PS4 \| PS5`, `PS3 \| PS4 \| Vita`, `PS Vita` |
+
+Short names drop "XBOX" because a platform logo will precede them (#105) and
+complete the name; a PSN short name never has a bare digit. "XBOX" is always
+upper-case. `/panel`'s "now" row names only the family, as its header lines do.
 
 ### Digests
 
 - One header ("получает N достижений" / "N трофеев" for an all-PSN batch), one block
-  per game with the game's own counter, every item in the card's line format. A
+  per game with the game's own counter, every item in the card's line format, the
+  descriptions in italics (owner, 2026-09-25) and the block's version named by
+  whichever item knows its device. A
   `sendMediaGroup`, caption on the first image, images deduped.
 - **The anti-flood digest is the same form**; only its header names the person
   instead of a platform nickname, because it can mix platforms.
@@ -785,14 +861,14 @@ Pickers of fixed options (timezones, digest thresholds, hours) are not lists.
   behind a spoiler.
 - **`/online`**: activity beats freshness (`presence_view.pick_presence`).
 - **Summary leaderboards keep zero rows** — a report, not a feed (#34).
-- **Rarity is read from `achievement_rarity_cache`** (`platform, title_id,
-  achievement_id`), through `_sql.py`'s `rarity()` / `rarity_cache_join()`, with
+- **Rarity is read from the catalog** (`title_achievements.rarity_percent`, #119),
+  through `_sql.py`'s `rarity()` / `rarity_cache_join()`, with
   `seen_achievements.rarity_percent` as the fallback — rarity is a fact about the
   achievement, and the row is a never-updated snapshot. Xbox rarity comes only with
   contract 4, so the contract-2 history is filled by `poller/rarity_backfill.py` (and
   `scripts/backfill_rarity.py`, bot stopped) — one request per title covers every
-  owner. Every platform's poll also writes the cache. `checked_at` orders the refresh
-  queue and is not an expiry. Xbox 360 has no rarity: no 💎 there, and `rare` mode
+  owner. Every platform's poll also writes it. Nothing expires: a year-old
+  percentage is worth more than none. Xbox 360 has no rarity: no 💎 there, and `rare` mode
   lets its achievements through.
 - **The admin's user list** is text and buttons on purpose: columns to read, rows to
   tap. **The chat list** is buttons only — a row fits on its button.
@@ -871,7 +947,9 @@ and logged at startup (`… is up (v1.4.3.058)`). History: #112.
 - **C** — commits counted from git at startup, never stored in a file: on a working
   branch since the **merge base** with `main` (so others' merges do not renumber it);
   on `main` since the **newest release tag**, **first parents only** — one per release.
-  `?` without git; `0` on an untagged `main`. **Cutting a release is tagging one.**
+  **Commits that touch only documentation do not count** (`DOCS_PATHS`: any `*.md`
+  and `changelog/`), because docs ship without a release. `?` without git; `0` on an
+  untagged `main`. **Cutting a release is tagging one.**
 - **D** — the newest migration this code ships, not what the database has. A database
   *ahead* of it refuses to start (Data model).
 
@@ -973,10 +1051,35 @@ It:
 GitHub holds four secrets (SSH key, host, user, host fingerprint); `.env`, `FERNET_KEY`
 and databases never go near it.
 
+**Measure completeness after a release that touches syncing**:
+`scripts/check_integrity.py` compares, per account, what each platform reports with
+what is stored (#120) — read-only, safe beside a running bot.
+
 **The deploy does not rehearse migrations.** That is a person's job, done on a copy of
 production **before merging `prerelease` into `main`** — the last moment it is still a
 decision. The test server migrates its own, smaller, differently shaped database and is
 no substitute.
+
+### Documentation-only changes
+
+**Documentation travels `dev` → `prerelease` → `main` without a release** (owner,
+2026-09-24). A change that touches only `*.md` files and `changelog/` gets:
+
+- **no deploy** — CI's `changes` job diffs the push and the `deploy` job skips it
+  (tests and the Mini App build still run, so the required checks report);
+- **no version change** — such commits do not advance C (Versioning), and nothing
+  restarts to announce anything;
+- **no release notes and no minor bump**.
+
+Promote it the usual way (`git push origin dev:prerelease`, then a PR into `main`
+merged as a merge commit); the servers pick the files up on their next real deploy.
+A change that mixes docs with anything else is a normal change.
+
+**Never put GitHub's skip-CI marker in a commit message — not even quoted.** GitHub
+honours it anywhere in the text, and `changes` diffs each push against the one
+before it: a skipped push that carried code leaves the servers behind, and the next
+push no longer sees that code. If it happens, deploy by hand with the script CI
+uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
 
 ### Releases
 

@@ -1,141 +1,122 @@
+"""Which platform a screen names (#114): the version played, the platforms a
+game was released on, the device somebody is on."""
+
 from __future__ import annotations
 
 import json
 
-from bot.services.platform_format import format_game_platforms, normalize_device_name
+import pytest
+
+from bot.services.platform_format import (
+    device_label,
+    game_platforms_json,
+    game_platforms_label,
+    played_version,
+)
+
+XPA = ["PC", "XboxOne", "XboxSeries"]
+SMART = ["XboxOne", "XboxSeries"]
 
 
-def test_normalize_device_name() -> None:
-    # Full by default
-    assert normalize_device_name("XboxSeriesX") == "XBOX Series X|S"
-    assert normalize_device_name("XboxSeriesS") == "XBOX Series X|S"
-    assert normalize_device_name("XboxScarlett") == "XBOX Series X|S"
-    assert normalize_device_name("Scarlett") == "XBOX Series X|S"
-    assert normalize_device_name("Durango") == "XBOX One"
-    assert normalize_device_name("XboxOne") == "XBOX One"
-    assert normalize_device_name("WindowsOneCore") == "XBOX PC"
-    assert normalize_device_name("PC") == "XBOX PC"
-    assert normalize_device_name("Win32") == "XBOX PC"
-    assert normalize_device_name("Xbox360") == "XBOX 360"
-    assert normalize_device_name("Mobile") == "XBOX Mobile"
-    assert normalize_device_name("Cloud") == "XBOX Cloud"
-
-    assert normalize_device_name("PS5") == "PlayStation 5"
-    assert normalize_device_name("PS4") == "PlayStation 4"
-    assert normalize_device_name("PS3") == "PlayStation 3"
-    assert normalize_device_name("PSVITA") == "PlayStation Vita"
-    assert normalize_device_name("PSPC") == "PS PC"
-
-    assert normalize_device_name("Steam") == "Steam"
-    assert normalize_device_name(None) is None
-    assert normalize_device_name("") is None
-
-    # Short
-    assert normalize_device_name("XboxSeriesX", short=True) == "XSeries"
-    assert normalize_device_name("Scarlett", short=True) == "XSeries"
-    assert normalize_device_name("XboxOne", short=True) == "XOne"
-    assert normalize_device_name("Durango", short=True) == "XOne"
-    assert normalize_device_name("Xbox360", short=True) == "X360"
-    assert normalize_device_name("PC", short=True) == "PC"
-    assert normalize_device_name("Win32", short=True) == "PC"
-    assert normalize_device_name("WindowsOneCore", short=True) == "PC"
-    assert normalize_device_name("Mobile", short=True) == "Mobile"
-    assert normalize_device_name("Cloud", short=True) == "Cloud"
-    assert normalize_device_name("PS5", short=True) == "PS5"
-    assert normalize_device_name("PS4", short=True) == "PS4"
-    assert normalize_device_name("PS3", short=True) == "PS3"
-    assert normalize_device_name("PSVITA", short=True) == "PS Vita"
-
-
-def test_format_game_platforms_full() -> None:
-    # Xbox Full
-    assert format_game_platforms(json.dumps(["XboxSeriesX"])) == "XBOX Series X|S"
-    assert format_game_platforms(json.dumps(["XboxOne"])) == "XBOX One"
-    assert format_game_platforms(json.dumps(["PC"])) == "XBOX PC"
-    assert format_game_platforms(json.dumps(["Win32"])) == "XBOX PC"
-    assert format_game_platforms(json.dumps(["Xbox360"])) == "XBOX 360"
-    # Backwards compatible Xbox 360 titles report One/Series in TitleHub devices
-    assert format_game_platforms(json.dumps(["Xbox360", "XboxOne", "XboxSeries"])) == "XBOX 360"
-    assert (
-        format_game_platforms(json.dumps(["Xbox360", "PC", "XboxOne", "XboxSeries"])) == "XBOX 360"
-    )
-    assert format_game_platforms(json.dumps(["XboxOne", "XboxSeriesX"])) == "XBOX One | Series"
-    assert format_game_platforms(json.dumps(["XboxOne", "PC"])) == "XBOX Play Anywhere"
-    assert format_game_platforms(json.dumps(["XboxSeriesX", "PC"])) == "XBOX Play Anywhere"
-    assert (
-        format_game_platforms(json.dumps(["XboxOne", "XboxSeriesX", "PC"])) == "XBOX Play Anywhere"
-    )
-
-    # PlayStation Full
-    assert format_game_platforms("PS5") == "PlayStation 5"
-    assert format_game_platforms("PS4") == "PlayStation 4"
-    assert format_game_platforms("PS3") == "PlayStation 3"
-    assert format_game_platforms("PSVITA") == "PlayStation Vita"
-    assert format_game_platforms("PS3,PSVITA") == "PlayStation 3 | Vita"
-    assert format_game_platforms("PS4,PSVITA") == "PlayStation 4 | Vita"
-    assert format_game_platforms("PS4,PS3,PSVITA") == "PlayStation 3 | 4 | Vita"
-    assert format_game_platforms("PS4,PS5") == "PlayStation 4 | 5"
-
-    # Steam Full
-    assert format_game_platforms(["PC"], fallback_platform="steam") == "Steam"
-    assert format_game_platforms(["Steam"]) == "Steam"
+@pytest.mark.parametrize(
+    ("platforms", "family", "device", "full", "short"),
+    [
+        # Xbox 360 is 360 on any console, even when titlehub lists the emulators
+        (["Xbox360"], "xbox_360", "Scarlett", "XBOX 360", "360"),
+        (["Xbox360", "XboxOne", "XboxSeries"], "xbox_modern", "Scarlett", "XBOX 360", "360"),
+        (None, "xbox_360", None, "XBOX 360", "360"),
+        # A game on one platform is that platform, whatever ran it
+        (["XboxOne"], "xbox_modern", "Scarlett", "XBOX One", "One"),
+        (["XboxOne"], "xbox_modern", None, "XBOX One", "One"),
+        (["XboxSeries"], "xbox_modern", None, "XBOX Series X|S", "Series X|S"),
+        (["PC"], "xbox_modern", None, "XBOX PC", "PC"),
+        # Smart Delivery: the version of the console it ran on
+        (SMART, "xbox_modern", "Scarlett", "XBOX Series X|S", "Series X|S"),
+        (SMART, "xbox_modern", "Durango", "XBOX One", "One"),
+        # Play Anywhere is never a version played
+        (XPA, "xbox_modern", "WindowsOneCore", "XBOX PC", "PC"),
+        (XPA, "xbox_modern", "XboxSeries", "XBOX Series X|S", "Series X|S"),
+        (["PC", "XboxOne"], "xbox_modern", "Scarlett", "XBOX One", "One"),
+        # The cloud runs the console version
+        (XPA, "xbox_modern", "Web", "XBOX Series X|S ☁", "Series X|S ☁"),
+        (["XboxOne"], "xbox_modern", "Web", "XBOX One ☁", "One ☁"),
+        (XPA, "xbox_modern", "iOS", "XBOX Series X|S ☁", "Series X|S ☁"),
+        (["Android", "PC", "XboxSeries"], "xbox_modern", "Android", "XBOX Mobile", "Mobile"),
+        # Unknown: never guessed
+        (XPA, "xbox_modern", None, "XBOX", "XBOX"),
+        (None, "xbox_modern", None, "XBOX", "XBOX"),
+        ("[]", "xbox_modern", None, "XBOX", "XBOX"),
+        # The game unknown after three lookups: the device's own version
+        ("[]", "xbox_modern", "Scarlett", "XBOX Series X|S", "Series X|S"),
+        (None, "xbox_modern", "Web", "XBOX Series X|S ☁", "Series X|S ☁"),
+        # PlayStation: backward compatibility gives the original, cross-buy the one played
+        (["PS4"], "psn", "PS5", "PlayStation 4", "PS4"),
+        (["PS4", "PS5"], "psn", "PS5", "PlayStation 5", "PS5"),
+        (["PS4", "PS5"], "psn", "PS4", "PlayStation 4", "PS4"),
+        (["PS3", "PS4", "PSVITA"], "psn", "PS5", "PlayStation 4", "PS4"),
+        (["PS3", "PSVITA"], "psn", "PSVITA", "PlayStation Vita", "PS Vita"),
+        (["PS4", "PS5"], "psn", None, "PSN", "PSN"),
+        (None, "psn", None, "PSN", "PSN"),
+        # Steam is Steam
+        (["PC"], "steam", "PC", "Steam", "Steam"),
+    ],
+)
+def test_played_version(platforms, family, device, full, short) -> None:
+    raw = json.dumps(platforms) if isinstance(platforms, list) else platforms
+    assert played_version(raw, family, device=device) == full
+    assert played_version(raw, family, device=device, short=True) == short
 
 
-def test_format_game_platforms_short() -> None:
-    # Xbox Short
-    assert format_game_platforms(["XboxSeriesX"], short=True) == "XSeries"
-    assert format_game_platforms(["XboxOne"], short=True) == "XOne"
-    assert format_game_platforms(["Xbox360"], short=True) == "X360"
-    # Backwards compatible Xbox 360 titles
-    assert format_game_platforms(["Xbox360", "XboxOne", "XboxSeries"], short=True) == "X360"
-    assert format_game_platforms(["Xbox360", "PC", "XboxOne", "XboxSeries"], short=True) == "X360"
-    assert format_game_platforms(["PC"], short=True) == "PC"
-    assert format_game_platforms(["Win32"], short=True) == "PC"
-    assert format_game_platforms(["XboxOne", "XboxSeriesX"], short=True) == "XOne | Series"
-    assert format_game_platforms(["XboxOne", "PC"], short=True) == "XPA"
-    assert format_game_platforms(["XboxSeriesX", "PC"], short=True) == "XPA"
-    assert format_game_platforms(["XboxOne", "XboxSeriesX", "PC"], short=True) == "XPA"
-
-    # PlayStation Short
-    assert format_game_platforms("PS5", short=True) == "PS5"
-    assert format_game_platforms("PS4", short=True) == "PS4"
-    assert format_game_platforms("PS3", short=True) == "PS3"
-    assert format_game_platforms("PSVITA", short=True) == "PS Vita"
-    assert format_game_platforms("PS3,PSVITA", short=True) == "PS3 | Vita"
-    assert format_game_platforms("PS4,PSVITA", short=True) == "PS4 | Vita"
-    assert format_game_platforms("PS4,PS3,PSVITA", short=True) == "PS3 | 4 | Vita"
-    assert format_game_platforms("PS4,PS5", short=True) == "PS4 | PS5"
-
-    # Steam Short
-    assert format_game_platforms(["PC"], fallback_platform="steam", short=True) == "Steam"
-    assert format_game_platforms(["Steam"], short=True) == "Steam"
+@pytest.mark.parametrize(
+    ("platforms", "family", "full", "short"),
+    [
+        (XPA, "xbox_modern", "XBOX Play Anywhere", "XPA"),
+        (["PC", "XboxSeries"], "xbox_modern", "XBOX Play Anywhere", "XPA"),
+        (SMART, "xbox_modern", "XBOX One | Series", "One | Series"),
+        (["XboxSeries"], "xbox_modern", "XBOX Series X|S", "Series X|S"),
+        (["XboxOne"], "xbox_modern", "XBOX One", "One"),
+        (["PC"], "xbox_modern", "XBOX PC", "PC"),
+        (["Xbox360"], "xbox_modern", "XBOX 360", "360"),
+        (None, "xbox_360", "XBOX 360", "360"),
+        (None, "xbox_modern", "XBOX", "XBOX"),
+        (["PS4", "PS5"], "psn", "PlayStation 4 | 5", "PS4 | PS5"),
+        (["PS3", "PS4", "PSVITA"], "psn", "PlayStation 3 | 4 | Vita", "PS3 | PS4 | Vita"),
+        (["PS3", "PSVITA"], "psn", "PlayStation 3 | Vita", "PS3 | Vita"),
+        (["PS4", "PSVITA"], "psn", "PlayStation 4 | Vita", "PS4 | Vita"),
+        (["PS5"], "psn", "PlayStation 5", "PS5"),
+        (["PSVITA"], "psn", "PlayStation Vita", "PS Vita"),
+        (None, "psn", "PSN", "PSN"),
+        (["PC"], "steam", "Steam", "Steam"),
+    ],
+)
+def test_game_platforms_label(platforms, family, full, short) -> None:
+    raw = json.dumps(platforms) if platforms is not None else None
+    assert game_platforms_label(raw, family) == full
+    assert game_platforms_label(raw, family, short=True) == short
 
 
-def test_format_game_platforms_fallback() -> None:
-    assert format_game_platforms(None, fallback_platform="xbox_360") == "XBOX 360"
-    assert format_game_platforms(None, fallback_platform="xbox_360", short=True) == "X360"
-    # Even if played on Scarlett/Durango via backwards compatibility, fallback x360 takes precedence
-    assert (
-        format_game_platforms(None, fallback_platform="xbox_360", device="Scarlett", short=True)
-        == "X360"
-    )
-    assert (
-        format_game_platforms(None, fallback_platform="xbox_360", device="Scarlett") == "XBOX 360"
-    )
-    assert format_game_platforms(None, fallback_platform="xbox_modern") == "XBOX"
-    assert (
-        format_game_platforms(None, fallback_platform="xbox_modern", device="Scarlett", short=True)
-        == "XSeries"
-    )
-    assert (
-        format_game_platforms(None, fallback_platform="xbox_modern", device="Durango", short=True)
-        == "XOne"
-    )
-    assert (
-        format_game_platforms(None, fallback_platform="xbox_modern", device="PC", short=True)
-        == "PC"
-    )
-    assert format_game_platforms(None, fallback_platform="psn") == "PlayStation"
-    assert format_game_platforms(None, fallback_platform="psn", short=True) == "PS"
-    assert format_game_platforms(None, fallback_platform="steam") == "Steam"
-    assert format_game_platforms(None, fallback_platform=None) == ""
+@pytest.mark.parametrize(
+    ("device", "short"),
+    [
+        ("Scarlett", "Series X|S"),
+        ("XboxSeriesX", "Series X|S"),
+        ("Durango", "One"),
+        ("WindowsOneCore", "PC"),
+        ("Web", "Series X|S ☁"),
+        ("iOS", "Mobile"),
+        ("PS5", "PS5"),
+        ("PSVITA", "PS Vita"),
+        (None, None),
+        ("HoloLens", None),
+    ],
+)
+def test_device_label(device, short) -> None:
+    assert device_label(device) == short
+
+
+def test_game_platforms_json() -> None:
+    assert game_platforms_json(["PC", "XboxSeries"]) == '["PC", "XboxSeries"]'
+    assert game_platforms_json(["Xbox360", "XboxOne"]) == '["Xbox360"]'
+    assert game_platforms_json(["XboxOne"], is_x360=True) == '["Xbox360"]'
+    assert game_platforms_json([]) is None
+    assert game_platforms_json(None) is None

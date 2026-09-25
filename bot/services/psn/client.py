@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from psnawp_api import PSNAWP
@@ -97,6 +97,50 @@ class PsnClientSetupError(PsnApiError):
 class PsnProfile:
     account_id: str
     online_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class TitleRef:
+    """The four things the trophy calls read from a game, for a game known
+    only from the database (#115). psnawp's own `TrophyTitle` has eleven more
+    required fields, and building one by hand is a TypeError — which is how
+    the Mini App's PSN catalog refresh never once worked."""
+
+    np_communication_id: str
+    title_name: str | None
+    title_icon_url: str | None
+    title_platform: frozenset[PlatformType]
+
+
+def title_ref(
+    np_communication_id: str,
+    platforms: Iterable[str] | None,
+    *,
+    title_name: str | None = None,
+    title_icon_url: str | None = None,
+) -> TitleRef:
+    """A game by id and its stored `titles.platforms`. The platform picks
+    Sony's trophy service (PS5 lives on a different one than PS3/PS4/Vita),
+    so it is the game's own newest console, not a default."""
+    known = {item.value: item for item in PlatformType}
+    kinds = [known[p] for p in platforms or () if p in known]
+    newest = [
+        p
+        for p in (
+            PlatformType.PS5,
+            PlatformType.PS4,
+            PlatformType.PS3,
+            PlatformType.PS_VITA,
+            PlatformType.PSPC,
+        )
+        if p in kinds
+    ][:1]
+    return TitleRef(
+        np_communication_id=np_communication_id,
+        title_name=title_name,
+        title_icon_url=title_icon_url,
+        title_platform=frozenset(newest),
+    )
 
 
 @dataclass(slots=True)
@@ -406,7 +450,7 @@ async def trophy_titles_for_account(
 
 
 async def trophies_for_title(
-    client: PSNAWP, account_id: str, title: TrophyTitle, *, earned_only: bool = True
+    client: PSNAWP, account_id: str, title: TrophyTitle | TitleRef, *, earned_only: bool = True
 ) -> list[EarnedTrophy]:
     """Full detail (name/tier/rarity/hidden/icon) for every trophy in one game.
     When earned_only is True (default), filters to earned trophies only.
@@ -506,7 +550,7 @@ class TrophyGroups:
 async def trophy_groups_for_title(
     client: PSNAWP,
     account_id: str,
-    title: TrophyTitle,
+    title: TrophyTitle | TitleRef,
     *,
     translation_client: PSNAWP | None = None,
 ) -> TrophyGroups:
@@ -570,7 +614,9 @@ class _Summary:
     groups: dict[str, tuple[str | None, int]]
 
 
-async def _groups_from(client: PSNAWP, account_id: str, title: TrophyTitle) -> _Summary | None:
+async def _groups_from(
+    client: PSNAWP, account_id: str, title: TrophyTitle | TitleRef
+) -> _Summary | None:
     """One client's answer, or None when it could not give one."""
     try:
         user = await _call(client.user, account_id=account_id)

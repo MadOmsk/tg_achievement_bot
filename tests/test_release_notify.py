@@ -4,7 +4,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardMarkup
 
 from bot.db.repo import Repo
@@ -17,9 +17,10 @@ from bot.services.release_notify import (
 
 
 class FakeBot:
-    def __init__(self, fail_for: set[int] | None = None) -> None:
+    def __init__(self, fail_for: set[int] | None = None, missing: set[int] | None = None) -> None:
         self.sent: list[dict[str, Any]] = []
         self.fail_for = fail_for or set()
+        self.missing = missing or set()
 
     async def send_message(
         self,
@@ -32,6 +33,8 @@ class FakeBot:
         if chat_id in self.fail_for:
             # Match TelegramForbiddenError's signature
             raise TelegramForbiddenError(method=MagicMock(), message="Forbidden: bot was kicked")
+        if chat_id in self.missing:
+            raise TelegramBadRequest(method=MagicMock(), message="Bad Request: chat not found")
         self.sent.append({"chat_id": chat_id, "text": text, "reply_markup": reply_markup})
 
 
@@ -132,6 +135,23 @@ async def test_forbidden_error_deactivates_chat(repo: Repo) -> None:
     )
     row = await cursor.fetchone()
     assert row["is_active"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_chat_that_no_longer_exists_is_deactivated(repo: Repo) -> None:
+    """ "chat not found" is a chat that is gone, like a kick (#116)."""
+    gone, alive = -1004002, -1004003
+    await repo.upsert_chat(gone, "Deleted Chat", None)
+    await repo.upsert_chat(alive, "Live Chat", None)
+
+    bot = FakeBot(missing={gone})
+    delivered = await announce_release_if_needed(
+        bot, repo, "1.3.0.050", is_test=False, sleep_delay=0
+    )
+
+    assert delivered == 1
+    cursor = await repo._conn.execute("SELECT chat_id, is_active FROM chats ORDER BY chat_id")
+    assert {r["chat_id"]: r["is_active"] for r in await cursor.fetchall()} == {gone: 0, alive: 1}
 
 
 def test_load_release_summary_from_summary_file() -> None:

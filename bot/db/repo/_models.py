@@ -89,6 +89,9 @@ class PollTarget:
     updated_at: str | None
     last_online_at: str | None = None
     linked_at: str | None = None
+    # The device presence last reported — what the exit poll of the game just
+    # left was played on.
+    device: str | None = None
 
 
 @dataclass(slots=True)
@@ -286,8 +289,9 @@ class FloodState:
 
 @dataclass(slots=True)
 class CachedDescription:
-    """One `achievement_description_cache` row (2026-09-09 user request) —
-    see schema.sql's own comment on that table for what `source` means."""
+    """An achievement's two descriptions as the translator left them
+    (2026-09-09, in the catalog since #119) — see schema.sql's comment on
+    `title_achievements.description_source` for what `source` means."""
 
     description_ru: str | None
     description_en: str | None

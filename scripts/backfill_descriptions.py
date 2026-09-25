@@ -1,7 +1,7 @@
 """One-time backfill: bilingual descriptions for everything unlocked before
 the description cache existed (#48).
 
-All three platform clients have been filling `achievement_description_cache`
+All three platform clients have been filling the catalog's descriptions
 since 2026-09-09, but only for achievements unlocked *since* — every row
 already in `seen_achievements` at that point carries a single-language
 snapshot and nothing else. A chat set to English therefore still sees
@@ -229,7 +229,14 @@ async def run_psn(
 ) -> None:
     """PSN needs the `TrophyTitle` object itself, not just an id — the
     account's title list is fetched once per account by the caller and
-    passed in here."""
+    passed in here.
+
+    Asked for the whole trophy list (`earned_only=False`), one owner is
+    enough: Sony lists every trophy of a game, earned or not, to anyone who
+    has played it. Asking only for earned ones is what once left a trophy
+    only a second owner had without a description (#50). The next owner is
+    tried only when one fails.
+    """
     primary = await psn_auth.get_client()
     translation = await psn_auth.get_translation_client()
     for _tg_id, account_id in work.owners:
@@ -237,14 +244,19 @@ async def run_psn(
         if title is None:
             continue
         try:
-            english = await trophies_for_title(primary, account_id, title)
-            russian = await trophies_for_title(translation, account_id, title)
+            english = await trophies_for_title(primary, account_id, title, earned_only=False)
+            russian = await trophies_for_title(translation, account_id, title, earned_only=False)
         except PsnApiError as exc:
             log.warning("  %s: account %s failed (%s)", work.title_id, account_id, exc)
             continue
         russian_by_id = {str(t.trophy_id): t.trophy_detail for t in russian}
+        # No Russian entry is "no native translation", not "no description"
+        # (#50): the English text goes through as both halves.
         native = {
-            str(item.trophy_id): (russian_by_id.get(str(item.trophy_id)), item.trophy_detail)
+            str(item.trophy_id): (
+                russian_by_id.get(str(item.trophy_id)) or item.trophy_detail,
+                item.trophy_detail,
+            )
             for item in english
             if item.trophy_detail
         }

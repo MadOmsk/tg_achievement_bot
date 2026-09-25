@@ -27,7 +27,7 @@ from bot.constants import (
 from bot.db.repo import PlatformLink, Repo
 from bot.i18n import gettext, translator
 from bot.services.naming import NO_NICKNAME, link_nickname, xbox_nickname
-from bot.services.platform_format import format_game_platforms
+from bot.services.platform_format import played_version
 from bot.services.profile_links import link_html, platform_profile_url, xbox_profile_url
 from bot.util import humanize_ago, thousands
 
@@ -188,6 +188,15 @@ def score_suffix(score: int) -> str:
     return f" (+{thousands(score)} G)" if score else ""
 
 
+def family_tag(platform: str, locale: str) -> str:
+    """Just the platform family, as the platform header lines name it —
+    /panel's "now" row, where the question is "which of my accounts"."""
+    icon = PLATFORM_ICON.get(platform, PLATFORM_ICON_UNKNOWN)
+    _ = translator("achievements", locale)
+    label = _(PLATFORM_LABEL_KEYS.get(platform, "achievement-platform-unknown"), platform=platform)
+    return f"{icon} {label}"
+
+
 def platform_tag(
     platform: str,
     locale: str,
@@ -197,20 +206,11 @@ def platform_tag(
     short: bool = False,
 ) -> str:
     """SPEC 9, M-Steam-2e — which platform an achievement came from, right
-    in the message itself, not just inferred from context."""
+    in the message itself: the version of the game it was earned in (#114)."""
     icon = PLATFORM_ICON.get(platform, PLATFORM_ICON_UNKNOWN)
-    label = format_game_platforms(
-        platforms,
-        fallback_platform=platform,
-        device=device,
-        short=short,
-    )
+    label = played_version(platforms, platform, device=device, short=short)
     if not label:
-        _ = translator("achievements", locale)
-        label = _(
-            PLATFORM_LABEL_KEYS.get(platform, "achievement-platform-unknown"),
-            platform=platform,
-        )
+        return family_tag(platform, locale)
     return f"{icon} {label}"
 
 

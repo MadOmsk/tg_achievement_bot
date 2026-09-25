@@ -36,7 +36,7 @@ import logging
 from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import Repo, TitleCoverRow
 from bot.services import covers
-from bot.services.steam.client import cover_url as steam_cover_url
+from bot.services.steam.client import cover_urls as steam_cover_urls
 from bot.services.xbox.auth import TokenRefreshError
 from bot.services.xbox.client import XboxApiError, XboxClient
 
@@ -67,14 +67,26 @@ class CoverRefresh:
                 log.exception("cover refresh failed for title %s", title.title_id)
 
     async def _visit(self, title: TitleCoverRow) -> None:
-        url = title.icon_url or await self._find_url(title)
-        if not url:
+        if account_platform_of(title.platform or "") == AccountPlatform.STEAM:
+            # Derived, never stored first: a URL an earlier visit kept may be
+            # the portrait capsule an old game does not have (#117).
+            candidates: tuple[str, ...] = steam_cover_urls(title.title_id)
+        else:
+            found = title.icon_url or await self._find_url(title)
+            candidates = (found,) if found else ()
+        if not candidates:
             # Stamped anyway: without this the same unanswerable game comes
             # back at the head of the queue on the very next tick.
             await self._repo.set_title_cover(title.title_id)
             return
 
-        saved = await covers.download(url, covers.cover_name(title.platform, title.title_id))
+        name = covers.cover_name(title.platform, title.title_id)
+        url, saved = candidates[0], None
+        for candidate in candidates:
+            saved = await covers.download(candidate, name)
+            if saved is not None:
+                url = candidate
+                break
         if saved is None:
             # The URL is worth keeping even when the download failed — the
             # Mini App can load it straight from the platform's CDN, and the
@@ -91,8 +103,6 @@ class CoverRefresh:
     async def _find_url(self, title: TitleCoverRow) -> str | None:
         """Where this platform keeps its art, or None when it cannot say."""
         platform = account_platform_of(title.platform or "")
-        if platform == AccountPlatform.STEAM:
-            return steam_cover_url(title.title_id)
         if platform == AccountPlatform.PSN:
             # Sony's own icon arrives with the trophy titles the scan already
             # walks, so there is nothing useful to ask here — a PSN game

@@ -12,13 +12,13 @@ from datetime import date, datetime, timedelta
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramForbiddenError
 
 from bot.db.repo import Repo
 from bot.services.admin_settings import (
     DEFAULT_MONTHLY_DELAY_MINUTES,
     MONTHLY_DELAY_KEY,
 )
+from bot.services.chat_gone import chat_is_gone
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
 from bot.views.summary import (
@@ -106,12 +106,12 @@ class DailySummary:
                 await self._bot.send_message(
                     chat.chat_id, text, parse_mode=ParseMode.HTML, reply_markup=markup
                 )
-        except TelegramForbiddenError:
-            log.info("chat %s refused the summary, deactivating", chat.chat_id)
-            await self._repo.deactivate_chat(chat.chat_id)
-            return
-        except Exception:
-            log.exception("could not send the summary to %s", chat.chat_id)
+        except Exception as exc:
+            if chat_is_gone(exc):
+                log.info("chat %s is gone (%s), deactivating", chat.chat_id, exc)
+                await self._repo.deactivate_chat(chat.chat_id)
+            else:
+                log.exception("could not send the summary to %s", chat.chat_id)
             return
         await self._repo.mark_daily_report_sent(chat.chat_id, marker)
 

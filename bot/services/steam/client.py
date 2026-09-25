@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import httpx
 
@@ -263,6 +263,32 @@ def _vanity_from(profile_url: str | None, steam_id: str) -> str | None:
     return segment if segment and segment != steam_id else None
 
 
+# Games Valve folded into another one (#123): the achievements stayed on the
+# old app, but the library lists only the host, so nothing the bot reads ever
+# mentions the old app again. Half-Life 2's episodes became part of Half-Life 2
+# in November 2024 — one account holds 13/13 and 22/23 of theirs, and Steam's
+# own "perfect games" counts Episode One while GetOwnedGames, with every flag
+# it takes, never returns it. There is no API that lists such apps, hence a
+# table: host appid -> (folded appid, name).
+FOLDED_APPS: dict[str, tuple[tuple[str, str], ...]] = {
+    "220": (("380", "Half-Life 2: Episode One"), ("420", "Half-Life 2: Episode Two")),
+}
+
+
+def with_folded_apps[G: (OwnedGame, RecentlyPlayedGame)](games: list[G]) -> list[G]:
+    """The list as Steam gave it, plus each folded app of a host in it —
+    carrying the host's playtime and last session, which is where the
+    folded game's own went (#123)."""
+    listed = {game.appid for game in games}
+    extra = [
+        replace(game, appid=appid, name=name)
+        for game in games
+        for appid, name in FOLDED_APPS.get(game.appid, ())
+        if appid not in listed
+    ]
+    return games + extra
+
+
 @dataclass(slots=True)
 class OwnedGame:
     appid: str
@@ -273,6 +299,9 @@ class OwnedGame:
     # makes a relink cost two requests instead of three hundred: only games
     # touched since the newest unlock we already hold can have anything new.
     last_played: int = 0
+    # `has_community_visible_stats`: whether the game has achievements at
+    # all. Asking one without them costs a request and earns a 400 (#120).
+    has_stats: bool = True
 
 
 async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
@@ -280,11 +309,16 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
     launched has nothing to backfill, and asking about it wastes a request
     for every game in a large library. Verified live: 617 owned games, 306
     with playtime_forever > 0, on the same account used throughout M-Steam
-    research."""
+    research.
+
+    `include_played_free_games` (#120): without it Steam leaves out every
+    free-to-play game — Destiny 2, Apex Legends, Aimlabs — and their
+    achievements were never backfilled at all (34 of 1712 on one account).
+    """
     payload = await _get(
         "/IPlayerService/GetOwnedGames/v1/",
         api_key,
-        {"steamid": steam_id, "include_appinfo": "1"},
+        {"steamid": steam_id, "include_appinfo": "1", "include_played_free_games": "1"},
     )
     if "games" not in payload:
         # See SteamGameDetailsPrivateError's own docstring — this is a
@@ -294,16 +328,18 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
             "Game details privacy is not public (GetOwnedGames returned no games key)"
         )
     games = payload.get("games") or []
-    return [
+    games = [
         OwnedGame(
             appid=str(item["appid"]),
             name=item.get("name") or str(item["appid"]),
             playtime_forever=int(item.get("playtime_forever") or 0),
             last_played=int(item.get("rtime_last_played") or 0),
+            has_stats=bool(item.get("has_community_visible_stats")),
         )
         for item in games
         if item.get("appid") and int(item.get("playtime_forever") or 0) > 0
     ]
+    return with_folded_apps(games)
 
 
 @dataclass(slots=True)
@@ -326,7 +362,7 @@ async def get_recently_played_games(
         {"steamid": steam_id, "count": str(count)},
     )
     games = payload.get("games") or []
-    return [
+    games = [
         RecentlyPlayedGame(
             appid=str(item["appid"]),
             name=item.get("name") or str(item["appid"]),
@@ -337,6 +373,7 @@ async def get_recently_played_games(
         for item in games
         if item.get("appid")
     ]
+    return with_folded_apps(games)
 
 
 async def get_player_achievements(
@@ -454,6 +491,9 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
     raise SteamApiError("Steam request gave up")  # pragma: no cover — loop always returns/raises
 
 
+_STEAM_APP_CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps"
+
+
 def cover_url(appid: str) -> str:
     """A game's cover art, derived rather than fetched (2026-09-18).
 
@@ -464,11 +504,18 @@ def cover_url(appid: str) -> str:
     `library_600x900` rather than `header.jpg`: the header is a 460×215
     banner, and the Mini App crops a cover into a 42×42 square
     (`object-fit: cover`), which throws away most of a wide image. The
-    portrait capsule survives that crop with the art still recognisable. A
-    game too old to have one simply 404s, which the caller treats as "no
-    cover", the same as any other platform having nothing to give.
+    portrait capsule survives that crop with the art still recognisable.
     """
-    return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg"
+    return f"{_STEAM_APP_CDN}/{appid}/library_600x900.jpg"
+
+
+def cover_urls(appid: str) -> tuple[str, str]:
+    """Where to look for a game's cover, best first (#117): the portrait
+    capsule, then the header banner. A game older than the library view
+    (appids 13500-13570 on the dev server, for one) has no portrait capsule
+    and 404s on it, but every Steam game has a header — a wide picture
+    cropped square beats no picture."""
+    return cover_url(appid), f"{_STEAM_APP_CDN}/{appid}/header.jpg"
 
 
 async def avatar_url(api_key: str, steam_id: str) -> str | None:

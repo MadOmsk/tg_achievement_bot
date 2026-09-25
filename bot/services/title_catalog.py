@@ -7,6 +7,7 @@ and reconciling DLC / new achievements.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import timedelta
 
@@ -18,7 +19,7 @@ from bot.services.psn.client import (
     PsnApiError,
     PsnPrivateProfileError,
     PsnTitleUnavailableError,
-    TrophyTitle,
+    title_ref,
     trophies_for_title,
     trophy_groups_for_title,
 )
@@ -206,7 +207,7 @@ class TitleCatalogService:
             except Exception:
                 log.info("steam translation failed for appid %s", appid, exc_info=True)
 
-        await self._repo.upsert_title_achievements(rows)
+        await self._repo.upsert_title_achievements(rows, complete=True)
         await self._repo.upsert_title(
             appid,
             appid,
@@ -225,7 +226,7 @@ class TitleCatalogService:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
 
         try:
-            client = await self._psn_auth.client()
+            client = await self._psn_auth.get_client()
             translation_client = await self._psn_auth.get_translation_client()
         except Exception:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
@@ -244,10 +245,13 @@ class TitleCatalogService:
         if not account_id:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
 
-        dummy_title = TrophyTitle(
-            np_communication_id=np_communication_id,
+        stored_platforms = (await self._repo.title_platforms([np_communication_id])).get(
+            np_communication_id
+        )
+        dummy_title = title_ref(
+            np_communication_id,
+            json.loads(stored_platforms) if stored_platforms else None,
             title_name="?",
-            title_platform=[],
         )
 
         # Structure / Groups fetch (Issue #80 fix: updates title_groups)
@@ -341,7 +345,7 @@ class TitleCatalogService:
             except Exception:
                 log.info("psn translation failed for title %s", np_communication_id, exc_info=True)
 
-        await self._repo.upsert_title_achievements(rows)
+        await self._repo.upsert_title_achievements(rows, complete=True)
         await self._repo.upsert_title(
             np_communication_id,
             dummy_title.title_name,
@@ -466,7 +470,7 @@ class TitleCatalogService:
             except Exception:
                 log.info("xbox translation failed for title %s", title_id, exc_info=True)
 
-        await self._repo.upsert_title_achievements(rows)
+        await self._repo.upsert_title_achievements(rows, complete=True)
         await self._repo.upsert_title(
             title_id,
             achievements_en[0].title_name or title_id if achievements_en else title_id,

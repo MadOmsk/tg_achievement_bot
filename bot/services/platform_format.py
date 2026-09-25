@@ -1,8 +1,25 @@
-"""Mapping and formatting of game platforms and player devices (#79).
+"""Which platform a screen names, and how (#79, reworked in #114).
 
-Separates:
-1. Game platforms: available platforms for a title (e.g. Xbox devices, PSN title_platform).
-2. Player device: physical console / device where player is online or earned an achievement.
+Three different questions, one function each:
+
+* `played_version` — which *version of the game* somebody earned an
+  achievement in: the achievement card, the digest, /recent. It is the
+  game's own original platform, chosen by the device it ran on: an Xbox 360
+  game is 360 even through backward compatibility on a Series, a One-only
+  game on a Series is One, a Smart Delivery game is the version of the
+  console it ran on, a Play Anywhere game played on PC is PC. The cloud
+  runs the console version and gets a ☁.
+* `game_platforms_label` — what a game was *released on*: the games lists.
+  Here Play Anywhere is a thing (XPA); in `played_version` it never is,
+  because nobody plays two platforms at once.
+* `device_label` — what somebody is on right now: /online.
+
+What cannot be known is not guessed: a game on several platforms with no
+device is named by its family (XBOX, PSN, Steam), and so is anything
+unrecognised.
+
+Short names drop "XBOX": a platform logo will precede them one day and
+complete the name itself. "XBOX" is always upper-case.
 """
 
 from __future__ import annotations
@@ -10,193 +27,210 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 
-# Xbox device tokens
-_XBOX_SERIES_TOKENS = {
-    "xboxseriesx",
-    "xboxseriess",
-    "xboxseries",
-    "xboxscarlett",
-    "scarlett",
-    "anaconda",
-    "lockhart",
+# Canonical platforms. Raw values come from titlehub (a game's `devices`),
+# Xbox presence (codenames), PSN's title listing and PSN presence.
+SERIES = "series"
+ONE = "one"
+PC = "pc"
+X360 = "360"
+MOBILE = "mobile"
+CLOUD = "cloud"
+PS5 = "ps5"
+PS4 = "ps4"
+PS3 = "ps3"
+VITA = "vita"
+PSPC = "pspc"
+
+_RAW: dict[str, str] = {
+    **dict.fromkeys(
+        (
+            "xboxseries",
+            "xboxseriesx",
+            "xboxseriess",
+            "xboxscarlett",
+            "scarlett",
+            "anaconda",
+            "lockhart",
+        ),
+        SERIES,
+    ),
+    **dict.fromkeys(("xboxone", "xboxones", "xboxonex", "durango", "xboxdurango", "scorpio"), ONE),
+    **dict.fromkeys(("pc", "win32", "windows", "windowsonecore"), PC),
+    **dict.fromkeys(("xbox360", "xbox 360", "x360"), X360),
+    **dict.fromkeys(("mobile", "ios", "android", "windowsphone"), MOBILE),
+    **dict.fromkeys(("web", "cloud"), CLOUD),
+    "ps5": PS5,
+    "ps4": PS4,
+    "ps3": PS3,
+    **dict.fromkeys(("psvita", "ps vita", "vita"), VITA),
+    **dict.fromkeys(("pspc", "ps pc"), PSPC),
 }
-_XBOX_ONE_TOKENS = {
-    "xboxone",
-    "xboxones",
-    "xboxonex",
-    "durango",
-    "xboxdurango",
-    "scorpio",
+
+_XBOX = {SERIES, ONE, PC, X360, MOBILE, CLOUD}
+
+# (full, short)
+_NAMES: dict[str, tuple[str, str]] = {
+    SERIES: ("XBOX Series X|S", "Series X|S"),
+    ONE: ("XBOX One", "One"),
+    PC: ("XBOX PC", "PC"),
+    X360: ("XBOX 360", "360"),
+    MOBILE: ("XBOX Mobile", "Mobile"),
+    PS5: ("PlayStation 5", "PS5"),
+    PS4: ("PlayStation 4", "PS4"),
+    PS3: ("PlayStation 3", "PS3"),
+    VITA: ("PlayStation Vita", "PS Vita"),
+    PSPC: ("PS PC", "PS PC"),
 }
-_XBOX_PC_TOKENS = {"windowsonecore", "pc", "win32", "windows"}
-_XBOX_360_TOKENS = {"xbox360", "xbox 360", "x360"}
-_XBOX_MOBILE_TOKENS = {"mobile", "ios", "android", "windowsphone"}
-_XBOX_CLOUD_TOKENS = {"web", "cloud"}
+CLOUD_MARK = "☁"
 
-# PSN tokens
-_PSN_VITA_TOKENS = {"psvita", "ps vita", "vita"}
+FAMILY_XBOX = "XBOX"
+FAMILY_PSN = "PSN"
+FAMILY_STEAM = "Steam"
+
+# Which version of a game a device runs, most native first (#114). A console
+# plays its own generation and every older one it is compatible with; the
+# cloud runs Series hardware.
+_RUNS: dict[str, tuple[str, ...]] = {
+    SERIES: (SERIES, ONE),
+    CLOUD: (SERIES, ONE),
+    ONE: (ONE,),
+    PC: (PC,),
+    MOBILE: (MOBILE,),
+    PS5: (PS5, PS4),
+    PS4: (PS4,),
+    PS3: (PS3,),
+    VITA: (VITA,),
+    PSPC: (PSPC,),
+}
 
 
-def normalize_device_name(device: str | None, *, short: bool = False) -> str | None:
-    """Normalize a raw device string (from presence or earned achievement)
-    into a human-readable display string."""
-    if not device:
+def canonical(raw: str | None) -> str | None:
+    """A raw platform/device string as one of the canonical platforms above."""
+    if not raw:
         return None
-    raw = device.strip()
-    key = raw.lower()
-
-    if key in _XBOX_SERIES_TOKENS:
-        return "XSeries" if short else "XBOX Series X|S"
-    if key in _XBOX_ONE_TOKENS:
-        return "XOne" if short else "XBOX One"
-    if key in _XBOX_PC_TOKENS:
-        return "PC" if short else "XBOX PC"
-    if key in _XBOX_360_TOKENS:
-        return "X360" if short else "XBOX 360"
-    if key in _XBOX_MOBILE_TOKENS:
-        return "Mobile" if short else "XBOX Mobile"
-    if key in _XBOX_CLOUD_TOKENS:
-        return "Cloud" if short else "XBOX Cloud"
-
-    if key == "ps5":
-        return "PS5" if short else "PlayStation 5"
-    if key == "ps4":
-        return "PS4" if short else "PlayStation 4"
-    if key == "ps3":
-        return "PS3" if short else "PlayStation 3"
-    if key in _PSN_VITA_TOKENS:
-        return "PS Vita" if short else "PlayStation Vita"
-    if key in {"pspc", "ps pc"}:
-        return "PS PC"
-
-    if key in {"steam", "valve"}:
-        return "Steam"
-
-    return raw
+    return _RAW.get(raw.strip().lower())
 
 
-def _parse_raw_platforms(platforms_raw: str | Iterable[str] | None) -> list[str]:
-    """Parse raw JSON string or comma-separated string into a list of strings."""
+def parse_platforms(platforms_raw: str | Iterable[str] | None) -> set[str]:
+    """A game's stored platforms (a JSON list) as canonical platforms;
+    anything unrecognised (HoloLens, a typo) is dropped rather than shown."""
     if not platforms_raw:
-        return []
+        return set()
     if isinstance(platforms_raw, str):
         text = platforms_raw.strip()
-        if text.startswith("[") and text.endswith("]"):
-            try:
-                parsed = json.loads(text)
-                if isinstance(parsed, list):
-                    return [str(item).strip() for item in parsed if item]
-            except (json.JSONDecodeError, TypeError):
-                pass
-        return [part.strip() for part in text.split(",") if part.strip()]
-    return [str(item).strip() for item in platforms_raw if item]
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            parsed = text.split(",")
+        items = parsed if isinstance(parsed, list) else []
+    else:
+        items = list(platforms_raw)
+    return {p for p in (canonical(str(item)) for item in items if item) if p}
 
 
-def format_game_platforms(
+def game_platforms_json(devices: Iterable[str] | None, *, is_x360: bool = False) -> str | None:
+    """What to store in `titles.platforms` from titlehub's `devices`: an Xbox
+    360 game lists the consoles that emulate it too, and is still a 360 game."""
+    listed = [str(d) for d in devices or () if d]
+    if is_x360 or any(canonical(d) == X360 for d in listed):
+        return json.dumps(["Xbox360"])
+    return json.dumps(listed) if listed else None
+
+
+def _family(platform: str | None) -> str | None:
+    key = (platform or "").lower()
+    if key in {"xbox_modern", "xbox_360", "xbox", "modern", "x360"}:
+        return FAMILY_XBOX
+    if key == "psn":
+        return FAMILY_PSN
+    if key == "steam":
+        return FAMILY_STEAM
+    return None
+
+
+def _name(kind: str, short: bool) -> str:
+    full, brief = _NAMES[kind]
+    return brief if short else full
+
+
+def played_version(
     platforms_raw: str | Iterable[str] | None,
-    fallback_platform: str | None = None,
+    platform: str | None,
     *,
     device: str | None = None,
     short: bool = False,
 ) -> str:
-    """Format available game platforms into a Full or Short display string.
+    """The version of the game an achievement was earned in (#114)."""
+    family = _family(platform)
+    if family == FAMILY_STEAM:
+        return FAMILY_STEAM
+    game = parse_platforms(platforms_raw)
+    if (platform or "").lower() in {"xbox_360", "x360"} or X360 in game:
+        return _name(X360, short)
 
-    Rules:
-    XBOX:
-      360 (native or backwards-compatible on One/Series) -> Full: 'XBOX 360', Short: 'X360'
-      Play Anywhere: (One or Series) + PC -> Full: 'XBOX Play Anywhere', Short: 'XPA'
-      Cross-gen: One + Series -> Full: 'XBOX One | Series', Short: 'XOne | Series'
-      Series only: -> Full: 'XBOX Series X|S', Short: 'XSeries'
-      One only: -> Full: 'XBOX One', Short: 'XOne'
-      PC only: -> Full: 'XBOX PC', Short: 'PC'
+    on = canonical(device)
+    cloud = on == CLOUD
+    if on == MOBILE and MOBILE not in game:
+        # A phone plays a console game through the cloud.
+        on, cloud = CLOUD, True
+    mark = f" {CLOUD_MARK}" if cloud else ""
 
-    PlayStation:
-      PS3 + PS4 + Vita -> Full: 'PlayStation 3 | 4 | Vita', Short: 'PS3 | 4 | Vita'
-      PS3 + Vita -> Full: 'PlayStation 3 | Vita', Short: 'PS3 | Vita'
-      PS4 + Vita -> Full: 'PlayStation 4 | Vita', Short: 'PS4 | Vita'
-      PS4 + PS5 -> Full: 'PlayStation 4 | 5', Short: 'PS4 | PS5'
-      PS5 only -> Full: 'PlayStation 5', Short: 'PS5'
-      PS4 only -> Full: 'PlayStation 4', Short: 'PS4'
-      PS3 only -> Full: 'PlayStation 3', Short: 'PS3'
-      Vita only -> Full: 'PlayStation Vita', Short: 'PS Vita'
+    if len(game) == 1:
+        return _name(next(iter(game)), short) + mark
+    if game and on:
+        for kind in _RUNS.get(on, ()):
+            if kind in game:
+                return _name(kind, short) + mark
+        return family or ""
+    if not game and on:
+        # Nothing known about the game: the device's own version.
+        native = _RUNS.get(on, (on,))[0]
+        return _name(native, short) + mark
+    return family or ""
 
-    Steam:
-      Steam -> Full: 'Steam', Short: 'Steam'
-    """
-    # 0. Xbox 360 titles are ALWAYS Xbox 360, regardless of the play device (back-compat)
-    if fallback_platform and fallback_platform.lower() in {"xbox_360", "x360"}:
-        return "X360" if short else "XBOX 360"
 
-    raw_list = _parse_raw_platforms(platforms_raw)
-    tokens = {item.lower() for item in raw_list}
+def game_platforms_label(
+    platforms_raw: str | Iterable[str] | None,
+    platform: str | None,
+    *,
+    short: bool = False,
+) -> str:
+    """What a game was released on — the games lists (#114)."""
+    family = _family(platform)
+    if family == FAMILY_STEAM:
+        return FAMILY_STEAM
+    game = parse_platforms(platforms_raw)
+    if (platform or "").lower() in {"xbox_360", "x360"} or X360 in game:
+        return _name(X360, short)
 
-    # 1. Xbox 360 titles (including backwards compatibility on Xbox One / Series)
-    if bool(tokens & _XBOX_360_TOKENS):
-        return "X360" if short else "XBOX 360"
-
-    # Check for Steam (Steam always formats as Steam)
-    if (fallback_platform and fallback_platform.lower() == "steam") or "steam" in tokens:
-        return "Steam"
-
-    if not tokens and device:
-        dev_norm = normalize_device_name(device, short=short)
-        if dev_norm:
-            return dev_norm
-
-    if not tokens:
-        if fallback_platform:
-            fb = fallback_platform.lower()
-            if fb in {"xbox_modern", "modern", "xbox"}:
-                return "XBOX"
-            if fb == "psn":
-                return "PS" if short else "PlayStation"
-        return ""
-
-    # Check for Xbox
-    has_series = bool(tokens & _XBOX_SERIES_TOKENS)
-    has_one = bool(tokens & _XBOX_ONE_TOKENS)
-    has_pc = bool(tokens & _XBOX_PC_TOKENS)
-
-    # 2. Modern Xbox titles
-    if has_series or has_one or has_pc:
-        if (has_series or has_one) and has_pc:
+    xbox = game & _XBOX
+    if xbox:
+        console = xbox & {SERIES, ONE}
+        if console and PC in xbox:
             return "XPA" if short else "XBOX Play Anywhere"
-        if has_series and has_one:
-            return "XOne | Series" if short else "XBOX One | Series"
-        if has_series:
-            return "XSeries" if short else "XBOX Series X|S"
-        if has_one:
-            return "XOne" if short else "XBOX One"
-        if has_pc:
-            return "PC" if short else "XBOX PC"
-        return "XBOX"
+        if console == {SERIES, ONE}:
+            return "One | Series" if short else "XBOX One | Series"
+        for kind in (SERIES, ONE, PC, MOBILE):
+            if kind in xbox:
+                return _name(kind, short)
 
-    # Check for PlayStation
-    has_ps5 = "ps5" in tokens
-    has_ps4 = "ps4" in tokens
-    has_ps3 = "ps3" in tokens
-    has_vita = bool(tokens & _PSN_VITA_TOKENS)
+    psn = [k for k in (PS3, PS4, PS5, VITA) if k in game]
+    if len(psn) == 1:
+        return _name(psn[0], short)
+    if psn:
+        if short:
+            return " | ".join("Vita" if k == VITA else _name(k, True) for k in psn)
+        return "PlayStation " + " | ".join("Vita" if k == VITA else k[-1] for k in psn)
+    if PSPC in game:
+        return _name(PSPC, short)
+    return family or ""
 
-    if has_ps5 or has_ps4 or has_ps3 or has_vita:
-        if has_ps3 and has_ps4 and has_vita:
-            return "PS3 | 4 | Vita" if short else "PlayStation 3 | 4 | Vita"
-        if has_ps3 and has_vita:
-            return "PS3 | Vita" if short else "PlayStation 3 | Vita"
-        if has_ps4 and has_vita:
-            return "PS4 | Vita" if short else "PlayStation 4 | Vita"
-        if has_ps4 and has_ps5:
-            return "PS4 | PS5" if short else "PlayStation 4 | 5"
-        if has_ps5:
-            return "PS5" if short else "PlayStation 5"
-        if has_ps4:
-            return "PS4" if short else "PlayStation 4"
-        if has_ps3:
-            return "PS3" if short else "PlayStation 3"
-        if has_vita:
-            return "PS Vita" if short else "PlayStation Vita"
-        return "PS" if short else "PlayStation"
 
-    if "pc" in tokens:
-        return "Steam"
-
-    return "XBOX" if "xbox" in tokens else "PlayStation"
+def device_label(device: str | None, *, short: bool = True) -> str | None:
+    """The device somebody is on right now — /online. None when unknown."""
+    on = canonical(device)
+    if on is None:
+        return None
+    if on == CLOUD:
+        return f"{_name(SERIES, short)} {CLOUD_MARK}"
+    return _name(on, short)

@@ -11,8 +11,16 @@ from bot.util import utcnow_iso
 class _CatalogRepo:
     _conn: aiosqlite.Connection
 
-    async def upsert_title_achievements(self, rows: list[TitleAchievementRow]) -> None:
-        """Upsert a game's full or partial achievement catalog."""
+    async def upsert_title_achievements(
+        self, rows: list[TitleAchievementRow], *, complete: bool = False
+    ) -> None:
+        """Upsert a game's full or partial achievement catalog.
+
+        `complete` says the rows are the game's *whole* list (#119) — the
+        catalog refresh, Steam's per-game response. A live poll that holds
+        only what one person earned passes False: its rows still land, but
+        do not become the game's list, or one person's unlocks would pass for
+        the whole game (and count as a 100% completion)."""
         if not rows:
             return
         now = utcnow_iso()
@@ -22,15 +30,23 @@ class _CatalogRepo:
                 "INSERT INTO title_achievements ("
                 "  platform, title_id, achievement_id, name_ru, name_en,"
                 "  description_ru, description_en, icon_url, is_secret,"
-                "  gamerscore, trophy_type, trophy_group_id, rarity_percent, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "  gamerscore, trophy_type, trophy_group_id, rarity_percent, updated_at,"
+                "  listed"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(platform, title_id, achievement_id) DO UPDATE SET "
                 "  name_ru = COALESCE(excluded.name_ru, title_achievements.name_ru),"
                 "  name_en = COALESCE(excluded.name_en, title_achievements.name_en),"
-                "  description_ru = COALESCE(excluded.description_ru, "
-                "                            title_achievements.description_ru),"
-                "  description_en = COALESCE(excluded.description_en, "
-                "                            title_achievements.description_en),"
+                # Once a description went through the translator
+                # (description_source set), it is the translator's: the raw
+                # pair a refresh passes by must not overwrite a translation.
+                "  description_ru = CASE WHEN title_achievements.description_source"
+                "      IS NOT NULL THEN title_achievements.description_ru"
+                "      ELSE COALESCE(excluded.description_ru, title_achievements.description_ru)"
+                "  END,"
+                "  description_en = CASE WHEN title_achievements.description_source"
+                "      IS NOT NULL THEN title_achievements.description_en"
+                "      ELSE COALESCE(excluded.description_en, title_achievements.description_en)"
+                "  END,"
                 "  icon_url = COALESCE(excluded.icon_url, title_achievements.icon_url),"
                 "  is_secret = excluded.is_secret,"
                 "  gamerscore = COALESCE(excluded.gamerscore, title_achievements.gamerscore),"
@@ -39,7 +55,8 @@ class _CatalogRepo:
                 "                             title_achievements.trophy_group_id),"
                 "  rarity_percent = COALESCE(excluded.rarity_percent, "
                 "                            title_achievements.rarity_percent),"
-                "  updated_at = excluded.updated_at",
+                "  updated_at = excluded.updated_at,"
+                "  listed = MAX(title_achievements.listed, excluded.listed)",
                 (
                     r.platform,
                     r.title_id,
@@ -55,6 +72,7 @@ class _CatalogRepo:
                     r.trophy_group_id,
                     r.rarity_percent,
                     updated_at,
+                    1 if complete else 0,
                 ),
             )
         await self._conn.commit()
@@ -68,7 +86,7 @@ class _CatalogRepo:
             "       description_ru, description_en, icon_url, is_secret, "
             "       gamerscore, trophy_type, trophy_group_id, rarity_percent, updated_at "
             "FROM title_achievements "
-            "WHERE platform = ? AND title_id = ? "
+            "WHERE platform = ? AND title_id = ? AND listed = 1 "
             "ORDER BY rowid ASC",
             (platform, title_id),
         )
@@ -96,7 +114,8 @@ class _CatalogRepo:
     async def title_achievements_count(self, platform: str, title_id: str) -> int:
         """How many achievements are currently in catalog for this game."""
         cursor = await self._conn.execute(
-            "SELECT COUNT(*) AS c FROM title_achievements WHERE platform = ? AND title_id = ?",
+            "SELECT COUNT(*) AS c FROM title_achievements"
+            " WHERE platform = ? AND title_id = ? AND listed = 1",
             (platform, title_id),
         )
         row = await cursor.fetchone()
@@ -116,7 +135,7 @@ class _CatalogRepo:
                 "LEFT JOIN seen_achievements sa "
                 "  ON sa.platform = ta.platform AND sa.title_id = ta.title_id "
                 " AND sa.achievement_id = ta.achievement_id AND sa.xuid = ? "
-                "WHERE ta.platform = ? AND ta.title_id = ? "
+                "WHERE ta.platform = ? AND ta.title_id = ? AND ta.listed = 1 "
                 "ORDER BY ta.rowid ASC",
                 (xuid, platform, title_id),
             )
@@ -127,7 +146,7 @@ class _CatalogRepo:
                 "       ta.gamerscore, ta.trophy_type, ta.trophy_group_id, ta.rarity_percent, "
                 "       ta.updated_at, NULL AS unlocked_at "
                 "FROM title_achievements ta "
-                "WHERE ta.platform = ? AND ta.title_id = ? "
+                "WHERE ta.platform = ? AND ta.title_id = ? AND ta.listed = 1 "
                 "ORDER BY ta.rowid ASC",
                 (platform, title_id),
             )

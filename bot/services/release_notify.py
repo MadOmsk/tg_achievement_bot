@@ -14,11 +14,11 @@ from pathlib import Path
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.db.repo import Repo
 from bot.i18n import gettext
+from bot.services.chat_gone import chat_is_gone
 from bot.services.message_log import stats_category
 
 log = logging.getLogger(__name__)
@@ -123,11 +123,14 @@ async def announce_release_if_needed(
                     chat_id, text, parse_mode=ParseMode.HTML, reply_markup=markup
                 )
             sent_count += 1
-        except TelegramForbiddenError:
-            log.info("bot was kicked from chat %s, deactivating", chat_id)
-            await repo.deactivate_chat(chat_id)
-        except Exception:
-            log.warning("failed to send release announcement to chat %s", chat_id, exc_info=True)
+        except Exception as exc:
+            if chat_is_gone(exc):
+                log.info("chat %s is gone (%s), deactivating", chat_id, exc)
+                await repo.deactivate_chat(chat_id)
+            else:
+                log.warning(
+                    "failed to send release announcement to chat %s", chat_id, exc_info=True
+                )
 
         if sleep_delay > 0:
             await asyncio.sleep(sleep_delay)

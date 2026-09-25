@@ -470,3 +470,45 @@ async def test_a_game_cached_before_localization_is_looked_at_once_more(
     title.progress = 20
     await _run(repo)
     assert calls == ["NPWR00001_00"], "and never again once both languages are stored"
+
+
+# The device trophies were earned on is a fact or nothing (owner, 2026-09-24).
+
+
+@dataclass
+class _TitleOn(_FakeTitle):
+    title_platform: tuple[str, ...] = ()
+
+
+async def _device_of(repo: Repo) -> str | None:
+    cur = await repo._conn.execute(
+        "SELECT device FROM seen_achievements WHERE xuid = ?", (ACCOUNT_ID,)
+    )
+    row = await cur.fetchone()
+    return row["device"]
+
+
+@pytest.mark.parametrize(
+    ("platforms", "presence", "expected"),
+    [
+        (("PS4", "PS5"), None, None),  # several platforms, nothing known: no guess
+        (("PS4", "PS5"), ("offline", "PS5"), None),  # an old presence is not this session
+        (("PS4", "PS5"), ("online", "PS5"), "PS5"),
+        (("PS5",), None, None),  # one platform: the game says it, not the row (#114)
+    ],
+)
+async def test_a_trophy_device_is_known_or_left_empty(
+    repo: Repo, monkeypatch, platforms, presence, expected
+) -> None:
+    await _linked(repo)
+    if presence:
+        state = "Online" if presence[0] == "online" else "Offline"
+        await repo.save_psn_presence_state(
+            ACCOUNT_ID, state, None, None, device=presence[1], changed=True
+        )
+    title = _TitleOn("NPWR00001_00", "Some Game", progress=10, title_platform=platforms)
+    _install_fakes(monkeypatch, [title], {"NPWR00001_00": [_trophy(1)]})
+
+    await _run(repo)
+
+    assert await _device_of(repo) == expected

@@ -26,12 +26,14 @@ from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
+from bot.poller.psn_trophy_groups import PsnTrophyGroups
 from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_catch_up import SteamCatchUpPoller
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
+from bot.poller.title_platforms import TitlePlatformsRefresh
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +63,8 @@ class PollerScheduler:
         catch_up: CatchUpPoller,
         cover_refresh: CoverRefresh,
         steam_catch_up: SteamCatchUpPoller,
+        title_platforms: TitlePlatformsRefresh,
+        psn_trophy_groups: PsnTrophyGroups,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -81,6 +85,8 @@ class PollerScheduler:
         self._avatar_refresh = avatar_refresh
         self._catch_up = catch_up
         self._cover_refresh = cover_refresh
+        self._title_platforms = title_platforms
+        self._psn_trophy_groups = psn_trophy_groups
         self._steam_catch_up = steam_catch_up
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -127,6 +133,23 @@ class PollerScheduler:
             self._cover_refresh.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="cover_refresh",
+            coalesce=True,
+            max_instances=1,
+        )
+        # The same kind of finite backlog: Xbox games whose platforms are
+        # unknown, until found or given up on (#114).
+        self._scheduler.add_job(
+            self._title_platforms.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="title_platforms",
+            coalesce=True,
+            max_instances=1,
+        )
+        # PSN trophies stored before #46 without their group (#115).
+        self._scheduler.add_job(
+            self._psn_trophy_groups.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="psn_trophy_groups",
             coalesce=True,
             max_instances=1,
         )

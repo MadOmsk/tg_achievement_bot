@@ -279,7 +279,8 @@ def format_digest(
         # in a message that is already grouping things. `None` is the
         # game-only progress entry every platform has.
         key = (group[0].platform, group[0].title_id, None)
-        device = group[0].device if group else None
+        # One session, one device: whichever item knows it speaks for the block.
+        device = next((item.device for item in group if item.device), None)
         platforms = getattr(group[0], "game_platforms", None) if group else None
         lines.append(
             _game_line(
@@ -294,5 +295,9 @@ def format_digest(
         for item in group:
             lines.append(_rarity_line(item, locale))
             if item.description:
-                lines.append(_spoiler(html_escape(item.description), secret=item.is_secret))
+                # Italic in a digest only (owner, 2026-09-25): several
+                # achievements in a row, and the description is what sets
+                # one apart from the next after its name.
+                description = _spoiler(html_escape(item.description), secret=item.is_secret)
+                lines.append(f"<i>{description}</i>")
     return "\n".join(lines)

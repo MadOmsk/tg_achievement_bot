@@ -434,7 +434,9 @@ async def main() -> int:
 
     bot = Bot(
         settings.bot_token.get_secret_value(),
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        # The bot's own defaults (bot/main.py): no link previews, or a profile
+        # link in /stats grows a card the real screen never shows.
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True),
     )
     try:
         for _name, screen in built:

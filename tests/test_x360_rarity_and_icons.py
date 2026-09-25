@@ -219,11 +219,11 @@ def test_format_digest_x360_rarity_and_spoilers() -> None:
     text = format_digest("Player", "Wolfenstein 3D", [ach1, ach2], locale="ru")
 
     # Common achievement: 🏆 badge, 25% rarity, no spoiler
-    assert "🏆 «Common Achievement» · 15 G · редкость 25%" in text
+    assert "🏆 «Common Achievement» · 15 G · 25%" in text
     assert "Common description" in text
 
     # Rare secret achievement: 💎 badge, 4.5% rarity, spoiler on title and description
-    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · редкость 4.5%' in text
+    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · 4.5%' in text
     assert '<span class="tg-spoiler">Secret description</span>' in text
 
 
@@ -244,5 +244,53 @@ def test_format_single_x360_secret_achievement() -> None:
 
     text = format_single("Player", ach, "Wolfenstein 3D", locale="ru")
     assert "получает секретное достижение" in text
-    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · редкость 4.5%' in text
+    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · 4.5%' in text
     assert '<span class="tg-spoiler">Secret description</span>' in text
+
+
+MIGRATION_061 = Path("bot/db/migrations/061_x360_real_icons.sql").read_text(encoding="utf-8")
+
+
+async def test_migration_061_gives_old_rows_their_real_icon(tmp_path) -> None:
+    import aiosqlite
+
+    sql = MIGRATION_061
+    real = "http://image.xboxlive.com/global/t.4d5308ab/ach/0/44"
+    box_art = "http://store-images.s-microsoft.com/image/apps.1.box"
+    async with aiosqlite.connect(tmp_path / "m061.db") as conn:
+        await conn.execute(
+            "CREATE TABLE seen_achievements"
+            " (platform TEXT, title_id TEXT, achievement_id TEXT, icon_url TEXT)"
+        )
+        await conn.execute(
+            "CREATE TABLE title_achievements"
+            " (platform TEXT, title_id TEXT, achievement_id TEXT, icon_url TEXT)"
+        )
+        await conn.executemany(
+            "INSERT INTO seen_achievements VALUES (?, ?, ?, ?)",
+            [
+                ("xbox_360", "g", "32", box_art),  # box art: replaced
+                ("xbox_360", "g", "33", None),  # nothing: filled
+                ("xbox_360", "g", "34", box_art),  # catalog has no real one: kept
+                ("xbox_modern", "g", "32", box_art),  # not a 360 row: untouched
+            ],
+        )
+        await conn.executemany(
+            "INSERT INTO title_achievements VALUES (?, ?, ?, ?)",
+            [
+                ("xbox_360", "g", "32", real),
+                ("xbox_360", "g", "33", real),
+                ("xbox_360", "g", "34", None),
+                ("xbox_modern", "g", "32", real),
+            ],
+        )
+        await conn.executescript(sql)
+        cursor = await conn.execute(
+            "SELECT platform, achievement_id, icon_url FROM seen_achievements"
+        )
+        icons = {(r[0], r[1]): r[2] for r in await cursor.fetchall()}
+
+    assert icons[("xbox_360", "32")] == real
+    assert icons[("xbox_360", "33")] == real
+    assert icons[("xbox_360", "34")] == box_art
+    assert icons[("xbox_modern", "32")] == box_art

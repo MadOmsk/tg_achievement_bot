@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from psnawp_api import PSNAWP
 from psnawp_api.models.trophies import TrophyTitle
 
-from bot.constants import Platform
+from bot.constants import Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleAchievementRow
 from bot.services.models import ParsedAchievement
 from bot.services.psn.client import (
@@ -36,6 +36,7 @@ from bot.services.psn.client import (
     PsnApiError,
     PsnPrivateProfileError,
     PsnTitleUnavailableError,
+    TitleRef,
     trophies_for_title,
     trophy_groups_for_title,
     trophy_titles_for_account,
@@ -254,16 +255,15 @@ async def sync_account(
                 if item.trophy_earn_rate is not None
             },
         )
+        # The device these trophies were earned on (owner, 2026-09-24): what
+        # presence reports while the person is online, and otherwise nothing —
+        # never a guess. A game on a single platform needs none: its version
+        # is known from the game alone (#114, services/platform_format.py).
         target_device: str | None = None
-        if not is_backfill:
-            if len(platforms_list) == 1:
-                target_device = platforms_list[0]
-            elif platforms_list:
-                presence = await repo.psn_presence_of(account_id)
-                if presence and presence.device:
-                    target_device = presence.device
-                if not target_device:
-                    target_device = platforms_list[0]
+        if not is_backfill and len(platforms_list) > 1:
+            presence = await repo.psn_presence_of(account_id)
+            if presence and presence.state == PresenceState.ONLINE and presence.device:
+                target_device = presence.device
 
         rows = [
             to_achievement_row(_to_parsed(title.np_communication_id, item, device=target_device))
@@ -284,6 +284,31 @@ async def sync_account(
             outcome.new_rows.extend(inserted)
 
     return outcome
+
+
+async def regroup_title(
+    repo: Repo, client: PSNAWP, tg_id: int, account_id: str, title: TitleRef
+) -> int:
+    """Complete this account's trophies in one game: give the ones stored
+    before #46 their group (#115), and store any earned trophy the bot never
+    stored (#120) — DLC ones invisible before #46, or a whole game whose
+    fetch once failed after its progress was already recorded.
+
+    One request, the game's whole earned list with `trophy_group_id="all"`.
+    What is added goes in as backfill: it was earned long ago and a first
+    sight of it is not news, which is also what keeps the ordinary scan from
+    announcing it the day this game next moves. Returns how many rows gained
+    a group or were added.
+    """
+    earned = await trophies_for_title(client, account_id, title)
+    rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
+    added = await repo.insert_new_achievements_psn(tg_id, account_id, rows, is_backfill=True)
+    regrouped = await repo.set_psn_trophy_groups(
+        account_id,
+        title.np_communication_id,
+        {str(item.trophy_id): item.trophy_group_id for item in earned if item.trophy_group_id},
+    )
+    return len(added) + regrouped
 
 
 def _to_parsed(

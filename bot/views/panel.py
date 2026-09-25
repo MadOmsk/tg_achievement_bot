@@ -25,7 +25,7 @@ from bot.views.keyboards import (
     format_rarity,
     panel_keyboard,
 )
-from bot.views.parts import platform_header_lines, platform_tag, visibility_status_text
+from bot.views.parts import family_tag, platform_header_lines, visibility_status_text
 
 LOGIN_STATUS_KEYS = {
     TokenStatus.ACTIVE: "panel-login-active",
@@ -284,7 +284,7 @@ async def _now_playing(
         return i18n.get("panel-no-presence-data")
     if not presence.online:
         return i18n.get("panel-offline", ago=humanize_ago(presence.updated_at, i18n.locale))
-    tag = platform_tag(presence.platform, i18n.locale)
+    tag = family_tag(presence.platform, i18n.locale)
     if not presence.title_id:
         return f"{tag}  ·  " + i18n.get("panel-online-idle")
     # Presence gives no name for PC titles — fall back to the cache the

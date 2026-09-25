@@ -354,6 +354,10 @@ CREATE TABLE IF NOT EXISTS titles (
     name_en    TEXT,
     platform   TEXT,               -- xbox_360 / xbox_modern
     platforms  TEXT,               -- JSON array of available platforms from API (#79)
+    -- Failed titlehub lookups of `platforms` for an Xbox game, and when the
+    -- last one ran (migration 060, #114). After three, `platforms` is '[]'.
+    platforms_attempts   INTEGER NOT NULL DEFAULT 0,
+    platforms_checked_at TEXT,
     -- The game's own box art (titlehub's display_image), not an achievement
     -- icon — used as a stand-in icon for Xbox 360 achievement messages
     -- (fetcher.py's ensure_title_icon): contract 1 only ever gives a bare
@@ -570,85 +574,20 @@ CREATE TABLE IF NOT EXISTS steam_rarity_cache (
     cached_at       TEXT NOT NULL
 );
 
--- Bilingual achievement/trophy *descriptions* (2026-09-09 user request) —
--- names are never translated, only descriptions. Shared across every person
--- who ever unlocks this achievement, keyed by the achievement itself, not by
--- who unlocked it — seen_achievements is per-person by design (SPEC 9,
--- M-Steam-2) and would otherwise pay the same translation cost (or even the
--- same extra platform request) once per person instead of once ever.
--- `source` records how description_en/description_ru were obtained:
--- 'native' — the platform itself returned two genuinely different strings
--- for the two locales requested (no LLM involved, free); 'llm' — the two
--- came back identical (the platform has no real translation of its own,
--- only a silent fallback to its default language), so the missing side was
--- produced by services/translate. Ordinary achievement descriptions exist
--- on every platform including Xbox 360 (which has no rarity data at all,
--- CLAUDE.md) — nothing here is rarity-related.
-CREATE TABLE IF NOT EXISTS achievement_description_cache (
-    platform         TEXT NOT NULL,
-    title_id         TEXT NOT NULL,
-    achievement_id   TEXT NOT NULL,
-    description_ru   TEXT,
-    description_en   TEXT,
-    -- native: the platform returned two genuinely different strings.
-    -- llm: it returned the same one twice (no translation exists there), so
-    --   services/translate filled the gap.
-    -- fallback: same as llm's case, but nothing could translate it yet — no
-    --   Anthropic key, or the call failed. The text is stored and shown
-    --   untranslated rather than dropped (user request, 2026-09-13), and
-    --   `description_ru` stays NULL so "no Russian" is a fact rather than a
-    --   lie. A fallback row is offered to the translator again; the other two
-    --   never are.
-    source           TEXT NOT NULL CHECK (source IN ('native', 'llm', 'fallback')),
-    cached_at        TEXT NOT NULL,
-    PRIMARY KEY (platform, title_id, achievement_id)
-);
-
--- An achievement's own name in both languages (#61). Separate from the
--- description cache above on purpose: `source` there is about where a
--- *description* came from, and a name has no such story — it is only ever the
--- platform's own string, never translated by anything (CLAUDE.md). Plenty of
--- achievements also have a name and no description, and would otherwise need
--- a description row invented to hold the name.
-CREATE TABLE IF NOT EXISTS achievement_name_cache (
-    platform        TEXT NOT NULL,
-    title_id        TEXT NOT NULL,
-    achievement_id  TEXT NOT NULL,
-    name_ru         TEXT,
-    name_en         TEXT,
-    cached_at       TEXT NOT NULL,
-    PRIMARY KEY (platform, title_id, achievement_id)
-);
-
--- How rare an achievement is, as a fact about the achievement rather than
--- about the person who unlocked it (owner, 2026-09-17).
---
--- `seen_achievements.rarity_percent` is written once per person per
--- achievement and never updated (every insert is INSERT OR IGNORE, and
--- nothing UPDATEs that table), so it is really "whatever the platform
--- reported the first time somebody here earned this". On Xbox most rows
--- carry none at all: rarity arrives only on contract 4, the per-title call a
--- live poll makes, while backfill uses contract 2 for the whole library.
---
--- `checked_at` is when it was last fetched, not an expiry: a percentage
--- drifts as more people play, but a year-old figure is worth more than none
--- (owner), so nothing here is hidden for being stale — it only orders the
--- refresh queue.
-CREATE TABLE IF NOT EXISTS achievement_rarity_cache (
-    platform        TEXT NOT NULL,   -- xbox_modern / xbox_360 / steam / psn
-    title_id        TEXT NOT NULL,
-    achievement_id  TEXT NOT NULL,
-    rarity_percent  REAL NOT NULL,
-    checked_at      TEXT NOT NULL,
-    PRIMARY KEY (platform, title_id, achievement_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_rarity_cache_title
-    ON achievement_rarity_cache(platform, title_id, checked_at);
-
 -- Full game achievement catalog (Issue #99, 2026-09-22) — stores all achievements
 -- of a title (both unlocked and locked), with bilingual names and descriptions,
--- icons, secrecy, gamerscore, trophy tiers and rarity. Shared across all users.
+-- icons, secrecy, gamerscore, trophy tiers and rarity. Shared across all users,
+-- keyed by the achievement itself, never by who unlocked it.
+--
+-- The one store of these facts (#119): it absorbed the description, name and
+-- rarity caches that predated it (migration 062). A row may be partial — a
+-- poll that learned only names or a percentage writes just those — and the
+-- catalog refresh (services/title_catalog.py) fills in the rest.
+--
+-- Names are the platform's own strings, never translated. `rarity_percent` is
+-- the latest the platform reported; `seen_achievements.rarity_percent` is only
+-- a snapshot from the first unlock here and the fallback. A year-old
+-- percentage is worth more than none, so nothing here expires.
 CREATE TABLE IF NOT EXISTS title_achievements (
     platform        TEXT NOT NULL CHECK (platform IN ('xbox_modern', 'xbox_360', 'steam', 'psn')),
     title_id        TEXT NOT NULL,
@@ -664,6 +603,22 @@ CREATE TABLE IF NOT EXISTS title_achievements (
     trophy_group_id TEXT,
     rarity_percent  REAL,
     updated_at      TEXT NOT NULL,
+    -- How the two descriptions were obtained, once they went through
+    -- services/translate/descriptions.py; NULL until then.
+    -- native: the platform returned two genuinely different strings.
+    -- llm: it returned the same one twice (no translation exists there), so
+    --   services/translate filled the gap.
+    -- fallback: same as llm's case, but nothing could translate it yet — no
+    --   Anthropic key, or the call failed. The text is shown untranslated,
+    --   `description_ru` stays NULL, and the row is offered to the translator
+    --   again; the other two never are.
+    description_source TEXT CHECK (description_source IN ('native', 'llm', 'fallback')),
+    -- 1 once the catalog's own writer (upsert_title_achievements) wrote the
+    -- row, i.e. it is known to be one of the game's achievements with its name
+    -- and icon. A row a poll created to hold just a percentage, a name or a
+    -- description stays 0 — it is not counted as the game's list, or a list
+    -- of one person's unlocks would pass for the whole game (#119).
+    listed          INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (platform, title_id, achievement_id)
 );
 

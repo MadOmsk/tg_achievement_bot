@@ -96,7 +96,7 @@ def test_the_revision_counts_from_the_fork_point_not_from_main_s_tip() -> None:
     if not base:
         return  # no origin/main here (a shallow CI checkout) — nothing to compare
     expected = subprocess.run(
-        ["git", "rev-list", "--count", f"{base}..HEAD"],
+        ["git", "rev-list", "--count", f"{base}..HEAD", *version_module._NOT_DOCS],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -226,7 +226,13 @@ def test_production_counts_from_the_newest_release_tag(monkeypatch) -> None:
     # --first-parent: one per release, not one per commit that rode in with
     # it. Measured on the day this was written: 3 releases against 19
     # commits, and the number is meant to say which release is running.
-    assert ("rev-list", "--count", "--first-parent", "v1.2.0..HEAD") in asked
+    assert (
+        "rev-list",
+        "--count",
+        "--first-parent",
+        "v1.2.0..HEAD",
+        *version_module._NOT_DOCS,
+    ) in asked
     version_module.revision.cache_clear()
     version_module.line.cache_clear()
 
@@ -257,7 +263,43 @@ def test_a_working_branch_still_counts_from_where_it_left_main(monkeypatch) -> N
     assert version_module.revision() == "3"
     # Every commit here, not first parents: on a working branch the question
     # is how much work has accumulated.
-    assert ("rev-list", "--count", "abc123..HEAD") in asked
+    assert ("rev-list", "--count", "abc123..HEAD", *version_module._NOT_DOCS) in asked
     assert not any(args[0] == "describe" for args in asked), "a branch must not read the tag"
     version_module.revision.cache_clear()
     version_module.line.cache_clear()
+
+
+def test_a_documentation_only_commit_does_not_advance_the_version(tmp_path, monkeypatch) -> None:
+    """Owner, 2026-09-24: docs travel dev → prerelease → main without a
+    release, so they must not move the number the next release gets. A real
+    repository, because the rule lives in git's own pathspec."""
+    import subprocess
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (tmp_path / "bot.py").write_text("a = 1")
+    git("add", ".")
+    git("commit", "-qm", "code")
+    git("tag", "v1.0.0")
+    for name, body in (("CLAUDE.md", "x"), ("changelog/1.0.1.ru.md", "y"), ("bot.py", "a = 2")):
+        path = tmp_path / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(body)
+        git("add", ".")
+        git("commit", "-qm", name)
+
+    monkeypatch.setattr(version_module, "REPO", tmp_path)
+    version_module.revision.cache_clear()
+    version_module.line.cache_clear()
+    try:
+        # three commits since the tag, one of them code
+        assert version_module.revision() == "1"
+    finally:
+        version_module.revision.cache_clear()
+        version_module.line.cache_clear()

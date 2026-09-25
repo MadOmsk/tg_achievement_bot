@@ -248,7 +248,7 @@ class _StatsRepo:
         at all, and only PSN has tiers — which needs no special handling: a
         zero simply renders as nothing, the same way a zero gamerscore does.
         """
-        # Joined to the rarity cache, unlike its neighbours here: the cache is
+        # Joined to the catalog, unlike its neighbours here: its percentage is
         # what makes an Xbox row rare at all, most of them having been stored
         # by a backfill that carries no percentage. The table stays unaliased
         # because OWNED_BY_PERSON_EXISTS below names it in full.
@@ -257,18 +257,18 @@ class _StatsRepo:
         query = (
             f"SELECT SUM(CASE WHEN {value} IS NOT NULL AND {value} <= ?"
             "                THEN 1 ELSE 0 END),"
-            "       SUM(CASE WHEN trophy_type = 'platinum' THEN 1 ELSE 0 END),"
-            "       SUM(CASE WHEN trophy_type = 'gold' THEN 1 ELSE 0 END),"
-            "       SUM(CASE WHEN trophy_type = 'silver' THEN 1 ELSE 0 END),"
-            "       SUM(CASE WHEN trophy_type = 'bronze' THEN 1 ELSE 0 END) "
+            f"       SUM(CASE WHEN {table}trophy_type = 'platinum' THEN 1 ELSE 0 END),"
+            f"       SUM(CASE WHEN {table}trophy_type = 'gold' THEN 1 ELSE 0 END),"
+            f"       SUM(CASE WHEN {table}trophy_type = 'silver' THEN 1 ELSE 0 END),"
+            f"       SUM(CASE WHEN {table}trophy_type = 'bronze' THEN 1 ELSE 0 END) "
             "FROM seen_achievements " + rarity_cache_join(table) + "WHERE " + OWNED_BY_PERSON_EXISTS
         )
         params: list[object] = [rare_threshold, tg_id]
         if since is not None:
-            query += f" AND {earned_since('')}"
+            query += f" AND {earned_since(table)}"
             params.append(_iso(since))
         if until is not None:
-            query += f" AND {earned_at('')} < ?"
+            query += f" AND {earned_at(table)} < ?"
             params.append(_iso(until))
         cursor = await self._conn.execute(query, params)
         row = await cursor.fetchone()
@@ -356,7 +356,7 @@ class _StatsRepo:
                 JOIN (
                     SELECT title_id, COUNT(*) AS catalog_total
                     FROM title_achievements
-                    WHERE platform IN ('xbox_modern', 'xbox_360')
+                    WHERE platform IN ('xbox_modern', 'xbox_360') AND listed = 1
                     GROUP BY title_id
                 ) c ON s.title_id = c.title_id
                 WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
