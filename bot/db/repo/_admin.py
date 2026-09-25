@@ -338,15 +338,15 @@ class _AdminRepo:
             "        JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
             "        WHERE s.title_id = t.title_id) AS owner_tg_id "
             f"FROM titles t WHERE {self._PLATFORMS_DUE} "
+            # Filtered before the LIMIT: a game nobody here can be asked about
+            # must not take a place in the batch, or a head of such games
+            # would stall the queue for good.
+            "AND owner_tg_id IS NOT NULL "
             "ORDER BY t.platforms_checked_at IS NOT NULL, t.platforms_checked_at "
             "LIMIT ?",
             (limit,),
         )
-        return [
-            (row["title_id"], row["owner_tg_id"])
-            for row in await cursor.fetchall()
-            if row["owner_tg_id"] is not None
-        ]
+        return [(row["title_id"], row["owner_tg_id"]) for row in await cursor.fetchall()]
 
     async def record_platforms_lookup(self, title_id: str, platforms_json: str | None) -> None:
         """What one titlehub lookup found. None counts as a failed attempt; the

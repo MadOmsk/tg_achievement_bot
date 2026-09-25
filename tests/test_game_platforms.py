@@ -575,3 +575,17 @@ async def test_the_walker_asks_through_an_owner_with_a_live_token(repo: Repo) ->
     assert titlehub.calls == ["t-walk"]
     platforms = await repo.title_platforms(["t-walk", "t-orphan"])
     assert platforms == {"t-walk": '["XboxOne", "XboxSeries"]'}
+
+
+async def test_games_nobody_can_be_asked_about_do_not_stall_the_queue(repo: Repo) -> None:
+    await repo.ensure_user(7, "igor")
+    await repo.save_refresh_token(7, "encrypted")
+    await repo.link_xbox_account(7, "xuid-7", "Seven", None)
+    for n in range(3):
+        await repo.upsert_title(f"t-orphan-{n}", "Nobody holds it", Platform.XBOX_MODERN)
+    await repo.upsert_title("t-held", "Held", Platform.XBOX_MODERN)
+    await repo.insert_new_achievements(
+        "xuid-7", [_row("t-held", "1", Platform.XBOX_MODERN)], is_backfill=True
+    )
+
+    assert await repo.titles_needing_platforms(1) == [("t-held", 7)]
