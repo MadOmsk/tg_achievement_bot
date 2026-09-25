@@ -273,6 +273,9 @@ class OwnedGame:
     # makes a relink cost two requests instead of three hundred: only games
     # touched since the newest unlock we already hold can have anything new.
     last_played: int = 0
+    # `has_community_visible_stats`: whether the game has achievements at
+    # all. Asking one without them costs a request and earns a 400 (#120).
+    has_stats: bool = True
 
 
 async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
@@ -305,6 +308,7 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
             name=item.get("name") or str(item["appid"]),
             playtime_forever=int(item.get("playtime_forever") or 0),
             last_played=int(item.get("rtime_last_played") or 0),
+            has_stats=bool(item.get("has_community_visible_stats")),
         )
         for item in games
         if item.get("appid") and int(item.get("playtime_forever") or 0) > 0

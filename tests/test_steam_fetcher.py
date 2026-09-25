@@ -261,6 +261,7 @@ async def test_library_gaps_are_filled_once_and_silently(
         return [
             OwnedGame(appid="550", name="L4D2", playtime_forever=100),
             OwnedGame(appid="1085660", name="Destiny 2", playtime_forever=900),
+            OwnedGame(appid="4000", name="Garry's Mod", playtime_forever=50, has_stats=False),
         ]
 
     async def fake_fetch_unlocked(
@@ -277,7 +278,9 @@ async def test_library_gaps_are_filled_once_and_silently(
     await fetcher.fill_library_gaps_once([(TG_ID, STEAM_ID)])
     await fetcher.fill_library_gaps_once([(TG_ID, STEAM_ID)])
 
-    assert asked == ["1085660"]  # L4D2 already had rows; second call is a no-op
+    # L4D2 already had rows, Garry's Mod has no achievements at all, and
+    # the second call is a no-op.
+    assert asked == ["1085660"]
     assert publisher.published == []
     assert await repo.steam_titles_with_achievements(STEAM_ID) == {"550", "1085660"}
 

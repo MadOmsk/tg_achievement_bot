@@ -210,7 +210,7 @@ class SteamFetcher:
             stored = await self._repo.steam_titles_with_achievements(steam_id)
             rows: list[AchievementRow] = []
             for game in games:
-                if game.appid in stored:
+                if game.appid in stored or not game.has_stats:
                     continue
                 async with self._game_slots:
                     try:
