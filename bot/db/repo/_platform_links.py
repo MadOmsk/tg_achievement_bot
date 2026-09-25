@@ -354,19 +354,36 @@ class _PlatformLinksRepo:
     async def psn_titles_missing_groups(
         self, limit: int, skip: Collection[tuple[str, str]] = ()
     ) -> list[tuple[int, str, str, str | None]]:
-        """`(tg_id, account_id, title_id, platforms)` for PSN games in which a
-        linked account still holds trophies with no group (#115) — stored
-        before #46. Only accounts somebody holds: nobody sees the others."""
+        """`(tg_id, account_id, title_id, platforms)` for PSN games whose
+        stored trophies are known to be incomplete, for a linked account —
+        nobody sees the others:
+
+        - trophies with no group (#115), stored before #46 fetched DLC;
+        - a game with progress and not a single trophy stored (#120): the scan
+          advanced its progress when the fetch failed, so it never asks again.
+          Progress is written only after a game's trophies are, so "progress,
+          no rows" cannot be a scan still in flight.
+        """
         cursor = await self._conn.execute(
-            "SELECT al.tg_id, s.xuid AS account_id, s.title_id, t.platforms "
+            "SELECT al.tg_id, s.xuid AS account_id, s.title_id, t.platforms,"
+            "       MAX(COALESCE(s.unlocked_at, s.created_at)) AS latest "
             "FROM seen_achievements s "
             "JOIN account_links al ON al.platform = s.account_platform"
             " AND al.external_id = s.xuid AND al.is_active = 1 "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             "WHERE s.account_platform = ? AND s.trophy_group_id IS NULL "
             "GROUP BY s.xuid, s.title_id "
-            "ORDER BY MAX(COALESCE(s.unlocked_at, s.created_at)) DESC",
-            (AccountPlatform.PSN,),
+            "UNION ALL "
+            "SELECT al.tg_id, p.account_id, p.np_communication_id, t.platforms, p.updated_at "
+            "FROM psn_title_progress p "
+            "JOIN account_links al ON al.platform = ? AND al.external_id = p.account_id"
+            " AND al.is_active = 1 "
+            "LEFT JOIN titles t ON t.title_id = p.np_communication_id "
+            "WHERE p.progress > 0 AND NOT EXISTS ("
+            "  SELECT 1 FROM seen_achievements s WHERE s.account_platform = ?"
+            "   AND s.xuid = p.account_id AND s.title_id = p.np_communication_id) "
+            "ORDER BY latest DESC",
+            (AccountPlatform.PSN, AccountPlatform.PSN, AccountPlatform.PSN),
         )
         found: list[tuple[int, str, str, str | None]] = []
         for row in await cursor.fetchall():
@@ -376,6 +393,15 @@ class _PlatformLinksRepo:
             if len(found) >= limit:
                 break
         return found
+
+    async def steam_titles_with_achievements(self, steam_id: str) -> set[str]:
+        """The appids this Steam account has anything stored for (#120)."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT title_id FROM seen_achievements"
+            " WHERE account_platform = ? AND xuid = ?",
+            (AccountPlatform.STEAM, steam_id),
+        )
+        return {row["title_id"] for row in await cursor.fetchall()}
 
     async def set_psn_trophy_groups(
         self, account_id: str, title_id: str, groups: dict[str, str]

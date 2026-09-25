@@ -90,7 +90,7 @@ async def test_old_trophies_get_their_group_and_missing_dlc_is_stored_silently(
         title_ref(GAME, ["PS5"]),  # type: ignore[arg-type]
     )
 
-    assert changed == 2
+    assert changed == 3  # two regrouped, one added
     stored = await _stored(repo)
     assert stored["1"] == ("default", 0)
     assert stored["2"] == ("default", 0)
@@ -130,3 +130,30 @@ def test_title_ref_picks_the_trophy_service_of_the_newest_console() -> None:
     assert title_ref("X", ["PS3", "PS4", "PSVITA"]).title_platform == {PlatformType.PS4}
     assert title_ref("X", ["PSVITA"]).title_platform == {PlatformType.PS_VITA}
     assert title_ref("X", None).title_platform == frozenset()
+
+
+async def test_a_game_with_progress_and_nothing_stored_is_filled_in(
+    repo: Repo, monkeypatch
+) -> None:
+    """The scan advanced progress when the fetch failed, so it never asks
+    again (#120): the walker does, and stores what it finds as history."""
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, "Gamer")
+    await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR22032_00", 1)
+    await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR00000_00", 0)  # nothing earned
+
+    pending = await repo.psn_titles_missing_groups(10)
+    assert [(p[1], p[2]) for p in pending] == [(ACCOUNT_ID, "NPWR22032_00")]
+
+    _sony_says(monkeypatch, [_trophy(7, "default")])
+    changed = await psn_achievements.regroup_title(
+        repo,
+        object(),
+        TG_ID,
+        ACCOUNT_ID,
+        title_ref("NPWR22032_00", ["PS5"]),  # type: ignore[arg-type]
+    )
+
+    assert changed == 1
+    assert (await _stored(repo))["7"] == ("default", 1)
+    assert await repo.psn_titles_missing_groups(10) == []

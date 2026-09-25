@@ -280,11 +280,16 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
     launched has nothing to backfill, and asking about it wastes a request
     for every game in a large library. Verified live: 617 owned games, 306
     with playtime_forever > 0, on the same account used throughout M-Steam
-    research."""
+    research.
+
+    `include_played_free_games` (#120): without it Steam leaves out every
+    free-to-play game — Destiny 2, Apex Legends, Aimlabs — and their
+    achievements were never backfilled at all (34 of 1712 on one account).
+    """
     payload = await _get(
         "/IPlayerService/GetOwnedGames/v1/",
         api_key,
-        {"steamid": steam_id, "include_appinfo": "1"},
+        {"steamid": steam_id, "include_appinfo": "1", "include_played_free_games": "1"},
     )
     if "games" not in payload:
         # See SteamGameDetailsPrivateError's own docstring — this is a

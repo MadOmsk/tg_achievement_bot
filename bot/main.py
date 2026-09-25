@@ -380,6 +380,9 @@ async def run(settings: Settings) -> None:
                     )
                 except Exception:
                     log.exception("steam catch-up for tg_id=%s failed", steam_target.tg_id)
+            await steam_fetcher.fill_library_gaps_once(
+                [(t.tg_id, t.steam_id) for t in await repo.steam_pollable_users()]
+            )
 
     await publisher.start()
     # Force-exit every anti-flood window still open from before this restart

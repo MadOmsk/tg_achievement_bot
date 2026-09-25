@@ -173,6 +173,7 @@ name, or when the tree goes stale.
 │
 ├── scripts/                     one-off operational helpers, outside the running bot
 │   ├── render_screen.py          draws any screen, prints it or sends it to the owner's DM (#63)
+│   ├── check_integrity.py        stored achievements vs what each platform reports, read-only (#120)
 │   ├── xbox-deploy.sh            what CI runs on the server (/usr/local/bin/xbox-deploy)
 │   ├── db_status.py              summary for `manage.ps1 status`
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
@@ -452,7 +453,10 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   no icon and no spoiler. One retry per game per process. Global rarity is cached
   with an expiry (it drifts).
 - **Backfill** scans owned games with playtime, one call per game, under a two-level
-  concurrency limit (people at once, games per person at once).
+  concurrency limit (people at once, games per person at once). `GetOwnedGames`
+  asks for `include_played_free_games` (#120): without it every free-to-play game
+  was left out. Accounts linked before that are topped up once at startup
+  (`SteamFetcher.fill_library_gaps_once`, marked in `app_settings`), as history.
 - **Descriptions**: `GetPlayerAchievements` is fetched with `l=english` beside
   `l=russian` only when some achievement in the batch is not cached yet.
 - **Exit poll is delayed 180s** (`STEAM_DELAYED_EXIT_POLL_SECONDS`, #89): `GetPlayerAchievements` sits behind a CDN
@@ -500,7 +504,9 @@ for this; psnawp uses the private one the PlayStation App uses.
   `poller/psn_trophy_groups.py` → `regroup_title`): a game with some grouped rows is
   never widened, so its older rows stayed ungrouped and the card's group counter
   undercounted. One request per (account, game); earned trophies never stored go in
-  as backfill — history, not news. Only accounts somebody holds.
+  as backfill — history, not news. Only accounts somebody holds. The same walker
+  takes a game with progress and no trophies stored (#120): the scan records
+  progress even when the fetch failed, and then never asks again.
 - **A game known only from the database is a `TitleRef`** (`title_ref(id,
   platforms)`), never a hand-built psnawp `TrophyTitle` (a TypeError). Its platform
   picks Sony's trophy service, so it is the game's newest console, not a default.
@@ -1039,6 +1045,10 @@ It:
 
 GitHub holds four secrets (SSH key, host, user, host fingerprint); `.env`, `FERNET_KEY`
 and databases never go near it.
+
+**Measure completeness after a release that touches syncing**:
+`scripts/check_integrity.py` compares, per account, what each platform reports with
+what is stored (#120) — read-only, safe beside a running bot.
 
 **The deploy does not rehearse migrations.** That is a person's job, done on a copy of
 production **before merging `prerelease` into `main`** — the last moment it is still a

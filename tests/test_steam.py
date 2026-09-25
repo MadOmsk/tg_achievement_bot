@@ -262,7 +262,11 @@ async def test_get_presence_batch_omits_a_profile_steam_did_not_return(
 async def test_get_owned_games_keeps_only_played_ones(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
         assert path == "/IPlayerService/GetOwnedGames/v1/"
-        assert params == {"steamid": STEAM_ID, "include_appinfo": "1"}
+        assert params == {
+            "steamid": STEAM_ID,
+            "include_appinfo": "1",
+            "include_played_free_games": "1",  # #120
+        }
         return {
             "game_count": 2,
             "games": [

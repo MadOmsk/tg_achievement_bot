@@ -289,23 +289,26 @@ async def sync_account(
 async def regroup_title(
     repo: Repo, client: PSNAWP, tg_id: int, account_id: str, title: TitleRef
 ) -> int:
-    """Give this account's trophies in one game the group they belong to
-    (#115), for rows stored before #46 when only the base group was fetched.
+    """Complete this account's trophies in one game: give the ones stored
+    before #46 their group (#115), and store any earned trophy the bot never
+    stored (#120) — DLC ones invisible before #46, or a whole game whose
+    fetch once failed after its progress was already recorded.
 
     One request, the game's whole earned list with `trophy_group_id="all"`.
-    Earned trophies the bot never stored — DLC ones, invisible before #46 —
-    go in as backfill: they were earned long ago and a first sight of them
-    is not news, which is also what keeps the ordinary scan from announcing
-    them the day this game next moves. Returns how many rows gained a group.
+    What is added goes in as backfill: it was earned long ago and a first
+    sight of it is not news, which is also what keeps the ordinary scan from
+    announcing it the day this game next moves. Returns how many rows gained
+    a group or were added.
     """
     earned = await trophies_for_title(client, account_id, title)
     rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
-    await repo.insert_new_achievements_psn(tg_id, account_id, rows, is_backfill=True)
-    return await repo.set_psn_trophy_groups(
+    added = await repo.insert_new_achievements_psn(tg_id, account_id, rows, is_backfill=True)
+    regrouped = await repo.set_psn_trophy_groups(
         account_id,
         title.np_communication_id,
         {str(item.trophy_id): item.trophy_group_id for item in earned if item.trophy_group_id},
     )
+    return len(added) + regrouped
 
 
 def _to_parsed(

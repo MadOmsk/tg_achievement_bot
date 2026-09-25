@@ -31,9 +31,14 @@ from bot.services.steam.client import (
     rate_limit_usage,
 )
 from bot.services.translate.auth import AnthropicAuth
-from bot.util import parse_iso
+from bot.util import parse_iso, utcnow_iso
 
 log = logging.getLogger(__name__)
+
+# Set once every linked account's library has been topped up with the games
+# the backfill never saw (#120) — free-to-play ones, left out of
+# GetOwnedGames until the flag that includes them was added.
+LIBRARY_TOPUP_KEY = "steam_free_games_topup_done"
 
 
 # A backfill's per-game concurrency — Xbox never needed this second level
@@ -193,6 +198,58 @@ class SteamFetcher:
                     except SteamApiError as exc:
                         log.info("steam catch-up of appid=%s skipped: %s", game.appid, exc)
             return found
+
+    async def fill_library_gaps(self, tg_id: int, steam_id: str) -> int:
+        """Store, as history, the achievements of every played game this
+        account has nothing stored for (#120) — one request per such game,
+        not per game in the library. Publishes nothing: whatever is there was
+        earned before the bot could see it."""
+        api_key = await self._steam_auth.require_key()
+        async with self._backfill_slots:
+            games = await get_owned_games(api_key, steam_id)
+            stored = await self._repo.steam_titles_with_achievements(steam_id)
+            rows: list[AchievementRow] = []
+            for game in games:
+                if game.appid in stored:
+                    continue
+                async with self._game_slots:
+                    try:
+                        parsed = await fetch_unlocked(
+                            self._repo,
+                            self._anthropic_auth,
+                            api_key,
+                            steam_id,
+                            game.appid,
+                            title_name=game.name,
+                        )
+                    except SteamApiError as exc:
+                        log.info("steam top-up of appid=%s skipped: %s", game.appid, exc)
+                        continue
+                rows.extend(to_achievement_row(item) for item in parsed)
+            await self._repo.insert_new_achievements_steam(tg_id, steam_id, rows, is_backfill=True)
+            log.info("steam top-up for tg_id=%s stored %s achievements", tg_id, len(rows))
+            return len(rows)
+
+    async def fill_library_gaps_once(self, targets: list[tuple[int, str]]) -> None:
+        """`fill_library_gaps` for every linked account, once per database
+        (#120): a new link already gets free games through its backfill, and
+        one played later arrives through the catch-up's recently-played list.
+        The mark is not set if Steam failed for somebody, so the next start
+        tries again; a private library is not a failure — asking again would
+        not change it."""
+        if await self._repo.get_app_setting(LIBRARY_TOPUP_KEY):
+            return
+        complete = True
+        for tg_id, steam_id in targets:
+            try:
+                await self.fill_library_gaps(tg_id, steam_id)
+            except SteamGameDetailsPrivateError:
+                continue
+            except Exception:
+                log.exception("steam top-up for tg_id=%s failed", tg_id)
+                complete = False
+        if complete:
+            await self._repo.set_app_setting(LIBRARY_TOPUP_KEY, utcnow_iso())
 
     async def backfill(self, tg_id: int, steam_id: str) -> int:
         """Mark everything already unlocked as seen, publishing nothing —
