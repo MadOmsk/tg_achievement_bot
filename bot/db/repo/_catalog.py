@@ -11,8 +11,16 @@ from bot.util import utcnow_iso
 class _CatalogRepo:
     _conn: aiosqlite.Connection
 
-    async def upsert_title_achievements(self, rows: list[TitleAchievementRow]) -> None:
-        """Upsert a game's full or partial achievement catalog."""
+    async def upsert_title_achievements(
+        self, rows: list[TitleAchievementRow], *, complete: bool = False
+    ) -> None:
+        """Upsert a game's full or partial achievement catalog.
+
+        `complete` says the rows are the game's *whole* list (#119) — the
+        catalog refresh, Steam's per-game response. A live poll that holds
+        only what one person earned passes False: its rows still land, but
+        do not become the game's list, or one person's unlocks would pass for
+        the whole game (and count as a 100% completion)."""
         if not rows:
             return
         now = utcnow_iso()
@@ -24,7 +32,7 @@ class _CatalogRepo:
                 "  description_ru, description_en, icon_url, is_secret,"
                 "  gamerscore, trophy_type, trophy_group_id, rarity_percent, updated_at,"
                 "  listed"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1) "
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(platform, title_id, achievement_id) DO UPDATE SET "
                 "  name_ru = COALESCE(excluded.name_ru, title_achievements.name_ru),"
                 "  name_en = COALESCE(excluded.name_en, title_achievements.name_en),"
@@ -47,7 +55,8 @@ class _CatalogRepo:
                 "                             title_achievements.trophy_group_id),"
                 "  rarity_percent = COALESCE(excluded.rarity_percent, "
                 "                            title_achievements.rarity_percent),"
-                "  updated_at = excluded.updated_at, listed = 1",
+                "  updated_at = excluded.updated_at,"
+                "  listed = MAX(title_achievements.listed, excluded.listed)",
                 (
                     r.platform,
                     r.title_id,
@@ -63,6 +72,7 @@ class _CatalogRepo:
                     r.trophy_group_id,
                     r.rarity_percent,
                     updated_at,
+                    1 if complete else 0,
                 ),
             )
         await self._conn.commit()

@@ -72,7 +72,7 @@ async def test_repo_title_achievements_crud(repo: Repo) -> None:
             rarity_percent=12.5,
         ),
     ]
-    await repo.upsert_title_achievements(rows)
+    await repo.upsert_title_achievements(rows, complete=True)
 
     count = await repo.title_achievements_count(Platform.XBOX_MODERN, "12345")
     assert count == 2
@@ -126,7 +126,7 @@ async def test_repo_title_achievements_with_user_unlocks(repo: Repo) -> None:
             name_ru="Ачивка 2",
         ),
     ]
-    await repo.upsert_title_achievements(rows)
+    await repo.upsert_title_achievements(rows, complete=True)
 
     # Link user and unlock only a1
     await repo.ensure_user(101, "player_one")
@@ -171,7 +171,8 @@ async def test_catalog_service_24h_debounce(repo: Repo) -> None:
                 achievement_id="x1",
                 name_en="X1",
             )
-        ]
+        ],
+        complete=True,
     )
     two_hours_ago = (datetime.now(UTC) - timedelta(hours=2)).isoformat(timespec="seconds")
     await repo.set_title_achievements_checked_at("debounced_game", two_hours_ago)
@@ -215,7 +216,8 @@ async def test_catalog_service_count_match_skips_translation(repo: Repo) -> None
                 achievement_id="x2",
                 name_en="X2",
             ),
-        ]
+        ],
+        complete=True,
     )
     old_time = (datetime.now(UTC) - timedelta(hours=30)).isoformat(timespec="seconds")
     await repo.set_title_achievements_checked_at("xbox_game", old_time)
@@ -306,7 +308,8 @@ async def test_get_game_details_with_checklist_and_groups(repo: Repo, settings: 
                 trophy_type="silver",
                 trophy_group_id="001",
             ),
-        ]
+        ],
+        complete=True,
     )
     await repo.set_title_achievements_checked_at("NPWR999", utcnow_iso())
 

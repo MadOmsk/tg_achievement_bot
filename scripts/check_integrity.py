@@ -208,6 +208,11 @@ async def check_steam(data: sqlite3.Connection, key: str | None, report: Report)
             report.say(f"  {name}: game details are private")
             continue
         games = [g for g in payload["games"] if g.get("has_community_visible_stats")]
+        games += [
+            {"appid": appid, "name": name, "playtime_forever": g.get("playtime_forever")}
+            for g in games
+            for appid, name in steam.FOLDED_APPS.get(str(g["appid"]), ())
+        ]
         counts = await asyncio.gather(
             *(_steam_game(key, steam_id, str(g["appid"]), slots) for g in games)
         )

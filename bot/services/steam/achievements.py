@@ -138,7 +138,8 @@ async def fetch_unlocked(
                     updated_at=now,
                 )
             )
-        await repo.upsert_title_achievements(cat_rows)
+        # GetPlayerAchievements lists the whole game, earned or not.
+        await repo.upsert_title_achievements(cat_rows, complete=True)
 
     result: list[ParsedAchievement] = []
     for item in unlocked:

@@ -358,11 +358,12 @@ every column. History: #106.
   a fact one side learned was invisible to the other. Keyed by the achievement,
   never by who earned it, so a translation is paid for once.
   - `TitleCatalogService` refreshes a title's full list at most every 24h
-    (`titles.achievements_checked_at`); those rows are `listed = 1`. A poll that
-    learned only a percentage, a name or a description upserts just that column
-    and leaves `listed = 0` — **only listed rows count as the game's list** (its
-    size, the Mini App, 100% completions), or one person's unlocks would pass for
-    the whole game.
+    (`titles.achievements_checked_at`); those rows, and Steam's per-game response,
+    are the whole list and are written `complete=True` → `listed = 1`. Everything
+    else — a percentage, a name, a description, a live Xbox/PSN poll's earned-only
+    rows, the seed migration 053 took from what people had earned — leaves
+    `listed = 0`. **Only listed rows count as the game's list** (its size, the Mini
+    App, 100% completions), or one person's unlocks would pass for the whole game.
   - **Descriptions**: `description_source` says how they came — `native` (the
     platform gave two different strings), `llm` (it gave the same text twice, so
     `services/translate` filled the gap), `fallback` (no Anthropic key: shown
@@ -457,6 +458,10 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   asks for `include_played_free_games` (#120): without it every free-to-play game
   was left out. Accounts linked before that are topped up once at startup
   (`SteamFetcher.fill_library_gaps_once`, marked in `app_settings`), as history.
+- **Games Valve folded into another are listed beside their host** (#123,
+  `steam/client.py::FOLDED_APPS`): Half-Life 2's episodes became part of Half-Life 2
+  in 2024, their achievements stayed on apps 380/420, and no API lists those apps
+  any more. A table, because nothing else can know.
 - **Descriptions**: `GetPlayerAchievements` is fetched with `l=english` beside
   `l=russian` only when some achievement in the batch is not cached yet.
 - **Exit poll is delayed 180s** (`STEAM_DELAYED_EXIT_POLL_SECONDS`, #89): `GetPlayerAchievements` sits behind a CDN

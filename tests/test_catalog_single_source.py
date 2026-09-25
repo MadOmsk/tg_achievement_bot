@@ -38,7 +38,11 @@ async def test_facts_a_poll_learned_are_not_the_games_list(repo: Repo) -> None:
     assert await repo.title_achievements_count("xbox_modern", "g") == 0
     assert await repo.get_title_achievements("xbox_modern", "g") == []
 
-    await repo.upsert_title_achievements([_listed("1"), _listed("2"), _listed("3")])
+    # A live poll's earned-only rows are not the list either.
+    await repo.upsert_title_achievements([_listed("1")])
+    assert await repo.title_achievements_count("xbox_modern", "g") == 0
+
+    await repo.upsert_title_achievements([_listed("1"), _listed("2"), _listed("3")], complete=True)
 
     assert await repo.title_achievements_count("xbox_modern", "g") == 3
     rows = {r.achievement_id: r for r in await repo.get_title_achievements("xbox_modern", "g")}
@@ -90,6 +94,8 @@ async def test_migration_062_moves_the_caches_into_the_catalog(tmp_path) -> None
                 trophy_type TEXT, trophy_group_id TEXT, rarity_percent REAL,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (platform, title_id, achievement_id));
+            CREATE TABLE titles (title_id TEXT PRIMARY KEY, achievements_checked_at TEXT);
+            INSERT INTO titles VALUES ('P', 't0'), ('Q', NULL);
             CREATE TABLE achievement_description_cache (
                 platform TEXT, title_id TEXT, achievement_id TEXT, description_ru TEXT,
                 description_en TEXT, source TEXT, cached_at TEXT);
@@ -105,7 +111,10 @@ async def test_migration_062_moves_the_caches_into_the_catalog(tmp_path) -> None
             -- in the catalog already, with an untranslated Russian
             INSERT INTO title_achievements VALUES
                 ('psn', 'P', '1', 'Trophy', 'Trophy', 'Win', 'Win', 'icon', 0, NULL,
-                 'gold', 'default', 9.5, 't0');
+                 'gold', 'default', 9.5, 't0'),
+                -- seeded by migration 053 from what somebody earned, never refreshed
+                ('psn', 'Q', '1', 'Seed', 'Seed', NULL, NULL, NULL, 0, NULL,
+                 'bronze', NULL, NULL, 't0');
             INSERT INTO achievement_description_cache VALUES
                 ('psn', 'P', '1', 'Победи', 'Win', 'llm', 't1'),
                 ('psn', 'P', '2', NULL, 'Lose', 'fallback', 't1');
@@ -134,7 +143,8 @@ async def test_migration_062_moves_the_caches_into_the_catalog(tmp_path) -> None
     assert (one["name_ru"], one["name_en"]) == ("Трофей", "Trophy")
     assert (one["description_ru"], one["description_source"]) == ("Победи", "llm")
     assert one["rarity_percent"] == 7.0
-    assert one["listed"] == 1
+    assert one["listed"] == 1  # its game's catalog was refreshed
+    assert rows[("psn", "Q", "1")]["listed"] == 0  # a seed is not the game's list
     two = rows[("psn", "P", "2")]
     assert (two["description_ru"], two["description_en"], two["description_source"]) == (
         None,

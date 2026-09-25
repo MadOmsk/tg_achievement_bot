@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import httpx
 
@@ -263,6 +263,32 @@ def _vanity_from(profile_url: str | None, steam_id: str) -> str | None:
     return segment if segment and segment != steam_id else None
 
 
+# Games Valve folded into another one (#123): the achievements stayed on the
+# old app, but the library lists only the host, so nothing the bot reads ever
+# mentions the old app again. Half-Life 2's episodes became part of Half-Life 2
+# in November 2024 — one account holds 13/13 and 22/23 of theirs, and Steam's
+# own "perfect games" counts Episode One while GetOwnedGames, with every flag
+# it takes, never returns it. There is no API that lists such apps, hence a
+# table: host appid -> (folded appid, name).
+FOLDED_APPS: dict[str, tuple[tuple[str, str], ...]] = {
+    "220": (("380", "Half-Life 2: Episode One"), ("420", "Half-Life 2: Episode Two")),
+}
+
+
+def with_folded_apps[G: (OwnedGame, RecentlyPlayedGame)](games: list[G]) -> list[G]:
+    """The list as Steam gave it, plus each folded app of a host in it —
+    carrying the host's playtime and last session, which is where the
+    folded game's own went (#123)."""
+    listed = {game.appid for game in games}
+    extra = [
+        replace(game, appid=appid, name=name)
+        for game in games
+        for appid, name in FOLDED_APPS.get(game.appid, ())
+        if appid not in listed
+    ]
+    return games + extra
+
+
 @dataclass(slots=True)
 class OwnedGame:
     appid: str
@@ -302,7 +328,7 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
             "Game details privacy is not public (GetOwnedGames returned no games key)"
         )
     games = payload.get("games") or []
-    return [
+    games = [
         OwnedGame(
             appid=str(item["appid"]),
             name=item.get("name") or str(item["appid"]),
@@ -313,6 +339,7 @@ async def get_owned_games(api_key: str, steam_id: str) -> list[OwnedGame]:
         for item in games
         if item.get("appid") and int(item.get("playtime_forever") or 0) > 0
     ]
+    return with_folded_apps(games)
 
 
 @dataclass(slots=True)
@@ -335,7 +362,7 @@ async def get_recently_played_games(
         {"steamid": steam_id, "count": str(count)},
     )
     games = payload.get("games") or []
-    return [
+    games = [
         RecentlyPlayedGame(
             appid=str(item["appid"]),
             name=item.get("name") or str(item["appid"]),
@@ -346,6 +373,7 @@ async def get_recently_played_games(
         for item in games
         if item.get("appid")
     ]
+    return with_folded_apps(games)
 
 
 async def get_player_achievements(

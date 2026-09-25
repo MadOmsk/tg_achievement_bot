@@ -429,3 +429,32 @@ async def test_get_recently_played_games_handles_empty_response(
 
     games = await get_recently_played_games("key", STEAM_ID)
     assert games == []
+
+
+async def test_a_folded_game_is_listed_beside_its_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Half-Life 2's episodes live inside Half-Life 2 since November 2024 and
+    GetOwnedGames no longer returns them, while their achievements stay on
+    their own app ids (#123)."""
+
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {
+            "games": [
+                {
+                    "appid": 220,
+                    "name": "Half-Life 2",
+                    "playtime_forever": 900,
+                    "rtime_last_played": 7,
+                    "has_community_visible_stats": True,
+                },
+            ]
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    games = await get_owned_games("key", STEAM_ID)
+
+    assert [(g.appid, g.playtime_forever, g.last_played) for g in games] == [
+        ("220", 900, 7),
+        ("380", 900, 7),
+        ("420", 900, 7),
+    ]

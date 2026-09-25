@@ -36,9 +36,11 @@ from bot.util import parse_iso, utcnow_iso
 log = logging.getLogger(__name__)
 
 # Set once every linked account's library has been topped up with the games
-# the backfill never saw (#120) — free-to-play ones, left out of
-# GetOwnedGames until the flag that includes them was added.
-LIBRARY_TOPUP_KEY = "steam_free_games_topup_done"
+# the backfill never saw: free-to-play ones, left out of GetOwnedGames until
+# the flag that includes them was added (#120), and games Valve folded into
+# another (#123). A new name runs the top-up again for whatever a later fix
+# makes visible.
+LIBRARY_TOPUP_KEY = "steam_library_topup_123"
 
 
 # A backfill's per-game concurrency — Xbox never needed this second level

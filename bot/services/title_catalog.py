@@ -207,7 +207,7 @@ class TitleCatalogService:
             except Exception:
                 log.info("steam translation failed for appid %s", appid, exc_info=True)
 
-        await self._repo.upsert_title_achievements(rows)
+        await self._repo.upsert_title_achievements(rows, complete=True)
         await self._repo.upsert_title(
             appid,
             appid,
@@ -345,7 +345,7 @@ class TitleCatalogService:
             except Exception:
                 log.info("psn translation failed for title %s", np_communication_id, exc_info=True)
 
-        await self._repo.upsert_title_achievements(rows)
+        await self._repo.upsert_title_achievements(rows, complete=True)
         await self._repo.upsert_title(
             np_communication_id,
             dummy_title.title_name,
@@ -470,7 +470,7 @@ class TitleCatalogService:
             except Exception:
                 log.info("xbox translation failed for title %s", title_id, exc_info=True)
 
-        await self._repo.upsert_title_achievements(rows)
+        await self._repo.upsert_title_achievements(rows, complete=True)
         await self._repo.upsert_title(
             title_id,
             achievements_en[0].title_name or title_id if achievements_en else title_id,

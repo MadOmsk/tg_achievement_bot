@@ -10,11 +10,14 @@
 ALTER TABLE title_achievements ADD COLUMN description_source TEXT
     CHECK (description_source IN ('native', 'llm', 'fallback'));
 
--- Every row the catalog holds today was written by its own refresh; the rows
--- the caches bring in below are only facts about an achievement, not the
--- game's list, and stay 0.
+-- A game's list is known to be whole only where the catalog refresh ran
+-- (`achievements_checked_at`). Migration 053 seeded the catalog from what
+-- people had earned, and live polls add earned-only rows too — on
+-- production, 99 of 100 PSN games hold only the unlocked trophies. Those,
+-- and the rows the caches bring in below, stay 0 until a refresh.
 ALTER TABLE title_achievements ADD COLUMN listed INTEGER NOT NULL DEFAULT 0;
-UPDATE title_achievements SET listed = 1;
+UPDATE title_achievements SET listed = 1
+WHERE title_id IN (SELECT title_id FROM titles WHERE achievements_checked_at IS NOT NULL);
 
 -- The WHERE also keeps SQLite from reading ON CONFLICT as a join clause.
 INSERT INTO title_achievements
