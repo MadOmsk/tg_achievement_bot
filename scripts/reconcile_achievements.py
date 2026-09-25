@@ -37,7 +37,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.publisher import Publisher
 from bot.services.crypto import TokenCipher
 from bot.services.translate.auth import AnthropicAuth
-from bot.services.xbox.auth import XboxAuthService
+from bot.services.xbox.auth import TokenRefreshError, XboxAuthService
 from bot.services.xbox.client import XboxApiError, XboxClient
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)-7s %(message)s")
@@ -70,28 +70,36 @@ async def main() -> None:
     users = [u for u in await repo.admin_users() if u.xuid]
     log.info("reconciling %s connected users", len(users))
 
-    for user in users:
-        name = user.gamertag or f"id{user.tg_id}"
-        try:
-            _, before_score = await repo.achievement_counts(user.xuid, None)
-            total = await fetcher.backfill(user.tg_id, user.xuid)
-            _, after_score = await repo.achievement_counts(user.xuid, None)
-        except XboxApiError as exc:
-            log.warning("%s: skipped, %s", name, exc)
-            continue
-        gained = after_score - before_score
-        log.info(
-            "%s: %s achievements on record, +%s gamerscore recovered (%s -> %s)",
-            name,
-            total,
-            gained,
-            before_score,
-            after_score,
-        )
+    try:
+        for user in users:
+            await _reconcile(repo, fetcher, user)
+    finally:
+        # A connection left open keeps aiosqlite's thread alive and the
+        # process hangs instead of exiting (CLAUDE.md, bring-up).
+        await auth.close()
+        await bot.session.close()
+        await database.close()
 
-    await auth.close()
-    await bot.session.close()
-    await database.close()
+
+async def _reconcile(repo: Repo, fetcher: Fetcher, user) -> None:
+    name = user.gamertag or f"id{user.tg_id}"
+    try:
+        _, before_score = await repo.achievement_counts(user.xuid, None)
+        total = await fetcher.backfill(user.tg_id, user.xuid)
+        _, after_score = await repo.achievement_counts(user.xuid, None)
+    except (XboxApiError, TokenRefreshError) as exc:
+        # TokenRefreshError is not an XboxApiError: a network blip during a
+        # refresh used to end the whole run (found live, a DNS hiccup).
+        log.warning("%s: skipped, %s", name, exc)
+        return
+    log.info(
+        "%s: %s achievements on record, +%s gamerscore recovered (%s -> %s)",
+        name,
+        total,
+        after_score - before_score,
+        before_score,
+        after_score,
+    )
 
 
 if __name__ == "__main__":
