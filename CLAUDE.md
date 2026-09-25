@@ -1088,6 +1088,14 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   `.summary.ru.txt` / `.summary.en.txt` (5–8 `•` bullets for the announcement), where
   `<v>` is `A.B.C`. `main` then always carries its own notes and the announcement
   links never 404.
+- **A release is: notes, a short review, then `prerelease` → `main`** (owner,
+  2026-09-25). A contributor's pull request targets `prerelease`, never `main`: #129
+  merged into `main` deployed at once, and production announced a version with no
+  notes behind its link.
+- **A release that starts a new minor** bumps `TRUNK_LINE` on `prerelease`, and the
+  merge into `main` is made locally, tagged `vX.Y.0`, and pushed **tag first, then
+  `main`**: the deploy starts on the push and counts C from the newest tag, so a tag
+  added after a GitHub merge arrives too late (production would read `X.Y.N`).
 - **On startup each bot announces a new version** (`services/release_notify.py`) once,
   tracked in `app_settings.last_announced_version`: to active group chats only, in each
   chat's locale. Prod sends the summary bullets and a button to the full notes on
