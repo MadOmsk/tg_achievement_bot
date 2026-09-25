@@ -371,7 +371,7 @@ async def _bilingual_descriptions(
     cached: dict[int, str] = {}
     for trophy_id, english_text in candidates.items():
         cat_row = cat_by_id.get(str(trophy_id))
-        if cat_row and cat_row.description_ru:
+        if cat_row and cat_row.description_ru and cat_row.description_source:  # #127
             cached[trophy_id] = cat_row.description_ru
             continue
         row = await repo.get_cached_description(

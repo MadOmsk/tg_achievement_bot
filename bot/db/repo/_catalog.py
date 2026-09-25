@@ -26,6 +26,15 @@ class _CatalogRepo:
         now = utcnow_iso()
         for r in rows:
             updated_at = r.updated_at or now
+            # The platform answers a Russian request with its English when it
+            # has no Russian, and storing that as `description_ru` made every
+            # reader take it for a translation (#127). Only the translator
+            # (cache_description) may say a Russian side equals the English.
+            description_ru = (
+                None
+                if r.description_ru and r.description_ru == r.description_en
+                else r.description_ru
+            )
             await self._conn.execute(
                 "INSERT INTO title_achievements ("
                 "  platform, title_id, achievement_id, name_ru, name_en,"
@@ -63,7 +72,7 @@ class _CatalogRepo:
                     r.achievement_id,
                     r.name_ru,
                     r.name_en,
-                    r.description_ru,
+                    description_ru,
                     r.description_en,
                     r.icon_url,
                     1 if r.is_secret else 0,
@@ -84,7 +93,8 @@ class _CatalogRepo:
         cursor = await self._conn.execute(
             "SELECT platform, title_id, achievement_id, name_ru, name_en, "
             "       description_ru, description_en, icon_url, is_secret, "
-            "       gamerscore, trophy_type, trophy_group_id, rarity_percent, updated_at "
+            "       gamerscore, trophy_type, trophy_group_id, rarity_percent, updated_at,"
+            "       description_source "
             "FROM title_achievements "
             "WHERE platform = ? AND title_id = ? AND listed = 1 "
             "ORDER BY rowid ASC",
@@ -107,6 +117,7 @@ class _CatalogRepo:
                 trophy_group_id=row["trophy_group_id"],
                 rarity_percent=row["rarity_percent"],
                 updated_at=row["updated_at"],
+                description_source=row["description_source"],
             )
             for row in rows
         ]

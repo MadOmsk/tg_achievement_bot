@@ -262,7 +262,9 @@ class Fetcher:
         uncached: dict[str, str] = {}
         for achievement_id, english_text in candidates.items():
             cat_row = cat_by_id.get(achievement_id)
-            if cat_row and cat_row.description_ru:
+            # Only a description that went through the translator (#127) —
+            # a catalog refresh alone may hold the English under "ru".
+            if cat_row and cat_row.description_ru and cat_row.description_source:
                 result[achievement_id] = (
                     cat_row.description_ru,
                     cat_row.description_en or english_text,

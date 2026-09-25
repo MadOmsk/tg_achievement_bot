@@ -690,6 +690,10 @@ class TitleAchievementRow:
     trophy_group_id: str | None = None
     rarity_percent: float | None = None
     updated_at: str | None = None
+    # How the descriptions came (native / llm / fallback), None until they went
+    # through the translator — a Russian side is only to be trusted once this
+    # is set (#127): the platform often returns its English for the Russian.
+    description_source: str | None = None
 
 
 @dataclass(slots=True)

@@ -154,3 +154,86 @@ async def test_migration_062_moves_the_caches_into_the_catalog(tmp_path) -> None
     assert two["listed"] == 0  # a fact, not a known entry of the game's list
     assert rows[("xbox_modern", "X", "a")]["name_en"] == "Name"
     assert rows[("xbox_modern", "X", "b")]["rarity_percent"] == 3.0
+
+
+async def test_the_english_under_ru_is_not_stored_as_russian(repo: Repo) -> None:
+    """#127: a platform answering a Russian request in English is no Russian."""
+    await repo.upsert_title_achievements(
+        [_listed("1", description_ru="Win", description_en="Win")], complete=True
+    )
+    rows = await repo.get_title_achievements("xbox_modern", "g")
+    assert rows[0].description_ru is None
+    assert rows[0].description_en == "Win"
+
+
+MIGRATION_065 = Path("bot/db/migrations/065_untranslated_is_not_russian.sql").read_text(
+    encoding="utf-8"
+)
+
+
+async def test_migration_065_drops_the_copies(tmp_path) -> None:
+    sql = MIGRATION_065
+    async with aiosqlite.connect(tmp_path / "m065.db") as conn:
+        await conn.executescript(
+            """
+            CREATE TABLE title_achievements (
+                achievement_id TEXT, description_ru TEXT, description_en TEXT,
+                description_source TEXT);
+            INSERT INTO title_achievements VALUES
+                ('copy', 'Win', 'Win', NULL),
+                ('llm', 'Победи', 'Win', 'llm'),
+                ('same', 'OK', 'OK', 'native'),
+                ('real', 'Победи', 'Win', NULL);
+            """
+        )
+        await conn.executescript(sql)
+        rows = dict(
+            await (
+                await conn.execute("SELECT achievement_id, description_ru FROM title_achievements")
+            ).fetchall()
+        )
+    assert rows == {"copy": None, "llm": "Победи", "same": "OK", "real": "Победи"}
+
+
+async def test_the_walker_translates_steam_from_stored_text(
+    repo: Repo, monkeypatch, cipher
+) -> None:
+    """Steam/PSN (#127): the English is already stored, only the translation
+    is missing — no platform request."""
+    from bot.db.repo import AchievementRow
+    from bot.poller.description_backfill import DescriptionBackfill
+    from bot.services.translate import descriptions as descriptions_module
+    from bot.services.translate.auth import AnthropicAuth
+
+    await repo.ensure_user(7, "igor")
+    await repo.link_platform_account(7, "steam", "7656", "Igor")
+    await repo.insert_new_achievements_steam(
+        7,
+        "7656",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="WIN",
+                name="Победа",
+                description="Win the game",
+                icon_url=None,
+                unlocked_at=None,
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=True,
+    )
+
+    async def _fake_translate(api_key, texts, *, target_language):
+        return {aid: f"[ru] {text}" for aid, text in texts.items()}
+
+    monkeypatch.setattr(descriptions_module, "translate_descriptions", _fake_translate)
+    auth = AnthropicAuth(repo, cipher, env_key="fake-key")
+    await auth.get_key()
+
+    await DescriptionBackfill(repo, object(), auth).tick()  # type: ignore[arg-type]
+
+    cached = await repo.get_cached_description("steam", "550", "WIN")
+    assert cached is not None and cached.description_ru == "[ru] Win the game"

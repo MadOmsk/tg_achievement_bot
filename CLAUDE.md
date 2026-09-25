@@ -375,7 +375,13 @@ every column. History: #106.
     untranslated, `description_ru` NULL, re-offered to the translator), NULL (never
     through the translator yet: rendered as it is, and still queued). Only
     `services/translate/descriptions.py::bilingual_descriptions` sets it, and a
-    catalog refresh never overwrites a description that has one.
+    catalog refresh never overwrites a description that has one. **A Russian side
+    is trusted only when `description_source` is set** (#127): a platform with no
+    Russian answers the Russian request with its English, and a catalog refresh
+    that stored it under `description_ru` once made every poll skip the
+    translator. So no writer but the translator stores a Russian side equal to
+    the English, and `poller/description_backfill.py` translates Steam/PSN rows
+    from the English already stored, without a platform request.
   - **Names**: the platform's own two strings, **never translated**, from the same
     two locale requests. Each platform's main call fixes one language (Xbox/PSN
     English, Steam Russian), which is why both are kept.

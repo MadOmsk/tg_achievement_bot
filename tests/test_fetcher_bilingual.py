@@ -189,3 +189,44 @@ async def test_no_anthropic_key_stores_the_english_description_untranslated(
         "fallback",
     )
     assert await _stored_description(repo, "A1") == "Win the game"
+
+
+async def test_a_catalog_holding_the_english_under_ru_is_still_translated(
+    repo: Repo, cipher: TokenCipher, monkeypatch
+) -> None:
+    """Well Dweller, 2026-09-25 (#127): a catalog refresh had stored Xbox's
+    English under "ru", the poll took that for a translation, and a whole
+    session published in English. Only a translator-settled row is trusted."""
+    from bot.db.repo import TitleAchievementRow
+
+    await _connected_user(repo, cipher)
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="1",
+                achievement_id="A1",
+                name_en="A1",
+                description_ru="Win the game",  # the platform's English, not Russian
+                description_en="Win the game",
+            )
+        ],
+        complete=True,
+    )
+    client = FakeClient(
+        {
+            "en-US": [_achievement("A1", "Win the game")],
+            "ru-RU": [_achievement("A1", "Win the game")],
+        }
+    )
+
+    async def _fake_translate(api_key, texts, *, target_language):
+        return {aid: f"[ru] {text}" for aid, text in texts.items()}
+
+    monkeypatch.setattr(descriptions_module, "translate_descriptions", _fake_translate)
+    anthropic_auth = AnthropicAuth(repo, cipher, env_key="fake-key")
+    await anthropic_auth.get_key()
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=anthropic_auth)
+
+    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Game") == 1
+    assert await _stored_description(repo, "A1") == "[ru] Win the game"

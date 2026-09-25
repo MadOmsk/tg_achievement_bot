@@ -97,8 +97,16 @@ async def fetch_unlocked(
     await repo.cache_rarity(Platform.STEAM, appid, percentages)
     stored_count = await repo.title_achievements_count(Platform.STEAM.value, appid)
     api_total = len(raw)
-    if stored_count > 0 and stored_count == api_total:
-        catalog = await repo.get_title_achievements(Platform.STEAM.value, appid)
+    catalog = (
+        await repo.get_title_achievements(Platform.STEAM.value, appid)
+        if stored_count > 0 and stored_count == api_total
+        else []
+    )
+    settled = {row.achievement_id for row in catalog if row.description_source}
+    # A whole catalog answers only for descriptions the translator settled
+    # (#127): a refresh alone may hold Steam's English under "ru", and an
+    # earned one still waiting is worth the second request.
+    if catalog and all(item.apiname in settled for item in unlocked if item.description):
         descriptions = {
             row.achievement_id: (row.description_ru, row.description_en) for row in catalog
         }
