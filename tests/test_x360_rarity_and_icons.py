@@ -219,11 +219,11 @@ def test_format_digest_x360_rarity_and_spoilers() -> None:
     text = format_digest("Player", "Wolfenstein 3D", [ach1, ach2], locale="ru")
 
     # Common achievement: 🏆 badge, 25% rarity, no spoiler
-    assert "🏆 «Common Achievement» · 15 G · редкость 25%" in text
+    assert "🏆 «Common Achievement» · 15 G · 25%" in text
     assert "Common description" in text
 
     # Rare secret achievement: 💎 badge, 4.5% rarity, spoiler on title and description
-    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · редкость 4.5%' in text
+    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · 4.5%' in text
     assert '<span class="tg-spoiler">Secret description</span>' in text
 
 
@@ -244,5 +244,5 @@ def test_format_single_x360_secret_achievement() -> None:
 
     text = format_single("Player", ach, "Wolfenstein 3D", locale="ru")
     assert "получает секретное достижение" in text
-    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · редкость 4.5%' in text
+    assert '💎 «<span class="tg-spoiler">Rare Secret</span>» · 30 G · 4.5%' in text
     assert '<span class="tg-spoiler">Secret description</span>' in text

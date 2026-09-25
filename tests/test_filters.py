@@ -131,7 +131,7 @@ def test_single_message_is_the_standardized_form() -> None:
     text = format_single("Igor", achievement(rarity=2.4), "Halo Infinite", locale="ru")
     assert "<b>Igor</b> получает достижение" in text
     assert "Halo Infinite (<i>🟢 XBOX</i>)" in text
-    assert "💎 «Ashes to Ashes» · 20 G · редкость 2.4%" in text
+    assert "💎 «Ashes to Ashes» · 20 G · 2.4%" in text
 
 
 def test_single_message_for_x360_has_no_rarity_percent_but_still_a_badge() -> None:
@@ -155,7 +155,7 @@ def test_single_message_omits_gamerscore_when_zero() -> None:
     text = format_single("Igor", item, "Deadlock", locale="ru")
     lines = text.split("\n")
     assert "G" not in lines[3]  # header, blank, game line, then this one
-    assert "редкость 92.2%" in text
+    assert "· 92.2%" in text
 
 
 def test_single_message_shows_gamerscore_when_nonzero_on_any_platform() -> None:
@@ -296,7 +296,7 @@ def test_secret_achievement_name_is_spoilered_in_a_digest_line_too() -> None:
     assert '«<span class="tg-spoiler">Ashes to Ashes</span>»' in text
     assert '<span class="tg-spoiler">Kill 100 enemies</span>' in text
     assert "«Ashes to Ashes» ·" in text  # the non-secret one, unwrapped
-    assert "\nKill 100 enemies" in text
+    assert "\n<i>Kill 100 enemies</i>" in text  # italic in a digest (owner, 2026-09-25)
 
 
 def test_gamertag_and_achievement_text_are_html_escaped() -> None:

@@ -305,6 +305,67 @@ class _AdminRepo:
         )
         return {row["title_id"]: row["platforms"] for row in await cursor.fetchall()}
 
+    # An Xbox game's platforms, looked up in titlehub until found or given up
+    # on (#114, migration 060): the lookup is retried an hour apart at most,
+    # so one bad minute of Microsoft's cannot spend all three attempts.
+    PLATFORMS_LOOKUP_ATTEMPTS = 3
+
+    _PLATFORMS_DUE = (
+        "t.platform = 'xbox_modern' AND t.platforms IS NULL"
+        f" AND t.platforms_attempts < {PLATFORMS_LOOKUP_ATTEMPTS}"
+        " AND (t.platforms_checked_at IS NULL"
+        "      OR t.platforms_checked_at < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-1 hour'))"
+    )
+
+    async def platforms_lookup_due(self, title_id: str) -> bool:
+        """Whether publishing this game should ask titlehub for its platforms first."""
+        cursor = await self._conn.execute(
+            f"SELECT 1 FROM titles t WHERE t.title_id = ? AND {self._PLATFORMS_DUE}",
+            (title_id,),
+        )
+        return await cursor.fetchone() is not None
+
+    async def titles_needing_platforms(self, limit: int) -> list[tuple[str, int]]:
+        """`(title_id, owner_tg_id)` for Xbox games whose platforms are still
+        unknown — the same "somebody here with a live token" owner the cover
+        walker asks through, since titlehub answers only through a person's."""
+        cursor = await self._conn.execute(
+            "SELECT t.title_id,"
+            "       (SELECT MIN(al.tg_id) FROM seen_achievements s "
+            "        JOIN account_links al ON al.platform = s.account_platform"
+            "         AND al.external_id = s.xuid AND al.is_active = 1 "
+            "        JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
+            "        JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
+            "        WHERE s.title_id = t.title_id) AS owner_tg_id "
+            f"FROM titles t WHERE {self._PLATFORMS_DUE} "
+            "ORDER BY t.platforms_checked_at IS NOT NULL, t.platforms_checked_at "
+            "LIMIT ?",
+            (limit,),
+        )
+        return [
+            (row["title_id"], row["owner_tg_id"])
+            for row in await cursor.fetchall()
+            if row["owner_tg_id"] is not None
+        ]
+
+    async def record_platforms_lookup(self, title_id: str, platforms_json: str | None) -> None:
+        """What one titlehub lookup found. None counts as a failed attempt; the
+        third one stores '[]' — "known to be unknown" — and leaves the queue."""
+        if platforms_json:
+            await self._conn.execute(
+                "UPDATE titles SET platforms = ?, platforms_checked_at = ? WHERE title_id = ?",
+                (platforms_json, utcnow_iso(), title_id),
+            )
+        else:
+            await self._conn.execute(
+                "UPDATE titles SET platforms_attempts = platforms_attempts + 1,"
+                " platforms_checked_at = ?,"
+                " platforms = CASE WHEN platforms_attempts + 1 >= ? THEN '[]' ELSE platforms END "
+                "WHERE title_id = ?",
+                (utcnow_iso(), self.PLATFORMS_LOOKUP_ATTEMPTS, title_id),
+            )
+        await self._conn.commit()
+
     async def set_title_total(self, title_id: str, total: int) -> None:
         """How many achievements a game has, without touching anything else
         about it (#46).

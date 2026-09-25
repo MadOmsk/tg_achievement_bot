@@ -494,7 +494,7 @@ async def _device_of(repo: Repo) -> str | None:
         (("PS4", "PS5"), None, None),  # several platforms, nothing known: no guess
         (("PS4", "PS5"), ("offline", "PS5"), None),  # an old presence is not this session
         (("PS4", "PS5"), ("online", "PS5"), "PS5"),
-        (("PS5",), None, "PS5"),  # released on one platform only
+        (("PS5",), None, None),  # one platform: the game says it, not the row (#114)
     ],
 )
 async def test_a_trophy_device_is_known_or_left_empty(

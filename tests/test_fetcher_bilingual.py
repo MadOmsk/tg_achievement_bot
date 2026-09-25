@@ -36,6 +36,9 @@ class FakeClient:
         self.by_language = by_language
         self.calls: list[str] = []
 
+    async def resolve_title(self, tg_id, title_id):
+        return None  # titlehub cannot describe it: platforms stay unknown (#114)
+
     async def title_achievements(self, tg_id, title_id, platform, *, language: str = "en-US"):
         self.calls.append(language)
         return self.by_language.get(language, [])

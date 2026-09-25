@@ -118,7 +118,8 @@ name, or when the tree goes stale.
 │   │   ├── profile_links.py      one profile-URL builder per platform
 │   │   ├── presence_view.py      "where is this person right now" — /online's rule, for one person
 │   │   ├── descriptions_view.py  an achievement's name/description in the reader's language (#48, #61)
-│   │   ├── platform_format.py    game platforms and devices, formatted (#79)
+│   │   ├── platform_format.py    which platform a screen names: version played, release
+│   │   │                         platforms, device (#79, #114)
 │   │   ├── title_catalog.py      the game-level achievement catalog, 24h debounce (#99, #80)
 │   │   ├── achievement_icons.py  achievement icons on disk under data/achievements/ (#99)
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
@@ -151,6 +152,7 @@ name, or when the tree goes stale.
 │   │   ├── flood_flush.py        the anti-flood read/flush side
 │   │   ├── daily.py              scheduled summaries and the two on-demand summary commands (#14)
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
+│   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
 │   │   ├── reminders.py          reminders for a dead Xbox login
@@ -295,18 +297,20 @@ every column. History: #106.
 - **`device` — what an achievement was earned on — is a fact or `NULL`, never a
   guess** (#79; owner, 2026-09-24; migration 059). Its sources: Xbox presence while
   that game is being played (the exit poll uses the device presence last reported);
-  PSN presence while the person is online; otherwise, for a game released on
-  exactly one platform, that platform (`repo.fill_single_platform_devices`, run on
-  insert and again when `save_title_history` learns a game's platforms). A game on
-  several platforms with nothing known stays `NULL` and renders as the platform
-  family. Steam stays `NULL` (PC or Steam Deck cannot be told apart). The column
-  holds either presence codenames (`Scarlett`, `PS5`) or platform names
-  (`XboxSeries`, `PC`) — display normalizes both. How each screen *shows* platform
-  vs device is being redesigned (owner, 2026-09-24) and is not settled yet.
+  PSN presence while the person is online, on a game released on several
+  platforms; otherwise `NULL` — a single-platform game needs none, its version is
+  known from the game (#114). Steam stays `NULL` (PC or Steam Deck cannot be told
+  apart). Presence codenames (`Scarlett`, `Durango`, `Web`, `PS5`) —
+  `services/platform_format.py` normalizes them.
 - **A game's platforms (`titles.platforms`) are what it was released on** — from
   Xbox titlehub or PSN's title listing, never from presence. Presence codenames
   found there (`Scarlett`, `Durango`, `WindowsOneCore`, `Web`, …) were device
-  guesses and were cleared by migration 059 for titlehub to refill.
+  guesses and were cleared by migration 059 for titlehub to refill. An Xbox game
+  without them is looked up in titlehub (#114, migration 060): before its
+  achievements publish (`Fetcher.ensure_title_platforms`) and by
+  `poller/title_platforms.py` for the rest, at most three times an hour apart
+  (`platforms_attempts`, `platforms_checked_at`); after the third failure
+  `platforms` is `'[]'` — known to be unknown.
 - `publications` records what was posted to each chat, with its message id.
   `bot_messages` logs every bot message in a group (`is_system`, `is_achievement`,
   `preview`) for cleanup and `/delete_last`; `tracked_messages` holds the one copy a
@@ -696,7 +700,7 @@ History: #110.
 - Header: the name in bold + "получает достижение" / "получает трофей" (PSN), or
   **"получает секретное …"** for a secret one (#16) — the header is the one line never
   hidden, and a spoiler with no explanation reads as a glitch.
-- **Game line**, italic: game, platform, and the person's progress `47/50` when the
+- **Game line**, italic: game, the version played (below), and the person's progress `47/50` when the
   total is known (#46). Totals: Xbox 360 from `title_history`; modern Xbox from
   titlehub or, when titlehub says 0, the size of the per-title response stored in
   `titles.achievements_total` (Microsoft's count wins where it exists); Steam from the
@@ -706,15 +710,47 @@ History: #110.
   and progress inside it (`CTNS: The Heist · 3/7`). A name equal to the game's reads
   "Основная игра"; a name starting with the game's keeps only the rest; never a "DLC"
   prefix (a group is not always one) — `services/achievements.py::_group_label`.
-- Then the badge and the name in quotes, gamerscore (if nonzero) and rarity (if
-  known), then the description — behind a spoiler if secret.
+- Then the badge and the name in quotes, gamerscore (if nonzero) and rarity as a
+  bare percentage (if known — no word, owner 2026-09-25), then the description —
+  behind a spoiler if secret.
 - **Badges**: `rarity_badge()` — 💎 at or below the chat's rare threshold, 🏆
   otherwise (including unknown). PSN shows its tier instead (see PSN).
+
+### Which platform a screen names (#114, owner, 2026-09-24)
+
+Three questions, one function each in `services/platform_format.py`:
+
+- **The version played** (`played_version`) — the card and digest (full name),
+  `/recent` (short). The game's *original* platform, picked by the device it ran
+  on: a 360 game is 360 even through backward compatibility, a One-only game on a
+  Series is One, Smart Delivery is the console's own version, a Play Anywhere game
+  on PC is PC. The cloud runs the console version and adds ☁ (a phone without a
+  native version is the cloud). PSN the same: a PS4 game on PS5 is PS4, a
+  cross-buy game is the version played. Play Anywhere is never a version played.
+- **The release platforms** (`game_platforms_label`) — the games lists, short:
+  here XPA exists.
+- **The device** (`device_label`) — `/online`, short.
+
+Unknown is never guessed: a game on several platforms with no device, or nothing
+known at all, is its family — **XBOX**, **PSN**, **Steam**. A game whose platforms
+could not be found (`'[]'`, see Data model) names the device's own version.
+
+| | full | short |
+|---|---|---|
+| Xbox | `XBOX Series X\|S`, `XBOX One`, `XBOX 360`, `XBOX PC`, `XBOX Mobile`, `XBOX Play Anywhere`, `XBOX One \| Series` | `Series X\|S`, `One`, `360`, `PC`, `Mobile`, `XPA`, `One \| Series` |
+| cloud | `XBOX Series X\|S ☁` | `Series X\|S ☁` |
+| PSN | `PlayStation 5`, `PlayStation 4 \| 5`, `PlayStation 3 \| 4 \| Vita`, `PlayStation Vita` | `PS5`, `PS4 \| PS5`, `PS3 \| PS4 \| Vita`, `PS Vita` |
+
+Short names drop "XBOX" because a platform logo will precede them (#105) and
+complete the name; a PSN short name never has a bare digit. "XBOX" is always
+upper-case. `/panel`'s "now" row names only the family, as its header lines do.
 
 ### Digests
 
 - One header ("получает N достижений" / "N трофеев" for an all-PSN batch), one block
-  per game with the game's own counter, every item in the card's line format. A
+  per game with the game's own counter, every item in the card's line format, the
+  descriptions in italics (owner, 2026-09-25) and the block's version named by
+  whichever item knows its device. A
   `sendMediaGroup`, caption on the first image, images deduped.
 - **The anti-flood digest is the same form**; only its header names the person
   instead of a platform nickname, because it can mix platforms.

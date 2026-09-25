@@ -32,6 +32,7 @@ from bot.poller.service_health import ServiceHealth
 from bot.poller.steam_catch_up import SteamCatchUpPoller
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
+from bot.poller.title_platforms import TitlePlatformsRefresh
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class PollerScheduler:
         catch_up: CatchUpPoller,
         cover_refresh: CoverRefresh,
         steam_catch_up: SteamCatchUpPoller,
+        title_platforms: TitlePlatformsRefresh,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -81,6 +83,7 @@ class PollerScheduler:
         self._avatar_refresh = avatar_refresh
         self._catch_up = catch_up
         self._cover_refresh = cover_refresh
+        self._title_platforms = title_platforms
         self._steam_catch_up = steam_catch_up
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -127,6 +130,15 @@ class PollerScheduler:
             self._cover_refresh.tick,
             IntervalTrigger(seconds=TICK_SECONDS),
             id="cover_refresh",
+            coalesce=True,
+            max_instances=1,
+        )
+        # The same kind of finite backlog: Xbox games whose platforms are
+        # unknown, until found or given up on (#114).
+        self._scheduler.add_job(
+            self._title_platforms.tick,
+            IntervalTrigger(seconds=TICK_SECONDS),
+            id="title_platforms",
             coalesce=True,
             max_instances=1,
         )

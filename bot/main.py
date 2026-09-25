@@ -59,6 +59,7 @@ from bot.poller.steam_catch_up import SteamCatchUpPoller
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
+from bot.poller.title_platforms import TitlePlatformsRefresh
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.message_limits import MessageLimitMiddleware
@@ -213,6 +214,7 @@ async def run(settings: Settings) -> None:
         CatchUpPoller(settings, repo, fetcher),
         CoverRefresh(repo, client),
         steam_catch_up,
+        TitlePlatformsRefresh(repo, client),
     )
 
     async def backfill(tg_id: int, xuid: str) -> None:

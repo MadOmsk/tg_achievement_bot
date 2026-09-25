@@ -256,8 +256,8 @@ async def sync_account(
         )
         # The device these trophies were earned on (owner, 2026-09-24): what
         # presence reports while the person is online, and otherwise nothing —
-        # never a guess. A game on a single platform is filled in by
-        # `repo.fill_single_platform_devices` on insert, backfill included.
+        # never a guess. A game on a single platform needs none: its version
+        # is known from the game alone (#114, services/platform_format.py).
         target_device: str | None = None
         if not is_backfill and len(platforms_list) > 1:
             presence = await repo.psn_presence_of(account_id)

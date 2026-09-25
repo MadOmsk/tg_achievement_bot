@@ -354,6 +354,10 @@ CREATE TABLE IF NOT EXISTS titles (
     name_en    TEXT,
     platform   TEXT,               -- xbox_360 / xbox_modern
     platforms  TEXT,               -- JSON array of available platforms from API (#79)
+    -- Failed titlehub lookups of `platforms` for an Xbox game, and when the
+    -- last one ran (migration 060, #114). After three, `platforms` is '[]'.
+    platforms_attempts   INTEGER NOT NULL DEFAULT 0,
+    platforms_checked_at TEXT,
     -- The game's own box art (titlehub's display_image), not an achievement
     -- icon — used as a stand-in icon for Xbox 360 achievement messages
     -- (fetcher.py's ensure_title_icon): contract 1 only ever gives a bare

@@ -28,7 +28,7 @@ from html import escape as html_escape
 
 from bot.constants import Platform
 from bot.db.repo import GameAchievements
-from bot.services.platform_format import format_game_platforms
+from bot.services.platform_format import game_platforms_label
 from bot.views.parts import (
     PLATFORM_ICON,
     bracketed,
@@ -135,7 +135,7 @@ def game_rows(games: list[GameRow], untitled: str, locale: str) -> list[str]:
     rows: list[str] = []
     for place, game in enumerate(games, start=1):
         icon = PLATFORM_ICON.get(game.platform or "", "")
-        plat = format_game_platforms(game.platforms, game.platform, short=True)
+        plat = game_platforms_label(game.platforms, game.platform, short=True)
         tag = f"({icon} <i>{plat}</i>) " if plat else (f"{icon} " if icon else "")
         tail = _game_tail(game, locale)
         escaped_name = html_escape(game.name or untitled)

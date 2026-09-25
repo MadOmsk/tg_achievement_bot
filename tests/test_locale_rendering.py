@@ -52,7 +52,7 @@ def _achievement(
 def test_single_achievement_renders_in_english() -> None:
     text = format_single("Igor", _achievement(), "Halo Infinite", locale="en")
     assert text.startswith("<b>Igor</b> gets an achievement")
-    assert "rarity" in text
+    assert "· 2.5%" in text  # the percentage alone, no word (owner, 2026-09-25)
 
 
 def test_single_achievement_shows_device_in_game_line() -> None:

@@ -15,21 +15,7 @@ WHERE json_valid(platforms)
 
 -- 2. PSN guessed the first of several platforms when presence had nothing, and a
 --    guessed row cannot be told from a real one: start PSN over. Steam has no device.
+--    Xbox devices came from presence while the game was played: kept. Where nothing
+--    is known the column stays NULL; the version shown is derived from the game's
+--    own platforms (#114).
 UPDATE seen_achievements SET device = NULL WHERE platform IN ('psn', 'steam');
-
--- 3. Xbox devices came from presence while the game was played: kept. Where nothing is
---    known, a game released on exactly one platform can only have been played there;
---    a game on several stays NULL (rendered as the platform family).
-UPDATE seen_achievements
-SET device = (
-    SELECT json_extract(t.platforms, '$[0]') FROM titles t
-    WHERE t.title_id = seen_achievements.title_id
-)
-WHERE device IS NULL
-  AND platform <> 'steam'
-  AND EXISTS (
-      SELECT 1 FROM titles t
-      WHERE t.title_id = seen_achievements.title_id
-        AND json_valid(t.platforms)
-        AND json_array_length(t.platforms) = 1
-  );

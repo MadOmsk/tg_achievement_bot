@@ -17,7 +17,7 @@ achievement-digest-header = <b>{ $gamertag }</b> gets { $phrase }
 achievement-game-line = { $title } (<i>{ $platform }</i>)
 achievement-name = { $badge } “{ $name }”
 achievement-gamerscore = { $score } G
-achievement-rarity = { $percent }% rarity
+achievement-rarity = { $percent }%
 
 # Plural forms. The form is selected by Fluent itself from $count, using the
 # CLDR plural rules of whichever locale this file belongs to — English has

@@ -30,7 +30,7 @@ from bot.services.naming import (
     subscriber_names,
     xbox_nickname,
 )
-from bot.services.platform_format import format_game_platforms
+from bot.services.platform_format import played_version
 from bot.services.stats import counters_for, local_now, month_cutoff_utc
 from bot.util import humanize_ago, thousands
 from bot.version import version
@@ -267,7 +267,7 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
     )
     game = html_escape(truncate_name(row.game or _hub_text(i18n, "chat-untitled")))
     icon = PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
-    plat = format_game_platforms(row.game_platforms, row.platform, device=row.device, short=True)
+    plat = played_version(row.game_platforms, row.platform, device=row.device, short=True)
     icon_tag = f"({icon} <i>{plat}</i>)" if plat else icon
     # Found live: every Steam row showed a flat "+0 G" — Steam achievements
     # have no gamerscore at all (services/steam/achievements.py), same
