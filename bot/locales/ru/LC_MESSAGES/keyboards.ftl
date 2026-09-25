@@ -24,8 +24,8 @@ kb-cancel = Отмена
 kb-panel-connect-xbox = 🎮 Подключить Xbox
 kb-panel-connect-steam = 🎮 Подключить Steam
 kb-panel-connect-psn = 🎮 Подключить PSN
-kb-steam-disconnect = 🔕 Отключить Steam
-kb-psn-disconnect = 🔕 Отключить PSN
+kb-steam-disconnect = 🔌 Отвязать
+kb-psn-disconnect = 🔌 Отвязать
 kb-xbox-reconnect = 🔄 Подключить заново
 
 # Panel controls
@@ -37,7 +37,10 @@ kb-profile-visible = Профиль виден другим: { $visible } ▸
 kb-profile-visible-yes = да
 kb-profile-visible-no = нет
 kb-profile = 👤 Профиль
-kb-xbox-disconnect = 🔕 Отключить XBOX
+kb-xbox-disconnect = 🔌 Отвязать
+kb-profile-of = 👤 { $platform }
+kb-publishes-on = 🔔 Публикуется
+kb-publishes-off = 🔇 Не публикуется
 kb-locale = Язык: { $name } ▸
 kb-refresh = Обновить
 kb-back = ‹ Назад

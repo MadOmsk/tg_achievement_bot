@@ -89,7 +89,7 @@ class _PlatformLinksRepo:
     _LINK_COLUMNS = (
         "SELECT al.tg_id, al.platform, al.external_id, a.display_name, a.secondary_name,"
         "       al.linked_at, a.psn_trophy_level, a.achievements_visible,"
-        "       a.achievements_visible_checked_at "
+        "       a.achievements_visible_checked_at, al.publishes "
         "FROM account_links al "
         "JOIN accounts a ON a.platform = al.platform AND a.external_id = al.external_id "
     )
@@ -606,6 +606,28 @@ class _PlatformLinksRepo:
         )
         return await cursor.fetchone() is not None
 
+    async def account_publishes(self, tg_id: int, platform: str, external_id: str) -> bool:
+        """Whether this person announces this account's achievements (#20).
+        An account with no current link answers True: the publisher has
+        nothing else to go on, and chat targets already need a person."""
+        cursor = await self._conn.execute(
+            "SELECT publishes FROM account_links"
+            " WHERE tg_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
+            (tg_id, platform, external_id),
+        )
+        row = await cursor.fetchone()
+        return bool(row["publishes"]) if row else True
+
+    async def set_account_publishes(
+        self, tg_id: int, platform: str, external_id: str, publishes: bool
+    ) -> None:
+        await self._conn.execute(
+            "UPDATE account_links SET publishes = ?"
+            " WHERE tg_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
+            (1 if publishes else 0, tg_id, platform, external_id),
+        )
+        await self._conn.commit()
+
     async def any_active_external_id(self, platform: str) -> str | None:
         """Find any active external_id linked for this platform (e.g. for catalog queries)."""
         cursor = await self._conn.execute(
@@ -629,4 +651,5 @@ def _as_platform_link(row) -> PlatformLink:
             bool(row["achievements_visible"]) if row["achievements_visible"] is not None else None
         ),
         achievements_visible_checked_at=row["achievements_visible_checked_at"],
+        publishes=bool(row["publishes"]) if "publishes" in row.keys() else True,
     )

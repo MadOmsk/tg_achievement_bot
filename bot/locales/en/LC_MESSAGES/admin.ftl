@@ -209,6 +209,7 @@ admin-xbox-header = 🟢 XBOX: { $gamertag }
 admin-xuid-tag = XUID { $xuid }
 admin-login-row =   Login: { $login }
 admin-online-row =   Online: { $online }
+admin-muted-row =   🔇 posting switched off by the owner
 admin-steam-header = ⚫ Steam: { $name }
 admin-steamid-tag = id { $external_id }
 admin-psn-header = 🔵 PSN: { $name }

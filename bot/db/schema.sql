@@ -530,6 +530,11 @@ CREATE TABLE IF NOT EXISTS account_links (
     is_active   INTEGER NOT NULL DEFAULT 1,
     linked_at   TEXT NOT NULL,
     unlinked_at TEXT,
+    -- Whether this account's achievements are announced in the person's chats
+    -- (#20): the person's own switch, per account — with several PSN accounts
+    -- (#10) each has its own. A muted account still counts in stats,
+    -- summaries and /online; it only stops posting.
+    publishes   INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (tg_id, platform, external_id),
     FOREIGN KEY (platform, external_id) REFERENCES accounts(platform, external_id)
 );

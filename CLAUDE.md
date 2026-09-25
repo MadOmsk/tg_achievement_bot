@@ -40,8 +40,9 @@ admin controls, and predictable behavior, not public SaaS scale.
   process only answers `/api/mini/*` next to `/auth/callback`). Slash commands and
   chat notifications stay — the Mini App is an extra door, not a replacement.
 - No `/compare` or `/top` (see the appendix).
-- No per-platform visibility toggles: one `rarity_mode` per person, for every
-  platform and every chat (see the appendix; #20 revisits it per account).
+- One `rarity_mode` per person, for every platform and every chat — not one per
+  platform (see the appendix). What a person *can* switch off is a whole account's
+  posts (#20).
 - No live platform API calls from normal read-only commands or panels.
 - No multi-tenant hosting model.
 
@@ -265,7 +266,9 @@ every column. History: #106.
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
   generations). `account_links (tg_id, platform, external_id, is_active, linked_at,
-  unlinked_at)` says who holds it now and who held it before.
+  unlinked_at, publishes)` says who holds it now and who held it before, and whether
+  the holder announces its achievements (#20: the person's own switch per account; a
+  muted account still counts in stats, summaries and `/online`).
 - **Unlinking never deletes**: the link is deactivated, the account and its history
   stay, and relinking finds them. `idx_links_one_active_per_platform` allows one
   account per platform per person — **dropping it is all multi-account support
@@ -579,7 +582,8 @@ History: #108.
 History: #108.
 
 An achievement is published to a chat only if every check passes: the person is
-subscribed there; not admin-excluded; the person's `rarity_mode` isn't `hidden`; in
+subscribed there; not admin-excluded; the account's posting switch is on (#20); the
+person's `rarity_mode` isn't `hidden`; in
 `rare` mode a
 known rarity is at or below the chat's threshold (a platform with no rarity at all —
 Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
@@ -665,7 +669,9 @@ keyboard.
   last checked), where achievements publish, presence as **one row**
   (`presence_view.pick_presence`, the same rule `/online` uses — names the platform
   only while online), the rarity mode, timezone. Keyboard: one row per platform in
-  the display order — `[Profile, Disconnect]` or one wide "🎮 Подключить X" (#33) —
+  the display order — `[👤 Platform, 🔔/🔇 posting switch, 🔌 Unlink]` or one wide
+  "🎮 Подключить X" (#33); the switch is per account (#20) and the publication row
+  names what is switched off —
   then timezone, My chats (subscribe / unsubscribe per chat — nothing else is per
   chat), the rarity mode for every chat (#126), sync, `show_profile_links`, language
   (#48, DMs only). Nothing on it is Xbox-gated. Own profile links always show (only the owner
@@ -1192,8 +1198,8 @@ actually invocable (`tests/test_handler_wiring.py`).
   the useful group views; a leaderboard command was not worth the surface.
 - **A visibility toggle per platform** — tried twice, rejected twice: nobody needs a
   different mode per platform. One `rarity_mode` covers all; a platform without rarity
-  (Xbox 360) is exempt from `rare` instead of getting a toggle. (Reconsideration is
-  open as #20.)
+  (Xbox 360) is exempt from `rare` instead of getting a toggle. (#20 settled it differently:
+  a posting on/off switch per *account*, not a rarity mode per platform.)
 - **Global rarity settings for every chat at once** — replaced by a per-chat
   threshold.
 - **Live platform API calls from `/stats`, the summaries, `/online` or the panel** —

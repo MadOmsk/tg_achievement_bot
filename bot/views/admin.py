@@ -18,6 +18,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.constants import (
+    AccountPlatform,
     Platform,
     PresenceState,
     TokenStatus,
@@ -391,7 +392,14 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
         _("admin-login-row", login=login),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
+        *_muted_line(await repo.get_platform_link(user.tg_id, AccountPlatform.XBOX), _),
     ]
+
+
+def _muted_line(link: PlatformLink | None, _: Callable[..., str]) -> list[str]:
+    """One more line only when the owner switched this account's posts off
+    (#20) — the answer to "why does nothing of theirs appear in chat"."""
+    return [_("admin-muted-row")] if link is not None and not link.publishes else []
 
 
 async def _steam_admin_block(
@@ -441,6 +449,7 @@ async def _steam_admin_block(
         _("admin-login-row", login=visibility_status_text(link, locale)),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
+        *_muted_line(link, _),
     ]
 
 
@@ -495,6 +504,7 @@ async def _psn_admin_block(
         _("admin-login-row", login=visibility_status_text(link, locale)),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
+        *_muted_line(link, _),
     ]
 
 

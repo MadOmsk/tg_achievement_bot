@@ -122,6 +122,12 @@ class Publisher:
         """
         if not achievements:
             return
+        # The person's own switch for this account (#20): muted, it stays
+        # stored and counted, and posts nowhere.
+        if not await self._repo.account_publishes(
+            tg_id, account_platform_of(achievements[0].platform), xuid
+        ):
+            return
         if window_hours is not None:
             cutoff = utcnow() - timedelta(hours=window_hours)
             achievements = [

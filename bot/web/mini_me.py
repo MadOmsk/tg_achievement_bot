@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from bot.constants import Platform, PresenceState, TokenStatus
+from bot.constants import AccountPlatform, Platform, PresenceState, TokenStatus
 from bot.db.repo import PlatformLink, Repo, User
 from bot.services.profile_links import (
     psn_profile_url,
@@ -123,8 +123,13 @@ async def _xbox_block(
     presence = None
     if linked and user and user.xuid:
         presence = await _xbox_presence(repo, user.xuid)
+    xbox_link = (
+        await repo.get_platform_link(user.tg_id, AccountPlatform.XBOX) if linked and user else None
+    )
     return {
         "linked": linked,
+        # The owner's switch for this account's posts (#20).
+        "publishes": xbox_link.publishes if xbox_link else True,
         "gamertag": gamertag,
         "gamertag_modern": user.gamertag_modern if user else None,
         "xuid": user.xuid if user else None,
@@ -156,6 +161,7 @@ async def _steam_block(
     presence = await _steam_presence(repo, link.external_id)
     return {
         "linked": True,
+        "publishes": link.publishes,
         "steam_id": link.external_id,
         "display_name": link.display_name,
         "secondary_name": link.secondary_name,
@@ -188,6 +194,7 @@ async def _psn_block(
     name = link.display_name
     return {
         "linked": True,
+        "publishes": link.publishes,
         "account_id": link.external_id,
         "online_id": name,
         "secondary_name": link.secondary_name,

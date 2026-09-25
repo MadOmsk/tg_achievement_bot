@@ -100,7 +100,12 @@ def test_not_connected_keyboard_offers_steam_disconnect_once_connected() -> None
     """Steam-only, no XBOX at all — still gets a real disconnect option for
     the platform it does have, not nothing (2026-09-05 follow-up)."""
     markup = panel_keyboard(None, connected=False, steam_connected=True)
-    assert _callback_data(markup)[-6:-3] == ["relogin", "psn:connect", "steam:disconnectprompt"]
+    assert _callback_data(markup)[-7:-3] == [
+        "relogin",
+        "psn:connect",
+        "panel:pub:steam",  # the account's own posting switch (#20)
+        "steam:disconnectprompt",
+    ]
 
 
 def test_connected_keyboard_offers_steam_connect_or_disconnect_not_both() -> None:
@@ -149,27 +154,29 @@ def test_xbox_disconnect_row_gains_a_profile_link_when_gamertag_is_known() -> No
     """2026-09-05 follow-up: profile link and disconnect share one row."""
     without = panel_keyboard(180, connected=True)
     row = _disconnect_row(without, "panel:disconnect")
-    assert len(row) == 1  # no gamertag given — no profile button to add
+    assert len(row) == 2  # no gamertag given — no profile button; the switch and unlink
 
     with_tag = panel_keyboard(180, connected=True, gamertag="Mad Omsk")
     row = _disconnect_row(with_tag, "panel:disconnect")
-    assert len(row) == 2
+    assert len(row) == 3
     assert row[0].url == xbox_profile_url("Mad Omsk")
-    assert row[1].callback_data == "panel:disconnect"
+    assert row[0].text == "👤 XBOX"  # the row's platform rides on the profile button (#20)
+    assert row[1].callback_data == "panel:pub:xbox"
+    assert row[2].callback_data == "panel:disconnect"
 
 
 def test_steam_disconnect_row_gains_a_profile_link_when_steam_id_is_known() -> None:
     without = panel_keyboard(180, connected=True, steam_connected=True)
     row = _disconnect_row(without, "steam:disconnectprompt")
-    assert len(row) == 1
+    assert len(row) == 2
 
     with_id = panel_keyboard(
         180, connected=True, steam_connected=True, steam_id="76561197960287930"
     )
     row = _disconnect_row(with_id, "steam:disconnectprompt")
-    assert len(row) == 2
+    assert len(row) == 3
     assert row[0].url == steam_profile_url("76561197960287930")
-    assert row[1].callback_data == "steam:disconnectprompt"
+    assert row[2].callback_data == "steam:disconnectprompt"
 
 
 def test_psn_disconnect_row_gains_a_profile_link_when_psn_id_is_known() -> None:
@@ -177,13 +184,13 @@ def test_psn_disconnect_row_gains_a_profile_link_when_psn_id_is_known() -> None:
     the earlier "PSN has no linkable page" call)."""
     without = panel_keyboard(180, connected=True, psn_connected=True)
     row = _disconnect_row(without, "psn:disconnectprompt")
-    assert len(row) == 1
+    assert len(row) == 2
 
     with_id = panel_keyboard(180, connected=True, psn_connected=True, psn_id="superomsk")
     row = _disconnect_row(with_id, "psn:disconnectprompt")
-    assert len(row) == 2
+    assert len(row) == 3
     assert row[0].url == psn_profile_url("superomsk")
-    assert row[1].callback_data == "psn:disconnectprompt"
+    assert row[2].callback_data == "psn:disconnectprompt"
 
 
 def _toggle_button_text(markup):
@@ -214,3 +221,11 @@ def test_steam_profile_url_uses_the_steamid64() -> None:
         steam_profile_url("76561197960287930")
         == "https://steamcommunity.com/profiles/76561197960287930"
     )
+
+
+def test_a_muted_account_says_so_on_its_switch() -> None:
+    """#20: 🔔 while the account posts, 🔇 once its owner switched it off."""
+    on = panel_keyboard(180, connected=True, psn_connected=True)
+    off = panel_keyboard(180, connected=True, psn_connected=True, psn_publishes=False)
+    assert _disconnect_row(on, "psn:disconnectprompt")[0].text == "🔔 Публикуется"
+    assert _disconnect_row(off, "psn:disconnectprompt")[0].text == "🔇 Не публикуется"

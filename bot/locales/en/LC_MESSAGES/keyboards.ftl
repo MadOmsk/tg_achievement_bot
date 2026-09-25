@@ -30,8 +30,8 @@ kb-cancel = Cancel
 kb-panel-connect-xbox = 🎮 Connect Xbox
 kb-panel-connect-steam = 🎮 Connect Steam
 kb-panel-connect-psn = 🎮 Connect PSN
-kb-steam-disconnect = 🔕 Disconnect Steam
-kb-psn-disconnect = 🔕 Disconnect PSN
+kb-steam-disconnect = 🔌 Unlink
+kb-psn-disconnect = 🔌 Unlink
 kb-xbox-reconnect = 🔄 Connect again
 
 # Panel controls
@@ -43,7 +43,10 @@ kb-profile-visible = Profile visible to others: { $visible } ▸
 kb-profile-visible-yes = yes
 kb-profile-visible-no = no
 kb-profile = 👤 Profile
-kb-xbox-disconnect = 🔕 Disconnect XBOX
+kb-xbox-disconnect = 🔌 Unlink
+kb-profile-of = 👤 { $platform }
+kb-publishes-on = 🔔 Posting
+kb-publishes-off = 🔇 Not posting
 kb-locale = Language: { $name } ▸
 kb-refresh = Refresh
 kb-back = ‹ Back

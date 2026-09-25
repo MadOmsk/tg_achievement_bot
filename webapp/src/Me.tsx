@@ -35,6 +35,7 @@ export function Me({
   onDisconnectSteam,
   onDisconnectPsn,
   onSync,
+  onTogglePublish,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -46,6 +47,7 @@ export function Me({
   onDisconnectSteam: () => void;
   onDisconnectPsn: () => void;
   onSync: () => void;
+  onTogglePublish?: (platform: "xbox" | "psn" | "steam", publishes: boolean) => void;
 }) {
   const xboxName =
     me.xbox.gamertag_modern || me.xbox.gamertag || t(locale, "notLinked");
@@ -60,6 +62,12 @@ export function Me({
         locale={locale}
         onConnect={onConnectXbox}
         onDisconnect={onDisconnectXbox}
+        publishes={me.xbox.publishes !== false}
+        onTogglePublish={
+          onTogglePublish
+            ? () => onTogglePublish("xbox", me.xbox.publishes === false)
+            : undefined
+        }
         onSync={me.xbox.linked ? onSync : undefined}
         notes={[
           me.xbox.needs_reconnect
@@ -77,6 +85,12 @@ export function Me({
         locale={locale}
         onConnect={onConnectPsn}
         onDisconnect={onDisconnectPsn}
+        publishes={!(me.psn.linked && me.psn.publishes === false)}
+        onTogglePublish={
+          onTogglePublish
+            ? () => onTogglePublish("psn", me.psn.linked && me.psn.publishes === false)
+            : undefined
+        }
         onSync={me.psn.linked ? onSync : undefined}
         notes={[
           me.psn.linked && me.psn.achievements_visible === false
@@ -94,6 +108,12 @@ export function Me({
         locale={locale}
         onConnect={onConnectSteam}
         onDisconnect={onDisconnectSteam}
+        publishes={!(me.steam.linked && me.steam.publishes === false)}
+        onTogglePublish={
+          onTogglePublish
+            ? () => onTogglePublish("steam", me.steam.linked && me.steam.publishes === false)
+            : undefined
+        }
         onSync={me.steam.linked ? onSync : undefined}
         notes={[
           me.steam.linked && me.steam.achievements_visible === false
@@ -116,6 +136,8 @@ function PlatformCard({
   onDisconnect,
   onSync,
   notes,
+  publishes = true,
+  onTogglePublish,
 }: {
   mark: string;
   linked: boolean;
@@ -125,6 +147,8 @@ function PlatformCard({
   onConnect: () => void;
   onDisconnect: () => void;
   onSync?: () => void;
+  publishes?: boolean;
+  onTogglePublish?: () => void;
   notes?: Array<PlatNote | null | undefined>;
 }) {
   return (
@@ -165,6 +189,16 @@ function PlatformCard({
                 <Icon name="sync" size={16} />
               </span>
             )}
+            {onTogglePublish ? (
+              <button
+                type="button"
+                onClick={onTogglePublish}
+                aria-label={t(locale, publishes ? "publishesOn" : "publishesOff")}
+                title={t(locale, publishes ? "publishesOn" : "publishesOff")}
+              >
+                {publishes ? "🔔" : "🔇"}
+              </button>
+            ) : null}
             <button
               type="button"
               className="is-danger"
@@ -205,10 +239,12 @@ export function Settings({
   onDisconnectSteam,
   onDisconnectPsn,
   onSync,
+  onTogglePublish,
 }: {
   me: MeResponse;
   locale: Locale;
   notes?: PlatNotes;
+  onTogglePublish?: (platform: "xbox" | "psn" | "steam", publishes: boolean) => void;
   onPatch: (body: {
     locale?: Locale;
     tz_offset_min?: number | null;
@@ -362,6 +398,7 @@ export function Settings({
         onDisconnectPsn={onDisconnectPsn}
         onSync={onSync}
         notes={notes}
+        onTogglePublish={onTogglePublish}
       />
 
       {me.is_admin && onAdmin ? (

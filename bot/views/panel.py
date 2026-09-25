@@ -11,7 +11,7 @@ from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
-from bot.constants import Platform, RarityMode, TokenStatus
+from bot.constants import AccountPlatform, Platform, RarityMode, TokenStatus
 from bot.db.repo import PlatformLink, Repo, User, UserChatRow
 from bot.i18n import gettext, i18n_for
 from bot.services.naming import link_nickname, person_name_of
@@ -156,6 +156,7 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
     connected = user is not None and bool(user.xuid)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
     psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
+    xbox_link = await repo.get_platform_link(tg_id, AccountPlatform.XBOX) if connected else None
 
     token = await repo.get_token(tg_id) if connected else None
     needs_reconnect = token is not None and token.status == TokenStatus.INVALID
@@ -172,6 +173,9 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         psn_id=psn_link.display_name if psn_link else None,
         show_profile_links=bool(settings_row and settings_row.show_profile_links),
         rarity_mode=settings_row.rarity_mode if settings_row else RarityMode.ALL,
+        xbox_publishes=xbox_link.publishes if xbox_link else True,
+        psn_publishes=psn_link.publishes if psn_link else True,
+        steam_publishes=steam_link.publishes if steam_link else True,
     )
 
     if user is None:
@@ -218,7 +222,21 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
     lines.append(
         i18n.get(
             "panel-publication-row",
-            status=await _publication_status(repo, user.tg_id, user.is_excluded, i18n),
+            status=await _publication_status(
+                repo,
+                user.tg_id,
+                user.is_excluded,
+                i18n,
+                muted=[
+                    name
+                    for name, link in (
+                        ("XBOX", xbox_link),
+                        ("PSN", psn_link),
+                        ("Steam", steam_link),
+                    )
+                    if link is not None and not link.publishes
+                ],
+            ),
         )
     )
     lines.append(
@@ -280,14 +298,26 @@ async def _now_playing(
     return f"{tag}  ·  " + i18n.get("panel-playing", game=game)
 
 
-async def _publication_status(repo: Repo, tg_id: int, is_excluded: bool, i18n: I18nContext) -> str:
+async def _publication_status(
+    repo: Repo,
+    tg_id: int,
+    is_excluded: bool,
+    i18n: I18nContext,
+    *,
+    muted: list[str] | None = None,
+) -> str:
     if is_excluded:
         # An exclusion is never silent: the person sees it here (SPEC 6.4).
         return i18n.get("panel-excluded")
     chats = await repo.chats_of_user(tg_id)
     if not chats:
         return i18n.get("panel-not-subscribed-anywhere")
-    return i18n.get("panel-subscribed-in", chats=", ".join(f"«{title}»" for title in chats))
+    status = i18n.get("panel-subscribed-in", chats=", ".join(f"«{title}»" for title in chats))
+    if muted:
+        # Which accounts the person switched off (#20), said where the
+        # question "where does it post" is answered.
+        status += i18n.get("panel-publishing-without", platforms=", ".join(muted))
+    return status
 
 
 async def render_unsub_prompt(

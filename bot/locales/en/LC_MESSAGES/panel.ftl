@@ -100,6 +100,9 @@ panel-playing = playing — { $game }
 panel-excluded = 🚫 excluded by the administrator
 panel-not-subscribed-anywhere = — not subscribed in any chat
 panel-subscribed-in = ✅ in { $chats }
+panel-publishing-without = {" "}· except { $platforms }
+panel-publishes-on-toast = Posting this account's achievements
+panel-publishes-off-toast = This account's achievements are no longer posted
 
 panel-delete-account = 🗑 Delete account
 panel-delete-confirm-1 =

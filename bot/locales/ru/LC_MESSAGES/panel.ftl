@@ -97,6 +97,9 @@ panel-playing = играет — { $game }
 panel-excluded = 🚫 исключён администратором
 panel-not-subscribed-anywhere = — не подписан ни в одном чате
 panel-subscribed-in = ✅ в { $chats }
+panel-publishing-without = {" "}· без { $platforms }
+panel-publishes-on-toast = Публикую ачивки этого аккаунта
+panel-publishes-off-toast = Ачивки этого аккаунта больше не публикуются
 
 panel-delete-account = 🗑 Удалить аккаунт
 panel-delete-confirm-1 =

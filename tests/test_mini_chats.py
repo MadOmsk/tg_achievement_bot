@@ -70,3 +70,32 @@ async def test_the_rarity_mode_is_a_setting_not_a_chat_field(
         assert resp.status == 400  # no action: nothing per chat to set any more
     finally:
         await client.close()
+
+
+async def test_an_account_switch_turns_its_posts_off(repo: Repo, settings: Settings) -> None:
+    """The owner's switch for one linked account (#20)."""
+    app = web.Application(middlewares=[cors_middleware()])
+    setup_mini_api(app, settings, repo)
+    user_id = 42
+    await repo.ensure_user(user_id, "testuser")
+    await repo.link_platform_account(user_id, "psn", "acc-1", "Gamer")
+    headers = {
+        "X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), user_id)
+    }
+
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        resp = await client.patch(
+            "/api/mini/accounts/psn", json={"publishes": False}, headers=headers
+        )
+        assert resp.status == 200
+        assert (await resp.json())["psn"]["publishes"] is False
+        assert not await repo.account_publishes(user_id, "psn", "acc-1")
+
+        resp = await client.patch(
+            "/api/mini/accounts/steam", json={"publishes": False}, headers=headers
+        )
+        assert resp.status == 404  # nothing linked there
+    finally:
+        await client.close()

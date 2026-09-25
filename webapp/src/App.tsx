@@ -10,6 +10,7 @@ import {
   isPreview,
   patchChat,
   patchSettings,
+  setAccountPublishes,
   syncXbox,
   type MeResponse,
 } from "./api";
@@ -291,6 +292,11 @@ export function App() {
           onSync={() =>
             void runPlat("xbox", async () => {
               await syncXbox(data);
+            })
+          }
+          onTogglePublish={(platform, publishes) =>
+            void runPlat(platform, async () => {
+              await setAccountPublishes(data, platform, publishes);
             })
           }
         />

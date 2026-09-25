@@ -28,6 +28,7 @@ export type MeResponse = {
   };
   xbox: {
     linked: boolean;
+    publishes?: boolean;
     gamertag: string | null;
     gamertag_modern: string | null;
     xuid: string | null;
@@ -46,6 +47,7 @@ export type MeResponse = {
     | { linked: false }
     | {
         linked: true;
+        publishes?: boolean;
         steam_id: string;
         display_name: string | null;
         secondary_name: string | null;
@@ -63,6 +65,7 @@ export type MeResponse = {
     | { linked: false }
     | {
         linked: true;
+        publishes?: boolean;
         account_id: string;
         online_id: string | null;
         secondary_name: string | null;
@@ -202,6 +205,18 @@ export function connectPsn(
   return api(initData, "/api/mini/connect/psn", {
     method: "POST",
     body: JSON.stringify({ online_id: onlineId }),
+  });
+}
+
+/** The owner's switch for one linked account's posts (#20). */
+export function setAccountPublishes(
+  initData: string,
+  platform: "xbox" | "psn" | "steam",
+  publishes: boolean,
+): Promise<MeResponse> {
+  return api(initData, `/api/mini/accounts/${platform}`, {
+    method: "PATCH",
+    body: JSON.stringify({ publishes }),
   });
 }
 

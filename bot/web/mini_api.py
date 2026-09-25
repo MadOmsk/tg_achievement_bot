@@ -15,7 +15,7 @@ from typing import Any
 from aiohttp import web
 
 from bot.config import Settings
-from bot.constants import Platform, RarityMode
+from bot.constants import AccountPlatform, Platform, RarityMode
 from bot.db.repo import Repo
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
@@ -113,6 +113,7 @@ def setup_mini_api(
     app.router.add_post("/api/mini/connect/psn", handle_connect_psn)
     app.router.add_post("/api/mini/disconnect/psn", handle_disconnect_psn)
     app.router.add_post("/api/mini/sync", handle_sync)
+    app.router.add_patch("/api/mini/accounts/{platform}", handle_patch_account)
     app.router.add_get("/api/mini/chats", handle_chats)
     app.router.add_patch("/api/mini/chats/{chat_id}", handle_patch_chat)
     app.router.add_get("/api/mini/chats/{chat_id}/feed", handle_chat_feed)
@@ -414,6 +415,25 @@ async def handle_sync(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "sync_failed"}, status=502)
 
     return web.json_response({"ok": True, "titles": titles, "published": published})
+
+
+async def handle_patch_account(request: web.Request) -> web.Response:
+    """The owner's switch for one linked account's posts (#20)."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    platform = request.match_info.get("platform", "")
+    if platform not in (AccountPlatform.XBOX, AccountPlatform.PSN, AccountPlatform.STEAM):
+        raise web.HTTPBadRequest(text="bad platform")
+    body = await _json_body(request)
+    if "publishes" not in body:
+        raise web.HTTPBadRequest(text="no publishes")
+    link = await repo.get_platform_link(user.tg_id, platform)
+    if link is None:
+        raise web.HTTPNotFound(text="not linked")
+    await repo.set_account_publishes(
+        user.tg_id, link.platform, link.external_id, bool(body["publishes"])
+    )
+    return await handle_me(request)
 
 
 async def handle_chats(request: web.Request) -> web.Response:

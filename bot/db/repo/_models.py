@@ -657,6 +657,8 @@ class PlatformLink:
     achievements_visible: bool | None = None
     # When the check above last ran (UTC ISO string), or None if never.
     achievements_visible_checked_at: str | None = None
+    # Whether this account's achievements are announced (#20).
+    publishes: bool = True
 
 
 @dataclass(slots=True)

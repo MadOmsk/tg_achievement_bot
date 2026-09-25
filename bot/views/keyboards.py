@@ -247,16 +247,30 @@ def _platform_row(
     connect_cb: str,
     profile_url: str | None,
     disconnect_btn: InlineKeyboardButton,
+    label: str,
+    publish_cb: str | None = None,
+    publishes: bool = True,
 ) -> list[InlineKeyboardButton]:
     """One platform's row in /panel (#33) — always the same shape and
-    position: `[👤 Профиль, 🔕 Отключить]` when connected (Профиль only once
-    there is something to link to — the id can be missing pre-first-sync),
-    or a single wide "🎮 Подключить X" when not."""
+    position: `[👤 XBOX, 🔔 Публикуется, 🔌 Отвязать]` when connected (the
+    profile only once there is something to link to — the id can be missing
+    pre-first-sync), or a single wide "🎮 Подключить X" when not. The
+    platform's name rides on the profile button: three buttons without it
+    would not say which platform the row is (#20)."""
     if not connected:
         return [InlineKeyboardButton(text=i18n.get(connect_key), callback_data=connect_cb)]
     row: list[InlineKeyboardButton] = []
     if profile_url:
-        row.append(InlineKeyboardButton(text=i18n.get("kb-profile"), url=profile_url))
+        row.append(
+            InlineKeyboardButton(text=i18n.get("kb-profile-of", platform=label), url=profile_url)
+        )
+    if publish_cb:
+        row.append(
+            InlineKeyboardButton(
+                text=i18n.get("kb-publishes-on" if publishes else "kb-publishes-off"),
+                callback_data=publish_cb,
+            )
+        )
     row.append(disconnect_btn)
     return row
 
@@ -274,6 +288,9 @@ def panel_keyboard(
     psn_id: str | None = None,
     show_profile_links: bool = False,
     rarity_mode: str = RarityMode.ALL,
+    xbox_publishes: bool = True,
+    psn_publishes: bool = True,
+    steam_publishes: bool = True,
 ) -> InlineKeyboardMarkup:
     i18n = i18n or static_i18n("keyboards")
 
@@ -292,6 +309,9 @@ def panel_keyboard(
             disconnect_btn=InlineKeyboardButton(
                 text=i18n.get("kb-xbox-disconnect"), callback_data="panel:disconnect"
             ),
+            label="XBOX",
+            publish_cb="panel:pub:xbox",
+            publishes=xbox_publishes,
         ),
         _platform_row(
             i18n,
@@ -300,6 +320,9 @@ def panel_keyboard(
             connect_cb="psn:connect",
             profile_url=psn_profile_url(psn_id) if psn_id else None,
             disconnect_btn=psn_disconnect_button(i18n),
+            label="PSN",
+            publish_cb="panel:pub:psn",
+            publishes=psn_publishes,
         ),
         _platform_row(
             i18n,
@@ -308,6 +331,9 @@ def panel_keyboard(
             connect_cb="steam:connect",
             profile_url=steam_profile_url(steam_id) if steam_id else None,
             disconnect_btn=steam_disconnect_button(i18n),
+            label="Steam",
+            publish_cb="panel:pub:steam",
+            publishes=steam_publishes,
         ),
     ]
 

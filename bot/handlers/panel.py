@@ -268,6 +268,27 @@ async def panel_toggle_profile_links(
     await safe_edit(callback, screen.text, screen.keyboard)
 
 
+@router.callback_query(F.data.startswith("panel:pub:"))
+async def panel_toggle_publishing(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """The person's own switch for one account (#20): announce its
+    achievements, or keep them to stats. One tap, no confirmation — just as
+    undoable as the profile-links toggle."""
+    assert callback.data is not None
+    platform = callback.data.rsplit(":", 1)[1]
+    link = await repo.get_platform_link(callback.from_user.id, platform)
+    if link is None:
+        await callback.answer()
+        return
+    await repo.set_account_publishes(
+        callback.from_user.id, link.platform, link.external_id, not link.publishes
+    )
+    await callback.answer(
+        i18n.get("panel-publishes-off-toast" if link.publishes else "panel-publishes-on-toast")
+    )
+    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+
+
 @router.callback_query(F.data == "panel:rarity")
 async def panel_rarity(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """The person's rarity mode, for every chat at once (#126)."""

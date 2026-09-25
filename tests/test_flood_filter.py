@@ -300,3 +300,24 @@ async def test_flood_flush_multiple_psn_trophies_uses_platform_nickname(
     assert "Justdrunkzero" in job.text
     assert "Igor" not in job.text
     assert "получает 2 трофея" in job.text
+
+
+async def test_a_muted_account_posts_nothing_and_holds_nothing_back(repo: Repo) -> None:
+    """The owner's own switch (#20): the achievements stay stored and
+    counted, and nothing reaches a chat — not now, and not later as a
+    flushed anti-flood digest either."""
+    await _setup_chat(repo, flood_limit=0)
+    await repo.set_account_publishes(TG_ID, "xbox", XUID, False)
+    publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+    item = achievement("m1")
+    await repo.insert_new_achievements(XUID, [item], is_backfill=False)
+
+    await publisher.publish(TG_ID, XUID, "Gamer", [item])
+
+    assert publisher._queue.qsize() == 0
+    assert await repo.unpublished_achievements(TG_ID, CHAT_ID) == []
+    assert await repo.has_any_achievements(XUID)
+
+    await repo.set_account_publishes(TG_ID, "xbox", XUID, True)
+    await publisher.publish(TG_ID, XUID, "Gamer", [item])
+    assert publisher._queue.qsize() == 1
