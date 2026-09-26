@@ -49,7 +49,7 @@ button.person-back:focus-visible {
   /* The arrow is drawn inside its box with ~8px to spare on the left: pull
    * it out so its visible edge sits on the page gutter (like the icon on
    * the right), and close the gap to the avatar to match the avatar-name one. */
-  margin: 0 -2px 0 -10px;
+  margin: 0 -2px 0 -12px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -139,4 +139,25 @@ button.person-back:focus-visible {
 .dock button:focus,
 .dock button:focus-visible {
   outline: none;
+}
+
+/* The bar's name and, under it, a small muted line (a person's status, whose
+ * progress a game page shows): a pair centred together on the avatar, as wide
+ * as the bar allows so a long nick or status is not cut short. */
+.person-bar .person-bar-title {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 1px;
+}
+
+.person-bar .person-bar-title small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

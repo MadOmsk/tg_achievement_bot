@@ -15,7 +15,7 @@
   --stroke: rgba(255, 255, 255, 0.08);
   --hair: rgba(255, 255, 255, 0.06);
   --radius: 20px;
-  --font: "Segoe UI Variable", "Segoe UI", "Noto Sans", system-ui, sans-serif;
+  --font: "Inter Variable", "Segoe UI Variable", "Segoe UI", "Noto Sans", system-ui, sans-serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
   --blur: blur(34px) saturate(1.35);

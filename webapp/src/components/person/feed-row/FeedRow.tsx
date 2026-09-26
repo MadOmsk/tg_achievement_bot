@@ -19,8 +19,15 @@ export function FeedRow({
   detailed?: boolean;
   onOpen: (row: FeedItem) => void;
 }) {
-  // The frame marks a platinum trophy only.
-  const done = row.trophy_type === "platinum";
+  // The frame marks the "platinum" of a game: a platinum trophy, or any
+  // achievement of a game its owner has completed (100%).
+  const done =
+    row.trophy_type === "platinum" ||
+    Boolean(
+      row.progress &&
+        row.progress.total > 0 &&
+        row.progress.unlocked >= row.progress.total,
+    );
   return (
     <button
       type="button"
@@ -52,9 +59,8 @@ export function FeedRow({
           </p>
           <HeroMarks
             compact
-            score={
-              row.tier_badge || (row.gamerscore ? `${row.gamerscore} G` : null)
-            }
+            score={row.gamerscore ? `${row.gamerscore} G` : null}
+            tier={row.tier_badge ? row.trophy_type : null}
             rarity={
               row.rarity_percent != null ? `${row.rarity_percent}%` : null
             }

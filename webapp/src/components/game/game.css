@@ -5,7 +5,7 @@
 .game-cover {
   position: relative;
   /* Out to the page edges, square corners. */
-  margin: 0 -18px 18px;
+  margin: 0 -18px 4px;
   aspect-ratio: 1 / 1;
   overflow: hidden;
   background: #0a0c12;
@@ -26,7 +26,7 @@
   height: 100%;
   transform: scale(1.18);
   object-fit: cover;
-  filter: blur(20px) brightness(0.68) saturate(1.2);
+  filter: blur(22px) brightness(0.6) saturate(1.25);
 }
 
 /* No glyph on the backdrop: the fitted layer carries it when there is no picture. */
@@ -34,6 +34,143 @@
   display: none;
 }
 
+/* Progress: a slim bar along the picture's lower edge. */
+.game-cover-bar {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 3;
+  height: 5px;
+  background: rgba(8, 10, 16, 0.55);
+}
+
+.game-cover-bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(200, 210, 225, 0.55) 0%, rgba(245, 248, 252, 0.95) 100%);
+}
+
+/* A completed game: a platinum medal hangs off the picture's lower edge, on a
+ * glow, with a couple of sparkles — the reward for getting all the way. */
+.game-hero {
+  position: relative;
+  margin: 0 -18px 4px;
+}
+
+.game-hero .game-cover {
+  margin: 0;
+}
+
+.game-hero.is-done {
+  margin-bottom: 64px;
+}
+
+.game-hero.is-done .game-cover-bar-fill {
+  background: linear-gradient(90deg, rgba(95, 185, 215, 0.6) 0%, rgba(175, 230, 245, 1) 100%);
+  box-shadow: 0 0 12px rgba(140, 220, 245, 0.6);
+}
+
+.game-hero.is-done .game-cover::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 45%;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(70% 90% at 50% 100%, rgba(150, 225, 250, 0.45), transparent 70%);
+}
+
+.game-medal {
+  position: absolute;
+  left: 50%;
+  bottom: -54px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+
+.game-medal-disc {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  color: #12303c;
+  background:
+    radial-gradient(circle at 30% 25%, #ffffff 0%, transparent 42%),
+    conic-gradient(from 210deg, #cdeaf7, #f6fbff, #9fd3ea, #eaf6fc, #b7ddef, #cdeaf7);
+  box-shadow:
+    0 0 0 3px rgba(12, 15, 22, 0.9),
+    0 0 0 5px rgba(180, 232, 250, 0.7),
+    0 10px 28px rgba(120, 210, 245, 0.55);
+}
+
+.game-medal-disc svg {
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.7));
+}
+
+.game-medal-label {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(150, 215, 240, 0.14);
+  color: rgb(190, 238, 250);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.game-medal-spark {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  filter: drop-shadow(0 0 4px rgba(200, 240, 255, 0.9));
+  animation: medal-twinkle 2.6s ease-in-out infinite;
+}
+
+.game-medal-spark.is-a {
+  top: -8px;
+  right: -14px;
+}
+
+.game-medal-spark.is-b {
+  bottom: 2px;
+  left: -20px;
+  width: 10px;
+  height: 10px;
+  animation-delay: 0.9s;
+}
+
+.game-medal-spark.is-c {
+  top: 6px;
+  left: -12px;
+  width: 8px;
+  height: 8px;
+  animation-delay: 1.7s;
+}
+
+@keyframes medal-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-medal-spark {
+    animation: none;
+    opacity: 0.8;
+  }
+}
 
 /* The game's own page: a full-screen layer over the app, scrolling on its
  * own, with the same sticky top bar the profile has. */
@@ -45,9 +182,13 @@
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 0 18px calc(28px + var(--safe-bottom));
-  background:
-    radial-gradient(880px 520px at 6% -14%, rgba(120, 150, 230, 0.22), transparent 58%),
-    linear-gradient(180deg, #121620 0%, #0a0c12 48%, #07080c 100%);
+  /* The same background as every other page, over a solid colour: if a phone
+   * fails to paint the gradient layers, the feed underneath must still never
+   * show through. (No `local` attachment — some WebViews drop it.) */
+  background-color: var(--bg);
+  background-image: var(--app-bg);
+  isolation: isolate;
+  transform: translateZ(0);
 }
 
 /* The bar brings its own top padding (and the sticky offset is measured
@@ -56,7 +197,7 @@
   margin-top: 0;
 }
 
-.game-page > *:not(.person-bar):not(.game-cover) {
+.game-page > *:not(.person-bar):not(.game-hero) {
   max-width: 28rem;
   margin-left: auto;
   margin-right: auto;
@@ -68,7 +209,7 @@
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 40px;
+  width: 32px;
   height: 32px;
   padding: 0;
   border: 0;
@@ -105,37 +246,24 @@
 }
 
 /* Title and, under it, whose progress the page shows. */
-.person-bar .game-bar-title {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  gap: 1px;
-}
-
-/* Title and, under it, whose progress: a pair centred together on the
- * avatar, and as wide as the bar allows so a long nick is not cut short. */
-.person-bar .game-bar-title small {
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .game-head-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  /* The icon is centred in its 32px box and drawn with a little air inside its
+   * own square: pull the row out by both, so what is *seen* of the last icon
+   * ends on the page gutter, like every right-hand edge. */
+  margin-right: -10px;
   min-width: 0;
 }
 
 /* Flips the list between the person's progress and yours. */
-.game-head-actions .game-who-chip.is-on {
-  background: rgba(255, 255, 255, 0.2);
+.game-lock-chip.is-on {
   color: #fff;
+}
+
+.game-lock-chip.is-on svg {
+  fill: rgba(255, 255, 255, 0.22);
 }
 
 /* Each person's mark on an achievement: their avatar, lit when they
@@ -157,29 +285,78 @@
   opacity: 1;
   filter: none;
 }
-.game-head-actions .game-who-chip {
-  max-width: 11rem;
-  padding: 6px 12px;
-  border: 0;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-  color: rgba(238, 241, 246, 0.94);
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
+
 
 /* The list heading spaced like the home page's "Friends": 28px above it,
  * 16px below (its own row is taller than the text because of the buttons). */
 .game-page .achievements-head {
-  margin: 28px 0 16px;
+  margin: 28px 0 0;
   /* As tall as its buttons from the start: they appear only once the list
    * has loaded, and the heading's spacing used to grow when they did. */
   min-height: 32px;
   align-items: center;
+}
+
+/* The list has no day label here, so the room under the heading is just this. */
+.game-page .feed {
+  --day-gap: 8px;
+}
+
+/* A finished game's picture gets a cool "platinum" grade: a tint over it and
+ * a soft vignette, so it reads as achieved before anything is read. */
+.game-hero.is-done .game-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(6, 22, 34, 0.5) 100%),
+    linear-gradient(180deg, rgba(150, 225, 250, 0.16), rgba(30, 90, 130, 0.3));
+  mix-blend-mode: soft-light;
+}
+
+.game-hero.is-done .game-cover .fit-layer > img {
+  filter: saturate(1.12) contrast(1.05) brightness(1.03);
+}
+
+/* What the person earned in this game, in the top bar: the number and its unit
+ * (G, achievements, trophies). */
+.person-bar .game-bar-score {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.person-bar .game-bar-score strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.person-bar .game-bar-score small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+/* On a game's page the description is not cut to one line: it wraps. */
+.feed-row.has-wrap .unlock-game {
+  align-items: flex-start;
+}
+
+.feed-row.has-wrap .unlock-game-lead {
+  overflow: visible;
+}
+
+.feed-row.has-wrap .unlock-game-name {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.feed-row.has-wrap {
+  align-items: flex-start;
 }

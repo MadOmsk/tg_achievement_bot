@@ -3,6 +3,7 @@ import {
   connectPsn,
   connectSteam,
   connectXbox,
+  deleteAccount,
   disconnectPsn,
   disconnectSteam,
   disconnectXbox,
@@ -19,6 +20,7 @@ import { t, type Locale } from "./i18n";
 import { ConnectForm, Settings, type PlatNotes } from "./screens/me";
 import { Icon, PageSkel, usePullToRefresh } from "./components/shared/lib";
 import {
+  ADMIN_SCREENS,
   asLaunchTab,
   SCREEN_NAMES,
   SCREENS,
@@ -76,7 +78,7 @@ export function App() {
   const [platNotes, setPlatNotes] = useState<PlatNotes>({});
   const [personOpen, setPersonOpen] = useState(false);
   // Which admin screen Settings' admin list opened.
-  const [adminScreen, setAdminScreen] = useState<AdminScreen>({ name: "users" });
+  const [adminScreen, setAdminScreen] = useState<AdminScreen>({ name: ADMIN_SCREENS.USERS });
   // Bumped by pull-to-refresh so Club refetches without remounting the tab.
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -309,6 +311,9 @@ export function App() {
               await syncXbox(data);
             })
           }
+          onDeleteAccount={async () => {
+            await deleteAccount(data);
+          }}
         />
       )}
 

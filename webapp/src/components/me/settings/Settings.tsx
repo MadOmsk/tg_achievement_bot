@@ -1,8 +1,14 @@
 import { useState } from "react";
 import type { MeResponse } from "../../../api";
 import { t, timezoneLabel, type Locale } from "../../../i18n";
-import { BackHead, Toggle, Chevron } from "../../shared/lib";
-import { PLATFORMS, TIMEZONES, type AdminScreen } from "../../shared/constants";
+import { BackHead, Chevron, Icon, Sheet, Toggle } from "../../shared/lib";
+import {
+  PLATFORMS,
+  SETTINGS_PANES,
+  TIMEZONES,
+  type AdminScreen,
+  type SettingsPane,
+} from "../../shared/constants";
 import { AdminSection } from "../../admin";
 import { ChatSettingsCard } from "../chat-settings-card/ChatSettingsCard";
 import { PlatformCard, type PlatNotes } from "../platform-card/PlatformCard";
@@ -24,6 +30,7 @@ export function Settings({
   onDisconnectSteam,
   onDisconnectPsn,
   onSync,
+  onDeleteAccount,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -45,21 +52,25 @@ export function Settings({
   onDisconnectSteam: () => void;
   onDisconnectPsn: () => void;
   onSync: () => void;
+  onDeleteAccount: () => Promise<void>;
 }) {
-  const [pane, setPane] = useState<"root" | "achievements" | "chats">("root");
+  const [pane, setPane] = useState<SettingsPane>(SETTINGS_PANES.ROOT);
+  // Deleting asks once, in a warning over the page; afterwards the account is gone.
+  const [deleteAsk, setDeleteAsk] = useState<"closed" | "ask" | "done">("closed");
+  const [deleting, setDeleting] = useState(false);
   const tz = me.settings.tz_offset_min;
   const tzOptions = TIMEZONES;
 
   const xboxName =
     me.xbox.gamertag_modern || me.xbox.gamertag || t(locale, "notLinked");
 
-  if (pane === "achievements") {
+  if (pane === SETTINGS_PANES.ACHIEVEMENTS) {
     return (
       <>
         <BackHead
           title={t(locale, "homeAchievements")}
           backLabel={t(locale, "back")}
-          onBack={() => setPane("root")}
+          onBack={() => setPane(SETTINGS_PANES.ROOT)}
         />
         <div className="glass-card">
           <div className="ios-row">
@@ -87,13 +98,13 @@ export function Settings({
     );
   }
 
-  if (pane === "chats") {
+  if (pane === SETTINGS_PANES.CHATS) {
     return (
       <>
         <BackHead
           title={t(locale, "myChats")}
           backLabel={t(locale, "back")}
-          onBack={() => setPane("root")}
+          onBack={() => setPane(SETTINGS_PANES.ROOT)}
         />
         <p className="settings-hint">{t(locale, "myChatsHint")}</p>
         {me.chats.length === 0 ? (
@@ -118,6 +129,7 @@ export function Settings({
         <h1>{t(locale, "settings")}</h1>
       </header>
 
+      <p className="kicker">{t(locale, "general")}</p>
       <div className="glass-card">
         <div className="ios-row">
           <span>{t(locale, "language")}</span>
@@ -164,7 +176,7 @@ export function Settings({
         <button
           type="button"
           className="ios-row"
-          onClick={() => setPane("achievements")}
+          onClick={() => setPane(SETTINGS_PANES.ACHIEVEMENTS)}
         >
           <span>{t(locale, "homeAchievements")}</span>
           <span className="ios-value">
@@ -174,7 +186,7 @@ export function Settings({
         <button
           type="button"
           className="ios-row"
-          onClick={() => setPane("chats")}
+          onClick={() => setPane(SETTINGS_PANES.CHATS)}
         >
           <span>{t(locale, "myChats")}</span>
           <span className="ios-value">
@@ -184,7 +196,20 @@ export function Settings({
         </button>
       </div>
 
-      <p className="kicker">{t(locale, "accounts")}</p>
+      <div className="accounts-head">
+        <p className="kicker">{t(locale, "accounts")}</p>
+        <button
+          type="button"
+          className="accounts-delete"
+          aria-label={t(locale, "deleteAccount")}
+          title={t(locale, "deleteAccount")}
+          onClick={() => {
+            setDeleteAsk("ask");
+          }}
+        >
+          <Icon name="trash" size={20} />
+        </button>
+      </div>
       <PlatformCard
         linked={me.xbox.linked}
         name={xboxName}
@@ -233,6 +258,68 @@ export function Settings({
           notes?.steam,
         ]}
       />
+      {deleteAsk !== "closed" && (
+        <Sheet
+          onClose={() => {
+            if (deleteAsk === "done") window.Telegram?.WebApp?.close?.();
+            setDeleteAsk("closed");
+          }}
+          closeLabel={t(locale, "close")}
+          noClose
+        >
+          <div className="delete-warning">
+            <span className="delete-warning-icon" aria-hidden>
+              <Icon name="trash" size={26} />
+            </span>
+            <h2>
+              {t(locale, deleteAsk === "done" ? "deleteDoneTitle" : "deleteAccount")}
+            </h2>
+            <p>
+              {t(locale, deleteAsk === "done" ? "deleteDone" : "deleteWarning")}
+            </p>
+            {deleteAsk === "ask" ? (
+              <div className="delete-warning-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setDeleteAsk("closed")}
+                >
+                  {t(locale, "cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  disabled={deleting}
+                  onClick={async () => {
+                    setDeleting(true);
+                    try {
+                      await onDeleteAccount();
+                      setDeleteAsk("done");
+                    } catch (err) {
+                      onFlash(`${t(locale, "error")}: ${String(err)}`);
+                      setDeleteAsk("closed");
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                >
+                  {t(locale, "deleteSure")}
+                </button>
+              </div>
+            ) : (
+              <div className="delete-warning-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => window.Telegram?.WebApp?.close?.()}
+                >
+                  {t(locale, "close")}
+                </button>
+              </div>
+            )}
+          </div>
+        </Sheet>
+      )}
 
       {me.is_admin && onAdmin && (
         <AdminSection

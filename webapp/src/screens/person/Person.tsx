@@ -6,6 +6,8 @@ export {
   HeroMarks,
   PeopleHits,
   PersonProfile,
+  PlayedGames,
+  RecentPosts,
   PostLead,
   ProgressBar,
   UnlockCard,

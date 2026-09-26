@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { FeedItem } from "../../../api";
 import { dayKey, dayLabel, type Locale } from "../../../i18n";
 import { feedKey, veiled } from "../utils";
@@ -6,11 +6,11 @@ import { useDayJump } from "../day-jump/useDayJump";
 import { UnlockCard } from "../unlock-card/UnlockCard";
 import { UnlockSlider } from "../unlock-slider/UnlockSlider";
 
-// The feed mounts a card (some of them carousels, all with pictures) per post;
-// building hundreds at once froze the tab switch. Only the first ones are
-// rendered, the rest as the bottom nears.
-const FIRST_POSTS = 5;
-const MORE_POSTS = 6;
+// The tab opens on its first posts at once and builds the rest in the
+// background, a few per turn — not on scroll, so nothing pops in under the
+// finger, and not all at the start, which held the tap for a second.
+const FIRST_POSTS = 4;
+const POSTS_PER_TURN = 4;
 
 export function FeedPosts({
   items,
@@ -27,9 +27,8 @@ export function FeedPosts({
   onReveal: (key: string) => void;
   onOpenPerson: (tgId: number) => void;
 }) {
-  const [limit, setLimit] = useState(FIRST_POSTS);
-  const jump = useDayJump(items, locale, () => setLimit(Infinity));
-  const sentinel = useRef<HTMLDivElement | null>(null);
+  const jump = useDayJump(items, locale);
+  const [built, setBuilt] = useState(FIRST_POSTS);
   // Days first, then — inside a day — runs of one person's achievements in one
   // game, which become a carousel.
   const days: Array<{ key: string; label: string; iso: string | null; groups: FeedItem[][] }> = [];
@@ -58,30 +57,20 @@ export function FeedPosts({
       day.groups.push([row]);
     }
   }
-  let budget = limit;
+  const total = days.reduce((sum, day) => sum + day.groups.length, 0);
+  useEffect(() => {
+    if (built >= total) return;
+    const id = window.setTimeout(() => setBuilt((n) => n + POSTS_PER_TURN), 60);
+    return () => window.clearTimeout(id);
+  }, [built, total]);
+
+  let budget = built;
   const shown: typeof days = [];
   for (const day of days) {
     if (budget <= 0) break;
     shown.push({ ...day, groups: day.groups.slice(0, budget) });
     budget -= day.groups.length;
   }
-  const total = days.reduce((sum, day) => sum + day.groups.length, 0);
-  const more = limit < total;
-
-  useEffect(() => {
-    const node = sentinel.current;
-    if (!node || !more) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setLimit((n) => n + MORE_POSTS);
-        }
-      },
-      { rootMargin: "900px 0px" },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [more, limit]);
 
   return (
     <div className="feed-days">
@@ -135,7 +124,6 @@ export function FeedPosts({
           </div>
         </section>
       ))}
-      {more && <div ref={sentinel} aria-hidden style={{ height: 1 }} />}
       {jump.picker}
     </div>
   );

@@ -8,13 +8,7 @@ import { DayPicker } from "../../shared/lib";
  * registers each day's section with `register`, puts a `DayLabel` on it and
  * renders `picker` once.
  */
-export function useDayJump(
-  items: FeedItem[],
-  locale: Locale,
-  // A list that renders lazily says here that a day must exist before the
-  // scroll to it can happen.
-  ensureRendered?: (key: string) => void,
-) {
+export function useDayJump(items: FeedItem[], locale: Locale) {
   const [from, setFrom] = useState<Date | null>(null);
   const nodes = useRef(new Map<string, HTMLElement>());
 
@@ -31,14 +25,17 @@ export function useDayJump(
 
   const jumpTo = (key: string) => {
     setFrom(null);
-    ensureRendered?.(key);
-    // Let the sheet start closing (and a lazy list render the day) first, so
-    // the scroll is not fighting either; retry briefly until the day exists.
+    // Let the sheet start closing first, so the scroll is not fighting it;
+    // retry briefly in case the day has not mounted yet.
     let tries = 0;
     const go = () => {
       const node = nodes.current.get(key);
       if (node) {
         node.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Posts far away are only estimated in height until they are rendered
+        // (content-visibility): once the scroll has passed them, settle exactly.
+        window.setTimeout(() => node.scrollIntoView({ block: "start" }), 900);
+        window.setTimeout(() => node.scrollIntoView({ block: "start" }), 1500);
       } else if (tries++ < 12) {
         window.setTimeout(go, 100);
       }

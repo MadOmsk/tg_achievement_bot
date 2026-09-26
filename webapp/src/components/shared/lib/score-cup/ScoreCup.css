@@ -23,7 +23,8 @@
   align-items: center;
   width: auto;
   height: 40px;
-  padding: 0 4px;
+  /* No padding on the right: the last icon ends on the page gutter, level with the cards. */
+  padding: 0 0 0 4px;
   border: 0;
   background: none;
   color: inherit;
@@ -64,7 +65,7 @@
 
 .score-row strong small {
   margin-left: 4px;
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 750;
   letter-spacing: 0;
   color: rgba(255, 255, 255, 0.72);
@@ -73,7 +74,7 @@
 .score-row em {
   min-width: 0;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   font-style: normal;
   font-variant-numeric: tabular-nums;
 }

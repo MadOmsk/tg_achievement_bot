@@ -245,10 +245,6 @@
   transition: all 0.15s ease;
 }
 
-.feed-row.is-locked-row {
-  opacity: 0.65;
-}
-
 /* Alignment tweaks for the shared .btn (see components/shared/styles/base.css) inside
  * this screen's own platform cards and connect form. */
 /* Keep the action strip ≈ the Russian «Подключить» button footprint. */
@@ -273,4 +269,72 @@
   width: 100%;
   margin-top: 4px;
   min-height: 48px;
+}
+/* The deletion warning, a small card over the page. */
+.delete-warning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 22px 20px;
+  text-align: center;
+}
+
+.delete-warning-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 107, 122, 0.16);
+  color: #ff8a96;
+}
+
+.delete-warning h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.delete-warning p {
+  margin: 0;
+  color: rgba(238, 241, 246, 0.82);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.delete-warning-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.delete-warning-actions .btn {
+  flex: 1 1 0;
+}
+
+/* "Accounts" and, on its right, the way to delete the account. */
+.accounts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 24px 0 12px;
+}
+
+.accounts-head .kicker {
+  margin: 0 12px 0 0;
+}
+
+.accounts-delete {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-right: -8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #ff8a96;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
