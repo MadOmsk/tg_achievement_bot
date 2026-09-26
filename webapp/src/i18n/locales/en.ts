@@ -50,11 +50,9 @@ loading: "Gathering the crew…",
   digest: "Digest",
   subscribe: "Publish here",
   unsubscribe: "Stop publishing",
-  deleteDoneTitle: "Account deleted",
   deleteAccount: "Delete account",
   deleteWarning:
     "Delete your account from the bot? All your platform links, chat subscriptions and settings will be erased for good. This cannot be undone.",
-  deleteSure: "Delete",
   deleteDone:
     "Your account and its data have been deleted. If you want to come back, just send the bot /start.",
   confirmUnsubscribe:

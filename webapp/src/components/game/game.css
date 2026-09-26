@@ -34,23 +34,56 @@
   display: none;
 }
 
-/* Progress: a slim bar along the picture's lower edge. */
-.game-cover-bar {
-  position: absolute;
-  inset: auto 0 0 0;
+/* Progress: a plate hanging off the picture's lower edge — the percentage, a
+ * bar and the count, so a game in progress is not just a picture. */
+.game-plate {
+  position: relative;
   z-index: 3;
-  height: 5px;
-  background: rgba(8, 10, 16, 0.55);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  margin: -30px 18px 0;
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: rgba(14, 17, 26, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 12px 30px rgba(0, 0, 0, 0.4);
 }
 
-.game-cover-bar-fill {
+.game-plate strong {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.game-plate small {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.game-plate-bar {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.game-plate-fill {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, rgba(200, 210, 225, 0.55) 0%, rgba(245, 248, 252, 0.95) 100%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(150, 175, 255, 0.6), rgba(240, 245, 255, 1));
 }
 
-/* A completed game: a platinum medal hangs off the picture's lower edge, on a
- * glow, with a couple of sparkles — the reward for getting all the way. */
+/* A completed game: a big platinum medal on the picture's edge, on a glow, with
+ * sparkles, and its label written in the same cool light — no outline. */
 .game-hero {
   position: relative;
   margin: 0 -18px 4px;
@@ -61,33 +94,28 @@
 }
 
 .game-hero.is-done {
-  margin-bottom: 64px;
-}
-
-.game-hero.is-done .game-cover-bar-fill {
-  background: linear-gradient(90deg, rgba(95, 185, 215, 0.6) 0%, rgba(175, 230, 245, 1) 100%);
-  box-shadow: 0 0 12px rgba(140, 220, 245, 0.6);
+  margin-bottom: 118px;
 }
 
 .game-hero.is-done .game-cover::after {
   content: "";
   position: absolute;
   inset: auto 0 0 0;
-  height: 45%;
+  height: 60%;
   z-index: 2;
   pointer-events: none;
-  background: radial-gradient(70% 90% at 50% 100%, rgba(150, 225, 250, 0.45), transparent 70%);
+  background: radial-gradient(75% 90% at 50% 100%, rgba(150, 225, 250, 0.5), transparent 72%);
 }
 
 .game-medal {
   position: absolute;
   left: 50%;
-  bottom: -54px;
+  bottom: -104px;
   z-index: 4;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   transform: translateX(-50%);
 }
 
@@ -95,62 +123,78 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: 74px;
-  height: 74px;
+  width: 104px;
+  height: 104px;
   border-radius: 50%;
   color: #12303c;
   background:
-    radial-gradient(circle at 30% 25%, #ffffff 0%, transparent 42%),
+    radial-gradient(circle at 30% 24%, #ffffff 0%, transparent 44%),
     conic-gradient(from 210deg, #cdeaf7, #f6fbff, #9fd3ea, #eaf6fc, #b7ddef, #cdeaf7);
   box-shadow:
-    0 0 0 3px rgba(12, 15, 22, 0.9),
-    0 0 0 5px rgba(180, 232, 250, 0.7),
-    0 10px 28px rgba(120, 210, 245, 0.55);
+    0 0 0 4px rgba(12, 15, 22, 0.9),
+    0 0 0 7px rgba(180, 232, 250, 0.7),
+    0 0 46px rgba(120, 210, 245, 0.7),
+    0 14px 34px rgba(0, 0, 0, 0.45);
 }
 
 .game-medal-disc svg {
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.7));
+  filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.75));
 }
 
 .game-medal-label {
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: rgba(150, 215, 240, 0.14);
-  color: rgb(190, 238, 250);
-  font-size: 0.78rem;
-  font-weight: 700;
+  margin-top: 12px;
+  color: rgb(200, 240, 252);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 18px rgba(140, 220, 245, 0.6);
   white-space: nowrap;
+}
+
+.game-medal-count {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .game-medal-spark {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   background: #fff;
   clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
-  filter: drop-shadow(0 0 4px rgba(200, 240, 255, 0.9));
+  filter: drop-shadow(0 0 5px rgba(200, 240, 255, 0.95));
   animation: medal-twinkle 2.6s ease-in-out infinite;
 }
 
 .game-medal-spark.is-a {
-  top: -8px;
-  right: -14px;
+  top: -12px;
+  right: -20px;
 }
 
 .game-medal-spark.is-b {
-  bottom: 2px;
-  left: -20px;
-  width: 10px;
-  height: 10px;
+  bottom: 6px;
+  left: -28px;
+  width: 11px;
+  height: 11px;
   animation-delay: 0.9s;
 }
 
 .game-medal-spark.is-c {
-  top: 6px;
-  left: -12px;
+  top: 10px;
+  left: -18px;
+  width: 9px;
+  height: 9px;
+  animation-delay: 1.7s;
+}
+
+.game-medal-spark.is-d {
+  bottom: -6px;
+  right: -14px;
   width: 8px;
   height: 8px;
-  animation-delay: 1.7s;
+  animation-delay: 0.4s;
 }
 
 @keyframes medal-twinkle {
@@ -170,6 +214,24 @@
     animation: none;
     opacity: 0.8;
   }
+}
+
+/* A finished game's picture gets a cool "platinum" grade: a tint over it and
+ * a soft vignette, so it reads as achieved before anything is read. */
+.game-hero.is-done .game-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(6, 22, 34, 0.5) 100%),
+    linear-gradient(180deg, rgba(150, 225, 250, 0.16), rgba(30, 90, 130, 0.3));
+  mix-blend-mode: soft-light;
+}
+
+.game-hero.is-done .game-cover .fit-layer > img {
+  filter: saturate(1.12) contrast(1.05) brightness(1.03);
 }
 
 /* The game's own page: a full-screen layer over the app, scrolling on its
@@ -302,23 +364,6 @@
   --day-gap: 8px;
 }
 
-/* A finished game's picture gets a cool "platinum" grade: a tint over it and
- * a soft vignette, so it reads as achieved before anything is read. */
-.game-hero.is-done .game-cover::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  background:
-    radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(6, 22, 34, 0.5) 100%),
-    linear-gradient(180deg, rgba(150, 225, 250, 0.16), rgba(30, 90, 130, 0.3));
-  mix-blend-mode: soft-light;
-}
-
-.game-hero.is-done .game-cover .fit-layer > img {
-  filter: saturate(1.12) contrast(1.05) brightness(1.03);
-}
 
 /* What the person earned in this game, in the top bar: the number and its unit
  * (G, achievements, trophies). */

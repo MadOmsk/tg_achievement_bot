@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { MeResponse } from "../../../api";
 import { t, timezoneLabel, type Locale } from "../../../i18n";
-import { BackHead, Chevron, Icon, Sheet, Toggle } from "../../shared/lib";
+import { BackHead, Chevron, Icon, Toggle } from "../../shared/lib";
 import {
   PLATFORMS,
   SETTINGS_PANES,
@@ -55,8 +55,6 @@ export function Settings({
   onDeleteAccount: () => Promise<void>;
 }) {
   const [pane, setPane] = useState<SettingsPane>(SETTINGS_PANES.ROOT);
-  // Deleting asks once, in a warning over the page; afterwards the account is gone.
-  const [deleteAsk, setDeleteAsk] = useState<"closed" | "ask" | "done">("closed");
   const [deleting, setDeleting] = useState(false);
   const tz = me.settings.tz_offset_min;
   const tzOptions = TIMEZONES;
@@ -203,8 +201,20 @@ export function Settings({
           className="accounts-delete"
           aria-label={t(locale, "deleteAccount")}
           title={t(locale, "deleteAccount")}
-          onClick={() => {
-            setDeleteAsk("ask");
+          disabled={deleting}
+          onClick={async () => {
+            // Telegram's own confirmation, like turning off publishing to a chat.
+            if (!window.confirm(t(locale, "deleteWarning"))) return;
+            setDeleting(true);
+            try {
+              await onDeleteAccount();
+              window.alert(t(locale, "deleteDone"));
+              window.Telegram?.WebApp?.close?.();
+            } catch (err) {
+              onFlash(`${t(locale, "error")}: ${String(err)}`);
+            } finally {
+              setDeleting(false);
+            }
           }}
         >
           <Icon name="trash" size={20} />
@@ -258,68 +268,7 @@ export function Settings({
           notes?.steam,
         ]}
       />
-      {deleteAsk !== "closed" && (
-        <Sheet
-          onClose={() => {
-            if (deleteAsk === "done") window.Telegram?.WebApp?.close?.();
-            setDeleteAsk("closed");
-          }}
-          closeLabel={t(locale, "close")}
-          noClose
-        >
-          <div className="delete-warning">
-            <span className="delete-warning-icon" aria-hidden>
-              <Icon name="trash" size={26} />
-            </span>
-            <h2>
-              {t(locale, deleteAsk === "done" ? "deleteDoneTitle" : "deleteAccount")}
-            </h2>
-            <p>
-              {t(locale, deleteAsk === "done" ? "deleteDone" : "deleteWarning")}
-            </p>
-            {deleteAsk === "ask" ? (
-              <div className="delete-warning-actions">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setDeleteAsk("closed")}
-                >
-                  {t(locale, "cancel")}
-                </button>
-                <button
-                  type="button"
-                  className="btn danger"
-                  disabled={deleting}
-                  onClick={async () => {
-                    setDeleting(true);
-                    try {
-                      await onDeleteAccount();
-                      setDeleteAsk("done");
-                    } catch (err) {
-                      onFlash(`${t(locale, "error")}: ${String(err)}`);
-                      setDeleteAsk("closed");
-                    } finally {
-                      setDeleting(false);
-                    }
-                  }}
-                >
-                  {t(locale, "deleteSure")}
-                </button>
-              </div>
-            ) : (
-              <div className="delete-warning-actions">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => window.Telegram?.WebApp?.close?.()}
-                >
-                  {t(locale, "close")}
-                </button>
-              </div>
-            )}
-          </div>
-        </Sheet>
-      )}
+
 
       {me.is_admin && onAdmin && (
         <AdminSection

@@ -363,6 +363,8 @@ export function TitleSheet({
       <GameHero
         cover={cover}
         pct={pct}
+        unlocked={unlocked}
+        total={total}
         isCompleted={isCompleted}
         locale={locale}
       />
@@ -425,11 +427,10 @@ export function TitleSheet({
               )}
               {section.rows.map((row) => {
                 const iHave = myUnlockedIds.has(row.achievement_id);
+                // A secret stays hidden until the "show secrets" setting or a
+                // tap on it says otherwise — earned or not.
                 const isRevealed =
-                  showAllSecrets ||
-                  row.is_unlocked ||
-                  (comparing && iHave) ||
-                  revealedIds.has(row.achievement_id);
+                  showAllSecrets || revealedIds.has(row.achievement_id);
                 return (
                   <GameAchievementRow
                     key={row.achievement_id}
@@ -470,10 +471,16 @@ export function TitleSheet({
             <UnlockCard
               item={selectedFeedItem}
               locale={locale}
-              secret={false}
+              secret={Boolean(
+                selectedAch?.is_secret &&
+                  !showAllSecrets &&
+                  !revealedIds.has(selectedAch.achievement_id),
+              )}
               author={false}
               gameInCopy
-              onReveal={() => {}}
+              onReveal={() =>
+                selectedAch && toggleReveal(selectedAch.achievement_id)
+              }
             />
           </div>
         </Sheet>

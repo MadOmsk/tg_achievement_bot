@@ -270,48 +270,7 @@
   margin-top: 4px;
   min-height: 48px;
 }
-/* The deletion warning, a small card over the page. */
-.delete-warning {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 24px 22px 20px;
-  text-align: center;
-}
 
-.delete-warning-icon {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: rgba(255, 107, 122, 0.16);
-  color: #ff8a96;
-}
-
-.delete-warning h2 {
-  margin: 0;
-  font-size: 1.15rem;
-}
-
-.delete-warning p {
-  margin: 0;
-  color: rgba(238, 241, 246, 0.82);
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-.delete-warning-actions {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  margin-top: 6px;
-}
-
-.delete-warning-actions .btn {
-  flex: 1 1 0;
-}
 
 /* "Accounts" and, on its right, the way to delete the account. */
 .accounts-head {
