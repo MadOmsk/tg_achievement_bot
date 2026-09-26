@@ -13,7 +13,7 @@ from aiogram_i18n import I18nContext
 
 from bot.config import Settings
 from bot.constants import AccountPlatform, Platform, RarityMode, TokenStatus
-from bot.db.repo import Repo
+from bot.db.repo import PlatformLink, Repo
 from bot.handlers.delivery import safe_edit
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
@@ -31,6 +31,7 @@ from bot.views.keyboards import (
     timezone_keyboard,
 )
 from bot.views.panel import (
+    render_account_menu,
     render_chat_card,
     render_chat_delete_prompt,
     render_chat_list,
@@ -107,7 +108,8 @@ async def panel_sync(
     xbox_linked = bool(user and user.xuid)
     xbox_active = bool(xbox_linked and token and token.status == TokenStatus.ACTIVE)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
+    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    psn_link = psn_links[0] if psn_links else None
 
     if not (xbox_linked or steam_link or psn_link):
         await callback.answer(i18n.get("panel-connect-any-platform-first"), show_alert=True)
@@ -170,12 +172,12 @@ async def panel_sync(
             errors.append("steam")
             log.exception("manual steam catch-up for tg_id=%s failed", tg_id)
 
-    # 3. PSN
-    if psn_link:
+    # 3. PSN — every account the person holds (#10)
+    for link in psn_links:
         attempted_platforms += 1
         try:
             p_published = await psn_fetcher.poll_account(
-                tg_id, psn_link.external_id, link_nickname(psn_link)
+                tg_id, link.external_id, link_nickname(link)
             )
             total_published += p_published
         except Exception:
@@ -220,11 +222,9 @@ async def panel_disconnect_prompt(callback: CallbackQuery, repo: Repo, i18n: I18
 
 @router.callback_query(F.data == "panel:disconnect:no")
 async def panel_disconnect_cancel(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    # Cancelling here edits the panel message itself, so restore the panel
-    # in place instead of leaving a throwaway "cancelled" message behind.
-    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
-    await callback.answer()
+    # Cancelling here edits the panel message itself, so restore the screen
+    # the prompt came from instead of leaving a "cancelled" message behind.
+    await _redraw_account_menu(callback, repo, AccountPlatform.XBOX, i18n)
 
 
 @router.callback_query(F.data == "panel:steamdisconnect:no")
@@ -233,9 +233,7 @@ async def panel_steam_disconnect_cancel(
 ) -> None:
     """Same treatment as panel_disconnect_cancel above, for Steam's own
     disconnect button (2026-09-05 follow-up)."""
-    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
-    await callback.answer()
+    await _redraw_account_menu(callback, repo, AccountPlatform.STEAM, i18n)
 
 
 @router.callback_query(F.data == "panel:psndisconnect:no")
@@ -244,9 +242,7 @@ async def panel_psn_disconnect_cancel(
 ) -> None:
     """Same treatment as panel_steam_disconnect_cancel above, for PSN's own
     disconnect button (SPEC 9, M-PSN-1)."""
-    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
-    await callback.answer()
+    await _redraw_account_menu(callback, repo, AccountPlatform.PSN, i18n)
 
 
 @router.callback_query(F.data == "panel:linkstoggle")
@@ -268,25 +264,94 @@ async def panel_toggle_profile_links(
     await safe_edit(callback, screen.text, screen.keyboard)
 
 
+async def _redraw_account_menu(
+    callback: CallbackQuery, repo: Repo, platform: str, i18n: I18nContext, *, answer: bool = True
+) -> None:
+    """A platform's own screen (#10), or the panel once nothing is left on
+    that platform to show."""
+    screen = await render_account_menu(repo, callback.from_user.id, platform, locale=i18n.locale)
+    if screen is None:
+        screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+    if answer:
+        await callback.answer()
+
+
+async def _links_of(repo: Repo, tg_id: int, platform: str) -> list[PlatformLink]:
+    if platform == AccountPlatform.PSN:
+        return await repo.platform_links_for(tg_id, platform)
+    link = await repo.get_platform_link(tg_id, platform)
+    return [link] if link is not None else []
+
+
+@router.callback_query(F.data.startswith("panel:acc:"))
+async def panel_account_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """A platform's button on /panel (#10): its own screen."""
+    assert callback.data is not None
+    platform = callback.data.rsplit(":", 1)[1]
+    if platform not in (AccountPlatform.XBOX, AccountPlatform.PSN, AccountPlatform.STEAM):
+        await callback.answer()
+        return
+    await _redraw_account_menu(callback, repo, platform, i18n)
+
+
 @router.callback_query(F.data.startswith("panel:pub:"))
 async def panel_toggle_publishing(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """The person's own switch for one account (#20): announce its
-    achievements, or keep them to stats. One tap, no confirmation — just as
-    undoable as the profile-links toggle."""
+    """The person's own switch for a whole platform (#20, #10): announce its
+    achievements, or keep them to stats. With several PSN accounts some on
+    and some off ("Частично"), a tap turns them all on. One tap, no
+    confirmation — just as undoable as the profile-links toggle."""
+    assert callback.data is not None
+    platform = callback.data.rsplit(":", 1)[1]
+    links = await _links_of(repo, callback.from_user.id, platform)
+    if not links:
+        await callback.answer()
+        return
+    publishes = not all(link.publishes for link in links)
+    await repo.set_platform_publishes(callback.from_user.id, platform, publishes)
+    await callback.answer(
+        i18n.get("panel-publishes-on-toast" if publishes else "panel-publishes-off-toast")
+    )
+    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
+
+
+@router.callback_query(F.data.startswith("panel:accpub:"))
+async def panel_toggle_account_publishing(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext
+) -> None:
+    """The same switch on XBOX's or Steam's own screen, which stays open."""
     assert callback.data is not None
     platform = callback.data.rsplit(":", 1)[1]
     link = await repo.get_platform_link(callback.from_user.id, platform)
     if link is None:
         await callback.answer()
         return
+    await _toggle_one(callback, repo, link, i18n)
+    await _redraw_account_menu(callback, repo, platform, i18n, answer=False)
+
+
+@router.callback_query(F.data.startswith("panel:psnpub:"))
+async def panel_toggle_psn_account(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """One PSN account's switch, on the PSN screen (#10)."""
+    assert callback.data is not None
+    account_id = callback.data.rsplit(":", 1)[1]
+    links = await repo.platform_links_for(callback.from_user.id, AccountPlatform.PSN)
+    link = next((item for item in links if item.external_id == account_id), None)
+    if link is not None:
+        await _toggle_one(callback, repo, link, i18n)
+    await _redraw_account_menu(callback, repo, AccountPlatform.PSN, i18n, answer=link is None)
+
+
+async def _toggle_one(
+    callback: CallbackQuery, repo: Repo, link: PlatformLink, i18n: I18nContext
+) -> None:
     await repo.set_account_publishes(
         callback.from_user.id, link.platform, link.external_id, not link.publishes
     )
     await callback.answer(
         i18n.get("panel-publishes-off-toast" if link.publishes else "panel-publishes-on-toast")
     )
-    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
 
 
 @router.callback_query(F.data == "panel:rarity")

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ChatRow, MeResponse } from "./api";
 import { rarityLabel, t, type Locale } from "./i18n";
-import { BackHead, Icon, PlatformLogo, Toggle } from "./ui";
+import { BackHead, PlatformLogo, Toggle } from "./ui";
 
 export const TIMEZONES: Array<{ min: number; ru: string; en: string }> = [
   { min: -480, ru: "Лос-Анджелес · UTC−8", en: "Los Angeles · UTC−8" },
@@ -24,6 +24,17 @@ export const TIMEZONES: Array<{ min: number; ru: string; en: string }> = [
 export type PlatNote = { kind: "error" | "warn" | "info"; text: string };
 export type PlatNotes = Partial<Record<"xbox" | "steam" | "psn", PlatNote>>;
 
+type PlatformKey = "xbox" | "psn" | "steam";
+
+type AccountRow = {
+  key: string;
+  name: string;
+  profileUrl: string | null;
+  publishes: boolean;
+  onTogglePublish?: () => void;
+  onDisconnect: () => void;
+};
+
 export function Me({
   me,
   locale,
@@ -45,55 +56,94 @@ export function Me({
   onConnectPsn: () => void;
   onDisconnectXbox: () => void;
   onDisconnectSteam: () => void;
-  onDisconnectPsn: () => void;
+  onDisconnectPsn: (accountId?: string) => void;
   onSync: () => void;
-  onTogglePublish?: (platform: "xbox" | "psn" | "steam", publishes: boolean) => void;
+  onTogglePublish?: (platform: PlatformKey, publishes: boolean, accountId?: string) => void;
 }) {
-  const xboxName =
-    me.xbox.gamertag_modern || me.xbox.gamertag || t(locale, "notLinked");
+  const toggle = (platform: PlatformKey, publishes: boolean, accountId?: string) =>
+    onTogglePublish ? () => onTogglePublish(platform, !publishes, accountId) : undefined;
+
+  const xboxAccounts: AccountRow[] = me.xbox.linked
+    ? [
+        {
+          key: "xbox",
+          name: me.xbox.gamertag_modern || me.xbox.gamertag || t(locale, "notLinked"),
+          profileUrl: me.xbox.profile_url,
+          publishes: me.xbox.publishes !== false,
+          onTogglePublish: toggle("xbox", me.xbox.publishes !== false),
+          onDisconnect: onDisconnectXbox,
+        },
+      ]
+    : [];
+
+  // Several PSN accounts (#10), each named "PSN: nick" — a bare nickname
+  // does not say which platform the row is (owner).
+  const psnAccounts: AccountRow[] = !me.psn.linked
+    ? []
+    : (
+        me.psn.accounts ?? [
+          {
+            account_id: me.psn.account_id,
+            name: me.psn.online_id || me.psn.account_id,
+            publishes: me.psn.publishes !== false,
+            profile_url: me.psn.profile_url,
+          },
+        ]
+      ).map((account) => ({
+        key: account.account_id,
+        name: `PSN: ${account.name}`,
+        profileUrl: account.profile_url,
+        publishes: account.publishes,
+        onTogglePublish: toggle("psn", account.publishes, account.account_id),
+        onDisconnect: () => onDisconnectPsn(account.account_id),
+      }));
+  const psnMax = me.psn.linked ? (me.psn.max_accounts ?? 1) : 1;
+  const psnHidden =
+    me.psn.linked &&
+    (me.psn.accounts ?? []).some((account) => account.achievements_visible === false);
+
+  const steamAccounts: AccountRow[] = me.steam.linked
+    ? [
+        {
+          key: "steam",
+          name: me.steam.display_name || me.steam.steam_id,
+          profileUrl: me.steam.profile_url,
+          publishes: me.steam.publishes !== false,
+          onTogglePublish: toggle("steam", me.steam.publishes !== false),
+          onDisconnect: onDisconnectSteam,
+        },
+      ]
+    : [];
 
   return (
     <>
       <PlatformCard
-        linked={me.xbox.linked}
-        name={xboxName}
         mark="xbox"
-        profileUrl={me.xbox.profile_url}
+        title="XBOX"
+        accounts={xboxAccounts}
         locale={locale}
         onConnect={onConnectXbox}
-        onDisconnect={onDisconnectXbox}
-        publishes={me.xbox.publishes !== false}
-        onTogglePublish={
-          onTogglePublish
-            ? () => onTogglePublish("xbox", me.xbox.publishes === false)
-            : undefined
-        }
         onSync={me.xbox.linked ? onSync : undefined}
         notes={[
-          me.xbox.needs_reconnect
-            ? { kind: "error", text: t(locale, "reconnectHint") }
-            : null,
+          me.xbox.needs_reconnect ? { kind: "error", text: t(locale, "reconnectHint") } : null,
           notes?.xbox,
         ]}
       />
 
       <PlatformCard
-        linked={me.psn.linked}
-        name={me.psn.linked ? me.psn.online_id || me.psn.account_id : ""}
         mark="psn"
-        profileUrl={me.psn.linked ? me.psn.profile_url : null}
+        title={
+          psnAccounts.length > 1
+            ? `PSN · ${psnAccounts.length} ${t(locale, "of")} ${psnMax}`
+            : "PSN"
+        }
+        accounts={psnAccounts}
         locale={locale}
         onConnect={onConnectPsn}
-        onDisconnect={onDisconnectPsn}
-        publishes={!(me.psn.linked && me.psn.publishes === false)}
-        onTogglePublish={
-          onTogglePublish
-            ? () => onTogglePublish("psn", me.psn.linked && me.psn.publishes === false)
-            : undefined
-        }
+        onAdd={psnAccounts.length && psnAccounts.length < psnMax ? onConnectPsn : undefined}
         onSync={me.psn.linked ? onSync : undefined}
         notes={[
-          me.psn.linked && me.psn.achievements_visible === false
+          psnHidden || (me.psn.linked && me.psn.achievements_visible === false)
             ? { kind: "warn", text: t(locale, "hiddenPsn") }
             : null,
           notes?.psn,
@@ -101,19 +151,11 @@ export function Me({
       />
 
       <PlatformCard
-        linked={me.steam.linked}
-        name={me.steam.linked ? me.steam.display_name || me.steam.steam_id : ""}
         mark="steam"
-        profileUrl={me.steam.linked ? me.steam.profile_url : null}
+        title="Steam"
+        accounts={steamAccounts}
         locale={locale}
         onConnect={onConnectSteam}
-        onDisconnect={onDisconnectSteam}
-        publishes={!(me.steam.linked && me.steam.publishes === false)}
-        onTogglePublish={
-          onTogglePublish
-            ? () => onTogglePublish("steam", me.steam.linked && me.steam.publishes === false)
-            : undefined
-        }
         onSync={me.steam.linked ? onSync : undefined}
         notes={[
           me.steam.linked && me.steam.achievements_visible === false
@@ -126,95 +168,80 @@ export function Me({
   );
 }
 
+/** One platform: its name, then every account it holds with worded
+ * buttons — profile, posting, unlink (#10; an icon alone said nothing). */
 function PlatformCard({
   mark,
-  linked,
-  name,
-  profileUrl,
+  title,
+  accounts,
   locale,
   onConnect,
-  onDisconnect,
+  onAdd,
   onSync,
   notes,
-  publishes = true,
-  onTogglePublish,
 }: {
   mark: string;
-  linked: boolean;
-  name: string;
-  profileUrl: string | null;
+  title: string;
+  accounts: AccountRow[];
   locale: Locale;
   onConnect: () => void;
-  onDisconnect: () => void;
+  onAdd?: () => void;
   onSync?: () => void;
-  publishes?: boolean;
-  onTogglePublish?: () => void;
   notes?: Array<PlatNote | null | undefined>;
 }) {
+  const linked = accounts.length > 0;
   return (
     <div className={linked ? "plat-card is-linked" : "plat-card"}>
       <div className="plat-card-main">
         <PlatformLogo platform={mark} size={22} />
         <strong className="plat-card-nick">
-          {linked ? name : t(locale, "notLinked")}
+          {linked ? title : `${title} · ${t(locale, "notLinked")}`}
         </strong>
-        {linked ? (
-          <div className="plat-card-icons" role="group">
-            {profileUrl ? (
-              <a
-                href={profileUrl}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={t(locale, "profile")}
-                title={t(locale, "profile")}
-              >
-                <Icon name="link" size={16} />
-              </a>
-            ) : (
-              <span className="is-disabled" aria-hidden>
-                <Icon name="link" size={16} />
-              </span>
-            )}
-            {onSync ? (
-            <button
-              type="button"
-              onClick={onSync}
-              aria-label={t(locale, "sync")}
-              title={t(locale, "sync")}
-            >
-              <Icon name="sync" size={16} />
-            </button>
-            ) : (
-              <span className="is-disabled" aria-hidden>
-                <Icon name="sync" size={16} />
-              </span>
-            )}
-            {onTogglePublish ? (
-              <button
-                type="button"
-                onClick={onTogglePublish}
-                aria-label={t(locale, publishes ? "publishesOn" : "publishesOff")}
-                title={t(locale, publishes ? "publishesOn" : "publishesOff")}
-              >
-                {publishes ? "🔔" : "🔇"}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="is-danger"
-              onClick={onDisconnect}
-              aria-label={t(locale, "disconnect")}
-              title={t(locale, "disconnect")}
-            >
-              <Icon name="off" size={16} />
-            </button>
-          </div>
-        ) : (
+        {linked ? null : (
           <button type="button" className="btn sm" onClick={onConnect}>
             {t(locale, "connect")}
           </button>
         )}
       </div>
+      {accounts.map((account) => (
+        <div key={account.key} className="plat-account">
+          <p className="plat-account-name">{account.name}</p>
+          <div className="plat-buttons">
+            {account.profileUrl ? (
+              <a
+                className="btn sm ghost"
+                href={account.profileUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t(locale, "profile")}
+              </a>
+            ) : null}
+            {account.onTogglePublish ? (
+              <button type="button" className="btn sm ghost" onClick={account.onTogglePublish}>
+                {t(locale, account.publishes ? "publishingOn" : "publishingOff")}
+              </button>
+            ) : null}
+            <button type="button" className="btn sm ghost is-danger" onClick={account.onDisconnect}>
+              {t(locale, "disconnect")}
+            </button>
+          </div>
+        </div>
+      ))}
+      {linked && (onSync || onAdd) ? (
+        <div className="plat-buttons plat-buttons-foot">
+          {onSync ? (
+            <button type="button" className="btn sm ghost" onClick={onSync}>
+              {t(locale, "sync")}
+            </button>
+          ) : null}
+          {onAdd ? (
+            <button type="button" className="btn sm ghost" onClick={onAdd}>
+              {t(locale, "addPsnAccount")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {(notes ?? []).filter((n): n is PlatNote => Boolean(n)).map((note) => (
         <p key={`${note.kind}:${note.text}`} className={`plat-note is-${note.kind}`}>
           {note.text}
@@ -244,7 +271,7 @@ export function Settings({
   me: MeResponse;
   locale: Locale;
   notes?: PlatNotes;
-  onTogglePublish?: (platform: "xbox" | "psn" | "steam", publishes: boolean) => void;
+  onTogglePublish?: (platform: PlatformKey, publishes: boolean, accountId?: string) => void;
   onPatch: (body: {
     locale?: Locale;
     tz_offset_min?: number | null;
@@ -259,7 +286,7 @@ export function Settings({
   onConnectPsn: () => void;
   onDisconnectXbox: () => void;
   onDisconnectSteam: () => void;
-  onDisconnectPsn: () => void;
+  onDisconnectPsn: (accountId?: string) => void;
   onSync: () => void;
 }) {
   const [pane, setPane] = useState<"root" | "achievements" | "chats">("root");

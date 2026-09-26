@@ -43,6 +43,7 @@ from bot.services.admin_settings import (
 )
 from bot.services.naming import (
     account_nickname,
+    link_nickname,
     person_name,
     subscriber_names,
     xbox_nickname,
@@ -463,8 +464,9 @@ async def _psn_admin_block(
     tracking is unrelated to it, so this block gets its "last online" line
     back same as the other two platforms."""
     _ = translator("admin", locale)
-    count = await repo.platform_achievement_count(link.tg_id, Platform.PSN)
-    platinum = await repo.psn_platinum_count(link.tg_id)
+    # This account's own figures (#10): a person may hold several.
+    count = await repo.account_achievement_count(Platform.PSN, link.external_id)
+    platinum = await repo.account_platinum_count(link.external_id)
     parts = [plural_trophies(count, locale)]
     if platinum:
         parts.append(f"{platinum} {COMPLETED_BADGE_PSN}")
@@ -514,16 +516,15 @@ async def render_user_card(
     _ = translator("admin", locale)
     user = await repo.get_user(tg_id)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
+    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
     # Used to bail out on `not user.xuid` alone (2026-09-05 follow-up) — a
     # A Steam-only person got a "user not found" result in the admin panel,
     # same class of gap /stats had before it learned to work without Xbox.
-    if user is None or (not user.xuid and steam_link is None and psn_link is None):
+    if user is None or (not user.xuid and steam_link is None and not psn_links):
         return _("admin-user-not-found"), _back_home(locale=locale)
 
-    today_xbox, today_steam, today_psn = await repo.achievement_platform_breakdown(
-        tg_id, today_cutoff_utc()
-    )
+    today = today_cutoff_utc()
+    today_xbox, today_steam, _today_psn = await repo.achievement_platform_breakdown(tg_id, today)
     chats = await repo.chats_of_user(tg_id)
 
     # Telegram identity first (2026-09-08 user request), then one block per
@@ -536,8 +537,10 @@ async def render_user_card(
     if user.xuid:
         lines += await _xbox_admin_block(repo, user, today_xbox, locale=locale)
         lines.append("")
-    if psn_link is not None:
-        lines += await _psn_admin_block(repo, psn_link, today_psn, locale=locale)
+    # One block per PSN account (#10), each with its own "today".
+    for link in psn_links:
+        today_psn = await repo.account_count_since(Platform.PSN, link.external_id, today)
+        lines += await _psn_admin_block(repo, link, today_psn, locale=locale)
         lines.append("")
     if steam_link is not None:
         lines += await _steam_admin_block(repo, steam_link, today_steam, locale=locale)
@@ -571,10 +574,19 @@ async def render_user_card(
             ),
             InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{tg_id}"),
         )
-    if psn_link is not None:
+    for link in psn_links:
+        # Each account has its own pair (#10), named when there are several
+        # — "PSN: nick", never a bare nickname (owner).
+        account = f"{tg_id}:{link.external_id}"
+        if len(psn_links) > 1:
+            name = link_nickname(link)
+            refresh = _("admin-refresh-psn-account", name=name)
+            reset = _("admin-reset-psn-account", name=name)
+        else:
+            refresh, reset = _("admin-refresh-psn"), _("admin-reset-psn")
         builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:sync:psn:{tg_id}"),
-            InlineKeyboardButton(text=_("admin-reset-psn"), callback_data=f"a:reset:psn:{tg_id}"),
+            InlineKeyboardButton(text=refresh, callback_data=f"a:sync:psn:{account}"),
+            InlineKeyboardButton(text=reset, callback_data=f"a:reset:psn:{account}"),
         )
     if steam_link is not None:
         builder.row(
@@ -987,22 +999,31 @@ def render_wipe_prompt(chat: ChatTarget, count: int, hours: int, *, locale: str)
 RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
 
 
-def render_reset_confirm(platform: str, tg_id: str, *, locale: str) -> Screen:
+def render_reset_confirm(
+    platform: str,
+    tg_id: str,
+    *,
+    locale: str,
+    account_id: str | None = None,
+    account_name: str | None = None,
+) -> Screen:
     """ "Сброс базы" is destructive and not undoable (2026-09-08 user
     request) — same one-tap-confirm shape as /disconnect_steam's own
-    prompt, not an instant action behind a single tap."""
+    prompt, not an instant action behind a single tap. `account_id` picks
+    one of several PSN accounts (#10)."""
     _ = translator("admin", locale)
+    target = f"{tg_id}:{account_id}" if account_id else tg_id
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{tg_id}"
+            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{target}"
         ),
         InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
     )
-    return Screen(
-        _("admin-reset-confirm-prompt", platform=RESET_PLATFORM_NAMES[platform]),
-        builder.as_markup(),
-    )
+    name = RESET_PLATFORM_NAMES[platform]
+    if account_name:
+        name = f"{name}: {account_name}"
+    return Screen(_("admin-reset-confirm-prompt", platform=name), builder.as_markup())
 
 
 def render_system_wipe_prompt(

@@ -15,7 +15,7 @@ from typing import Any
 from aiohttp import web
 
 from bot.config import Settings
-from bot.constants import AccountPlatform, Platform, RarityMode
+from bot.constants import MAX_PSN_ACCOUNTS, AccountPlatform, Platform, RarityMode
 from bot.db.repo import Repo
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
@@ -316,12 +316,10 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
     if not raw:
         return web.json_response({"ok": False, "error": "missing_identity"}, status=400)
 
-    existing = await repo.get_platform_link(user.tg_id, Platform.PSN)
-    if existing is not None:
-        return web.json_response(
-            {"ok": False, "error": "already_linked", "display_name": existing.display_name},
-            status=409,
-        )
+    # Up to MAX_PSN_ACCOUNTS accounts (#10); the limit is checked again
+    # below once the Online ID is resolved, since relinking one already held
+    # is not an addition.
+    held = await repo.platform_links_for(user.tg_id, Platform.PSN)
 
     try:
         client = await psn_auth.get_client()
@@ -336,6 +334,13 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
 
     if not await is_trophy_visible(client, profile.account_id):
         return web.json_response({"ok": False, "error": "private"}, status=400)
+    if (
+        all(link.external_id != profile.account_id for link in held)
+        and len(held) >= MAX_PSN_ACCOUNTS
+    ):
+        return web.json_response(
+            {"ok": False, "error": "limit", "max": MAX_PSN_ACCOUNTS}, status=409
+        )
 
     await repo.ensure_user(user.tg_id, user.username)
     cooldown = await repo.check_platform_cooldown(user.tg_id, Platform.PSN, profile.account_id)
@@ -352,7 +357,9 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
     await repo.link_platform_account(
         user.tg_id, Platform.PSN, profile.account_id, profile.online_id
     )
-    await repo.set_achievements_visible(user.tg_id, Platform.PSN, True)
+    await repo.set_achievements_visible(
+        user.tg_id, Platform.PSN, True, external_id=profile.account_id
+    )
     log.info("mini connect_psn: tg_id=%s account_id=%s", user.tg_id, profile.account_id)
     asyncio.create_task(  # noqa: RUF006
         _psn_backfill(psn_fetcher, user.tg_id, profile.account_id)
@@ -368,13 +375,19 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
 
 
 async def handle_disconnect_psn(request: web.Request) -> web.Response:
+    """Every PSN account, or the one `account_id` names (#10)."""
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    link = await repo.get_platform_link(user.tg_id, Platform.PSN)
-    await repo.unlink_platform_account(user.tg_id, Platform.PSN)
-    if link is not None:
-        await repo.delete_psn_poll_state(link.external_id)
-    return web.json_response({"ok": True, "already": link is None})
+    body = await _json_body(request) if request.can_read_body else {}
+    account_id = str(body.get("account_id") or "").strip() or None
+    links = await repo.platform_links_for(user.tg_id, Platform.PSN)
+    if account_id is not None:
+        links = [link for link in links if link.external_id == account_id]
+    for link in links:
+        # `psn_poll_state` stays: it is #21's gate, and a relink through the
+        # bot skips backfill (see handlers/psn.py::disconnect_psn_confirm).
+        await repo.unlink_account(user.tg_id, Platform.PSN, link.external_id)
+    return web.json_response({"ok": True, "already": not links})
 
 
 async def handle_sync(request: web.Request) -> web.Response:
@@ -427,12 +440,18 @@ async def handle_patch_account(request: web.Request) -> web.Response:
     body = await _json_body(request)
     if "publishes" not in body:
         raise web.HTTPBadRequest(text="no publishes")
-    link = await repo.get_platform_link(user.tg_id, platform)
-    if link is None:
+    publishes = bool(body["publishes"])
+    account_id = str(body.get("account_id") or "").strip() or None
+    if account_id is None:
+        # The whole platform — every PSN account at once (#10).
+        if await repo.get_platform_link(user.tg_id, platform) is None:
+            raise web.HTTPNotFound(text="not linked")
+        await repo.set_platform_publishes(user.tg_id, platform, publishes)
+        return await handle_me(request)
+    links = await repo.platform_links_for(user.tg_id, platform)
+    if all(link.external_id != account_id for link in links):
         raise web.HTTPNotFound(text="not linked")
-    await repo.set_account_publishes(
-        user.tg_id, link.platform, link.external_id, bool(body["publishes"])
-    )
+    await repo.set_account_publishes(user.tg_id, platform, account_id, publishes)
     return await handle_me(request)
 
 

@@ -7,15 +7,25 @@ file's.
 
 from __future__ import annotations
 
+from html import escape as html_escape
+
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
-from bot.constants import AccountPlatform, Platform, RarityMode, TokenStatus
-from bot.db.repo import PlatformLink, Repo, User, UserChatRow
+from bot.constants import (
+    MAX_PSN_ACCOUNTS,
+    AccountPlatform,
+    Platform,
+    PresenceState,
+    RarityMode,
+    TokenStatus,
+)
+from bot.db.repo import PlatformLink, PsnPresenceRow, Repo, User, UserChatRow
 from bot.i18n import gettext, i18n_for
-from bot.services.naming import link_nickname, person_name_of
+from bot.services.naming import link_nickname, person_name_of, xbox_nickname
 from bot.services.presence_view import pick_presence
+from bot.services.profile_links import platform_profile_url, xbox_profile_url
 from bot.util import humanize_ago
 from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows
@@ -25,7 +35,14 @@ from bot.views.keyboards import (
     panel_keyboard,
     rarity_keyboard,
 )
-from bot.views.parts import family_tag, platform_header_lines, visibility_status_text
+from bot.views.parts import (
+    PLATFORM_ICON,
+    family_tag,
+    link_value_parts,
+    platform_header_lines,
+    visibility_status_text,
+    xbox_value_parts,
+)
 
 LOGIN_STATUS_KEYS = {
     TokenStatus.ACTIVE: "panel-login-active",
@@ -118,7 +135,7 @@ async def _panel_header_lines(
     repo: Repo,
     user: User,
     steam_link: PlatformLink | None,
-    psn_link: PlatformLink | None,
+    psn_links: list[PlatformLink],
     i18n: I18nContext,
 ) -> list[str]:
     """Identity + one line per connected platform with its lifetime count
@@ -131,7 +148,7 @@ async def _panel_header_lines(
     inline hyperlinks — /panel's own "Profile" buttons already cover that
     (CLAUDE.md: "always visible regardless of the privacy toggle" is about
     those buttons, not a second, redundant link inside the header text)."""
-    platform_links = [link for link in (psn_link, steam_link) if link is not None]
+    platform_links = [*psn_links, *([steam_link] if steam_link else [])]
     return [_panel_identity(user, platform_links, i18n.locale)] + await platform_header_lines(
         repo,
         tg_id=user.tg_id,
@@ -155,7 +172,8 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
     settings_row = await repo.get_user_settings(tg_id)
     connected = user is not None and bool(user.xuid)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
+    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    psn_link = psn_links[0] if psn_links else None
     xbox_link = await repo.get_platform_link(tg_id, AccountPlatform.XBOX) if connected else None
 
     token = await repo.get_token(tg_id) if connected else None
@@ -167,14 +185,12 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         connected=connected,
         needs_reconnect=needs_reconnect,
         steam_connected=steam_link is not None,
-        psn_connected=psn_link is not None,
-        gamertag=user.gamertag if user else None,
-        steam_id=steam_link.external_id if steam_link else None,
-        psn_id=psn_link.display_name if psn_link else None,
+        psn_connected=bool(psn_links),
+        psn_accounts=len(psn_links),
         show_profile_links=bool(settings_row and settings_row.show_profile_links),
         rarity_mode=settings_row.rarity_mode if settings_row else RarityMode.ALL,
         xbox_publishes=xbox_link.publishes if xbox_link else True,
-        psn_publishes=psn_link.publishes if psn_link else True,
+        psn_publishes=platform_publishes(psn_links),
         steam_publishes=steam_link.publishes if steam_link else True,
     )
 
@@ -201,7 +217,7 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
     # Header: identity + per-platform lifetime counts (#18). The 24h/30d
     # counters and "последние достижения" list this body used to carry are
     # gone — the header covers achievements now.
-    lines = await _panel_header_lines(repo, user, steam_link, psn_link, i18n)
+    lines = await _panel_header_lines(repo, user, steam_link, psn_links, i18n)
     lines += ["", i18n.get("panel-login-xbox-row", status=login)]
     if steam_link is not None:
         lines.append(
@@ -211,12 +227,12 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
                 status=visibility_status_text(steam_link, i18n.locale),
             )
         )
-    if psn_link is not None:
+    for link in psn_links:
         lines.append(
             i18n.get(
                 "panel-login-psn-row",
-                name=link_nickname(psn_link),
-                status=visibility_status_text(psn_link, i18n.locale),
+                name=link_nickname(link),
+                status=visibility_status_text(link, i18n.locale),
             )
         )
     lines.append(
@@ -227,15 +243,7 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
                 user.tg_id,
                 user.is_excluded,
                 i18n,
-                muted=[
-                    name
-                    for name, link in (
-                        ("XBOX", xbox_link),
-                        ("PSN", psn_link),
-                        ("Steam", steam_link),
-                    )
-                    if link is not None and not link.publishes
-                ],
+                muted=_muted_accounts(xbox_link, psn_links, steam_link),
             ),
         )
     )
@@ -250,7 +258,7 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         # tail, closed 2026-09-15) — it used to be gated on `user.xuid` and so
         # was missing entirely from a Steam/PSN-only person's panel, the last
         # row here that still assumed Xbox.
-        playing = await _now_playing(repo, user, steam_link, psn_link, i18n)
+        playing = await _now_playing(repo, user, steam_link, psn_links, i18n)
         lines.append(i18n.get("panel-now-playing-row", playing=playing))
     lines += [
         "",
@@ -267,7 +275,7 @@ async def _now_playing(
     repo: Repo,
     user: User,
     steam_link: PlatformLink | None,
-    psn_link: PlatformLink | None,
+    psn_links: list[PlatformLink],
     i18n: I18nContext,
 ) -> str:
     """One row for every platform at once, not one row each: the question
@@ -280,10 +288,17 @@ async def _now_playing(
     offline row has no "where" left to answer, so naming the platform there
     just picks one arbitrarily (the same call `/online`'s own rows make,
     #51)."""
+    # Several PSN accounts (#10): the one with the most to say — the same
+    # playing > online > offline rule, applied among them first.
+    psn = None
+    for link in psn_links:
+        candidate = await repo.psn_presence_of(link.external_id)
+        if candidate is not None:
+            psn = candidate if psn is None else _livelier(psn, candidate)
     presence = pick_presence(
         xbox=await repo.presence_of(user.xuid) if user.xuid else None,
         steam=await repo.steam_presence_of(steam_link.external_id) if steam_link else None,
-        psn=await repo.psn_presence_of(psn_link.external_id) if psn_link else None,
+        psn=psn,
     )
     if presence is None:
         return i18n.get("panel-no-presence-data")
@@ -296,6 +311,40 @@ async def _now_playing(
     # poller fills (SPEC 4), same as the admin card.
     game = presence.game or await repo.title_name(presence.title_id) or presence.title_id
     return f"{tag}  ·  " + i18n.get("panel-playing", game=game)
+
+
+def _livelier(a: PsnPresenceRow, b: PsnPresenceRow) -> PsnPresenceRow:
+    def rank(p: PsnPresenceRow) -> tuple[int, str]:
+        online = p.state == PresenceState.ONLINE
+        return (2 if online and p.title_id else 1 if online else 0, p.updated_at or "")
+
+    return b if rank(b) > rank(a) else a
+
+
+def platform_publishes(links: list[PlatformLink]) -> bool | None:
+    """The panel's switch for a whole platform (#10): on, off, or `None` when
+    some of its accounts post and some do not."""
+    states = {link.publishes for link in links}
+    return None if len(states) > 1 else (states.pop() if states else True)
+
+
+def _muted_accounts(
+    xbox_link: PlatformLink | None, psn_links: list[PlatformLink], steam_link: PlatformLink | None
+) -> list[str]:
+    """Which accounts the person switched off (#20), named as briefly as
+    still says which: a platform, or PSN's muted accounts by nickname when
+    only some of several are off (#10)."""
+    muted = []
+    if xbox_link is not None and not xbox_link.publishes:
+        muted.append("XBOX")
+    psn_muted = [link for link in psn_links if not link.publishes]
+    if psn_muted and len(psn_muted) == len(psn_links):
+        muted.append("PSN")
+    elif psn_muted:
+        muted.append("PSN: " + ", ".join(link_nickname(link) for link in psn_muted))
+    if steam_link is not None and not steam_link.publishes:
+        muted.append("Steam")
+    return muted
 
 
 async def _publication_status(
@@ -412,3 +461,146 @@ async def render_rarity_picker(repo: Repo, tg_id: int, *, locale: str) -> Screen
     settings_row = await repo.get_user_settings(tg_id)
     current = settings_row.rarity_mode if settings_row else RarityMode.ALL
     return Screen(i18n.get("panel-rarity-prompt"), rarity_keyboard(current, i18n))
+
+
+# ---------------------------------------------------------------- account screens (#10)
+
+
+def _back(i18n: I18nContext) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=i18n.get("panel-back"), callback_data="panel:refresh")
+
+
+def _publish_state(publishes: bool, i18n: I18nContext) -> str:
+    return i18n.get("panel-account-publishes-on" if publishes else "panel-account-publishes-off")
+
+
+async def render_account_menu(
+    repo: Repo, tg_id: int, platform: str, *, locale: str
+) -> Screen | None:
+    """One platform's own screen behind its /panel button (#10): what the
+    account is, its profile, its publishing switch, unlinking — and for PSN
+    every account the person holds, plus adding another. None when the
+    platform is not linked any more (the caller falls back to the panel)."""
+    i18n = await i18n_for(locale)
+    if platform == AccountPlatform.PSN:
+        return await _psn_menu(repo, tg_id, i18n)
+    if platform == AccountPlatform.XBOX:
+        user = await repo.get_user(tg_id)
+        link = await repo.get_platform_link(tg_id, AccountPlatform.XBOX)
+        if user is None or not user.xuid or link is None:
+            return None
+        token = await repo.get_token(tg_id)
+        login = (
+            i18n.get(LOGIN_STATUS_KEYS.get(token.status, "panel-login-revoked"))
+            if token
+            else i18n.get("panel-login-not-connected")
+        )
+        name = xbox_nickname(
+            gamertag_modern=user.gamertag_modern, gamertag=user.gamertag, xuid=user.xuid
+        )
+        parts = await xbox_value_parts(
+            repo, tg_id=tg_id, xuid=user.xuid, gamerscore=user.gamerscore, locale=i18n.locale
+        )
+        profile_url = xbox_profile_url(user.gamertag) if user.gamertag else None
+        label = "XBOX"
+        icon = PLATFORM_ICON[Platform.XBOX_MODERN]
+        unlink_cb = "panel:disconnect"
+    else:
+        link = await repo.get_platform_link(tg_id, AccountPlatform.STEAM)
+        if link is None:
+            return None
+        login = visibility_status_text(link, i18n.locale)
+        name = link_nickname(link)
+        parts = await link_value_parts(repo, tg_id=tg_id, link=link, locale=i18n.locale)
+        profile_url = platform_profile_url(
+            link.platform, external_id=link.external_id, display_name=link.display_name
+        )
+        label = "Steam"
+        icon = PLATFORM_ICON[Platform.STEAM]
+        unlink_cb = "steam:disconnectprompt"
+
+    text = "\n".join(
+        [
+            i18n.get("panel-account-title", icon=icon, platform=label),
+            "",
+            f"{html_escape(name)}  ·  " + "  ·  ".join(parts),
+            i18n.get("panel-account-login", status=login),
+            i18n.get("panel-account-publication", state=_publish_state(link.publishes, i18n)),
+        ]
+    )
+    builder = InlineKeyboardBuilder()
+    if profile_url:
+        builder.row(
+            InlineKeyboardButton(
+                text=i18n.get("kb-account-profile", platform=label, name=name), url=profile_url
+            )
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get(
+                "kb-account-publication-on" if link.publishes else "kb-account-publication-off"
+            ),
+            callback_data=f"panel:accpub:{platform}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("kb-account-unlink", platform=label), callback_data=unlink_cb
+        )
+    )
+    if platform == AccountPlatform.STEAM:
+        builder.row(
+            InlineKeyboardButton(text=i18n.get("kb-account-relink"), callback_data="steam:connect")
+        )
+    builder.row(_back(i18n))
+    return Screen(text, builder.as_markup())
+
+
+async def _psn_menu(repo: Repo, tg_id: int, i18n: I18nContext) -> Screen | None:
+    links = await repo.platform_links_for(tg_id, Platform.PSN)
+    if not links:
+        return None
+    lines = [
+        i18n.get(
+            "panel-psn-title",
+            icon=PLATFORM_ICON[Platform.PSN],
+            count=len(links),
+            max=MAX_PSN_ACCOUNTS,
+        ),
+        "",
+    ]
+    builder = InlineKeyboardBuilder()
+    for link in links:
+        name = link_nickname(link)
+        parts = await link_value_parts(repo, tg_id=tg_id, link=link, locale=i18n.locale)
+        lines.append(f"<b>PSN: {html_escape(name)}</b>  ·  " + "  ·  ".join(parts))
+        lines.append(
+            i18n.get(
+                "panel-psn-account-state",
+                login=visibility_status_text(link, i18n.locale),
+                state=_publish_state(link.publishes, i18n),
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text=i18n.get("kb-account-psn", name=name),
+                url=platform_profile_url(
+                    link.platform, external_id=link.external_id, display_name=link.display_name
+                ),
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text=i18n.get("kb-publishes-on" if link.publishes else "kb-publishes-off"),
+                callback_data=f"panel:psnpub:{link.external_id}",
+            ),
+            InlineKeyboardButton(
+                text=i18n.get("kb-psn-disconnect"), callback_data=f"psn:unlink:{link.external_id}"
+            ),
+        )
+    if len(links) > 1:
+        lines += ["", i18n.get("panel-psn-summed")]
+    if len(links) < MAX_PSN_ACCOUNTS:
+        builder.row(InlineKeyboardButton(text=i18n.get("kb-psn-add"), callback_data="psn:add"))
+    builder.row(_back(i18n))
+    return Screen("\n".join(lines), builder.as_markup())

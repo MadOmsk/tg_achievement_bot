@@ -82,9 +82,25 @@ export type MeResponse = {
         achievements_visible: boolean | null;
         profile_url: string | null;
         presence: PresenceInfo | null;
+        /** Every PSN account the person holds (#10), first linked first. */
+        accounts?: PsnAccount[];
+        max_accounts?: number;
       };
   chats: ChatRow[];
   publication: { excluded: boolean; chat_titles: string[] };
+};
+
+export type PsnAccount = {
+  account_id: string;
+  online_id: string | null;
+  name: string;
+  publishes: boolean;
+  trophy_count: number;
+  platinum_count: number;
+  trophy_level: number | null;
+  visibility: string;
+  achievements_visible: boolean | null;
+  profile_url: string | null;
 };
 
 function initHeaders(initData: string): HeadersInit {
@@ -208,22 +224,25 @@ export function connectPsn(
   });
 }
 
-/** The owner's switch for one linked account's posts (#20). */
+/** The owner's switch for a platform's posts (#20), or for one of its
+ * PSN accounts when `accountId` is given (#10). */
 export function setAccountPublishes(
   initData: string,
   platform: "xbox" | "psn" | "steam",
   publishes: boolean,
+  accountId?: string,
 ): Promise<MeResponse> {
   return api(initData, `/api/mini/accounts/${platform}`, {
     method: "PATCH",
-    body: JSON.stringify({ publishes }),
+    body: JSON.stringify(accountId ? { publishes, account_id: accountId } : { publishes }),
   });
 }
 
-export function disconnectPsn(initData: string): Promise<{ ok: boolean }> {
+/** Every PSN account, or the one `accountId` names (#10). */
+export function disconnectPsn(initData: string, accountId?: string): Promise<{ ok: boolean }> {
   return api(initData, "/api/mini/disconnect/psn", {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify(accountId ? { account_id: accountId } : {}),
   });
 }
 

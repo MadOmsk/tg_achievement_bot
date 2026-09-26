@@ -205,7 +205,8 @@ async def test_reset_button_appears_next_to_each_connected_platforms_refresh_but
     datas = _callback_datas(markup)
     assert "a:sync:xbox:1" in datas and "a:reset:xbox:1" in datas
     assert "a:sync:steam:1" in datas and "a:reset:steam:1" in datas
-    assert "a:sync:psn:1" in datas and "a:reset:psn:1" in datas
+    # PSN names its account (#10): a person may hold several.
+    assert "a:sync:psn:1:acc-1" in datas and "a:reset:psn:1:acc-1" in datas
 
 
 async def test_no_reset_buttons_for_platforms_never_connected(repo: Repo) -> None:
@@ -318,14 +319,14 @@ async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatc
         drawn.append((text, markup))
 
     monkeypatch.setattr(admin_handlers, "_redraw", record)
-    callback = _FakeCallback("a:reset:psn:1")
+    callback = _FakeCallback("a:reset:psn:1:acc-1")
 
-    await admin_handlers.reset_platform_confirm(callback, static_i18n("admin", "ru"))  # type: ignore[arg-type]
+    await admin_handlers.reset_platform_confirm(callback, repo, static_i18n("admin", "ru"))  # type: ignore[arg-type]
 
     assert drawn, "the prompt never rendered"
     text, markup = drawn[0]
-    assert "PSN" in text
-    assert "a:resetok:psn:1" in _callback_datas(markup)
+    assert "PSN: PsnPerson" in text
+    assert "a:resetok:psn:1:acc-1" in _callback_datas(markup)
 
 
 async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> None:

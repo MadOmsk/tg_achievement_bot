@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-from bot.views.keyboards import (
-    next_rarity_mode,
-    panel_keyboard,
-    psn_profile_url,
-    steam_profile_url,
-    xbox_profile_url,
-)
+from bot.services.profile_links import steam_profile_url, xbox_profile_url
+from bot.views.keyboards import next_rarity_mode, panel_keyboard
 
 
 def _button_texts(markup) -> list[str]:
@@ -63,70 +58,59 @@ def test_not_connected_keyboard_still_offers_the_rest_of_the_settings() -> None:
 
 
 def test_every_platform_is_exactly_one_row_in_xbox_psn_steam_order() -> None:
-    """#33: one row per platform, always the same position — no split
-    between a connect button at the top and a profile/disconnect row at the
-    bottom for the same platform.
+    """#33: one row per platform, always the same position.
 
     Xbox, PlayStation, Steam: the one display order every screen uses
-    (constants.platform_display_rank, owner decision 2026-09-13). /panel
-    listed Steam second and /stats listed PlayStation second, which is how
-    "a fixed order" turned out to mean two different orders.
-    """
-    markup = panel_keyboard(
-        180,
-        connected=True,
-        steam_connected=True,
-        psn_connected=False,
-        gamertag="Mad Omsk",
-        steam_id="76561197960287930",
-    )
+    (constants.platform_display_rank, owner decision 2026-09-13)."""
+    markup = panel_keyboard(180, connected=True, steam_connected=True, psn_connected=False)
     rows = markup.inline_keyboard
     xbox_i = next(
-        i for i, r in enumerate(rows) if any(b.callback_data == "panel:disconnect" for b in r)
+        i for i, r in enumerate(rows) if any(b.callback_data == "panel:acc:xbox" for b in r)
     )
     steam_i = next(
-        i for i, r in enumerate(rows) if any(b.callback_data == "steam:disconnectprompt" for b in r)
+        i for i, r in enumerate(rows) if any(b.callback_data == "panel:acc:steam" for b in r)
     )
     psn_i = next(i for i, r in enumerate(rows) if any(b.callback_data == "psn:connect" for b in r))
     assert psn_i == xbox_i + 1
     assert steam_i == xbox_i + 2
-    assert (
-        rows[steam_i + 1][0].callback_data == "panel:delete_account"
-    )  # platform block, then delete_account
-    assert rows[steam_i + 2][0].callback_data == "panel:sync"  # then Синхронизировать
+    assert rows[steam_i + 1][0].callback_data == "panel:delete_account"
+    assert rows[steam_i + 2][0].callback_data == "panel:sync"
 
 
-def test_not_connected_keyboard_offers_steam_disconnect_once_connected() -> None:
-    """Steam-only, no XBOX at all — still gets a real disconnect option for
-    the platform it does have, not nothing (2026-09-05 follow-up)."""
+def test_a_linked_platform_is_its_screen_and_its_switch() -> None:
+    """#10: two buttons per linked platform — the platform, into its own
+    screen, and the platform's publishing switch."""
     markup = panel_keyboard(None, connected=False, steam_connected=True)
-    assert _callback_data(markup)[-7:-3] == [
-        "relogin",
-        "psn:connect",
-        "panel:pub:steam",  # the account's own posting switch (#20)
-        "steam:disconnectprompt",
-    ]
+    row = _row(markup, "panel:acc:steam")
+    assert [b.callback_data for b in row] == ["panel:acc:steam", "panel:pub:steam"]
+    assert row[0].text == "⚫ Steam ▸"
 
 
-def test_connected_keyboard_offers_steam_connect_or_disconnect_not_both() -> None:
+def test_connected_keyboard_offers_steam_connect_or_its_screen_not_both() -> None:
     connect_only = panel_keyboard(180, connected=True)
     assert "steam:connect" in _callback_data(connect_only)
-    assert "steam:disconnectprompt" not in _callback_data(connect_only)
+    assert "panel:acc:steam" not in _callback_data(connect_only)
 
-    disconnect_only = panel_keyboard(180, connected=True, steam_connected=True)
-    assert "steam:disconnectprompt" in _callback_data(disconnect_only)
-    assert "steam:connect" not in _callback_data(disconnect_only)
+    linked = panel_keyboard(180, connected=True, steam_connected=True)
+    assert "panel:acc:steam" in _callback_data(linked)
+    assert "steam:connect" not in _callback_data(linked)
 
 
-def test_connected_keyboard_offers_psn_connect_or_disconnect_not_both() -> None:
-    """PSN's own counterpart of the Steam test above (SPEC 9, M-PSN-1)."""
+def test_connected_keyboard_offers_psn_connect_or_its_screen_not_both() -> None:
     connect_only = panel_keyboard(180, connected=True)
     assert "psn:connect" in _callback_data(connect_only)
-    assert "psn:disconnectprompt" not in _callback_data(connect_only)
+    assert "panel:acc:psn" not in _callback_data(connect_only)
 
-    disconnect_only = panel_keyboard(180, connected=True, psn_connected=True)
-    assert "psn:disconnectprompt" in _callback_data(disconnect_only)
-    assert "psn:connect" not in _callback_data(disconnect_only)
+    linked = panel_keyboard(180, connected=True, psn_connected=True)
+    assert "panel:acc:psn" in _callback_data(linked)
+    assert "psn:connect" not in _callback_data(linked)
+
+
+def test_several_psn_accounts_are_counted_on_the_button() -> None:
+    one = panel_keyboard(180, connected=True, psn_connected=True)
+    two = panel_keyboard(180, connected=True, psn_connected=True, psn_accounts=2)
+    assert _row(one, "panel:acc:psn")[0].text == "🔵 PSN ▸"
+    assert _row(two, "panel:acc:psn")[0].text == "🔵 PSN (2) ▸"
 
 
 def test_needs_reconnect_adds_a_button_without_hiding_settings() -> None:
@@ -139,58 +123,10 @@ def test_needs_reconnect_adds_a_button_without_hiding_settings() -> None:
     assert "panel:tz" in data  # settings still reachable, not replaced
 
 
-def test_connected_keyboard_offers_disconnect() -> None:
-    markup = panel_keyboard(180, connected=True)
-    assert "panel:disconnect" in _callback_data(markup)
-
-
-def _disconnect_row(markup, callback_data: str) -> list:
+def _row(markup, callback_data: str) -> list:
     return next(
         row for row in markup.inline_keyboard if callback_data in [b.callback_data for b in row]
     )
-
-
-def test_xbox_disconnect_row_gains_a_profile_link_when_gamertag_is_known() -> None:
-    """2026-09-05 follow-up: profile link and disconnect share one row."""
-    without = panel_keyboard(180, connected=True)
-    row = _disconnect_row(without, "panel:disconnect")
-    assert len(row) == 2  # no gamertag given — no profile button; the switch and unlink
-
-    with_tag = panel_keyboard(180, connected=True, gamertag="Mad Omsk")
-    row = _disconnect_row(with_tag, "panel:disconnect")
-    assert len(row) == 3
-    assert row[0].url == xbox_profile_url("Mad Omsk")
-    assert row[0].text == "👤 XBOX"  # the row's platform rides on the profile button (#20)
-    assert row[1].callback_data == "panel:pub:xbox"
-    assert row[2].callback_data == "panel:disconnect"
-
-
-def test_steam_disconnect_row_gains_a_profile_link_when_steam_id_is_known() -> None:
-    without = panel_keyboard(180, connected=True, steam_connected=True)
-    row = _disconnect_row(without, "steam:disconnectprompt")
-    assert len(row) == 2
-
-    with_id = panel_keyboard(
-        180, connected=True, steam_connected=True, steam_id="76561197960287930"
-    )
-    row = _disconnect_row(with_id, "steam:disconnectprompt")
-    assert len(row) == 3
-    assert row[0].url == steam_profile_url("76561197960287930")
-    assert row[2].callback_data == "steam:disconnectprompt"
-
-
-def test_psn_disconnect_row_gains_a_profile_link_when_psn_id_is_known() -> None:
-    """Same treatment as XBOX/Steam above (2026-09-06 follow-up, reversing
-    the earlier "PSN has no linkable page" call)."""
-    without = panel_keyboard(180, connected=True, psn_connected=True)
-    row = _disconnect_row(without, "psn:disconnectprompt")
-    assert len(row) == 2
-
-    with_id = panel_keyboard(180, connected=True, psn_connected=True, psn_id="superomsk")
-    row = _disconnect_row(with_id, "psn:disconnectprompt")
-    assert len(row) == 3
-    assert row[0].url == psn_profile_url("superomsk")
-    assert row[2].callback_data == "psn:disconnectprompt"
 
 
 def _toggle_button_text(markup):
@@ -223,9 +159,12 @@ def test_steam_profile_url_uses_the_steamid64() -> None:
     )
 
 
-def test_a_muted_account_says_so_on_its_switch() -> None:
-    """#20: 🔔 while the account posts, 🔇 once its owner switched it off."""
+def test_the_switch_says_on_off_or_partly() -> None:
+    """#20: 🔔 while the platform posts, 🔇 once switched off, and "Частично"
+    when only some of several PSN accounts post (#10)."""
     on = panel_keyboard(180, connected=True, psn_connected=True)
     off = panel_keyboard(180, connected=True, psn_connected=True, psn_publishes=False)
-    assert _disconnect_row(on, "psn:disconnectprompt")[0].text == "🔔 Публикуется"
-    assert _disconnect_row(off, "psn:disconnectprompt")[0].text == "🔇 Не публикуется"
+    partly = panel_keyboard(180, connected=True, psn_connected=True, psn_publishes=None)
+    assert _row(on, "panel:pub:psn")[1].text == "🔔 Публикуется"
+    assert _row(off, "panel:pub:psn")[1].text == "🔇 Не публикуется"
+    assert _row(partly, "panel:pub:psn")[1].text == "🔔 Частично"

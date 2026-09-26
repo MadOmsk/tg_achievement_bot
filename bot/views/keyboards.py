@@ -17,11 +17,11 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
-from bot.constants import RarityMode
+from bot.constants import Platform, RarityMode
 from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
 from bot.services.naming import link_nickname
-from bot.services.profile_links import psn_profile_url, steam_profile_url, xbox_profile_url
 from bot.services.relink import LinkPreview
+from bot.views.parts import PLATFORM_ICON
 
 # Re-exported (not redefined) — services/profile_links.py is the one place
 # that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
@@ -245,34 +245,27 @@ def _platform_row(
     connected: bool,
     connect_key: str,
     connect_cb: str,
-    profile_url: str | None,
-    disconnect_btn: InlineKeyboardButton,
     label: str,
-    publish_cb: str | None = None,
-    publishes: bool = True,
+    menu_cb: str,
+    publish_cb: str,
+    publishes: bool | None = True,
 ) -> list[InlineKeyboardButton]:
-    """One platform's row in /panel (#33) — always the same shape and
-    position: `[👤 XBOX, 🔔 Публикуется, 🔌 Отвязать]` when connected (the
-    profile only once there is something to link to — the id can be missing
-    pre-first-sync), or a single wide "🎮 Подключить X" when not. The
-    platform's name rides on the profile button: three buttons without it
-    would not say which platform the row is (#20)."""
+    """One platform's row in /panel (#33, #10) — always the same shape and
+    position: `[🟢 XBOX ▸, 🔔 Публикуется]` when connected, or a single wide
+    "🎮 Подключить X" when not. The platform button opens its own screen
+    (profile, unlinking, PSN's several accounts); the second is the platform's
+    publishing switch, `None` meaning some of its accounts post and some do
+    not ("Частично")."""
     if not connected:
         return [InlineKeyboardButton(text=i18n.get(connect_key), callback_data=connect_cb)]
-    row: list[InlineKeyboardButton] = []
-    if profile_url:
-        row.append(
-            InlineKeyboardButton(text=i18n.get("kb-profile-of", platform=label), url=profile_url)
-        )
-    if publish_cb:
-        row.append(
-            InlineKeyboardButton(
-                text=i18n.get("kb-publishes-on" if publishes else "kb-publishes-off"),
-                callback_data=publish_cb,
-            )
-        )
-    row.append(disconnect_btn)
-    return row
+    if publishes is None:
+        publish_key = "kb-publishes-partly"
+    else:
+        publish_key = "kb-publishes-on" if publishes else "kb-publishes-off"
+    return [
+        InlineKeyboardButton(text=label, callback_data=menu_cb),
+        InlineKeyboardButton(text=i18n.get(publish_key), callback_data=publish_cb),
+    ]
 
 
 def panel_keyboard(
@@ -283,33 +276,38 @@ def panel_keyboard(
     needs_reconnect: bool = False,
     steam_connected: bool = False,
     psn_connected: bool = False,
-    gamertag: str | None = None,
-    steam_id: str | None = None,
-    psn_id: str | None = None,
+    psn_accounts: int = 1,
     show_profile_links: bool = False,
     rarity_mode: str = RarityMode.ALL,
     xbox_publishes: bool = True,
-    psn_publishes: bool = True,
+    psn_publishes: bool | None = True,
     steam_publishes: bool = True,
 ) -> InlineKeyboardMarkup:
     i18n = i18n or static_i18n("keyboards")
 
     # One row per platform, Xbox -> PlayStation -> Steam (the one display
     # order, constants.platform_display_rank), in the same shape and position
-    # whether or not the person has that platform connected (#33) — no more
-    # connect buttons at the top and profile/disconnect rows at the bottom for
-    # the same platform.
+    # whether or not the person has that platform connected (#33).
+    psn_label = (
+        i18n.get(
+            "kb-platform-menu-count",
+            icon=PLATFORM_ICON[Platform.PSN],
+            platform="PSN",
+            count=psn_accounts,
+        )
+        if psn_accounts > 1
+        else i18n.get("kb-platform-menu", icon=PLATFORM_ICON[Platform.PSN], platform="PSN")
+    )
     platform_rows = [
         _platform_row(
             i18n,
             connected=connected,
             connect_key="kb-panel-connect-xbox",
             connect_cb="relogin",
-            profile_url=xbox_profile_url(gamertag) if gamertag else None,
-            disconnect_btn=InlineKeyboardButton(
-                text=i18n.get("kb-xbox-disconnect"), callback_data="panel:disconnect"
+            label=i18n.get(
+                "kb-platform-menu", icon=PLATFORM_ICON[Platform.XBOX_MODERN], platform="XBOX"
             ),
-            label="XBOX",
+            menu_cb="panel:acc:xbox",
             publish_cb="panel:pub:xbox",
             publishes=xbox_publishes,
         ),
@@ -318,9 +316,8 @@ def panel_keyboard(
             connected=psn_connected,
             connect_key="kb-panel-connect-psn",
             connect_cb="psn:connect",
-            profile_url=psn_profile_url(psn_id) if psn_id else None,
-            disconnect_btn=psn_disconnect_button(i18n),
-            label="PSN",
+            label=psn_label,
+            menu_cb="panel:acc:psn",
             publish_cb="panel:pub:psn",
             publishes=psn_publishes,
         ),
@@ -329,9 +326,10 @@ def panel_keyboard(
             connected=steam_connected,
             connect_key="kb-panel-connect-steam",
             connect_cb="steam:connect",
-            profile_url=steam_profile_url(steam_id) if steam_id else None,
-            disconnect_btn=steam_disconnect_button(i18n),
-            label="Steam",
+            label=i18n.get(
+                "kb-platform-menu", icon=PLATFORM_ICON[Platform.STEAM], platform="Steam"
+            ),
+            menu_cb="panel:acc:steam",
             publish_cb="panel:pub:steam",
             publishes=steam_publishes,
         ),

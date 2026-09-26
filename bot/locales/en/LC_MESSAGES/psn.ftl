@@ -2,7 +2,19 @@
 psn-not-configured = PSN linking isn't set up yet — ask the administrator.
 psn-connect-group-redirect = Message me privately — we'll connect PSN there.
 psn-private-only = This command works in a DM.
-psn-already-connected = PSN is currently linked to { $name }. Send another Online ID and I will switch; to just unlink, use /disconnect_psn.
+# Several PSN accounts per person (#10).
+psn-has-accounts = 🔵 You already have PSN linked: { $names } ({ $count } of { $max }).
+
+    Add another account?
+psn-accounts-full = 🔵 { $max } PSN accounts are linked already — that is the maximum.
+
+    To link a different one, unlink one of them first under "PSN accounts".
+psn-add-prompt = 🔵 <b>Another PSN account</b> · { $count } of { $max } once linked
+
+    Send the account's Online ID (its PlayStation Network nickname) in one message. Its trophies must be visible to everyone — PS App → Settings → Privacy → "Trophy level and game collection" → "Anyone".
+psn-connected-count = ✅ PSN account <b>{ $name }</b> linked — { $count } of { $max }.
+psn-add-button = ➕ Add an account
+psn-accounts-button = 🔵 PSN accounts ▸
 psn-link-prompt = Send me your PSN Online ID — I'll link it.
 
     ⚠️ Your trophy privacy has to be open, or I can't read them: in the PS App → Settings → Privacy → “Trophy level and game collection” → “Anyone”.

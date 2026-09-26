@@ -57,6 +57,10 @@ _DISPLAY_RANK = {
     Platform.STEAM: 2,
 }
 
+# How many PSN accounts one person may hold at once (#10, owner). Xbox and
+# Steam stay at one, which the database's own unique index enforces.
+MAX_PSN_ACCOUNTS = 3
+
 
 def platform_display_rank(platform: str) -> int:
     """Sort key for the order above. An unknown value sorts last rather than

@@ -101,6 +101,27 @@ panel-publishing-without = {" "}· без { $platforms }
 panel-publishes-on-toast = Публикую ачивки этого аккаунта
 panel-publishes-off-toast = Ачивки этого аккаунта больше не публикуются
 
+# A platform's own screen behind its /panel button (#10).
+panel-account-title = { $icon } <b>{ $platform }</b>
+panel-account-login = Вход: { $status }
+panel-account-publication = Публикация: { $state }
+panel-account-publishes-on = 🔔 включена
+panel-account-publishes-off = 🔇 выключена
+panel-psn-title = { $icon } <b>PSN</b> · { $count ->
+    [one] { $count } аккаунт
+    [few] { $count } аккаунта
+   *[other] { $count } аккаунтов
+} из { $max }
+panel-psn-account-state = {"    "}{ $login } · { $state }
+panel-psn-summed = Трофеи всех аккаунтов складываются в статистике и сводках.
+kb-account-profile = 👤 Профиль { $platform }: { $name }
+kb-account-psn = 👤 PSN: { $name }
+kb-account-publication-on = 🔔 Публикация: включена
+kb-account-publication-off = 🔇 Публикация: выключена
+kb-account-unlink = 🔌 Отвязать { $platform }
+kb-account-relink = 🔁 Привязать другой аккаунт
+kb-psn-add = ➕ Привязать ещё аккаунт PSN
+
 panel-delete-account = 🗑 Удалить аккаунт
 panel-delete-confirm-1 =
     Вы действительно хотите удалить свой аккаунт из бота?

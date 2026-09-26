@@ -291,7 +291,12 @@ async def build_person_payload(
         platforms.append(
             {
                 "platform": Platform.PSN,
-                "name": psn.display_name,
+                # Several accounts (#10): one summed row, every nickname on it.
+                "name": ", ".join(
+                    link.display_name or link.external_id
+                    for link in links
+                    if link.platform == Platform.PSN
+                ),
                 "trophy_count": await repo.platform_achievement_count(target.tg_id, Platform.PSN),
                 "bronze": bronze,
                 "silver": silver,

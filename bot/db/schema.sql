@@ -538,11 +538,10 @@ CREATE TABLE IF NOT EXISTS account_links (
     PRIMARY KEY (tg_id, platform, external_id),
     FOREIGN KEY (platform, external_id) REFERENCES accounts(platform, external_id)
 );
--- One account per platform per person — **this single index is the only
--- thing enforcing that limit**. Dropping it is what multi-account support
--- (#10) needs; no query in the codebase assumes at most one active link.
+-- One account per platform per person — except PSN, where a person may
+-- hold up to three (#10; the limit of three is enforced in code, not here).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_links_one_active_per_platform
-    ON account_links(tg_id, platform) WHERE is_active = 1;
+    ON account_links(tg_id, platform) WHERE is_active = 1 AND platform <> 'psn';
 -- An account has at most one current owner, which is what makes a takeover
 -- well-defined: linking an account somebody else holds deactivates their
 -- link (and tells them), rather than quietly producing two owners.

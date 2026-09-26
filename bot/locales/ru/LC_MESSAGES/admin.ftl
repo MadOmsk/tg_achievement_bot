@@ -227,6 +227,9 @@ admin-refresh-psn = 🔄 Обновить PSN
 admin-reset-xbox = 🗑 Сброс XBOX
 admin-reset-steam = 🗑 Сброс Steam
 admin-reset-psn = 🗑 Сброс PSN
+# One pair per PSN account when a person holds several (#10).
+admin-refresh-psn-account = 🔄 Обновить PSN: { $name }
+admin-reset-psn-account = 🗑 Сброс PSN: { $name }
 admin-reset-confirm-prompt =
     Стереть базу { $platform } для этого пользователя и синхронизировать заново?
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bot.db.repo import Repo
-from bot.views.panel import render_panel
+from bot.views.panel import render_account_menu, render_panel
 
 TG_ID = 1
 
@@ -86,20 +86,47 @@ async def test_steam_status_shows_visibility_and_when_it_was_checked(repo: Repo)
 
 
 async def test_psn_linked_gets_its_own_profile_button(repo: Repo) -> None:
-    """Follow-up 2026-09-06 — the panel's "👤 Профиль" row, same as XBOX and
-    Steam already had (2026-09-05)."""
+    """Follow-up 2026-09-06 — a PSN profile button, now on the PSN screen
+    behind the panel's platform button (#10), named "PSN: nick"."""
     await repo.ensure_user(TG_ID, "someone")
     await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
     await repo.link_platform_account(TG_ID, "psn", "internal-account-id", "superomsk")
 
-    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
+    screen = await render_account_menu(repo, TG_ID, "psn", locale="ru")
 
-    row = next(
-        row
-        for row in markup.inline_keyboard
-        if any(b.callback_data == "psn:disconnectprompt" for b in row)
-    )
-    assert any(b.url == "https://psnprofiles.com/superomsk" for b in row)
+    assert screen is not None
+    buttons = [b for row in screen.keyboard.inline_keyboard for b in row]
+    profile = next(b for b in buttons if b.url)
+    assert profile.url == "https://psnprofiles.com/superomsk"
+    assert profile.text == "👤 PSN: superomsk"
+    assert "psn:unlink:internal-account-id" in [b.callback_data for b in buttons]
+
+
+async def test_several_psn_accounts_each_get_a_line_and_their_own_switch(repo: Repo) -> None:
+    """#10: one header and login line per PSN account; the panel's switch
+    reads "Частично" when only some of them post, and the publication row
+    names the muted one."""
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "SuperOmsk")
+    await repo.link_platform_account(TG_ID, "psn", "acc-2", "OmskSecond")
+    await repo.set_account_publishes(TG_ID, "psn", "acc-2", False)
+    await repo.upsert_chat(-100, "XBOX CG", None)
+    await repo.subscribe(-100, TG_ID)
+
+    text, markup = (await render_panel(repo, TG_ID)).as_pair()
+
+    assert text.count("Вход PSN:") == 2
+    assert text.index("SuperOmsk") < text.index("OmskSecond")
+    assert "без PSN: OmskSecond" in text
+    buttons = {b.callback_data: b.text for row in markup.inline_keyboard for b in row}
+    assert buttons["panel:acc:psn"] == "🔵 PSN (2) ▸"
+    assert buttons["panel:pub:psn"] == "🔔 Частично"
+
+    screen = await render_account_menu(repo, TG_ID, "psn", locale="ru")
+    assert screen is not None
+    assert "2 аккаунта из 3" in screen.text
+    datas = [b.callback_data for row in screen.keyboard.inline_keyboard for b in row]
+    assert "panel:psnpub:acc-2" in datas and "psn:add" in datas
 
 
 async def test_show_profile_links_defaults_off(repo: Repo) -> None:

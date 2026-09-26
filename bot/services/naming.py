@@ -141,7 +141,10 @@ def person_name_of(user: User, links: Iterable[PlatformLink] = ()) -> str:
     """`person_name` for the two shapes most call sites already hold: a
     `users` row and that person's `platform_links`. Keeps every caller from
     re-deriving which link is Steam and which is PSN."""
-    by_platform = {link.platform: link for link in links}
+    by_platform: dict[str, PlatformLink] = {}
+    for link in links:
+        # The first PSN account linked names the person (#10), not the last.
+        by_platform.setdefault(link.platform, link)
     return person_name(
         tg_id=user.tg_id,
         first_name=user.first_name,

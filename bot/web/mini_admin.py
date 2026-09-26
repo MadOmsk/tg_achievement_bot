@@ -166,7 +166,8 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
 async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
     user = await repo.get_user(tg_id)
     steam = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn = await repo.get_platform_link(tg_id, Platform.PSN)
+    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    psn = psn_links[0] if psn_links else None
     if user is None or (not user.xuid and steam is None and psn is None):
         return None
     chats = await repo.chats_of_user(tg_id)
@@ -191,11 +192,25 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
         }
     psn_block = None
     if psn is not None:
+        # The first account's fields, the person's sum, and every account
+        # on its own (#10) for the per-account refresh/reset.
         psn_block = {
             "name": psn.display_name,
             "external_id": psn.external_id,
             "trophy_count": await repo.platform_achievement_count(tg_id, Platform.PSN),
             "trophy_level": psn.psn_trophy_level,
+            "accounts": [
+                {
+                    "name": link.display_name,
+                    "external_id": link.external_id,
+                    "trophy_count": await repo.account_achievement_count(
+                        Platform.PSN, link.external_id
+                    ),
+                    "trophy_level": link.psn_trophy_level,
+                    "publishes": link.publishes,
+                }
+                for link in psn_links
+            ],
         }
     return {
         "tg_id": tg_id,
@@ -416,7 +431,8 @@ async def handle_admin_user_patch(request: web.Request) -> web.Response:
     action = body.get("action")
     platform = str(body.get("platform") or "")
     if action in ("sync", "reset") and platform in ("xbox", "steam", "psn"):
-        await _admin_platform_action(request, tg_id, platform, action)
+        account_id = str(body.get("account_id") or "").strip() or None
+        await _admin_platform_action(request, tg_id, platform, action, account_id)
     payload = await build_admin_user(repo, tg_id)
     if payload is None:
         raise web.HTTPNotFound()
@@ -522,7 +538,7 @@ async def handle_admin_chat_action(request: web.Request) -> web.Response:
 
 
 async def _admin_platform_action(
-    request: web.Request, tg_id: int, platform: str, action: str
+    request: web.Request, tg_id: int, platform: str, action: str, account_id: str | None = None
 ) -> None:
     repo: Repo = request.app["mini_repo"]
     xbox = request.app.get("mini_xbox_fetcher")
@@ -551,7 +567,10 @@ async def _admin_platform_action(
                 tg_id, link.external_id, link.display_name or link.external_id, locale
             )
         return
-    link = await repo.get_platform_link(tg_id, Platform.PSN)
+    links = await repo.platform_links_for(tg_id, Platform.PSN)
+    if account_id is not None:
+        links = [item for item in links if item.external_id == account_id]
+    link = links[0] if links else None
     if link is None or psn_fetcher is None:
         raise web.HTTPBadRequest(text="psn not linked")
     if action == "reset":

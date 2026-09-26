@@ -47,6 +47,11 @@ kb-xbox-disconnect = 🔌 Unlink
 kb-profile-of = 👤 { $platform }
 kb-publishes-on = 🔔 Posting
 kb-publishes-off = 🔇 Not posting
+# Some accounts of the platform post, some do not (#10).
+kb-publishes-partly = 🔔 Partly
+# /panel's platform buttons (#10): each opens that platform's own screen.
+kb-platform-menu = { $icon } { $platform } ▸
+kb-platform-menu-count = { $icon } { $platform } ({ $count }) ▸
 kb-locale = Language: { $name } ▸
 kb-refresh = Refresh
 kb-back = ‹ Back

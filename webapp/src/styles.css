@@ -3662,6 +3662,44 @@ button.stat-row {
   line-height: 1.35;
 }
 
+/* One row per linked account (#10): its name, then worded buttons. */
+.plat-account {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair);
+}
+
+.plat-account-name {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plat-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plat-buttons .btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.plat-buttons .is-danger {
+  color: #ff8f8f;
+}
+
+.plat-buttons-foot {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair);
+}
+
 .plat-card .plat-note {
   margin: 10px 0 0;
 }

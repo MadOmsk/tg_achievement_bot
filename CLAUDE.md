@@ -1150,6 +1150,11 @@ History: #112.
   code. `scripts/render_screen.py <screen>` prints it; `--send` puts it in the owner's
   DM, keyboard and all — the only form a layout can be judged in. The preview message
   carries only the rendered screen; caveats and questions go in the chat reply.
+- **Screens that lead into each other are one navigable mockup, not a pile of
+  messages** (owner, 2026-09-25): a single message whose buttons move between the
+  proposed screens (edit in place), with every action a stub that changes nothing
+  real. Before it, one plain text message says that it is a mockup and what it is
+  for, so nobody mistakes it for the working bot.
 
   ```bash
   python scripts/render_screen.py --list

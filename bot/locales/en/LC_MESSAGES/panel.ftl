@@ -104,6 +104,26 @@ panel-publishing-without = {" "}· except { $platforms }
 panel-publishes-on-toast = Posting this account's achievements
 panel-publishes-off-toast = This account's achievements are no longer posted
 
+# A platform's own screen behind its /panel button (#10).
+panel-account-title = { $icon } <b>{ $platform }</b>
+panel-account-login = Login: { $status }
+panel-account-publication = Posting: { $state }
+panel-account-publishes-on = 🔔 on
+panel-account-publishes-off = 🔇 off
+panel-psn-title = { $icon } <b>PSN</b> · { $count ->
+    [one] { $count } account
+   *[other] { $count } accounts
+} of { $max }
+panel-psn-account-state = {"    "}{ $login } · { $state }
+panel-psn-summed = Trophies of every account add up in stats and summaries.
+kb-account-profile = 👤 { $platform } profile: { $name }
+kb-account-psn = 👤 PSN: { $name }
+kb-account-publication-on = 🔔 Posting: on
+kb-account-publication-off = 🔇 Posting: off
+kb-account-unlink = 🔌 Unlink { $platform }
+kb-account-relink = 🔁 Link another account
+kb-psn-add = ➕ Link another PSN account
+
 panel-delete-account = 🗑 Delete account
 panel-delete-confirm-1 =
     Are you sure you want to delete your account from the bot?

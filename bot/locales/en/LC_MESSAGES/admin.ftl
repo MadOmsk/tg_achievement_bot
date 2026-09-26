@@ -227,6 +227,9 @@ admin-refresh-psn = 🔄 Refresh PSN
 admin-reset-xbox = 🗑 Reset XBOX
 admin-reset-steam = 🗑 Reset Steam
 admin-reset-psn = 🗑 Reset PSN
+# One pair per PSN account when a person holds several (#10).
+admin-refresh-psn-account = 🔄 Refresh PSN: { $name }
+admin-reset-psn-account = 🗑 Reset PSN: { $name }
 admin-reset-confirm-prompt =
     Wipe this user's { $platform } data and sync it again from scratch?
 

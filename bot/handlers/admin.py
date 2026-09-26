@@ -27,7 +27,7 @@ from bot.constants import (
     Platform,
     account_platform_of,
 )
-from bot.db.repo import Repo
+from bot.db.repo import PlatformLink, Repo
 from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
@@ -812,8 +812,26 @@ _SYNC_NOT_CONNECTED_KEY = {
 }
 
 
+async def _account_link(
+    repo: Repo, platform: str, tg_id: int, account_id: str | None
+) -> PlatformLink | None:
+    """The Steam/PSN link a button is about: the one named by `account_id`
+    (a PSN account among several, #10), else the person's only one."""
+    platform_value = Platform.STEAM if platform == "steam" else Platform.PSN
+    if account_id is None:
+        return await repo.get_platform_link(tg_id, platform_value)
+    links = await repo.platform_links_for(tg_id, platform_value)
+    return next((link for link in links if link.external_id == account_id), None)
+
+
+def _parse_account(data: str) -> tuple[str, int, str | None]:
+    """`a:<action>:<platform>:<tg_id>[:<account_id>]` → its three values."""
+    parts = data.split(":")
+    return parts[2], int(parts[3]), parts[4] if len(parts) > 4 else None
+
+
 async def _sync_target(
-    repo: Repo, platform: str, tg_id: int, *, locale: str
+    repo: Repo, platform: str, tg_id: int, *, locale: str, account_id: str | None = None
 ) -> tuple[str, str] | None:
     """(external_id, display_name) for user_refresh below, or None if this
     platform isn't connected for this person — Xbox resolves through
@@ -825,9 +843,7 @@ async def _sync_target(
         if user is None or not user.xuid:
             return None
         return user.xuid, user.gamertag or _("admin-default-player")
-    link = await repo.get_platform_link(
-        tg_id, Platform.STEAM if platform == "steam" else Platform.PSN
-    )
+    link = await _account_link(repo, platform, tg_id, account_id)
     if link is None:
         return None
     return link.external_id, link_nickname(link)
@@ -854,10 +870,9 @@ async def user_refresh(
     # two lines up — to the string "a", so the next `_("key")` raised
     # TypeError and this button had never once worked (found 2026-09-13 by
     # capturing the real screens; the same slip killed "🗑 Сброс" below).
-    _prefix, _action, platform, tg_id_s = callback.data.split(":")
-    tg_id = int(tg_id_s)
+    platform, tg_id, account_id = _parse_account(callback.data)
 
-    target = await _sync_target(repo, platform, tg_id, locale=i18n.locale)
+    target = await _sync_target(repo, platform, tg_id, locale=i18n.locale, account_id=account_id)
     if target is None:
         await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
         return
@@ -1160,13 +1175,24 @@ async def chat_system_wipe_all_confirm(
 
 
 @router.callback_query(F.data.startswith("a:reset:"))
-async def reset_platform_confirm(callback: CallbackQuery, i18n: I18nContext) -> None:
+async def reset_platform_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """ "Сброс базы" is destructive and not undoable (user request 2026-09-08)
     — same one-tap-confirm shape as /disconnect_steam's own prompt, not an
     instant action behind a single tap."""
     assert callback.data is not None
-    _prefix, _action, platform, tg_id_s = callback.data.split(":")  # not `_`, see user_refresh
-    await _redraw(callback, *render_reset_confirm(platform, tg_id_s, locale=i18n.locale).as_pair())
+    platform, tg_id, account_id = _parse_account(callback.data)
+    account_name = None
+    if account_id is not None:
+        link = await _account_link(repo, platform, tg_id, account_id)
+        account_name = link_nickname(link) if link else account_id
+    screen = render_reset_confirm(
+        platform,
+        str(tg_id),
+        locale=i18n.locale,
+        account_id=account_id,
+        account_name=account_name,
+    )
+    await _redraw(callback, *screen.as_pair())
 
 
 @router.callback_query(F.data.startswith("a:resetok:"))
@@ -1182,8 +1208,7 @@ async def reset_platform_confirmed(
     assert callback.data is not None
     # Four parts here too, and `_` stays the translator (see user_refresh):
     # this one unpacked four into three and raised ValueError instead.
-    _prefix, _action, platform, tg_id_s = callback.data.split(":")
-    tg_id = int(tg_id_s)
+    platform, tg_id, account_id = _parse_account(callback.data)
     await callback.answer(_("admin-refreshing"))
 
     try:
@@ -1193,7 +1218,7 @@ async def reset_platform_confirmed(
             await repo.reset_xbox_data(tg_id, user.xuid)
             await fetcher.backfill(tg_id, user.xuid)
         elif platform == "steam":
-            link = await repo.get_platform_link(tg_id, Platform.STEAM)
+            link = await _account_link(repo, platform, tg_id, account_id)
             assert link is not None
             # The account's own id, not the person's: since #52 the history
             # belongs to the account, and this call used to be handed `tg_id`,
@@ -1202,7 +1227,7 @@ async def reset_platform_confirmed(
             await repo.reset_steam_data(link.external_id)
             await steam_fetcher.backfill(tg_id, link.external_id)
         else:
-            link = await repo.get_platform_link(tg_id, Platform.PSN)
+            link = await _account_link(repo, platform, tg_id, account_id)
             assert link is not None
             await repo.reset_psn_data(tg_id, link.external_id)
             await psn_fetcher.backfill(tg_id, link.external_id)

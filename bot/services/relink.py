@@ -67,7 +67,20 @@ class LinkPreview:
 
 
 async def preview(repo: Repo, tg_id: int, platform: str, external_id: str) -> LinkPreview:
-    current = await repo.get_platform_link(tg_id, platform)
+    if platform == AccountPlatform.PSN:
+        # PSN adds an account beside the others (#10) instead of swapping:
+        # nothing is lost, so the only "current" worth naming is the incoming
+        # account itself, when this person already holds it.
+        current = next(
+            (
+                link
+                for link in await repo.platform_links_for(tg_id, platform)
+                if link.external_id == external_id
+            ),
+            None,
+        )
+    else:
+        current = await repo.get_platform_link(tg_id, platform)
     owner = await repo.account_owner(platform, external_id)
     return LinkPreview(
         current=current,

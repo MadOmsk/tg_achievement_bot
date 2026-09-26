@@ -283,10 +283,10 @@ export function App() {
               await disconnectSteam(data);
             })
           }
-          onDisconnectPsn={() =>
+          onDisconnectPsn={(accountId) =>
             void runPlat("psn", async () => {
               if (!window.confirm(t(locale, "confirmDisconnect"))) return;
-              await disconnectPsn(data);
+              await disconnectPsn(data, accountId);
             })
           }
           onSync={() =>
@@ -294,9 +294,9 @@ export function App() {
               await syncXbox(data);
             })
           }
-          onTogglePublish={(platform, publishes) =>
+          onTogglePublish={(platform, publishes, accountId) =>
             void runPlat(platform, async () => {
-              await setAccountPublishes(data, platform, publishes);
+              await setAccountPublishes(data, platform, publishes, accountId);
             })
           }
         />

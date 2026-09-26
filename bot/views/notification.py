@@ -213,7 +213,7 @@ def format_single(
 
 def _group_by_title(
     achievements: list[AchievementRow],
-) -> dict[tuple[str, str], list[AchievementRow]]:
+) -> dict[tuple[str, str, str | None], list[AchievementRow]]:
     """Keyed on (platform, title_id), not title_id alone — Xbox's and
     Steam's own id spaces (title_id vs. appid) don't promise to avoid each
     other. In practice every publish() call is already scoped to one game
@@ -221,10 +221,15 @@ def _group_by_title(
     one title at a time) — this grouping exists so the digest renders
     correctly if that ever stops being true, not because it commonly sees
     more than one group today.
+
+    And on the account: the anti-flood digest reads rows back with their
+    `xuid`, and two PSN accounts of one person playing the same game are two
+    blocks, each with its own progress (#10). A live batch carries no `xuid`
+    and is one account anyway.
     """
-    groups: dict[tuple[str, str], list[AchievementRow]] = {}
+    groups: dict[tuple[str, str, str | None], list[AchievementRow]] = {}
     for item in achievements:
-        groups.setdefault((item.platform, item.title_id), []).append(item)
+        groups.setdefault((item.platform, item.title_id, item.xuid), []).append(item)
     return groups
 
 
@@ -234,7 +239,8 @@ def format_digest(
     achievements: list[AchievementRow],
     *,
     locale: str,
-    progress: dict[tuple[str, str, str | None], TitleProgress] | None = None,
+    progress: dict[tuple, TitleProgress] | None = None,
+    account_names: dict[str, str] | None = None,
 ) -> str:
     """Standardized form (2026-09-05 follow-up): one block per game, each
     shaped like format_single's own game+rarity lines — a digest reader who
@@ -269,6 +275,11 @@ def format_digest(
     for index, group in enumerate(_group_by_title(achievements).values()):
         if index > 0:
             lines.append("")  # a blank line between one game's block and the next
+        # Which account, when the digest spans several of one platform (#10):
+        # the header names the person, so the block has to name the account.
+        account = (account_names or {}).get(group[0].xuid or "")
+        if account:
+            lines.append(f"<b>{html_escape(account)}</b>")
         title = group[0].title_name or title_name or _("achievement-unknown-game")
         # Keyed the same way _group_by_title groups (#46) — one progress
         # figure per game, and a digest can span several.
@@ -279,6 +290,7 @@ def format_digest(
         # in a message that is already grouping things. `None` is the
         # game-only progress entry every platform has.
         key = (group[0].platform, group[0].title_id, None)
+        account_key = (*key, group[0].xuid)
         # One session, one device: whichever item knows it speaks for the block.
         device = next((item.device for item in group if item.device), None)
         platforms = getattr(group[0], "game_platforms", None) if group else None
@@ -287,7 +299,7 @@ def format_digest(
                 title,
                 group[0].platform,
                 locale,
-                (progress or {}).get(key),
+                (progress or {}).get(account_key) or (progress or {}).get(key),
                 device=device,
                 platforms=platforms,
             )
