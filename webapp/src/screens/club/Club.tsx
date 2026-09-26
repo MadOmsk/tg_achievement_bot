@@ -15,7 +15,7 @@ import {
 import { t, type Locale } from "../../i18n";
 import { GameHits, GameSheet, useHltbSearch } from "../hltb";
 import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
-import { AccountBar, Avatar, GlassWait, HomeSkel, PageSkel, RowsSkel, ScoreCup, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, FeedSkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -165,7 +165,15 @@ export function Club({
     // Keep the open profile visible while pull-to-refresh refetches it.
     if (refreshKey === 0) setPersonBusy(true);
     void fetchPerson(data, activeId, openPersonId, personMonth ? { month: personMonth } : undefined)
-      .then((payload) => {
+      .then(async (payload) => {
+        // The profile appears with its gallery picture and its games' covers
+        // already loaded — not skeleton, then the bar, then pictures one by one.
+        if (refreshKey === 0) {
+          await preloadImages([
+            payload.feed[0]?.icon_url,
+            ...payload.feed.slice(0, 8).map((row) => row.game_icon_url),
+          ]);
+        }
         if (!cancelled) {
           setPerson(payload);
           if (openPersonId === me.tg_id) setMyPerson(payload);
@@ -354,7 +362,7 @@ export function Club({
   if (openPersonId && personBusy && !openProfile) {
     return (
       <div className="pane-fade person-wait">
-        <GlassWait tall />
+        <PersonSkel />
       </div>
     );
   }
@@ -491,7 +499,7 @@ export function Club({
 
       {pane === SCREEN_NAMES.FEED &&
         (!clubReady ? (
-          <PageSkel />
+          <FeedSkel />
         ) : (
           <>
             <header className="page-head is-split">
@@ -499,7 +507,7 @@ export function Club({
               {monthChip(feedMonth, MONTH_TARGETS.FEED)}
             </header>
             {feedBusy ? (
-              <RowsSkel count={6} />
+              <FeedSkel head={false} />
             ) : feed.length === 0 ? (
               <p className="empty">{t(locale, "emptyFeed")}</p>
             ) : (
@@ -517,7 +525,7 @@ export function Club({
 
       {pane === SCREEN_NAMES.SUMMARY &&
         (!clubReady ? (
-          <PageSkel />
+          <StatsSkel />
         ) : (
           <ClubStats
             meId={me.tg_id}

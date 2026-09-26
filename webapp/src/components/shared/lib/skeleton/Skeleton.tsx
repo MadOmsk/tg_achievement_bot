@@ -79,3 +79,105 @@ export function AppSkel() {
     </div>
   );
 }
+
+/** A page's own heading: the title on the left, the month chip on the right. */
+function HeadSkel() {
+  return (
+    <div className="page-skel-head">
+      <span className="skel line skel-title" />
+      <span className="skel page-skel-chip" />
+    </div>
+  );
+}
+
+/** The feed: a heading and posts — a head, a picture, two lines. */
+export function FeedSkel({
+  posts = 2,
+  head = true,
+}: {
+  posts?: number;
+  /** False when the page's own heading is already on screen. */
+  head?: boolean;
+}) {
+  return (
+    <div aria-busy="true" aria-live="polite">
+      {head && <HeadSkel />}
+      <div className="feed-skel">
+        {Array.from({ length: posts }, (_, i) => (
+          <div key={i} className="skel-post">
+            <div className="skel-post-head">
+              <span className="skel skel-avatar" />
+              <span className="skel-copy">
+                <span className="skel line" style={{ width: 96 }} />
+                <span className="skel line is-thin" style={{ width: 64 }} />
+              </span>
+            </div>
+            <span className="skel skel-post-pic" />
+            <span className="skel-copy skel-post-text">
+              <span className="skel line" style={{ width: "58%", height: 16 }} />
+              <span className="skel line is-thin" style={{ width: "82%" }} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The stats page: two tiles, a strip of covers, and the leaders. */
+export function StatsSkel() {
+  return (
+    <div aria-busy="true" aria-live="polite">
+      <HeadSkel />
+      <div className="stats-skel-tiles">
+        <span className="skel stats-skel-tile" />
+        <span className="skel stats-skel-tile" />
+      </div>
+      <span className="skel line skel-title is-small" />
+      <div className="stats-skel-strip">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="stats-skel-cover">
+            <span className="skel stats-skel-art" />
+            <span className="skel line" style={{ width: "80%" }} />
+            <span className="skel line is-thin" style={{ width: 22 }} />
+          </span>
+        ))}
+      </div>
+      <span className="skel line skel-title is-small" style={{ marginTop: 28 }} />
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="stats-skel-row">
+          <span className="skel skel-avatar is-row" />
+          <span className="skel line" style={{ width: `${44 - i * 8}%` }} />
+          <span className="skel line stats-skel-count" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Somebody's profile while it opens: the bar, the picture, their games. */
+export function PersonSkel() {
+  return (
+    <div className="app-skel" aria-busy="true" aria-live="polite">
+      <div className="app-skel-head">
+        <span className="skel skel-avatar" />
+        <span className="app-skel-who">
+          <span className="skel line" style={{ width: 120, height: 17 }} />
+          <span className="skel line is-thin" style={{ width: 84 }} />
+        </span>
+      </div>
+      <span className="skel app-skel-hero" />
+      <span className="skel line skel-title is-small" />
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="app-skel-game">
+          <span className="skel skel-pic is-big" />
+          <span className="skel-copy">
+            <span className="skel line" style={{ width: `${62 - i * 9}%` }} />
+            <span className="skel line" />
+            <span className="skel line is-thin" style={{ width: 84 }} />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}

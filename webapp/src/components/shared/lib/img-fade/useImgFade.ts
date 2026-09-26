@@ -38,3 +38,33 @@ export function useImgFade(src: string | null | undefined) {
     className: loaded ? "img-fade is-loaded" : "img-fade",
   };
 }
+
+/**
+ * Loads pictures ahead of the screen that shows them, so it can appear with its
+ * pictures already in place instead of drawing them in one by one. Gives up
+ * after `ms`: a slow or broken picture never holds a screen back.
+ */
+export function preloadImages(urls: Array<string | null | undefined>, ms = 1500): Promise<void> {
+  const wanted = [...new Set(urls.map((u) => (u ?? "").trim()).filter(Boolean))].filter(
+    (u) => !seen.has(u),
+  );
+  if (wanted.length === 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    let left = wanted.length;
+    const done = () => {
+      left -= 1;
+      if (left <= 0) resolve();
+    };
+    const timer = window.setTimeout(resolve, ms);
+    for (const url of wanted) {
+      const img = new Image();
+      img.onload = () => {
+        seen.add(url);
+        done();
+      };
+      img.onerror = done;
+      img.src = url;
+    }
+    void timer;
+  });
+}

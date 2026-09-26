@@ -46,8 +46,6 @@ export function GameAchievementRow({
         "feed-row",
         "has-wrap",
         isSecret ? "is-secret" : "",
-        // The frame is for a platinum only; other earned ones look ordinary.
-        row.trophy_type === "platinum" && row.is_unlocked ? "is-done" : "",
         row.is_unlocked ? "" : "is-locked-row",
       ]
         .filter(Boolean)

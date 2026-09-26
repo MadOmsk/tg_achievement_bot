@@ -1,1 +1,1 @@
-export { PageSkel, HomeSkel, RowsSkel, AppSkel } from "./Skeleton";
+export { PageSkel, HomeSkel, RowsSkel, AppSkel, FeedSkel, StatsSkel, PersonSkel } from "./Skeleton";

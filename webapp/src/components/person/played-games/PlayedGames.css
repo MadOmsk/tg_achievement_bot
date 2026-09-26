@@ -54,10 +54,6 @@
   animation: played-shine 6s ease-in-out infinite;
 }
 
-.played-game.is-done .played-game-cover {
-  box-shadow: 0 0 0 1px rgba(150, 220, 245, 0.45), 0 0 14px rgba(120, 210, 245, 0.35);
-}
-
 @keyframes played-shine {
   0% {
     transform: translateX(-130%);

@@ -961,8 +961,6 @@
 
 .person-wait {
   min-height: 46vh;
-  display: grid;
-  place-items: center;
 }
 
 @keyframes hero-art-in {

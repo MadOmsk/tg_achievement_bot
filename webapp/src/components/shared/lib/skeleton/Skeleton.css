@@ -139,6 +139,119 @@
   gap: 12px;
 }
 
+/* The other pages' first screens. */
+.page-skel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 18px;
+  min-height: 40px;
+}
+
+.page-skel-head .skel-title {
+  width: 38%;
+  height: 24px;
+  margin: 0;
+}
+
+.page-skel-chip {
+  width: 92px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.feed-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.skel-post {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--stroke);
+}
+
+.skel-post-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.skel-post-head .skel-copy {
+  gap: 8px;
+}
+
+.skel-post-pic {
+  aspect-ratio: 1 / 1;
+  border-radius: 16px;
+}
+
+.skel-post-text {
+  gap: 10px;
+  padding: 0 2px 4px;
+}
+
+.stats-skel-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 0 26px;
+}
+
+.stats-skel-tile {
+  height: 104px;
+  border-radius: 22px;
+}
+
+.app-skel .skel-title.is-small,
+.skel-title.is-small {
+  width: 34%;
+  height: 14px;
+  margin: 0 0 16px;
+}
+
+.stats-skel-strip {
+  display: flex;
+  gap: 10px;
+}
+
+.stats-skel-cover {
+  display: flex;
+  flex: 0 0 108px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-skel-art {
+  width: 108px;
+  height: 108px;
+  margin-bottom: 4px;
+  border-radius: 16px;
+}
+
+.stats-skel-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.skel-avatar.is-row {
+  width: 44px;
+  height: 44px;
+}
+
+.stats-skel-count {
+  width: 18px;
+  margin-left: auto;
+}
+
 @keyframes sheen {
   to {
     transform: translateX(100%);
