@@ -145,3 +145,34 @@ button.rows-row {
   margin-left: 2px;
   vertical-align: middle;
 }
+
+/* The stats lists (leaders, rare finds, hunts) share one look and one type
+ * scale with the rest of the page: 14px titles, 12px small text, a 40px face
+ * or cover, the count in white on the right. */
+.rows-section.is-stat .rows-title {
+  font-size: 0.72rem;
+}
+
+.rows-row.is-stat .cover-ph.rows-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.rows-row.is-stat .rows-copy strong {
+  font-size: 0.9rem;
+}
+
+.rows-row.is-stat .rows-copy p {
+  font-size: 0.74rem;
+}
+
+.rows-row.is-stat .rows-rank {
+  font-size: 0.74rem;
+}
+
+.rows-row.is-stat .rows-trail {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 750;
+}

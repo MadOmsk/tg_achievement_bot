@@ -35,6 +35,46 @@
   border-radius: 14px;
 }
 
+/* A finished game's picture gets the platinum shimmer of its own page: every
+ * few seconds a band of light passes over it. */
+.played-game.is-done .played-game-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 36%,
+    rgba(215, 245, 255, 0.5) 50%,
+    transparent 64%
+  );
+  transform: translateX(-130%);
+  animation: played-shine 6s ease-in-out infinite;
+}
+
+.played-game.is-done .played-game-cover {
+  box-shadow: 0 0 0 1px rgba(150, 220, 245, 0.45), 0 0 14px rgba(120, 210, 245, 0.35);
+}
+
+@keyframes played-shine {
+  0% {
+    transform: translateX(-130%);
+  }
+  30%,
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .played-game.is-done .played-game-cover::after {
+    animation: none;
+    display: none;
+  }
+}
+
 .played-game-body {
   display: flex;
   flex: 1 1 auto;
@@ -70,18 +110,10 @@
 }
 
 .played-bar {
-  display: block;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --bar-h: 6px;
 }
 
 .played-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
   /* What was earned before this month is toned down; the month's own stretch
    * (var(--month) of the fill, at its end) keeps the bar's full colour. */
   background:
@@ -90,15 +122,10 @@
       rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 10px),
       transparent calc(100% - var(--month, 0%))
     ),
-    linear-gradient(90deg, rgba(200, 210, 225, 0.5) 0%, rgba(245, 248, 252, 0.92) 100%);
+    linear-gradient(90deg, var(--fill-a), var(--fill-b));
 }
 
 /* A finished game keeps its own colour, as everywhere else (the "platinum"). */
-.played-game.is-done .played-bar {
-  background: rgba(120, 190, 210, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(140, 200, 220, 0.1);
-}
-
 .played-game.is-done .played-bar-fill {
   background:
     linear-gradient(
@@ -106,7 +133,7 @@
       rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 10px),
       transparent calc(100% - var(--month, 0%))
     ),
-    linear-gradient(90deg, rgba(95, 185, 215, 0.55) 0%, rgba(175, 230, 245, 0.95) 100%);
+    linear-gradient(90deg, var(--fill-a), var(--fill-b));
 }
 
 .played-game-when {

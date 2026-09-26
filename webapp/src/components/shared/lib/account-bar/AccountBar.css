@@ -161,3 +161,31 @@ button.person-back:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* The status under the nick in the home header: small and muted. */
+.account-status {
+  display: block;
+  margin-top: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.15;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Three lines (hello, nick, status) spread over the avatar's full height. */
+.home-chrome .account-who > span {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  height: 48px;
+}
+
+.home-chrome .account-who .hello,
+.home-chrome .account-who strong,
+.home-chrome .account-who .account-status {
+  line-height: 1.1;
+}

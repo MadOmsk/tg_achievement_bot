@@ -15,7 +15,7 @@ import {
 import { t, type Locale } from "../../i18n";
 import { GameHits, GameSheet, useHltbSearch } from "../hltb";
 import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
-import { AccountBar, Avatar, GlassWait, HomeSkel, PageSkel, ScoreCup, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, GlassWait, HomeSkel, PageSkel, RowsSkel, ScoreCup, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -426,6 +426,10 @@ export function Club({
                 me={me}
                 locale={locale}
                 onProfile={() => openPerson(me.tg_id)}
+                status={
+                  statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
+                  t(locale, "notOnline")
+                }
                 score={false}
               />
             </div>
@@ -476,7 +480,7 @@ export function Club({
                   </h1>
                   {monthChip(homeMonth, MONTH_TARGETS.HOME)}
                 </div>
-                {homeBusy && <GlassWait />}
+                {homeBusy && <RowsSkel count={3} />}
                 {!homeBusy && mine.length > 0 && (
                   <PlayedGames items={mine} locale={locale} />
                 )}
@@ -495,7 +499,7 @@ export function Club({
               {monthChip(feedMonth, MONTH_TARGETS.FEED)}
             </header>
             {feedBusy ? (
-              <GlassWait />
+              <RowsSkel count={6} />
             ) : feed.length === 0 ? (
               <p className="empty">{t(locale, "emptyFeed")}</p>
             ) : (

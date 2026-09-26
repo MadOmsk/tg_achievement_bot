@@ -227,6 +227,7 @@ export function ClubStats({
 
       {(day.length > 0 || month.length > 0) && (
         <RowsSection
+          className="is-stat"
           title={t(locale, "leaders")}
           action={periodSwitch(board, setBoard, t(locale, "leaders"))}
         >
@@ -234,10 +235,11 @@ export function ClubStats({
             boardRows.map((row, i) => (
               <Row
                 key={row.tg_id}
+                className="is-stat"
                 lead={
                   <>
                     <span className="rows-rank">{i + 1}</span>
-                    {faceOf(row.tg_id, row.name, 36)}
+                    {faceOf(row.tg_id, row.name, 40)}
                   </>
                 }
                 title={row.name}
@@ -257,11 +259,12 @@ export function ClubStats({
       )}
 
       {finders.length > 0 && (
-        <RowsSection title={t(locale, "rareFinds")}>
+        <RowsSection className="is-stat" title={t(locale, "rareFinds")}>
           {finders.map((finder) => (
             <Row
               key={finder.tgId}
-              lead={faceOf(finder.tgId, finder.name, 36)}
+              className="is-stat"
+              lead={faceOf(finder.tgId, finder.name, 40)}
               title={finder.name}
               subtitle={`${t(locale, "rarerThan")} ${RARE_FIND_PERCENT}%`}
               trailing={finder.items.length}
@@ -272,10 +275,11 @@ export function ClubStats({
       )}
 
       {hunts.length > 0 && (
-        <RowsSection title={t(locale, "huntTogether")}>
+        <RowsSection className="is-stat" title={t(locale, "huntTogether")}>
           {hunts.map((hunt) => (
             <Row
               key={hunt.key}
+              className="is-stat"
               lead={
                 <CoverImg src={hunt.cover} kind="game" className="rows-art" />
               }

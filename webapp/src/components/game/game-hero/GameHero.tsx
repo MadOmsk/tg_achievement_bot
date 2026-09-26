@@ -4,56 +4,62 @@ import { CoverImg, FitImg, Icon } from "../../shared/lib";
 /**
  * The top of a game's page: the picture across the full width (over a blurred
  * copy of itself for whatever its shape leaves bare) and, hanging off its lower
- * edge, how far along the person is — a plate with the percentage, a bar and
- * the count. A game with every achievement earned gets a big platinum medal
- * with a glow and sparkles instead of the plate.
+ * edge, how far along the person is — a plate with an achievement icon, a bar and
+ * the percentage. A game with every achievement earned gets a big platinum medal
+ * on a glow instead of the plate, with light rays, a passing shine and a lit
+ * edge across the picture.
  */
 export function GameHero({
   cover,
   pct,
-  unlocked,
   total,
   isCompleted,
+  loading = false,
   locale,
 }: {
   cover: string | null;
   pct: number;
-  unlocked: number;
   total: number;
   isCompleted: boolean;
+  /** The game is still being fetched: an empty plate stands in. */
+  loading?: boolean;
   locale: Locale;
 }) {
   const width = `${Math.min(100, Math.max(0, pct))}%`;
   return (
-    <div className={isCompleted ? "game-hero is-done" : "game-hero"}>
+    <div className={isCompleted && !loading ? "game-hero is-done" : "game-hero"}>
       <div className="game-cover">
         <CoverImg src={cover} kind="game" className="game-cover-back" />
         <FitImg src={cover} mode="width" kind="game" />
+        {isCompleted && !loading && (
+          <>
+            <i className="game-rays" aria-hidden />
+            <i className="game-shine" aria-hidden />
+            <i className="game-edge" aria-hidden />
+          </>
+        )}
       </div>
-      {isCompleted ? (
+      {isCompleted && !loading ? (
         <div className="game-medal">
           <span className="game-medal-disc" aria-hidden>
             <Icon name="cup" size={52} filled />
-            <i className="game-medal-spark is-a" />
-            <i className="game-medal-spark is-b" />
-            <i className="game-medal-spark is-c" />
-            <i className="game-medal-spark is-d" />
           </span>
           <span className="game-medal-label">{t(locale, "gameCompleted")}</span>
-          <span className="game-medal-count">
-            {unlocked} / {total}
-          </span>
         </div>
       ) : (
-        total > 0 && (
+        (loading || total > 0) && (
           <div className="game-plate">
-            <strong>{pct}%</strong>
-            <span className="game-plate-bar" aria-hidden>
-              <span className="game-plate-fill" style={{ width }} />
+            <span className="game-plate-icon" aria-hidden>
+              <Icon name="cup" size={26} filled />
             </span>
-            <small>
-              {unlocked} / {total}
-            </small>
+            <span className="game-plate-bar" aria-hidden>
+              <span className="game-plate-fill" style={{ width: loading ? "0%" : width }} />
+            </span>
+            {loading ? (
+              <span className="skel game-plate-pct" aria-hidden />
+            ) : (
+              <strong>{pct}%</strong>
+            )}
           </div>
         )
       )}

@@ -221,64 +221,8 @@
 
 .game-card-progress .hero-game-bar,
 .game-card-veil .game-card-progress .hero-game-bar {
-  flex: none;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-}
-
-.game-card-progress .hero-game-bar,
-.unlock-card .hero-game-bar {
-  display: block;
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.28),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-
-.game-card-veil .game-card-progress .hero-game-bar {
   height: 7px;
   background: rgba(255, 255, 255, 0.16);
-}
-
-.game-card-progress .hero-game-bar-fill,
-.unlock-card .hero-game-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    rgba(170, 195, 230, 0.45) 0%,
-    rgba(230, 238, 250, 0.88) 55%,
-    rgba(255, 255, 255, 1) 100%
-  );
-  box-shadow:
-    0 0 10px rgba(210, 225, 255, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-.game-card-progress .hero-game-bar-row.is-done .hero-game-bar,
-.unlock-card .hero-game-bar-row.is-done .hero-game-bar {
-  background: rgba(100, 185, 210, 0.16);
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.22),
-    inset 0 0 0 1px rgba(140, 210, 230, 0.18);
-}
-
-.game-card-progress .hero-game-bar-row.is-done .hero-game-bar-fill,
-.unlock-card .hero-game-bar-row.is-done .hero-game-bar-fill {
-  background: linear-gradient(
-    90deg,
-    rgba(90, 185, 215, 0.55) 0%,
-    rgba(160, 225, 245, 0.9) 55%,
-    rgba(220, 245, 255, 1) 100%
-  );
-  box-shadow:
-    0 0 10px rgba(120, 210, 235, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .unlock-slide-art .cover-ph,
@@ -601,24 +545,7 @@
 .hero-game-bar {
   flex: 1 1 auto;
   min-width: 0;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-}
-
-.hero-game-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    rgba(200, 210, 225, 0.5) 0%,
-    rgba(245, 248, 252, 0.92) 100%
-  );
-  box-shadow: none;
-  transition: width 0.25s ease;
+  --bar-h: 4px;
 }
 
 .hero-game-count {
@@ -643,52 +570,13 @@
 }
 
 .feed-row-progress .hero-game-bar {
-  height: 3px;
+  --bar-h: 4px;
   margin-bottom: 0;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: none;
-}
-
-.feed-row-progress .hero-game-bar-fill {
-  background: linear-gradient(
-    90deg,
-    rgba(160, 175, 200, 0.4) 0%,
-    rgba(210, 220, 236, 0.75) 100%
-  );
-  box-shadow: none;
-}
-
-.hero-game-bar-row.is-done .hero-game-bar {
-  background: rgba(120, 190, 210, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(140, 200, 220, 0.1);
-}
-
-.hero-game-bar-row.is-done .hero-game-bar-fill {
-  background: linear-gradient(
-    90deg,
-    rgba(95, 185, 215, 0.55) 0%,
-    rgba(175, 230, 245, 0.95) 100%
-  );
-  box-shadow: none;
 }
 
 /* Count stays the same colour as an unfinished bar — only the fill shifts. */
 .hero-game-bar-row.is-done .hero-game-count {
   color: var(--muted);
-}
-
-.feed-row-progress .hero-game-bar-row.is-done .hero-game-bar {
-  background: rgba(120, 180, 200, 0.1);
-  box-shadow: none;
-}
-
-.feed-row-progress .hero-game-bar-row.is-done .hero-game-bar-fill {
-  background: linear-gradient(
-    90deg,
-    rgba(100, 170, 195, 0.4) 0%,
-    rgba(155, 205, 225, 0.8) 100%
-  );
-  box-shadow: none;
 }
 
 .hero-game-group {

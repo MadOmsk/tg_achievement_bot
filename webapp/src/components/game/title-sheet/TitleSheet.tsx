@@ -9,7 +9,7 @@ import {
 import { t, type Locale } from "../../../i18n";
 import {
   CoverImg,
-  GlassWait,
+  RowsSkel,
   Icon,
   TierMedals,
   asTier,
@@ -363,9 +363,9 @@ export function TitleSheet({
       <GameHero
         cover={cover}
         pct={pct}
-        unlocked={unlocked}
         total={total}
         isCompleted={isCompleted}
+        loading={busy}
         locale={locale}
       />
 
@@ -401,7 +401,7 @@ export function TitleSheet({
         </span>
       </div>
 
-      {busy && <GlassWait />}
+      {busy && <RowsSkel count={6} />}
       {error && (
         <p className="empty">
           {t(locale, "error")}: {error}

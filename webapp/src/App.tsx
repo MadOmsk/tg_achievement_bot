@@ -18,7 +18,7 @@ import { Admin } from "./screens/admin";
 import { GameOpenProvider } from "./components/game";
 import { t, type Locale } from "./i18n";
 import { ConnectForm, Settings, type PlatNotes } from "./screens/me";
-import { Icon, PageSkel, usePullToRefresh } from "./components/shared/lib";
+import { AppSkel, Icon, usePullToRefresh } from "./components/shared/lib";
 import {
   ADMIN_SCREENS,
   asLaunchTab,
@@ -126,7 +126,7 @@ export function App() {
   });
 
   if (state.status === "loading") {
-    return <PageSkel />;
+    return <AppSkel />;
   }
   if (state.status === "need-telegram") {
     return <p className="error">{t("ru", "needTelegram")}</p>;

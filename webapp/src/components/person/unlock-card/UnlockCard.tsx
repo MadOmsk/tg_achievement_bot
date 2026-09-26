@@ -102,11 +102,11 @@ export function UnlockCard({
             <span />
           )}
           {!minimal && (
-          <HeroMarks
-            score={score}
-            rarity={rarity}
-            tier={item.tier_badge ? item.trophy_type : null}
-          />
+            <HeroMarks
+              score={score}
+              rarity={rarity}
+              tier={item.tier_badge ? item.trophy_type : null}
+            />
           )}
         </div>
       </div>

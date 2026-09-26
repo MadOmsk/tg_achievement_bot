@@ -1,6 +1,7 @@
 • Profile: the month's games with progress instead of a list of achievements; tap opens the game
 • A gallery of the latest achievements on the home page and in a profile
-• The game page: a platinum medal, comparison, full achievement descriptions
+• The game page: a platinum banner, comparison, full achievement descriptions
+• One glowing progress bar, loading placeholders instead of spinners
 • PSN trophy medals look the same everywhere
 • Delete your account in settings
 • A status in the profile bar, the Inter font, a feed that no longer stalls

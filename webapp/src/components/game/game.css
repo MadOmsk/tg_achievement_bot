@@ -34,8 +34,8 @@
   display: none;
 }
 
-/* Progress: a plate hanging off the picture's lower edge — the percentage, a
- * bar and the count, so a game in progress is not just a picture. */
+/* Progress: a plate hanging off the picture's lower edge — an achievement icon, a
+ * bar and the percentage, so a game in progress is not just a picture. */
 .game-plate {
   position: relative;
   z-index: 3;
@@ -60,30 +60,24 @@
   line-height: 1;
 }
 
-.game-plate small {
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .game-plate-bar {
-  display: block;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  --bar-h: 9px;
 }
 
-.game-plate-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(150, 175, 255, 0.6), rgba(240, 245, 255, 1));
+.game-plate-pct {
+  width: 58px;
+  height: 26px;
+  border-radius: 8px;
 }
 
-/* A completed game: a big platinum medal on the picture's edge, on a glow, with
- * sparkles, and its label written in the same cool light — no outline. */
+.game-plate-icon {
+  display: grid;
+  place-items: center;
+  color: rgba(240, 245, 255, 0.9);
+}
+
+/* A completed game: a big platinum medal on the picture's edge, on a glow,
+ * and its label written in the same cool light — no outline. */
 .game-hero {
   position: relative;
   margin: 0 -18px 4px;
@@ -94,7 +88,7 @@
 }
 
 .game-hero.is-done {
-  margin-bottom: 118px;
+  margin-bottom: 120px;
 }
 
 .game-hero.is-done .game-cover::after {
@@ -110,13 +104,14 @@
 .game-medal {
   position: absolute;
   left: 50%;
-  bottom: -104px;
+  /* The disc's centre sits on the picture's lower edge; the label hangs below. */
+  top: 100%;
   z-index: 4;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  transform: translateX(-50%);
+  transform: translate(-50%, -52px);
 }
 
 .game-medal-disc {
@@ -143,77 +138,89 @@
 
 .game-medal-label {
   margin-top: 12px;
-  color: rgb(200, 240, 252);
   font-size: 1rem;
   font-weight: 800;
   letter-spacing: 0.02em;
-  text-shadow: 0 0 18px rgba(140, 220, 245, 0.6);
   white-space: nowrap;
+  /* Platinum lettering: a cool metallic gradient with a soft glow behind it. */
+  background: linear-gradient(180deg, #ffffff 10%, #bfe9fa 55%, #86c9e6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgba(140, 220, 245, 0.55));
 }
 
-.game-medal-count {
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.game-medal-spark {
+/* Light rays fanning out of the medal across the picture, turning slowly. */
+.game-rays {
   position: absolute;
-  width: 16px;
-  height: 16px;
-  background: #fff;
-  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
-  filter: drop-shadow(0 0 5px rgba(200, 240, 255, 0.95));
-  animation: medal-twinkle 2.6s ease-in-out infinite;
+  left: 50%;
+  bottom: 0;
+  z-index: 2;
+  width: 190vw;
+  height: 190vw;
+  max-width: 1400px;
+  max-height: 1400px;
+  pointer-events: none;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(200, 244, 255, 0.3) 0deg 5deg,
+    transparent 5deg 20deg
+  );
+  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.55) 30%, transparent 62%);
+  mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.55) 30%, transparent 62%);
+  mix-blend-mode: screen;
+  transform: translate(-50%, 50%) rotate(0deg);
+  animation: game-rays-turn 60s linear infinite;
 }
 
-.game-medal-spark.is-a {
-  top: -12px;
-  right: -20px;
+@keyframes game-rays-turn {
+  to {
+    transform: translate(-50%, 50%) rotate(360deg);
+  }
 }
 
-.game-medal-spark.is-b {
-  bottom: 6px;
-  left: -28px;
-  width: 11px;
-  height: 11px;
-  animation-delay: 0.9s;
+/* A bright band sweeping over the picture now and then. */
+.game-shine {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.34) 50%,
+    transparent 62%
+  );
+  transform: translateX(-130%);
+  animation: game-shine-pass 6s ease-in-out 1s infinite;
 }
 
-.game-medal-spark.is-c {
-  top: 10px;
-  left: -18px;
-  width: 9px;
-  height: 9px;
-  animation-delay: 1.7s;
-}
-
-.game-medal-spark.is-d {
-  bottom: -6px;
-  right: -14px;
-  width: 8px;
-  height: 8px;
-  animation-delay: 0.4s;
-}
-
-@keyframes medal-twinkle {
-  0%,
+@keyframes game-shine-pass {
+  0% {
+    transform: translateX(-130%);
+  }
+  35%,
   100% {
-    opacity: 0.25;
-    transform: scale(0.7);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.1);
+    transform: translateX(130%);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .game-medal-spark {
-    animation: none;
-    opacity: 0.8;
-  }
+/* The picture's lower edge as a lit platinum line, brightest under the medal. */
+.game-edge {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 3;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(190, 236, 252, 0.6) 25%,
+    #ffffff 50%,
+    rgba(190, 236, 252, 0.6) 75%,
+    transparent
+  );
+  box-shadow: 0 0 16px 2px rgba(150, 225, 250, 0.6);
 }
 
 /* A finished game's picture gets a cool "platinum" grade: a tint over it and
