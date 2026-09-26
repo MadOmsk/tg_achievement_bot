@@ -5,7 +5,7 @@
 .game-cover {
   position: relative;
   /* Out to the page edges, square corners. */
-  margin: 0 -18px 18px;
+  margin: 0 -18px 4px;
   aspect-ratio: 1 / 1;
   overflow: hidden;
   background: #0a0c12;
@@ -26,7 +26,7 @@
   height: 100%;
   transform: scale(1.18);
   object-fit: cover;
-  filter: blur(20px) brightness(0.68) saturate(1.2);
+  filter: blur(22px) brightness(0.6) saturate(1.25);
 }
 
 /* No glyph on the backdrop: the fitted layer carries it when there is no picture. */
@@ -34,6 +34,212 @@
   display: none;
 }
 
+/* Progress: a plate hanging off the picture's lower edge — an achievement icon, a
+ * bar and the percentage, so a game in progress is not just a picture. */
+.game-plate {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  margin: -30px 18px 0;
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: rgba(14, 17, 26, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.game-plate strong {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.game-plate-bar {
+  --bar-h: 9px;
+}
+
+.game-plate-pct {
+  width: 58px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.game-plate-icon {
+  display: grid;
+  place-items: center;
+  color: rgba(240, 245, 255, 0.9);
+}
+
+/* A completed game: a big platinum medal on the picture's edge, on a glow,
+ * and its label written in the same cool light — no outline. */
+.game-hero {
+  position: relative;
+  margin: 0 -18px 4px;
+}
+
+.game-hero .game-cover {
+  margin: 0;
+}
+
+.game-hero.is-done {
+  margin-bottom: 120px;
+}
+
+.game-hero.is-done .game-cover::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 60%;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(75% 90% at 50% 100%, rgba(150, 225, 250, 0.5), transparent 72%);
+}
+
+.game-medal {
+  position: absolute;
+  left: 50%;
+  /* The disc's centre sits on the picture's lower edge; the label hangs below. */
+  top: 100%;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transform: translate(-50%, -52px);
+}
+
+.game-medal-disc {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  color: #12303c;
+  background:
+    radial-gradient(circle at 30% 24%, #ffffff 0%, transparent 44%),
+    conic-gradient(from 210deg, #cdeaf7, #f6fbff, #9fd3ea, #eaf6fc, #b7ddef, #cdeaf7);
+  box-shadow:
+    0 0 0 4px rgba(12, 15, 22, 0.9),
+    0 0 0 7px rgba(180, 232, 250, 0.7),
+    0 0 46px rgba(120, 210, 245, 0.7),
+    0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+.game-medal-disc svg {
+  filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.75));
+}
+
+.game-medal-label {
+  margin-top: 12px;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  /* Platinum lettering: a cool metallic gradient with a soft glow behind it. */
+  background: linear-gradient(180deg, #ffffff 10%, #bfe9fa 55%, #86c9e6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgba(140, 220, 245, 0.55));
+}
+
+/* Light rays fanning out of the medal across the picture, turning slowly. */
+.game-rays {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  z-index: 2;
+  width: 190vw;
+  height: 190vw;
+  max-width: 1400px;
+  max-height: 1400px;
+  pointer-events: none;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(200, 244, 255, 0.3) 0deg 5deg,
+    transparent 5deg 20deg
+  );
+  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.55) 30%, transparent 62%);
+  mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.55) 30%, transparent 62%);
+  mix-blend-mode: screen;
+  transform: translate(-50%, 50%) rotate(0deg);
+  animation: game-rays-turn 60s linear infinite;
+}
+
+@keyframes game-rays-turn {
+  to {
+    transform: translate(-50%, 50%) rotate(360deg);
+  }
+}
+
+/* A bright band sweeping over the picture now and then. */
+.game-shine {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.34) 50%,
+    transparent 62%
+  );
+  transform: translateX(-130%);
+  animation: game-shine-pass 6s ease-in-out 1s infinite;
+}
+
+@keyframes game-shine-pass {
+  0% {
+    transform: translateX(-130%);
+  }
+  35%,
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+/* The picture's lower edge as a lit platinum line, brightest under the medal. */
+.game-edge {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 3;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(190, 236, 252, 0.6) 25%,
+    #ffffff 50%,
+    rgba(190, 236, 252, 0.6) 75%,
+    transparent
+  );
+  box-shadow: 0 0 16px 2px rgba(150, 225, 250, 0.6);
+}
+
+/* A finished game's picture gets a cool "platinum" grade: a tint over it and
+ * a soft vignette, so it reads as achieved before anything is read. */
+.game-hero.is-done .game-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(6, 22, 34, 0.5) 100%),
+    linear-gradient(180deg, rgba(150, 225, 250, 0.16), rgba(30, 90, 130, 0.3));
+  mix-blend-mode: soft-light;
+}
+
+.game-hero.is-done .game-cover .fit-layer > img {
+  filter: saturate(1.12) contrast(1.05) brightness(1.03);
+}
 
 /* The game's own page: a full-screen layer over the app, scrolling on its
  * own, with the same sticky top bar the profile has. */
@@ -45,9 +251,13 @@
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 0 18px calc(28px + var(--safe-bottom));
-  background:
-    radial-gradient(880px 520px at 6% -14%, rgba(120, 150, 230, 0.22), transparent 58%),
-    linear-gradient(180deg, #121620 0%, #0a0c12 48%, #07080c 100%);
+  /* The same background as every other page, over a solid colour: if a phone
+   * fails to paint the gradient layers, the feed underneath must still never
+   * show through. (No `local` attachment — some WebViews drop it.) */
+  background-color: var(--bg);
+  background-image: var(--app-bg);
+  isolation: isolate;
+  transform: translateZ(0);
 }
 
 /* The bar brings its own top padding (and the sticky offset is measured
@@ -56,7 +266,7 @@
   margin-top: 0;
 }
 
-.game-page > *:not(.person-bar):not(.game-cover) {
+.game-page > *:not(.person-bar):not(.game-hero) {
   max-width: 28rem;
   margin-left: auto;
   margin-right: auto;
@@ -68,7 +278,7 @@
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 40px;
+  width: 32px;
   height: 32px;
   padding: 0;
   border: 0;
@@ -105,37 +315,24 @@
 }
 
 /* Title and, under it, whose progress the page shows. */
-.person-bar .game-bar-title {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  gap: 1px;
-}
-
-/* Title and, under it, whose progress: a pair centred together on the
- * avatar, and as wide as the bar allows so a long nick is not cut short. */
-.person-bar .game-bar-title small {
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .game-head-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  /* The icon is centred in its 32px box and drawn with a little air inside its
+   * own square: pull the row out by both, so what is *seen* of the last icon
+   * ends on the page gutter, like every right-hand edge. */
+  margin-right: -10px;
   min-width: 0;
 }
 
 /* Flips the list between the person's progress and yours. */
-.game-head-actions .game-who-chip.is-on {
-  background: rgba(255, 255, 255, 0.2);
+.game-lock-chip.is-on {
   color: #fff;
+}
+
+.game-lock-chip.is-on svg {
+  fill: rgba(255, 255, 255, 0.22);
 }
 
 /* Each person's mark on an achievement: their avatar, lit when they
@@ -157,29 +354,61 @@
   opacity: 1;
   filter: none;
 }
-.game-head-actions .game-who-chip {
-  max-width: 11rem;
-  padding: 6px 12px;
-  border: 0;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-  color: rgba(238, 241, 246, 0.94);
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
+
 
 /* The list heading spaced like the home page's "Friends": 28px above it,
  * 16px below (its own row is taller than the text because of the buttons). */
 .game-page .achievements-head {
-  margin: 28px 0 16px;
+  margin: 28px 0 0;
   /* As tall as its buttons from the start: they appear only once the list
    * has loaded, and the heading's spacing used to grow when they did. */
   min-height: 32px;
   align-items: center;
+}
+
+/* The list has no day label here, so the room under the heading is just this. */
+.game-page .feed {
+  --day-gap: 8px;
+}
+
+
+/* What the person earned in this game, in the top bar: the number and its unit
+ * (G, achievements, trophies). */
+.person-bar .game-bar-score {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.person-bar .game-bar-score strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.person-bar .game-bar-score small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+/* On a game's page the description is not cut to one line: it wraps. */
+.feed-row.has-wrap .unlock-game {
+  align-items: flex-start;
+}
+
+.feed-row.has-wrap .unlock-game-lead {
+  overflow: visible;
+}
+
+.feed-row.has-wrap .unlock-game-name {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.feed-row.has-wrap {
+  align-items: flex-start;
 }

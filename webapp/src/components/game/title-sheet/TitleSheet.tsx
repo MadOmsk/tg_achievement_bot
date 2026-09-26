@@ -9,17 +9,18 @@ import {
 import { t, type Locale } from "../../../i18n";
 import {
   CoverImg,
-  GlassWait,
+  RowsSkel,
   Icon,
-  ScoreCup,
-  Sheet,
+  TierMedals,
+  asTier,
   type ScoreCupLine,
+  type TierCounts,
+  Sheet,
 } from "../../shared/lib";
 import { UnlockCard } from "../../person";
 import {
   COMPLETION_BADGES,
   PLATFORMS,
-  TROPHY_BADGES,
 } from "../../shared/constants";
 import {
   groupLabel,
@@ -27,8 +28,8 @@ import {
   trophyBadge,
   type FilterType,
 } from "../utils";
-import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
 import { GameHero } from "../game-hero/GameHero";
+import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
 
 export function TitleSheet({
   game,
@@ -56,10 +57,8 @@ export function TitleSheet({
   const viewed = other;
   const [compare, setCompare] = useState(false);
   const [myDetails, setMyDetails] = useState<GameDetails | null>(null);
-  // Your own page opens on what you still have to earn; somebody else's on
-  // what they have earned. The lock flips between the two.
-  const [showEarned, setShowEarned] = useState(Boolean(other));
-  const filter: FilterType = showEarned ? "unlocked" : "locked";
+  // Always opens on what was earned; the lock flips to what is still to earn.
+  const [showEarned, setShowEarned] = useState(true);
   const showAllSecrets = initialShowSecrets;
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
   const [selectedAch, setSelectedAch] = useState<GameAchievement | null>(null);
@@ -157,9 +156,7 @@ export function TitleSheet({
       }
     }
 
-    const tiers = isPsn
-      ? `${TROPHY_BADGES.BRONZE} ${bronze} · ${TROPHY_BADGES.SILVER} ${silver} · ${TROPHY_BADGES.GOLD} ${gold} · ${TROPHY_BADGES.PLATINUM} ${platinum}`
-      : null;
+    const tiers = isPsn ? { bronze, silver, gold, platinum } : null;
 
     const extra = isXbox
       ? isCompleted
@@ -183,6 +180,19 @@ export function TitleSheet({
       },
     ];
   }, [achievements, game.platform, isCompleted, locale, pct, total, unlocked]);
+
+  // PSN: how many trophies of each tier the person has earned in this game.
+  const tierCounts = useMemo<TierCounts>(() => {
+    const counts: TierCounts = { bronze: 0, silver: 0, gold: 0, platinum: 0 };
+    for (const ach of achievements) {
+      const tier = asTier(ach.trophy_type);
+      if (tier && ach.is_unlocked) counts[tier] += 1;
+    }
+    return counts;
+  }, [achievements]);
+
+  // What was earned here, written in the bar itself (no tap, no drawer).
+  const earnedLine = busy ? null : scoreLines[0];
 
   const toggleReveal = useCallback((achId: string) => {
     setRevealedIds((prev) => {
@@ -208,13 +218,33 @@ export function TitleSheet({
   );
   const comparing = compare && Boolean(myDetails) && Boolean(other);
 
+  // With nothing earned (or everything earned) there is only one list to show:
+  // the one that has achievements in it, and no lock to flip to an empty one.
+  const earnedCount = achievements.filter((a) => a.is_unlocked).length;
+  const hasBoth = earnedCount > 0 && earnedCount < achievements.length;
+  const earnedView = hasBoth ? showEarned : earnedCount > 0;
+  const filter: FilterType = earnedView ? "unlocked" : "locked";
+
   const filteredAchievements = useMemo(() => {
-    return achievements.filter((ach) => {
+    const rows = achievements.filter((ach) => {
       if (comparing) return true;
       if (filter === "unlocked") return ach.is_unlocked;
       if (filter === "locked") return !ach.is_unlocked;
       return true;
     });
+    // What was earned reads newest first (undated ones last); what is still to
+    // earn keeps the game's own order. Comparing: theirs earned first, likewise.
+    const at = (ach: GameAchievement) =>
+      ach.unlocked_at ? Date.parse(ach.unlocked_at) || 0 : 0;
+    if (comparing) {
+      return [...rows].sort(
+        (a, b) =>
+          Number(b.is_unlocked) - Number(a.is_unlocked) ||
+          (a.is_unlocked && b.is_unlocked ? at(b) - at(a) : 0),
+      );
+    }
+    if (filter === "unlocked") return [...rows].sort((a, b) => at(b) - at(a));
+    return rows;
   }, [achievements, filter, comparing]);
 
   const byGroup = useMemo(() => {
@@ -273,7 +303,8 @@ export function TitleSheet({
       is_secret: selectedAch.is_secret,
       title_id: game.title_id,
       achievement_id: selectedAch.achievement_id,
-      icon_url: selectedAch.icon_url,
+      // Many catalog rows carry no picture of their own: the game's stands in.
+      icon_url: selectedAch.icon_url || cover,
       game_icon_url: cover,
       description: pickLocale(
         locale,
@@ -312,48 +343,65 @@ export function TitleSheet({
               <Icon name="back" size={28} />
             </button>
             <CoverImg src={cover} kind="game" className="person-avatar" />
-            <span className="game-bar-title">
+            <span className="person-bar-title">
               <strong>{title}</strong>
               {viewed && <small>{viewed.name}</small>}
             </span>
           </div>
-          <ScoreCup locale={locale} lines={scoreLines} />
+          {earnedLine &&
+            (game.platform === PLATFORMS.PSN ? (
+              <TierMedals counts={tierCounts} />
+            ) : (
+              <span className="game-bar-score">
+                <strong>{earnedLine.count}</strong>
+                <small>{earnedLine.unit ?? t(locale, "achievements")}</small>
+              </span>
+            ))}
         </div>
       </header>
 
-      <GameHero cover={cover} />
+      <GameHero
+        cover={cover}
+        pct={pct}
+        total={total}
+        isCompleted={isCompleted}
+        loading={busy}
+        locale={locale}
+      />
 
       <div className="section-head achievements-head">
         <h1 className="kicker" style={{ margin: 0 }}>
-          {t(locale, "homeAchievements")} (
-          {comparing ? `${myUnlockedIds.size} · ${unlocked}` : unlocked}/{total})
+          {t(locale, "homeAchievements")}
+          {total > 0 &&
+            ` (${comparing ? `${myUnlockedIds.size} · ${unlocked}` : unlocked}/${total})`}
         </h1>
 
         <span className="game-head-actions">
         {other && (
           <button
             type="button"
-            className={compare ? "game-who-chip is-on" : "game-who-chip"}
+            className={compare ? "game-lock-chip is-on" : "game-lock-chip"}
             aria-pressed={compare}
+            aria-label={t(locale, "compare")}
             onClick={() => setCompare((on) => !on)}
           >
-            {t(locale, "compare")}
+            <Icon name="compare" size={20} />
           </button>
         )}
-        {(!busy && achievements.length > 0 && !comparing) && (
+        {(!busy && hasBoth && !comparing) && (
           <button
             type="button"
             className="game-lock-chip"
-            aria-label={t(locale, showEarned ? "showLocked" : "showEarned")}
+            aria-label={t(locale, earnedView ? "showLocked" : "showEarned")}
             onClick={() => setShowEarned((on) => !on)}
           >
-            <Icon name={showEarned ? "unlock" : "lock"} size={18} />
+            <Icon name={earnedView ? "unlock" : "lock"} size={18} />
           </button>
         )}
         </span>
       </div>
 
-      {busy && <GlassWait />}
+      {busy && <RowsSkel count={6} />}
       {error && (
         <p className="empty">
           {t(locale, "error")}: {error}
@@ -379,11 +427,10 @@ export function TitleSheet({
               )}
               {section.rows.map((row) => {
                 const iHave = myUnlockedIds.has(row.achievement_id);
+                // A secret stays hidden until the "show secrets" setting or a
+                // tap on it says otherwise — earned or not.
                 const isRevealed =
-                  showAllSecrets ||
-                  row.is_unlocked ||
-                  (comparing && iHave) ||
-                  revealedIds.has(row.achievement_id);
+                  showAllSecrets || revealedIds.has(row.achievement_id);
                 return (
                   <GameAchievementRow
                     key={row.achievement_id}
@@ -392,6 +439,7 @@ export function TitleSheet({
                     locale={locale}
                     onToggleReveal={toggleReveal}
                     onSelect={setSelectedAch}
+                    fallbackIcon={cover}
                     compare={
                       comparing && other
                         ? {
@@ -423,10 +471,16 @@ export function TitleSheet({
             <UnlockCard
               item={selectedFeedItem}
               locale={locale}
-              secret={false}
+              secret={Boolean(
+                selectedAch?.is_secret &&
+                  !showAllSecrets &&
+                  !revealedIds.has(selectedAch.achievement_id),
+              )}
               author={false}
               gameInCopy
-              onReveal={() => {}}
+              onReveal={() =>
+                selectedAch && toggleReveal(selectedAch.achievement_id)
+              }
             />
           </div>
         </Sheet>

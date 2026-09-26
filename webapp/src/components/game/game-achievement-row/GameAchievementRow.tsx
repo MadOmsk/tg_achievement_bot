@@ -2,7 +2,7 @@ import type { GameAchievement } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, CoverImg, Icon } from "../../shared/lib";
 import { HeroMarks } from "../../person";
-import { pickLocale, trophyBadge } from "../utils";
+import { pickLocale } from "../utils";
 
 export function GameAchievementRow({
   row,
@@ -11,12 +11,15 @@ export function GameAchievementRow({
   onToggleReveal,
   onSelect,
   compare,
+  fallbackIcon,
 }: {
   row: GameAchievement;
   isRevealed: boolean;
   locale: Locale;
   onToggleReveal: (id: string) => void;
   onSelect: (row: GameAchievement) => void;
+  /** Shown when the achievement has no picture of its own (most catalog rows do not). */
+  fallbackIcon?: string | null;
   /** Both people's state on this achievement (the compare view). */
   compare?: {
     me: { id: number; name: string; has: boolean };
@@ -31,9 +34,7 @@ export function GameAchievementRow({
 
   const desc = pickLocale(locale, row.description_ru, row.description_en);
 
-  const score = isSecret
-    ? null
-    : trophyBadge(row.trophy_type) || (row.gamerscore ? `${row.gamerscore} G` : null);
+  const score = row.gamerscore ? `${row.gamerscore} G` : null;
   const blur = isSecret ? "secret-blur" : undefined;
 
   const rarity = row.rarity_percent != null ? `${row.rarity_percent}%` : null;
@@ -43,9 +44,8 @@ export function GameAchievementRow({
       type="button"
       className={[
         "feed-row",
+        "has-wrap",
         isSecret ? "is-secret" : "",
-        // The frame is for a platinum only; other earned ones look ordinary.
-        row.trophy_type === "platinum" && row.is_unlocked ? "is-done" : "",
         row.is_unlocked ? "" : "is-locked-row",
       ]
         .filter(Boolean)
@@ -59,7 +59,7 @@ export function GameAchievementRow({
       }}
     >
       <CoverImg
-        src={row.icon_url}
+        src={row.icon_url || fallbackIcon}
         kind="achievement"
         className="feed-cover"
         imgClassName="cover"
@@ -75,7 +75,7 @@ export function GameAchievementRow({
           <p className="unlock-title">
             <span className={blur}>{name}</span>
           </p>
-          <HeroMarks compact score={score} rarity={rarity} />
+          <HeroMarks compact score={score} rarity={rarity} tier={row.trophy_type} />
         </span>
         {compare ? (
           <span className="compare-marks">
@@ -92,7 +92,9 @@ export function GameAchievementRow({
           desc && (
             <p className="unlock-game">
               <span className="unlock-game-lead">
-                <span className="unlock-game-name">{desc || "\u00a0"}</span>
+                <span className={blur ? `unlock-game-name ${blur}` : "unlock-game-name"}>
+                  {desc}
+                </span>
               </span>
             </p>
           )

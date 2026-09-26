@@ -3,6 +3,7 @@ import type { MeResponse } from "../../../../api";
 import { t, type Locale } from "../../../../i18n";
 import { PlatformLogo } from "../platform/Platform";
 import { Sheet } from "../sheet/Sheet";
+import { TierMedals, type TierCounts } from "../tier-medals/TierMedals";
 import "./ScoreCup.css";
 
 export type ScoreCupLine = {
@@ -12,7 +13,7 @@ export type ScoreCupLine = {
   month?: number | null;
   extra?: string | null;
   unit?: string | null;
-  tiers?: string | null;
+  tiers?: TierCounts | null;
 };
 
 export function ScoreCup({
@@ -64,7 +65,7 @@ export function ScoreCup({
                   {line.count.toLocaleString("ru-RU")}
                   {line.unit && <small>{line.unit}</small>}
                 </strong>
-                {line.tiers && <em>{line.tiers}</em>}
+                {line.tiers && <TierMedals counts={line.tiers} />}
                 {(line.month != null && line.day != null) && (
                   <span className="score-meta">
                     {line.month.toLocaleString("ru-RU")} {t(locale, "homeMonthShort")}
@@ -103,7 +104,12 @@ export function meScoreLines(
       day: me.psn.day,
       month: me.psn.month,
       extra: me.psn.trophy_level != null ? `${t(locale, "level")} ${me.psn.trophy_level}` : null,
-      tiers: `🥉 ${me.psn.bronze} · 🥈 ${me.psn.silver} · 🥇 ${me.psn.gold} · 🏆 ${me.psn.platinum_count}`,
+      tiers: {
+        bronze: me.psn.bronze,
+        silver: me.psn.silver,
+        gold: me.psn.gold,
+        platinum: me.psn.platinum_count,
+      },
     });
   }
   if (me.steam.linked) {

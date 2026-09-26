@@ -14,6 +14,8 @@ export function Icon({
     | "feed"
     | "lock"
     | "unlock"
+    | "compare"
+    | "trash"
     | "stats"
     | "cup"
     | "back"
@@ -110,6 +112,24 @@ export function Icon({
       <svg {...props}>
         <rect x="5" y="11" width="14" height="10" rx="2" />
         <path d="M8 11V8a4 4 0 0 1 7.6-1.7" />
+      </svg>
+    );
+  }
+  if (name === "trash") {
+    return (
+      <svg {...props}>
+        <path d="M4.5 7h15" />
+        <path d="M9.5 7V4.8h5V7" />
+        <path d="M6.6 7l.9 12.2h9l.9-12.2" />
+        <path d="M10.2 10.6v5.6M13.8 10.6v5.6" />
+      </svg>
+    );
+  }
+  if (name === "compare") {
+    return (
+      <svg {...props}>
+        <circle cx="9" cy="12" r="5.6" />
+        <circle cx="15" cy="12" r="5.6" />
       </svg>
     );
   }

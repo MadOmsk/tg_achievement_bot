@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { GameRef } from "../../../api";
 import type { Locale } from "../../../i18n";
@@ -24,6 +24,16 @@ export function GameOpenProvider({
 }) {
   const [game, setGame] = useState<GameRef | null>(null);
   const open = useCallback((next: GameRef) => setGame(next), []);
+
+  // While a game page covers the app, the app beneath stops being painted
+  // (see base.css): a long feed of blurred, filtered cards under a full-screen
+  // layer was eating the phone's graphics memory, and that showed as artifacts.
+  useEffect(() => {
+    if (!game) return;
+    const html = document.documentElement;
+    html.classList.add("has-game-page");
+    return () => html.classList.remove("has-game-page");
+  }, [game]);
   return (
     <GameOpenContext.Provider value={open}>
       {children}

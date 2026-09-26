@@ -8,6 +8,7 @@ export const API_BASE_ROUTES = {
 
 export const USER_ROUTES = {
   ME: "/me",
+  DELETE_ME: "/me",
   AVATAR: (tgId: number) => `/avatar/${tgId}`,
   SETTINGS: "/settings",
   CONNECT_XBOX: "/connect/xbox",

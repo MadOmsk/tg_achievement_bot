@@ -1,0 +1,51 @@
+/* One look for every "how far along" bar (feed rows, the slider's cards, the
+ * games in a profile, a game's own page): a thin track with faint marks at a
+ * quarter, half and three quarters, and a softly glowing fill. A finished game
+ * turns platinum. A bar sets its thickness with --bar-h; nothing else about it is
+ * decided anywhere else. */
+:is(.hero-game-bar, .played-bar, .game-plate-bar) {
+  --bar-h: 6px;
+  position: relative;
+  display: block;
+  height: var(--bar-h);
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.1);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(25% - 1px),
+    rgba(255, 255, 255, 0.16) calc(25% - 1px) 25%
+  );
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+:is(.hero-game-bar-fill, .played-bar-fill, .game-plate-fill) {
+  --fill-a: rgba(178, 188, 204, 0.5);
+  --fill-b: rgba(255, 255, 255, 1);
+  --fill-glow: rgba(255, 255, 255, 0.4);
+  position: relative;
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--fill-a), var(--fill-b));
+  box-shadow:
+    0 0 10px 1px var(--fill-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: width 0.25s ease;
+}
+
+/* Nothing earned: no light at all. */
+:is(.hero-game-bar-fill, .played-bar-fill, .game-plate-fill)[style*="width: 0%"] {
+  box-shadow: none;
+}
+
+/* Platinum: a finished game. */
+:is(.hero-game-bar-row.is-done, .played-game.is-done)
+  :is(.hero-game-bar-fill, .played-bar-fill) {
+  --fill-a: rgba(80, 182, 218, 0.7);
+  --fill-b: rgba(226, 247, 255, 1);
+  --fill-glow: rgba(120, 214, 245, 0.7);
+}
+
+:is(.hero-game-bar-row.is-done, .played-game.is-done) :is(.hero-game-bar, .played-bar) {
+  background-color: rgba(120, 190, 210, 0.14);
+}

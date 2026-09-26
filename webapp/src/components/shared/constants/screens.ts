@@ -43,3 +43,11 @@ export function asLaunchTab(value: string | null): LaunchTab {
     ? (value as LaunchTab)
     : SCREEN_NAMES.HOME;
 }
+
+/** The sub-panes of the settings screen. */
+export const SETTINGS_PANES = {
+  ROOT: "root",
+  ACHIEVEMENTS: "achievements",
+  CHATS: "chats",
+} as const;
+export type SettingsPane = (typeof SETTINGS_PANES)[keyof typeof SETTINGS_PANES];

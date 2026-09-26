@@ -15,14 +15,16 @@ export function Chevron() {
 export function RowsSection({
   title,
   action,
+  className,
   children,
 }: {
   title?: ReactNode;
   action?: ReactNode;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="rows-section">
+    <section className={className ? `rows-section ${className}` : "rows-section"}>
       {(title || action) && (
         <div className="rows-head">
           <h3 className="rows-title">{title}</h3>

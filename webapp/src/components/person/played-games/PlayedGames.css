@@ -1,0 +1,140 @@
+.played-games {
+  display: flex;
+  flex-direction: column;
+}
+
+.played-game {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.played-game:last-child {
+  border-bottom: 0;
+}
+
+.played-game .cover-ph.played-game-cover {
+  flex: 0 0 60px;
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+}
+
+.played-game .cover-ph.played-game-cover > img {
+  border-radius: 14px;
+}
+
+/* A finished game's picture gets the platinum shimmer of its own page: every
+ * few seconds a band of light passes over it. */
+.played-game.is-done .played-game-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 36%,
+    rgba(215, 245, 255, 0.5) 50%,
+    transparent 64%
+  );
+  transform: translateX(-130%);
+  animation: played-shine 6s ease-in-out infinite;
+}
+
+@keyframes played-shine {
+  0% {
+    transform: translateX(-130%);
+  }
+  30%,
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .played-game.is-done .played-game-cover::after {
+    animation: none;
+    display: none;
+  }
+}
+
+.played-game-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.played-game-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.played-game-head strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.played-game-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.played-bar {
+  --bar-h: 6px;
+}
+
+.played-bar-fill {
+  /* What was earned before this month is toned down; the month's own stretch
+   * (var(--month) of the fill, at its end) keeps the bar's full colour. */
+  background:
+    linear-gradient(
+      90deg,
+      rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 10px),
+      transparent calc(100% - var(--month, 0%))
+    ),
+    linear-gradient(90deg, var(--fill-a), var(--fill-b));
+}
+
+/* A finished game keeps its own colour, as everywhere else (the "platinum"). */
+.played-game.is-done .played-bar-fill {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 10px),
+      transparent calc(100% - var(--month, 0%))
+    ),
+    linear-gradient(90deg, var(--fill-a), var(--fill-b));
+}
+
+.played-game-when {
+  /* A step brighter than the muted grey, but softer than the title. */
+  color: rgba(186, 196, 214, 0.82);
+  font-size: 0.78rem;
+  font-weight: 550;
+}

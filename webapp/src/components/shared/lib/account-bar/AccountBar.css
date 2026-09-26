@@ -49,7 +49,7 @@ button.person-back:focus-visible {
   /* The arrow is drawn inside its box with ~8px to spare on the left: pull
    * it out so its visible edge sits on the page gutter (like the icon on
    * the right), and close the gap to the avatar to match the avatar-name one. */
-  margin: 0 -2px 0 -10px;
+  margin: 0 -2px 0 -12px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -139,4 +139,53 @@ button.person-back:focus-visible {
 .dock button:focus,
 .dock button:focus-visible {
   outline: none;
+}
+
+/* The bar's name and, under it, a small muted line (a person's status, whose
+ * progress a game page shows): a pair centred together on the avatar, as wide
+ * as the bar allows so a long nick or status is not cut short. */
+.person-bar .person-bar-title {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 1px;
+}
+
+.person-bar .person-bar-title small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The status under the nick in the home header: small and muted. */
+.account-status {
+  display: block;
+  margin-top: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.15;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Three lines (hello, nick, status) spread over the avatar's full height. */
+.home-chrome .account-who > span {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  height: 48px;
+}
+
+.home-chrome .account-who .hello,
+.home-chrome .account-who strong,
+.home-chrome .account-who .account-status {
+  line-height: 1.1;
 }

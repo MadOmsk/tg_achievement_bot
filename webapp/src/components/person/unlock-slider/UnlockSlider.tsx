@@ -97,6 +97,8 @@ function UnlockSliderBase({
   onReveal,
   onOpenPerson,
   variant = "hero",
+  author = true,
+  minimal = false,
 }: {
   items: FeedItem[];
   locale: Locale;
@@ -105,6 +107,10 @@ function UnlockSliderBase({
   onReveal?: (key: string) => void;
   onOpenPerson?: (tgId: number) => void;
   variant?: "hero" | "feed" | "game";
+  /** Whose achievement it is, in the card's corner (off on a person's own page). */
+  author?: boolean;
+  /** Gallery form: picture, name and game only. */
+  minimal?: boolean;
 }) {
   const slides = variant === "feed" ? items : items.slice(0, HOME_SLIDES);
   const slideKey = variant === "game" ? gameKey : feedKey;
@@ -122,7 +128,10 @@ function UnlockSliderBase({
         creativeEffect={CREATIVE_EFFECT}
         speed={480}
         followFinger={!feedDots}
-        threshold={feedDots ? 12 : 5}
+        threshold={feedDots ? 12 : 3}
+        // A profile gallery turns over on a short drag (12% of the width, not
+        // half of it, which is Swiper's default).
+        longSwipesRatio={feedDots ? 0.5 : 0.12}
         loop={n > 2}
         onSwiper={setSwiper}
       >
@@ -137,7 +146,7 @@ function UnlockSliderBase({
                   item={item}
                   locale={locale}
                   secret={secret}
-                  author
+                  author={author}
                   gameInCopy
                   onOpenPerson={onOpenPerson}
                   onReveal={onReveal}
@@ -147,6 +156,8 @@ function UnlockSliderBase({
                   item={item}
                   secret={secret}
                   locale={locale}
+                  author={author}
+                  minimal={minimal}
                   onReveal={onReveal}
                   onOpenPerson={onOpenPerson}
                 />

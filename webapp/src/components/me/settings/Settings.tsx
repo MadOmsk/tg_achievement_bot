@@ -1,8 +1,14 @@
 import { useState } from "react";
 import type { MeResponse } from "../../../api";
 import { t, timezoneLabel, type Locale } from "../../../i18n";
-import { BackHead, Toggle, Chevron } from "../../shared/lib";
-import { PLATFORMS, TIMEZONES, type AdminScreen } from "../../shared/constants";
+import { BackHead, Chevron, Icon, Toggle } from "../../shared/lib";
+import {
+  PLATFORMS,
+  SETTINGS_PANES,
+  TIMEZONES,
+  type AdminScreen,
+  type SettingsPane,
+} from "../../shared/constants";
 import { AdminSection } from "../../admin";
 import { ChatSettingsCard } from "../chat-settings-card/ChatSettingsCard";
 import { PlatformCard, type PlatNotes } from "../platform-card/PlatformCard";
@@ -24,6 +30,7 @@ export function Settings({
   onDisconnectSteam,
   onDisconnectPsn,
   onSync,
+  onDeleteAccount,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -45,21 +52,23 @@ export function Settings({
   onDisconnectSteam: () => void;
   onDisconnectPsn: () => void;
   onSync: () => void;
+  onDeleteAccount: () => Promise<void>;
 }) {
-  const [pane, setPane] = useState<"root" | "achievements" | "chats">("root");
+  const [pane, setPane] = useState<SettingsPane>(SETTINGS_PANES.ROOT);
+  const [deleting, setDeleting] = useState(false);
   const tz = me.settings.tz_offset_min;
   const tzOptions = TIMEZONES;
 
   const xboxName =
     me.xbox.gamertag_modern || me.xbox.gamertag || t(locale, "notLinked");
 
-  if (pane === "achievements") {
+  if (pane === SETTINGS_PANES.ACHIEVEMENTS) {
     return (
       <>
         <BackHead
           title={t(locale, "homeAchievements")}
           backLabel={t(locale, "back")}
-          onBack={() => setPane("root")}
+          onBack={() => setPane(SETTINGS_PANES.ROOT)}
         />
         <div className="glass-card">
           <div className="ios-row">
@@ -87,13 +96,13 @@ export function Settings({
     );
   }
 
-  if (pane === "chats") {
+  if (pane === SETTINGS_PANES.CHATS) {
     return (
       <>
         <BackHead
           title={t(locale, "myChats")}
           backLabel={t(locale, "back")}
-          onBack={() => setPane("root")}
+          onBack={() => setPane(SETTINGS_PANES.ROOT)}
         />
         <p className="settings-hint">{t(locale, "myChatsHint")}</p>
         {me.chats.length === 0 ? (
@@ -118,6 +127,7 @@ export function Settings({
         <h1>{t(locale, "settings")}</h1>
       </header>
 
+      <p className="kicker">{t(locale, "general")}</p>
       <div className="glass-card">
         <div className="ios-row">
           <span>{t(locale, "language")}</span>
@@ -164,7 +174,7 @@ export function Settings({
         <button
           type="button"
           className="ios-row"
-          onClick={() => setPane("achievements")}
+          onClick={() => setPane(SETTINGS_PANES.ACHIEVEMENTS)}
         >
           <span>{t(locale, "homeAchievements")}</span>
           <span className="ios-value">
@@ -174,7 +184,7 @@ export function Settings({
         <button
           type="button"
           className="ios-row"
-          onClick={() => setPane("chats")}
+          onClick={() => setPane(SETTINGS_PANES.CHATS)}
         >
           <span>{t(locale, "myChats")}</span>
           <span className="ios-value">
@@ -184,7 +194,32 @@ export function Settings({
         </button>
       </div>
 
-      <p className="kicker">{t(locale, "accounts")}</p>
+      <div className="accounts-head">
+        <p className="kicker">{t(locale, "accounts")}</p>
+        <button
+          type="button"
+          className="accounts-delete"
+          aria-label={t(locale, "deleteAccount")}
+          title={t(locale, "deleteAccount")}
+          disabled={deleting}
+          onClick={async () => {
+            // Telegram's own confirmation, like turning off publishing to a chat.
+            if (!window.confirm(t(locale, "deleteWarning"))) return;
+            setDeleting(true);
+            try {
+              await onDeleteAccount();
+              window.alert(t(locale, "deleteDone"));
+              window.Telegram?.WebApp?.close?.();
+            } catch (err) {
+              onFlash(`${t(locale, "error")}: ${String(err)}`);
+            } finally {
+              setDeleting(false);
+            }
+          }}
+        >
+          <Icon name="trash" size={20} />
+        </button>
+      </div>
       <PlatformCard
         linked={me.xbox.linked}
         name={xboxName}
@@ -233,6 +268,7 @@ export function Settings({
           notes?.steam,
         ]}
       />
+
 
       {me.is_admin && onAdmin && (
         <AdminSection
