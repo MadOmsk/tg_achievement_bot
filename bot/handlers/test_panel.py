@@ -50,13 +50,23 @@ def reset_mock_state(tg_id: int) -> MockPanelState:
     return _USER_STATES[tg_id]
 
 
-@router.message(Command("test_panel", "testpanel", "demo"))
+@router.message(Command("test_panel", "testpanel", "panel_demo"))
 async def handle_test_panel_cmd(message: Message) -> None:
     if message.chat.type != ChatType.PRIVATE:
         await message.answer("Команда доступна только в личных сообщениях с ботом.")
         return
     state = get_mock_state(message.from_user.id)
     text, markup = render_screen("home", state)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.message(Command("test_admin", "testadmin", "admin_demo"))
+async def handle_test_admin_cmd(message: Message) -> None:
+    if message.chat.type != ChatType.PRIVATE:
+        await message.answer("Команда доступна только в личных сообщениях с ботом.")
+        return
+    state = get_mock_state(message.from_user.id)
+    text, markup = render_screen("admin", state)
     await message.answer(text, reply_markup=markup, parse_mode="HTML")
 
 
@@ -84,13 +94,6 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    if action == "rarity":
-        text, markup = render_screen("rarity", state)
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer()
-        return
-
     if action == "chats":
         text, markup = render_screen("chats", state)
         with contextlib.suppress(TelegramBadRequest):
@@ -104,6 +107,23 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         await callback.answer()
+        return
+
+    if action == "del_chat_prompt":
+        chat_id = int(parts[2]) if len(parts) > 2 else 101
+        text, markup = render_screen("chat_del_confirm", state, {"chat_id": chat_id})
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        await callback.answer()
+        return
+
+    if action == "do_chat_del":
+        chat_id = int(parts[2]) if len(parts) > 2 else 101
+        state.chats = [c for c in state.chats if c["id"] != chat_id]
+        text, markup = render_screen("chats", state)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        await callback.answer("Убрал из списка", show_alert=False)
         return
 
     if action == "tz":
@@ -142,6 +162,25 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         return
 
     # 2. State Toggles & Actions (#20, #126, #10)
+    if action == "cycle_rarity":
+        order = ["all", "rare", "hidden"]
+        idx = order.index(state.rarity_mode) if state.rarity_mode in order else 0
+        state.rarity_mode = order[(idx + 1) % len(order)]
+        text, markup = render_screen("home", state)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        await callback.answer(f"Публиковать достижения: {_rarity_name(state.rarity_mode)}")
+        return
+
+    if action == "cycle_secrets":
+        state.show_secrets = not state.show_secrets
+        text, markup = render_screen("home", state)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        st = "показывать" if state.show_secrets else "не показывать"
+        await callback.answer(f"Секретные достижения: {st}")
+        return
+
     if action == "pub":
         plat = parts[2] if len(parts) > 2 else "xbox"
         if plat == "xbox":
@@ -155,9 +194,8 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
                 "Steam: 🔔 Публикация вкл" if state.steam_publishes else "Steam: 🔇 Публикация выкл"
             )
         elif plat == "psn":
-            # Toggle all PSN accounts together from home screen
-            any_pub = any(a["publishes"] for a in state.psn_accounts)
-            new_val = not any_pub
+            all_pub = all(a["publishes"] for a in state.psn_accounts)
+            new_val = not all_pub
             for a in state.psn_accounts:
                 a["publishes"] = new_val
             toast = "PSN: 🔔 Публикация вкл" if new_val else "PSN: 🔇 Публикация выкл"
@@ -184,33 +222,6 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         await callback.answer(toast)
         return
 
-    if action == "toggle_links":
-        state.show_profile_links = not state.show_profile_links
-        toast = "Ссылки на профили: Вкл" if state.show_profile_links else "Ссылки на профили: Выкл"
-        text, markup = render_screen("home", state)
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer(toast)
-        return
-
-    if action == "toggle_secrets":
-        state.show_secrets = not state.show_secrets
-        toast = "Секретные ачивки: Вкл" if state.show_secrets else "Секретные ачивки: Выкл"
-        text, markup = render_screen("home", state)
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer(toast)
-        return
-
-    if action == "set_rarity":
-        mode = parts[2] if len(parts) > 2 else "all"
-        state.rarity_mode = mode
-        text, markup = render_screen("rarity", state)
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer(f"Редкость: {_rarity_name(mode)}")
-        return
-
     if action == "set_tz":
         off = int(parts[2]) if len(parts) > 2 else 180
         state.tz_offset_min = off
@@ -225,7 +236,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         chat = next((c for c in state.chats if c["id"] == chat_id), None)
         if chat:
             chat["subscribed"] = not chat["subscribed"]
-            toast = "Публикация сюда: Вкл" if chat["subscribed"] else "Публикация сюда: Выкл"
+            toast = "Подписал" if chat["subscribed"] else "Отписал"
         else:
             toast = "Чат не найден"
         text, markup = render_screen("chat_detail", state, {"chat_id": chat_id})
@@ -272,7 +283,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
             next_screen = "acc:psn"
         else:
             next_screen = "home"
-        await callback.answer("⚙️ [Заглушка]: Аккаунт отключен.", show_alert=True)
+        await callback.answer("⚙️ [Заглушка]: Аккаунт отвязан.", show_alert=True)
         text, markup = render_screen(next_screen, state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
@@ -293,9 +304,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         text, markup = render_screen("admin", state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer(
-            "Ссылки новичков: Вкл" if state.default_links else "Ссылки новичков: Выкл"
-        )
+        await callback.answer(f"Ссылки на профили: {'Да' if state.default_links else 'Нет'}")
         return
 
     if action == "set_digest":
@@ -316,9 +325,12 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         return
 
     if action == "noop":
-        await callback.answer(
-            "⚙️ [Заглушка]: Это демонстрационная ссылка на профиль.", show_alert=True
-        )
+        sub = parts[2] if len(parts) > 2 else ""
+        if sub == "sync":
+            toast = "Синхронизирую… (заглушка)"
+        else:
+            toast = "⚙️ [Заглушка]: Это демонстрационная ссылка на профиль."
+        await callback.answer(toast, show_alert=True)
         return
 
     await callback.answer()

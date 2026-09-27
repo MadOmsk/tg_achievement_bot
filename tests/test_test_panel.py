@@ -18,9 +18,9 @@ def test_render_all_screens() -> None:
         "acc:steam",
         "psn_add",
         "unlink_confirm",
-        "rarity",
         "chats",
         "chat_detail",
+        "chat_del_confirm",
         "tz",
         "admin",
         "adm_digest",
@@ -41,19 +41,43 @@ def test_toggle_publication_and_rarity_state() -> None:
 
     # Toggle xbox
     state.xbox_publishes = False
-    text, _ = render_screen("home", state)
+    text, markup = render_screen("home", state)
     assert "XBOX: 🔇 Не публикуется" in text
+    assert any("🔇 Не публикуется" in btn.text for row in markup.inline_keyboard for btn in row)
 
     # Toggle psn
     state.psn_accounts[1]["publishes"] = True
     text, _ = render_screen("acc:psn", state)
     assert "Snake (второй)" in text
 
-    # Toggle rarity
+    # Toggle rarity cyclic button on home
     state.rarity_mode = "rare"
-    text, markup = render_screen("rarity", state)
-    assert "Редкость достижений" in text
-    assert any("• Только редкие" in btn.text for row in markup.inline_keyboard for btn in row)
+    text, markup = render_screen("home", state)
+    assert "Достижения (#126):</b> редкие" in text
+    assert any(
+        "Публиковать достижения: редкие" in btn.text
+        for row in markup.inline_keyboard
+        for btn in row
+    )
+
+
+def test_chat_delete_button_visibility() -> None:
+    state = MockPanelState()
+    chat_sub = state.chats[0]
+    assert chat_sub["subscribed"] is True
+    _, markup_sub = render_screen("chat_detail", state, {"chat_id": chat_sub["id"]})
+    # Subscribed chat has no delete button
+    assert not any(
+        "Удалить из списка" in btn.text for row in markup_sub.inline_keyboard for btn in row
+    )
+
+    # Unsubscribed chat has delete button
+    chat_unsub = state.chats[1]
+    assert chat_unsub["subscribed"] is False
+    _, markup_unsub = render_screen("chat_detail", state, {"chat_id": chat_unsub["id"]})
+    assert any(
+        "Удалить из списка" in btn.text for row in markup_unsub.inline_keyboard for btn in row
+    )
 
 
 def test_add_and_unlink_psn_accounts() -> None:

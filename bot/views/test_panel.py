@@ -18,7 +18,6 @@ class MockPanelState:
     __test__ = False
     rarity_mode: str = "all"  # "all", "rare", "hidden"
     tz_offset_min: int = 180  # UTC+3
-    show_profile_links: bool = False
     show_secrets: bool = True
     xbox_publishes: bool = True
     steam_publishes: bool = True
@@ -49,16 +48,16 @@ class MockPanelState:
         ]
     )
     default_rarity: str = "all"
-    default_links: bool = False
+    default_links: bool = True  # Project-wide admin setting, default: True
     admin_chat_digest: int = 5
 
 
 def _rarity_name(mode: str) -> str:
     if mode == "rare":
-        return "Только редкие"
+        return "редкие"
     if mode == "hidden":
-        return "Скрытые (выкл)"
-    return "Все достижения"
+        return "никакие"
+    return "все"
 
 
 def _format_offset(minutes: int) -> str:
@@ -82,71 +81,96 @@ def render_screen(
             psn_pub_text.append(f"• PSN ({html_escape(a['name'])}): {st}")
         psn_summary = "\n".join(psn_pub_text)
 
+        rarity_str = _rarity_name(state.rarity_mode)
+        secrets_str = "показывать" if state.show_secrets else "не показывать"
+
         text = (
             "👤 <b>Тестовая панель (Демо-режим)</b>\n"
             "<i>Все кнопки и переходы интерактивны. Все действия выполняются заглушками "
             "без изменения рабочей базы данных.</i>\n\n"
             "<b>GamerAdmin</b>  ·  14 520 G  ·  325 ачивок  ·  184 🏆\n"
-            "🎮 XBOX: MajorNelson · В сети (Halo Infinite)\n"
-            "🎮 Steam: Gaben · В сети\n"
-            f"🎮 PSN: {len(state.psn_accounts)} аккаунта(ов)\n\n"
+            "🎮 <b>XBOX:</b> MajorNelson · В сети (Halo Infinite)\n"
+            "🎮 <b>Steam:</b> Gaben · В сети\n"
+            f"🎮 <b>PSN:</b> {len(state.psn_accounts)} аккаунта(ов)\n\n"
             "<b>Публикация (#20):</b>\n"
             f"• XBOX: {'🔔 Публикуется' if state.xbox_publishes else '🔇 Не публикуется'}\n"
             f"• Steam: {'🔔 Публикуется' if state.steam_publishes else '🔇 Не публикуется'}\n"
             f"{psn_summary}\n\n"
-            f"🎯 <b>Редкость (профиль, #126):</b> {_rarity_name(state.rarity_mode)}\n"
+            f"🎯 <b>Достижения (#126):</b> {rarity_str}\n"
+            f"👁 <b>Секретные достижения:</b> {secrets_str}\n"
             f"⏱ <b>Часовой пояс:</b> {_format_offset(state.tz_offset_min)}"
         )
 
-        any_psn_pub = any(a["publishes"] for a in state.psn_accounts)
-        psn_icon = "🔔" if any_psn_pub else "🔇"
-
-        builder.row(
-            InlineKeyboardButton(text="🎮 XBOX", callback_data="tp:acc:xbox"),
-            InlineKeyboardButton(
-                text="🔔" if state.xbox_publishes else "🔇", callback_data="tp:pub:xbox"
-            ),
-        )
+        # 1. Timezone
         builder.row(
             InlineKeyboardButton(
-                text=f"🎮 PSN ({len(state.psn_accounts)} из 3)", callback_data="tp:acc:psn"
-            ),
-            InlineKeyboardButton(text=psn_icon, callback_data="tp:pub:psn"),
-        )
-        builder.row(
-            InlineKeyboardButton(text="🎮 Steam", callback_data="tp:acc:steam"),
-            InlineKeyboardButton(
-                text="🔔" if state.steam_publishes else "🔇", callback_data="tp:pub:steam"
-            ),
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=f"⏱ Часовой пояс: {_format_offset(state.tz_offset_min)}",
+                text=f"⏱ Часовой пояс: {_format_offset(state.tz_offset_min)} ▸",
                 callback_data="tp:tz",
             )
         )
-        builder.row(
-            InlineKeyboardButton(text=f"💬 Мои чаты ({len(state.chats)})", callback_data="tp:chats")
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=f"🎯 Редкость: {_rarity_name(state.rarity_mode)}",
-                callback_data="tp:rarity",
-            )
-        )
+
+        # 2. My chats
         builder.row(
             InlineKeyboardButton(
-                text=f"🔗 Ссылки на профили: {'✅ Вкл' if state.show_profile_links else '⚪ Выкл'}",
-                callback_data="tp:toggle_links",
+                text=f"💬 Мои чаты ({len(state.chats)}) ▸",
+                callback_data="tp:chats",
             )
         )
+
+        # 3. Rarity cycle button
         builder.row(
             InlineKeyboardButton(
-                text=f"👁 Секретные ачивки: {'✅ Вкл' if state.show_secrets else '⚪ Выкл'}",
-                callback_data="tp:toggle_secrets",
+                text=f"Публиковать достижения: {rarity_str}",
+                callback_data="tp:cycle_rarity",
             )
         )
-        builder.row(InlineKeyboardButton(text="⚙️ Меню администратора", callback_data="tp:admin"))
+
+        # 4. Secret achievements toggle
+        builder.row(
+            InlineKeyboardButton(
+                text=f"Секретные достижения: {secrets_str}",
+                callback_data="tp:cycle_secrets",
+            )
+        )
+
+        # 5. Platforms (old main screen order: Xbox -> PSN -> Steam)
+        builder.row(
+            InlineKeyboardButton(text="🟢 XBOX ▸", callback_data="tp:acc:xbox"),
+            InlineKeyboardButton(
+                text="🔔 Публикуется" if state.xbox_publishes else "🔇 Не публикуется",
+                callback_data="tp:pub:xbox",
+            ),
+        )
+
+        any_psn_pub = any(a["publishes"] for a in state.psn_accounts)
+        all_psn_pub = (
+            all(a["publishes"] for a in state.psn_accounts) if state.psn_accounts else False
+        )
+        if all_psn_pub:
+            psn_pub_label = "🔔 Публикуется"
+        elif any_psn_pub:
+            psn_pub_label = "🔔 Частично"
+        else:
+            psn_pub_label = "🔇 Не публикуется"
+
+        psn_count_label = (
+            f"🔵 PSN ({len(state.psn_accounts)}) ▸" if len(state.psn_accounts) > 1 else "🔵 PSN ▸"
+        )
+        builder.row(
+            InlineKeyboardButton(text=psn_count_label, callback_data="tp:acc:psn"),
+            InlineKeyboardButton(text=psn_pub_label, callback_data="tp:pub:psn"),
+        )
+
+        builder.row(
+            InlineKeyboardButton(text="⚪ Steam ▸", callback_data="tp:acc:steam"),
+            InlineKeyboardButton(
+                text="🔔 Публикуется" if state.steam_publishes else "🔇 Не публикуется",
+                callback_data="tp:pub:steam",
+            ),
+        )
+
+        # 6. Actions
+        builder.row(InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="tp:noop:sync"))
         builder.row(
             InlineKeyboardButton(text="🔄 Сбросить состояние заглушек", callback_data="tp:reset")
         )
@@ -184,7 +208,7 @@ def render_screen(
                     callback_data=f"tp:toggle_psn_pub:{a['id']}",
                 ),
                 InlineKeyboardButton(
-                    text="🔌 Отключить", callback_data=f"tp:unlink_confirm:psn:{a['id']}"
+                    text="🔌 Отвязать", callback_data=f"tp:unlink_confirm:psn:{a['id']}"
                 ),
             )
 
@@ -195,7 +219,7 @@ def render_screen(
                     callback_data="tp:psn_add",
                 )
             )
-        builder.row(InlineKeyboardButton(text="◀️ Назад в панель", callback_data="tp:home"))
+        builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="tp:home"))
         return "\n".join(lines), builder.as_markup()
 
     if screen == "acc:xbox":
@@ -215,9 +239,9 @@ def render_screen(
             )
         )
         builder.row(
-            InlineKeyboardButton(text="🔌 Отключить", callback_data="tp:unlink_confirm:xbox:0")
+            InlineKeyboardButton(text="🔌 Отвязать", callback_data="tp:unlink_confirm:xbox:0")
         )
-        builder.row(InlineKeyboardButton(text="◀️ Назад в панель", callback_data="tp:home"))
+        builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="tp:home"))
         return text, builder.as_markup()
 
     if screen == "acc:steam":
@@ -235,9 +259,9 @@ def render_screen(
             )
         )
         builder.row(
-            InlineKeyboardButton(text="🔌 Отключить", callback_data="tp:unlink_confirm:steam:0")
+            InlineKeyboardButton(text="🔌 Отвязать", callback_data="tp:unlink_confirm:steam:0")
         )
-        builder.row(InlineKeyboardButton(text="◀️ Назад в панель", callback_data="tp:home"))
+        builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="tp:home"))
         return text, builder.as_markup()
 
     if screen == "psn_add":
@@ -253,7 +277,7 @@ def render_screen(
                 text="✅ Симулировать подключение 'Hunter3'", callback_data="tp:do_psn_add"
             )
         )
-        builder.row(InlineKeyboardButton(text="◀️ Отмена", callback_data="tp:acc:psn"))
+        builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="tp:acc:psn"))
         return text, builder.as_markup()
 
     if screen == "unlink_confirm":
@@ -283,26 +307,6 @@ def render_screen(
         builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data=back_cb))
         return text, builder.as_markup()
 
-    if screen == "rarity":
-        text = (
-            "🎯 <b>Редкость достижений (#126)</b>\n\n"
-            "Настройка задаётся <b>в профиле пользователя</b> и действует во всех чатах:\n\n"
-            "• <b>Все</b> — публиковать каждое открытое достижение\n"
-            "• <b>Редкие</b> — публиковать только достижения не выше порога группы\n"
-            "• <b>Скрытые</b> — временно скрыть публикации во всех чатах"
-        )
-        for val, label in [
-            ("all", "Все достижения"),
-            ("rare", "Только редкие"),
-            ("hidden", "Скрытые (выкл)"),
-        ]:
-            mark = "• " if state.rarity_mode == val else ""
-            builder.row(
-                InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"tp:set_rarity:{val}")
-            )
-        builder.row(InlineKeyboardButton(text="◀️ Назад в панель", callback_data="tp:home"))
-        return text, builder.as_markup()
-
     if screen == "chats":
         text = (
             "💬 <b>Мои чаты</b>\n\n"
@@ -313,26 +317,61 @@ def render_screen(
             mark = "✅" if c["subscribed"] else "⚪"
             builder.row(
                 InlineKeyboardButton(
-                    text=f"{mark} {c['title']}", callback_data=f"tp:chat:{c['id']}"
+                    text=f"{mark} {c['title']} ▸", callback_data=f"tp:chat:{c['id']}"
                 )
             )
-        builder.row(InlineKeyboardButton(text="◀️ Назад в панель", callback_data="tp:home"))
+        builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="tp:home"))
         return text, builder.as_markup()
 
     if screen == "chat_detail":
         chat_id = extra.get("chat_id", 101)
-        chat = next((c for c in state.chats if c["id"] == chat_id), state.chats[0])
+        chat = next((c for c in state.chats if c["id"] == chat_id), None)
+        if not chat and state.chats:
+            chat = state.chats[0]
+        if not chat:
+            return "Чаты отсутствуют", builder.as_markup()
+
+        pub_text = "✅ включена" if chat["subscribed"] else "⏸ выключена"
         text = (
             f"💬 <b>Чат: {html_escape(chat['title'])}</b>\n\n"
-            f"Публикация сюда: <b>{'Включена ✅' if chat['subscribed'] else 'Выключена ⚪'}</b>\n"
+            f"Публикация: <b>{pub_text}</b>\n"
             f"Редкость: из вашего профиля (<b>{_rarity_name(state.rarity_mode)}</b>)\n"
             f"Порог дайджеста группы (#126): <b>{chat['digest']}</b> ачивок"
         )
-        toggle_text = "🔕 Не публиковать сюда" if chat["subscribed"] else "🔔 Публиковать сюда"
-        builder.row(
-            InlineKeyboardButton(text=toggle_text, callback_data=f"tp:toggle_sub:{chat['id']}")
+        if chat["subscribed"]:
+            builder.row(
+                InlineKeyboardButton(
+                    text="🔕 Отписаться", callback_data=f"tp:toggle_sub:{chat['id']}"
+                )
+            )
+        else:
+            builder.row(
+                InlineKeyboardButton(
+                    text="🔔 Подписаться", callback_data=f"tp:toggle_sub:{chat['id']}"
+                )
+            )
+            builder.row(
+                InlineKeyboardButton(
+                    text="🗑️ Удалить из списка", callback_data=f"tp:del_chat_prompt:{chat['id']}"
+                )
+            )
+        builder.row(InlineKeyboardButton(text="‹ К списку чатов", callback_data="tp:chats"))
+        return text, builder.as_markup()
+
+    if screen == "chat_del_confirm":
+        chat_id = extra.get("chat_id", 101)
+        chat = next((c for c in state.chats if c["id"] == chat_id), None)
+        title = chat["title"] if chat else f"ID {chat_id}"
+        text = (
+            f"🗑️ <b>Удаление чата</b>\n\n"
+            f"Убрать «{html_escape(title)}» из списка? "
+            "Как будто вас там никогда не было — не бан, снова окажетесь в списке, "
+            "если подпишетесь или напишете туда."
         )
-        builder.row(InlineKeyboardButton(text="◀️ К списку чатов", callback_data="tp:chats"))
+        builder.row(
+            InlineKeyboardButton(text="⚠️ Да, удалить", callback_data=f"tp:do_chat_del:{chat_id}")
+        )
+        builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data=f"tp:chat:{chat_id}"))
         return text, builder.as_markup()
 
     if screen == "tz":
@@ -355,18 +394,19 @@ def render_screen(
                 row_buttons = []
         if row_buttons:
             builder.row(*row_buttons)
-        builder.row(InlineKeyboardButton(text="◀️ Назад в панель", callback_data="tp:home"))
+        builder.row(InlineKeyboardButton(text="‹ Назад", callback_data="tp:home"))
         return text, builder.as_markup()
 
     if screen == "admin":
         text = (
-            "⚙️ <b>Панель администратора (Новые функции)</b>\n\n"
+            "⚙️ <b>Панель администратора (Демо-режим /admin)</b>\n\n"
             "1. <b>Новые пользователи (#126):</b>\n"
-            f"• Редкость по умолчанию: <b>{_rarity_name(state.default_rarity)}</b>\n"
-            f"• Ссылки на профили: <b>{'Вкл' if state.default_links else 'Выкл'}</b>\n\n"
-            "2. <b>Настройки групп (#126):</b>\n"
+            f"• Редкость по умолчанию: <b>{_rarity_name(state.default_rarity)}</b>\n\n"
+            "2. <b>Глобальные настройки проекта:</b>\n"
+            f"• Ссылки на профили: <b>{'✅ Да' if state.default_links else '⚪ Нет'}</b>\n\n"
+            "3. <b>Настройки групп (#126):</b>\n"
             f"• Порог группировки в дайджест: <b>{state.admin_chat_digest} ачивок</b>\n\n"
-            "3. <b>Мульти-аккаунты (#10, #20):</b>\n"
+            "4. <b>Мульти-аккаунты (#10, #20):</b>\n"
             "• В карточках пользователей отображаются все привязанные аккаунты PSN (1..3) "
             "и метка 🔇 Заглушен, если юзер отключил публикации."
         )
@@ -378,7 +418,7 @@ def render_screen(
         )
         builder.row(
             InlineKeyboardButton(
-                text=f"🔗 Ссылки новичков: {'✅ Вкл' if state.default_links else '⚪ Выкл'}",
+                text=f"🔗 Ссылки на профили: {'✅ Да' if state.default_links else '⚪ Нет'}",
                 callback_data="tp:adm_toggle_links",
             )
         )
@@ -390,12 +430,12 @@ def render_screen(
         )
         builder.row(
             InlineKeyboardButton(
-                text="👤 Посмотреть тестовую карточку юзера в админке",
+                text="👤 Тестовая карточка юзера в админке",
                 callback_data="tp:adm_usercard",
             )
         )
         builder.row(
-            InlineKeyboardButton(text="◀️ В пользовательскую панель", callback_data="tp:home")
+            InlineKeyboardButton(text="🔄 Сбросить настройки админки", callback_data="tp:reset")
         )
         return text, builder.as_markup()
 
@@ -419,7 +459,7 @@ def render_screen(
                 row_buttons = []
         if row_buttons:
             builder.row(*row_buttons)
-        builder.row(InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"))
+        builder.row(InlineKeyboardButton(text="‹ Назад в админку", callback_data="tp:admin"))
         return text, builder.as_markup()
 
     if screen == "adm_usercard":
@@ -451,7 +491,7 @@ def render_screen(
             "<i>Все аккаунты PSN (1..3) видны списком, а отключенные тумблером "
             "помечаются меткой 'Публикация отключена'.</i>"
         )
-        builder.row(InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"))
+        builder.row(InlineKeyboardButton(text="‹ Назад в админку", callback_data="tp:admin"))
         return text, builder.as_markup()
 
     return "Неизвестный экран", builder.as_markup()
