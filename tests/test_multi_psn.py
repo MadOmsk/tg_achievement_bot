@@ -186,4 +186,3 @@ async def test_checklist_combines_and_deduplicates_across_accounts(repo: Repo) -
     assert not t0.is_unlocked and t0.unlocked_at is None
     assert t1.is_unlocked and t1.unlocked_at == "2026-09-20T12:00:00+00:00"
     assert t2.is_unlocked and t2.unlocked_at == "2026-09-22T12:00:00+00:00"
-

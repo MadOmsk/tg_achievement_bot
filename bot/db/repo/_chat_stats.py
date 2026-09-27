@@ -20,8 +20,6 @@ from bot.db.repo._sql import (
     active_account,
     earned_at,
     earned_since,
-    pick_name,
-    publishes,
     rarity,
     rarity_cache_join,
 )
