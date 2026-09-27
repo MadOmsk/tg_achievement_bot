@@ -27,6 +27,7 @@ from bot.handlers import hltb as hltb_handlers
 from bot.handlers import panel as panel_handlers
 from bot.handlers import psn as psn_handlers
 from bot.handlers import steam as steam_handlers
+from bot.handlers import test_panel as test_panel_handlers
 from bot.handlers.chat import UsernameMiddleware
 from bot.i18n import (
     AVAILABLE_LOCALES,
@@ -322,6 +323,7 @@ async def run(settings: Settings) -> None:
     dispatcher.include_router(hltb_handlers.router)
     dispatcher.include_router(steam_handlers.router)
     dispatcher.include_router(psn_handlers.router)
+    dispatcher.include_router(test_panel_handlers.router)
 
     async def startup_catch_up() -> None:
         """Pick up what happened while the bot was down (SPEC 5.8).
