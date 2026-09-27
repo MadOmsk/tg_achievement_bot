@@ -73,13 +73,13 @@ panel-login-xbox-row = Вход XBOX:   { $status }
 # only ever existed for the Xbox-gated early-return branch that used them,
 # now removed, so this name freed up.
 panel-login-steam-row = Вход Steam:  { $name }  ·  { $status }
-panel-login-psn-row = Вход PSN:    { $name }  ·  { $status }
+panel-login-psn-row = Вход { $label }:   { $name }  ·  { $status }
 # Steam/PSN's achievement/trophy visibility, as of the last actual check
 # (#5) — connect time, or any backfill/resync since. Xbox has no
 # equivalent row here: its own token status (panel-login-xbox-row above)
 # already answers a similar "can I actually read this account" question.
 panel-visibility-visible = ✅ ачивки видны
-panel-visibility-hidden = ⚠️ ачивки скрыты
+panel-visibility-hidden = ⚠️ требуется изменить настройки приватности
 panel-visibility-unknown = ❓ не проверено
 panel-publication-row = Публикация:  { $status }
 panel-rarity-row = Ачивки:      { $mode }
@@ -89,7 +89,9 @@ panel-rarity-prompt =
     «Только редкие» считаются по порогу редкости каждого чата.
 panel-now-playing-row = Сейчас:      { $playing }
 panel-timezone-row = Часовой пояс: { $offset }
-panel-reconnect-hint = Доступ к XBOX истёк — жми «Подключить заново» ниже.
+panel-reconnect-hint = ⚠️ Доступ к XBOX истёк — необходимо выполнить повторный вход
+panel-steam-privacy-hint = ⚠️ Ваши достижения Steam скрыты настройками приватности — необходимо изменить настройки приватности Steam
+panel-psn-privacy-hint = ⚠️ Ваши призы PSN ({ $name }) скрыты настройками приватности — необходимо изменить настройки приватности PlayStation
 panel-no-presence-data = нет данных
 panel-offline = не в сети ({ $ago })
 panel-online-idle = в сети, не играет

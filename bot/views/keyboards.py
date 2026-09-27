@@ -363,21 +363,6 @@ def panel_keyboard(
                 callback_data="panel:rarity",
             )
         ],
-        # Off by default (Follow-up 2026-09-06) — gates the clickable link
-        # /stats and /who put in this person's nickname; the panel's own
-        # "👤 Профиль" buttons below stay visible regardless (this screen is
-        # only ever shown to its owner).
-        [
-            InlineKeyboardButton(
-                text=i18n.get(
-                    "kb-profile-visible",
-                    visible=i18n.get(
-                        "kb-profile-visible-yes" if show_profile_links else "kb-profile-visible-no"
-                    ),
-                ),
-                callback_data="panel:linkstoggle",
-            )
-        ],
         # Personal, and only ever applies to DMs — a group follows its own
         # chat_settings.locale, which no individual member can move (#48).
         [

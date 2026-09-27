@@ -18,7 +18,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 class MockPanelState:
     __test__ = False
     rarity_mode: str = "all"  # "all", "rare", "hidden"
-    tz_offset_min: int = 180  # UTC+3
+    tz_offset_min: int = 120  # UTC+2
     show_secrets: bool = True
     xbox_publishes: bool = True
     steam_publishes: bool = True
@@ -27,26 +27,26 @@ class MockPanelState:
         default_factory=lambda: [
             {
                 "id": "1",
-                "name": "Kratos",
+                "name": "SuperOmsk",
                 "publishes": True,
-                "level": 45,
-                "trophies": 120,
-                "platinum": 5,
+                "level": 6,
+                "trophies": 19,
+                "platinum": 1,
             },
             {
                 "id": "2",
-                "name": "Snake",
-                "publishes": False,
-                "level": 28,
-                "trophies": 64,
-                "platinum": 1,
+                "name": "Omsk2",
+                "publishes": True,
+                "level": 12,
+                "trophies": 45,
+                "platinum": 2,
             },
         ]
     )
     chats: list[dict] = field(
         default_factory=lambda: [
-            {"id": 101, "title": "Xbox Community", "subscribed": True, "digest": 5},
-            {"id": 102, "title": "PlayStation Club", "subscribed": False, "digest": 3},
+            {"id": 101, "title": "Dev Igor and Igorr", "subscribed": True, "digest": 5},
+            {"id": 102, "title": "test chat", "subscribed": False, "digest": 3},
         ]
     )
     default_rarity: str = "all"
@@ -126,66 +126,76 @@ def render_screen(
     # =========================================================================
     if screen == "home":
         is_multi_psn = len(state.psn_accounts) > 1
-        psn_pub_text = []
+        lines = [
+            "👤 Igor",
+            "🟢 XBOX: Mad Omsk  ·  7 478 достижений  ·  9 🌀  ·  152 604 G",
+        ]
+        if state.psn_accounts:
+            total_trophies = sum(a["trophies"] for a in state.psn_accounts)
+            total_plat = sum(a["platinum"] for a in state.psn_accounts)
+            first_name = state.psn_accounts[0]["name"]
+            extra_cnt = len(state.psn_accounts) - 1
+            name_str = f"{first_name} (+{extra_cnt})" if is_multi_psn else first_name
+            lvl = state.psn_accounts[0]["level"]
+            lines.append(
+                f"🔵 PlayStation: {name_str}  ·  {total_trophies} трофеев  ·  "
+                f"{total_plat} 💠  ·  уровень {lvl}"
+            )
+        lines.append("⚫️ Steam: Mad Omsk  ·  1 747 достижений  ·  6 👾")
+        lines.append("")
+        lines.append("Вход XBOX:   ⚠️ требуется повторный вход")
+        lines.append(
+            "Вход Steam:  Mad Omsk  ·  "
+            "⚠️ требуется изменить настройки приватности  ·  4 дн назад"
+        )
         for idx, a in enumerate(state.psn_accounts, 1):
             prefix = f"PSN{idx}" if is_multi_psn else "PSN"
-            st = "🔔 Публикуется" if a["publishes"] else "🔇 Не публикуется"
-            psn_pub_text.append(f"• {prefix} ({html_escape(a['name'])}): {st}")
-        psn_summary = "\n".join(psn_pub_text)
+            name_esc = html_escape(a["name"])
+            lines.append(f"Вход {prefix}:  {name_esc}  ·  ✅ ачивки видны  ·  4 дн назад")
 
-        rarity_val = _rarity_title(state.rarity_mode)
-        secrets_val = "Показывать" if state.show_secrets else "Не показывать"
-
-        text = (
-            "👤 <b>Тестовая панель пользователя (/panel)</b>\n"
-            "<i>Все кнопки и переходы интерактивны. Все действия выполняются заглушками "
-            "без изменения рабочей базы данных.</i>\n\n"
-            "<b>GamerAdmin</b>  ·  14 520 G  ·  325 ачивок  ·  184 🏆\n"
-            "🎮 <b>XBOX:</b> MajorNelson · В сети (Halo Infinite)\n"
-            "🎮 <b>Steam:</b> Gaben · В сети\n"
-            f"🎮 <b>PSN:</b> {len(state.psn_accounts)} аккаунта(ов)\n\n"
-            "<b>Публикация (#20):</b>\n"
-            f"• XBOX: {'🔔 Публикуется' if state.xbox_publishes else '🔇 Не публикуется'}\n"
-            f"• Steam: {'🔔 Публикуется' if state.steam_publishes else '🔇 Не публикуется'}\n"
-            f"{psn_summary}\n\n"
-            f"🎯 <b>Достижения (#126):</b> <b>{rarity_val}</b>\n"
-            f"👁 <b>Секретные достижения:</b> <b>{secrets_val}</b>\n"
-            f"⏱ <b>Часовой пояс:</b> {_format_offset(state.tz_offset_min)}"
+        pub_chats = []
+        for c in state.chats:
+            icon = "✅" if c["subscribed"] else "🔇"
+            pub_chats.append(f"{icon} «{html_escape(c['title'])}»")
+        pub_str = ", ".join(pub_chats) if pub_chats else "— не подписан ни в одном чате"
+        lines.append(f"Публикация:  {pub_str}")
+        lines.append(f"Часовой пояс: {_format_offset(state.tz_offset_min)}")
+        lines.append("")
+        lines.append("⚠️ Доступ к XBOX истёк — необходимо выполнить повторный вход")
+        lines.append(
+            "⚠️ Ваши достижения Steam скрыты настройками приватности — "
+            "необходимо изменить настройки приватности Steam"
         )
 
-        # 1. Timezone
+        text = "\n".join(lines)
+
+        # Keyboard matching real panel_keyboard (#10, #20, #126)
         builder.row(
             InlineKeyboardButton(
                 text=f"⏱ Часовой пояс: {_format_offset(state.tz_offset_min)} ▸",
                 callback_data="tp:tz",
             )
         )
-
-        # 2. My chats
         builder.row(
             InlineKeyboardButton(
                 text=f"💬 Мои чаты ({len(state.chats)}) ▸",
                 callback_data="tp:chats",
             )
         )
-
-        # 3. Rarity cyclic button
         builder.row(
             InlineKeyboardButton(
-                text=f"🎯 Публиковать достижения: {rarity_val}",
+                text=f"🎯 Публиковать достижения: {_rarity_title(state.rarity_mode)}",
                 callback_data="tp:cycle_rarity",
             )
         )
-
-        # 4. Secret achievements cyclic toggle
         builder.row(
             InlineKeyboardButton(
-                text=f"👁 Секретные достижения: {secrets_val}",
-                callback_data="tp:cycle_secrets",
+                text="🌐 Язык: Русский ▸",
+                callback_data="tp:noop:locale",
             )
         )
 
-        # 5. Platforms (old main screen order: Xbox -> PSN -> Steam)
+        # Platforms in fixed order (Xbox -> PSN -> Steam)
         builder.row(
             InlineKeyboardButton(text="🟢 XBOX ▸", callback_data="tp:acc:xbox"),
             InlineKeyboardButton(
@@ -206,7 +216,7 @@ def render_screen(
             psn_pub_label = "🔇 Не публикуется"
 
         psn_count_label = (
-            f"🔵 PSN ({len(state.psn_accounts)}) ▸" if len(state.psn_accounts) > 1 else "🔵 PSN ▸"
+            f"🔵 PSN ({len(state.psn_accounts)}) ▸" if is_multi_psn else "🔵 PSN ▸"
         )
         builder.row(
             InlineKeyboardButton(text=psn_count_label, callback_data="tp:acc:psn"),
@@ -214,15 +224,19 @@ def render_screen(
         )
 
         builder.row(
-            InlineKeyboardButton(text="⚪ Steam ▸", callback_data="tp:acc:steam"),
+            InlineKeyboardButton(text="⚫️ Steam ▸", callback_data="tp:acc:steam"),
             InlineKeyboardButton(
                 text="🔔 Публикуется" if state.steam_publishes else "🔇 Не публикуется",
                 callback_data="tp:pub:steam",
             ),
         )
 
-        # 6. Actions
-        builder.row(InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="tp:noop:sync"))
+        builder.row(
+            InlineKeyboardButton(text="🗑 Удалить аккаунт", callback_data="tp:noop:del_acc")
+        )
+        builder.row(
+            InlineKeyboardButton(text="🔄 Синхронизировать", callback_data="tp:noop:sync")
+        )
         builder.row(
             InlineKeyboardButton(text="🧭 Каталог экранов", callback_data="tp:showcase"),
             InlineKeyboardButton(text="🔄 Сброс заглушек", callback_data="tp:reset"),
@@ -235,23 +249,18 @@ def render_screen(
     if screen == "acc:psn":
         is_multi_psn = len(state.psn_accounts) > 1
         lines = [
-            f"🎮 <b>PlayStation Network ({len(state.psn_accounts)} из 3 аккаунтов) (#10)</b>",
-            "<i>Управление несколькими аккаунтами PSN для одного человека.</i>\n",
+            f"🎮 <b>PlayStation Network ({len(state.psn_accounts)} из 3 аккаунтов)</b>\n"
         ]
         for idx, a in enumerate(state.psn_accounts, 1):
             prefix = f"PSN{idx}" if is_multi_psn else "PSN"
+            t_plat = a["platinum"]
             lines.append(
-                f"<b>{prefix}: {html_escape(a['name'])}</b> · {a['level']} ур. · {a['trophies']} 🏆"
+                f"<b>{prefix}: {html_escape(a['name'])}</b> · {a['level']} ур. · "
+                f"{a['trophies']} 🏆 ({t_plat} 💠)"
             )
-            lines.append("Статус: Открытый профиль")
+            lines.append("Видимость: открытый профиль")
             lines.append(
-                f"Публикация: {'🔔 Публикуется' if a['publishes'] else '🔇 Заглушен (#20)'}\n"
-            )
-
-        if is_multi_psn:
-            lines.append(
-                "<i>Статистика в профиле суммируется, "
-                "а одинаковые трофеи в каталоге игр дедуплицируются.</i>"
+                f"Публикация: {'🔔 Публикуется' if a['publishes'] else '🔇 Заглушен'}\n"
             )
 
         for idx, a in enumerate(state.psn_accounts, 1):
@@ -282,13 +291,13 @@ def render_screen(
             InlineKeyboardButton(text="◀️ Назад в панель", callback_data="tp:home"),
             InlineKeyboardButton(text="🧭 В каталог", callback_data="tp:showcase"),
         )
-        return "\n".join(lines), builder.as_markup()
+        return "\n".join(lines).strip(), builder.as_markup()
 
     if screen == "acc:xbox":
         text = (
-            "🎮 <b>XBOX</b>\n\n"
-            "MajorNelson  ·  14 520 G  ·  325 ачивок\n"
-            "Вход: активен\n"
+            "🟢 <b>XBOX</b>\n\n"
+            "MajorNelson  ·  152 604 G  ·  7 478 достижений  ·  9 🌀\n"
+            "Вход: активен, проверен 4 мин назад\n"
             f"Публикация: {'🔔 Публикуется' if state.xbox_publishes else '🔇 Не публикуется'}"
         )
         builder.row(
@@ -311,12 +320,14 @@ def render_screen(
 
     if screen == "acc:steam":
         text = (
-            "🎮 <b>Steam</b>\n\n"
-            "Gaben  ·  89 ачивок  ·  4 🏆\n"
-            "Видимость: Открытый профиль\n"
+            "⚫️ <b>Steam</b>\n\n"
+            "Mad Omsk  ·  1 747 достижений  ·  6 👾\n"
+            "Видимость: ⚠️ требуется изменить настройки приватности  ·  4 дн назад\n"
             f"Публикация: {'🔔 Публикуется' if state.steam_publishes else '🔇 Не публикуется'}"
         )
-        builder.row(InlineKeyboardButton(text="👤 Профиль: Gaben", callback_data="tp:noop:profile"))
+        builder.row(
+            InlineKeyboardButton(text="👤 Профиль: Mad Omsk", callback_data="tp:noop:profile")
+        )
         builder.row(
             InlineKeyboardButton(
                 text="🔔 Публикуется" if state.steam_publishes else "🔇 Не публикуется",
@@ -364,7 +375,7 @@ def render_screen(
         elif plat == "xbox":
             name = "XBOX 'MajorNelson'"
         elif plat == "steam":
-            name = "Steam 'Gaben'"
+            name = "Steam 'Mad Omsk'"
 
         text = (
             "🔌 <b>Отключение платформы</b>\n\n"
@@ -434,7 +445,10 @@ def render_screen(
                     text="🗑️ Удалить из списка", callback_data=f"tp:del_chat_prompt:{chat['id']}"
                 )
             )
-        builder.row(InlineKeyboardButton(text="◀️ К списку чатов", callback_data="tp:chats"))
+        builder.row(
+            InlineKeyboardButton(text="◀️ К списку чатов", callback_data="tp:chats"),
+            InlineKeyboardButton(text="🧭 В каталог", callback_data="tp:showcase"),
+        )
         return text, builder.as_markup()
 
     if screen == "chat_del_confirm":
@@ -484,16 +498,50 @@ def render_screen(
     # =========================================================================
     if screen == "admin":
         text = (
-            "⚙️ <b>Панель администратора (/admin)</b>\n\n"
-            "1. <b>Новые пользователи (#126):</b>\n"
-            f"• Редкость по умолчанию: <b>{_rarity_title(state.default_rarity)}</b>\n\n"
-            "2. <b>Глобальные настройки проекта:</b>\n"
-            f"• Ссылки на профили для всех: <b>{'Да' if state.default_links else 'Нет'}</b>\n\n"
-            "3. <b>Настройки групп (#126):</b>\n"
-            f"• Порог группировки в дайджест: <b>{state.admin_chat_digest} ачивок</b>\n\n"
-            "4. <b>Мульти-аккаунты (#10, #20):</b>\n"
-            "• В карточках пользователей отображаются все привязанные аккаунты PSN (1..3) "
-            "и метка 🔇 Заглушен, если юзер отключил публикации."
+            "⚙️ Администрирование  ·  обновлено 14:00\n\n"
+            "Пользователей: 4 (исключено: 0)\n"
+            "  XBOX:  2 (вход активен: 1, без входа: 1)\n"
+            "  PSN:   3\n"
+            "  Steam: 2\n"
+            "Чатов:          2\n"
+            "API XBOX (достижения):  12/30 за 5 мин\n"
+            "API Steam (достижения): нет данных\n"
+            "Ключ PSN:   ✅ жив, проверен 4 мин назад\n"
+            "Ключ Steam: ✅ жив, проверен 4 мин назад\n"
+            "Запросов к PSN за сутки: 18"
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="👤 Новые пользователи ▸", callback_data="tp:adm_newusers"
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="⚙️ Глобальные настройки ▸", callback_data="tp:adm_limits"
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(text="Пользователи ▸", callback_data="tp:adm_usercard")
+        )
+        builder.row(
+            InlineKeyboardButton(text="Чаты ▸", callback_data="tp:adm_chats")
+        )
+        builder.row(
+            InlineKeyboardButton(text="🔑 Ключи платформ ▸", callback_data="tp:adm_keys")
+        )
+        builder.row(
+            InlineKeyboardButton(text="🧭 В каталог экранов", callback_data="tp:showcase"),
+            InlineKeyboardButton(text="🔄 Сброс настроек", callback_data="tp:reset"),
+        )
+        return text, builder.as_markup()
+
+    if screen == "adm_newusers":
+        text = (
+            "👤 <b>Настройки новых пользователей</b>\n\n"
+            "Эти настройки применяются только в момент, когда новый пользователь впервые "
+            "подписывается на бота.\n\n"
+            f"• Редкость по умолчанию: <b>{_rarity_title(state.default_rarity)}</b>\n"
+            f"• Ссылки на профили для всех: <b>{'Да' if state.default_links else 'Нет'}</b>"
         )
         builder.row(
             InlineKeyboardButton(
@@ -508,20 +556,26 @@ def render_screen(
             )
         )
         builder.row(
+            InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"),
+            InlineKeyboardButton(text="🧭 В каталог", callback_data="tp:showcase"),
+        )
+        return text, builder.as_markup()
+
+    if screen == "adm_limits":
+        text = (
+            "⚙️ <b>Глобальные настройки</b>\n\n"
+            "Числовые лимиты и пороги группировки для всего бота.\n\n"
+            f"• Порог дайджеста чата: <b>{state.admin_chat_digest}</b> ачивок"
+        )
+        builder.row(
             InlineKeyboardButton(
                 text=f"📊 Порог дайджеста чата: {state.admin_chat_digest}",
                 callback_data="tp:adm_digest",
             )
         )
         builder.row(
-            InlineKeyboardButton(
-                text="👤 Тестовая карточка юзера в админке",
-                callback_data="tp:adm_usercard",
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(text="🧭 В каталог экранов", callback_data="tp:showcase"),
-            InlineKeyboardButton(text="🔄 Сброс настроек", callback_data="tp:reset"),
+            InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"),
+            InlineKeyboardButton(text="🧭 В каталог", callback_data="tp:showcase"),
         )
         return text, builder.as_markup()
 
@@ -545,7 +599,10 @@ def render_screen(
                 row_buttons = []
         if row_buttons:
             builder.row(*row_buttons)
-        builder.row(InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"))
+        builder.row(
+            InlineKeyboardButton(text="◀️ Назад в настройки", callback_data="tp:adm_limits"),
+            InlineKeyboardButton(text="🧭 В каталог", callback_data="tp:showcase"),
+        )
         return text, builder.as_markup()
 
     if screen == "adm_usercard":
@@ -553,33 +610,76 @@ def render_screen(
         psn_blocks = []
         for idx, a in enumerate(state.psn_accounts, 1):
             prefix = f"PSN{idx}" if is_multi_psn else "PSN"
-            muted = "" if a["publishes"] else "\n   🔇 <i>Публикация выключена (#20)</i>"
+            muted = "" if a["publishes"] else "\n   🔇 <i>Публикация отключена</i>"
             name = html_escape(a["name"])
             trophies = a["trophies"]
             plat = a["platinum"]
-            psn_blocks.append(f"🎮 <b>{prefix}:</b> {name} · {trophies} 🏆 ({plat} 🏆){muted}")
-        psn_text = "\n".join(psn_blocks)
+            psn_blocks.append(
+                f"🔵 <b>PlayStation: {name}</b> ({prefix})\n"
+                f"   psnid: 123456789012345678{a['id']}\n"
+                "   Видимость: открытый профиль\n"
+                f"   {trophies} трофеев  ·  {plat} 💠  ·  уровень {a['level']}\n"
+                "   В сети: играет [<i>PS5</i>] — God of War Ragnarök"
+                f"{muted}"
+            )
+        psn_text = "\n\n".join(psn_blocks)
 
         xb_muted = (
-            "🔇 <i>Публикация отключена</i>" if not state.xbox_publishes else "🔔 Публикуется"
+            "\n   🔇 <i>Публикация отключена</i>" if not state.xbox_publishes else ""
         )
         st_muted = (
-            "🔇 <i>Публикация отключена</i>" if not state.steam_publishes else "🔔 Публикуется"
+            "\n   🔇 <i>Публикация отключена</i>" if not state.steam_publishes else ""
         )
 
         text = (
-            "👤 <b>Карточка пользователя в /admin (#10, #20)</b>\n\n"
-            "Пользователь: <b>@GamerAdmin (Igor)</b>  [ID: 188022193]\n"
-            f"Глобальная редкость (#126): <b>{_rarity_title(state.rarity_mode)}</b>\n\n"
-            "🎮 <b>XBOX:</b> MajorNelson  ·  14 520 G  ·  325 ачивок\n"
-            f"   {xb_muted}\n"
-            "🎮 <b>Steam:</b> Gaben  ·  89 ачивок\n"
-            f"   {st_muted}\n"
+            "👤 <b>Пользователь: @GamerAdmin (Igor)</b>  [ID: 188022193]\n\n"
+            "🟢 <b>XBOX: MajorNelson</b>\n"
+            "   xuid: 2533274812345678\n"
+            "   Вход: активен, проверен 4 мин назад\n"
+            "   14 520 G  ·  325 достижений  ·  сегодня: 4\n"
+            "   В сети: играет [<i>Xbox Series X</i>] — Halo Infinite"
+            f"{xb_muted}\n\n"
+            "⚫ <b>Steam: Gaben</b>\n"
+            "   steamid: 76561198000000000\n"
+            "   Видимость: открытый профиль\n"
+            "   89 достижений  ·  сегодня: 1\n"
+            "   В сети: играет — Half-Life 2"
+            f"{st_muted}\n\n"
             f"{psn_text}\n\n"
-            "<i>Все аккаунты PSN (1..3) видны списком, а отключенные тумблером "
-            "помечаются меткой 'Публикация отключена'.</i>"
+            f"Язык: Русский  ·  Часовой пояс: {_format_offset(state.tz_offset_min)}  ·  "
+            f"Редкость: {_rarity_title(state.rarity_mode)}"
         )
-        builder.row(InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"))
+        builder.row(
+            InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"),
+            InlineKeyboardButton(text="🧭 В каталог", callback_data="tp:showcase"),
+        )
+        return text, builder.as_markup()
+
+    if screen == "adm_chats":
+        text = (
+            "💬 <b>Чаты (2)</b>\n\n"
+            "1. <b>Dev Igor and Igorr</b> (ID: -100123456789)\n"
+            "   Участников: 3  ·  Дайджест: от 5  ·  Редкость: все\n\n"
+            "2. <b>test chat</b> (ID: -100987654321)\n"
+            "   Участников: 1  ·  Дайджест: от 3  ·  Редкость: все"
+        )
+        builder.row(
+            InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"),
+            InlineKeyboardButton(text="🧭 В каталог", callback_data="tp:showcase"),
+        )
+        return text, builder.as_markup()
+
+    if screen == "adm_keys":
+        text = (
+            "🔑 <b>Ключи платформ</b>\n\n"
+            "• Steam Web API: задан\n"
+            "• PSN NPSSO: задан\n"
+            "• Anthropic API: задан"
+        )
+        builder.row(
+            InlineKeyboardButton(text="◀️ Назад в админку", callback_data="tp:admin"),
+            InlineKeyboardButton(text="🧭 В каталог", callback_data="tp:showcase"),
+        )
         return text, builder.as_markup()
 
     # =========================================================================
@@ -587,30 +687,37 @@ def render_screen(
     # =========================================================================
     if screen == "chat_hub":
         text = (
-            "💬 <b>Хаб чата: Xbox & PlayStation Club</b>\n\n"
-            "🔔 В этом чате публикуются достижения участников:\n"
-            "• @GamerAdmin, @PlayerTwo, @SnakeEater\n\n"
-            "<i>🎮 Привяжи свои аккаунты, чтобы делиться победами!</i>\n\n"
-            "<code>tg_achievement_bot v1.5.0</code>"
+            "🎮 Слежу за достижениями и трофеями тех, кто играет на XBOX, "
+            "PlayStation и в Steam, и публикую их сюда — с фильтром по редкости, "
+            "статистикой каждого и итогом дня.\n\n"
+            "Публикуются: @GamerAdmin, @PlayerTwo, @SnakeEater\n\n"
+            "<i>Версия 1.5.0</i>"
         )
         builder.row(
-            InlineKeyboardButton(text="👤 Кто здесь?", callback_data="tp:noop:hub_who"),
-            InlineKeyboardButton(text="🟢 Кто в сети", callback_data="tp:screen:online"),
-            InlineKeyboardButton(text="⏳ Недавние", callback_data="tp:screen:recent"),
+            InlineKeyboardButton(
+                text="🎮 Открыть приложение", callback_data="tp:noop:open_app"
+            )
         )
         builder.row(
-            InlineKeyboardButton(text="📅 Итоги дня", callback_data="tp:screen:sum_day"),
-            InlineKeyboardButton(text="🗓️ Итоги месяца", callback_data="tp:screen:sum_month"),
+            InlineKeyboardButton(text="👤 Игрок", callback_data="tp:noop:hub_who"),
+            InlineKeyboardButton(text="🟢 Онлайн", callback_data="tp:screen:online"),
+            InlineKeyboardButton(text="🕘 Недавние", callback_data="tp:screen:recent"),
         )
-        hub_pub_label = "🔕 Не публиковать сюда" if state.hub_publishes else "🔔 Публиковать сюда"
+        builder.row(
+            InlineKeyboardButton(text="📅 Сводка дня", callback_data="tp:screen:sum_day"),
+            InlineKeyboardButton(text="📆 Сводка месяца", callback_data="tp:screen:sum_month"),
+        )
+        hub_pub_label = (
+            "🔕 Не публиковать сюда" if state.hub_publishes else "🔔 Публиковать сюда"
+        )
         builder.row(
             InlineKeyboardButton(text=hub_pub_label, callback_data="tp:toggle_hub_pub"),
-            InlineKeyboardButton(text="⚙️ Настройки чата", callback_data="tp:noop:hub_settings"),
+            InlineKeyboardButton(text="⚙️ Настройки", callback_data="tp:screen:panel"),
         )
         builder.row(
-            InlineKeyboardButton(text="🟢 XBOX", callback_data="tp:noop:connect_xbox"),
-            InlineKeyboardButton(text="🔵 PSN", callback_data="tp:noop:connect_psn"),
-            InlineKeyboardButton(text="⚪ Steam", callback_data="tp:noop:connect_steam"),
+            InlineKeyboardButton(text="🔗 XBOX", callback_data="tp:noop:connect_xbox"),
+            InlineKeyboardButton(text="🎮 PSN", callback_data="tp:noop:connect_psn"),
+            InlineKeyboardButton(text="🎮 Steam", callback_data="tp:noop:connect_steam"),
         )
         builder.row(InlineKeyboardButton(text="🧭 В каталог экранов", callback_data="tp:showcase"))
         return text, builder.as_markup()
@@ -619,47 +726,28 @@ def render_screen(
     # 6. Player Stats (/stats)
     # =========================================================================
     if screen == "stats":
-        is_multi_psn = len(state.psn_accounts) > 1
-        psn_lines = []
-        for idx, a in enumerate(state.psn_accounts, 1):
-            prefix = f"PSN{idx}" if is_multi_psn else "PSN"
-            psn_lines.append(
-                f"🎮 <b>{prefix}:</b> {html_escape(a['name'])}  ·  "
-                f"{a['level']} ур.  ·  {a['trophies']} 🏆 ({a['platinum']} 🏆)"
-            )
-        psn_block = "\n".join(psn_lines)
-
         text = (
-            "📊 <b>Статистика: GamerAdmin</b>  ·  14 520 G  ·  325 ачивок  ·  184 🏆\n\n"
-            "🎮 <b>XBOX:</b> MajorNelson  ·  14 520 G  ·  325 ачивок\n"
-            "🎮 <b>Steam:</b> Gaben  ·  89 ачивок  ·  4 🏆\n"
-            f"{psn_block}\n\n"
-            "<b>Популярные игры:</b>\n"
-            "• Halo Infinite — 1000/1000 G (100%)\n"
-            "• God of War Ragnarök — 🏆 36/36 (Платина)\n"
-            "• Metal Gear Solid Delta — 🏆 18/42\n"
-            "• Half-Life 2 — 33/33 (100%)\n"
-            "• Elden Ring — 42/42 (100%)\n\n"
-            "📅 <b>За сегодня:</b> 4 ачивки (+85 G)\n"
-            "🗓️ <b>За сентябрь:</b> 28 ачивок (+640 G, 1 🏆)"
+            "👤 <b>GamerAdmin</b>\n"
+            "🟢 XBOX: MajorNelson  ·  14 520 G  ·  325 достижений  ·  12 🌀\n"
+            "🔵 PlayStation: SuperOmsk  ·  120 трофеев  ·  5 💠  ·  уровень 45\n"
+            "⚫️ Steam: Gaben  ·  89 достижений  ·  4 👾\n\n"
+            "За сутки:  4 достижения (🟢 2 · ⚫ 1 · 🔵 1) [85 G · 1 💎 · 1 🏆]\n"
+            "С 1 сентября:  28 достижений (🟢 15 · ⚫ 5 · 🔵 8) [640 G · 3 💎 · 1 🏆 2 🏆 5 🏆]\n\n"
+            "<b>Игры с 1 сентября</b>\n"
+            "• Halo Infinite (🟢 <i>XSX</i>) — 8 достижений [150 G · 1 💎]\n"
+            "• God of War Ragnarök (🔵 <i>PS5</i>) — 6 трофеев [1 🏆 2 🏆 3 🏆]\n"
+            "• Metal Gear Solid Delta (🔵 <i>PS5</i>) — 2 трофея [2 🏆]\n"
+            "• Half-Life 2 (⚫) — 5 достижений\n"
+            "• Elden Ring (🟢 <i>XSX</i>) — 7 достижений [120 G · 1 💎]"
         )
         builder.row(
-            InlineKeyboardButton(text="👤 Профиль XBOX", callback_data="tp:noop:xbox_profile"),
-            InlineKeyboardButton(text="👤 Профиль Steam", callback_data="tp:noop:steam_profile"),
+            InlineKeyboardButton(
+                text="🎮 Открыть приложение", callback_data="tp:noop:open_app"
+            )
         )
-        if state.psn_accounts:
-            p_btns = []
-            for idx, a in enumerate(state.psn_accounts, 1):
-                prefix = f"PSN{idx}" if is_multi_psn else "PSN"
-                p_btns.append(
-                    InlineKeyboardButton(
-                        text=f"👤 {prefix}: {a['name']}", callback_data="tp:noop:psn_profile"
-                    )
-                )
-            builder.row(*p_btns)
         builder.row(
-            InlineKeyboardButton(text="📅 За сегодня (4)", callback_data="tp:screen:sum_day"),
-            InlineKeyboardButton(text="🗓️ За месяц (28)", callback_data="tp:screen:sum_month"),
+            InlineKeyboardButton(text="📅 Сводка дня", callback_data="tp:screen:sum_day"),
+            InlineKeyboardButton(text="📆 Сводка месяца", callback_data="tp:screen:sum_month"),
         )
         builder.row(InlineKeyboardButton(text="🧭 В каталог экранов", callback_data="tp:showcase"))
         return text, builder.as_markup()
@@ -669,17 +757,18 @@ def render_screen(
     # =========================================================================
     if screen == "summary_day":
         text = (
-            "📅 <b>Итоги дня: 27 сентября</b>\n"
-            "💬 Чат «Xbox & PlayStation Club»\n\n"
-            "Всего за 24 часа выбито <b>14 достижений</b> (+320 G, 2 🏆) в 4 играх.\n\n"
-            "🏆 <b>Таблица лидеров:</b>\n"
-            "1. 🥇 <b>GamerAdmin</b> — 6 ачивок (+150 G, 1 🏆)\n"
-            "   • Halo Infinite (3), God of War (3)\n"
-            "2. 🥈 <b>SnakeEater</b> — 5 ачивок (+120 G)\n"
-            "   • MGS Delta (5)\n"
-            "3. 🥉 <b>Cortana</b> — 3 ачивки (+50 G, 1 🏆)\n"
-            "   • Forza Horizon 5 (3)\n"
-            "4. <b>Chief117</b> — 0 ачивок"
+            "📅 <b>Итоги дня</b>\n\n"
+            "Всего: 14 достижений (🟢 7 · ⚫ 2 · 🔵 5) [320 G · 2 💎 · 1 🏆 1 🏆 3 🏆]\n\n"
+            "<b>Игроки:</b>\n"
+            "1. GamerAdmin — 6 достижений (🟢 3 · ⚫ 0 · 🔵 3) [150 G · 1 💎 · 1 🏆 2 🏆]\n"
+            "2. SnakeEater — 5 достижений (🟢 0 · ⚫ 0 · 🔵 5) [120 G · 3 🏆]\n"
+            "3. Cortana — 3 достижения (🟢 3 · ⚫ 0 · 🔵 0) [50 G · 1 💎]\n"
+            "4. Chief117 — 0 достижений (🟢 0 · ⚫ 0 · 🔵 0)\n\n"
+            "<b>Игры:</b>\n"
+            "• Halo Infinite (🟢 <i>XSX</i>) — 4 достижения [80 G]\n"
+            "• God of War Ragnarök (🔵 <i>PS5</i>) — 5 трофеев [1 🏆 1 🏆 3 🏆]\n"
+            "• Forza Horizon 5 (🟢 <i>XSX</i>) — 3 достижения [50 G · 1 💎]\n"
+            "• Half-Life 2 (⚫) — 2 достижения"
         )
         builder.row(
             InlineKeyboardButton(text="◀️ 26 сен", callback_data="tp:noop:prev_day"),
@@ -688,7 +777,12 @@ def render_screen(
         )
         builder.row(
             InlineKeyboardButton(
-                text="👥 Показать всех участников (4)", callback_data="tp:noop:full_roster"
+                text="Показать всех (24ч)", callback_data="tp:noop:full_roster"
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="🎮 Открыть приложение", callback_data="tp:noop:open_app"
             )
         )
         builder.row(InlineKeyboardButton(text="🧭 В каталог экранов", callback_data="tp:showcase"))
@@ -696,14 +790,19 @@ def render_screen(
 
     if screen == "summary_month":
         text = (
-            "🗓️ <b>Итоги месяца: Сентябрь 2026</b>\n"
-            "💬 Чат «Xbox & PlayStation Club»\n\n"
-            "Всего за месяц выбито <b>184 достижения</b> (+4 120 G, 12 🏆) в 18 играх.\n\n"
-            "🏆 <b>Таблица лидеров месяца:</b>\n"
-            "1. 🥇 <b>GamerAdmin</b> — 86 ачивок (+1 840 G, 5 🏆)\n"
-            "2. 🥈 <b>Chief117</b> — 54 ачивки (+1 200 G, 4 🏆)\n"
-            "3. 🥉 <b>SnakeEater</b> — 32 ачивки (+780 G, 2 🏆)\n"
-            "4. <b>Cortana</b> — 12 ачивок (+300 G, 1 🏆)"
+            "🗓 <b>Итоги месяца</b>\n\n"
+            "Всего: 184 достижения (🟢 96 · ⚫ 34 · 🔵 54) [4 120 G · 18 💎 · 3 🏆 8 🏆 15 🏆]\n\n"
+            "<b>Игроки:</b>\n"
+            "1. GamerAdmin — 86 достижений (🟢 48 · ⚫ 12 · 🔵 26) "
+            "[1 840 G · 8 💎 · 2 🏆 4 🏆 6 🏆]\n"
+            "2. Chief117 — 54 достижения (🟢 54 · ⚫ 0 · 🔵 0) [1 200 G · 5 💎]\n"
+            "3. SnakeEater — 32 достижения (🟢 0 · ⚫ 0 · 🔵 32) [780 G · 1 🏆 3 🏆 8 🏆]\n"
+            "4. Cortana — 12 достижений (🟢 12 · ⚫ 0 · 🔵 0) [300 G · 2 💎]\n\n"
+            "<b>Игры:</b>\n"
+            "• Halo Infinite (🟢 <i>XSX</i>) — 42 достижения [920 G · 4 💎]\n"
+            "• God of War Ragnarök (🔵 <i>PS5</i>) — 36 трофеев [1 🏆 5 🏆 10 🏆]\n"
+            "• Cyberpunk 2077 (⚫) — 28 достижений\n"
+            "• Forza Horizon 5 (🟢 <i>XSX</i>) — 24 достижения [580 G · 3 💎]"
         )
         builder.row(
             InlineKeyboardButton(text="◀️ Август", callback_data="tp:noop:prev_month"),
@@ -712,7 +811,12 @@ def render_screen(
         )
         builder.row(
             InlineKeyboardButton(
-                text="👥 Показать полный список", callback_data="tp:noop:full_month"
+                text="Показать всех (за месяц)", callback_data="tp:noop:full_month"
+            )
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="🎮 Открыть приложение", callback_data="tp:noop:open_app"
             )
         )
         builder.row(InlineKeyboardButton(text="🧭 В каталог экранов", callback_data="tp:showcase"))
@@ -723,39 +827,38 @@ def render_screen(
     # =========================================================================
     if screen == "single_achievement":
         text = (
-            "🎮 <b>GamerAdmin</b> получает достижение:\n\n"
-            "<i>Halo Infinite (Xbox Series X)</i>  ·  34/119\n"
-            "💎 <b>«Восхождение Спартанца»</b>  ·  50 G  ·  3.4%\n\n"
+            "<b>GamerAdmin</b> получает достижение\n\n"
+            "Halo Infinite (<i>XBOX</i>) · 34/119\n"
+            "💎 «Восхождение Спартанца» · 50 G · 3.4%\n\n"
             '<span class="tg-spoiler">Завершите все испытания кампании на Легендарной сложности '
             "без использования черепов-модификаторов.</span>"
         )
         builder.row(
             InlineKeyboardButton(
-                text="🎮 Halo Infinite (Прогресс)", callback_data="tp:noop:game_info"
-            ),
-            InlineKeyboardButton(
-                text="👤 Профиль GamerAdmin", callback_data="tp:noop:player_profile"
-            ),
+                text="🎮 Открыть приложение", callback_data="tp:noop:open_app"
+            )
         )
         builder.row(InlineKeyboardButton(text="🧭 В каталог экранов", callback_data="tp:showcase"))
         return text, builder.as_markup()
 
     if screen == "digest_achievement":
         is_multi_psn = len(state.psn_accounts) > 1
-        psn_prefix = "PSN1" if is_multi_psn else "PSN"
+        psn_prefix = "SuperOmsk (PSN1)" if is_multi_psn else "SuperOmsk"
         text = (
-            "🎮 <b>GamerAdmin</b> выбивает <b>3 трофея</b>:\n\n"
-            "<i>God of War Ragnarök (PS5)</i>  ·  🏆 24/36\n"
-            f"• {psn_prefix} (Kratos)\n"
-            "🥉 <b>«Холодный приём»</b>  ·  42%\n"
-            "🥈 <b>«Охотник на валькирий»</b>  ·  12.5%\n"
-            "🏆 <b>«Чистильщик девяти миров»</b>  ·  4.1%"
+            "<b>GamerAdmin</b> получает 3 трофея\n\n"
+            f"<b>{psn_prefix}</b>\n"
+            "God of War Ragnarök (<i>PlayStation</i>) · 24/36\n"
+            "🥉 «Холодный приём» · 42%\n"
+            "<i>Победите первого босса в прологе.</i>\n"
+            "🥈 «Охотник на валькирий» · 12.5%\n"
+            "<i>Одолейте всех берсерков в девяти мирах.</i>\n"
+            "🏆 «Чистильщик девяти миров» · 4.1%\n"
+            "<i>Завершите все дополнительные активности во всех королевствах.</i>"
         )
         builder.row(
-            InlineKeyboardButton(text="🎮 God of War Ragnarök", callback_data="tp:noop:game_info"),
             InlineKeyboardButton(
-                text=f"👤 Профиль {psn_prefix}", callback_data="tp:noop:psn_profile"
-            ),
+                text="🎮 Открыть приложение", callback_data="tp:noop:open_app"
+            )
         )
         builder.row(InlineKeyboardButton(text="🧭 В каталог экранов", callback_data="tp:showcase"))
         return text, builder.as_markup()
@@ -765,12 +868,18 @@ def render_screen(
     # =========================================================================
     if screen == "online":
         text = (
-            "🟢 <b>Сейчас в сети</b> (обновлено 13:45 UTC+3)\n\n"
-            "🟢 <b>MajorNelson</b> — играет в <i>Halo Infinite (Xbox)</i>\n"
-            "🔵 <b>Kratos</b> — играет в <i>God of War Ragnarök (PS5)</i>\n"
-            "⚪ <b>Gaben</b> — в сети (Steam)\n"
-            "⚫ <b>Chief117</b> — не в сети (35 мин. назад)\n"
-            "⚫ <b>Cortana</b> — не в сети (3 ч. назад)"
+            "🎮 <b>Онлайн-статус игроков</b>\n"
+            "<i>Обновлено: 13:45</i>\n\n"
+            "🟢 MajorNelson — играет [<i>Xbox Series X</i>] — Halo Infinite\n"
+            "🔵 SuperOmsk — играет [<i>PS5</i>] — God of War Ragnarök\n"
+            "⚫ Gaben — в сети, не играет\n"
+            "⚪ Chief117 — не в сети\n"
+            "⚪ Cortana — не в сети"
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="🎮 Открыть приложение", callback_data="tp:noop:open_app"
+            )
         )
         builder.row(
             InlineKeyboardButton(text="🔄 Обновить список", callback_data="tp:noop:refresh_online"),
@@ -781,12 +890,19 @@ def render_screen(
 
     if screen == "recent":
         text = (
-            "⏳ <b>Недавние достижения в чате:</b>\n\n"
-            "• 13:20 🎮 <b>GamerAdmin</b>: 💎 «Восхождение Спартанца» (+50 G) · "
-            "<i>Halo Infinite</i>\n"
-            "• 12:45 🎮 <b>GamerAdmin</b>: 🏆 «Чистильщик девяти миров» · <i>God of War</i>\n"
-            "• 11:10 🎮 <b>SnakeEater</b>: 🥈 «Тихий шаг» (+25 G) · <i>MGS Delta</i>\n"
-            "• Вчера 🎮 <b>Chief117</b>: 💎 «Мастер Чиф на века» (+100 G) · <i>MCC</i>"
+            "🕘 <b>Последние достижения</b>\n\n"
+            "💎 GamerAdmin — (🟢 <i>XSX</i>) Halo Infinite · "
+            "«Восхождение Спартанца» (+50 G · 3.4%) · 25 мин назад\n"
+            "🏆 GamerAdmin — (🔵 <i>PS5</i>) God of War Ragnarök · "
+            "«Чистильщик девяти миров» (4.1%) · 1 ч назад\n"
+            "🥈 SnakeEater — (🔵 <i>PS5</i>) MGS Delta · «Тихий шаг» (18%) · 2 ч назад\n"
+            "💎 Chief117 — (🟢 <i>XSX</i>) Halo: MCC · "
+            "«Мастер Чиф на века» (+100 G · 1.2%) · 5 ч назад"
+        )
+        builder.row(
+            InlineKeyboardButton(
+                text="🎮 Открыть приложение", callback_data="tp:noop:open_app"
+            )
         )
         builder.row(
             InlineKeyboardButton(text="🔄 Обновить ленту", callback_data="tp:noop:refresh_recent")

@@ -49,15 +49,15 @@ def test_psn_single_vs_multi_labeling() -> None:
 
     # Multi PSN (2 accounts)
     text_multi, markup_multi = render_screen("home", state)
-    assert "• PSN1 (Kratos):" in text_multi
-    assert "• PSN2 (Snake):" in text_multi
+    assert "Вход PSN1:  SuperOmsk" in text_multi
+    assert "Вход PSN2:  Omsk2" in text_multi
     assert any("🔵 PSN (2) ▸" in btn.text for row in markup_multi.inline_keyboard for btn in row)
 
     text_acc_multi, markup_acc_multi = render_screen("acc:psn", state)
-    assert "PSN1: Kratos" in text_acc_multi
-    assert "PSN2: Snake" in text_acc_multi
+    assert "PSN1: SuperOmsk" in text_acc_multi
+    assert "PSN2: Omsk2" in text_acc_multi
     assert any(
-        "👤 Профиль: PSN1 (Kratos)" in btn.text
+        "👤 Профиль: PSN1 (SuperOmsk)" in btn.text
         for row in markup_acc_multi.inline_keyboard
         for btn in row
     )
@@ -67,15 +67,15 @@ def test_psn_single_vs_multi_labeling() -> None:
     assert len(state.psn_accounts) == 1
 
     text_single, markup_single = render_screen("home", state)
-    assert "• PSN (Kratos):" in text_single
-    assert "• PSN1" not in text_single
+    assert "Вход PSN:  SuperOmsk" in text_single
+    assert "Вход PSN1" not in text_single
     assert any("🔵 PSN ▸" in btn.text for row in markup_single.inline_keyboard for btn in row)
 
     text_acc_single, markup_acc_single = render_screen("acc:psn", state)
-    assert "PSN: Kratos" in text_acc_single
+    assert "PSN: SuperOmsk" in text_acc_single
     assert "PSN1" not in text_acc_single
     assert any(
-        "👤 Профиль: PSN (Kratos)" in btn.text
+        "👤 Профиль: PSN (SuperOmsk)" in btn.text
         for row in markup_acc_single.inline_keyboard
         for btn in row
     )
@@ -88,17 +88,15 @@ def test_toggle_publication_and_rarity_state() -> None:
 
     # Toggle xbox
     state.xbox_publishes = False
-    text, markup = render_screen("home", state)
-    assert "XBOX: 🔇 Не публикуется" in text
+    _, markup = render_screen("home", state)
     assert any("🔇 Не публикуется" in btn.text for row in markup.inline_keyboard for btn in row)
 
     # Toggle rarity cyclic button on home
     state.rarity_mode = "rare"
-    text, markup = render_screen("home", state)
-    assert "Достижения (#126):</b> <b>Редкие</b>" in text
+    _, markup_rare = render_screen("home", state)
     assert any(
         "Публиковать достижения: Редкие" in btn.text
-        for row in markup.inline_keyboard
+        for row in markup_rare.inline_keyboard
         for btn in row
     )
 

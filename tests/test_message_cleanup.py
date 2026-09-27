@@ -32,8 +32,8 @@ async def _log_old(repo: Repo, message_id: int, *, is_system: bool, minutes_ago:
     await repo._conn.commit()
 
 
-async def test_default_ttl_is_five_minutes(repo: Repo) -> None:
-    assert await system_message_ttl_minutes(repo) == 5
+async def test_default_ttl_is_zero_disabled(repo: Repo) -> None:
+    assert await system_message_ttl_minutes(repo) == 0
 
 
 async def test_ttl_zero_disables_cleanup_entirely(repo: Repo) -> None:
@@ -48,7 +48,8 @@ async def test_ttl_zero_disables_cleanup_entirely(repo: Repo) -> None:
 
 async def test_deletes_only_system_messages_past_the_ttl(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Test chat", 1)
-    await _log_old(repo, 1, is_system=True, minutes_ago=10)  # past the 5-minute default
+    await repo.set_app_setting("system_message_ttl_min", "5", 1)
+    await _log_old(repo, 1, is_system=True, minutes_ago=10)  # past the 5-minute configured TTL
     await _log_old(repo, 2, is_system=True, minutes_ago=1)  # too fresh
     await _log_old(repo, 3, is_system=False, minutes_ago=10)  # a "stats" result, never touched
 
@@ -65,6 +66,7 @@ async def test_a_failed_delete_still_forgets_the_row(repo: Repo) -> None:
     too old (Telegram's 48h cap) or already gone either way, nothing left
     worth retrying."""
     await repo.upsert_chat(CHAT_ID, "Test chat", 1)
+    await repo.set_app_setting("system_message_ttl_min", "5", 1)
     await _log_old(repo, 1, is_system=True, minutes_ago=10)
 
     await MessageCleanup(FakeBot(fail_on={1}), repo).tick()

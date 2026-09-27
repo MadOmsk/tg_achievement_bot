@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from bot.db.repo import Repo
-from bot.views.panel import render_account_menu, render_panel
+from bot.i18n import i18n_for
+from bot.views.panel import _now_playing, render_account_menu, render_panel
 
 TG_ID = 1
 
@@ -46,7 +47,6 @@ async def test_steam_or_psn_only_person_still_gets_the_full_settings_body(repo: 
     assert "panel:tz" in callback_datas
     assert "panel:chatlist" in callback_datas
     assert "panel:sync" in callback_datas
-    assert "panel:linkstoggle" in callback_datas
 
 
 async def test_xbox_connected_without_steam_has_no_steam_line(repo: Repo) -> None:
@@ -115,9 +115,9 @@ async def test_several_psn_accounts_each_get_a_line_and_their_own_switch(repo: R
 
     text, markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert text.count("Вход PSN:") == 2
+    assert "Вход PSN1:" in text and "Вход PSN2:" in text
     assert text.index("SuperOmsk") < text.index("OmskSecond")
-    assert "без PSN: OmskSecond" in text
+    assert "«XBOX CG»" in text
     buttons = {b.callback_data: b.text for row in markup.inline_keyboard for b in row}
     assert buttons["panel:acc:psn"] == "🔵 PSN (2) ▸"
     assert buttons["panel:pub:psn"] == "🔔 Частично"
@@ -135,10 +135,9 @@ async def test_show_profile_links_defaults_off(repo: Repo) -> None:
 
     _text, markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    toggle = next(
-        b for row in markup.inline_keyboard for b in row if b.callback_data == "panel:linkstoggle"
+    assert not any(
+        b.callback_data == "panel:linkstoggle" for row in markup.inline_keyboard for b in row
     )
-    assert "нет" in toggle.text
 
 
 async def test_show_profile_links_admin_default_applies_to_new_users(repo: Repo) -> None:
@@ -150,12 +149,8 @@ async def test_show_profile_links_admin_default_applies_to_new_users(repo: Repo)
     await repo.ensure_user(TG_ID, "someone")
     await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
 
-    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
-
-    toggle = next(
-        b for row in markup.inline_keyboard for b in row if b.callback_data == "panel:linkstoggle"
-    )
-    assert "да" in toggle.text
+    settings_row = await repo.get_user_settings(TG_ID)
+    assert settings_row is not None and settings_row.show_profile_links is True
 
 
 async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(repo: Repo) -> None:
@@ -173,8 +168,7 @@ async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(re
     assert "Сегодня:" not in text
     assert "За месяц:" not in text
     assert "Последние достижения" not in text
-    # Kept (#18 decisions): current presence and the timezone text line.
-    assert "Сейчас:" in text
+    # Kept (#18 decisions): the timezone text line.
     assert "Часовой пояс:" in text
 
 
@@ -210,9 +204,13 @@ async def test_now_row_names_the_platform_the_person_is_actually_playing_on(
         "acc-1", "Online", "CUSA00001", "Ghost of Tsushima", changed=True
     )
 
-    text, _markup = (await render_panel(repo, TG_ID)).as_pair()
+    i18n = await i18n_for("ru")
+    user = await repo.get_user(TG_ID)
+    assert user is not None
+    psn_links = await repo.platform_links_for(TG_ID, "psn")
+    playing = await _now_playing(repo, user, None, psn_links, i18n)
 
-    assert "Сейчас:      🔵 PlayStation  ·  играет — Ghost of Tsushima" in text
+    assert "🔵 PlayStation  ·  играет — Ghost of Tsushima" in playing
 
 
 async def test_a_steam_only_person_gets_a_now_row_at_all(repo: Repo) -> None:
@@ -222,9 +220,13 @@ async def test_a_steam_only_person_gets_a_now_row_at_all(repo: Repo) -> None:
     await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
     await repo.save_steam_presence_state("76561197960287930", 1, "570", "Dota 2", changed=True)
 
-    text, _markup = (await render_panel(repo, TG_ID)).as_pair()
+    i18n = await i18n_for("ru")
+    user = await repo.get_user(TG_ID)
+    assert user is not None
+    steam_link = await repo.get_platform_link(TG_ID, "steam")
+    playing = await _now_playing(repo, user, steam_link, [], i18n)
 
-    assert "Сейчас:      ⚫ Steam  ·  играет — Dota 2" in text
+    assert "⚫ Steam  ·  играет — Dota 2" in playing
 
 
 async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
@@ -235,10 +237,14 @@ async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
     await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
     await repo.save_steam_presence_state("76561197960287930", 0, None, None, changed=True)
 
-    text, _markup = (await render_panel(repo, TG_ID)).as_pair()
+    i18n = await i18n_for("ru")
+    user = await repo.get_user(TG_ID)
+    assert user is not None
+    steam_link = await repo.get_platform_link(TG_ID, "steam")
+    playing = await _now_playing(repo, user, steam_link, [], i18n)
 
-    assert "Сейчас:      не в сети" in text
-    assert "Steam  ·  не в сети" not in text
+    assert "не в сети" in playing
+    assert "Steam  ·  не в сети" not in playing
 
 
 async def test_panel_steam_row_uses_naming_chain_fallback(repo: Repo) -> None:
@@ -256,7 +262,7 @@ async def test_panel_psn_row_uses_naming_chain_fallback(repo: Repo) -> None:
     await repo.set_platform_secondary_name(TG_ID, "psn", "old_psn_tag")
 
     text, _ = (await render_panel(repo, TG_ID)).as_pair()
-    assert "Вход PSN:    old_psn_tag" in text
+    assert "Вход PSN:   old_psn_tag" in text
 
 
 async def test_panel_has_delete_account_button_above_sync(repo: Repo) -> None:

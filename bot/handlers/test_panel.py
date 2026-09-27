@@ -172,8 +172,8 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         return
 
     # 3. Admin Navigation
-    if action == "admin":
-        text, markup = render_screen("admin", state)
+    if action in ("admin", "adm_newusers", "adm_limits", "adm_chats", "adm_keys", "adm_usercard"):
+        text, markup = render_screen(action, state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         await callback.answer()
@@ -181,13 +181,6 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
 
     if action == "adm_digest":
         text, markup = render_screen("adm_digest", state)
-        with contextlib.suppress(TelegramBadRequest):
-            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer()
-        return
-
-    if action == "adm_usercard":
-        text, markup = render_screen("adm_usercard", state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         await callback.answer()
@@ -346,7 +339,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         order = ["all", "rare", "hidden"]
         idx = order.index(state.default_rarity) if state.default_rarity in order else 0
         state.default_rarity = order[(idx + 1) % len(order)]
-        text, markup = render_screen("admin", state)
+        text, markup = render_screen("adm_newusers", state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         await callback.answer(f"Редкость новичков: {_rarity_title(state.default_rarity)}")
@@ -354,7 +347,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
 
     if action == "adm_toggle_links":
         state.default_links = not state.default_links
-        text, markup = render_screen("admin", state)
+        text, markup = render_screen("adm_newusers", state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         await callback.answer(f"Ссылки на профили: {'Да' if state.default_links else 'Нет'}")

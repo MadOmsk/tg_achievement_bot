@@ -21,7 +21,9 @@ from bot.util import utcnow
 
 log = logging.getLogger(__name__)
 
-DEFAULT_TTL_MINUTES = 5
+# 0 = disabled (#134). System messages (prompts, confirmations, /help, hub)
+# are no longer auto-deleted by default.
+DEFAULT_TTL_MINUTES = 0
 TTL_SETTING_KEY = "system_message_ttl_min"
 
 

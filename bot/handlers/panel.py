@@ -28,6 +28,7 @@ from bot.views.keyboards import (
     disconnect_prompt_keyboard,
     locale_name,
     next_locale,
+    next_rarity_mode,
     timezone_keyboard,
 )
 from bot.views.panel import (
@@ -38,7 +39,6 @@ from bot.views.panel import (
     render_panel,
     render_panel_delete_confirm_1,
     render_panel_delete_confirm_2,
-    render_rarity_picker,
     render_unsub_prompt,
 )
 
@@ -356,10 +356,15 @@ async def _toggle_one(
 
 @router.callback_query(F.data == "panel:rarity")
 async def panel_rarity(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """The person's rarity mode, for every chat at once (#126)."""
-    screen = await render_rarity_picker(repo, callback.from_user.id, locale=i18n.locale)
+    """The person's rarity mode, for every chat at once (#126) — cyclic toggle."""
+    await repo.ensure_user(callback.from_user.id, callback.from_user.username)
+    settings_row = await repo.get_user_settings(callback.from_user.id)
+    current = settings_row.rarity_mode if settings_row else RarityMode.ALL
+    new_mode = next_rarity_mode(current)
+    await repo.update_user_settings(callback.from_user.id, rarity_mode=new_mode)
+    await callback.answer(i18n.get(f"chat-hub-toast-{new_mode}"))
+    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard)
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("panel:rarityset:"))

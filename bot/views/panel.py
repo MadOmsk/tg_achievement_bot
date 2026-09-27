@@ -31,7 +31,6 @@ from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows
 from bot.views.keyboards import (
     format_offset,
-    format_rarity,
     panel_keyboard,
     rarity_keyboard,
 )
@@ -173,7 +172,6 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
     connected = user is not None and bool(user.xuid)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
     psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
-    psn_link = psn_links[0] if psn_links else None
     xbox_link = await repo.get_platform_link(tg_id, AccountPlatform.XBOX) if connected else None
 
     token = await repo.get_token(tg_id) if connected else None
@@ -227,10 +225,13 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
                 status=visibility_status_text(steam_link, i18n.locale),
             )
         )
-    for link in psn_links:
+    is_multi_psn = len(psn_links) > 1
+    for idx, link in enumerate(psn_links, 1):
+        label = f"PSN{idx}" if is_multi_psn else "PSN"
         lines.append(
             i18n.get(
                 "panel-login-psn-row",
+                label=label,
                 name=link_nickname(link),
                 status=visibility_status_text(link, i18n.locale),
             )
@@ -243,31 +244,20 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
                 user.tg_id,
                 user.is_excluded,
                 i18n,
-                muted=_muted_accounts(xbox_link, psn_links, steam_link),
             ),
         )
     )
-    lines.append(
-        i18n.get(
-            "panel-rarity-row",
-            mode=format_rarity(settings_row.rarity_mode if settings_row else RarityMode.ALL, i18n),
-        )
-    )
-    if user.xuid or steam_link is not None or psn_link is not None:
-        # Every connected platform competes for this row now (issue #1's own
-        # tail, closed 2026-09-15) — it used to be gated on `user.xuid` and so
-        # was missing entirely from a Steam/PSN-only person's panel, the last
-        # row here that still assumed Xbox.
-        playing = await _now_playing(repo, user, steam_link, psn_links, i18n)
-        lines.append(i18n.get("panel-now-playing-row", playing=playing))
-    lines += [
-        "",
-        # Kept as a text line too (#18): the person should see which
-        # timezone is selected, not just have it on the button label.
-        i18n.get("panel-timezone-row", offset=format_offset(tz_offset, i18n)),
-    ]
+    lines.append(i18n.get("panel-timezone-row", offset=format_offset(tz_offset, i18n)))
+    hints = []
     if needs_reconnect:
-        lines += ["", i18n.get("panel-reconnect-hint")]
+        hints.append(i18n.get("panel-reconnect-hint"))
+    if steam_link is not None and steam_link.achievements_visible is False:
+        hints.append(i18n.get("panel-steam-privacy-hint"))
+    for link in psn_links:
+        if link.achievements_visible is False:
+            hints.append(i18n.get("panel-psn-privacy-hint", name=link_nickname(link)))
+    if hints:
+        lines += ["", *hints]
     return Screen("\n".join(lines), keyboard)
 
 
@@ -352,21 +342,16 @@ async def _publication_status(
     tg_id: int,
     is_excluded: bool,
     i18n: I18nContext,
-    *,
-    muted: list[str] | None = None,
 ) -> str:
     if is_excluded:
         # An exclusion is never silent: the person sees it here (SPEC 6.4).
         return i18n.get("panel-excluded")
-    chats = await repo.chats_of_user(tg_id)
-    if not chats:
+    user_chats = await repo.user_chats(tg_id)
+    if not user_chats:
         return i18n.get("panel-not-subscribed-anywhere")
-    status = i18n.get("panel-subscribed-in", chats=", ".join(f"«{title}»" for title in chats))
-    if muted:
-        # Which accounts the person switched off (#20), said where the
-        # question "where does it post" is answered.
-        status += i18n.get("panel-publishing-without", platforms=", ".join(muted))
-    return status
+    return ", ".join(
+        f"{'✅' if c.is_subscribed else '🔇'} «{c.title or c.chat_id}»" for c in user_chats
+    )
 
 
 async def render_unsub_prompt(
@@ -570,10 +555,12 @@ async def _psn_menu(repo: Repo, tg_id: int, i18n: I18nContext) -> Screen | None:
         "",
     ]
     builder = InlineKeyboardBuilder()
-    for link in links:
+    is_multi_psn = len(links) > 1
+    for idx, link in enumerate(links, 1):
         name = link_nickname(link)
         parts = await link_value_parts(repo, tg_id=tg_id, link=link, locale=i18n.locale)
-        lines.append(f"<b>PSN: {html_escape(name)}</b>  ·  " + "  ·  ".join(parts))
+        label = f"PSN{idx}" if is_multi_psn else "PSN"
+        lines.append(f"<b>{label}: {html_escape(name)}</b>  ·  " + "  ·  ".join(parts))
         lines.append(
             i18n.get(
                 "panel-psn-account-state",
@@ -583,7 +570,7 @@ async def _psn_menu(repo: Repo, tg_id: int, i18n: I18nContext) -> Screen | None:
         )
         builder.row(
             InlineKeyboardButton(
-                text=i18n.get("kb-account-psn", name=name),
+                text=f"👤 {label}: {name}",
                 url=platform_profile_url(
                     link.platform, external_id=link.external_id, display_name=link.display_name
                 ),

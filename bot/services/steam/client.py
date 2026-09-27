@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 
 import httpx
@@ -412,6 +413,39 @@ async def get_player_achievements(
         for item in stats.get("achievements") or []
         if item.get("apiname")
     ]
+
+
+async def get_community_achievement_descriptions(
+    steam_id: str, appid: str, *, language: str = "english"
+) -> dict[str, str]:
+    """Fetch unlocked achievement descriptions from Steam Community XML (#132).
+
+    Steam Web API (GetPlayerAchievements / GetSchemaForGame) redacts or leaves
+    description empty for hidden/secret achievements even when unlocked.
+    The public community profile stats XML exposes them once achieved.
+    """
+    url = f"https://steamcommunity.com/profiles/{steam_id}/stats/{appid}/?xml=1"
+    cookies = {"Steam_Language": language}
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.get(url, cookies=cookies)
+            if resp.status_code != 200:
+                return {}
+            root = ET.fromstring(resp.content)
+            result = {}
+            for item in root.findall(".//achievement"):
+                apiname_elem = item.find("apiname")
+                desc_elem = item.find("description")
+                apiname = apiname_elem.text if apiname_elem is not None else None
+                desc = desc_elem.text if desc_elem is not None else None
+                if apiname and desc:
+                    result[apiname] = desc
+            return result
+    except Exception:
+        log.info(
+            "steam community descriptions for %s/%s unavailable", steam_id, appid, exc_info=True
+        )
+        return {}
 
 
 async def get_schema(

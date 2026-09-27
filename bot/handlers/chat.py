@@ -38,6 +38,7 @@ from bot.handlers.admin import IsAdmin
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.admin_settings import DEFAULT_RECENT_LIMIT
 from bot.services.message_log import stats_category
+from bot.services.mini_app import mini_app_group_url
 from bot.services.naming import (
     person_name_of,
 )
@@ -174,6 +175,17 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
             await message.answer(i18n.get("chat-subscribe-already"))
             return
         await repo.subscribe(message.chat.id, message.from_user.id)
+    me = await message.bot.me()  # type: ignore[union-attr]
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("chat-subscribe-settings-button"),
+                    url=f"https://t.me/{me.username}?start=panel",
+                )
+            ]
+        ]
+    )
     await message.answer(
         i18n.get(
             "chat-subscribe-done",
@@ -181,7 +193,8 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
             # `user.gamertag`, so anyone without Xbox got the generic
             # "твои достижения" instead of their own name.
             gamertag=person_name_of(user, await repo.platform_links_of(message.from_user.id)),
-        )
+        ),
+        reply_markup=keyboard,
     )
 
 
@@ -999,3 +1012,22 @@ async def delete_last(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
         await message.answer(i18n.get("chat-delete-last-done-generic"))
     with contextlib.suppress(Exception):
         await message.delete()  # tidy up the /delete_last command itself too
+
+
+@router.message(Command("intro", "pin_app"), F.chat.type.in_(GROUP_TYPES), IsAdmin())
+async def intro_command(message: Message, bot: Bot, i18n: I18nContext) -> None:
+    """Post pinnable introduction card with Mini App button (#136)."""
+    me = await bot.me()
+    button = InlineKeyboardButton(
+        text=i18n.get("chat-intro-open-app-button"),
+        url=mini_app_group_url(me.username or "", chat_id=message.chat.id),
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[button]])
+    with stats_category():
+        await message.answer(
+            i18n.get("chat-intro-pinned-text"),
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
+        )
+    with contextlib.suppress(Exception):
+        await message.delete()

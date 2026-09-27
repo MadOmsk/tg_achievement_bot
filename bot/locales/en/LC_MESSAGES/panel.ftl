@@ -76,13 +76,13 @@ panel-login-xbox-row = XBOX login:   { $status }
 # only ever existed for the Xbox-gated early-return branch that used them,
 # now removed, so this name freed up.
 panel-login-steam-row = Steam login:  { $name }  ·  { $status }
-panel-login-psn-row = PSN login:    { $name }  ·  { $status }
+panel-login-psn-row = { $label } login:   { $name }  ·  { $status }
 # Steam/PSN's achievement/trophy visibility, as of the last actual check
 # (#5) — connect time, or any backfill/resync since. Xbox has no
 # equivalent row here: its own token status (panel-login-xbox-row above)
 # already answers a similar "can I actually read this account" question.
 panel-visibility-visible = ✅ achievements visible
-panel-visibility-hidden = ⚠️ achievements hidden
+panel-visibility-hidden = ⚠️ privacy settings change required
 panel-visibility-unknown = ❓ not checked
 panel-publication-row = Publishing:   { $status }
 panel-rarity-row = Achievements: { $mode }
@@ -92,7 +92,9 @@ panel-rarity-prompt =
     "Rare only" follows each chat's own rarity threshold.
 panel-now-playing-row = Now:          { $playing }
 panel-timezone-row = Timezone:     { $offset }
-panel-reconnect-hint = Your XBOX access has expired — press “Connect again” below.
+panel-reconnect-hint = ⚠️ Your XBOX access has expired — you need to sign in again
+panel-steam-privacy-hint = ⚠️ Your Steam achievements are hidden by privacy settings — you need to change Steam privacy settings
+panel-psn-privacy-hint = ⚠️ Your PSN trophies ({ $name }) are hidden by privacy settings — you need to change PlayStation privacy settings
 panel-no-presence-data = no data
 panel-offline = offline ({ $ago })
 panel-online-idle = online, not playing

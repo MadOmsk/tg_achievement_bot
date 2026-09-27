@@ -52,7 +52,6 @@ def test_not_connected_keyboard_still_offers_the_rest_of_the_settings() -> None:
     data = _callback_data(markup)
     assert "panel:tz" in data
     assert "panel:chatlist" in data
-    assert "panel:linkstoggle" in data
     assert "panel:delete_account" in data
     assert "panel:sync" in data
 
@@ -128,22 +127,6 @@ def _row(markup, callback_data: str) -> list:
         row for row in markup.inline_keyboard if callback_data in [b.callback_data for b in row]
     )
 
-
-def _toggle_button_text(markup):
-    return next(
-        b.text
-        for row in markup.inline_keyboard
-        for b in row
-        if b.callback_data == "panel:linkstoggle"
-    )
-
-
-def test_show_profile_links_toggle_reflects_state_and_is_reachable() -> None:
-    off = panel_keyboard(180, connected=True, show_profile_links=False)
-    on = panel_keyboard(180, connected=True, show_profile_links=True)
-    assert "panel:linkstoggle" in _callback_data(off)
-    assert "нет" in _toggle_button_text(off)
-    assert "да" in _toggle_button_text(on)
 
 
 def test_xbox_profile_url_encodes_the_gamertag() -> None:

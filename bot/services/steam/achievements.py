@@ -21,6 +21,7 @@ from bot.db.repo import Repo, SteamSchemaAchievement, TitleAchievementRow
 from bot.services.models import ParsedAchievement
 from bot.services.steam.client import (
     RawAchievement,
+    get_community_achievement_descriptions,
     get_global_percentages,
     get_player_achievements,
     get_schema,
@@ -73,6 +74,20 @@ async def fetch_unlocked(
         # either way there is nothing worth a schema/rarity lookup for.
         return []
 
+    # If any unlocked achievements lack description (common for secret/hidden achievements
+    # where Steam Web API returns empty string, #132), fall back to Community profile XML stats.
+    community_desc: dict[str, str] = {}
+    missing_desc = [item for item in unlocked if not item.description]
+    if missing_desc:
+        community_desc = await get_community_achievement_descriptions(steam_id, appid)
+        if community_desc:
+            for item in unlocked:
+                if not item.description and item.apiname in community_desc:
+                    item.description = community_desc[item.apiname]
+            for raw_item in raw:
+                if not raw_item.description and raw_item.apiname in community_desc:
+                    raw_item.description = community_desc[raw_item.apiname]
+
     schema_by_id = {a.apiname: a for a in await _schema(repo, api_key, appid)}
     # A game that added achievements after release (an update, a DLC) has
     # them missing from a schema cached forever (#49). The achievement
@@ -112,7 +127,7 @@ async def fetch_unlocked(
         }
     else:
         descriptions = await _bilingual_descriptions(
-            repo, anthropic_auth, api_key, steam_id, appid, unlocked
+            repo, anthropic_auth, api_key, steam_id, appid, unlocked, community_desc=community_desc
         )
         now = utcnow_iso()
         cached_names_map = await repo.cached_names(
@@ -185,6 +200,8 @@ async def _bilingual_descriptions(
     steam_id: str,
     appid: str,
     unlocked: list[RawAchievement],
+    *,
+    community_desc: dict[str, str] | None = None,
 ) -> dict[str, tuple[str | None, str | None]]:
     """A second `l=english` request, only when at least one of this batch's
     achievements isn't already in the catalog — the
@@ -214,6 +231,10 @@ async def _bilingual_descriptions(
         return result
 
     english_items = await get_player_achievements(api_key, steam_id, appid, language="english")
+    if community_desc:
+        for item in english_items:
+            if not item.description and item.apiname in community_desc:
+                item.description = community_desc[item.apiname]
     # Steam is the mirror image of Xbox here: its *primary* call already asks
     # for Russian, so `unlocked` holds the Russian names and this second
     # response the English ones. Both are Steam's own strings (#61).

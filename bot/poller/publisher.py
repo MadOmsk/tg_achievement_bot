@@ -15,7 +15,7 @@ from datetime import timedelta
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import InputMediaPhoto
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 
 from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
@@ -23,6 +23,7 @@ from bot.services.achievements import passes_filters
 from bot.services.chat_gone import chat_is_gone
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import achievement_category
+from bot.services.mini_app import mini_app_group_url
 from bot.services.naming import (
     NO_NICKNAME,
     account_nickname,
@@ -91,6 +92,7 @@ class Publisher:
     def __init__(self, bot: Bot, repo: Repo) -> None:
         self._bot = bot
         self._repo = repo
+        self._bot_username: str | None = None
         self._queue: asyncio.Queue[PublishJob] = asyncio.Queue()
         # Chats a *test* bot cannot reach (it is not a member of them): skipped for
         # the life of the process instead of deactivated, see `_send`.
@@ -496,6 +498,24 @@ class Publisher:
         # photo, then text. Every branch is an achievement notification — never
         # auto-deleted (message_cleanup.py) and never taken by /delete_last (#101).
         with achievement_category():
+            reply_markup: InlineKeyboardMarkup | None = None
+            if self._bot is not None:
+                if not self._bot_username:
+                    with contextlib.suppress(Exception):
+                        me = await self._bot.me()
+                        self._bot_username = me.username or ""
+                if self._bot_username:
+                    reply_markup = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="🎮 Открыть приложение",
+                                    url=mini_app_group_url(self._bot_username, chat_id=job.chat_id),
+                                )
+                            ]
+                        ]
+                    )
+
             if len(job.gallery) >= 2:
                 try:
                     media = [
@@ -524,6 +544,7 @@ class Publisher:
                         caption=job.text,
                         parse_mode=ParseMode.HTML,
                         has_spoiler=secret,
+                        reply_markup=reply_markup,
                     )
                     return message.message_id
                 except (TelegramForbiddenError, TelegramRetryAfter):
@@ -533,5 +554,7 @@ class Publisher:
                         raise
                     log.info("icon for chat %s did not go through, sending text", job.chat_id)
 
-            message = await self._bot.send_message(job.chat_id, job.text, parse_mode=ParseMode.HTML)
+            message = await self._bot.send_message(
+                job.chat_id, job.text, parse_mode=ParseMode.HTML, reply_markup=reply_markup
+            )
             return message.message_id

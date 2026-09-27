@@ -10,9 +10,9 @@ kb-tz-skip = Пропустить
 kb-connect-xbox = Подключить XBOX
 kb-digest-never = никогда
 kb-digest-from-n = от { $threshold } достижений
-kb-rarity-hidden = никакие
-kb-rarity-rare = только редкие
-kb-rarity-all = любые
+kb-rarity-hidden = Никакие
+kb-rarity-rare = Редкие
+kb-rarity-all = Все
 
 # Connection controls
 kb-disconnect-confirm = Да, отключить
@@ -29,9 +29,9 @@ kb-psn-disconnect = 🔌 Отвязать
 kb-xbox-reconnect = 🔄 Подключить заново
 
 # Panel controls
-kb-timezone-row = Часовой пояс: { $offset } ▸
+kb-timezone-row = ⏱ Часовой пояс: { $offset } ▸
 kb-my-chats = 💬 Мои чаты ▸
-kb-rarity-row = Ачивки: { $mode } ▸
+kb-rarity-row = 🎯 Публиковать достижения: { $mode }
 kb-sync = 🔄 Синхронизировать
 kb-profile-visible = Профиль виден другим: { $visible } ▸
 kb-profile-visible-yes = да
@@ -46,7 +46,7 @@ kb-publishes-partly = 🔔 Частично
 # /panel's platform buttons (#10): each opens that platform's own screen.
 kb-platform-menu = { $icon } { $platform } ▸
 kb-platform-menu-count = { $icon } { $platform } ({ $count }) ▸
-kb-locale = Язык: { $name } ▸
+kb-locale = 🌐 Язык: { $name } ▸
 kb-refresh = Обновить
 kb-back = ‹ Назад
 kb-open = Открыть

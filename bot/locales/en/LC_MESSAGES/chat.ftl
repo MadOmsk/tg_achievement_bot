@@ -2,8 +2,8 @@
 chat-subscribe-groups-only = This command is for a group chat — that's where publishing happens.
 chat-subscribe-connect-first = Connect at least one platform first — buttons below.
 chat-subscribe-already = You're already publishing here.
-chat-subscribe-done = Done. { $gamertag }'s achievements will land here.
-    Rarity and XBOX 360 settings are in a DM, /panel.
+chat-subscribe-done = Done. { $gamertag }'s achievements will be published in this chat.
+chat-subscribe-settings-button = ⚙️ Settings in PM
 chat-unsubscribe-not-subscribed = You weren't publishing here anyway.
 chat-unsubscribe-confirm-button = Yes, unsubscribe
 chat-cancel-button = Cancel
@@ -11,6 +11,13 @@ chat-close-button = Close
 chat-unsubscribe-prompt = Stop publishing your achievements in this chat?
 chat-not-your-button = That's not your button.
 chat-unsubscribe-done = I'll stop publishing your achievements in this chat.
+
+# Intro / Pinned card (#136)
+chat-intro-pinned-text =
+    🎮 <b>Club Gaming Achievements</b>
+
+    Tracking new achievements and trophies across XBOX, PlayStation, and Steam, publishing them to chat, and calculating player stats.
+chat-intro-open-app-button = 🎮 Open App
 
 # Statistics and presence
 chat-stats-no-gamertag = no gamertag

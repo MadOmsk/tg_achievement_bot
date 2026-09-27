@@ -16,9 +16,9 @@ kb-digest-from-n =
         [one] from { $threshold } achievement
        *[other] from { $threshold } achievements
     }
-kb-rarity-hidden = none
-kb-rarity-rare = rare only
-kb-rarity-all = all of them
+kb-rarity-hidden = None
+kb-rarity-rare = Rare only
+kb-rarity-all = All
 
 # Connection controls
 kb-disconnect-confirm = Yes, disconnect
@@ -35,9 +35,9 @@ kb-psn-disconnect = 🔌 Unlink
 kb-xbox-reconnect = 🔄 Connect again
 
 # Panel controls
-kb-timezone-row = Timezone: { $offset } ▸
+kb-timezone-row = ⏱ Timezone: { $offset } ▸
 kb-my-chats = 💬 My chats ▸
-kb-rarity-row = Achievements: { $mode } ▸
+kb-rarity-row = 🎯 Publish achievements: { $mode }
 kb-sync = 🔄 Sync now
 kb-profile-visible = Profile visible to others: { $visible } ▸
 kb-profile-visible-yes = yes
@@ -52,7 +52,7 @@ kb-publishes-partly = 🔔 Partly
 # /panel's platform buttons (#10): each opens that platform's own screen.
 kb-platform-menu = { $icon } { $platform } ▸
 kb-platform-menu-count = { $icon } { $platform } ({ $count }) ▸
-kb-locale = Language: { $name } ▸
+kb-locale = 🌐 Language: { $name } ▸
 kb-refresh = Refresh
 kb-back = ‹ Back
 kb-open = Open

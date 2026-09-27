@@ -2,8 +2,8 @@
 chat-subscribe-groups-only = Эта команда для группового чата — там, где нужны публикации.
 chat-subscribe-connect-first = Сначала подключи хотя бы одну платформу — кнопки ниже.
 chat-subscribe-already = Ты уже публикуешься здесь.
-chat-subscribe-done = Готово. Ачивки { $gamertag } будут прилетать сюда.
-    Настройки редкости и XBOX 360 — в личке, /panel.
+chat-subscribe-done = Готово. Достижения { $gamertag } будут публиковаться в этот чат.
+chat-subscribe-settings-button = ⚙️ Настройки в личке
 chat-unsubscribe-not-subscribed = Ты здесь и не публиковался.
 chat-unsubscribe-confirm-button = Да, отписаться
 chat-cancel-button = Отмена
@@ -11,6 +11,13 @@ chat-close-button = Закрыть
 chat-unsubscribe-prompt = Перестать публиковать твои достижения в этом чате?
 chat-not-your-button = Это не твоя кнопка.
 chat-unsubscribe-done = Больше не публикую твои достижения в этом чате.
+
+# Intro / Pinned card (#136)
+chat-intro-pinned-text =
+    🎮 <b>Игровые достижения клуба</b>
+
+    Слежу за новыми достижениями и трофеями на XBOX, PlayStation и в Steam, публикую их в чат и считаю статистику игроков.
+chat-intro-open-app-button = 🎮 Открыть приложение
 
 # Statistics and presence
 chat-stats-no-gamertag = без геймертега

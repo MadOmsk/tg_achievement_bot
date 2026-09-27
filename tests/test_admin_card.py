@@ -175,7 +175,7 @@ async def test_psn_status_line_shows_visibility_not_nickname(repo: Repo) -> None
     text, _markup = await render_user_card(repo, 1, locale="ru")
 
     status_line = _block(text, "PSN:")[2]
-    assert "ачивки скрыты" in status_line
+    assert "настройки приватности" in status_line
     assert "PsnPerson" not in status_line
 
 
