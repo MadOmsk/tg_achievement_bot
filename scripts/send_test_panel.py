@@ -21,6 +21,11 @@ from bot.views.test_panel import render_screen
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Send test panel to admin PM")
     parser.add_argument("--env", default=".env.test", help="Path to env file (default: .env.test)")
+    parser.add_argument(
+        "--screen",
+        default="showcase",
+        help="Screen to render (default: showcase)",
+    )
     args = parser.parse_args()
 
     os.environ["BOT_ENV_FILE"] = args.env
@@ -37,7 +42,7 @@ async def main() -> None:
         me = await bot.get_me()
         print(f"Using bot: @{me.username} ({me.id})")
         state = get_mock_state(admin_id)
-        text, reply_markup = render_screen("home", state)
+        text, reply_markup = render_screen(args.screen, state)
         msg = await bot.send_message(
             chat_id=admin_id,
             text=text,

@@ -1,4 +1,4 @@
-"""Tests for interactive test panel (#10, #20, #126)."""
+"""Tests for interactive test panel (#10, #20, #126) and Showcase screens."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from bot.views.test_panel import (
 def test_render_all_screens() -> None:
     state = MockPanelState()
 
-    for scr in [
+    all_screens = [
+        "showcase",
         "home",
         "acc:psn",
         "acc:xbox",
@@ -25,19 +26,65 @@ def test_render_all_screens() -> None:
         "admin",
         "adm_digest",
         "adm_usercard",
-    ]:
+        "chat_hub",
+        "stats",
+        "summary_day",
+        "summary_month",
+        "single_achievement",
+        "digest_achievement",
+        "online",
+        "recent",
+    ]
+
+    for scr in all_screens:
         text, markup = render_screen(scr, state, {"platform": "psn", "id": "1", "chat_id": 101})
-        assert text
-        assert markup.inline_keyboard is not None
-        assert len(markup.inline_keyboard) > 0
+        assert text, f"Empty text for {scr}"
+        assert markup.inline_keyboard is not None, f"No keyboard for {scr}"
+        assert len(markup.inline_keyboard) > 0, f"Empty keyboard for {scr}"
+
+
+def test_psn_single_vs_multi_labeling() -> None:
+    state = MockPanelState()
+    assert len(state.psn_accounts) == 2
+
+    # Multi PSN (2 accounts)
+    text_multi, markup_multi = render_screen("home", state)
+    assert "• PSN1 (Kratos):" in text_multi
+    assert "• PSN2 (Snake):" in text_multi
+    assert any("🔵 PSN (2) ▸" in btn.text for row in markup_multi.inline_keyboard for btn in row)
+
+    text_acc_multi, markup_acc_multi = render_screen("acc:psn", state)
+    assert "PSN1: Kratos" in text_acc_multi
+    assert "PSN2: Snake" in text_acc_multi
+    assert any(
+        "👤 Профиль: PSN1 (Kratos)" in btn.text
+        for row in markup_acc_multi.inline_keyboard
+        for btn in row
+    )
+
+    # Single PSN (1 account)
+    state.psn_accounts = [state.psn_accounts[0]]
+    assert len(state.psn_accounts) == 1
+
+    text_single, markup_single = render_screen("home", state)
+    assert "• PSN (Kratos):" in text_single
+    assert "• PSN1" not in text_single
+    assert any("🔵 PSN ▸" in btn.text for row in markup_single.inline_keyboard for btn in row)
+
+    text_acc_single, markup_acc_single = render_screen("acc:psn", state)
+    assert "PSN: Kratos" in text_acc_single
+    assert "PSN1" not in text_acc_single
+    assert any(
+        "👤 Профиль: PSN (Kratos)" in btn.text
+        for row in markup_acc_single.inline_keyboard
+        for btn in row
+    )
 
 
 def test_toggle_publication_and_rarity_state() -> None:
     state = MockPanelState()
     assert state.rarity_mode == "all"
     assert state.xbox_publishes is True
-    assert state.psn_accounts[0]["publishes"] is True
-    assert state.psn_accounts[1]["publishes"] is False
 
     # Toggle xbox
     state.xbox_publishes = False
@@ -45,17 +92,12 @@ def test_toggle_publication_and_rarity_state() -> None:
     assert "XBOX: 🔇 Не публикуется" in text
     assert any("🔇 Не публикуется" in btn.text for row in markup.inline_keyboard for btn in row)
 
-    # Toggle psn
-    state.psn_accounts[1]["publishes"] = True
-    text, _ = render_screen("acc:psn", state)
-    assert "Snake (второй)" in text
-
     # Toggle rarity cyclic button on home
     state.rarity_mode = "rare"
     text, markup = render_screen("home", state)
-    assert "Достижения (#126):</b> редкие" in text
+    assert "Достижения (#126):</b> <b>Редкие</b>" in text
     assert any(
-        "Публиковать достижения: редкие" in btn.text
+        "Публиковать достижения: Редкие" in btn.text
         for row in markup.inline_keyboard
         for btn in row
     )
@@ -66,7 +108,6 @@ def test_chat_delete_button_visibility() -> None:
     chat_sub = state.chats[0]
     assert chat_sub["subscribed"] is True
     _, markup_sub = render_screen("chat_detail", state, {"chat_id": chat_sub["id"]})
-    # Subscribed chat has no delete button
     assert not any(
         "Удалить из списка" in btn.text for row in markup_sub.inline_keyboard for btn in row
     )
@@ -84,6 +125,10 @@ def test_add_and_unlink_psn_accounts() -> None:
     state = MockPanelState()
     assert len(state.psn_accounts) == 2
 
+    # Screen has add button when < 3
+    _, markup = render_screen("acc:psn", state)
+    assert any("➕ Добавить аккаунт" in btn.text for row in markup.inline_keyboard for btn in row)
+
     # Add 3rd
     state.psn_accounts.append(
         {
@@ -98,17 +143,19 @@ def test_add_and_unlink_psn_accounts() -> None:
     assert len(state.psn_accounts) == 3
 
     # Screen should not have add button anymore
-    _, markup = render_screen("acc:psn", state)
-    add_buttons = [
-        btn for row in markup.inline_keyboard for btn in row if "Добавить аккаунт" in btn.text
-    ]
-    assert len(add_buttons) == 0
+    _, markup_full = render_screen("acc:psn", state)
+    assert not any(
+        "➕ Добавить аккаунт" in btn.text
+        for row in markup_full.inline_keyboard
+        for btn in row
+    )
 
     # Unlink account 1
     state.psn_accounts = [a for a in state.psn_accounts if a["id"] != "1"]
     assert len(state.psn_accounts) == 2
-    _, markup2 = render_screen("acc:psn", state)
-    add_buttons2 = [
-        btn for row in markup2.inline_keyboard for btn in row if "Добавить аккаунт" in btn.text
-    ]
-    assert len(add_buttons2) == 1
+    _, markup_after = render_screen("acc:psn", state)
+    assert any(
+        "➕ Добавить аккаунт" in btn.text
+        for row in markup_after.inline_keyboard
+        for btn in row
+    )

@@ -1,8 +1,8 @@
 """Interactive test panel for user and admin features (#10, #20, #126).
 
 Provides an in-memory stub/mock screen in private Telegram messages
-so admins can test UX, submenus, toggle switches, and navigation
-without mutating production or test database state.
+so admins can test UX, submenus, toggle switches, navigation,
+and preview all major bot screen formats.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from bot.config import Settings
 from bot.views.test_panel import (
     MockPanelState,
     _format_offset,
-    _rarity_name,
+    _rarity_title,
     render_screen,
 )
 
@@ -50,10 +50,19 @@ def reset_mock_state(tg_id: int) -> MockPanelState:
     return _USER_STATES[tg_id]
 
 
-@router.message(Command("test_panel", "testpanel", "panel_demo"))
+@router.message(Command("test_panel", "testpanel", "demo", "showcase", "screens"))
 async def handle_test_panel_cmd(message: Message) -> None:
     if message.chat.type != ChatType.PRIVATE:
         await message.answer("Команда доступна только в личных сообщениях с ботом.")
+        return
+    state = get_mock_state(message.from_user.id)
+    text, markup = render_screen("showcase", state)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.message(Command("panel_demo", "test_user"))
+async def handle_user_panel_demo(message: Message) -> None:
+    if message.chat.type != ChatType.PRIVATE:
         return
     state = get_mock_state(message.from_user.id)
     text, markup = render_screen("home", state)
@@ -78,7 +87,36 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
     user_id = callback.from_user.id
     state = get_mock_state(user_id)
 
-    # 1. Navigation
+    # 1. Showcase & Direct Screen Navigation
+    if action == "showcase":
+        text, markup = render_screen("showcase", state)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        await callback.answer()
+        return
+
+    if action == "screen":
+        target = parts[2] if len(parts) > 2 else "panel"
+        screen_map = {
+            "panel": "home",
+            "admin": "admin",
+            "chat_hub": "chat_hub",
+            "stats": "stats",
+            "sum_day": "summary_day",
+            "sum_month": "summary_month",
+            "single": "single_achievement",
+            "digest": "digest_achievement",
+            "online": "online",
+            "recent": "recent",
+        }
+        scr = screen_map.get(target, "home")
+        text, markup = render_screen(scr, state)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        await callback.answer()
+        return
+
+    # 2. User Panel Navigation
     if action == "home":
         text, markup = render_screen("home", state)
         with contextlib.suppress(TelegramBadRequest):
@@ -133,6 +171,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
+    # 3. Admin Navigation
     if action == "admin":
         text, markup = render_screen("admin", state)
         with contextlib.suppress(TelegramBadRequest):
@@ -161,7 +200,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         await callback.answer()
         return
 
-    # 2. State Toggles & Actions (#20, #126, #10)
+    # 4. State Toggles & Actions (#20, #126, #10)
     if action == "cycle_rarity":
         order = ["all", "rare", "hidden"]
         idx = order.index(state.rarity_mode) if state.rarity_mode in order else 0
@@ -169,7 +208,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         text, markup = render_screen("home", state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer(f"Публиковать достижения: {_rarity_name(state.rarity_mode)}")
+        await callback.answer(f"Публиковать достижения: {_rarity_title(state.rarity_mode)}")
         return
 
     if action == "cycle_secrets":
@@ -177,8 +216,21 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         text, markup = render_screen("home", state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        st = "показывать" if state.show_secrets else "не показывать"
+        st = "Показывать" if state.show_secrets else "Не показывать"
         await callback.answer(f"Секретные достижения: {st}")
+        return
+
+    if action == "toggle_hub_pub":
+        state.hub_publishes = not state.hub_publishes
+        text, markup = render_screen("chat_hub", state)
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        toast = (
+            "🔔 Публикация в этот чат включена"
+            if state.hub_publishes
+            else "🔕 Публикация отключена"
+        )
+        await callback.answer(toast)
         return
 
     if action == "pub":
@@ -213,7 +265,10 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         acc = next((a for a in state.psn_accounts if a["id"] == acc_id), None)
         if acc:
             acc["publishes"] = not acc["publishes"]
-            toast = f"{acc['name']}: 🔔 Вкл" if acc["publishes"] else f"{acc['name']}: 🔇 Заглушен"
+            is_multi = len(state.psn_accounts) > 1
+            idx = next((i for i, x in enumerate(state.psn_accounts, 1) if x["id"] == acc_id), 1)
+            prefix = f"PSN{idx}" if is_multi else "PSN"
+            toast = f"{prefix}: 🔔 Вкл" if acc["publishes"] else f"{prefix}: 🔇 Заглушен"
         else:
             toast = "Аккаунт не найден"
         text, markup = render_screen("acc:psn", state)
@@ -249,16 +304,14 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         if len(state.psn_accounts) < 3:
             new_acc = {
                 "id": str(len(state.psn_accounts) + 1),
-                "name": "Hunter3 (третий)",
+                "name": "Hunter",
                 "publishes": True,
                 "level": 12,
                 "trophies": 15,
                 "platinum": 0,
             }
             state.psn_accounts.append(new_acc)
-            await callback.answer(
-                "⚙️ [Заглушка]: Аккаунт Hunter3 успешно привязан!", show_alert=True
-            )
+            await callback.answer("⚙️ [Заглушка]: Аккаунт Hunter успешно привязан!", show_alert=True)
         else:
             await callback.answer("Достигнут максимум (3 аккаунта)", show_alert=True)
         text, markup = render_screen("acc:psn", state)
@@ -296,7 +349,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         text, markup = render_screen("admin", state)
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer(f"Редкость новичков: {_rarity_name(state.default_rarity)}")
+        await callback.answer(f"Редкость новичков: {_rarity_title(state.default_rarity)}")
         return
 
     if action == "adm_toggle_links":
@@ -318,10 +371,10 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
 
     if action == "reset":
         reset_mock_state(user_id)
-        text, markup = render_screen("home", get_mock_state(user_id))
+        text, markup = render_screen("showcase", get_mock_state(user_id))
         with contextlib.suppress(TelegramBadRequest):
             await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-        await callback.answer("Состояние тестовой панели сброшено", show_alert=True)
+        await callback.answer("Все демо-заглушки сброшены", show_alert=True)
         return
 
     if action == "noop":
@@ -329,7 +382,7 @@ async def handle_test_panel_callback(callback: CallbackQuery) -> None:
         if sub == "sync":
             toast = "Синхронизирую… (заглушка)"
         else:
-            toast = "⚙️ [Заглушка]: Это демонстрационная ссылка на профиль."
+            toast = "⚙️ [Заглушка]: Интерактивное демо-действие."
         await callback.answer(toast, show_alert=True)
         return
 
