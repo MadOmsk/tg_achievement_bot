@@ -379,6 +379,17 @@ CREATE TABLE IF NOT EXISTS titles (
     cover_hash TEXT,
     cover_checked_at TEXT,
     achievements_checked_at TEXT,
+    -- Which HowLongToBeat entry this game is (#131, migration 063): matched
+    -- automatically, never chosen by a person — bot/services/hltb_match.py
+    -- scores every candidate a search turns up and only keeps one it is
+    -- sure of. NULL until matched or given up on (three failed attempts,
+    -- same shape as platforms_attempts above); `hltb_match_score` is the
+    -- winning score, for telling a confident match from a Steam-appid one
+    -- (always 1.0) apart when the operator needs to check by hand.
+    hltb_id INTEGER,
+    hltb_match_score REAL,
+    hltb_attempts INTEGER NOT NULL DEFAULT 0,
+    hltb_checked_at TEXT,
     updated_at TEXT NOT NULL
 );
 

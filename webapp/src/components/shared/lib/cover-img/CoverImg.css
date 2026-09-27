@@ -172,9 +172,12 @@
   height: 64px;
 }
 
+/* Same rule for every small achievement row — the profile feed, the game
+ * page's own list — since both share this class; one size everywhere a
+ * missing icon shows at this scale. */
 .feed-cover.is-achievement.is-empty .cover-ph-mark svg {
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
 }
 
 /* Blurred caption wash — no second art layer; the hero under the panel shows through. */

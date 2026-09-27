@@ -6,21 +6,17 @@ import "./Sheet.css";
 export function Sheet({
   children,
   onClose,
-  closeLabel,
   photo,
   tall,
   mid,
   compact,
-  noClose: _noClose,
 }: {
   children: ReactNode;
   onClose: () => void;
-  closeLabel: string;
   photo?: boolean;
   tall?: boolean;
   mid?: boolean;
   compact?: boolean;
-  noClose?: boolean;
 }) {
   const [leaving, setLeaving] = useState(false);
   const closed = useRef(false);
@@ -83,17 +79,6 @@ export function Sheet({
       role="presentation"
     >
       <div className="sheet-stack">
-        <button
-          type="button"
-          className="sheet-dismiss"
-          onClick={(e) => {
-            e.stopPropagation();
-            close();
-          }}
-          aria-label={closeLabel}
-        >
-          ✕
-        </button>
         <div
           className={[
             "sheet-body glass",

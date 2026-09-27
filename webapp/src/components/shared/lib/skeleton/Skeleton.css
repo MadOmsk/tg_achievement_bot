@@ -1,12 +1,16 @@
 /* Placeholders for what is loading. They are drawn from the app's own pieces
  * (glass cards, the same picture and line sizes) and only a soft light passes
  * over them, so the page does not change shape when the content arrives. */
+/* Tinted with the app's own blue, not a neutral grey, so a loading screen
+ * still looks like this app rather than a generic placeholder. */
 .skel {
   position: relative;
   display: block;
   overflow: hidden;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.07);
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(130, 160, 235, 0.16), transparent 60%),
+    rgba(255, 255, 255, 0.05);
 }
 
 .skel::after {
@@ -16,7 +20,7 @@
   background: linear-gradient(
     100deg,
     transparent 30%,
-    rgba(255, 255, 255, 0.1) 50%,
+    rgba(200, 215, 255, 0.16) 50%,
     transparent 70%
   );
   transform: translateX(-100%);
@@ -65,6 +69,11 @@
 /* The first screen: the home page's own geometry, with room between blocks. */
 .app-skel {
   padding-top: 12px;
+}
+
+/* Follows a real header, already spaced by its own padding — no second gap. */
+.app-skel.is-nested {
+  padding-top: 0;
 }
 
 .app-skel-head {
@@ -182,18 +191,14 @@
   gap: 12px;
 }
 
-.skel-post-head .skel-copy {
-  gap: 8px;
-}
-
 .skel-post-pic {
   aspect-ratio: 1 / 1;
   border-radius: 16px;
 }
 
 .skel-post-text {
-  gap: 10px;
-  padding: 0 2px 4px;
+  margin: 2px 2px 4px;
+  height: 15px;
 }
 
 .stats-skel-tiles {

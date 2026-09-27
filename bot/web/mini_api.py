@@ -24,6 +24,8 @@ from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import achievement_icons
 from bot.services.connect import ConnectService
+from bot.services.hltb import HltbError, ensure_title_match
+from bot.services.hltb import resolve as hltb_resolve
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -53,7 +55,7 @@ from bot.web.mini_chat import (
     build_summary_payload,
     chat_of_user,
 )
-from bot.web.mini_hltb import setup_hltb_routes
+from bot.web.mini_hltb import hltb_payload, setup_hltb_routes
 from bot.web.mini_me import build_me_payload
 
 log = logging.getLogger(__name__)
@@ -136,6 +138,7 @@ def setup_mini_api(
     )
     app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
+    app.router.add_get("/api/mini/games/{platform}/{title_id}/hltb", handle_game_hltb)
     setup_admin_routes(app)
     setup_hltb_routes(app)
 
@@ -763,6 +766,36 @@ async def handle_game_details(request: web.Request) -> web.Response:
             ],
         }
     )
+
+
+async def handle_game_hltb(request: web.Request) -> web.Response:
+    """A game's HLTB hours/description, split off from `handle_game_details`
+    (#131) so the achievements a person actually opened the page for are
+    never held up behind it — an unmatched game's first visit costs a few
+    HLTB requests (`ensure_title_match`), which used to delay the whole
+    page. The Mini App calls this once the page itself has already
+    rendered, and fills the "Об игре" tab in when it answers."""
+    user = await _require_user(request)
+    title_id = request.match_info.get("title_id", "")
+    repo: Repo = request.app["mini_repo"]
+
+    hltb_block: dict[str, Any] | None = None
+    try:
+        await ensure_title_match(repo, title_id)
+        match = await repo.title_hltb_match(title_id)
+        if match:
+            hltb_id, _score = match
+            anthropic = request.app.get("mini_anthropic_auth")
+            result = await hltb_resolve(repo, hltb_id, anthropic_auth=anthropic)
+            hltb_block = hltb_payload(result, locale=await _user_locale(repo, user.tg_id))
+    except HltbError as exc:
+        log.info("could not resolve HLTB for title %s: %s", title_id, exc)
+    except Exception:
+        # Best-effort: a bad moment here must never surface as an error the
+        # Mini App has to show — the tab just stays without an answer.
+        log.exception("HLTB match/resolve failed for title %s", title_id)
+
+    return web.json_response({"ok": True, "hltb": hltb_block})
 
 
 def _extract_init_data(request: web.Request) -> str:

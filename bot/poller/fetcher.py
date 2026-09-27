@@ -11,6 +11,7 @@ from bot.db.repo import AchievementRow, Repo, TitleAchievementRow, TitleHistoryR
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
 from bot.services import achievement_icons
+from bot.services.hltb import ensure_title_match
 from bot.services.platform_format import game_platforms_json
 from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
@@ -109,6 +110,7 @@ class Fetcher:
         resolved = await self.ensure_title_name(tg_id, title_id, title_name)
         await self.ensure_title_platforms(tg_id, title_id)
         await self._publisher.publish(tg_id, xuid, gamertag, new_rows, resolved)
+        await self._ensure_hltb_match(title_id)
         return len(new_rows)
 
     async def ensure_title_name(
@@ -163,6 +165,17 @@ class Fetcher:
             else None
         )
         await self._repo.record_platforms_lookup(title_id, found)
+
+    async def _ensure_hltb_match(self, title_id: str) -> None:
+        """Which HowLongToBeat entry this game is (#131) — after publishing,
+        never before: unlike the platforms lookup above, nothing in the
+        notification itself needs it, so it must not add its latency to an
+        achievement going out. A no-op once the game is matched (or given up
+        on); see `services.hltb.ensure_title_match`."""
+        try:
+            await ensure_title_match(self._repo, title_id)
+        except Exception:
+            log.exception("HLTB match failed for title %s", title_id)
 
     async def ensure_title_icon(self, tg_id: int, title_id: str) -> str | None:
         """Box art as a stand-in for an Xbox 360 achievement icon (SPEC 7.1)
@@ -449,6 +462,7 @@ class Fetcher:
                 if fresh:
                     await self.ensure_title_platforms(tg_id, entry.title_id)
                     await self._publisher.publish(tg_id, xuid, gamertag, fresh, entry.name)
+                    await self._ensure_hltb_match(entry.title_id)
                     published += len(fresh)
 
             log.info(

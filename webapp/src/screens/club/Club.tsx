@@ -15,7 +15,7 @@ import {
 import { t, type Locale } from "../../i18n";
 import { GameHits, GameSheet, useHltbSearch } from "../hltb";
 import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
-import { AccountBar, Avatar, FeedSkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, FeedSkel, HomeSkel, Icon, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -145,6 +145,23 @@ export function Club({
         setMonthLabel(s.value.month_label);
       }
       if (mine.status === "fulfilled") setMyPerson(mine.value);
+      // The same "mine" games list the page renders below — preloaded before
+      // the skeleton lifts, so the header, the gallery and the games appear
+      // together instead of the gallery (and every game's cover) popping in
+      // a beat after the text around them.
+      if (refreshKey === 0) {
+        const myItems =
+          mine.status === "fulfilled" && mine.value.feed?.length
+            ? mine.value.feed
+            : f.status === "fulfilled"
+              ? f.value.items.filter((row) => row.tg_id === me.tg_id)
+              : [];
+        await preloadImages(
+          [myItems[0]?.icon_url, ...myItems.slice(0, 8).map((row) => row.game_icon_url)],
+          5000,
+        );
+      }
+      if (cancelled) return;
       setClubReady(true);
     };
     void load();
@@ -169,10 +186,17 @@ export function Club({
         // The profile appears with its gallery picture and its games' covers
         // already loaded — not skeleton, then the bar, then pictures one by one.
         if (refreshKey === 0) {
-          await preloadImages([
-            payload.feed[0]?.icon_url,
-            ...payload.feed.slice(0, 8).map((row) => row.game_icon_url),
-          ]);
+          // A generous budget: this is a deliberate navigation someone is
+          // waiting on, not an ambient background fetch — 1.5s let a slow
+          // connection through with its pictures still not there yet, which
+          // showed up as the gallery popping in a beat after the rest.
+          await preloadImages(
+            [
+              payload.feed[0]?.icon_url,
+              ...payload.feed.slice(0, 8).map((row) => row.game_icon_url),
+            ],
+            5000,
+          );
         }
         if (!cancelled) {
           setPerson(payload);
@@ -290,76 +314,19 @@ export function Club({
         {formatMonth(ym, locale, "chip")}
       </button>
     );
-  // The page opens at once: until the person's own payload arrives it is drawn
-  // from what is already at hand (their name, status and the feed's items of
-  // theirs), so a tap never looks like nothing happened.
-  const provisional =
-    openPersonId && (!person || person.tg_id !== openPersonId)
-      ? (() => {
-          const items = feed.filter((row) => row.tg_id === openPersonId);
-          const member = online.find((row) => row.tg_id === openPersonId);
-          if (!member && items.length === 0) return null;
-          return {
-            tg_id: openPersonId,
-            name: member?.name ?? items[0]?.person ?? `id${openPersonId}`,
-            platforms: [],
-            today: { count: 0, score: 0, xbox: 0, steam: 0, psn: 0 },
-            week: { count: 0, xbox: 0, steam: 0, psn: 0 },
-            month: { count: 0, score: 0, xbox: 0, steam: 0, psn: 0 },
-            games: [],
-            feed: items,
-          } as PersonPayload;
-        })()
-      : null;
+  // No provisional, half-loaded view: the page stays on the skeleton until
+  // the real payload (with its gallery picture and covers already preloaded)
+  // is ready, so it appears once, whole, instead of in visible stages.
   const openProfile =
-    openPersonId && (person && person.tg_id === openPersonId ? person : provisional);
-  const [homeCompact, setHomeCompact] = useState(false);
-  const homeCompactRef = useRef(false);
-  const homeLockRef = useRef(0);
-  const homeFrameRef = useRef(0);
-
-  useEffect(() => {
-    if (pane !== SCREEN_NAMES.HOME || openProfile) {
-      homeCompactRef.current = false;
-      setHomeCompact(false);
-      return;
-    }
-    const apply = (next: boolean) => {
-      if (homeCompactRef.current === next) return;
-      homeCompactRef.current = next;
-      homeLockRef.current = performance.now() + 420;
-      setHomeCompact(next);
-    };
-    const update = () => {
-      if (query.trim()) {
-        apply(true);
-        return;
-      }
-      if (performance.now() < homeLockRef.current) return;
-      const y = window.scrollY || document.documentElement.scrollTop || 0;
-      if (homeCompactRef.current) {
-        if (y <= 2) apply(false);
-        return;
-      }
-      if (y > 88) apply(true);
-    };
-    const onScroll = () => {
-      cancelAnimationFrame(homeFrameRef.current);
-      homeFrameRef.current = requestAnimationFrame(update);
-    };
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      cancelAnimationFrame(homeFrameRef.current);
-      window.removeEventListener("scroll", onScroll);
-    };
-  }, [pane, openProfile, query]);
+    openPersonId && person && person.tg_id === openPersonId ? person : null;
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [scoreOpen, setScoreOpen] = useState(false);
 
   if (me.chats.length === 0) {
     return <p className="empty">{t(locale, "noChats")}</p>;
   }
 
-  if (openPersonId && personBusy && !openProfile) {
+  if (openPersonId && personBusy) {
     return (
       <div className="pane-fade person-wait">
         <PersonSkel />
@@ -407,42 +374,67 @@ export function Club({
       <div className="pane-fade" key={pane}>
       {pane === SCREEN_NAMES.HOME && (
         <>
-          <div className={homeCompact ? "home-chrome is-compact" : "home-chrome"}>
-            <button
-              type="button"
-              className="home-me"
-              onClick={() => openPerson(me.tg_id)}
-              aria-label={accountLabel(me)}
-            >
-              <Avatar
-                name={accountLabel(me)}
-                photo={telegramPhoto()}
-                tgId={me.tg_id}
-                online={isOnline(online.find((m) => m.tg_id === me.tg_id) ?? {})}
-                platform={online.find((m) => m.tg_id === me.tg_id && isOnline(m))?.platform}
-                size={48}
-                zoomLabel={t(locale, "close")}
-              />
-            </button>
-            <ScoreCup
-              locale={locale}
-              lines={meScoreLines(me, locale)}
-              onEmpty={needle || homeCompact ? undefined : onSettings}
-            />
-            <div className="home-hello-row">
-              <AccountBar
-                me={me}
-                locale={locale}
-                onProfile={() => openPerson(me.tg_id)}
-                status={
-                  statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
-                  t(locale, "notOnline")
-                }
-                score={false}
-              />
-            </div>
-            <div className="home-search-row">
-              <SearchBar locale={locale} value={query} onChange={setQuery} />
+          <div className="home-chrome">
+            <div className="home-top">
+              <div className={searchOpen ? "home-top-main is-hidden" : "home-top-main"}>
+                <button
+                  type="button"
+                  className="home-me"
+                  onClick={() => openPerson(me.tg_id)}
+                  aria-label={accountLabel(me)}
+                >
+                  <Avatar
+                    name={accountLabel(me)}
+                    photo={telegramPhoto()}
+                    tgId={me.tg_id}
+                    online={isOnline(online.find((m) => m.tg_id === me.tg_id) ?? {})}
+                    platform={online.find((m) => m.tg_id === me.tg_id && isOnline(m))?.platform}
+                    size={48}
+                    zoomLabel={t(locale, "close")}
+                  />
+                </button>
+                <div className="home-hello-row">
+                  <AccountBar
+                    me={me}
+                    locale={locale}
+                    onProfile={() => setScoreOpen(true)}
+                    status={
+                      statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
+                      t(locale, "notOnline")
+                    }
+                    plats={
+                      <ScoreCup
+                        locale={locale}
+                        lines={meScoreLines(me, locale)}
+                        onEmpty={onSettings}
+                        markSize={12}
+                        open={scoreOpen}
+                        onOpenChange={setScoreOpen}
+                      />
+                    }
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="home-search-btn"
+                  aria-label={t(locale, "search")}
+                  onClick={() => setSearchOpen(true)}
+                >
+                  <Icon name="search" size={19} />
+                </button>
+              </div>
+              <div className={searchOpen ? "home-top-search" : "home-top-search is-hidden"}>
+                <SearchBar
+                  locale={locale}
+                  value={query}
+                  onChange={setQuery}
+                  focusKey={searchOpen}
+                  onClose={() => {
+                    setQuery("");
+                    setSearchOpen(false);
+                  }}
+                />
+              </div>
             </div>
           </div>
           {!clubReady && !needle && <HomeSkel />}

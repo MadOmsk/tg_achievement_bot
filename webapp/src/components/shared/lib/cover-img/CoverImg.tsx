@@ -28,13 +28,17 @@ export function CoverImg({
   const hero = Boolean(className?.includes("profile-hero-art"));
   const gameHero = Boolean(className?.includes("game-card-art"));
   const markSize = hero ? 96 : gameHero ? 112 : 28;
+  // The glyph stays up — on the same gradient an empty cover gets — until the
+  // picture has actually finished loading, so a slow network shows a steady
+  // placeholder instead of a blank box that later pops.
+  const shown = hasImg && fade.loaded;
   return (
     <span
-      className={["cover-ph", `is-${kind}`, hasImg ? "has-img" : "is-empty", className]
+      className={["cover-ph", `is-${kind}`, shown ? "has-img" : "is-empty", className]
         .filter(Boolean)
         .join(" ")}
     >
-      {hasImg ? (
+      {hasImg && (
         <img
           ref={fade.ref}
           src={url}
@@ -45,7 +49,8 @@ export function CoverImg({
           onLoad={fade.onLoad}
           onError={() => setFailed(true)}
         />
-      ) : (
+      )}
+      {!shown && (
         <span className="cover-ph-mark" aria-hidden>
           <CoverMark kind={kind} size={markSize} />
         </span>

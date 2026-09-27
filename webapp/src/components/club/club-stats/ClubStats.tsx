@@ -296,8 +296,6 @@ export function ClubStats({
         <Sheet
           mid
           onClose={() => setRareOpen(null)}
-          closeLabel={t(locale, "close")}
-          noClose
         >
           <div className="sheet-content score-sheet picker-sheet stats-sheet">
             <h2>{`${t(locale, "rareFinds")} - ${rareOpen.name}`}</h2>
@@ -308,6 +306,7 @@ export function ClubStats({
                 showSecrets={showSecrets}
                 detailed
                 onOpen={setItem}
+                onReveal={onReveal}
               />
             </div>
           </div>
@@ -318,8 +317,6 @@ export function ClubStats({
         <Sheet
           mid
           onClose={() => setHuntOpen(null)}
-          closeLabel={t(locale, "close")}
-          noClose
         >
           <div className="sheet-content score-sheet picker-sheet stats-sheet">
             <h2>{`${t(locale, "huntTogether")} - ${huntOpen.name}`}</h2>
@@ -330,6 +327,7 @@ export function ClubStats({
                 showSecrets={showSecrets}
                 detailed
                 onOpen={setItem}
+                onReveal={onReveal}
               />
             </div>
           </div>
@@ -340,8 +338,6 @@ export function ClubStats({
         <Sheet
           mid
           onClose={() => setItem(null)}
-          closeLabel={t(locale, "close")}
-          noClose
         >
           <div className="sheet-unlock">
             <UnlockCard

@@ -1,8 +1,28 @@
+/* The header is one plain row: avatar, platforms, the name/status pair, the
+ * search toggle — no more shrinking on scroll. Search swaps in over it by
+ * hiding one half and showing the other; both stay mounted, so opening it
+ * is never a re-mount (no re-fetching an avatar image, no losing state) and
+ * the row's own height never changes. */
+.home-top {
+  min-height: 48px;
+}
+
+.home-top-main,
+.home-top-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.home-top-main.is-hidden,
+.home-top-search.is-hidden {
+  display: none;
+}
+
 .home-me {
-  position: absolute;
-  top: calc(10px + var(--safe-top));
-  left: 18px;
-  z-index: 2;
+  position: relative;
+  flex: 0 0 auto;
   width: 48px;
   height: 48px;
   padding: 0;
@@ -23,47 +43,40 @@
 }
 
 .home-hello-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* No circle, no fill — just the glyph, so it reads as part of the header
+ * rather than a button sitting on it. */
+.home-search-btn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
   display: grid;
-  grid-template-rows: 1fr;
-  margin: 0 0 18px;
-  padding-left: 64px;
-  padding-right: 88px;
-  overflow: hidden;
+  place-items: center;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
 }
 
-.home-hello-row > * {
-  min-height: 0;
-  overflow: hidden;
+.home-search-btn:focus,
+.home-search-btn:focus-visible,
+.home-search-btn:active {
+  outline: none;
+  box-shadow: none;
 }
 
-.home-search-row {
-  padding-left: 0;
-}
-
-.home-chrome.is-compact .home-me {
-  top: calc(16px + var(--safe-top));
-  width: 36px;
-  height: 36px;
-}
-
-.home-chrome.is-compact .home-hello-row {
-  grid-template-rows: 0fr;
+/* The field takes the row over completely once open — no leftover margin
+ * from a bar that used to sit under the header. */
+.home-top .search-bar {
+  flex: 1 1 auto;
   margin: 0;
-  padding-left: 64px;
-  opacity: 0;
-  pointer-events: none;
 }
 
-.home-chrome.is-compact .home-search-row {
-  /* 36px avatar + air before the search field. */
-  padding-left: 56px;
-  padding-right: 0;
-}
-
-.is-home .account-bar .hello,
-.is-person .account-bar .hello {
-  color: rgba(238, 241, 246, 0.78);
-}
 
 .account-who {
   display: flex;
@@ -82,13 +95,6 @@
   user-select: none;
 }
 
-.hello {
-  display: block;
-  font-style: normal;
-  font-size: 0.78rem;
-  color: var(--muted);
-  font-weight: 500;
-}
 
 .page-head {
   display: flex;

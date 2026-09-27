@@ -34,6 +34,18 @@ export type GameGroup = {
   name_en: string | null;
 };
 
+export type GameHltb = {
+  hltb_id: number;
+  name: string;
+  release_year: number | null;
+  main_hours: number | null;
+  extra_hours: number | null;
+  completionist_hours: number | null;
+  genre: string | null;
+  description: string | null;
+  game_url: string | null;
+};
+
 export type GameDetails = {
   ok: boolean;
   platform: string;
@@ -51,4 +63,9 @@ export type GameDetails = {
   achievements_checked_at: string | null;
   groups: GameGroup[];
   achievements: GameAchievement[];
+};
+
+export type GameHltbResponse = {
+  ok: boolean;
+  hltb: GameHltb | null;
 };

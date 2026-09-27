@@ -49,3 +49,19 @@
 :is(.hero-game-bar-row.is-done, .played-game.is-done) :is(.hero-game-bar, .played-bar) {
   background-color: rgba(120, 190, 210, 0.14);
 }
+
+/* The profile's games list and the feed sit close to the eye in a plain list,
+ * so their glow is toned down from the shared default — still lit, just not
+ * as sharp. */
+.played-bar-fill,
+.hero-game-bar-fill {
+  --fill-glow: rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 0 8px 0 var(--fill-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.played-game.is-done .played-bar-fill,
+.hero-game-bar-row.is-done .hero-game-bar-fill {
+  --fill-glow: rgba(120, 214, 245, 0.5);
+}

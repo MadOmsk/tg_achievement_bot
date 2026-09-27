@@ -208,12 +208,11 @@ a:focus-visible {
 
 .chat-settings-title {
   margin: 0;
-  padding: 4px 0 8px;
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
+  padding: 2px 0 10px;
+  font-size: 1rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--text);
   line-height: 1.25;
 }
 

@@ -31,6 +31,8 @@ export const CLUB_ROUTES = {
 export const GAMES_ROUTES = {
   TITLE: (platform: string, titleId: string) =>
     `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}`,
+  HLTB: (platform: string, titleId: string) =>
+    `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}/hltb`,
 } as const;
 
 export const ADMIN_ROUTES = {
