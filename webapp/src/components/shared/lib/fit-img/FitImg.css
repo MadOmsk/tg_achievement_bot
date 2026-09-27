@@ -1,0 +1,46 @@
+.fit-layer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.fit-layer > img {
+  position: absolute;
+  display: block;
+  max-width: none;
+  max-height: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Whole picture visible top to bottom; the sides are cropped if it is
+ * wider than the block, and the stretched backdrop shows if it is narrower. */
+.fit-layer.is-height > img {
+  top: 0;
+  left: 50%;
+  height: 100%;
+  width: auto;
+  transform: translateX(-50%);
+}
+
+/* Full width first; whatever height is left over is cropped evenly. */
+.fit-layer.is-width > img {
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: auto;
+  transform: translateY(-50%);
+}
+
+/* No picture: the glyph stands in, centred in the visible block. */
+.fit-layer.is-empty {
+  display: grid;
+  place-items: center;
+}
+
+.fit-layer.is-empty .cover-ph-mark svg {
+  width: 84px;
+  height: 84px;
+}

@@ -1,0 +1,381 @@
+.home-me {
+  position: absolute;
+  top: calc(10px + var(--safe-top));
+  left: 18px;
+  z-index: 2;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.home-me:focus,
+.home-me:focus-visible,
+.home-me:active {
+  outline: none;
+  box-shadow: none;
+  background: none;
+}
+
+.home-hello-row {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin: 0 0 18px;
+  padding-left: 64px;
+  padding-right: 88px;
+  overflow: hidden;
+}
+
+.home-hello-row > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.home-search-row {
+  padding-left: 0;
+}
+
+.home-chrome.is-compact .home-me {
+  top: calc(16px + var(--safe-top));
+  width: 36px;
+  height: 36px;
+}
+
+.home-chrome.is-compact .home-hello-row {
+  grid-template-rows: 0fr;
+  margin: 0;
+  padding-left: 64px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.home-chrome.is-compact .home-search-row {
+  /* 36px avatar + air before the search field. */
+  padding-left: 56px;
+  padding-right: 0;
+}
+
+.is-home .account-bar .hello,
+.is-person .account-bar .hello {
+  color: rgba(238, 241, 246, 0.78);
+}
+
+.account-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.hello {
+  display: block;
+  font-style: normal;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  margin: 0 0 18px;
+  padding: 0;
+  min-height: 40px;
+}
+
+.page-head.is-split .month-chip {
+  margin-left: auto;
+}
+
+.month-chip,
+.section-head .month-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  max-width: 62%;
+  overflow: hidden;
+  border: 0;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 8px 18px rgba(0, 0, 0, 0.18);
+  color: rgba(238, 241, 246, 0.94);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.month-chip::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin-top: -2px;
+  border-right: 1.7px solid currentColor;
+  border-bottom: 1.7px solid currentColor;
+  transform: rotate(45deg);
+  opacity: 0.62;
+}
+
+/* Shared bottom picker (friends / months / games): same hairline rows as
+   the header score sheet — no card chips. */
+.picker-sheet {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 22px 18px 4px;
+}
+
+.picker-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+}
+
+.picker-game-art {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.picker-row-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: linear-gradient(160deg, rgba(155, 182, 255, 0.38), rgba(12, 16, 28, 0.92));
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.8rem;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px rgba(155, 182, 255, 0.22);
+}
+
+.avatar-dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 28%;
+  height: 28%;
+  min-width: 9px;
+  min-height: 9px;
+  max-width: 14px;
+  max-height: 14px;
+  border-radius: 50%;
+  background: #3ee070;
+  box-shadow: 0 0 0 2px #0a0c12;
+  color: #062012;
+  overflow: hidden;
+}
+
+.search-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 16px;
+  padding: 0 14px;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.friends {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  overflow-x: auto;
+  margin: 0 -18px 18px;
+  /* Top padding: overflow-x makes a scrollport that also clips Y,
+     so the avatar ring was getting shaved at the top. */
+  padding: 12px 18px 6px;
+  margin-top: -12px;
+  scrollbar-width: none;
+}
+
+.friends::-webkit-scrollbar {
+  display: none;
+}
+
+.friends.is-feed {
+  margin-bottom: 28px;
+}
+
+.friend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex: 0 0 80px;
+  width: 80px;
+  min-width: 80px;
+  max-width: 80px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.plat-logo {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  color: inherit;
+  line-height: 0;
+}
+
+.glass-card {
+  padding: 4px 0;
+  margin-top: 18px;
+  overflow: hidden;
+}
+
+.sheet-body {
+  position: relative;
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+  container-type: inline-size;
+  /* Leave room for the dismiss chip sitting above the drawer on the veil. */
+  max-height: calc(92dvh - 56px - env(safe-area-inset-top, 0px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)),
+    rgba(14, 18, 28, 0.72);
+  backdrop-filter: blur(42px) saturate(1.45);
+  -webkit-backdrop-filter: blur(42px) saturate(1.45);
+  border: 1px solid var(--stroke);
+  border-radius: 28px 28px 0 0;
+  padding: 0 0 calc(22px + var(--safe-bottom));
+}
+
+/* Telegram's WebView often skips backdrop-filter — without a denser fill
+   drawers look like a washed overlay instead of the frosted glass in Chrome. */
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .sheet-body,
+    .glass,
+    .glass-card,
+    .dock,
+    .home-chrome {
+      background: rgba(14, 18, 28, 0.94);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+
+}
+
+.sheet-hltb {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-hero {
+  --hero-lift: 0px;
+  --hero-art: min(92vw, 520px);
+  position: relative;
+  overflow: hidden;
+  min-height: var(--hero-art);
+  background: #0a0c12;
+}
+
+.is-home .home-skel {
+  --hero-lift: 0px;
+  width: auto;
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+  margin: 0 -18px 28px;
+}
+
+.home-skel {
+  pointer-events: none;
+  cursor: default;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.home-skel-fill {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  height: 100%;
+  border-radius: 0;
+}
+
+.friends.wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0;
+}
+
+.busy-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
