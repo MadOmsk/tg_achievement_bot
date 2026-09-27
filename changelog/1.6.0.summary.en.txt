@@ -1,0 +1,3 @@
+• Game page: HowLongToBeat completion times and description, matched automatically
+• New "Achievements" / "About" tabs — swipe or tap
+• Various Mini App interface polish
