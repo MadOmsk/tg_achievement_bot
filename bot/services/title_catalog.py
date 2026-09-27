@@ -120,15 +120,16 @@ class TitleCatalogService:
             plat, title_id, tg_id=tg_id, force=force, debounce_hours=debounce_hours
         )
 
-        xuid: str | None = None
+        xuids: list[str] = []
         if tg_id:
             is_xbox = plat in (Platform.XBOX_MODERN.value, Platform.XBOX_360.value)
             account_plat = "xbox" if is_xbox else plat
-            link = await self._repo.get_platform_link(tg_id, account_plat)
-            if link:
-                xuid = link.external_id
+            links = await self._repo.platform_links_for(tg_id, account_plat)
+            xuids = [link.external_id for link in links if link.external_id]
 
-        return await self._repo.get_title_achievements_with_user_unlocks(plat, title_id, xuid=xuid)
+        return await self._repo.get_title_achievements_with_user_unlocks(
+            plat, title_id, xuids=xuids
+        )
 
     # ------------------------------------------------------------------ Steam
 

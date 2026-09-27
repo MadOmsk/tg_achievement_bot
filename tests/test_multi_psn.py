@@ -8,7 +8,8 @@ import sqlite3
 
 import pytest
 
-from bot.db.repo import Repo
+from bot.constants import Platform
+from bot.db.repo import AchievementRow, Repo, TitleAchievementRow
 
 TG = 7
 
@@ -87,3 +88,102 @@ async def test_the_platform_switch_covers_every_account(repo: Repo) -> None:
     await repo.set_platform_publishes(TG, "psn", False)
 
     assert not any(link.publishes for link in await repo.platform_links_for(TG, "psn"))
+
+
+async def test_checklist_combines_and_deduplicates_across_accounts(repo: Repo) -> None:
+    await _two_psn(repo)
+    await repo.upsert_title("npwr_test", "Test Game", Platform.PSN)
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform=Platform.PSN,
+                title_id="npwr_test",
+                achievement_id="0",
+                name_en="Platinum",
+                trophy_type="platinum",
+            ),
+            TitleAchievementRow(
+                platform=Platform.PSN,
+                title_id="npwr_test",
+                achievement_id="1",
+                name_en="Bronze 1",
+                trophy_type="bronze",
+            ),
+            TitleAchievementRow(
+                platform=Platform.PSN,
+                title_id="npwr_test",
+                achievement_id="2",
+                name_en="Bronze 2",
+                trophy_type="bronze",
+            ),
+        ],
+        complete=True,
+    )
+
+    await repo.insert_new_achievements(
+        "acc-1",
+        [
+            AchievementRow(
+                title_id="npwr_test",
+                achievement_id="1",
+                name="Bronze 1",
+                description="D",
+                icon_url=None,
+                unlocked_at="2026-09-20T12:00:00+00:00",
+                gamerscore=0,
+                rarity_percent=50.0,
+                platform=Platform.PSN,
+                title_name="Test Game",
+                trophy_type="bronze",
+            )
+        ],
+        is_backfill=False,
+    )
+    await repo.insert_new_achievements(
+        "acc-2",
+        [
+            AchievementRow(
+                title_id="npwr_test",
+                achievement_id="1",
+                name="Bronze 1",
+                description="D",
+                icon_url=None,
+                unlocked_at="2026-09-21T12:00:00+00:00",
+                gamerscore=0,
+                rarity_percent=50.0,
+                platform=Platform.PSN,
+                title_name="Test Game",
+                trophy_type="bronze",
+            ),
+            AchievementRow(
+                title_id="npwr_test",
+                achievement_id="2",
+                name="Bronze 2",
+                description="D",
+                icon_url=None,
+                unlocked_at="2026-09-22T12:00:00+00:00",
+                gamerscore=0,
+                rarity_percent=30.0,
+                platform=Platform.PSN,
+                title_name="Test Game",
+                trophy_type="bronze",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    links = await repo.platform_links_for(TG, "psn")
+    xuids = [link.external_id for link in links]
+    checklist = await repo.get_title_achievements_with_user_unlocks(
+        Platform.PSN, "npwr_test", xuids=xuids
+    )
+
+    assert len(checklist) == 3
+    t0 = next(item for item in checklist if item.achievement.achievement_id == "0")
+    t1 = next(item for item in checklist if item.achievement.achievement_id == "1")
+    t2 = next(item for item in checklist if item.achievement.achievement_id == "2")
+
+    assert not t0.is_unlocked and t0.unlocked_at is None
+    assert t1.is_unlocked and t1.unlocked_at == "2026-09-20T12:00:00+00:00"
+    assert t2.is_unlocked and t2.unlocked_at == "2026-09-22T12:00:00+00:00"
+

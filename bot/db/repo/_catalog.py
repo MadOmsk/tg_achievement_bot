@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import aiosqlite
 
 from bot.db.repo._models import TitleAchievementRow, TitleAchievementWithUnlock
@@ -130,22 +132,34 @@ class _CatalogRepo:
         return int(row["c"]) if row else 0
 
     async def get_title_achievements_with_user_unlocks(
-        self, platform: str, title_id: str, xuid: str | None = None
+        self,
+        platform: str,
+        title_id: str,
+        xuid: str | None = None,
+        *,
+        xuids: Sequence[str] | None = None,
     ) -> list[TitleAchievementWithUnlock]:
-        """All achievements of a game merged with user's unlock history."""
-        if xuid:
+        """All achievements of a game merged with user's unlock history.
+        Accepts a single xuid or a list of xuids (e.g. several PSN accounts).
+        """
+        all_xuids: list[str] = list(xuids) if xuids is not None else ([xuid] if xuid else [])
+        if all_xuids:
+            placeholders = ",".join("?" * len(all_xuids))
             cursor = await self._conn.execute(
                 "SELECT ta.platform, ta.title_id, ta.achievement_id, ta.name_ru, ta.name_en, "
                 "       ta.description_ru, ta.description_en, ta.icon_url, ta.is_secret, "
                 "       ta.gamerscore, ta.trophy_type, ta.trophy_group_id, ta.rarity_percent, "
                 "       ta.updated_at, sa.unlocked_at "
                 "FROM title_achievements ta "
-                "LEFT JOIN seen_achievements sa "
-                "  ON sa.platform = ta.platform AND sa.title_id = ta.title_id "
-                " AND sa.achievement_id = ta.achievement_id AND sa.xuid = ? "
+                "LEFT JOIN ("
+                "  SELECT achievement_id, MIN(unlocked_at) AS unlocked_at "
+                "  FROM seen_achievements "
+                f"  WHERE platform = ? AND title_id = ? AND xuid IN ({placeholders}) "
+                "  GROUP BY achievement_id"
+                ") sa ON sa.achievement_id = ta.achievement_id "
                 "WHERE ta.platform = ? AND ta.title_id = ? AND ta.listed = 1 "
                 "ORDER BY ta.rowid ASC",
-                (xuid, platform, title_id),
+                (platform, title_id, *all_xuids, platform, title_id),
             )
         else:
             cursor = await self._conn.execute(
