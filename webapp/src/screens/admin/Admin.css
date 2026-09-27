@@ -24,7 +24,7 @@
 
 .admin-limit-copy small {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 500;
 }
 
@@ -124,7 +124,7 @@
 
 .stat-tile small {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
 }
 
 @keyframes spin {

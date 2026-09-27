@@ -14,14 +14,15 @@ import {
 } from "../../api";
 import { t, type Locale } from "../../i18n";
 import { GameHits, GameSheet, useHltbSearch } from "../hltb";
-import { FeedList, FeedPosts, PeopleHits, PersonProfile, UnlockSlider, matchQuery, recentGames } from "../person";
-import { AccountBar, Avatar, GlassWait, HomeSkel, PageSkel, ScoreCup, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
+import { AccountBar, Avatar, FeedSkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
   MonthSheet,
   RosterSheet,
   formatMonth,
+  statusOf,
 } from "../../components/club";
 import { SCREEN_NAMES, type ClubPane } from "../../components/shared/constants";
 import "./Club.css";
@@ -102,6 +103,8 @@ export function Club({
   onlineRef.current = online;
 
   const showSecrets = me.settings.show_secrets;
+  // The friends are everybody but you.
+  const others = online.filter((m) => m.tg_id !== me.tg_id);
   const activeId =
     (me.chats.find((c) => c.chat_id === chatId) ?? me.chats[0])?.chat_id ?? null;
 
@@ -162,7 +165,15 @@ export function Club({
     // Keep the open profile visible while pull-to-refresh refetches it.
     if (refreshKey === 0) setPersonBusy(true);
     void fetchPerson(data, activeId, openPersonId, personMonth ? { month: personMonth } : undefined)
-      .then((payload) => {
+      .then(async (payload) => {
+        // The profile appears with its gallery picture and its games' covers
+        // already loaded — not skeleton, then the bar, then pictures one by one.
+        if (refreshKey === 0) {
+          await preloadImages([
+            payload.feed[0]?.icon_url,
+            ...payload.feed.slice(0, 8).map((row) => row.game_icon_url),
+          ]);
+        }
         if (!cancelled) {
           setPerson(payload);
           if (openPersonId === me.tg_id) setMyPerson(payload);
@@ -279,8 +290,29 @@ export function Club({
         {formatMonth(ym, locale, "chip")}
       </button>
     );
-  const myGames = recentGames(mine, 5);
-  const openProfile = (person && openPersonId) && person;
+  // The page opens at once: until the person's own payload arrives it is drawn
+  // from what is already at hand (their name, status and the feed's items of
+  // theirs), so a tap never looks like nothing happened.
+  const provisional =
+    openPersonId && (!person || person.tg_id !== openPersonId)
+      ? (() => {
+          const items = feed.filter((row) => row.tg_id === openPersonId);
+          const member = online.find((row) => row.tg_id === openPersonId);
+          if (!member && items.length === 0) return null;
+          return {
+            tg_id: openPersonId,
+            name: member?.name ?? items[0]?.person ?? `id${openPersonId}`,
+            platforms: [],
+            today: { count: 0, score: 0, xbox: 0, steam: 0, psn: 0 },
+            week: { count: 0, xbox: 0, steam: 0, psn: 0 },
+            month: { count: 0, score: 0, xbox: 0, steam: 0, psn: 0 },
+            games: [],
+            feed: items,
+          } as PersonPayload;
+        })()
+      : null;
+  const openProfile =
+    openPersonId && (person && person.tg_id === openPersonId ? person : provisional);
   const [homeCompact, setHomeCompact] = useState(false);
   const homeCompactRef = useRef(false);
   const homeLockRef = useRef(0);
@@ -330,7 +362,7 @@ export function Club({
   if (openPersonId && personBusy && !openProfile) {
     return (
       <div className="pane-fade person-wait">
-        <GlassWait tall />
+        <PersonSkel />
       </div>
     );
   }
@@ -341,6 +373,10 @@ export function Club({
         <div className="pane-fade">
         <PersonProfile
           person={openProfile}
+          status={
+            statusOf(online.find((m) => m.tg_id === openProfile.tg_id)) ??
+            t(locale, "notOnline")
+          }
           locale={locale}
           revealed={revealed}
           showSecrets={showSecrets}
@@ -398,6 +434,10 @@ export function Club({
                 me={me}
                 locale={locale}
                 onProfile={() => openPerson(me.tg_id)}
+                status={
+                  statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
+                  t(locale, "notOnline")
+                }
                 score={false}
               />
             </div>
@@ -422,15 +462,21 @@ export function Club({
               </div>
             ) : (
               <>
-                {myGames.length > 0 && (
-                  <UnlockSlider items={myGames} locale={locale} variant="game" />
+                {mine.length > 0 && (
+                  <RecentPosts
+                    items={mine}
+                    locale={locale}
+                    revealed={revealed}
+                    showSecrets={showSecrets}
+                    onReveal={(key) => setRevealed(new Set(revealed).add(key))}
+                  />
                 )}
-                {myGames.length === 0 &&
+                {mine.length === 0 &&
                   (me.xbox.linked || me.steam.linked || me.psn.linked) && (
                     <p className="empty">{t(locale, "emptyFeed")}</p>
                   )}
                 <FriendsStrip
-                  members={online}
+                  members={others}
                   locale={locale}
                   limit={FRIENDS_PREVIEW}
                   onOpen={openPerson}
@@ -438,20 +484,13 @@ export function Club({
                 />
                 <div className="section-head achievements-head">
                   <h1 className="kicker" style={{ margin: 0 }}>
-                    {t(locale, "homeAchievements")}
+                    {t(locale, "games")}
                   </h1>
                   {monthChip(homeMonth, MONTH_TARGETS.HOME)}
                 </div>
-                {homeBusy && <GlassWait />}
+                {homeBusy && <RowsSkel count={3} />}
                 {!homeBusy && mine.length > 0 && (
-                  <FeedList
-                    items={mine}
-                    locale={locale}
-                    revealed={revealed}
-                    showSecrets={showSecrets}
-                    onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-                    onOpenPerson={openPerson}
-                  />
+                  <PlayedGames items={mine} locale={locale} />
                 )}
               </>
             ))}
@@ -460,7 +499,7 @@ export function Club({
 
       {pane === SCREEN_NAMES.FEED &&
         (!clubReady ? (
-          <PageSkel />
+          <FeedSkel />
         ) : (
           <>
             <header className="page-head is-split">
@@ -468,7 +507,7 @@ export function Club({
               {monthChip(feedMonth, MONTH_TARGETS.FEED)}
             </header>
             {feedBusy ? (
-              <GlassWait />
+              <FeedSkel head={false} />
             ) : feed.length === 0 ? (
               <p className="empty">{t(locale, "emptyFeed")}</p>
             ) : (
@@ -486,7 +525,7 @@ export function Club({
 
       {pane === SCREEN_NAMES.SUMMARY &&
         (!clubReady ? (
-          <PageSkel />
+          <StatsSkel />
         ) : (
           <ClubStats
             meId={me.tg_id}
@@ -509,7 +548,7 @@ export function Club({
 
       {rosterOpen && (
         <RosterSheet
-          members={online}
+          members={others}
           locale={locale}
           onClose={() => setRosterOpen(false)}
           onOpen={(id) => {

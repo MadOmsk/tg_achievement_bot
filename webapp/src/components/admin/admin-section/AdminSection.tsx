@@ -2,7 +2,7 @@ import { Chevron } from "../../shared/lib";
 import { useEffect, useState } from "react";
 import { fetchAdminHome, type AdminHome as AdminHomeType } from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import type { AdminScreen } from "../../shared/constants";
+import { ADMIN_SCREENS, type AdminScreen } from "../../shared/constants";
 
 /**
  * The super-admin's part of the settings screen: a list of the admin
@@ -27,11 +27,11 @@ export function AdminSection({
   }, [data, onFail]);
 
   const sections = [
-    { screen: { name: "users" }, label: "adminUsers" },
-    { screen: { name: "chats" }, label: "adminChats" },
-    { screen: { name: "keys" }, label: "adminKeys" },
-    { screen: { name: "limits" }, label: "adminLimits" },
-    { screen: { name: "defaults" }, label: "adminDefaults" },
+    { screen: { name: ADMIN_SCREENS.USERS }, label: "adminUsers" },
+    { screen: { name: ADMIN_SCREENS.CHATS }, label: "adminChats" },
+    { screen: { name: ADMIN_SCREENS.KEYS }, label: "adminKeys" },
+    { screen: { name: ADMIN_SCREENS.LIMITS }, label: "adminLimits" },
+    { screen: { name: ADMIN_SCREENS.DEFAULTS }, label: "adminDefaults" },
   ] as const;
 
   return (

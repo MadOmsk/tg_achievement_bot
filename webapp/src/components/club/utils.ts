@@ -88,3 +88,11 @@ export function pickCount(
   const row = rows.find((r) => r.tg_id === meId);
   return row ? row.count : fallback.get(meId) ?? 0;
 }
+
+/** What a member is doing right now, for a line under their name. */
+export function statusOf(member: OnlineMember | undefined): string | null {
+  if (!member) return null;
+  if (member.playing) return member.title_name || null;
+  // "no data" (never seen online) reads as offline to the person looking.
+  return member.state ? member.status || null : null;
+}

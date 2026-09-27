@@ -190,10 +190,10 @@
 .hero-game-mid .hero-game-group {
   flex: 1 1 auto;
   min-width: 0;
-  color: rgba(245, 248, 252, 0.74);
-  font-size: 0.62rem;
+  color: rgba(245, 248, 252, 0.78);
+  font-size: 0.76rem;
   font-weight: 550;
-  line-height: 1.1;
+  line-height: 1.15;
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.75),
     0 2px 6px rgba(0, 0, 0, 0.4);
@@ -221,64 +221,8 @@
 
 .game-card-progress .hero-game-bar,
 .game-card-veil .game-card-progress .hero-game-bar {
-  flex: none;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-}
-
-.game-card-progress .hero-game-bar,
-.unlock-card .hero-game-bar {
-  display: block;
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.28),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-
-.game-card-veil .game-card-progress .hero-game-bar {
   height: 7px;
   background: rgba(255, 255, 255, 0.16);
-}
-
-.game-card-progress .hero-game-bar-fill,
-.unlock-card .hero-game-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    rgba(170, 195, 230, 0.45) 0%,
-    rgba(230, 238, 250, 0.88) 55%,
-    rgba(255, 255, 255, 1) 100%
-  );
-  box-shadow:
-    0 0 10px rgba(210, 225, 255, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-.game-card-progress .hero-game-bar-row.is-done .hero-game-bar,
-.unlock-card .hero-game-bar-row.is-done .hero-game-bar {
-  background: rgba(100, 185, 210, 0.16);
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.22),
-    inset 0 0 0 1px rgba(140, 210, 230, 0.18);
-}
-
-.game-card-progress .hero-game-bar-row.is-done .hero-game-bar-fill,
-.unlock-card .hero-game-bar-row.is-done .hero-game-bar-fill {
-  background: linear-gradient(
-    90deg,
-    rgba(90, 185, 215, 0.55) 0%,
-    rgba(160, 225, 245, 0.9) 55%,
-    rgba(220, 245, 255, 1) 100%
-  );
-  box-shadow:
-    0 0 10px rgba(120, 210, 235, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .unlock-slide-art .cover-ph,
@@ -509,20 +453,32 @@
 
 /* On the big cards the game's title, count and bar stay one group, centred
  * beside the cover (the compact list in the profile aligns them to its edges). */
-.unlock-card .hero-game-text,
-.unlock-card .hero-game.has-mid .hero-game-text {
+.unlock-card .hero-game-text {
   justify-content: center;
   gap: 8px;
 }
 
-/* The DLC / group line sits vertically midway between the title and the bar
- * (equal gaps above and below), left-aligned with the title. */
+/* With a third line (a PSN trophy group / DLC name) the cover grows to the
+ * height of the three lines, and they are packed evenly down it — title on
+ * its top edge, the bar midway, the group label on its bottom edge — so
+ * nothing spills past the cover. */
+.hero-game.has-mid .hero-game-art,
+.hero-game.has-mid .cover-ph {
+  width: 60px;
+  height: 60px;
+  flex-basis: 60px;
+}
 
+.unlock-card .hero-game.has-mid .hero-game-text,
 .hero-game.has-mid .hero-game-text {
-  gap: 4px;
+  height: 60px;
+  min-height: 60px;
+  gap: 0;
   justify-content: space-between;
-  height: auto;
-  min-height: 48px;
+}
+
+.unlock-card .hero-game.has-mid .hero-game-mid {
+  flex: 0 0 auto;
 }
 
 .hero-game-head {
@@ -589,30 +545,13 @@
 .hero-game-bar {
   flex: 1 1 auto;
   min-width: 0;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-}
-
-.hero-game-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    rgba(200, 210, 225, 0.5) 0%,
-    rgba(245, 248, 252, 0.92) 100%
-  );
-  box-shadow: none;
-  transition: width 0.25s ease;
+  --bar-h: 4px;
 }
 
 .hero-game-count {
   flex: 0 0 auto;
   color: rgba(245, 248, 252, 0.82);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
@@ -631,33 +570,8 @@
 }
 
 .feed-row-progress .hero-game-bar {
-  height: 3px;
+  --bar-h: 4px;
   margin-bottom: 0;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: none;
-}
-
-.feed-row-progress .hero-game-bar-fill {
-  background: linear-gradient(
-    90deg,
-    rgba(160, 175, 200, 0.4) 0%,
-    rgba(210, 220, 236, 0.75) 100%
-  );
-  box-shadow: none;
-}
-
-.hero-game-bar-row.is-done .hero-game-bar {
-  background: rgba(120, 190, 210, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(140, 200, 220, 0.1);
-}
-
-.hero-game-bar-row.is-done .hero-game-bar-fill {
-  background: linear-gradient(
-    90deg,
-    rgba(95, 185, 215, 0.55) 0%,
-    rgba(175, 230, 245, 0.95) 100%
-  );
-  box-shadow: none;
 }
 
 /* Count stays the same colour as an unfinished bar — only the fill shifts. */
@@ -665,23 +579,9 @@
   color: var(--muted);
 }
 
-.feed-row-progress .hero-game-bar-row.is-done .hero-game-bar {
-  background: rgba(120, 180, 200, 0.1);
-  box-shadow: none;
-}
-
-.feed-row-progress .hero-game-bar-row.is-done .hero-game-bar-fill {
-  background: linear-gradient(
-    90deg,
-    rgba(100, 170, 195, 0.4) 0%,
-    rgba(155, 205, 225, 0.8) 100%
-  );
-  box-shadow: none;
-}
-
 .hero-game-group {
   color: rgba(255, 255, 255, 0.92);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 550;
   line-height: 1.2;
   text-shadow:
@@ -748,7 +648,7 @@
   max-width: 100%;
   margin: 2px 0 0;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   line-height: 1.25;
   min-height: 2.5em;
   display: -webkit-box;
@@ -1061,8 +961,6 @@
 
 .person-wait {
   min-height: 46vh;
-  display: grid;
-  place-items: center;
 }
 
 @keyframes hero-art-in {
@@ -1617,7 +1515,7 @@
 .feed-row .unlock-game-count {
   flex: 0 0 auto;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 650;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
@@ -1893,20 +1791,39 @@ button.chip.is-on {
   gap: 0;
 }
 
+/* The room a day label ("Today") has above and below it: the same on both
+ * sides, and the only room it has. */
+.feed {
+  --day-gap: 14px;
+}
+
 .feed-day {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  /* 10px when there is no feed around it to say otherwise (the stats drawers). */
+  gap: var(--day-gap, 10px);
 }
 
 .feed-day + .feed-day {
-  margin-top: 14px;
+  /* A little more room above a label than below it: it belongs to what follows. */
+  margin-top: calc(var(--day-gap) + 3px);
+}
+
+/* Right under a section heading the label brings its own room, so the
+ * heading's own bottom margin is dropped instead of adding to it. */
+.section-head:has(+ .feed) {
+  margin-bottom: 0;
+}
+
+.section-head + .feed > .feed-day:first-child {
+  /* The heading above already carries room of its own. */
+  margin-top: 8px;
 }
 
 .feed-day-label {
-  margin: 0 2px 2px;
+  margin: 0 2px;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 650;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -1914,11 +1831,14 @@ button.chip.is-on {
 
 button.feed-day-label {
   align-self: flex-start;
-  padding: 4px 0;
+  /* A comfortable tap target that takes no room: the label itself sits
+   * exactly as far below the block above as above the block below. */
+  padding: 6px 0;
+  margin: -6px 2px;
   border: 0;
   background: none;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 650;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -1942,9 +1862,28 @@ button.feed-day-label::after {
 
 /* The feed tab: days one under another, each with its own label. */
 .feed-days {
+  --day-gap: 18px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: var(--day-gap);
+}
+
+.feed-days .feed-day {
+  gap: var(--day-gap);
+}
+
+/* As under "Achievements": the tab's heading keeps no bottom room of its own,
+ * the first day label brings the only one. */
+.page-head:has(+ .feed-days) {
+  margin-bottom: 0;
+}
+
+.page-head + .feed-days > .feed-day:first-child {
+  margin-top: 8px;
+}
+
+.feed-days .feed-day + .feed-day {
+  margin-top: 3px;
 }
 
 .feed-posts {
@@ -2013,7 +1952,8 @@ button.feed-day-label::after {
 
 .feed-copy-head {
   display: flex;
-  align-items: flex-start;
+  /* The name and the rarity/score share one baseline, whatever their sizes. */
+  align-items: baseline;
   gap: 8px;
   min-width: 0;
   width: 100%;
@@ -2025,12 +1965,12 @@ button.feed-day-label::after {
 
 .feed-plat {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 5px;
   flex: 0 0 auto;
-  line-height: 1;
+  line-height: 1.2;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
@@ -2038,7 +1978,7 @@ button.feed-day-label::after {
 }
 
 .feed-row .feed-plat {
-  font-size: 0.76rem;
+  font-size: 0.86rem;
   font-weight: 650;
   letter-spacing: 0;
   color: rgba(186, 196, 214, 0.82);
@@ -2075,7 +2015,7 @@ button.feed-day-label::after {
 .feed-row .feed-game-count {
   flex: 0 0 auto;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 650;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
@@ -2094,8 +2034,11 @@ button.feed-day-label::after {
   opacity: 0.92;
 }
 
-.feed-row.is-locked-row:hover {
-  opacity: 0.85;
+/* An achievement not earned yet: the words stay fully readable, only the
+ * picture is dimmed and desaturated. */
+.feed-row.is-locked-row .feed-cover {
+  opacity: 0.5;
+  filter: grayscale(0.7);
 }
 
 /* Alignment tweak for the shared .btn (see components/shared/styles/base.css) inside
@@ -2246,4 +2189,21 @@ button.feed-day-label::after {
 .game-card.is-link {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+
+/* A long feed: only the posts near the screen are rendered and painted (their
+ * blurs, filters and pictures cost the phone's graphics memory, which showed as
+ * hard artifacts). Off-screen ones keep the size they last had, so the scroll
+ * bar and jumps to a day stay true. */
+.feed-posts > .unlock-card,
+.feed-posts > .unlock-slider {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 560px;
+}
+
+/* The taller block (three lines) keeps the same air above the description
+ * panel as the two-line one has. */
+.unlock-card-foot .hero-game.has-mid {
+  margin-bottom: 16px;
 }

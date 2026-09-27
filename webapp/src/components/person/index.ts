@@ -6,6 +6,8 @@ export { GameCard } from "./game-card/GameCard";
 export { UnlockCard, UnlockHero } from "./unlock-card/UnlockCard";
 export { UnlockSlider } from "./unlock-slider/UnlockSlider";
 export { FeedRow } from "./feed-row/FeedRow";
+export { RecentPosts } from "./recent-posts/RecentPosts";
+export { PlayedGames } from "./played-games/PlayedGames";
 export { FeedList } from "./feed-list/FeedList";
 export { PostLead } from "./post-lead/PostLead";
 export { FeedPosts } from "./feed-posts/FeedPosts";

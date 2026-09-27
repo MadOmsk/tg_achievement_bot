@@ -16,3 +16,4 @@ export * from "./rows";
 export * from "./game-open";
 export * from "./day-picker";
 export * from "./img-fade";
+export * from "./tier-medals";

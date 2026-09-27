@@ -14,11 +14,24 @@ export const ADMIN_CHAT_ACTIONS = {
 export type AdminChatAction =
   (typeof ADMIN_CHAT_ACTIONS)[keyof typeof ADMIN_CHAT_ACTIONS];
 
+/** The admin sub-screens' names — never re-typed as string literals. */
+export const ADMIN_SCREENS = {
+  KEYS: "keys",
+  LIMITS: "limits",
+  DEFAULTS: "defaults",
+  USERS: "users",
+  USER: "user",
+  CHATS: "chats",
+  CHAT: "chat",
+} as const;
+
+const A = ADMIN_SCREENS;
+
 export type AdminScreen =
-  | { name: "keys" }
-  | { name: "limits" }
-  | { name: "defaults" }
-  | { name: "users" }
-  | { name: "user"; tgId: number }
-  | { name: "chats" }
-  | { name: "chat"; chatId: number };
+  | { name: typeof A.KEYS }
+  | { name: typeof A.LIMITS }
+  | { name: typeof A.DEFAULTS }
+  | { name: typeof A.USERS }
+  | { name: typeof A.USER; tgId: number }
+  | { name: typeof A.CHATS }
+  | { name: typeof A.CHAT; chatId: number };

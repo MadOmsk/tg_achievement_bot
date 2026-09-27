@@ -36,6 +36,7 @@ export const disconnectXbox = (initData: string) => userApi.disconnectXbox(initD
 export const connectSteam = (...args: Parameters<typeof userApi.connectSteam>) => userApi.connectSteam(...args);
 export const disconnectSteam = (initData: string) => userApi.disconnectSteam(initData);
 export const connectPsn = (...args: Parameters<typeof userApi.connectPsn>) => userApi.connectPsn(...args);
+export const deleteAccount = (initData: string) => userApi.deleteAccount(initData);
 export const disconnectPsn = (initData: string) => userApi.disconnectPsn(initData);
 export const syncXbox = (initData: string) => userApi.syncXbox(initData);
 export const patchChat = (...args: Parameters<typeof userApi.patchChat>) => userApi.patchChat(...args);

@@ -5,14 +5,13 @@ import { Avatar, Icon, ScoreCup, isOnline } from "../../shared/lib";
 import {
   COMPLETION_BADGES,
   PLATFORMS,
-  TROPHY_BADGES,
 } from "../../shared/constants";
-import { recentGames } from "../utils";
-import { FeedList } from "../feed-list/FeedList";
-import { UnlockSlider } from "../unlock-slider/UnlockSlider";
+import { PlayedGames } from "../played-games/PlayedGames";
+import { RecentPosts } from "../recent-posts/RecentPosts";
 
 export function PersonProfile({
   person,
+  status,
   locale,
   revealed,
   showSecrets,
@@ -21,6 +20,8 @@ export function PersonProfile({
   onReveal,
 }: {
   person: PersonPayload;
+  /** What they are doing now ("В сети", "3 ч назад", the game), shown after the nick. */
+  status?: string | null;
   locale: Locale;
   revealed: Set<string>;
   showSecrets?: boolean;
@@ -54,7 +55,12 @@ export function PersonProfile({
         : PLATFORMS.PSN;
     const tiers =
       key === PLATFORMS.PSN && p.bronze != null
-        ? `${TROPHY_BADGES.BRONZE} ${p.bronze} · ${TROPHY_BADGES.SILVER} ${p.silver ?? 0} · ${TROPHY_BADGES.GOLD} ${p.gold ?? 0} · ${TROPHY_BADGES.PLATINUM} ${p.platinum_count ?? 0}`
+        ? {
+            bronze: p.bronze,
+            silver: p.silver ?? 0,
+            gold: p.gold ?? 0,
+            platinum: p.platinum_count ?? 0,
+          }
         : null;
     return [
       {
@@ -68,7 +74,6 @@ export function PersonProfile({
       },
     ];
   });
-  const games = recentGames(feed);
   const live = isOnline(person.presence ?? {});
   const playing = Boolean(person.presence?.playing);
   return (
@@ -93,34 +98,33 @@ export function PersonProfile({
               playing={playing}
               platform={person.presence?.platform}
             />
-            <span>
+            <span className="person-bar-title">
               <strong>{person.name}</strong>
+              {status && <small>{status}</small>}
             </span>
           </div>
           <ScoreCup locale={locale} lines={scoreLines} />
         </div>
       </header>
-      <div className="person-stage">
-        {games.length > 0 ? (
-          <UnlockSlider items={games} locale={locale} variant="game" />
-        ) : (
-          <p className="empty">{t(locale, "emptyFeed")}</p>
-        )}
-      </div>
-      <div className="section-head achievements-head">
-        <h1 className="kicker" style={{ margin: 0 }}>
-          {t(locale, "homeAchievements")}
-        </h1>
-        {monthChip}
-      </div>
-      {(feed.length > 0) && (
-        <FeedList
+      {feed.length > 0 ? (
+        <RecentPosts
           items={feed}
           locale={locale}
           revealed={revealed}
           showSecrets={showSecrets}
           onReveal={onReveal}
         />
+      ) : (
+        <p className="empty">{t(locale, "emptyFeed")}</p>
+      )}
+      <div className="section-head achievements-head">
+        <h1 className="kicker" style={{ margin: 0 }}>
+          {t(locale, "games")}
+        </h1>
+        {monthChip}
+      </div>
+      {(feed.length > 0) && (
+        <PlayedGames items={feed} locale={locale} />
       )}
     </>
   );

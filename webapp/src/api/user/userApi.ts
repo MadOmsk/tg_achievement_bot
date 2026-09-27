@@ -20,6 +20,10 @@ export class UserApi extends BaseApi {
     return response.blob();
   }
 
+  deleteAccount(initData: string): Promise<{ ok: boolean }> {
+    return this.delete<{ ok: boolean }>(initData, USER_ROUTES.DELETE_ME);
+  }
+
   patchSettings(initData: string, body: UserSettingsPatch): Promise<MeResponse> {
     return this.patch<MeResponse>(initData, USER_ROUTES.SETTINGS, body);
   }

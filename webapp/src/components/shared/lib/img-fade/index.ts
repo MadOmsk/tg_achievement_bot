@@ -1,1 +1,1 @@
-export { useImgFade } from "./useImgFade";
+export { preloadImages, useImgFade } from "./useImgFade";

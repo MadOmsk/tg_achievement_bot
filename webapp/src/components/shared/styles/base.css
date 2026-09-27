@@ -20,13 +20,20 @@ html.is-sheet-open body {
   overscroll-behavior: none;
 }
 
-body {
-  background:
+/* The page background, shared by the body and every full-screen layer that
+ * covers it (the game page), so they cannot drift apart. */
+:root {
+  --app-bg:
     radial-gradient(880px 520px at 6% -14%, rgba(120, 150, 230, 0.22), transparent 58%),
     radial-gradient(640px 480px at 108% 0%, rgba(90, 170, 255, 0.1), transparent 52%),
     radial-gradient(720px 440px at 70% 112%, rgba(40, 48, 80, 0.35), transparent 55%),
     linear-gradient(180deg, #121620 0%, #0a0c12 48%, #07080c 100%);
 }
+
+body {
+  background: var(--app-bg);
+}
+
 
 body::before {
   content: "";
@@ -202,7 +209,7 @@ a:focus-visible {
 .chat-settings-title {
   margin: 0;
   padding: 4px 0 8px;
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -270,4 +277,11 @@ a.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Under a full-screen page nothing of the app is visible: stop painting it.
+ * `visibility` (unlike display or content-visibility) keeps the layout, so the
+ * scroll position is still there when the page is closed. */
+html.has-game-page #root {
+  visibility: hidden;
 }

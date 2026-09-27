@@ -25,6 +25,7 @@ from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import achievement_category
 from bot.services.naming import NO_NICKNAME, account_nickname, person_name_of, xbox_nickname
 from bot.util import parse_iso, utcnow
+from bot.version import is_test
 from bot.views.notification import format_digest, format_single
 
 log = logging.getLogger(__name__)
@@ -84,6 +85,9 @@ class Publisher:
         self._bot = bot
         self._repo = repo
         self._queue: asyncio.Queue[PublishJob] = asyncio.Queue()
+        # Chats a *test* bot cannot reach (it is not a member of them): skipped for
+        # the life of the process instead of deactivated, see `_send`.
+        self._unreachable: set[int] = set()
         self._worker: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -412,11 +416,21 @@ class Publisher:
             await asyncio.sleep(SEND_INTERVAL_SECONDS)
 
     async def _send(self, job: PublishJob) -> None:
+        if job.chat_id in self._unreachable:
+            return
         try:
             message_id = await self._deliver(job)
         except (TelegramForbiddenError, TelegramBadRequest) as exc:
             if not chat_is_gone(exc):
                 raise
+            if is_test():
+                # A test bot usually runs on a copy of production's database
+                # and is simply not a member of those chats. Deactivating them
+                # would empty the copy's chat list — and the Mini App — so it
+                # just stops trying until the next start.
+                log.info("chat %s is unreachable for the test bot, skipping it", job.chat_id)
+                self._unreachable.add(job.chat_id)
+                return
             # Kicked out of the group, or the group is gone — stop trying
             # forever (SPEC 5.5, #116).
             log.info("chat %s is not available any more, deactivating", job.chat_id)

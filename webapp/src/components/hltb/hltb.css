@@ -46,7 +46,7 @@
 
 .hltb-mark small {
   color: rgba(238, 241, 246, 0.68);
-  font-size: 0.64rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -68,7 +68,7 @@
 
 .hltb-mark strong em {
   font-style: normal;
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: rgba(238, 241, 246, 0.7);

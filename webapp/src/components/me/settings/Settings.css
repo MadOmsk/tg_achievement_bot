@@ -245,10 +245,6 @@
   transition: all 0.15s ease;
 }
 
-.feed-row.is-locked-row {
-  opacity: 0.65;
-}
-
 /* Alignment tweaks for the shared .btn (see components/shared/styles/base.css) inside
  * this screen's own platform cards and connect form. */
 /* Keep the action strip ≈ the Russian «Подключить» button footprint. */
@@ -273,4 +269,31 @@
   width: 100%;
   margin-top: 4px;
   min-height: 48px;
+}
+
+
+/* "Accounts" and, on its right, the way to delete the account. */
+.accounts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 24px 0 12px;
+}
+
+.accounts-head .kicker {
+  margin: 0 12px 0 0;
+}
+
+.accounts-delete {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-right: -8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #ff8a96;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }

@@ -15,7 +15,7 @@
 .day-picker-week {
   margin-bottom: 4px;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.74rem;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
@@ -40,7 +40,7 @@
 }
 
 .day-picker-day small {
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   font-weight: 700;
   opacity: 0.8;
 }

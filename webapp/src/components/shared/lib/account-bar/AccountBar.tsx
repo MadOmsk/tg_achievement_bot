@@ -8,11 +8,14 @@ export function AccountBar({
   me,
   locale,
   onProfile,
+  status,
   score = true,
 }: {
   me: MeResponse;
   locale: Locale;
   onProfile: () => void;
+  /** What the person is doing now, written after the nick. */
+  status?: string | null;
   score?: boolean;
 }) {
   const name = accountLabel(me);
@@ -30,6 +33,7 @@ export function AccountBar({
           <span>
             <em className="hello">{t(locale, "hello")}</em>
             <strong>{name}</strong>
+            {status && <small className="account-status">{status}</small>}
           </span>
         </button>
         {score && <ScoreCup locale={locale} lines={meScoreLines(me, locale)} />}

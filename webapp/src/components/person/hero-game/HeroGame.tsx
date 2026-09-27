@@ -73,12 +73,12 @@ export function HeroGame({
             </span>
           )}
         </span>
+        {showBar && <ProgressBar progress={progress} hideCount />}
         {showGroup && group && (
           <span className="hero-game-mid">
             <span className="hero-game-group">{group.name}</span>
           </span>
         )}
-        {showBar && <ProgressBar progress={progress} hideCount />}
       </span>
     </span>
   );

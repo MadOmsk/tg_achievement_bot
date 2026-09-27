@@ -101,6 +101,9 @@
   color: var(--mint-2);
   font-size: 0.8rem;
   font-weight: 650;
+  /* The arrow is drawn with air inside its square: pull it out so what is
+   * seen of it ends on the page gutter, like the month chip below it. */
+  margin-right: -4px;
 }
 
 .is-home .home-chrome + .empty,
@@ -192,4 +195,11 @@
   font-size: 0.9rem;
   text-align: right;
   cursor: pointer;
+}
+
+/* A section heading brings its own room; the list under it starts right there,
+ * not 18px + 4px lower. */
+.kicker + .glass-card {
+  margin-top: 0;
+  padding-top: 0;
 }
