@@ -816,6 +816,11 @@ async def render_chat_card(
     )
     builder.row(
         InlineKeyboardButton(
+            text=_("admin-chat-pin-app-button"), callback_data=f"a:cpinapp:{chat_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
             text=_("admin-chat-messages-menu-button"), callback_data=f"a:mdel:{chat_id}"
         )
     )

@@ -1030,6 +1030,24 @@ async def chat_toggle_active(callback: CallbackQuery, repo: Repo, i18n: I18nCont
 # message with no such cap) uses the stored preview untouched.
 
 
+@router.callback_query(F.data.startswith("a:cpinapp:"))
+async def chat_pin_app(
+    callback: CallbackQuery, bot: Bot, repo: Repo, i18n: I18nContext, settings: Settings
+) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.split(":")[2])
+    from bot.handlers.chat import post_pin_app_intro
+
+    chat_loc = await repo.chat_locale(chat_id)
+    chat_i18n = i18n.use_locale(chat_loc) if hasattr(i18n, "use_locale") else i18n
+    try:
+        await post_pin_app_intro(bot, chat_id, chat_i18n, mini_app_name=settings.mini_app_name)
+        await callback.answer(i18n.get("admin-chat-pin-app-sent"), show_alert=True)
+    except Exception as e:
+        log.exception("failed to post pin_app into chat %s", chat_id)
+        await callback.answer(f"Ошибка: {e}", show_alert=True)
+
+
 @router.callback_query(F.data.startswith("a:cdellast:"))
 async def chat_delete_last(
     callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext

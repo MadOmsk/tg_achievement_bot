@@ -25,6 +25,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
     TelegramObject,
+    WebAppInfo,
 )
 from aiogram_i18n import I18nContext
 
@@ -38,7 +39,7 @@ from bot.handlers.admin import IsAdmin
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.admin_settings import DEFAULT_RECENT_LIMIT
 from bot.services.message_log import stats_category
-from bot.services.mini_app import mini_app_group_url
+from bot.services.mini_app import mini_app_group_url, mini_app_open_url
 from bot.services.naming import (
     person_name_of,
 )
@@ -80,6 +81,7 @@ def _hub_markup(
     settings: Settings,
     *,
     is_group: bool = True,
+    is_admin: bool = False,
 ) -> InlineKeyboardMarkup:
     """The hub's keyboard, with the Mini App row when there is an app to
     open. Every caller already holds `settings`, and the alternative — a
@@ -91,6 +93,8 @@ def _hub_markup(
         i18n,
         mini_app_url=settings.mini_app_url or "",
         is_group=is_group,
+        is_admin=is_admin,
+        mini_app_name=getattr(settings, "mini_app_name", "app"),
     )
 
 
@@ -823,24 +827,42 @@ async def panel_command(
 ) -> None:
     me = await bot.me()
     bot_username = me.username or ""
+    from_user = getattr(message, "from_user", None)
+    is_admin_check = getattr(settings, "is_admin", lambda uid: False)
+    is_adm = from_user is not None and is_admin_check(from_user.id)
     await message.answer(
         await hub_text(repo, message.chat.id, i18n),
         parse_mode=ParseMode.HTML,
-        reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=True),
+        reply_markup=_hub_markup(
+            bot_username, message.chat.id, i18n, settings, is_group=True, is_admin=is_adm
+        ),
     )
 
 
 @router.message(Command("help"))
 async def help_command(
-    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
+    message: Message, repo: Repo, i18n: I18nContext, settings: Settings
 ) -> None:
-    me = await bot.me()
-    bot_username = me.username or ""
     if message.chat.type not in GROUP_TYPES:
+        app_url = (settings.mini_app_url or "").strip()
+        reply_markup = None
+        if app_url:
+            reply_markup = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=i18n.get("chat-hub-open-app"),
+                            web_app=WebAppInfo(
+                                url=mini_app_open_url(app_url, chat_id=message.chat.id)
+                            ),
+                        )
+                    ]
+                ]
+            )
         await message.answer(
             help_text(i18n),
             parse_mode=ParseMode.HTML,
-            reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=False),
+            reply_markup=reply_markup,
         )
         return
     await message.answer(
@@ -1014,20 +1036,46 @@ async def delete_last(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
         await message.delete()  # tidy up the /delete_last command itself too
 
 
-@router.message(Command("intro", "pin_app"), F.chat.type.in_(GROUP_TYPES), IsAdmin())
-async def intro_command(message: Message, bot: Bot, i18n: I18nContext) -> None:
-    """Post pinnable introduction card with Mini App button (#136)."""
+async def post_pin_app_intro(
+    bot: Bot,
+    chat_id: int,
+    i18n: I18nContext,
+    *,
+    mini_app_name: str = "app",
+) -> Message:
     me = await bot.me()
     button = InlineKeyboardButton(
         text=i18n.get("chat-intro-open-app-button"),
-        url=mini_app_group_url(me.username or "", chat_id=message.chat.id),
+        url=mini_app_group_url(me.username or "", chat_id=chat_id, app_name=mini_app_name),
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[button]])
     with stats_category():
-        await message.answer(
+        return await bot.send_message(
+            chat_id,
             i18n.get("chat-intro-pinned-text"),
             parse_mode=ParseMode.HTML,
             reply_markup=keyboard,
         )
+
+
+@router.message(Command("pin_app"), F.chat.type.in_(GROUP_TYPES), IsAdmin())
+async def pin_app_command(
+    message: Message, bot: Bot, i18n: I18nContext, settings: Settings
+) -> None:
+    """Post pinnable introduction card with Mini App button (#136, #139)."""
+    await post_pin_app_intro(bot, message.chat.id, i18n, mini_app_name=settings.mini_app_name)
     with contextlib.suppress(Exception):
         await message.delete()
+
+
+@router.callback_query(F.data.startswith("hub:pin_app:"))
+async def hub_pin_app_callback(
+    callback: CallbackQuery, bot: Bot, i18n: I18nContext, settings: Settings
+) -> None:
+    if callback.from_user is None or not settings.is_admin(callback.from_user.id):
+        await callback.answer(i18n.get("chat-not-your-button"), show_alert=True)
+        return
+    assert callback.data is not None
+    chat_id = int(callback.data.split(":")[2])
+    await post_pin_app_intro(bot, chat_id, i18n, mini_app_name=settings.mini_app_name)
+    await callback.answer(i18n.get("chat-intro-posted-alert"), show_alert=True)

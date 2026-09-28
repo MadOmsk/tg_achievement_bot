@@ -12,7 +12,6 @@ def test_render_all_screens() -> None:
     state = MockPanelState()
 
     all_screens = [
-        "showcase",
         "home",
         "acc:psn",
         "acc:xbox",
@@ -23,17 +22,6 @@ def test_render_all_screens() -> None:
         "chat_detail",
         "chat_del_confirm",
         "tz",
-        "admin",
-        "adm_digest",
-        "adm_usercard",
-        "chat_hub",
-        "stats",
-        "summary_day",
-        "summary_month",
-        "single_achievement",
-        "digest_achievement",
-        "online",
-        "recent",
     ]
 
     for scr in all_screens:

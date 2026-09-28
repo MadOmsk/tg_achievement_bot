@@ -38,7 +38,7 @@ def test_hub_keyboard_adds_open_app_when_mini_url_is_set() -> None:
     buttons = [b for row in markup.inline_keyboard for b in row]
     assert len(buttons) == 12
     open_app = next(b for b in buttons if b.text == "Открыть приложение")
-    assert open_app.url == f"https://t.me/mybot?startapp=c{CHAT_ID}"
+    assert open_app.url == f"https://t.me/mybot/app?startapp=c{CHAT_ID}"
     assert markup.inline_keyboard[0] == [open_app]
 
 
@@ -307,13 +307,7 @@ def test_help_text_mentions_both_platforms_and_the_main_commands(locale: str) ->
     for command in (
         "/panel",
         "/stats",
-        "/online",
-        "/who",
-        "/recent",
-        "/summary",
         "/hltb",
-        "/subscribe",
-        "/unsubscribe",
         "/help",
     ):
         assert command in help_text

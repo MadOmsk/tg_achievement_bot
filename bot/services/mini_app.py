@@ -53,9 +53,12 @@ def mini_app_group_url(
     chat_id: int,
     person_id: int | None = None,
     tab: str | None = None,
+    app_name: str | None = "app",
 ) -> str:
     name = bot_username.lstrip("@")
     param = mini_app_start_param(chat_id=chat_id, person_id=person_id, tab=tab)
+    if app_name:
+        return f"https://t.me/{name}/{app_name}?startapp={param}"
     return f"https://t.me/{name}?startapp={param}"
 
 
@@ -68,6 +71,7 @@ def mini_app_open_markup(
     person_id: int | None = None,
     tab: str | None = None,
     in_group: bool = True,
+    app_name: str | None = "app",
 ) -> InlineKeyboardMarkup | None:
     https_url = (https_url or "").strip()
     name = (bot_username or "").lstrip("@")
@@ -78,7 +82,9 @@ def mini_app_open_markup(
             return None
         button = InlineKeyboardButton(
             text=text,
-            url=mini_app_group_url(name, chat_id=chat_id, person_id=person_id, tab=tab),
+            url=mini_app_group_url(
+                name, chat_id=chat_id, person_id=person_id, tab=tab, app_name=app_name
+            ),
         )
     else:
         button = InlineKeyboardButton(

@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     # button / tunnel during local dev). Empty = Mini App entry disabled;
     # classic slash commands and chat posts keep working either way.
     mini_app_url: str | None = None
+    # Short name of the Mini App configured in BotFather (e.g. 'app' -> t.me/bot/app)
+    mini_app_name: str = "app"
 
     @field_validator("admin_tg_ids", mode="before")
     @classmethod

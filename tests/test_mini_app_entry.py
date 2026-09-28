@@ -53,7 +53,7 @@ def test_the_hub_gains_an_app_row_only_when_there_is_an_app() -> None:
     buttons = _buttons(hub_keyboard(BOT, CHAT_ID, mini_app_url=APP_URL))
     assert len(buttons) == 12
     app_button = buttons[0]
-    assert app_button.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
+    assert app_button.url == f"https://t.me/{BOT}/app?startapp=c{CHAT_ID}"
     assert app_button.web_app is None
 
 
@@ -71,7 +71,7 @@ async def test_panel_command_in_a_group_sends_a_link_not_a_web_app(i18n, repo) -
     buttons = _buttons(message.markups[0])
     app_button = buttons[0]
     assert app_button.web_app is None
-    assert app_button.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
+    assert app_button.url == f"https://t.me/{BOT}/app?startapp=c{CHAT_ID}"
 
 
 async def test_help_command_in_a_group_sends_commands_without_markup(i18n, repo) -> None:
@@ -102,10 +102,7 @@ async def test_help_command_in_a_dm_without_app_url(i18n, repo) -> None:
 
     await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=""))
 
-    buttons = _buttons(message.markups[0])
-    assert not any(button.web_app for button in buttons)
-    assert len(buttons) == 5
-    assert buttons[-1].callback_data == "msg:close"
+    assert message.markups[0] is None
 
 
 async def test_start_in_a_group_gets_no_web_app_button(i18n, repo) -> None:

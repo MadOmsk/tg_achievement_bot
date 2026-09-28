@@ -23,8 +23,8 @@ async def main() -> None:
     parser.add_argument("--env", default=".env.test", help="Path to env file (default: .env.test)")
     parser.add_argument(
         "--screen",
-        default="showcase",
-        help="Screen to render (default: showcase)",
+        default="home",
+        help="Screen to render (default: home)",
     )
     args = parser.parse_args()
 

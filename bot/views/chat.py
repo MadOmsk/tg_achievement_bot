@@ -301,6 +301,8 @@ def hub_keyboard(
     *,
     mini_app_url: str = "",
     is_group: bool = True,
+    is_admin: bool = False,
+    mini_app_name: str = "app",
 ) -> InlineKeyboardMarkup:
     """A short walkthrough and quick navigation:
     1. App button (Open the app) - top row if configured
@@ -322,7 +324,9 @@ def hub_keyboard(
                 [
                     InlineKeyboardButton(
                         text=_hub_text(i18n, "chat-hub-open-app"),
-                        url=mini_app_group_url(bot_username, chat_id=chat_id),
+                        url=mini_app_group_url(
+                            bot_username, chat_id=chat_id, app_name=mini_app_name
+                        ),
                     )
                 ]
             )
@@ -381,6 +385,15 @@ def hub_keyboard(
                 settings_btn,
             ]
         )
+        if is_admin:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=_hub_text(i18n, "chat-hub-pin-app-button"),
+                        callback_data=f"hub:pin_app:{chat_id}",
+                    )
+                ]
+            )
     else:
         # In private chat: settings
         rows.append([settings_btn])
@@ -413,8 +426,8 @@ def hub_keyboard(
 
 
 def help_text(i18n: I18nContext) -> str:
-    """The list of chat commands for /help (#19)."""
-    return i18n.get("chat-help-text")
+    """The overview and commands for /help (#19, #140)."""
+    return i18n.get("chat-help-text") + "\n\n" + i18n.get("chat-help-version", version=version())
 
 
 async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:

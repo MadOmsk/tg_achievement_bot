@@ -48,21 +48,19 @@ chat-recent-row = { $badge } { $gamertag } — { $icon } { $game } · { $name }{
 # Group hub and chat actions
 chat-unknown-user = I don't know them. The Bot API can't look people up by @name — I remember the ones who have written in the chat. You can also reply to their message with /stats.
 chat-panel-text = 🎮 I watch the achievements and trophies of everyone playing on XBOX, PlayStation and Steam and post them here — with a rarity filter, personal stats, and a daily summary.
-chat-help-text = Chat commands:
-    /panel — menu and action buttons
-    /stats [@who] — stats: yours with no argument, someone else's with a name
-    /who — look up a specific player's stats
-    /online — who's in a game right now
-    /recent [N] — the chat's latest achievements
-    /summary_day — the last 24 hours in review
-    /summary_month — the month so far in review
-    /hltb — a game's HowLongToBeat summary
-    /subscribe — publish my achievements here
-    /unsubscribe — stop publishing here
-    /help — list of commands
+chat-help-text =
+    🎮 <b>Achievement Bot</b> tracks achievements and trophies for our gaming community.
 
-    Settings are in a DM, /panel.
+    Supports <b>XBOX</b>, <b>PlayStation Network</b>, and <b>Steam</b>. Tracks player progress, publishes newly unlocked achievements into chats with rarity filters, maintains personal stats, compiles daily and monthly summaries, and lets you explore your gaming history in the Telegram Mini App.
+
+    <b>Available commands:</b>
+    /panel — personal settings and linked accounts
+    /stats — achievements and trophies statistics
+    /hltb — game completion time from HowLongToBeat
+    /help — bot overview and help
 chat-help-version = <i>Version { $version }</i>
+chat-hub-pin-app-button = 📌 Post card to pin
+chat-intro-posted-alert = Intro card sent to chat!
 chat-hub-nobody = Nobody is publishing here yet.
 chat-hub-publishing = Publishing: { $names }
 chat-hub-publish-button = 🔔 Notification settings
