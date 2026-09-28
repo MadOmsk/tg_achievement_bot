@@ -629,7 +629,7 @@
 }
 
 .achievements-head {
-  margin: 22px 0 12px;
+  margin: 28px 0 12px;
 }
 
 .friend strong {
@@ -1368,7 +1368,7 @@
   margin: 0;
   aspect-ratio: auto;
   height: auto;
-  overflow: visible;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -1391,7 +1391,7 @@
 .feed-posts .unlock-slider.is-feed .unlock-slide.swiper-slide {
   max-width: 100%;
   height: auto;
-  overflow: visible;
+  overflow: hidden;
   box-sizing: border-box;
 }
 
@@ -1896,7 +1896,7 @@ button.feed-day-label::after {
 }
 
 .page-head + .feed-days > .feed-day:first-child {
-  margin-top: 8px;
+  margin-top: 18px;
 }
 
 .feed-days .feed-day + .feed-day {

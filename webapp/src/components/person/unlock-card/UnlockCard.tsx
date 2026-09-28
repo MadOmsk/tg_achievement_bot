@@ -141,15 +141,11 @@ export function UnlockCard({
       )}
       {minimal ? (
         <div className="unlock-card-copy is-minimal">
+          {item.game && <p className="minimal-game">{item.game}</p>}
           <h2>
             <span className={blur}>{item.name}</span>
           </h2>
           {item.description && <p className={["minimal-desc", blur].filter(Boolean).join(" ")}>{item.description}</p>}
-          {item.game && (
-            <p className="minimal-game">
-              {item.game}
-            </p>
-          )}
         </div>
       ) : gameInCopy ? (
         <div className="unlock-card-foot">

@@ -87,9 +87,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 20px 0 0;
-  /* Same height whichever tab is active — "Об игре" has no action row at
-   * all, and without this the header itself shrank when it disappeared. */
+  margin: 28px 0 0;
   min-height: 36px;
 }
 

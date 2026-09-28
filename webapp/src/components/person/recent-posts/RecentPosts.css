@@ -1,32 +1,32 @@
-/* The minimal gallery: the picture, then the name, the achievement's own
- * description as flavour text (italic, quiet) and its game — plain text,
- * set apart from the description by weight and colour, not a chip. */
+.unlock-card-copy.is-minimal .minimal-game {
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  color: rgba(238, 241, 246, 0.68);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .unlock-card-copy.is-minimal h2 {
+  margin-top: 4px;
   font-size: 1.1rem;
 }
 
 .unlock-card-copy.is-minimal .minimal-desc {
-  margin: 10px 0 0;
+  margin: 6px 0 0;
   color: rgba(238, 241, 246, 0.6);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-style: italic;
   line-height: 1.4;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-}
-
-.unlock-card-copy.is-minimal .minimal-game {
-  display: block;
-  max-width: 100%;
-  margin: 12px 0 0;
-  color: rgba(238, 241, 246, 0.92);
-  font-size: 0.85rem;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* No panel of its own: the name and the game sit on the picture, on a shade
