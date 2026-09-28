@@ -530,7 +530,8 @@
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
-  line-height: 1.3;
+  line-height: 1.4;
+  color: rgba(224, 229, 240, 0.76);
 }
 
 .feed-row.has-wrap {

@@ -9,11 +9,11 @@ import { t, type Locale } from "../../../i18n";
 import {
   Avatar,
   CoverImg,
-  GlassWait,
   Icon,
   Row,
   RowsSection,
   Sheet,
+  StatsSkel,
   isOnline,
   useOpenGame,
 } from "../../shared/lib";
@@ -83,6 +83,20 @@ export function ClubStats({
   const [rareOpen, setRareOpen] = useState<RareFinder | null>(null);
   const [huntOpen, setHuntOpen] = useState<Hunt | null>(null);
   const [item, setItem] = useState<FeedItem | null>(null);
+
+  if (busy) {
+    return (
+      <>
+        {!hideHeader && (
+          <header className="page-head is-split">
+            <h1>{t(locale, "stats")}</h1>
+            {monthChip}
+          </header>
+        )}
+        <StatsSkel head={false} />
+      </>
+    );
+  }
 
   if (day.length === 0 && month.length === 0 && feed.length === 0) {
     return (
@@ -171,7 +185,6 @@ export function ClubStats({
           {monthChip}
         </header>
       )}
-      {busy && <GlassWait />}
       <section className="stat-hero">
         <StatTile
           label={t(locale, "today")}

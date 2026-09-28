@@ -182,22 +182,7 @@ export function Club({
     // Keep the open profile visible while pull-to-refresh refetches it.
     if (refreshKey === 0) setPersonBusy(true);
     void fetchPerson(data, activeId, openPersonId, personMonth ? { month: personMonth } : undefined)
-      .then(async (payload) => {
-        // The profile appears with its gallery picture and its games' covers
-        // already loaded — not skeleton, then the bar, then pictures one by one.
-        if (refreshKey === 0) {
-          // A generous budget: this is a deliberate navigation someone is
-          // waiting on, not an ambient background fetch — 1.5s let a slow
-          // connection through with its pictures still not there yet, which
-          // showed up as the gallery popping in a beat after the rest.
-          await preloadImages(
-            [
-              payload.feed[0]?.icon_url,
-              ...payload.feed.slice(0, 8).map((row) => row.game_icon_url),
-            ],
-            5000,
-          );
-        }
+      .then((payload) => {
         if (!cancelled) {
           setPerson(payload);
           if (openPersonId === me.tg_id) setMyPerson(payload);
@@ -441,7 +426,8 @@ export function Club({
               </div>
             ) : (
               <>
-                {mine.length > 0 && (
+                {homeBusy && <HomeSkel />}
+                {!homeBusy && mine.length > 0 && (
                   <RecentPosts
                     items={mine}
                     locale={locale}
@@ -450,7 +436,8 @@ export function Club({
                     onReveal={(key) => setRevealed(new Set(revealed).add(key))}
                   />
                 )}
-                {mine.length === 0 &&
+                {!homeBusy &&
+                  mine.length === 0 &&
                   (me.xbox.linked || me.steam.linked || me.psn.linked) && (
                     <p className="empty">{t(locale, "emptyFeed")}</p>
                   )}
