@@ -30,6 +30,7 @@ export function useImgFade(src: string | null | undefined) {
 
   return {
     ref,
+    loaded,
     onLoad: () => {
       if (src) seen.add(src);
       setLoaded(true);

@@ -28,17 +28,21 @@
 }
 
 .avatar-dot.has-plat {
-  width: 34%;
-  height: 34%;
-  min-width: 12px;
-  min-height: 12px;
-  max-width: 18px;
-  max-height: 18px;
+  width: 26%;
+  height: 26%;
+  min-width: 9px;
+  min-height: 9px;
+  max-width: 13px;
+  max-height: 13px;
 }
 
 .avatar-dot.has-plat.is-fill {
   padding: 0;
-  color: #062012;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  color: #3ee070;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.75));
 }
 
 .friend .avatar-wrap {

@@ -50,6 +50,13 @@ export function FitImg({
         onLoad={fade.onLoad}
         onError={() => setFailed(true)}
       />
+      {/* The glyph stands in, centred, until the picture is actually there —
+       * not just a blank layer while it downloads. */}
+      {!fade.loaded && (
+        <span className="cover-ph-mark">
+          <CoverMark kind={kind} size={96} />
+        </span>
+      )}
     </span>
   );
 }

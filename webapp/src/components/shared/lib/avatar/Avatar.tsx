@@ -118,10 +118,8 @@ export function Avatar({
   }, [photo, tgId]);
   const live = Boolean(online || playing);
   const plat = (live && platform) && platformMark(platform);
-  const fillBadge = plat === "steam" || plat === "xbox";
-  const logoSize = fillBadge
-    ? Math.max(12, Math.min(18, Math.round(size * 0.34)))
-    : Math.max(7, Math.min(11, Math.round(size * 0.18)));
+  const fillBadge = Boolean(plat);
+  const logoSize = Math.max(9, Math.min(13, Math.round(size * 0.26)));
   return (
     <span className={live ? "avatar-wrap is-live" : "avatar-wrap"} style={{ width: size, height: size }}>
       <span

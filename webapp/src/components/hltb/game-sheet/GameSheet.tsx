@@ -47,7 +47,7 @@ export function GameSheet({
     game.game_url || `https://howlongtobeat.com/game/${game.hltb_id}`;
 
   return (
-    <Sheet mid onClose={onClose} closeLabel={t(locale, "close")} noClose>
+    <Sheet mid onClose={onClose}>
       <div className="sheet-hltb">
         <div className="unlock-card hltb-sheet has-fit">
           <div className="unlock-card-art">

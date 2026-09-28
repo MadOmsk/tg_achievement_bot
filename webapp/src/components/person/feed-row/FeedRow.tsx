@@ -2,6 +2,7 @@ import type { FeedItem } from "../../../api";
 import { CoverImg, Icon } from "../../shared/lib";
 import { HeroMarks } from "../hero-marks/HeroMarks";
 import { ProgressBar } from "../progress-bar/ProgressBar";
+import { feedKey } from "../utils";
 
 /**
  * One achievement as a compact plate: icon, name, game with its progress
@@ -12,12 +13,16 @@ export function FeedRow({
   secret,
   detailed = false,
   onOpen,
+  onToggleReveal,
 }: {
   row: FeedItem;
   secret: boolean;
   /** The drawer form: name, game and person, no progress. */
   detailed?: boolean;
   onOpen: (row: FeedItem) => void;
+  /** A tap on a secret row reveals it in place instead of opening it — the
+   * same first tap the game page's list uses. Omit it to open right away. */
+  onToggleReveal?: (key: string) => void;
 }) {
   // The frame marks the "platinum" of a game: a platinum trophy, or any
   // achievement of a game its owner has completed (100%).
@@ -38,7 +43,13 @@ export function FeedRow({
       ]
         .filter(Boolean)
         .join(" ")}
-      onClick={() => onOpen(row)}
+      onClick={() => {
+        if (secret && onToggleReveal) {
+          onToggleReveal(feedKey(row));
+        } else {
+          onOpen(row);
+        }
+      }}
     >
       <CoverImg
         src={row.icon_url}

@@ -92,3 +92,147 @@ async def test_a_test_bot_skips_an_unreachable_chat_and_leaves_it_active(repo, m
     pub, chat_id, active = await _gone_chat_publisher(repo, monkeypatch, test_bot=True)
     assert active == 1
     assert chat_id in pub._unreachable
+
+
+async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) -> None:
+    from types import SimpleNamespace
+
+    from bot.poller.publisher import Publisher
+
+    chat_id = -100999
+    tg_id = 9999
+    await repo.ensure_user(tg_id)
+    await repo.upsert_chat(chat_id, "Test Chat", tg_id)
+    await repo.subscribe(chat_id, tg_id)
+
+    settings = SimpleNamespace(mini_app_url="https://app.example.com")
+    pub = Publisher(bot=None, repo=repo, settings=settings, bot_username="testbot")
+
+    item = achievement("ach1", "icon.png")
+    await pub.publish(tg_id, "xuid1", "Player", [item], title_name="Game Title")
+
+    job = await pub._queue.get()
+    assert job.chat_id == chat_id
+    assert job.reply_markup is not None
+    button = job.reply_markup.inline_keyboard[0][0]
+    assert button.text == "Открыть Mini App"
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}"
+
+
+async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
+    from types import SimpleNamespace
+
+    from bot.poller.publisher import Publisher
+
+    chat_id = -100999
+    tg_id = 9999
+    await repo.ensure_user(tg_id)
+    await repo.upsert_chat(chat_id, "Test Chat", tg_id)
+    await repo.subscribe(chat_id, tg_id)
+    await repo.update_subscription_digest_threshold(chat_id, tg_id, 2)
+
+    settings = SimpleNamespace(mini_app_url="https://app.example.com")
+    pub = Publisher(bot=None, repo=repo, settings=settings, bot_username="testbot")
+
+    items = [achievement("ach1", "icon1.png"), achievement("ach2", "icon2.png")]
+    await pub.publish(tg_id, "xuid1", "Player", items, title_name="Game Title")
+
+    job = await pub._queue.get()
+    assert job.chat_id == chat_id
+    assert job.reply_markup is not None
+    button = job.reply_markup.inline_keyboard[0][0]
+    assert button.text == "Открыть Mini App"
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}"
+
+
+async def test_publisher_no_markup_when_no_mini_app_url(repo) -> None:
+    from bot.poller.publisher import Publisher
+
+    chat_id = -100999
+    tg_id = 9999
+    await repo.ensure_user(tg_id)
+    await repo.upsert_chat(chat_id, "Test Chat", tg_id)
+    await repo.subscribe(chat_id, tg_id)
+
+    pub = Publisher(bot=None, repo=repo, settings=None, bot_username="testbot")
+
+    item = achievement("ach1", "icon.png")
+    await pub.publish(tg_id, "xuid1", "Player", [item], title_name="Game Title")
+
+    job = await pub._queue.get()
+    assert job.reply_markup is None
+
+
+async def test_publisher_deliver_passes_reply_markup_to_bot(repo) -> None:
+    from types import SimpleNamespace
+
+    from bot.poller.publisher import Publisher, PublishJob
+
+    chat_id = -100999
+
+    class _MockBot:
+        def __init__(self):
+            self.sent_photos = []
+            self.sent_messages = []
+            self.edited_markups = []
+
+        async def send_photo(self, chat_id, photo, caption=None, reply_markup=None, **kwargs):
+            self.sent_photos.append((chat_id, photo, reply_markup))
+            return SimpleNamespace(message_id=101)
+
+        async def send_message(self, chat_id, text, reply_markup=None, **kwargs):
+            self.sent_messages.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=102)
+
+        async def send_media_group(self, chat_id, media):
+            return [SimpleNamespace(message_id=201), SimpleNamespace(message_id=202)]
+
+        async def edit_message_reply_markup(self, chat_id, message_id, reply_markup=None):
+            self.edited_markups.append((chat_id, message_id, reply_markup))
+
+    mock_bot = _MockBot()
+    pub = Publisher(bot=mock_bot, repo=repo)
+
+    markup = SimpleNamespace(inline_keyboard=[])
+
+    # 1. Single photo delivery
+    job1 = PublishJob(
+        chat_id=chat_id,
+        text="single",
+        gallery=[("photo.jpg", False)],
+        reply_markup=markup,
+    )
+    msg_id1 = await pub._deliver(job1)
+    assert msg_id1 == 101
+    assert len(mock_bot.sent_photos) == 1
+    assert mock_bot.sent_photos[0][2] is markup
+
+    # 2. Text fallback delivery
+    job2 = PublishJob(chat_id=chat_id, text="text", gallery=[], reply_markup=markup)
+    msg_id2 = await pub._deliver(job2)
+    assert msg_id2 == 102
+    assert len(mock_bot.sent_messages) == 1
+    assert mock_bot.sent_messages[0][2] is markup
+
+    # 3. Digest delivery with markup -> single photo so button is kept
+    job3 = PublishJob(
+        chat_id=chat_id,
+        text="digest",
+        gallery=[("p1.jpg", False), ("p2.jpg", False)],
+        reply_markup=markup,
+    )
+    msg_id3 = await pub._deliver(job3)
+    assert msg_id3 == 101
+    assert len(mock_bot.sent_photos) == 2
+    assert mock_bot.sent_photos[1][1] == "p1.jpg"
+    assert mock_bot.sent_photos[1][2] is markup
+
+    # 4. Digest delivery without markup -> media group
+    job4 = PublishJob(
+        chat_id=chat_id,
+        text="digest_no_markup",
+        gallery=[("p1.jpg", False), ("p2.jpg", False)],
+        reply_markup=None,
+    )
+    msg_id4 = await pub._deliver(job4)
+    assert msg_id4 == 201

@@ -1,7 +1,7 @@
+import type { ReactNode } from "react";
 import type { MeResponse } from "../../../../api";
 import { t, type Locale } from "../../../../i18n";
 import { Avatar, accountLabel, telegramPhoto } from "../avatar/Avatar";
-import { ScoreCup, meScoreLines } from "../score-cup/ScoreCup";
 import "./AccountBar.css";
 
 export function AccountBar({
@@ -9,14 +9,15 @@ export function AccountBar({
   locale,
   onProfile,
   status,
-  score = true,
+  plats,
 }: {
   me: MeResponse;
   locale: Locale;
   onProfile: () => void;
   /** What the person is doing now, written after the nick. */
   status?: string | null;
-  score?: boolean;
+  /** Small, subtle platform marks after the nick. */
+  plats?: ReactNode;
 }) {
   const name = accountLabel(me);
   return (
@@ -31,12 +32,13 @@ export function AccountBar({
             zoomLabel={t(locale, "close")}
           />
           <span>
-            <em className="hello">{t(locale, "hello")}</em>
-            <strong>{name}</strong>
+            <span className="account-name-row">
+              <strong>{name}</strong>
+              {plats}
+            </span>
             {status && <small className="account-status">{status}</small>}
           </span>
         </button>
-        {score && <ScoreCup locale={locale} lines={meScoreLines(me, locale)} />}
       </div>
     </header>
   );

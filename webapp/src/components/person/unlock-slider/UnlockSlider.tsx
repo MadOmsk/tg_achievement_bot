@@ -85,9 +85,9 @@ function SliderDots({
 }
 
 /**
- * Swiper with the creative effect and endless looping, plus the dots. In the
- * feed a swipe does not drag the card along: once it is clearly a swipe the
- * whole slide change plays out; the gallery in a profile follows the finger.
+ * Swiper with the creative effect and endless looping, plus the dots. Every
+ * carousel follows the finger while dragging — a card that only reacted once
+ * the swipe was already decided read as laggy.
  */
 function UnlockSliderBase({
   items,
@@ -126,13 +126,13 @@ function UnlockSliderBase({
         modules={[EffectCreative]}
         effect="creative"
         creativeEffect={CREATIVE_EFFECT}
-        speed={480}
-        followFinger={!feedDots}
-        threshold={feedDots ? 12 : 3}
+        speed={feedDots ? 360 : 480}
+        followFinger
+        threshold={3}
         // A profile gallery turns over on a short drag (12% of the width, not
         // half of it, which is Swiper's default).
         longSwipesRatio={feedDots ? 0.5 : 0.12}
-        loop={n > 2}
+        loop={n > 1}
         onSwiper={setSwiper}
       >
         {slides.map((item) => {

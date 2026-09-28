@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { MeResponse } from "../../../../api";
 import { t, type Locale } from "../../../../i18n";
 import { PlatformLogo } from "../platform/Platform";
@@ -20,12 +19,20 @@ export function ScoreCup({
   locale,
   lines,
   onEmpty,
+  markSize = 18,
+  open,
+  onOpenChange,
 }: {
   locale: Locale;
   onEmpty?: () => void;
   lines: ScoreCupLine[];
+  /** The size of each platform mark — smaller where the cup sits inline,
+   * next to the nick, rather than as its own button. */
+  markSize?: number;
+  /** Controlled: the nick beside it opens the same sheet. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   if (lines.length === 0) {
     if (!onEmpty) return null;
     return (
@@ -43,19 +50,19 @@ export function ScoreCup({
         className="score-cup-btn"
         onClick={(e) => {
           e.stopPropagation();
-          setOpen(true);
+          onOpenChange(true);
         }}
         aria-expanded={open}
         aria-label={t(locale, "scoreSummary")}
       >
         <span className="score-plats">
           {lines.map((line) => (
-            <PlatformLogo key={line.platform} platform={line.platform} size={18} />
+            <PlatformLogo key={line.platform} platform={line.platform} size={markSize} />
           ))}
         </span>
       </button>
       {open && (
-        <Sheet onClose={() => setOpen(false)} closeLabel={t(locale, "close")} noClose>
+        <Sheet onClose={() => onOpenChange(false)}>
           <div className="sheet-content score-sheet">
             <h2>{t(locale, "scoreSummary")}</h2>
             {lines.map((line) => (

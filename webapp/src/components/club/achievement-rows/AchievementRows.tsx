@@ -12,12 +12,15 @@ export function AchievementRows({
   showSecrets,
   detailed = false,
   onOpen,
+  onReveal,
 }: {
   items: FeedItem[];
   revealed: Set<string>;
   showSecrets?: boolean;
   detailed?: boolean;
   onOpen: (row: FeedItem) => void;
+  /** A tap on a secret row reveals it in place — see FeedRow. */
+  onReveal?: (key: string) => void;
 }) {
   return (
     <div className="feed-day">
@@ -28,6 +31,7 @@ export function AchievementRows({
           secret={veiled(row, feedKey(row), revealed, showSecrets)}
           detailed={detailed}
           onOpen={onOpen}
+          onToggleReveal={onReveal}
         />
       ))}
     </div>

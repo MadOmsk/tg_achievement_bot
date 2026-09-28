@@ -107,16 +107,10 @@ export function FeedSkel({
           <div key={i} className="skel-post">
             <div className="skel-post-head">
               <span className="skel skel-avatar" />
-              <span className="skel-copy">
-                <span className="skel line" style={{ width: 96 }} />
-                <span className="skel line is-thin" style={{ width: 64 }} />
-              </span>
+              <span className="skel line" style={{ width: 110 }} />
             </div>
             <span className="skel skel-post-pic" />
-            <span className="skel-copy skel-post-text">
-              <span className="skel line" style={{ width: "58%", height: 16 }} />
-              <span className="skel line is-thin" style={{ width: "82%" }} />
-            </span>
+            <span className="skel line skel-post-text" style={{ width: "56%" }} />
           </div>
         ))}
       </div>
@@ -125,10 +119,10 @@ export function FeedSkel({
 }
 
 /** The stats page: two tiles, a strip of covers, and the leaders. */
-export function StatsSkel() {
+export function StatsSkel({ head = true }: { head?: boolean }) {
   return (
     <div aria-busy="true" aria-live="polite">
-      <HeadSkel />
+      {head && <HeadSkel />}
       <div className="stats-skel-tiles">
         <span className="skel stats-skel-tile" />
         <span className="skel stats-skel-tile" />
@@ -155,29 +149,40 @@ export function StatsSkel() {
   );
 }
 
-/** Somebody's profile while it opens: the bar, the picture, their games. */
+/**
+ * Somebody's profile while it opens: the picture and their games, under the
+ * real header bar's own classes (not a stand-in copy) — so its size and
+ * position are the real ones, and nothing jumps once it is the real bar.
+ */
 export function PersonSkel() {
   return (
-    <div className="app-skel" aria-busy="true" aria-live="polite">
-      <div className="app-skel-head">
-        <span className="skel skel-avatar" />
-        <span className="app-skel-who">
-          <span className="skel line" style={{ width: 120, height: 17 }} />
-          <span className="skel line is-thin" style={{ width: 84 }} />
-        </span>
-      </div>
-      <span className="skel app-skel-hero" />
-      <span className="skel line skel-title is-small" />
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="app-skel-game">
-          <span className="skel skel-pic is-big" />
-          <span className="skel-copy">
-            <span className="skel line" style={{ width: `${62 - i * 9}%` }} />
-            <span className="skel line" />
-            <span className="skel line is-thin" style={{ width: 84 }} />
+    <div aria-busy="true" aria-live="polite">
+      <div className="account-bar person-bar">
+        <div className="account-top">
+          <span className="skel skel-avatar" style={{ width: 36, height: 36, flex: "0 0 auto" }} />
+          <span style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 auto", minWidth: 0 }}>
+            <span className="skel skel-avatar" />
+            <span className="app-skel-who">
+              <span className="skel line" style={{ width: 120, height: 17 }} />
+              <span className="skel line is-thin" style={{ width: 84 }} />
+            </span>
           </span>
         </div>
-      ))}
+      </div>
+      <div className="app-skel is-nested">
+        <span className="skel app-skel-hero" />
+        <span className="skel line skel-title is-small" />
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="app-skel-game">
+            <span className="skel skel-pic is-big" />
+            <span className="skel-copy">
+              <span className="skel line" style={{ width: `${62 - i * 9}%` }} />
+              <span className="skel line" />
+              <span className="skel line is-thin" style={{ width: 84 }} />
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

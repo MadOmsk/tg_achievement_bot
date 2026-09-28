@@ -22,7 +22,8 @@ export function Icon({
     | "forward"
     | "link"
     | "sync"
-    | "off";
+    | "off"
+    | "sort";
   size?: number;
   filled?: boolean;
 }) {
@@ -185,6 +186,14 @@ export function Icon({
         <path d="M4 12a8 8 0 0 1 13.5-5.8" />
         <path d="M16.5 3.5V6.8H20" />
         <path d="M7.5 20.5V17.2H4" />
+      </svg>
+    );
+  }
+  if (name === "sort") {
+    return (
+      <svg {...props}>
+        <path d="M7 5v13.5M7 18.5 3.8 15.3M7 18.5l3.2-3.2" />
+        <path d="M17 19V5.5M17 5.5l3.2 3.2M17 5.5l-3.2 3.2" />
       </svg>
     );
   }

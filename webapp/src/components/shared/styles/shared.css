@@ -629,7 +629,7 @@
 }
 
 .achievements-head {
-  margin: 22px 0 12px;
+  margin: 28px 0 12px;
 }
 
 .friend strong {
@@ -658,7 +658,7 @@
 }
 
 .score-sheet h2 {
-  margin: 0 0 8px;
+  margin: 0 0 22px;
 }
 
 .score-row strong {
@@ -888,10 +888,10 @@
 
 .sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game-art,
 .sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game .cover-ph {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
-  border-radius: 12px;
+  width: 60px;
+  height: 60px;
+  flex: 0 0 60px;
+  border-radius: 14px;
   overflow: hidden;
   box-shadow: 0 5px 14px rgba(0, 0, 0, 0.35);
 }
@@ -900,10 +900,25 @@
   min-width: 0;
   flex: 1 1 0;
   max-width: 100%;
-  height: 48px;
-  min-height: 48px;
+  height: 60px;
+  min-height: 60px;
   gap: 8px;
   overflow: hidden;
+}
+
+/* Under a big picture, the game's name, count and bar read as small next to
+ * it — a step up from the shared default, kept to this sheet only. */
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game-title,
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game strong {
+  font-size: 1.02rem;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game-count {
+  font-size: 0.86rem;
+}
+
+.sheet-body.is-mid .sheet-unlock .unlock-card-foot .hero-game-bar {
+  --bar-h: 6px;
 }
 
 .sheet-body.is-mid .sheet-unlock .unlock-card-stage .hero-game {
@@ -1162,6 +1177,8 @@
 
 .unlock-card.is-open {
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 
 .unlock-card-art {
@@ -1351,7 +1368,7 @@
   margin: 0;
   aspect-ratio: auto;
   height: auto;
-  overflow: visible;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -1374,7 +1391,7 @@
 .feed-posts .unlock-slider.is-feed .unlock-slide.swiper-slide {
   max-width: 100%;
   height: auto;
-  overflow: visible;
+  overflow: hidden;
   box-sizing: border-box;
 }
 
@@ -1879,7 +1896,7 @@ button.feed-day-label::after {
 }
 
 .page-head + .feed-days > .feed-day:first-child {
-  margin-top: 8px;
+  margin-top: 18px;
 }
 
 .feed-days .feed-day + .feed-day {
@@ -2202,8 +2219,3 @@ button.feed-day-label::after {
   contain-intrinsic-size: auto 560px;
 }
 
-/* The taller block (three lines) keeps the same air above the description
- * panel as the two-line one has. */
-.unlock-card-foot .hero-game.has-mid {
-  margin-bottom: 16px;
-}

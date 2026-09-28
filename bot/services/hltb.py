@@ -114,6 +114,12 @@ class HltbResult:
     genre: str | None
     description_en: str | None = None
     description_ru: str | None = None
+    # What the game-page matcher weighs (#131) — search results only, never
+    # cached: HLTB's other names for it, "game"/"dlc"/"mod", and how many
+    # people logged a completion.
+    alias: str | None = None
+    game_type: str | None = None
+    popularity: int = 0
 
     def description(self, locale: str) -> str | None:
         """The summary in the asked-for locale, falling back to whichever
@@ -157,6 +163,88 @@ async def _search_raw(cleaned_query: str, limit: int) -> list[HltbResult]:
         raise HltbError(f"HLTB search failed for {cleaned_query!r}: {exc}") from None
     entries = sorted(entries or [], key=lambda e: e.similarity, reverse=True)
     return [_as_result(e) for e in entries[:limit]]
+
+
+async def ensure_title_match(repo: Repo, title_id: str) -> None:
+    """This game's HLTB entry, matched once and kept forever (#131) —
+    lazily, not by a walker: called once from each platform's fetcher right
+    after it publishes a game's first new achievement, and again from the
+    Mini App's game-details endpoint if a game still has no match when
+    somebody actually opens its page (an old game nobody's played lately
+    gets matched the first time anybody looks, not before).
+
+    A no-op whenever `repo.title_hltb_match_row` says the game is not due —
+    already matched, or asked (and failed) too recently — so calling this on
+    every achievement and every page view costs nothing once the answer is
+    known. Local import: `services.hltb_match` imports this module for
+    `HltbError`/`HltbResult`, so the reverse import has to happen at call
+    time, not at module load.
+    """
+    from bot.services.hltb_match import GameIdentity, find, usable_name
+
+    row = await repo.title_hltb_match_row(title_id)
+    if row is None:
+        return
+    names = tuple(dict.fromkeys(n for n in (row.name_en, row.name, row.name_ru) if n))
+    if not any(usable_name(n) for n in names):
+        # A platform's own placeholder ("Unknown", "?") or a name with
+        # nothing Latin in it — HLTB's English-only search has nothing to
+        # go on, and asking three times a game apart would only confirm
+        # that. Skips straight past the retries.
+        await repo.give_up_hltb_match(title_id)
+        return
+    identity = GameIdentity(
+        names=names,
+        platform=row.platform,
+        platforms=tuple(row.platforms),
+        steam_appid=int(title_id) if row.platform == "steam" and title_id.isdigit() else None,
+        first_played_year=row.first_played_year,
+    )
+    try:
+        match = await find(identity, search_candidates, steam_appids)
+    except HltbError as exc:
+        log.info("HLTB match unanswerable for title %s (%s)", title_id, exc)
+        await repo.record_hltb_match(title_id, None, None)
+        return
+    if match is None:
+        await repo.record_hltb_match(title_id, None, None)
+        return
+    await repo.record_hltb_match(title_id, match.hltb_id, match.score)
+    log.info("HLTB match for %s (%s): %s (score=%.3f)", title_id, names[0], match.name, match.score)
+
+
+async def search_candidates(query: str) -> list[HltbResult]:
+    """Everything HLTB returns for `query`, unfiltered and unsorted — the
+    game-page matcher (#131) scores candidates itself, and the library's own
+    similarity cut-off drops the right entry whenever the platform's name
+    and HLTB's differ by an edition or a subtitle."""
+    try:
+        entries = await HowLongToBeat(0.0).async_search(
+            _clean_query(query), similarity_case_sensitive=False
+        )
+    except Exception as exc:  # the library exposes no narrower exception type
+        raise HltbError(f"HLTB search failed for {query!r}: {exc}") from None
+    return [_as_result(e) for e in entries or []]
+
+
+async def steam_appids(result: HltbResult) -> set[int] | None:
+    """The Steam appids HLTB's page lists for this entry (`profile_steam`,
+    `profile_steam_alt`): an empty set when it lists none, None when the
+    page could not be read."""
+    if not result.game_url:
+        return None
+    game = await _fetch_page_game(result.game_url)
+    if game is None:
+        return None
+    ids = set()
+    for key in ("profile_steam", "profile_steam_alt"):
+        try:
+            value = int(game.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            ids.add(value)
+    return ids
 
 
 def _pick_fallback_word(cleaned_query: str) -> str | None:
@@ -272,17 +360,28 @@ async def _fetch_page_details(game_url: str) -> tuple[str | None, str | None]:
     the rest of the card (SPEC 1.5's "expected failure, never crash"), so
     every error just means "no genre and no description this time", logged
     and swallowed, never raised as HltbError."""
+    game = await _fetch_page_game(game_url)
+    return _details_of(game) if game is not None else (None, None)
+
+
+async def _fetch_page_game(game_url: str) -> dict | None:
+    """The game's record from its HLTB page, or None — logged, never raised."""
     try:
         async with httpx.AsyncClient(timeout=_PAGE_REQUEST_TIMEOUT) as client:
             response = await client.get(game_url, headers=_PAGE_HEADERS)
         response.raise_for_status()
-        return _extract_details(response.text)
+        return _page_game(response.text)
     except Exception as exc:
-        log.info("could not fetch HLTB page details from %s: %s", game_url, exc)
-        return None, None
+        log.info("could not fetch HLTB page %s: %s", game_url, exc)
+        return None
 
 
 def _extract_details(html_page: str) -> tuple[str | None, str | None]:
+    game = _page_game(html_page)
+    return _details_of(game) if game is not None else (None, None)
+
+
+def _page_game(html_page: str) -> dict | None:
     """Genre and description both live in the game page's own `__NEXT_DATA__`
     — Next.js' server-rendered props, real structured JSON rather than text
     scraped out of prose HTML (still someone else's undocumented internal
@@ -298,18 +397,20 @@ def _extract_details(html_page: str) -> tuple[str | None, str | None]:
     """
     match = _NEXT_DATA_RE.search(html_page)
     if not match:
-        return None, None
+        return None
     data = json.loads(match.group(1))
     games = data["props"]["pageProps"]["game"]["data"]["game"]
-    if not games:
-        return None, None
-    genre = games[0].get("profile_genre") or None
+    return games[0] if games else None
+
+
+def _details_of(game: dict) -> tuple[str | None, str | None]:
+    genre = game.get("profile_genre") or None
     # HLTB returns an empty string, not a missing key, for an entry it has
     # no summary for — common for obscure games (verified live). Internal
     # line breaks are collapsed: some summaries are several short paragraphs
     # (Onimusha's is three), and the card shows this collapsed to about three
     # lines, where a blank line costs a third of what is visible.
-    summary = " ".join((games[0].get("profile_summary") or "").split()) or None
+    summary = " ".join((game.get("profile_summary") or "").split()) or None
     return genre, summary
 
 
@@ -327,7 +428,18 @@ def _as_result(entry: object) -> HltbResult:
         # Neither genre nor description is in the search JSON at all — both
         # are filled in by resolve(), from the game's own page.
         genre=None,
+        alias=entry.game_alias or None,  # type: ignore[attr-defined]
+        game_type=entry.game_type or None,  # type: ignore[attr-defined]
+        popularity=_popularity(entry),
     )
+
+
+def _popularity(entry: object) -> int:
+    raw = getattr(entry, "json_content", None) or {}
+    try:
+        return int(raw.get("count_comp") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return 0
 
 
 async def overlay_cache(repo: Repo, results: list[HltbResult]) -> list[HltbResult]:

@@ -24,6 +24,7 @@ import {
   formatMonth,
   statusOf,
 } from "../../components/club";
+import { Icon } from "../../components/shared/lib/icon/Icon";
 import { SCREEN_NAMES, type ClubPane } from "../../components/shared/constants";
 import "./Club.css";
 
@@ -96,6 +97,7 @@ export function Club({
   const [query, setQuery] = useState("");
   const [rosterOpen, setRosterOpen] = useState(false);
   const [hltbGame, setHltbGame] = useState<HltbHit | null>(null);
+  const [gameSort, setGameSort] = useState<"recent" | "top">("recent");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const feedRef = useRef(feed);
   const onlineRef = useRef(online);
@@ -145,6 +147,23 @@ export function Club({
         setMonthLabel(s.value.month_label);
       }
       if (mine.status === "fulfilled") setMyPerson(mine.value);
+      // The same "mine" games list the page renders below — preloaded before
+      // the skeleton lifts, so the header, the gallery and the games appear
+      // together instead of the gallery (and every game's cover) popping in
+      // a beat after the text around them.
+      if (refreshKey === 0) {
+        const myItems =
+          mine.status === "fulfilled" && mine.value.feed?.length
+            ? mine.value.feed
+            : f.status === "fulfilled"
+              ? f.value.items.filter((row) => row.tg_id === me.tg_id)
+              : [];
+        await preloadImages(
+          [myItems[0]?.icon_url, ...myItems.slice(0, 8).map((row) => row.game_icon_url)],
+          5000,
+        );
+      }
+      if (cancelled) return;
       setClubReady(true);
     };
     void load();
@@ -165,15 +184,7 @@ export function Club({
     // Keep the open profile visible while pull-to-refresh refetches it.
     if (refreshKey === 0) setPersonBusy(true);
     void fetchPerson(data, activeId, openPersonId, personMonth ? { month: personMonth } : undefined)
-      .then(async (payload) => {
-        // The profile appears with its gallery picture and its games' covers
-        // already loaded — not skeleton, then the bar, then pictures one by one.
-        if (refreshKey === 0) {
-          await preloadImages([
-            payload.feed[0]?.icon_url,
-            ...payload.feed.slice(0, 8).map((row) => row.game_icon_url),
-          ]);
-        }
+      .then((payload) => {
         if (!cancelled) {
           setPerson(payload);
           if (openPersonId === me.tg_id) setMyPerson(payload);
@@ -284,82 +295,28 @@ export function Club({
   const mine = myPerson?.feed?.length
     ? myPerson.feed
     : homeFeed.filter((row) => row.tg_id === me.tg_id);
+  const mineGameCount = new Set(
+    mine.filter((row) => row.game).map((row) => `${row.platform}:${row.title_id}`),
+  ).size;
   const monthChip = (ym: string, which: MonthTarget) =>
     ym && (
       <button type="button" className="month-chip" onClick={() => setMonthPicker(which)}>
-        {formatMonth(ym, locale, "chip")}
+        <span>{formatMonth(ym, locale, "chip")}</span>
+        <Icon name="forward" size={17} />
       </button>
     );
-  // The page opens at once: until the person's own payload arrives it is drawn
-  // from what is already at hand (their name, status and the feed's items of
-  // theirs), so a tap never looks like nothing happened.
-  const provisional =
-    openPersonId && (!person || person.tg_id !== openPersonId)
-      ? (() => {
-          const items = feed.filter((row) => row.tg_id === openPersonId);
-          const member = online.find((row) => row.tg_id === openPersonId);
-          if (!member && items.length === 0) return null;
-          return {
-            tg_id: openPersonId,
-            name: member?.name ?? items[0]?.person ?? `id${openPersonId}`,
-            platforms: [],
-            today: { count: 0, score: 0, xbox: 0, steam: 0, psn: 0 },
-            week: { count: 0, xbox: 0, steam: 0, psn: 0 },
-            month: { count: 0, score: 0, xbox: 0, steam: 0, psn: 0 },
-            games: [],
-            feed: items,
-          } as PersonPayload;
-        })()
-      : null;
+  // No provisional, half-loaded view: the page stays on the skeleton until
+  // the real payload (with its gallery picture and covers already preloaded)
+  // is ready, so it appears once, whole, instead of in visible stages.
   const openProfile =
-    openPersonId && (person && person.tg_id === openPersonId ? person : provisional);
-  const [homeCompact, setHomeCompact] = useState(false);
-  const homeCompactRef = useRef(false);
-  const homeLockRef = useRef(0);
-  const homeFrameRef = useRef(0);
-
-  useEffect(() => {
-    if (pane !== SCREEN_NAMES.HOME || openProfile) {
-      homeCompactRef.current = false;
-      setHomeCompact(false);
-      return;
-    }
-    const apply = (next: boolean) => {
-      if (homeCompactRef.current === next) return;
-      homeCompactRef.current = next;
-      homeLockRef.current = performance.now() + 420;
-      setHomeCompact(next);
-    };
-    const update = () => {
-      if (query.trim()) {
-        apply(true);
-        return;
-      }
-      if (performance.now() < homeLockRef.current) return;
-      const y = window.scrollY || document.documentElement.scrollTop || 0;
-      if (homeCompactRef.current) {
-        if (y <= 2) apply(false);
-        return;
-      }
-      if (y > 88) apply(true);
-    };
-    const onScroll = () => {
-      cancelAnimationFrame(homeFrameRef.current);
-      homeFrameRef.current = requestAnimationFrame(update);
-    };
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      cancelAnimationFrame(homeFrameRef.current);
-      window.removeEventListener("scroll", onScroll);
-    };
-  }, [pane, openProfile, query]);
+    openPersonId && person && person.tg_id === openPersonId ? person : null;
+  const [scoreOpen, setScoreOpen] = useState(false);
 
   if (me.chats.length === 0) {
     return <p className="empty">{t(locale, "noChats")}</p>;
   }
 
-  if (openPersonId && personBusy && !openProfile) {
+  if (openPersonId && personBusy) {
     return (
       <div className="pane-fade person-wait">
         <PersonSkel />
@@ -407,42 +364,55 @@ export function Club({
       <div className="pane-fade" key={pane}>
       {pane === SCREEN_NAMES.HOME && (
         <>
-          <div className={homeCompact ? "home-chrome is-compact" : "home-chrome"}>
-            <button
-              type="button"
-              className="home-me"
-              onClick={() => openPerson(me.tg_id)}
-              aria-label={accountLabel(me)}
-            >
-              <Avatar
-                name={accountLabel(me)}
-                photo={telegramPhoto()}
-                tgId={me.tg_id}
-                online={isOnline(online.find((m) => m.tg_id === me.tg_id) ?? {})}
-                platform={online.find((m) => m.tg_id === me.tg_id && isOnline(m))?.platform}
-                size={48}
-                zoomLabel={t(locale, "close")}
-              />
-            </button>
-            <ScoreCup
-              locale={locale}
-              lines={meScoreLines(me, locale)}
-              onEmpty={needle || homeCompact ? undefined : onSettings}
-            />
-            <div className="home-hello-row">
-              <AccountBar
-                me={me}
-                locale={locale}
-                onProfile={() => openPerson(me.tg_id)}
-                status={
-                  statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
-                  t(locale, "notOnline")
-                }
-                score={false}
-              />
-            </div>
-            <div className="home-search-row">
-              <SearchBar locale={locale} value={query} onChange={setQuery} />
+          <div className="home-chrome">
+            <div className="home-top">
+              <div className="home-top-main">
+                <button
+                  type="button"
+                  className="home-me"
+                  onClick={() => openPerson(me.tg_id)}
+                  aria-label={accountLabel(me)}
+                >
+                  <Avatar
+                    name={accountLabel(me)}
+                    photo={telegramPhoto()}
+                    tgId={me.tg_id}
+                    online={isOnline(online.find((m) => m.tg_id === me.tg_id) ?? {})}
+                    platform={online.find((m) => m.tg_id === me.tg_id && isOnline(m))?.platform}
+                    size={48}
+                    zoomLabel={t(locale, "close")}
+                  />
+                </button>
+                <div className="home-hello-row">
+                  <AccountBar
+                    me={me}
+                    locale={locale}
+                    onProfile={() => setScoreOpen(true)}
+                    status={
+                      statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
+                      t(locale, "notOnline")
+                    }
+                    plats={
+                      <ScoreCup
+                        locale={locale}
+                        lines={meScoreLines(me, locale)}
+                        onEmpty={onSettings}
+                        markSize={12}
+                        open={scoreOpen}
+                        onOpenChange={setScoreOpen}
+                      />
+                    }
+                  />
+                </div>
+                {clubReady ? (
+                  monthChip(homeMonth, MONTH_TARGETS.HOME)
+                ) : (
+                  <span className="skel month-chip-skel" aria-hidden />
+                )}
+              </div>
+              <div className="home-top-search">
+                <SearchBar locale={locale} value={query} onChange={setQuery} />
+              </div>
             </div>
           </div>
           {!clubReady && !needle && <HomeSkel />}
@@ -462,7 +432,8 @@ export function Club({
               </div>
             ) : (
               <>
-                {mine.length > 0 && (
+                {homeBusy && <HomeSkel />}
+                {!homeBusy && mine.length > 0 && (
                   <RecentPosts
                     items={mine}
                     locale={locale}
@@ -471,7 +442,8 @@ export function Club({
                     onReveal={(key) => setRevealed(new Set(revealed).add(key))}
                   />
                 )}
-                {mine.length === 0 &&
+                {!homeBusy &&
+                  mine.length === 0 &&
                   (me.xbox.linked || me.steam.linked || me.psn.linked) && (
                     <p className="empty">{t(locale, "emptyFeed")}</p>
                   )}
@@ -483,67 +455,96 @@ export function Club({
                   onSeeAll={() => setRosterOpen(true)}
                 />
                 <div className="section-head achievements-head">
-                  <h1 className="kicker" style={{ margin: 0 }}>
-                    {t(locale, "games")}
-                  </h1>
-                  {monthChip(homeMonth, MONTH_TARGETS.HOME)}
+                  <span className="section-title-group">
+                    <h1 className="kicker" style={{ margin: 0 }}>
+                      {t(locale, "games")}
+                    </h1>
+                    {!homeBusy && mineGameCount > 0 && (
+                      <span className="section-count">{mineGameCount}</span>
+                    )}
+                  </span>
+                  {!homeBusy && mineGameCount > 1 && (
+                    <button
+                      type="button"
+                      className="sort-toggle"
+                      aria-label={t(locale, gameSort === "recent" ? "sortTop" : "sortRecent")}
+                      onClick={() =>
+                        setGameSort((cur) => (cur === "recent" ? "top" : "recent"))
+                      }
+                    >
+                      <Icon name={gameSort === "recent" ? "sort" : "stats"} size={18} />
+                    </button>
+                  )}
                 </div>
                 {homeBusy && <RowsSkel count={3} />}
                 {!homeBusy && mine.length > 0 && (
-                  <PlayedGames items={mine} locale={locale} />
+                  <PlayedGames items={mine} locale={locale} sort={gameSort} />
                 )}
               </>
             ))}
         </>
       )}
 
-      {pane === SCREEN_NAMES.FEED &&
-        (!clubReady ? (
-          <FeedSkel />
-        ) : (
-          <>
-            <header className="page-head is-split">
-              <h1>{t(locale, "feed")}</h1>
-              {monthChip(feedMonth, MONTH_TARGETS.FEED)}
-            </header>
-            {feedBusy ? (
-              <FeedSkel head={false} />
-            ) : feed.length === 0 ? (
-              <p className="empty">{t(locale, "emptyFeed")}</p>
+      {pane === SCREEN_NAMES.FEED && (
+        <>
+          <header className="page-head is-split">
+            <h1>{t(locale, "feed")}</h1>
+            {clubReady ? (
+              monthChip(feedMonth, MONTH_TARGETS.FEED)
             ) : (
-              <FeedPosts
-                items={feed}
-                locale={locale}
-                revealed={revealed}
-                showSecrets={showSecrets}
-                onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-                onOpenPerson={openPerson}
-              />
+              <span className="skel month-chip-skel" aria-hidden />
             )}
-          </>
-        ))}
+          </header>
+          {!clubReady || feedBusy ? (
+            <FeedSkel head={false} />
+          ) : feed.length === 0 ? (
+            <p className="empty">{t(locale, "emptyFeed")}</p>
+          ) : (
+            <FeedPosts
+              items={feed}
+              locale={locale}
+              revealed={revealed}
+              showSecrets={showSecrets}
+              onReveal={(key) => setRevealed(new Set(revealed).add(key))}
+              onOpenPerson={openPerson}
+            />
+          )}
+        </>
+      )}
 
-      {pane === SCREEN_NAMES.SUMMARY &&
-        (!clubReady ? (
-          <StatsSkel />
-        ) : (
-          <ClubStats
-            meId={me.tg_id}
-            locale={locale}
-            day={day}
-            month={month}
-            games={games}
-            monthLabel={monthLabel}
-            feed={statsFeed}
-            online={online}
-            monthChip={monthChip(statsMonth, MONTH_TARGETS.STATS)}
-            busy={statsBusy}
-            revealed={revealed}
-            showSecrets={showSecrets}
-            onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-            onOpenPerson={openPerson}
-          />
-        ))}
+      {pane === SCREEN_NAMES.SUMMARY && (
+        <>
+          <header className="page-head is-split">
+            <h1>{t(locale, "stats")}</h1>
+            {clubReady ? (
+              monthChip(statsMonth, MONTH_TARGETS.STATS)
+            ) : (
+              <span className="skel month-chip-skel" aria-hidden />
+            )}
+          </header>
+          {!clubReady ? (
+            <StatsSkel head={false} />
+          ) : (
+            <ClubStats
+              meId={me.tg_id}
+              locale={locale}
+              day={day}
+              month={month}
+              games={games}
+              monthLabel={monthLabel}
+              feed={statsFeed}
+              online={online}
+              monthChip={monthChip(statsMonth, MONTH_TARGETS.STATS)}
+              busy={statsBusy}
+              revealed={revealed}
+              showSecrets={showSecrets}
+              onReveal={(key) => setRevealed(new Set(revealed).add(key))}
+              onOpenPerson={openPerson}
+              hideHeader
+            />
+          )}
+        </>
+      )}
       </div>
 
       {rosterOpen && (

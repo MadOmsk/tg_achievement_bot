@@ -81,3 +81,8 @@ chat-delete-last-done =
     🗑 Удалено сообщение:
     «{ $preview }»
 chat-delete-last-done-generic = 🗑 Сообщение удалено.
+chat-open-mini-app = Открыть Mini App
+chat-promo-text =
+    🎮 <b>Игровой клуб</b>
+    Следим за достижениями и трофеями участников на Xbox, PlayStation и в Steam. Сводки, статистика и лидерборды игроков чата — в Mini App.
+

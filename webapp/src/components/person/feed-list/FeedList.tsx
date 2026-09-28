@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FeedItem } from "../../../api";
-import { dayKey, dayLabel, t, type Locale } from "../../../i18n";
+import { dayKey, dayLabel, type Locale } from "../../../i18n";
 import { Sheet } from "../../shared/lib";
 import { feedKey, veiled } from "../utils";
 import { useDayJump } from "../day-jump/useDayJump";
@@ -62,6 +62,7 @@ export function FeedList({
                 row={row}
                 secret={secret}
                 onOpen={setItem}
+                onToggleReveal={onReveal}
               />
             );
           })}
@@ -72,8 +73,6 @@ export function FeedList({
         <Sheet
           mid
           onClose={() => setItem(null)}
-          closeLabel={t(locale, "close")}
-          noClose
         >
           <div className="sheet-unlock">
             <UnlockCard
