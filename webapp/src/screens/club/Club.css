@@ -1,23 +1,14 @@
-/* The header is one plain row: avatar, platforms, the name/status pair, the
- * search toggle — no more shrinking on scroll. Search swaps in over it by
- * hiding one half and showing the other; both stay mounted, so opening it
- * is never a re-mount (no re-fetching an avatar image, no losing state) and
- * the row's own height never changes. */
 .home-top {
-  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.home-top-main,
-.home-top-search {
+.home-top-main {
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 48px;
-}
-
-.home-top-main.is-hidden,
-.home-top-search.is-hidden {
-  display: none;
 }
 
 .home-me {
@@ -47,31 +38,6 @@
   min-width: 0;
 }
 
-/* No circle, no fill — just the glyph, so it reads as part of the header
- * rather than a button sitting on it. */
-.home-search-btn {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  -webkit-tap-highlight-color: transparent;
-  outline: none;
-}
-
-.home-search-btn:focus,
-.home-search-btn:focus-visible,
-.home-search-btn:active {
-  outline: none;
-  box-shadow: none;
-}
-
-/* The field takes the row over completely once open — no leftover margin
- * from a bar that used to sit under the header. */
 .home-top .search-bar {
   flex: 1 1 auto;
   margin: 0;
@@ -96,18 +62,16 @@
 }
 
 
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  margin: 0 0 18px;
-  padding: 0;
-  min-height: 40px;
-}
-
 .page-head.is-split .month-chip {
   margin-left: auto;
+}
+
+.month-chip-skel {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 84px;
+  height: 30px;
+  border-radius: 999px;
 }
 
 .month-chip,

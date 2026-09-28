@@ -119,10 +119,10 @@ export function FeedSkel({
 }
 
 /** The stats page: two tiles, a strip of covers, and the leaders. */
-export function StatsSkel() {
+export function StatsSkel({ head = true }: { head?: boolean }) {
   return (
     <div aria-busy="true" aria-live="polite">
-      <HeadSkel />
+      {head && <HeadSkel />}
       <div className="stats-skel-tiles">
         <span className="skel stats-skel-tile" />
         <span className="skel stats-skel-tile" />

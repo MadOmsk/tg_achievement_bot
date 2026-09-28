@@ -59,6 +59,7 @@ export function ClubStats({
   showSecrets,
   onReveal,
   onOpenPerson,
+  hideHeader,
 }: {
   meId: number;
   locale: Locale;
@@ -74,6 +75,7 @@ export function ClubStats({
   showSecrets?: boolean;
   onReveal: (key: string) => void;
   onOpenPerson: (tgId: number) => void;
+  hideHeader?: boolean;
 }) {
   const openGame = useOpenGame();
   const [gamesOpen, setGamesOpen] = useState(false);
@@ -85,10 +87,12 @@ export function ClubStats({
   if (day.length === 0 && month.length === 0 && feed.length === 0) {
     return (
       <>
-        <header className="page-head is-split">
-          <h1>{t(locale, "stats")}</h1>
-          {monthChip}
-        </header>
+        {!hideHeader && (
+          <header className="page-head is-split">
+            <h1>{t(locale, "stats")}</h1>
+            {monthChip}
+          </header>
+        )}
         <p className="empty">{t(locale, "emptySummary")}</p>
       </>
     );
@@ -161,10 +165,12 @@ export function ClubStats({
 
   return (
     <>
-      <header className="page-head is-split">
-        <h1>{t(locale, "stats")}</h1>
-        {monthChip}
-      </header>
+      {!hideHeader && (
+        <header className="page-head is-split">
+          <h1>{t(locale, "stats")}</h1>
+          {monthChip}
+        </header>
+      )}
       {busy && <GlassWait />}
       <section className="stat-hero">
         <StatTile

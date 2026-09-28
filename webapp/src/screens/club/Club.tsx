@@ -15,7 +15,7 @@ import {
 import { t, type Locale } from "../../i18n";
 import { GameHits, GameSheet, useHltbSearch } from "../hltb";
 import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
-import { AccountBar, Avatar, FeedSkel, HomeSkel, Icon, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, FeedSkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -319,7 +319,6 @@ export function Club({
   // is ready, so it appears once, whole, instead of in visible stages.
   const openProfile =
     openPersonId && person && person.tg_id === openPersonId ? person : null;
-  const [searchOpen, setSearchOpen] = useState(false);
   const [scoreOpen, setScoreOpen] = useState(false);
 
   if (me.chats.length === 0) {
@@ -376,7 +375,7 @@ export function Club({
         <>
           <div className="home-chrome">
             <div className="home-top">
-              <div className={searchOpen ? "home-top-main is-hidden" : "home-top-main"}>
+              <div className="home-top-main">
                 <button
                   type="button"
                   className="home-me"
@@ -414,26 +413,14 @@ export function Club({
                     }
                   />
                 </div>
-                <button
-                  type="button"
-                  className="home-search-btn"
-                  aria-label={t(locale, "search")}
-                  onClick={() => setSearchOpen(true)}
-                >
-                  <Icon name="search" size={19} />
-                </button>
+                {clubReady ? (
+                  monthChip(homeMonth, MONTH_TARGETS.HOME)
+                ) : (
+                  <span className="skel month-chip-skel" aria-hidden />
+                )}
               </div>
-              <div className={searchOpen ? "home-top-search" : "home-top-search is-hidden"}>
-                <SearchBar
-                  locale={locale}
-                  value={query}
-                  onChange={setQuery}
-                  focusKey={searchOpen}
-                  onClose={() => {
-                    setQuery("");
-                    setSearchOpen(false);
-                  }}
-                />
+              <div className="home-top-search">
+                <SearchBar locale={locale} value={query} onChange={setQuery} />
               </div>
             </div>
           </div>
@@ -478,7 +465,6 @@ export function Club({
                   <h1 className="kicker" style={{ margin: 0 }}>
                     {t(locale, "games")}
                   </h1>
-                  {monthChip(homeMonth, MONTH_TARGETS.HOME)}
                 </div>
                 {homeBusy && <RowsSkel count={3} />}
                 {!homeBusy && mine.length > 0 && (
@@ -489,53 +475,66 @@ export function Club({
         </>
       )}
 
-      {pane === SCREEN_NAMES.FEED &&
-        (!clubReady ? (
-          <FeedSkel />
-        ) : (
-          <>
-            <header className="page-head is-split">
-              <h1>{t(locale, "feed")}</h1>
-              {monthChip(feedMonth, MONTH_TARGETS.FEED)}
-            </header>
-            {feedBusy ? (
-              <FeedSkel head={false} />
-            ) : feed.length === 0 ? (
-              <p className="empty">{t(locale, "emptyFeed")}</p>
+      {pane === SCREEN_NAMES.FEED && (
+        <>
+          <header className="page-head is-split">
+            <h1>{t(locale, "feed")}</h1>
+            {clubReady ? (
+              monthChip(feedMonth, MONTH_TARGETS.FEED)
             ) : (
-              <FeedPosts
-                items={feed}
-                locale={locale}
-                revealed={revealed}
-                showSecrets={showSecrets}
-                onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-                onOpenPerson={openPerson}
-              />
+              <span className="skel month-chip-skel" aria-hidden />
             )}
-          </>
-        ))}
+          </header>
+          {!clubReady || feedBusy ? (
+            <FeedSkel head={false} />
+          ) : feed.length === 0 ? (
+            <p className="empty">{t(locale, "emptyFeed")}</p>
+          ) : (
+            <FeedPosts
+              items={feed}
+              locale={locale}
+              revealed={revealed}
+              showSecrets={showSecrets}
+              onReveal={(key) => setRevealed(new Set(revealed).add(key))}
+              onOpenPerson={openPerson}
+            />
+          )}
+        </>
+      )}
 
-      {pane === SCREEN_NAMES.SUMMARY &&
-        (!clubReady ? (
-          <StatsSkel />
-        ) : (
-          <ClubStats
-            meId={me.tg_id}
-            locale={locale}
-            day={day}
-            month={month}
-            games={games}
-            monthLabel={monthLabel}
-            feed={statsFeed}
-            online={online}
-            monthChip={monthChip(statsMonth, MONTH_TARGETS.STATS)}
-            busy={statsBusy}
-            revealed={revealed}
-            showSecrets={showSecrets}
-            onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-            onOpenPerson={openPerson}
-          />
-        ))}
+      {pane === SCREEN_NAMES.SUMMARY && (
+        <>
+          <header className="page-head is-split">
+            <h1>{t(locale, "stats")}</h1>
+            {clubReady ? (
+              monthChip(statsMonth, MONTH_TARGETS.STATS)
+            ) : (
+              <span className="skel month-chip-skel" aria-hidden />
+            )}
+          </header>
+          {!clubReady ? (
+            <StatsSkel head={false} />
+          ) : (
+            <ClubStats
+              meId={me.tg_id}
+              locale={locale}
+              day={day}
+              month={month}
+              games={games}
+              monthLabel={monthLabel}
+              feed={statsFeed}
+              online={online}
+              monthChip={monthChip(statsMonth, MONTH_TARGETS.STATS)}
+              busy={statsBusy}
+              revealed={revealed}
+              showSecrets={showSecrets}
+              onReveal={(key) => setRevealed(new Set(revealed).add(key))}
+              onOpenPerson={openPerson}
+              hideHeader
+            />
+          )}
+        </>
+      )}
       </div>
 
       {rosterOpen && (

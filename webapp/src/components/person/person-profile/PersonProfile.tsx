@@ -118,6 +118,7 @@ export function PersonProfile({
               {status && <small>{status}</small>}
             </span>
           </button>
+          {monthChip}
         </div>
       </header>
       {feed.length > 0 ? (
@@ -135,7 +136,6 @@ export function PersonProfile({
         <h1 className="kicker" style={{ margin: 0 }}>
           {t(locale, "games")}
         </h1>
-        {monthChip}
       </div>
       {(feed.length > 0) && (
         <PlayedGames items={feed} locale={locale} />
