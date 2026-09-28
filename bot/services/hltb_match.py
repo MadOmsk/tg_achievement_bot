@@ -102,6 +102,7 @@ _TAILS = [
         r"|game\s+of\s+the\s+year|anniversary|deluxe|enhanced|complete|trial|demo|beta)\s*$",
         re.IGNORECASE,
     ),
+    re.compile(r"\s*[-–—:]\s*$"),
 ]
 _SUBTITLE = re.compile(r"\s*(?::|\s[-–—]\s)\s*")
 
@@ -168,6 +169,7 @@ SteamIdsFn = Callable[[HltbResult], Awaitable[set[int] | None]]
 
 
 def normalize(text: str) -> str:
+    text = _MARKS.sub(" ", text)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = _MARKS.sub(" ", text.lower())

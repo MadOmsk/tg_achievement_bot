@@ -197,7 +197,7 @@ async def ensure_title_match(repo: Repo, title_id: str) -> None:
         names=names,
         platform=row.platform,
         platforms=tuple(row.platforms),
-        steam_appid=int(title_id) if row.platform == "steam" else None,
+        steam_appid=int(title_id) if row.platform == "steam" and title_id.isdigit() else None,
         first_played_year=row.first_played_year,
     )
     try:

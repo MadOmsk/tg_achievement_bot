@@ -6,3 +6,5 @@ ALTER TABLE titles ADD COLUMN hltb_id INTEGER;
 ALTER TABLE titles ADD COLUMN hltb_match_score REAL;
 ALTER TABLE titles ADD COLUMN hltb_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE titles ADD COLUMN hltb_checked_at TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_seen_achievements_title_id ON seen_achievements(title_id);

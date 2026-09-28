@@ -228,9 +228,11 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     PRIMARY KEY (platform, xuid, title_id, achievement_id),
     FOREIGN KEY (account_platform, xuid) REFERENCES accounts(platform, external_id)
 );
--- The indexes are NOT created here, on purpose — see migration 037 and the
--- note below: this file runs before any migration, so naming a column that
--- only a migration adds crashes startup for every existing database.
+
+CREATE INDEX IF NOT EXISTS idx_seen_achievements_title_id ON seen_achievements(title_id);
+-- The indexes on migrated columns (unlocked_at, account_platform) are NOT created here,
+-- on purpose — see migration 037 and the note below: this file runs before any migration,
+-- so naming a column that only a migration adds crashes startup for every existing database.
 -- idx_seen_tg_unlocked is gone with `tg_id` itself (#52): who a row belongs
 -- to is account_links' answer now, and the two indexes above are what the
 -- reads actually use. Its old comment here explained why it could not be
