@@ -15,14 +15,17 @@ from datetime import timedelta
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import InputMediaPhoto
+from aiogram.types import InlineKeyboardMarkup, InputMediaPhoto
 
+from bot.config import Settings
 from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
+from bot.i18n import gettext
 from bot.services.achievements import passes_filters
 from bot.services.chat_gone import chat_is_gone
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import achievement_category
+from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import NO_NICKNAME, account_nickname, person_name_of, xbox_nickname
 from bot.util import parse_iso, utcnow
 from bot.version import is_test
@@ -56,6 +59,7 @@ class PublishJob:
     # one must record its *own* xuid in `publications`, not whichever
     # platform happened to be first.
     items: list[tuple[str, str, str]] = field(default_factory=list)
+    reply_markup: InlineKeyboardMarkup | None = None
 
 
 def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
@@ -81,14 +85,51 @@ def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
 
 
 class Publisher:
-    def __init__(self, bot: Bot, repo: Repo) -> None:
+    def __init__(
+        self,
+        bot: Bot | None,
+        repo: Repo,
+        settings: Settings | None = None,
+        *,
+        bot_username: str | None = None,
+    ) -> None:
         self._bot = bot
         self._repo = repo
+        self._settings = settings
+        self._bot_username = bot_username.lstrip("@") if bot_username else None
         self._queue: asyncio.Queue[PublishJob] = asyncio.Queue()
         # Chats a *test* bot cannot reach (it is not a member of them): skipped for
         # the life of the process instead of deactivated, see `_send`.
         self._unreachable: set[int] = set()
         self._worker: asyncio.Task[None] | None = None
+
+    async def _get_bot_username(self) -> str:
+        if self._bot_username:
+            return self._bot_username
+        if self._bot is None:
+            return ""
+        try:
+            me = await self._bot.me()
+            self._bot_username = (me.username or "").lstrip("@")
+            return self._bot_username
+        except Exception:
+            return ""
+
+    async def _markup_for(self, chat_id: int, locale: str) -> InlineKeyboardMarkup | None:
+        if not self._settings or not (self._settings.mini_app_url or "").strip():
+            return None
+        in_group = chat_id < 0
+        bot_username = await self._get_bot_username()
+        if in_group and not bot_username:
+            return None
+        button_text = gettext("chat", "chat-open-mini-app", locale=locale)
+        return mini_app_open_markup(
+            button_text,
+            https_url=self._settings.mini_app_url,
+            bot_username=bot_username,
+            chat_id=chat_id,
+            in_group=in_group,
+        )
 
     async def start(self) -> None:
         self._worker = asyncio.create_task(self._run())
@@ -178,6 +219,7 @@ class Publisher:
                 for a in allowed:
                     if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
                         a.game_platforms = plat_map[a.title_id]
+            markup = await self._markup_for(chat.chat_id, chat.locale)
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
@@ -187,6 +229,7 @@ class Publisher:
                         ),
                         gallery=_gallery(allowed),
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
+                        reply_markup=markup,
                     )
                 )
                 continue
@@ -215,6 +258,7 @@ class Publisher:
                         ),
                         gallery=_gallery([item]),
                         items=[(xuid, item.title_id, item.achievement_id)],
+                        reply_markup=markup,
                     )
                 )
 
@@ -391,6 +435,7 @@ class Publisher:
             )
             gallery = _gallery(achievements)
 
+        markup = await self._markup_for(chat_id, locale)
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,
@@ -401,6 +446,7 @@ class Publisher:
                     for item in achievements
                     if item.xuid
                 ],
+                reply_markup=markup,
             )
         )
 
@@ -447,6 +493,8 @@ class Publisher:
             )
 
     async def _deliver(self, job: PublishJob) -> int | None:
+        if self._bot is None:
+            return None
         # The achievement matters more than the picture(s) (SPEC 7.1) — any
         # failure below falls through to plain text rather than losing the
         # achievement, same principle at every step: gallery, then a single
@@ -465,6 +513,13 @@ class Publisher:
                         for index, (url, secret) in enumerate(job.gallery[:MEDIA_GROUP_MAX])
                     ]
                     messages = await self._bot.send_media_group(job.chat_id, media)
+                    if messages and job.reply_markup:
+                        with contextlib.suppress(Exception):
+                            await self._bot.edit_message_reply_markup(
+                                chat_id=job.chat_id,
+                                message_id=messages[0].message_id,
+                                reply_markup=job.reply_markup,
+                            )
                     return messages[0].message_id if messages else None
                 except (TelegramForbiddenError, TelegramRetryAfter):
                     raise
@@ -481,6 +536,7 @@ class Publisher:
                         caption=job.text,
                         parse_mode=ParseMode.HTML,
                         has_spoiler=secret,
+                        reply_markup=job.reply_markup,
                     )
                     return message.message_id
                 except (TelegramForbiddenError, TelegramRetryAfter):
@@ -490,5 +546,10 @@ class Publisher:
                         raise
                     log.info("icon for chat %s did not go through, sending text", job.chat_id)
 
-            message = await self._bot.send_message(job.chat_id, job.text, parse_mode=ParseMode.HTML)
+            message = await self._bot.send_message(
+                job.chat_id,
+                job.text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=job.reply_markup,
+            )
             return message.message_id

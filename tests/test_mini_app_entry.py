@@ -139,3 +139,49 @@ async def test_start_in_a_group_gets_no_web_app_button(i18n, repo) -> None:
 
     assert not any(button.web_app for button in group_buttons)
     assert any(button.web_app for button in private_buttons)
+
+
+def test_promo_text_ru_and_en() -> None:
+    from bot.views.promo import promo_text
+
+    text_ru = promo_text("ru")
+    assert text_ru.startswith("🎮 <b>Игровой клуб</b>")
+    assert "Mini App" in text_ru
+
+    text_en = promo_text("en")
+    assert text_en.startswith("🎮 <b>Gaming Club</b>")
+    assert "Mini App" in text_en
+
+
+def test_promo_keyboard_group_and_private() -> None:
+    from bot.views.promo import promo_keyboard
+
+    # Group keyboard: URL button
+    kb_group = promo_keyboard(BOT, CHAT_ID, mini_app_url=APP_URL, is_group=True, locale="ru")
+    assert kb_group is not None
+    btn = kb_group.inline_keyboard[0][0]
+    assert btn.text == "Открыть Mini App"
+    assert btn.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
+    assert btn.web_app is None
+
+    # Private keyboard: WebApp button
+    kb_dm = promo_keyboard(BOT, 12345, mini_app_url=APP_URL, is_group=False, locale="en")
+    assert kb_dm is not None
+    btn_dm = kb_dm.inline_keyboard[0][0]
+    assert btn_dm.text == "Open Mini App"
+    assert btn_dm.url is None
+    assert btn_dm.web_app is not None
+    assert btn_dm.web_app.url.startswith(APP_URL)
+
+
+async def test_promo_command_in_group(i18n) -> None:
+    from bot.handlers.chat import promo_command
+
+    msg = _FakeMessage(ChatType.SUPERGROUP, CHAT_ID)
+    settings = SimpleNamespace(mini_app_url=APP_URL)
+    await promo_command(msg, _FakeBot(), i18n, settings)
+
+    assert len(msg.answers) == 1
+    assert "Игровой клуб" in msg.answers[0]
+    btn = msg.markups[0].inline_keyboard[0][0]
+    assert btn.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
