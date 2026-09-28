@@ -472,7 +472,7 @@ export function Club({
                         setGameSort((cur) => (cur === "recent" ? "top" : "recent"))
                       }
                     >
-                      <Icon name="sort" size={18} />
+                      <Icon name={gameSort === "recent" ? "sort" : "stats"} size={18} />
                     </button>
                   )}
                 </div>

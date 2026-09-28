@@ -400,11 +400,16 @@
   height: 36px;
   padding: 0;
   border: 0;
+  border-radius: 999px;
   background: none;
   box-shadow: none;
   color: rgba(238, 241, 246, 0.9);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+.game-lock-chip:active {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 
