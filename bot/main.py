@@ -173,7 +173,7 @@ async def run(settings: Settings) -> None:
     anthropic_auth.on_alive = notifier.translation_key_alive
 
     client = XboxClient(auth)
-    publisher = Publisher(bot, repo)
+    publisher = Publisher(bot, repo, settings=settings)
     fetcher = Fetcher(
         repo, client, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
     )

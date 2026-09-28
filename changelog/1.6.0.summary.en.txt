@@ -3,3 +3,4 @@
 • Unified frosted sticky headers with header month picker
 • Home game sorting (recent / count) and section counters
 • Redesigned avatar online platform marks and month-switch skeletons
+• Mini App button in achievement notifications and pinned promo card for chats (/promo)
