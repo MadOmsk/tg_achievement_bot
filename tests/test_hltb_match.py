@@ -11,11 +11,7 @@ import pytest
 
 from bot.services.hltb import HltbError, HltbResult
 from bot.services.hltb_match import (
-    ACCEPT_SCORE,
-    CLEAR_MARGIN,
     CORE_DISCOUNT,
-    SURE_SCORE,
-    WEAK_SCORE,
     GameIdentity,
     _Scored,
     core,
@@ -24,7 +20,6 @@ from bot.services.hltb_match import (
     name_score,
     normalize,
     queries,
-    rank,
     score,
     similarity,
     usable_name,
