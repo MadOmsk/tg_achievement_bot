@@ -24,6 +24,7 @@ import {
   formatMonth,
   statusOf,
 } from "../../components/club";
+import { Icon } from "../../components/shared/lib/icon/Icon";
 import { SCREEN_NAMES, type ClubPane } from "../../components/shared/constants";
 import "./Club.css";
 
@@ -96,6 +97,7 @@ export function Club({
   const [query, setQuery] = useState("");
   const [rosterOpen, setRosterOpen] = useState(false);
   const [hltbGame, setHltbGame] = useState<HltbHit | null>(null);
+  const [gameSort, setGameSort] = useState<"recent" | "top">("recent");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const feedRef = useRef(feed);
   const onlineRef = useRef(online);
@@ -293,10 +295,14 @@ export function Club({
   const mine = myPerson?.feed?.length
     ? myPerson.feed
     : homeFeed.filter((row) => row.tg_id === me.tg_id);
+  const mineGameCount = new Set(
+    mine.filter((row) => row.game).map((row) => `${row.platform}:${row.title_id}`),
+  ).size;
   const monthChip = (ym: string, which: MonthTarget) =>
     ym && (
       <button type="button" className="month-chip" onClick={() => setMonthPicker(which)}>
-        {formatMonth(ym, locale, "chip")}
+        <span>{formatMonth(ym, locale, "chip")}</span>
+        <Icon name="forward" size={17} />
       </button>
     );
   // No provisional, half-loaded view: the page stays on the skeleton until
@@ -449,13 +455,30 @@ export function Club({
                   onSeeAll={() => setRosterOpen(true)}
                 />
                 <div className="section-head achievements-head">
-                  <h1 className="kicker" style={{ margin: 0 }}>
-                    {t(locale, "games")}
-                  </h1>
+                  <span className="section-title-group">
+                    <h1 className="kicker" style={{ margin: 0 }}>
+                      {t(locale, "games")}
+                    </h1>
+                    {!homeBusy && mineGameCount > 0 && (
+                      <span className="section-count">{mineGameCount}</span>
+                    )}
+                  </span>
+                  {!homeBusy && mineGameCount > 1 && (
+                    <button
+                      type="button"
+                      className="sort-toggle"
+                      aria-label={t(locale, gameSort === "recent" ? "sortTop" : "sortRecent")}
+                      onClick={() =>
+                        setGameSort((cur) => (cur === "recent" ? "top" : "recent"))
+                      }
+                    >
+                      <Icon name="sort" size={18} />
+                    </button>
+                  )}
                 </div>
                 {homeBusy && <RowsSkel count={3} />}
                 {!homeBusy && mine.length > 0 && (
-                  <PlayedGames items={mine} locale={locale} />
+                  <PlayedGames items={mine} locale={locale} sort={gameSort} />
                 )}
               </>
             ))}

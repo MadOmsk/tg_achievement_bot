@@ -78,6 +78,7 @@
 .section-head .month-chip {
   display: inline-flex;
   align-items: center;
+  gap: 2px;
   flex: 0 0 auto;
   max-width: 62%;
   overflow: hidden;
@@ -92,6 +93,14 @@
   text-transform: capitalize;
   white-space: nowrap;
   transition: opacity 0.15s ease;
+}
+
+.month-chip svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  margin-left: 4px;
+  color: var(--muted);
+  transform: rotate(90deg);
 }
 
 .month-chip:active {
