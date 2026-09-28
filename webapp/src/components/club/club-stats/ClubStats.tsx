@@ -9,11 +9,11 @@ import { t, type Locale } from "../../../i18n";
 import {
   Avatar,
   CoverImg,
-  GlassWait,
   Icon,
   Row,
   RowsSection,
   Sheet,
+  StatsSkel,
   isOnline,
   useOpenGame,
 } from "../../shared/lib";
@@ -59,6 +59,7 @@ export function ClubStats({
   showSecrets,
   onReveal,
   onOpenPerson,
+  hideHeader,
 }: {
   meId: number;
   locale: Locale;
@@ -74,6 +75,7 @@ export function ClubStats({
   showSecrets?: boolean;
   onReveal: (key: string) => void;
   onOpenPerson: (tgId: number) => void;
+  hideHeader?: boolean;
 }) {
   const openGame = useOpenGame();
   const [gamesOpen, setGamesOpen] = useState(false);
@@ -82,13 +84,29 @@ export function ClubStats({
   const [huntOpen, setHuntOpen] = useState<Hunt | null>(null);
   const [item, setItem] = useState<FeedItem | null>(null);
 
+  if (busy) {
+    return (
+      <>
+        {!hideHeader && (
+          <header className="page-head is-split">
+            <h1>{t(locale, "stats")}</h1>
+            {monthChip}
+          </header>
+        )}
+        <StatsSkel head={false} />
+      </>
+    );
+  }
+
   if (day.length === 0 && month.length === 0 && feed.length === 0) {
     return (
       <>
-        <header className="page-head is-split">
-          <h1>{t(locale, "stats")}</h1>
-          {monthChip}
-        </header>
+        {!hideHeader && (
+          <header className="page-head is-split">
+            <h1>{t(locale, "stats")}</h1>
+            {monthChip}
+          </header>
+        )}
         <p className="empty">{t(locale, "emptySummary")}</p>
       </>
     );
@@ -161,11 +179,12 @@ export function ClubStats({
 
   return (
     <>
-      <header className="page-head is-split">
-        <h1>{t(locale, "stats")}</h1>
-        {monthChip}
-      </header>
-      {busy && <GlassWait />}
+      {!hideHeader && (
+        <header className="page-head is-split">
+          <h1>{t(locale, "stats")}</h1>
+          {monthChip}
+        </header>
+      )}
       <section className="stat-hero">
         <StatTile
           label={t(locale, "today")}
@@ -296,8 +315,6 @@ export function ClubStats({
         <Sheet
           mid
           onClose={() => setRareOpen(null)}
-          closeLabel={t(locale, "close")}
-          noClose
         >
           <div className="sheet-content score-sheet picker-sheet stats-sheet">
             <h2>{`${t(locale, "rareFinds")} - ${rareOpen.name}`}</h2>
@@ -308,6 +325,7 @@ export function ClubStats({
                 showSecrets={showSecrets}
                 detailed
                 onOpen={setItem}
+                onReveal={onReveal}
               />
             </div>
           </div>
@@ -318,8 +336,6 @@ export function ClubStats({
         <Sheet
           mid
           onClose={() => setHuntOpen(null)}
-          closeLabel={t(locale, "close")}
-          noClose
         >
           <div className="sheet-content score-sheet picker-sheet stats-sheet">
             <h2>{`${t(locale, "huntTogether")} - ${huntOpen.name}`}</h2>
@@ -330,6 +346,7 @@ export function ClubStats({
                 showSecrets={showSecrets}
                 detailed
                 onOpen={setItem}
+                onReveal={onReveal}
               />
             </div>
           </div>
@@ -340,8 +357,6 @@ export function ClubStats({
         <Sheet
           mid
           onClose={() => setItem(null)}
-          closeLabel={t(locale, "close")}
-          noClose
         >
           <div className="sheet-unlock">
             <UnlockCard

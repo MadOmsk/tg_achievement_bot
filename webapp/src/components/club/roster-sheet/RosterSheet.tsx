@@ -16,7 +16,7 @@ export function RosterSheet({
 }) {
   const rows = rankPeople(members);
   return (
-    <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
+    <Sheet onClose={onClose} mid>
       <div className="sheet-content score-sheet picker-sheet">
         <h2>{t(locale, "friends")}</h2>
         {rows.length === 0 ? (

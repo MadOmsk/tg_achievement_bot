@@ -66,8 +66,11 @@ export function UnlockCard({
   const score = item.gamerscore ? `${item.gamerscore} G` : null;
   const blur = secret ? "secret-blur" : undefined;
   const rarity = item.rarity_percent != null ? `${item.rarity_percent}%` : null;
-  const open = onOpen && !secret;
   const openGame = useOpenGame();
+  // The gallery form opens the game itself — there is nothing else on it to
+  // tap through to.
+  const canOpenGame = Boolean(minimal && item.title_id && openGame && !secret);
+  const open = canOpenGame || (onOpen && !secret);
   return (
     <div
       className={[
@@ -79,7 +82,11 @@ export function UnlockCard({
         .join(" ")}
       role={open ? "button" : undefined}
       tabIndex={open ? 0 : undefined}
-      onClick={open ? () => onOpen(item) : undefined}
+      onClick={
+        open
+          ? () => (canOpenGame ? openGame?.(gameRefOf(item)) : onOpen?.(item))
+          : undefined
+      }
     >
       <div ref={artRef} className="unlock-card-art">
         <span className="profile-hero-layers">
@@ -134,19 +141,11 @@ export function UnlockCard({
       )}
       {minimal ? (
         <div className="unlock-card-copy is-minimal">
+          {item.game && <p className="minimal-game">{item.game}</p>}
           <h2>
             <span className={blur}>{item.name}</span>
           </h2>
-          {item.game && (
-            <p
-              className={item.title_id && openGame ? "minimal-game is-link" : "minimal-game"}
-              onClick={
-                item.title_id && openGame ? () => openGame(gameRefOf(item)) : undefined
-              }
-            >
-              {item.game}
-            </p>
-          )}
+          {item.description && <p className={["minimal-desc", blur].filter(Boolean).join(" ")}>{item.description}</p>}
         </div>
       ) : gameInCopy ? (
         <div className="unlock-card-foot">

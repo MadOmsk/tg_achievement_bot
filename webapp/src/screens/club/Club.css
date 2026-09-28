@@ -1,8 +1,19 @@
+.home-top {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.home-top-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+
 .home-me {
-  position: absolute;
-  top: calc(10px + var(--safe-top));
-  left: 18px;
-  z-index: 2;
+  position: relative;
+  flex: 0 0 auto;
   width: 48px;
   height: 48px;
   padding: 0;
@@ -23,47 +34,15 @@
 }
 
 .home-hello-row {
-  display: grid;
-  grid-template-rows: 1fr;
-  margin: 0 0 18px;
-  padding-left: 64px;
-  padding-right: 88px;
-  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.home-hello-row > * {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.home-search-row {
-  padding-left: 0;
-}
-
-.home-chrome.is-compact .home-me {
-  top: calc(16px + var(--safe-top));
-  width: 36px;
-  height: 36px;
-}
-
-.home-chrome.is-compact .home-hello-row {
-  grid-template-rows: 0fr;
+.home-top .search-bar {
+  flex: 1 1 auto;
   margin: 0;
-  padding-left: 64px;
-  opacity: 0;
-  pointer-events: none;
 }
 
-.home-chrome.is-compact .home-search-row {
-  /* 36px avatar + air before the search field. */
-  padding-left: 56px;
-  padding-right: 0;
-}
-
-.is-home .account-bar .hello,
-.is-person .account-bar .hello {
-  color: rgba(238, 241, 246, 0.78);
-}
 
 .account-who {
   display: flex;
@@ -82,62 +61,50 @@
   user-select: none;
 }
 
-.hello {
-  display: block;
-  font-style: normal;
-  font-size: 0.78rem;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  margin: 0 0 18px;
-  padding: 0;
-  min-height: 40px;
-}
 
 .page-head.is-split .month-chip {
   margin-left: auto;
+}
+
+.month-chip-skel {
+  flex: 0 0 auto;
+  margin-left: auto;
+  width: 88px;
+  height: 24px;
+  border-radius: 8px;
 }
 
 .month-chip,
 .section-head .month-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   flex: 0 0 auto;
   max-width: 62%;
   overflow: hidden;
   border: 0;
   cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-    0 8px 18px rgba(0, 0, 0, 0.18);
-  color: rgba(238, 241, 246, 0.94);
-  font-size: 0.8rem;
+  padding: 4px 0;
+  background: none;
+  color: var(--text);
+  font-size: 0.95rem;
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
   text-transform: capitalize;
   white-space: nowrap;
+  transition: opacity 0.15s ease;
 }
 
-.month-chip::after {
-  content: "";
-  width: 6px;
-  height: 6px;
+.month-chip svg {
   flex: 0 0 auto;
-  margin-top: -2px;
-  border-right: 1.7px solid currentColor;
-  border-bottom: 1.7px solid currentColor;
-  transform: rotate(45deg);
-  opacity: 0.62;
+  margin-top: 1px;
+  margin-left: 4px;
+  color: var(--muted);
+  transform: rotate(90deg);
+}
+
+.month-chip:active {
+  opacity: 0.6;
 }
 
 /* Shared bottom picker (friends / months / games): same hairline rows as

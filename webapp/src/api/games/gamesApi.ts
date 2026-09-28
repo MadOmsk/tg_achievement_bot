@@ -1,6 +1,6 @@
 import { BaseApi } from "../base/baseApi";
 import { API_BASE_ROUTES, GAMES_ROUTES } from "../../components/shared/constants/routes";
-import type { GameDetails } from "./gamesApiModels";
+import type { GameDetails, GameHltbResponse } from "./gamesApiModels";
 
 export class GamesApi extends BaseApi {
   constructor(baseUrl: string = API_BASE_ROUTES.GAMES) {
@@ -20,6 +20,13 @@ export class GamesApi extends BaseApi {
         ? { force: opts.force ? 1 : undefined, tg_id: opts.tgId ?? undefined }
         : undefined,
     );
+  }
+
+  /** HowLongToBeat's own card for this game (#131) — its own request, so a
+   * game's first-ever match (a few HLTB requests) never delays the
+   * achievements `fetchGame` above already answers with. */
+  fetchGameHltb(initData: string, platform: string, titleId: string): Promise<GameHltbResponse> {
+    return this.get<GameHltbResponse>(initData, GAMES_ROUTES.HLTB(platform, titleId));
   }
 }
 

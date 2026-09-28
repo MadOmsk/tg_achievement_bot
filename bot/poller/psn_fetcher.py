@@ -22,10 +22,11 @@ from psnawp_api import PSNAWP
 
 from bot.config import Settings
 from bot.constants import Platform
-from bot.db.repo import Repo
+from bot.db.repo import AchievementRow, Repo
 from bot.i18n import translator
 from bot.poller.cadence import debounce_passed, is_dormant
 from bot.poller.publisher import Publisher
+from bot.services.hltb import ensure_title_match
 from bot.services.psn.achievements import sync_account
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import PsnApiError, account_trophy_level, is_trophy_visible
@@ -166,6 +167,7 @@ class PsnFetcher:
         if not outcome.new_rows:
             if outcome.catch_up_rows:
                 await self._refresh_level(client, tg_id, account_id)
+                await self._ensure_hltb_matches(outcome.catch_up_rows)
             return len(outcome.catch_up_rows)
 
         log.info("tg_id=%s unlocked %s new psn trophies", tg_id, len(outcome.new_rows))
@@ -186,7 +188,19 @@ class PsnFetcher:
         # 2026-09-06, /stats' own PSN line) — refreshed here, not on every
         # tick.
         await self._refresh_level(client, tg_id, account_id)
+        await self._ensure_hltb_matches(outcome.catch_up_rows + outcome.new_rows)
         return len(outcome.new_rows)
+
+    async def _ensure_hltb_matches(self, rows: list[AchievementRow]) -> None:
+        """Which HowLongToBeat entry each newly-published game is (#131) —
+        after publishing, never before (see Fetcher._ensure_hltb_match). One
+        poll can touch several games at once (M-PSN-2), unlike Xbox/Steam's
+        own poll_title, so every distinct title here gets its own check."""
+        for title_id in {row.title_id for row in rows}:
+            try:
+                await ensure_title_match(self._repo, title_id)
+            except Exception:
+                log.exception("HLTB match failed for title %s", title_id)
 
     def expect_relink_catch_up(self, account_id: str, window_hours: int) -> None:
         """Relinking an account the bot already knows needs no backfill at

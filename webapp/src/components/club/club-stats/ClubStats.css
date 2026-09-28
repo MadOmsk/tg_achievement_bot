@@ -55,7 +55,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin: 0 0 22px;
+  margin: 0 0 28px;
 }
 
 .stat-hero:has(.stat-tile:only-child) {
@@ -107,11 +107,15 @@
 }
 
 /* "What we played": one horizontal strip of covers, name and count under each. */
-/* Every block on this page sits 22px above the next (.rows-section's own
- * margin). The strip already carries 10px of padding under its covers, so the
- * block gives up that much of its margin instead of adding to it. */
+/* Every block on this page sits 28px above the next. The strip already
+ * carries 10px of padding under its covers, so the block gives up that much
+ * of its margin instead of adding to it. */
 .stat-games-block {
-  margin: 0 0 12px;
+  margin: 0 0 18px;
+}
+
+.rows-section.is-stat {
+  margin-bottom: 28px;
 }
 
 .stat-games {

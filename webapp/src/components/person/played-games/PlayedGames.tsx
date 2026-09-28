@@ -22,9 +22,12 @@ interface Played {
 export function PlayedGames({
   items,
   locale,
+  sort = "recent",
 }: {
   items: FeedItem[];
   locale: Locale;
+  /** "recent" keeps the feed's own newest-first order; "top" ranks by this month's count. */
+  sort?: "recent" | "top";
 }) {
   const openGame = useOpenGame();
   const games = new Map<string, Played>();
@@ -35,9 +38,11 @@ export function PlayedGames({
     if (cur) cur.count += 1;
     else games.set(key, { key, last: row, count: 1 });
   }
+  const ordered = [...games.values()];
+  if (sort === "top") ordered.sort((a, b) => b.count - a.count);
   return (
     <div className="played-games">
-      {[...games.values()].map(({ key, last, count }) => {
+      {ordered.map(({ key, last, count }) => {
         const progress = last.progress;
         const known = Boolean(progress && progress.total > 0);
         const done = Boolean(progress && known && progress.unlocked >= progress.total);

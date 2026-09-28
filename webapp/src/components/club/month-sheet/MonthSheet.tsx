@@ -18,19 +18,19 @@ export function MonthSheet({
   onPick: (ym: string) => void;
 }) {
   return (
-    <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
+    <Sheet onClose={onClose} mid>
       <div className="sheet-content score-sheet picker-sheet">
         <h2>{t(locale, "pickMonth")}</h2>
-        <div className="picker-list">
+        <div className="picker-list is-months">
           {months.map((ym) => (
             <button
               key={ym}
               type="button"
-              className={ym === selected ? "picker-row is-on" : "picker-row"}
+              className={ym === selected ? "picker-row is-month is-on" : "picker-row is-month"}
               onClick={() => onPick(ym)}
             >
               <strong>{formatMonth(ym, locale, "sheet")}</strong>
-              {(ym === liveMonth) && <span>{t(locale, "nowMonth")}</span>}
+              {(ym === liveMonth) && <span className="month-now">{t(locale, "nowMonth")}</span>}
             </button>
           ))}
         </div>

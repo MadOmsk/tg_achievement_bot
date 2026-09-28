@@ -129,7 +129,9 @@ name, or when the tree goes stale.
 │   │   ├── release_notify.py     the release announcement on startup
 │   │   ├── notify.py             notifications to the admin
 │   │   ├── mini_app.py           Mini App open-button URLs
-│   │   ├── hltb.py               howlongtobeatpy wrapper, cached in hltb_cache
+│   │   ├── hltb.py               howlongtobeatpy wrapper, cached in hltb_cache; ensure_title_match
+│   │   │                         is the lazy trigger for hltb_match.py below
+│   │   ├── hltb_match.py         which HLTB entry a game is, scored automatically (no DB access)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -341,7 +343,9 @@ every column. History: #106.
   `steam_rarity_cache`. HLTB: `hltb_cache`.
 - **`titles`** — one row per game: names (`name`, `name_ru`, `name_en`),
   `achievements_total`, `platform`, `platforms` (#79), cover art (`icon_url` +
-  `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at`.
+  `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at`, and which
+  HLTB entry it is (`hltb_id`/`hltb_match_score`/`hltb_attempts`/`hltb_checked_at`,
+  see HowLongToBeat's own "Automatic title matching").
 - **All three platforms localize a game's title** (#61). PSN's comes in the same call
   as its trophy groups; Xbox's rides on the `ru-RU` contract-4 response already
   fetched for descriptions (x360 keeps the titlehub name); Steam's needs the
@@ -933,6 +937,40 @@ History: #112.
   looks it up. No Anthropic key: the English text is shown.
 - The card shows it as a collapsed blockquote capped at `DESCRIPTION_LIMIT` — the card
   is usually a photo caption (1024 characters).
+
+### Automatic title matching
+
+**Every game gets its HLTB entry matched for it, without a person ever searching**
+(`bot/services/hltb_match.py`, `titles.hltb_id`/`hltb_match_score`) — the Mini App's
+game page shows HLTB's hours and description straight away. `/hltb` above is
+unrelated: it stays a person picking from a candidate list, cached by the id they
+picked.
+
+- **A match is asked for lazily, never by a walker**: once from each platform's
+  fetcher, right after it publishes a game's *first* new achievement
+  (`services.hltb.ensure_title_match`, called from `poller/fetcher.py`,
+  `poller/steam_fetcher.py`, `poller/psn_fetcher.py`), and again from the Mini App's
+  game-details endpoint if a game still has no match when somebody opens its page —
+  an old game nobody's played lately gets matched the first time anybody actually
+  looks at it, not before. **Backfill never triggers it** (backfill never publishes),
+  so a freshly connected account's whole library costs nothing up front; the requests
+  land one at a time, spread across whenever people actually earn something or open a
+  game page, never as a burst. Both call sites end up at the same one-row check
+  (`titles.hltb_id IS NULL AND hltb_attempts < 3`, re-askable an hour apart) — a
+  matched (or three-times-failed) game is a no-op wherever it is asked from.
+- **The matcher scores every HLTB search result against every name the game has** —
+  its platform names, normalized (accents, apostrophes, `&`, roman numerals) and also
+  *cored* (edition/platform tails like "- Definitive Edition", "(PC)", "Reloaded
+  Edition" cut off) at a small discount, so an exact match for the full release name
+  still outranks the cored one. A differing number is treated as a different game
+  (Halo 2 ≠ Halo 3); a DLC/mod entry, one released nowhere near our platforms, or one
+  that shipped *before* anybody here could have earned anything in it, all lose a
+  little; popularity only breaks a near-tie. A Steam game is settled outright by the
+  Steam appid HLTB's own page lists for a candidate, when it lists one.
+- **Nothing is accepted below a tuned score, or when a runner-up is too close to
+  call** — showing another game's hours is worse than showing none. Verified by hand
+  against ~200 real games from this community's library: no wrong match, only
+  occasional correct refusals (a placeholder platform name, an ambiguous subtitle).
 
 ## Versioning
 

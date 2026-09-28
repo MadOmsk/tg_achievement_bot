@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { PersonPayload } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, Icon, ScoreCup, isOnline } from "../../shared/lib";
@@ -29,6 +29,7 @@ export function PersonProfile({
   onBack: () => void;
   onReveal: (key: string) => void;
 }) {
+  const [scoreOpen, setScoreOpen] = useState(false);
   const feed = person.feed ?? [];
   const scoreLines = (person.platforms ?? []).flatMap((p) => {
     const xbox = p.platform.startsWith(PLATFORMS.XBOX);
@@ -80,15 +81,20 @@ export function PersonProfile({
     <>
       <header className="account-bar person-bar">
         <div className="account-top">
-          <div className="account-who">
-            <button
-              type="button"
-              className="person-back"
-              onClick={onBack}
-              aria-label={t(locale, "back")}
-            >
-              <Icon name="back" size={28} />
-            </button>
+          <button
+            type="button"
+            className="person-back"
+            onClick={onBack}
+            aria-label={t(locale, "back")}
+          >
+            <Icon name="back" size={26} />
+          </button>
+          <button
+            type="button"
+            className="account-who"
+            onClick={() => setScoreOpen(true)}
+            aria-label={t(locale, "scoreSummary")}
+          >
             <Avatar
               name={person.name}
               tgId={person.tg_id}
@@ -99,11 +105,20 @@ export function PersonProfile({
               platform={person.presence?.platform}
             />
             <span className="person-bar-title">
-              <strong>{person.name}</strong>
+              <span className="account-name-row">
+                <strong>{person.name}</strong>
+                <ScoreCup
+                  locale={locale}
+                  lines={scoreLines}
+                  open={scoreOpen}
+                  onOpenChange={setScoreOpen}
+                  markSize={12}
+                />
+              </span>
               {status && <small>{status}</small>}
             </span>
-          </div>
-          <ScoreCup locale={locale} lines={scoreLines} />
+          </button>
+          {monthChip}
         </div>
       </header>
       {feed.length > 0 ? (
@@ -121,7 +136,6 @@ export function PersonProfile({
         <h1 className="kicker" style={{ margin: 0 }}>
           {t(locale, "games")}
         </h1>
-        {monthChip}
       </div>
       {(feed.length > 0) && (
         <PlayedGames items={feed} locale={locale} />

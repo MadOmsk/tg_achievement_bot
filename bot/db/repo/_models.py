@@ -601,6 +601,22 @@ class TitleCoverRow:
 
 
 @dataclass(slots=True)
+class TitleHltbRow:
+    """One game as the HLTB matcher sees it (#131, migration 063): every name
+    it goes by, what it released on, and the year anybody here first earned
+    something in it — the matcher's own stand-in for a release date, since
+    none of our platforms give the game's."""
+
+    title_id: str
+    platform: str  # xbox_modern / xbox_360 / steam / psn
+    name: str
+    name_en: str | None
+    name_ru: str | None
+    platforms: list[str] = field(default_factory=list)
+    first_played_year: int | None = None
+
+
+@dataclass(slots=True)
 class HltbCacheRow:
     hltb_id: int
     name: str

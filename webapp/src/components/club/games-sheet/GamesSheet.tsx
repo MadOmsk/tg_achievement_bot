@@ -13,7 +13,7 @@ export function GamesSheet({
 }) {
   const openGame = useOpenGame();
   return (
-    <Sheet onClose={onClose} closeLabel={t(locale, "close")} noClose mid>
+    <Sheet onClose={onClose} mid>
       <div className="sheet-content score-sheet picker-sheet games-sheet">
         <h2>{t(locale, "monthGames")}</h2>
         <div className="picker-list games-sheet-list">

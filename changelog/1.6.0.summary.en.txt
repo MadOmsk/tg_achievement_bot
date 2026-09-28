@@ -1,0 +1,5 @@
+• Game page: HowLongToBeat completion times and description, matched automatically
+• New "Achievements" / "About" swipeable tabs on the game page
+• Unified frosted sticky headers with header month picker
+• Home game sorting (recent / count) and section counters
+• Redesigned avatar online platform marks and month-switch skeletons

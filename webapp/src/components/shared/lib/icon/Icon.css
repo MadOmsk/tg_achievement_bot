@@ -1,9 +1,10 @@
+/* Same shape as .person-back — no ring at rest, only on tap. */
 .icon-btn {
-  width: 40px;
-  height: 40px;
-  margin: 0 4px 0 -8px;
+  width: 44px;
+  height: 44px;
+  margin: 0 -6px 0 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 50%;
   background: none;
   color: #fff;
   display: grid;
@@ -13,6 +14,7 @@
   flex: 0 0 auto;
   -webkit-tap-highlight-color: transparent;
   outline: none;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 
 .icon-btn:focus,
@@ -21,8 +23,21 @@
   box-shadow: none;
 }
 
+.icon-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.92);
+}
+
 .page-head .icon-btn + h1 {
   flex: 1;
+}
+
+/* The back arrow's own box already carries visual padding (a circle drawn
+ * well inside its 44px square) — pulled toward the edge the same amount
+ * .person-back is, so every "back" header in the app reads at one distance
+ * from the edge. */
+.page-head .icon-btn {
+  margin-left: -8px;
 }
 
 .chip .mark {

@@ -1,25 +1,32 @@
-/* The minimal gallery: the picture, then only the name and its game. */
+.unlock-card-copy.is-minimal .minimal-game {
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  color: rgba(238, 241, 246, 0.68);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .unlock-card-copy.is-minimal h2 {
+  margin-top: 4px;
   font-size: 1.1rem;
 }
 
-.unlock-card-copy.is-minimal .minimal-game {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 0.95rem;
-  font-weight: 600;
-  display: block;
-  -webkit-line-clamp: 1;
-}
-
-.unlock-card-copy.is-minimal .minimal-game.is-link {
-  cursor: pointer;
-  /* No blue tap flash or text selection when the game is tapped. */
-  -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-  outline: none;
+.unlock-card-copy.is-minimal .minimal-desc {
+  margin: 6px 0 0;
+  color: rgba(238, 241, 246, 0.6);
+  font-size: 0.82rem;
+  font-style: italic;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 /* No panel of its own: the name and the game sit on the picture, on a shade
@@ -42,10 +49,6 @@
   pointer-events: none;
 }
 
-.unlock-slider .unlock-card-copy.is-minimal .minimal-game.is-link {
-  pointer-events: auto;
-}
-
 .unlock-slider .unlock-card-copy.is-minimal h2 {
   font-size: 1.35rem;
   font-weight: 800;
@@ -54,7 +57,10 @@
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
 }
 
+.unlock-slider .unlock-card-copy.is-minimal .minimal-desc {
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+}
+
 .unlock-slider .unlock-card-copy.is-minimal .minimal-game {
-  color: rgba(238, 241, 246, 0.9);
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }

@@ -1,5 +1,7 @@
+/* The gap under a drawer's title matches the gap above it (the card's own
+ * 22px top padding), so the title sits centred in its own space. */
 .picker-sheet h2 {
-  margin: 0 0 8px;
+  margin: 0 0 22px;
   flex: 0 0 auto;
   font-size: 1.14rem;
   font-weight: 750;
@@ -24,6 +26,13 @@
 
 .picker-row:last-child {
   border-bottom: 0;
+}
+
+/* Every row's own top padding is there to pair, across the hairline, with
+ * the row above it. The first row has nothing above it to pair with, so
+ * that padding just read as extra space under the title — drop it there. */
+.picker-list .picker-row:not(.is-month):first-child {
+  padding-top: 0;
 }
 
 .picker-row.is-person {
@@ -88,6 +97,55 @@ button.picker-row.is-game {
 
 .picker-row.is-on > span:not(.picker-row-copy) {
   color: rgba(238, 241, 246, 0.72);
+}
+
+/* The month picker: each choice its own rounded row with breathing room
+ * instead of a hairline-divided flat list; the current month gets a small
+ * lit pill instead of plain caps text; the picked one gets a soft blue card
+ * and its name in full white. */
+.picker-list.is-months {
+  gap: 6px;
+}
+
+.picker-row.is-month {
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  transition: background 0.15s ease;
+}
+
+.picker-row.is-month strong {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.picker-row.is-month .month-now {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(155, 182, 255, 0.18);
+  color: var(--mint-2);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.picker-row.is-month.is-on {
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(120, 150, 230, 0.28), transparent 65%),
+    rgba(150, 182, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(180, 200, 255, 0.35);
+}
+
+.picker-row.is-month.is-on strong {
+  color: #fff;
+}
+
+.picker-row.is-month.is-on .month-now {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
 }
 
 .games-sheet .picker-row.is-game {
@@ -218,26 +276,15 @@ button.picker-row.is-game {
   animation: sheet-pop-out 0.22s ease both;
 }
 
-.sheet-dismiss {
-  flex: 0 0 auto;
-  z-index: 2;
-  width: 44px;
-  height: 44px;
-  margin: 0 0 10px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 1.35rem;
-  font-weight: 300;
-  line-height: 1;
-  letter-spacing: 0;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.65);
-  transition: color 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+/* The card itself: the same cool blue-purple the app is built from (see
+ * --app-bg), not a flat grey wash — a soft glow in the corner it rises from,
+ * over the dark card colour every other plate in the app already uses. */
+.sheet-stack > .sheet-body {
+  background:
+    radial-gradient(120% 90% at 12% -8%, rgba(120, 150, 230, 0.18), transparent 55%),
+    radial-gradient(100% 70% at 100% 0%, rgba(90, 170, 255, 0.08), transparent 55%),
+    rgba(15, 18, 28, 0.92);
+  border-color: rgba(255, 255, 255, 0.09);
 }
 
 .sheet-body.is-tall {

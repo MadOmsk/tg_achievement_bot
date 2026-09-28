@@ -40,7 +40,16 @@
   place-items: center;
 }
 
-.fit-layer.is-empty .cover-ph-mark svg {
+/* Same glyph, shown over a picture that is still loading — centred on top
+ * of it regardless of which edge the picture itself is fit to. */
+.fit-layer .cover-ph-mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.fit-layer .cover-ph-mark svg {
   width: 84px;
   height: 84px;
 }

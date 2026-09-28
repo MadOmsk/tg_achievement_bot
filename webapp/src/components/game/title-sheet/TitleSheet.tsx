@@ -1,9 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { EffectFade } from "swiper/modules";
+import { Swiper, SwiperSlide } from "swiper/react";
+import type { Swiper as SwiperInstance } from "swiper/types";
+import "swiper/css";
+import "swiper/css/effect-fade";
 import {
   fetchGame,
+  fetchGameHltb,
   type FeedItem,
   type GameAchievement,
   type GameDetails,
+  type GameHltb,
   type GameRef,
 } from "../../../api";
 import { t, type Locale } from "../../../i18n";
@@ -30,6 +37,54 @@ import {
 } from "../utils";
 import { GameHero } from "../game-hero/GameHero";
 import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
+
+/**
+ * The tab bar above the achievements/about swiper. Keeps its own state and
+ * listens to the Swiper itself, the same reason `UnlockSlider`'s own dots do
+ * (`SliderDots`): if the page held this, every slide change would re-render
+ * the whole Swiper and, looping, rebuild its cloned slides.
+ */
+function GameTabBar({
+  swiper,
+  labels,
+  actions,
+}: {
+  swiper: SwiperInstance;
+  labels: [string, string];
+  /** Per tab: its own action row next to the labels, or nothing when a tab
+   * (like "Об игре") has no action of its own — the row just isn't there. */
+  actions: [ReactNode, ReactNode];
+}) {
+  const [active, setActive] = useState(swiper.realIndex);
+
+  useEffect(() => {
+    const onChange = () => setActive(swiper.realIndex);
+    swiper.on("slideChange", onChange);
+    return () => {
+      swiper.off("slideChange", onChange);
+    };
+  }, [swiper]);
+
+  return (
+    <div className="game-tabs-row">
+      <div className="game-tabs" role="tablist">
+        {labels.map((label, i) => (
+          <button
+            key={i}
+            type="button"
+            role="tab"
+            aria-selected={active === i}
+            className={active === i ? "is-on" : undefined}
+            onClick={() => swiper.slideToLoop(i)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {actions[active]}
+    </div>
+  );
+}
 
 export function TitleSheet({
   game,
@@ -62,6 +117,14 @@ export function TitleSheet({
   const showAllSecrets = initialShowSecrets;
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
   const [selectedAch, setSelectedAch] = useState<GameAchievement | null>(null);
+  // Achievements / "Об игре": one Swiper, endlessly looping, switched by tab
+  // or by swipe — the same shape the profile's own carousels use.
+  const [tabSwiper, setTabSwiper] = useState<SwiperInstance | null>(null);
+  // HLTB's own hours/description (#131), fetched on its own request so a
+  // game's first-ever match never delays the achievements below —
+  // `undefined` while that request is still out, `null` once it has
+  // answered with no match.
+  const [hltbInfo, setHltbInfo] = useState<GameHltb | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +147,23 @@ export function TitleSheet({
       cancelled = true;
     };
   }, [data, game.platform, game.title_id, viewed?.tg_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHltbInfo(undefined);
+    void fetchGameHltb(data, game.platform, game.title_id)
+      .then((res) => {
+        if (!cancelled) setHltbInfo(res.hltb);
+      })
+      .catch(() => {
+        // Best-effort, same as the endpoint itself: a game simply keeps
+        // showing no "Об игре" tab rather than an error over its achievements.
+        if (!cancelled) setHltbInfo(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, game.platform, game.title_id]);
 
   useEffect(() => {
     if (!compare || myDetails) return;
@@ -340,7 +420,7 @@ export function TitleSheet({
               onClick={onClose}
               aria-label={t(locale, "back")}
             >
-              <Icon name="back" size={28} />
+              <Icon name="back" size={26} />
             </button>
             <CoverImg src={cover} kind="game" className="person-avatar" />
             <span className="person-bar-title">
@@ -369,103 +449,289 @@ export function TitleSheet({
         locale={locale}
       />
 
-      <div className="section-head achievements-head">
-        <h1 className="kicker" style={{ margin: 0 }}>
-          {t(locale, "homeAchievements")}
-          {total > 0 &&
-            ` (${comparing ? `${myUnlockedIds.size} · ${unlocked}` : unlocked}/${total})`}
-        </h1>
+      {busy ? (
+        <>
+          <div className="game-tabs-row">
+            <div className="game-tabs">
+              <span className="skel line" style={{ width: 84, height: 15 }} />
+              <span className="skel line" style={{ width: 64, height: 15 }} />
+            </div>
+          </div>
+          <div className="game-tab-panel" style={{ marginTop: 14 }}>
+            <RowsSkel count={6} />
+          </div>
+        </>
+      ) : hltbInfo === null ? (
+        <>
+          <div className="section-head achievements-head">
+            <h1 className="kicker" style={{ margin: 0 }}>
+              {t(locale, "homeAchievements")}
+              {total > 0 &&
+                ` (${comparing ? `${myUnlockedIds.size} · ${unlocked}` : unlocked}/${total})`}
+            </h1>
 
-        <span className="game-head-actions">
-        {other && (
-          <button
-            type="button"
-            className={compare ? "game-lock-chip is-on" : "game-lock-chip"}
-            aria-pressed={compare}
-            aria-label={t(locale, "compare")}
-            onClick={() => setCompare((on) => !on)}
+            <span className="game-head-actions">
+            {other && (
+              <button
+                type="button"
+                className={compare ? "game-lock-chip is-on" : "game-lock-chip"}
+                aria-pressed={compare}
+                aria-label={t(locale, "compare")}
+                onClick={() => setCompare((on) => !on)}
+              >
+                <Icon name="compare" size={22} />
+              </button>
+            )}
+            {(hasBoth && !comparing) && (
+              <button
+                type="button"
+                className="game-lock-chip"
+                aria-label={t(locale, earnedView ? "showLocked" : "showEarned")}
+                onClick={() => setShowEarned((on) => !on)}
+              >
+                <Icon name={earnedView ? "unlock" : "lock"} size={20} />
+              </button>
+            )}
+            </span>
+          </div>
+
+          {error && (
+            <p className="empty">
+              {t(locale, "error")}: {error}
+            </p>
+          )}
+          {(!error && achievements.length === 0) && (
+            <p className="empty">{t(locale, "gameEmpty")}</p>
+          )}
+          {(!error && achievements.length > 0 && filteredAchievements.length === 0) && (
+            <p className="empty">{t(locale, "emptyFilter")}</p>
+          )}
+
+          <div className="feed">
+            {byGroup.map((section, i) => (
+              <section key={section.id || `group-${i}`} className="feed-day">
+                {section.label && (
+                  <p className="feed-day-label">{section.label}</p>
+                )}
+                {section.rows.map((row) => {
+                  const iHave = myUnlockedIds.has(row.achievement_id);
+                  // A secret stays hidden until the "show secrets" setting or a
+                  // tap on it says otherwise — earned or not.
+                  const isRevealed =
+                    showAllSecrets || revealedIds.has(row.achievement_id);
+                  return (
+                    <GameAchievementRow
+                      key={row.achievement_id}
+                      row={row}
+                      isRevealed={isRevealed}
+                      locale={locale}
+                      onToggleReveal={toggleReveal}
+                      onSelect={setSelectedAch}
+                      fallbackIcon={cover}
+                      compare={
+                        comparing && other
+                          ? {
+                              me: { id: meId, name: t(locale, "you"), has: iHave },
+                              them: {
+                                id: other.tg_id,
+                                name: other.name,
+                                has: row.is_unlocked,
+                              },
+                            }
+                          : undefined
+                      }
+                    />
+                  );
+                })}
+              </section>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          {tabSwiper && (
+            <GameTabBar
+              swiper={tabSwiper}
+              labels={[
+                total > 0
+                  ? `${t(locale, "homeAchievements")} (${comparing ? `${myUnlockedIds.size} · ${unlocked}` : unlocked}/${total})`
+                  : t(locale, "homeAchievements"),
+                t(locale, "aboutGame"),
+              ]}
+              actions={[
+                (other || (hasBoth && !comparing)) && (
+                  <div className="game-tab-actions">
+                    {other && (
+                      <button
+                        type="button"
+                        className={compare ? "game-lock-chip is-on" : "game-lock-chip"}
+                        aria-pressed={compare}
+                        aria-label={t(locale, "compare")}
+                        onClick={() => setCompare((on) => !on)}
+                      >
+                        <Icon name="compare" size={22} />
+                      </button>
+                    )}
+                    {hasBoth && !comparing && (
+                      <button
+                        type="button"
+                        className="game-lock-chip"
+                        aria-label={t(locale, earnedView ? "showLocked" : "showEarned")}
+                        onClick={() => setShowEarned((on) => !on)}
+                      >
+                        <Icon name={earnedView ? "unlock" : "lock"} size={20} />
+                      </button>
+                    )}
+                  </div>
+                ),
+                null,
+              ]}
+            />
+          )}
+          <Swiper
+            className="game-tab-swiper"
+            modules={[EffectFade]}
+            effect="fade"
+            fadeEffect={{ crossFade: true }}
+            loop
+            autoHeight
+            speed={320}
+            onSwiper={setTabSwiper}
           >
-            <Icon name="compare" size={20} />
-          </button>
-        )}
-        {(!busy && hasBoth && !comparing) && (
-          <button
-            type="button"
-            className="game-lock-chip"
-            aria-label={t(locale, earnedView ? "showLocked" : "showEarned")}
-            onClick={() => setShowEarned((on) => !on)}
-          >
-            <Icon name={earnedView ? "unlock" : "lock"} size={18} />
-          </button>
-        )}
-        </span>
-      </div>
-
-      {busy && <RowsSkel count={6} />}
-      {error && (
-        <p className="empty">
-          {t(locale, "error")}: {error}
-        </p>
-      )}
-      {(!busy && !error && achievements.length === 0) && (
-        <p className="empty">{t(locale, "gameEmpty")}</p>
-      )}
-
-      {(!busy &&
-      !error &&
-      achievements.length > 0 &&
-      filteredAchievements.length === 0) && (
-        <p className="empty">{t(locale, "emptyFilter")}</p>
-      )}
-
-      {(!busy && details) && (
-        <div className="feed">
-          {byGroup.map((section, i) => (
-            <section key={section.id || `group-${i}`} className="feed-day">
-              {section.label && (
-                <p className="feed-day-label">{section.label}</p>
-              )}
-              {section.rows.map((row) => {
-                const iHave = myUnlockedIds.has(row.achievement_id);
-                // A secret stays hidden until the "show secrets" setting or a
-                // tap on it says otherwise — earned or not.
-                const isRevealed =
-                  showAllSecrets || revealedIds.has(row.achievement_id);
-                return (
-                  <GameAchievementRow
-                    key={row.achievement_id}
-                    row={row}
-                    isRevealed={isRevealed}
-                    locale={locale}
-                    onToggleReveal={toggleReveal}
-                    onSelect={setSelectedAch}
-                    fallbackIcon={cover}
-                    compare={
-                      comparing && other
-                        ? {
-                            me: { id: meId, name: t(locale, "you"), has: iHave },
-                            them: {
-                              id: other.tg_id,
-                              name: other.name,
-                              has: row.is_unlocked,
-                            },
-                          }
-                        : undefined
-                    }
-                  />
-                );
-              })}
-            </section>
-          ))}
-        </div>
+            <SwiperSlide>
+              <div className="game-tab-panel">
+                {error && (
+                  <p className="empty">
+                    {t(locale, "error")}: {error}
+                  </p>
+                )}
+                {(!error && achievements.length === 0) && (
+                  <p className="empty">{t(locale, "gameEmpty")}</p>
+                )}
+                {(!error && achievements.length > 0 && filteredAchievements.length === 0) && (
+                  <p className="empty">{t(locale, "emptyFilter")}</p>
+                )}
+                <div className="feed">
+                  {byGroup.map((section, i) => (
+                    <section key={section.id || `group-${i}`} className="feed-day">
+                      {section.label && (
+                        <p className="feed-day-label">{section.label}</p>
+                      )}
+                      {section.rows.map((row) => {
+                        const iHave = myUnlockedIds.has(row.achievement_id);
+                        // A secret stays hidden until the "show secrets" setting or a
+                        // tap on it says otherwise — earned or not.
+                        const isRevealed =
+                          showAllSecrets || revealedIds.has(row.achievement_id);
+                        return (
+                          <GameAchievementRow
+                            key={row.achievement_id}
+                            row={row}
+                            isRevealed={isRevealed}
+                            locale={locale}
+                            onToggleReveal={toggleReveal}
+                            onSelect={setSelectedAch}
+                            fallbackIcon={cover}
+                            compare={
+                              comparing && other
+                                ? {
+                                    me: { id: meId, name: t(locale, "you"), has: iHave },
+                                    them: {
+                                      id: other.tg_id,
+                                      name: other.name,
+                                      has: row.is_unlocked,
+                                    },
+                                  }
+                                : undefined
+                            }
+                          />
+                        );
+                      })}
+                    </section>
+                  ))}
+                </div>
+              </div>
+            </SwiperSlide>
+            <SwiperSlide>
+              <div className="game-tab-panel">
+                {hltbInfo ? (
+                  <>
+                    {(hltbInfo.release_year || hltbInfo.genre) && (
+                      <p className="about-game-meta">
+                        {[hltbInfo.release_year, hltbInfo.genre].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
+                    {(hltbInfo.main_hours != null ||
+                      hltbInfo.extra_hours != null ||
+                      hltbInfo.completionist_hours != null) && (
+                      <div className="about-game-times">
+                        {hltbInfo.main_hours != null && (
+                          <span className="about-game-time">
+                            <b>
+                              {hltbInfo.main_hours} {t(locale, "hours")}
+                            </b>
+                            <small>{t(locale, "hltbMain")}</small>
+                          </span>
+                        )}
+                        {hltbInfo.extra_hours != null && (
+                          <span className="about-game-time">
+                            <b>
+                              {hltbInfo.extra_hours} {t(locale, "hours")}
+                            </b>
+                            <small>{t(locale, "hltbExtra")}</small>
+                          </span>
+                        )}
+                        {hltbInfo.completionist_hours != null && (
+                          <span className="about-game-time">
+                            <b>
+                              {hltbInfo.completionist_hours} {t(locale, "hours")}
+                            </b>
+                            <small>{t(locale, "hltbComplete")}</small>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {hltbInfo.description && (
+                      <p className="about-game-desc">{hltbInfo.description}</p>
+                    )}
+                    <button
+                      type="button"
+                      className="about-game-link"
+                      onClick={() => {
+                        const hltb = hltbInfo;
+                        const url =
+                          hltb.game_url ?? `https://howlongtobeat.com/game/${hltb.hltb_id}`;
+                        if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(url);
+                        else window.open(url, "_blank", "noopener");
+                      }}
+                    >
+                      HowLongToBeat →
+                    </button>
+                  </>
+                ) : (
+                  // Still out on its own request (#131) — the achievements tab
+                  // never waited on this, so it just fills in once it answers.
+                  <>
+                    <span className="skel line" style={{ width: "40%" }} />
+                    <div className="about-game-times">
+                      <span className="skel line" style={{ width: 56, height: 26 }} />
+                      <span className="skel line" style={{ width: 56, height: 26 }} />
+                      <span className="skel line" style={{ width: 56, height: 26 }} />
+                    </div>
+                    <span className="skel line" style={{ width: "92%", marginTop: 18 }} />
+                    <span className="skel line" style={{ width: "80%", marginTop: 6 }} />
+                  </>
+                )}
+              </div>
+            </SwiperSlide>
+          </Swiper>
+        </>
       )}
 
       {selectedFeedItem && (
         <Sheet
           mid
           onClose={() => setSelectedAch(null)}
-          closeLabel={t(locale, "close")}
-          noClose
         >
           <div className="sheet-unlock">
             <UnlockCard

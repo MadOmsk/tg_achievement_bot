@@ -1,4 +1,4 @@
-import { t, type Locale } from "../../../../i18n";
+import type { Locale } from "../../../../i18n";
 import { Sheet } from "../sheet/Sheet";
 import "./DayPicker.css";
 
@@ -43,7 +43,7 @@ export function DayPicker({
   const todayKey = pickerKey(today.getFullYear(), today.getMonth(), today.getDate());
 
   return (
-    <Sheet mid onClose={onClose} closeLabel={t(locale, "close")} noClose>
+    <Sheet mid onClose={onClose}>
       <div className="sheet-content score-sheet picker-sheet day-picker">
         <h2 className="day-picker-title">
           {first.toLocaleDateString(intl, { month: "long", year: "numeric" })}
