@@ -59,8 +59,6 @@ chat-help-text =
     /hltb — время прохождения игр по данным HowLongToBeat
     /help — справка о боте и возможностях
 chat-help-version = <i>Версия { $version }</i>
-chat-hub-pin-app-button = 📌 Карточка для закрепа
-chat-intro-posted-alert = Карточка отправлена в чат!
 chat-hub-nobody = Пока здесь никто не публикуется.
 chat-hub-publishing = Публикуются: { $names }
 chat-hub-publish-button = 🔔 Настройка уведомлений

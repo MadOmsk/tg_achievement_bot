@@ -301,7 +301,6 @@ def hub_keyboard(
     *,
     mini_app_url: str = "",
     is_group: bool = True,
-    is_admin: bool = False,
     mini_app_name: str = "app",
 ) -> InlineKeyboardMarkup:
     """A short walkthrough and quick navigation:
@@ -385,15 +384,6 @@ def hub_keyboard(
                 settings_btn,
             ]
         )
-        if is_admin:
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        text=_hub_text(i18n, "chat-hub-pin-app-button"),
-                        callback_data=f"hub:pin_app:{chat_id}",
-                    )
-                ]
-            )
     else:
         # In private chat: settings
         rows.append([settings_btn])

@@ -81,7 +81,6 @@ def _hub_markup(
     settings: Settings,
     *,
     is_group: bool = True,
-    is_admin: bool = False,
 ) -> InlineKeyboardMarkup:
     """The hub's keyboard, with the Mini App row when there is an app to
     open. Every caller already holds `settings`, and the alternative — a
@@ -93,7 +92,6 @@ def _hub_markup(
         i18n,
         mini_app_url=settings.mini_app_url or "",
         is_group=is_group,
-        is_admin=is_admin,
         mini_app_name=getattr(settings, "mini_app_name", "app"),
     )
 
@@ -827,21 +825,16 @@ async def panel_command(
 ) -> None:
     me = await bot.me()
     bot_username = me.username or ""
-    from_user = getattr(message, "from_user", None)
-    is_admin_check = getattr(settings, "is_admin", lambda uid: False)
-    is_adm = from_user is not None and is_admin_check(from_user.id)
     await message.answer(
         await hub_text(repo, message.chat.id, i18n),
         parse_mode=ParseMode.HTML,
-        reply_markup=_hub_markup(
-            bot_username, message.chat.id, i18n, settings, is_group=True, is_admin=is_adm
-        ),
+        reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=True),
     )
 
 
 @router.message(Command("help"))
 async def help_command(
-    message: Message, repo: Repo, i18n: I18nContext, settings: Settings
+    message: Message, repo: Repo, bot: Bot, i18n: I18nContext, settings: Settings
 ) -> None:
     if message.chat.type not in GROUP_TYPES:
         app_url = (settings.mini_app_url or "").strip()
@@ -1066,16 +1059,3 @@ async def pin_app_command(
     await post_pin_app_intro(bot, message.chat.id, i18n, mini_app_name=settings.mini_app_name)
     with contextlib.suppress(Exception):
         await message.delete()
-
-
-@router.callback_query(F.data.startswith("hub:pin_app:"))
-async def hub_pin_app_callback(
-    callback: CallbackQuery, bot: Bot, i18n: I18nContext, settings: Settings
-) -> None:
-    if callback.from_user is None or not settings.is_admin(callback.from_user.id):
-        await callback.answer(i18n.get("chat-not-your-button"), show_alert=True)
-        return
-    assert callback.data is not None
-    chat_id = int(callback.data.split(":")[2])
-    await post_pin_app_intro(bot, chat_id, i18n, mini_app_name=settings.mini_app_name)
-    await callback.answer(i18n.get("chat-intro-posted-alert"), show_alert=True)

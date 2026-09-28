@@ -59,8 +59,6 @@ chat-help-text =
     /hltb — game completion time from HowLongToBeat
     /help — bot overview and help
 chat-help-version = <i>Version { $version }</i>
-chat-hub-pin-app-button = 📌 Post card to pin
-chat-intro-posted-alert = Intro card sent to chat!
 chat-hub-nobody = Nobody is publishing here yet.
 chat-hub-publishing = Publishing: { $names }
 chat-hub-publish-button = 🔔 Notification settings
