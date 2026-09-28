@@ -501,7 +501,10 @@ class Publisher:
         # photo, then text. Every branch is an achievement notification — never
         # auto-deleted (message_cleanup.py) and never taken by /delete_last (#101).
         with achievement_category():
-            if len(job.gallery) >= 2:
+            # Telegram media groups (albums) do not support inline keyboards.
+            # When reply_markup is attached (e.g. Mini App button), send as a single
+            # photo card with the full digest text so the button is preserved.
+            if len(job.gallery) >= 2 and not job.reply_markup:
                 try:
                     media = [
                         InputMediaPhoto(
@@ -513,21 +516,18 @@ class Publisher:
                         for index, (url, secret) in enumerate(job.gallery[:MEDIA_GROUP_MAX])
                     ]
                     messages = await self._bot.send_media_group(job.chat_id, media)
-                    if messages and job.reply_markup:
-                        with contextlib.suppress(Exception):
-                            await self._bot.edit_message_reply_markup(
-                                chat_id=job.chat_id,
-                                message_id=messages[0].message_id,
-                                reply_markup=job.reply_markup,
-                            )
                     return messages[0].message_id if messages else None
                 except (TelegramForbiddenError, TelegramRetryAfter):
                     raise
                 except Exception as exc:
                     if chat_is_gone(exc):
                         raise
-                    log.info("gallery for chat %s did not go through, sending text", job.chat_id)
-            elif len(job.gallery) == 1:
+                    log.info(
+                        "gallery for chat %s did not go through, sending photo or text",
+                        job.chat_id,
+                    )
+
+            if job.gallery:
                 url, secret = job.gallery[0]
                 try:
                     message = await self._bot.send_photo(

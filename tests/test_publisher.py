@@ -214,7 +214,7 @@ async def test_publisher_deliver_passes_reply_markup_to_bot(repo) -> None:
     assert len(mock_bot.sent_messages) == 1
     assert mock_bot.sent_messages[0][2] is markup
 
-    # 3. Media group delivery
+    # 3. Digest delivery with markup -> single photo so button is kept
     job3 = PublishJob(
         chat_id=chat_id,
         text="digest",
@@ -222,6 +222,17 @@ async def test_publisher_deliver_passes_reply_markup_to_bot(repo) -> None:
         reply_markup=markup,
     )
     msg_id3 = await pub._deliver(job3)
-    assert msg_id3 == 201
-    assert len(mock_bot.edited_markups) == 1
-    assert mock_bot.edited_markups[0] == (chat_id, 201, markup)
+    assert msg_id3 == 101
+    assert len(mock_bot.sent_photos) == 2
+    assert mock_bot.sent_photos[1][1] == "p1.jpg"
+    assert mock_bot.sent_photos[1][2] is markup
+
+    # 4. Digest delivery without markup -> media group
+    job4 = PublishJob(
+        chat_id=chat_id,
+        text="digest_no_markup",
+        gallery=[("p1.jpg", False), ("p2.jpg", False)],
+        reply_markup=None,
+    )
+    msg_id4 = await pub._deliver(job4)
+    assert msg_id4 == 201
