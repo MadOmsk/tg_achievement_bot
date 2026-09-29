@@ -115,7 +115,14 @@ class Publisher:
         except Exception:
             return ""
 
-    async def _markup_for(self, chat_id: int, locale: str) -> InlineKeyboardMarkup | None:
+    async def _markup_for(
+        self,
+        chat_id: int,
+        locale: str,
+        *,
+        person_id: int | None = None,
+        game: tuple[str, str] | None = None,
+    ) -> InlineKeyboardMarkup | None:
         if not self._settings or not (self._settings.mini_app_url or "").strip():
             return None
         in_group = chat_id < 0
@@ -128,6 +135,8 @@ class Publisher:
             https_url=self._settings.mini_app_url,
             bot_username=bot_username,
             chat_id=chat_id,
+            person_id=person_id,
+            game=game,
             in_group=in_group,
         )
 
@@ -219,7 +228,12 @@ class Publisher:
                 for a in allowed:
                     if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
                         a.game_platforms = plat_map[a.title_id]
-            markup = await self._markup_for(chat.chat_id, chat.locale)
+            # One `publish()` call is always one game (title_name/xuid are
+            # singular above), so every item in `allowed` shares it.
+            game_ref = (allowed[0].platform, allowed[0].title_id) if allowed else None
+            markup = await self._markup_for(
+                chat.chat_id, chat.locale, person_id=tg_id, game=game_ref
+            )
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
@@ -415,6 +429,7 @@ class Publisher:
                     a.game_platforms = plat_map[a.title_id]
 
         progress_map = await self._progress_for(achievements)
+        game_ref: tuple[str, str] | None = None
         if len(achievements) == 1:
             item = achievements[0]
             text = format_single(
@@ -425,6 +440,7 @@ class Publisher:
                 progress=progress_map.get((item.platform, item.title_id, item.trophy_group_id)),
             )
             gallery = _gallery([item])
+            game_ref = (item.platform, item.title_id)
         else:
             text = format_digest(
                 name,
@@ -434,8 +450,13 @@ class Publisher:
                 progress=progress_map,
             )
             gallery = _gallery(achievements)
+            # The flood digest can mix games — only link straight to one
+            # when there was, in fact, only one.
+            titles = {(a.platform, a.title_id) for a in achievements}
+            if len(titles) == 1:
+                game_ref = next(iter(titles))
 
-        markup = await self._markup_for(chat_id, locale)
+        markup = await self._markup_for(chat_id, locale, person_id=tg_id, game=game_ref)
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,

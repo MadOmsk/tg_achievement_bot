@@ -30,7 +30,11 @@ export function PersonProfile({
   onReveal: (key: string) => void;
 }) {
   const [scoreOpen, setScoreOpen] = useState(false);
+  const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const feed = person.feed ?? [];
+  const gameCount = new Set(
+    feed.filter((row) => row.game).map((row) => `${row.platform}:${row.title_id}`),
+  ).size;
   const scoreLines = (person.platforms ?? []).flatMap((p) => {
     const xbox = p.platform.startsWith(PLATFORMS.XBOX);
     const count =
@@ -133,12 +137,25 @@ export function PersonProfile({
         <p className="empty">{t(locale, "emptyFeed")}</p>
       )}
       <div className="section-head achievements-head">
-        <h1 className="kicker" style={{ margin: 0 }}>
-          {t(locale, "games")}
-        </h1>
+        <span className="section-title-group">
+          <h1 className="kicker" style={{ margin: 0 }}>
+            {t(locale, "games")}
+          </h1>
+          {gameCount > 0 && <span className="section-count">{gameCount}</span>}
+        </span>
+        {gameCount > 1 && (
+          <button
+            type="button"
+            className="sort-toggle"
+            aria-label={t(locale, gameSort === "recent" ? "sortProgress" : "sortRecent")}
+            onClick={() => setGameSort((cur) => (cur === "recent" ? "progress" : "recent"))}
+          >
+            <Icon name={gameSort === "recent" ? "sort" : "stats"} size={18} />
+          </button>
+        )}
       </div>
       {(feed.length > 0) && (
-        <PlayedGames items={feed} locale={locale} />
+        <PlayedGames items={feed} locale={locale} sort={gameSort} />
       )}
     </>
   );

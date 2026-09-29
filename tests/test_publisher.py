@@ -116,7 +116,10 @@ async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) ->
     assert job.reply_markup is not None
     button = job.reply_markup.inline_keyboard[0][0]
     assert button.text == "Открыть Mini App"
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}"
+    assert (
+        button.url
+        == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{item.platform}:{item.title_id}"
+    )
 
 
 async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
@@ -142,7 +145,10 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
     assert job.reply_markup is not None
     button = job.reply_markup.inline_keyboard[0][0]
     assert button.text == "Открыть Mini App"
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}"
+    assert (
+        button.url
+        == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{items[0].platform}:{items[0].title_id}"
+    )
 
 
 async def test_publisher_no_markup_when_no_mini_app_url(repo) -> None:

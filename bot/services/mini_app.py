@@ -1,10 +1,10 @@
 """Mini App deep-link URLs for group teasers and Open buttons.
 
-Query params (`c`, `u`, `t`) are what the SPA reads on a WebApp URL.
+Query params (`c`, `u`, `t`, `g`) are what the SPA reads on a WebApp URL.
 Groups cannot use `web_app` inline buttons — Telegram answers
 BUTTON_TYPE_INVALID — so those Open buttons are a `t.me/bot?startapp=`
 link instead. The SPA already parses the same payload from
-`initDataUnsafe.start_param` (`c<id>u<id>t<tab>`).
+`initDataUnsafe.start_param` (`c<id>u<id>t<tab>g<platform>:<titleId>`).
 """
 
 from __future__ import annotations
@@ -13,6 +13,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
+# (platform, title_id) — the game to open straight to, bypassing chat/tab.
+GameRef = tuple[str, str]
+
 
 def mini_app_open_url(
     base: str,
@@ -20,6 +23,7 @@ def mini_app_open_url(
     chat_id: int,
     person_id: int | None = None,
     tab: str | None = None,
+    game: GameRef | None = None,
 ) -> str:
     parts = urlsplit(base.strip())
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
@@ -28,6 +32,8 @@ def mini_app_open_url(
         query["u"] = str(person_id)
     if tab:
         query["t"] = tab
+    if game:
+        query["g"] = f"{game[0]}:{game[1]}"
     path = parts.path or "/"
     return urlunsplit((parts.scheme, parts.netloc, path, urlencode(query), parts.fragment))
 
@@ -37,6 +43,7 @@ def mini_app_start_param(
     chat_id: int,
     person_id: int | None = None,
     tab: str | None = None,
+    game: GameRef | None = None,
 ) -> str:
     """Compact start_param — must stay in sync with webapp launchContext()."""
     param = f"c{chat_id}"
@@ -44,6 +51,8 @@ def mini_app_start_param(
         param += f"u{person_id}"
     if tab:
         param += f"t{tab}"
+    if game:
+        param += f"g{game[0]}:{game[1]}"
     return param
 
 
@@ -53,9 +62,10 @@ def mini_app_group_url(
     chat_id: int,
     person_id: int | None = None,
     tab: str | None = None,
+    game: GameRef | None = None,
 ) -> str:
     name = bot_username.lstrip("@")
-    param = mini_app_start_param(chat_id=chat_id, person_id=person_id, tab=tab)
+    param = mini_app_start_param(chat_id=chat_id, person_id=person_id, tab=tab, game=game)
     return f"https://t.me/{name}?startapp={param}"
 
 
@@ -67,6 +77,7 @@ def mini_app_open_markup(
     chat_id: int,
     person_id: int | None = None,
     tab: str | None = None,
+    game: GameRef | None = None,
     in_group: bool = True,
 ) -> InlineKeyboardMarkup | None:
     https_url = (https_url or "").strip()
@@ -78,13 +89,15 @@ def mini_app_open_markup(
             return None
         button = InlineKeyboardButton(
             text=text,
-            url=mini_app_group_url(name, chat_id=chat_id, person_id=person_id, tab=tab),
+            url=mini_app_group_url(name, chat_id=chat_id, person_id=person_id, tab=tab, game=game),
         )
     else:
         button = InlineKeyboardButton(
             text=text,
             web_app=WebAppInfo(
-                url=mini_app_open_url(https_url, chat_id=chat_id, person_id=person_id, tab=tab)
+                url=mini_app_open_url(
+                    https_url, chat_id=chat_id, person_id=person_id, tab=tab, game=game
+                )
             ),
         )
     return InlineKeyboardMarkup(inline_keyboard=[[button]])
