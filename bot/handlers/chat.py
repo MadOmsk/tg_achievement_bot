@@ -850,11 +850,12 @@ async def promo_command(message: Message, bot: Bot, i18n: I18nContext, settings:
         is_group=is_group,
         locale=i18n.locale,
     )
-    await message.answer(
-        promo_text(locale=i18n.locale),
-        parse_mode=ParseMode.HTML,
-        reply_markup=markup,
-    )
+    with stats_category():
+        await message.answer(
+            promo_text(locale=i18n.locale),
+            parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))
