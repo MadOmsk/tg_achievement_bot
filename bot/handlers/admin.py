@@ -40,8 +40,6 @@ from bot.services.admin_settings import (
     CHAT_SCOPED_KEYS,
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
-    DEFAULT_SHOW_LINKS_DEFAULT,
-    DEFAULT_SHOW_LINKS_KEY,
     FLOOD_LIMIT_DEFAULT,
     FLOOD_LIMIT_MAX,
     FLOOD_LIMIT_MIN,
@@ -50,6 +48,8 @@ from bot.services.admin_settings import (
     NUMERIC_SETTINGS,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
+    SHOW_LINKS_DEFAULT,
+    SHOW_LINKS_KEY,
 )
 from bot.services.message_log import stats_category
 from bot.services.mini_app import mini_app_open_markup
@@ -411,13 +411,12 @@ async def default_rarity_cycle(callback: CallbackQuery, repo: Repo, i18n: I18nCo
     await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
 
 
-@router.callback_query(F.data == "a:defaultlinks")
-async def default_show_links_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    current = await repo.get_int_setting(DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT))
-    await repo.set_app_setting(
-        DEFAULT_SHOW_LINKS_KEY, "0" if current else "1", callback.from_user.id
-    )
-    await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
+@router.callback_query(F.data == "a:showlinks")
+async def show_links_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """Profile links on cards, for everybody (owner, 2026-09-29)."""
+    current = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
+    await repo.set_app_setting(SHOW_LINKS_KEY, "0" if current else "1", callback.from_user.id)
+    await _redraw(callback, *(await render_limits(repo, locale=i18n.locale)).as_pair())
 
 
 # ------------------------------------------------------ free-text numeric settings

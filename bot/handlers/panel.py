@@ -245,25 +245,6 @@ async def panel_psn_disconnect_cancel(
     await _redraw_account_menu(callback, repo, AccountPlatform.PSN, i18n)
 
 
-@router.callback_query(F.data == "panel:linkstoggle")
-async def panel_toggle_profile_links(
-    callback: CallbackQuery, repo: Repo, i18n: I18nContext
-) -> None:
-    """Flips user_settings.show_profile_links (Follow-up 2026-09-06) —
-    one tap, no confirm, same weight as re-subscribing to a chat: showing
-    a link costs the person nothing they can't undo with another tap."""
-    settings_row = await repo.get_user_settings(callback.from_user.id)
-    currently_on = bool(settings_row and settings_row.show_profile_links)
-    await repo.update_user_settings(
-        callback.from_user.id, show_profile_links=0 if currently_on else 1
-    )
-    await callback.answer(
-        i18n.get("panel-links-hidden-toast" if currently_on else "panel-links-shown-toast")
-    )
-    screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
-
-
 async def _redraw_account_menu(
     callback: CallbackQuery, repo: Repo, platform: str, i18n: I18nContext, *, answer: bool = True
 ) -> None:

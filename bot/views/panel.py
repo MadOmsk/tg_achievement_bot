@@ -187,7 +187,6 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         steam_connected=steam_link is not None,
         psn_connected=bool(psn_links),
         psn_accounts=len(psn_links),
-        show_profile_links=bool(settings_row and settings_row.show_profile_links),
         rarity_mode=settings_row.rarity_mode if settings_row else RarityMode.ALL,
         xbox_publishes=xbox_link.publishes if xbox_link else True,
         psn_publishes=platform_publishes(psn_links),
@@ -515,6 +514,7 @@ async def render_account_menu(
         profile_url = platform_profile_url(
             link.platform, external_id=link.external_id, display_name=link.display_name
         )
+        token = None
         label = "Steam"
         icon = PLATFORM_ICON[Platform.STEAM]
         unlink_cb = "steam:disconnectprompt"
@@ -529,6 +529,15 @@ async def render_account_menu(
         ]
     )
     builder = InlineKeyboardBuilder()
+    if (
+        platform == AccountPlatform.XBOX
+        and token is not None
+        and token.status == TokenStatus.INVALID
+    ):
+        # First: nothing else on this screen works until the login does.
+        builder.row(
+            InlineKeyboardButton(text=i18n.get("kb-xbox-reconnect"), callback_data="relogin")
+        )
     if profile_url:
         builder.row(
             InlineKeyboardButton(

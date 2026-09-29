@@ -184,7 +184,7 @@ admin-new-users-screen =
     Applies only to subscriptions created from now on — existing ones are left
     alone.
 admin-default-rarity = Default achievements: { $rarity } ▸
-admin-default-links = Profile visible to others: { $visible } ▸
+admin-show-links = Profile links on cards: { $visible } ▸
 admin-users-empty = 👥 Nobody has connected yet.
 admin-users-header = 👥 Users
 admin-users-columns = Columns: last seen · achievements today / this month

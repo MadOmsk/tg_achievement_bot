@@ -332,9 +332,9 @@ every column. History: #106.
   gamerscore, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
   `locale`. `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
   new people start from `app_settings['default_rarity_mode']`), timezone, muted games,
-  `show_profile_links` (off by default; new users start from
-  `app_settings['default_show_profile_links']`), `show_secrets` (Mini App only),
-  `locale`. Somebody in many chats used to set the mode in each (#126).
+  `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
+  profile links are one admin switch, `app_settings['show_profile_links']`, on by
+  default — owner, 2026-09-29.) Somebody in many chats used to set the mode in each (#126).
 - **Anti-flood state**: `notification_throttle (tg_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
@@ -688,14 +688,16 @@ keyboard.
   with links off. Body: login state per platform (Xbox token; Steam/PSN visibility as
   last checked), where achievements publish, presence as **one row**
   (`presence_view.pick_presence`, the same rule `/online` uses — names the platform
-  only while online), the rarity mode, timezone. Keyboard: one row per platform in
-  the display order — `[👤 Platform, 🔔/🔇 posting switch, 🔌 Unlink]` or one wide
-  "🎮 Подключить X" (#33); the switch is per account (#20) and the publication row
-  names what is switched off —
-  then timezone, My chats (subscribe / unsubscribe per chat — nothing else is per
-  chat), the rarity mode for every chat (#126), sync, `show_profile_links`, language
-  (#48, DMs only). Nothing on it is Xbox-gated. Own profile links always show (only the owner
-  sees it). It never calls a platform API except the explicit sync button.
+  only while online), the rarity mode, timezone. Keyboard: timezone, My chats
+  (subscribe / unsubscribe per chat — nothing else is per chat), the rarity mode for
+  every chat (#126), language (#48, DMs only), then one row per platform in the
+  display order — `[🟢 XBOX ▸, 🔔 posting switch]` (#10), or one wide "🎮 Подключить X"
+  (#33). The platform button opens that platform's screen: profile, the switch,
+  unlink, and for PSN every account (up to three) plus adding one. The panel's switch
+  covers the whole platform ("Частично" when only some PSN accounts post); a dead Xbox
+  login puts "🔄 Подключить заново" in its place, and first on the XBOX screen. The
+  publication row names what is switched off. Nothing on it is Xbox-gated. It never
+  calls a platform API except the explicit sync button.
 
 ### Group chat
 
@@ -706,9 +708,9 @@ keyboard.
 - **`/stats`**: cached stats and games; header `👤` + the person (chain 1), each
   platform on its own line. **`/who`** picks a known member and opens their `/stats`;
   its buttons name the person (#40).
-- **Profile links** appear only when the person *the card is about* has
-  `show_profile_links` on — no exception for your own card, because the message is
-  the same whoever asked.
+- **Profile links** on cards follow the admin's one switch (`app_settings
+  ['show_profile_links']`, on by default, /admin → global settings; owner,
+  2026-09-29) — no longer each person's own setting.
 - **`chat_seen`** tracks anyone who wrote in the group; `/online` and `/who` use it,
   not just subscribers.
 - **A capped leaderboard** gets one button that replaces the message with the same
@@ -1040,7 +1042,7 @@ History: #112.
 - **PSN profile links point at PSNProfiles** (#30) — Sony has had no public trophy
   page since 2021. A first visit to an unindexed profile shows "not tracked" and
   indexes it. The bot never checks the link (automated requests get 403).
-- Profile links in `/stats`/`/who` follow the card owner's `show_profile_links`.
+- Profile links in `/stats`/`/who` follow the admin's global switch.
 
 ## Operations
 

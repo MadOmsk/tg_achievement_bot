@@ -23,6 +23,7 @@ from bot.db.repo import (
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
+from bot.services.admin_settings import SHOW_LINKS_DEFAULT, SHOW_LINKS_KEY
 from bot.services.mini_app import mini_app_group_url, mini_app_open_url
 from bot.services.naming import (
     person_name,
@@ -127,7 +128,8 @@ async def build_stats_text(
         return None
 
     settings_row = await repo.get_user_settings(target.tg_id)
-    show_links = bool(settings_row and settings_row.show_profile_links)
+    # The admin's switch, for everybody at once (owner, 2026-09-29).
+    show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
 
     locale = _locale_of(i18n)
     tz_offset_min = settings_row.tz_offset_min if settings_row else None

@@ -189,8 +189,6 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 fields["tz_offset_min"] = int(raw)
             except (TypeError, ValueError) as exc:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
-    if "show_profile_links" in body:
-        fields["show_profile_links"] = 1 if body["show_profile_links"] else 0
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
     if "rarity_mode" in body:

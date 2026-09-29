@@ -15,13 +15,13 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale, translator
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
-    DEFAULT_SHOW_LINKS_DEFAULT,
-    DEFAULT_SHOW_LINKS_KEY,
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
+    SHOW_LINKS_DEFAULT,
+    SHOW_LINKS_KEY,
 )
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
@@ -118,7 +118,7 @@ async def build_admin_limits(repo: Repo, *, locale: str) -> dict[str, Any]:
 
 async def build_admin_defaults(repo: Repo) -> dict[str, Any]:
     rarity = await repo.get_app_setting(DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT)
-    links = await repo.get_int_setting(DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT))
+    links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
     return {"rarity_mode": rarity or RarityMode.ALL, "show_profile_links": bool(links)}
 
 
@@ -399,7 +399,7 @@ async def handle_admin_defaults_patch(request: web.Request) -> web.Response:
         await repo.set_app_setting(DEFAULT_RARITY_MODE_KEY, mode, admin.tg_id)
     if "show_profile_links" in body:
         await repo.set_app_setting(
-            DEFAULT_SHOW_LINKS_KEY,
+            SHOW_LINKS_KEY,
             "1" if body["show_profile_links"] else "0",
             admin.tg_id,
         )

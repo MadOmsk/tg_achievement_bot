@@ -12,6 +12,7 @@ from bot.constants import (
     TokenStatus,
 )
 from bot.db.repo import PlatformLink, Repo, User
+from bot.services.admin_settings import SHOW_LINKS_DEFAULT, SHOW_LINKS_KEY
 from bot.services.naming import link_nickname
 from bot.services.profile_links import (
     psn_profile_url,
@@ -42,7 +43,8 @@ async def build_me_payload(
 
     locale = (settings_row.locale if settings_row else None) or "ru"
     tz_offset = settings_row.tz_offset_min if settings_row else None
-    show_links = bool(settings_row and settings_row.show_profile_links)
+    # The admin's switch for everybody (owner, 2026-09-29), no longer a person's.
+    show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
     show_secrets = bool(settings_row and settings_row.show_secrets)
 
     xbox_count = await repo.xbox_achievement_count(tg_id) if user and user.xuid else 0

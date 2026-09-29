@@ -46,7 +46,7 @@ async def test_steam_or_psn_only_person_still_gets_the_full_settings_body(repo: 
     assert "panel:tz" in callback_datas
     assert "panel:chatlist" in callback_datas
     assert "panel:sync" in callback_datas
-    assert "panel:linkstoggle" in callback_datas
+    assert "panel:linkstoggle" not in callback_datas
 
 
 async def test_xbox_connected_without_steam_has_no_steam_line(repo: Repo) -> None:
@@ -129,33 +129,16 @@ async def test_several_psn_accounts_each_get_a_line_and_their_own_switch(repo: R
     assert "panel:psnpub:acc-2" in datas and "psn:add" in datas
 
 
-async def test_show_profile_links_defaults_off(repo: Repo) -> None:
+async def test_a_dead_xbox_login_opens_its_screen_with_reconnect_first(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
     await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
+    await repo.save_refresh_token(TG_ID, b"encrypted")
+    await repo.set_token_status(TG_ID, "invalid")
 
-    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
+    screen = await render_account_menu(repo, TG_ID, "xbox", locale="ru")
 
-    toggle = next(
-        b for row in markup.inline_keyboard for b in row if b.callback_data == "panel:linkstoggle"
-    )
-    assert "нет" in toggle.text
-
-
-async def test_show_profile_links_admin_default_applies_to_new_users(repo: Repo) -> None:
-    """Repo.ensure_user reads app_settings['default_show_profile_links'] the
-    same way subscribe() reads default_rarity_mode — an admin-picked
-    starting point for someone who has never had a user_settings row
-    before (Follow-up 2026-09-06)."""
-    await repo.set_app_setting("default_show_profile_links", "1")
-    await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
-
-    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
-
-    toggle = next(
-        b for row in markup.inline_keyboard for b in row if b.callback_data == "panel:linkstoggle"
-    )
-    assert "да" in toggle.text
+    assert screen is not None
+    assert screen.keyboard.inline_keyboard[0][0].callback_data == "relogin"
 
 
 async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(repo: Repo) -> None:

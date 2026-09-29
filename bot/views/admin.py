@@ -28,14 +28,14 @@ from bot.i18n import translator
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
-    DEFAULT_SHOW_LINKS_DEFAULT,
-    DEFAULT_SHOW_LINKS_KEY,
     FLOOD_LIMIT_MAX,
     FLOOD_LIMIT_MIN,
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
     PAGE_SIZE,
+    SHOW_LINKS_DEFAULT,
+    SHOW_LINKS_KEY,
     STATUS_ICON,
     TOAST_PREVIEW_MAX_CHARS,
     VISIBILITY_ICON,
@@ -213,9 +213,6 @@ async def render_new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, Inl
         DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT
     )
     assert default_rarity_mode is not None  # a default was given above
-    default_show_links = await repo.get_int_setting(
-        DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT)
-    )
 
     text = _("admin-new-users-screen")
     keyboard = InlineKeyboardMarkup(
@@ -227,15 +224,6 @@ async def render_new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, Inl
                         rarity=format_rarity(default_rarity_mode),
                     ),
                     callback_data="a:defaultrarity",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=_(
-                        "admin-default-links",
-                        visible=_("admin-yes") if default_show_links else _("admin-no"),
-                    ),
-                    callback_data="a:defaultlinks",
                 )
             ],
             [InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")],
@@ -887,8 +875,15 @@ async def render_limits(repo: Repo, *, locale: str) -> Screen:
         (key, spec, await repo.get_app_setting(key, str(spec.default)))
         for key, spec in NUMERIC_SETTINGS.items()
     ]
-    keyboard = InlineListing(
-        rows=button_rows(
+    show_links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_("admin-show-links", visible=_("admin-yes") if show_links else _("admin-no")),
+                callback_data="a:showlinks",
+            )
+        ],
+        *button_rows(
             settings,
             lambda item: (
                 f"{_setting_label(item[1], locale=locale)}: "
@@ -896,8 +891,8 @@ async def render_limits(repo: Repo, *, locale: str) -> Screen:
             ),
             lambda item: f"a:limit:{item[0]}",
         ),
-        tail=_back_row(locale=locale),
-    ).markup()
+    ]
+    keyboard = InlineListing(rows=rows, tail=_back_row(locale=locale)).markup()
     return Screen(_("admin-limits-screen"), keyboard)
 
 

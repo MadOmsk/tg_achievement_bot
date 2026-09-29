@@ -249,6 +249,7 @@ def _platform_row(
     menu_cb: str,
     publish_cb: str,
     publishes: bool | None = True,
+    needs_reconnect: bool = False,
 ) -> list[InlineKeyboardButton]:
     """One platform's row in /panel (#33, #10) — always the same shape and
     position: `[🟢 XBOX ▸, 🔔 Публикуется]` when connected, or a single wide
@@ -258,14 +259,19 @@ def _platform_row(
     not ("Частично")."""
     if not connected:
         return [InlineKeyboardButton(text=i18n.get(connect_key), callback_data=connect_cb)]
+    menu = InlineKeyboardButton(text=label, callback_data=menu_cb)
+    if needs_reconnect:
+        # A dead login posts nothing whatever the switch says, so its place
+        # goes to the way back in (owner, 2026-09-29).
+        return [
+            menu,
+            InlineKeyboardButton(text=i18n.get("kb-xbox-reconnect"), callback_data=connect_cb),
+        ]
     if publishes is None:
         publish_key = "kb-publishes-partly"
     else:
         publish_key = "kb-publishes-on" if publishes else "kb-publishes-off"
-    return [
-        InlineKeyboardButton(text=label, callback_data=menu_cb),
-        InlineKeyboardButton(text=i18n.get(publish_key), callback_data=publish_cb),
-    ]
+    return [menu, InlineKeyboardButton(text=i18n.get(publish_key), callback_data=publish_cb)]
 
 
 def panel_keyboard(
@@ -277,7 +283,6 @@ def panel_keyboard(
     steam_connected: bool = False,
     psn_connected: bool = False,
     psn_accounts: int = 1,
-    show_profile_links: bool = False,
     rarity_mode: str = RarityMode.ALL,
     xbox_publishes: bool = True,
     psn_publishes: bool | None = True,
@@ -310,6 +315,7 @@ def panel_keyboard(
             menu_cb="panel:acc:xbox",
             publish_cb="panel:pub:xbox",
             publishes=xbox_publishes,
+            needs_reconnect=needs_reconnect,
         ),
         _platform_row(
             i18n,
@@ -342,12 +348,6 @@ def panel_keyboard(
     # specifically — so a Steam/PSN-only person saw nothing but the platform
     # rows at all, a leftover from before Steam/PSN existed).
     rows: list[list[InlineKeyboardButton]] = []
-    if needs_reconnect:
-        # A dead-login nudge — the account is still linked, its token just
-        # went stale — distinct from the "🎮 Подключить" button.
-        rows.append(
-            [InlineKeyboardButton(text=i18n.get("kb-xbox-reconnect"), callback_data="relogin")]
-        )
     rows += [
         [
             InlineKeyboardButton(
@@ -361,21 +361,6 @@ def panel_keyboard(
             InlineKeyboardButton(
                 text=i18n.get("kb-rarity-row", mode=format_rarity(rarity_mode, i18n)),
                 callback_data="panel:rarity",
-            )
-        ],
-        # Off by default (Follow-up 2026-09-06) — gates the clickable link
-        # /stats and /who put in this person's nickname; the panel's own
-        # "👤 Профиль" buttons below stay visible regardless (this screen is
-        # only ever shown to its owner).
-        [
-            InlineKeyboardButton(
-                text=i18n.get(
-                    "kb-profile-visible",
-                    visible=i18n.get(
-                        "kb-profile-visible-yes" if show_profile_links else "kb-profile-visible-no"
-                    ),
-                ),
-                callback_data="panel:linkstoggle",
             )
         ],
         # Personal, and only ever applies to DMs — a group follows its own

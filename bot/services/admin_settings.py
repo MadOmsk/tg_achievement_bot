@@ -103,8 +103,10 @@ DEFAULT_RARITY_MODE_DEFAULT = RarityMode.ALL
 # Follow-up 2026-09-06) — same admin-configurable-default shape as
 # DEFAULT_RARITY_MODE_KEY above, just a plain on/off instead of a cycle
 # through three modes.
-DEFAULT_SHOW_LINKS_KEY = "default_show_profile_links"
-DEFAULT_SHOW_LINKS_DEFAULT = "0"
+# Whether cards link people's profiles — one switch for everybody, the
+# admin's (owner, 2026-09-29); it used to be each person's own, off by default.
+SHOW_LINKS_KEY = "show_profile_links"
+SHOW_LINKS_DEFAULT = "1"
 
 
 _DEFAULT_STATS_GAMES_LIMIT = 15

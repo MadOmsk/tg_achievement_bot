@@ -41,7 +41,6 @@ export function Settings({
   onPatch: (body: {
     locale?: Locale;
     tz_offset_min?: number | null;
-    show_profile_links?: boolean;
     show_secrets?: boolean;
     rarity_mode?: string;
   }) => void;
@@ -150,16 +149,6 @@ export function Settings({
               label={t(locale, "showSecrets")}
               onClick={() =>
                 onPatch({ show_secrets: !me.settings.show_secrets })
-              }
-            />
-          </div>
-          <div className="ios-row">
-            <span>{t(locale, "showLinks")}</span>
-            <Toggle
-              on={me.settings.show_profile_links}
-              label={t(locale, "showLinks")}
-              onClick={() =>
-                onPatch({ show_profile_links: !me.settings.show_profile_links })
               }
             />
           </div>

@@ -57,21 +57,14 @@ class _AccountsRepo:
             "  updated_at = excluded.updated_at",
             (tg_id, username, first_name, last_name, now, now),
         )
-        # show_profile_links is explicit here, not left to the column's own
-        # DEFAULT 0 — same move as subscribe()'s default_rarity_mode: an
-        # admin-configurable starting point (app_settings
-        # ['default_show_profile_links'], handlers/admin.py) decides it for
-        # a brand-new person instead of a value baked into the schema. The
-        # column default stays 0 regardless, as a safety net for any insert
-        # that (today or in the future) doesn't go through this method.
-        default_show_links = await self.get_int_setting("default_show_profile_links", 0)
-        # The rarity mode too (#126): it moved here from the subscription, and
-        # the admin's default for new people moved with it.
+        # The rarity mode starts from the admin's default for new people
+        # (#126). Profile links are no longer a person's setting at all — the
+        # admin's one switch decides for everybody (owner, 2026-09-29), and
+        # `user_settings.show_profile_links` is left unread.
         default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
         await self._conn.execute(
-            "INSERT OR IGNORE INTO user_settings (tg_id, show_profile_links, rarity_mode)"
-            " VALUES (?, ?, ?)",
-            (tg_id, default_show_links, default_rarity_mode or "all"),
+            "INSERT OR IGNORE INTO user_settings (tg_id, rarity_mode) VALUES (?, ?)",
+            (tg_id, default_rarity_mode or "all"),
         )
         await self._conn.commit()
 

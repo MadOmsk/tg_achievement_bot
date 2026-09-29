@@ -184,7 +184,7 @@ admin-new-users-screen =
     Действует только на подписки, оформленные с этого момента — уже существующие
     не трогает.
 admin-default-rarity = Ачивки по умолчанию: { $rarity } ▸
-admin-default-links = Профиль виден другим: { $visible } ▸
+admin-show-links = Ссылки на профили в карточках: { $visible } ▸
 admin-users-empty = 👥 Пока никто не подключился.
 admin-users-header = 👥 Пользователи
 admin-users-columns = Колонки: когда был в сети · достижений сегодня / за месяц

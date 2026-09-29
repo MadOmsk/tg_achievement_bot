@@ -7,13 +7,13 @@ from bot.poller.message_cleanup import TTL_SETTING_KEY as SYSTEM_MESSAGE_TTL_KEY
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
 from bot.services.admin_settings import (
     ACCOUNT_RESET_COOLDOWN_HOURS_KEY,
-    DEFAULT_SHOW_LINKS_KEY,
     LIMIT_MAX,
     LIMIT_MIN,
     MONTHLY_DELAY_KEY,
     NUMERIC_SETTINGS,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
+    SHOW_LINKS_KEY,
     TOP_LIMIT_KEY,
     unlimited_label,
 )
@@ -48,15 +48,24 @@ def test_row_limit_bounds_reject_zero_and_absurdly_large() -> None:
     assert LIMIT_MIN <= 15 <= LIMIT_MAX
 
 
-async def test_new_user_defaults_shows_links_off_until_set(repo: Repo) -> None:
-    """Follow-up 2026-09-06 — same admin-configurable-default shape as
-    default_rarity_mode, just a plain on/off (Repo.ensure_user)."""
-    text, markup = await render_new_user_defaults(repo, locale="ru")
-    assert "нет" in text or any("нет" in b.text for row in markup.inline_keyboard for b in row)
+async def test_profile_links_are_a_global_switch_on_by_default(repo: Repo) -> None:
+    """The admin's one switch for everybody (owner, 2026-09-29), on the
+    global settings screen, not a default for new people."""
+    from bot.views.admin import render_limits
 
-    await repo.set_app_setting(DEFAULT_SHOW_LINKS_KEY, "1")
+    def links_button(screen):
+        return next(
+            b
+            for row in screen.keyboard.inline_keyboard
+            for b in row
+            if b.callback_data == "a:showlinks"
+        )
+
+    assert "да" in links_button(await render_limits(repo, locale="ru")).text
+    await repo.set_app_setting(SHOW_LINKS_KEY, "0")
+    assert "нет" in links_button(await render_limits(repo, locale="ru")).text
     _text, markup = await render_new_user_defaults(repo, locale="ru")
-    assert any("да" in b.text for row in markup.inline_keyboard for b in row)
+    assert all(b.callback_data != "a:defaultlinks" for row in markup.inline_keyboard for b in row)
 
 
 def test_only_summary_stats_and_ttl_limits_allow_zero() -> None:

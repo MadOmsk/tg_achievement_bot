@@ -52,7 +52,7 @@ def test_not_connected_keyboard_still_offers_the_rest_of_the_settings() -> None:
     data = _callback_data(markup)
     assert "panel:tz" in data
     assert "panel:chatlist" in data
-    assert "panel:linkstoggle" in data
+    assert "panel:linkstoggle" not in data  # the admin's now (2026-09-29)
     assert "panel:delete_account" in data
     assert "panel:sync" in data
 
@@ -113,37 +113,22 @@ def test_several_psn_accounts_are_counted_on_the_button() -> None:
     assert _row(two, "panel:acc:psn")[0].text == "🔵 PSN (2) ▸"
 
 
-def test_needs_reconnect_adds_a_button_without_hiding_settings() -> None:
+def test_a_dead_xbox_login_puts_reconnect_in_place_of_the_switch() -> None:
+    """A dead login posts nothing, so the XBOX row offers the way back in
+    where the posting switch was, and nothing is added on top (2026-09-29)."""
     connected = panel_keyboard(None, connected=True, needs_reconnect=False)
     reconnecting = panel_keyboard(None, connected=True, needs_reconnect=True)
 
     assert "relogin" not in _callback_data(connected)
-    data = _callback_data(reconnecting)
-    assert data[0] == "relogin"  # up front, not buried under settings
-    assert "panel:tz" in data  # settings still reachable, not replaced
+    row = _row(reconnecting, "panel:acc:xbox")
+    assert [b.callback_data for b in row] == ["panel:acc:xbox", "relogin"]
+    assert reconnecting.inline_keyboard[0][0].callback_data == "panel:tz"
 
 
 def _row(markup, callback_data: str) -> list:
     return next(
         row for row in markup.inline_keyboard if callback_data in [b.callback_data for b in row]
     )
-
-
-def _toggle_button_text(markup):
-    return next(
-        b.text
-        for row in markup.inline_keyboard
-        for b in row
-        if b.callback_data == "panel:linkstoggle"
-    )
-
-
-def test_show_profile_links_toggle_reflects_state_and_is_reachable() -> None:
-    off = panel_keyboard(180, connected=True, show_profile_links=False)
-    on = panel_keyboard(180, connected=True, show_profile_links=True)
-    assert "panel:linkstoggle" in _callback_data(off)
-    assert "нет" in _toggle_button_text(off)
-    assert "да" in _toggle_button_text(on)
 
 
 def test_xbox_profile_url_encodes_the_gamertag() -> None:
