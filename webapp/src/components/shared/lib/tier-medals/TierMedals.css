@@ -1,0 +1,56 @@
+.tier-disc {
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  vertical-align: middle;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.65),
+    inset 0 -2px 2px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.tier-disc.is-bronze {
+  background: radial-gradient(circle at 32% 28%, #f0b98a, #b06a3a 60%, #7d4523);
+}
+
+.tier-disc.is-silver {
+  background: radial-gradient(circle at 32% 28%, #ffffff, #b9c2d0 60%, #8893a3);
+}
+
+.tier-disc.is-gold {
+  background: radial-gradient(circle at 32% 28%, #fff1b0, #e7b93b 60%, #b98514);
+}
+
+.tier-disc.is-platinum {
+  background: radial-gradient(circle at 32% 28%, #ffffff, #a9dcf0 55%, #6fb7d6);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.8),
+    0 0 8px rgba(140, 220, 245, 0.6),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.tier-medals {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.tier-medal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tier-medal b {
+  font-size: 0.86rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inside a line of marks ("2.5% · 🔵") the disc is centred on the text's height,
+ * not hung from its baseline. */
+.feed-plat .tier-disc,
+.hero-mark .tier-disc {
+  align-self: center;
+}

@@ -19,6 +19,7 @@ from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
+from bot.services.hltb import ensure_title_match
 from bot.services.rows import to_achievement_row
 from bot.services.steam.achievements import fetch_unlocked
 from bot.services.steam.auth import SteamAuth, SteamNotConfiguredError
@@ -100,7 +101,16 @@ class SteamFetcher:
         await self._publisher.publish(
             tg_id, steam_id, persona_name, new_rows, game_name, window_hours=window_hours
         )
+        await self._ensure_hltb_match(appid)
         return len(new_rows)
+
+    async def _ensure_hltb_match(self, title_id: str) -> None:
+        """Which HowLongToBeat entry this game is (#131) — after publishing,
+        never before, same reasoning as Fetcher._ensure_hltb_match."""
+        try:
+            await ensure_title_match(self._repo, title_id)
+        except Exception:
+            log.exception("HLTB match failed for title %s", title_id)
 
     async def refresh_user(self, tg_id: int, steam_id: str, persona_name: str, locale: str) -> str:
         """An out-of-turn look at one person, for the admin card (SPEC 6.4)

@@ -24,6 +24,8 @@ from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import achievement_icons
 from bot.services.connect import ConnectService
+from bot.services.hltb import HltbError, ensure_title_match
+from bot.services.hltb import resolve as hltb_resolve
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -45,13 +47,14 @@ from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import load_avatar_bytes
 from bot.web.mini_chat import (
+    _https_url,
     build_feed_payload,
     build_online_payload,
     build_person_payload,
     build_summary_payload,
     chat_of_user,
 )
-from bot.web.mini_hltb import setup_hltb_routes
+from bot.web.mini_hltb import hltb_payload, setup_hltb_routes
 from bot.web.mini_me import build_me_payload
 
 log = logging.getLogger(__name__)
@@ -135,6 +138,7 @@ def setup_mini_api(
     )
     app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
+    app.router.add_get("/api/mini/games/{platform}/{title_id}/hltb", handle_game_hltb)
     setup_admin_routes(app)
     setup_hltb_routes(app)
 
@@ -700,13 +704,35 @@ async def handle_game_details(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     catalog_service: TitleCatalogService = request.app["mini_title_catalog"]
 
+    # Whose progress: the caller's own unless another club member is named.
+    viewed_id = user.tg_id
+    raw_viewed = request.query.get("tg_id")
+    if raw_viewed:
+        try:
+            viewed_id = int(raw_viewed)
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text="bad tg_id") from exc
+    if viewed_id != user.tg_id:
+        if await repo.get_user(viewed_id) is None:
+            raise web.HTTPNotFound(text="person not found")
+        mine = {c.chat_id for c in await repo.user_chats(user.tg_id)}
+        theirs = {c.chat_id for c in await repo.user_chats(viewed_id)}
+        if not mine & theirs:
+            raise web.HTTPForbidden(text="not a member")
+
     checklist = await catalog_service.get_title_checklist_for_user(
-        platform, title_id, tg_id=user.tg_id, force=force
+        platform, title_id, tg_id=viewed_id, force=force
     )
     title_info = await repo.title_record(title_id) or {}
 
-    total = len(checklist)
+    listed = len(checklist)
     unlocked = sum(1 for item in checklist if item.is_unlocked)
+    # The platform's own count (from the title list) can be larger than what the
+    # catalog holds: a game nobody's account could refresh yet has only the
+    # achievements somebody unlocked, and "9 of 9" would be a lie about it.
+    known_total = int(title_info.get("achievements_total") or 0)
+    total = max(listed, known_total)
+    partial = listed < total
     percent = round((unlocked / total) * 100, 1) if total > 0 else 0.0
 
     groups = await repo.get_title_groups(title_id) if platform == Platform.PSN else []
@@ -719,9 +745,12 @@ async def handle_game_details(request: web.Request) -> web.Response:
             "name": title_info.get("name"),
             "name_ru": title_info.get("name_ru"),
             "name_en": title_info.get("name_en"),
-            "icon_url": title_info.get("icon_url"),
+            # Same https rewrite the feed applies: a plain-http cover is mixed
+            # content, and the page used to swap its good picture for it.
+            "icon_url": _https_url(title_info.get("icon_url")),
             "cover_path": title_info.get("cover_path"),
-            "achievements_total": total or title_info.get("achievements_total") or 0,
+            "achievements_total": total,
+            "catalog_partial": partial,
             "achievements_unlocked": unlocked,
             "completion_percent": percent,
             "achievements_checked_at": title_info.get("achievements_checked_at"),
@@ -751,6 +780,36 @@ async def handle_game_details(request: web.Request) -> web.Response:
             ],
         }
     )
+
+
+async def handle_game_hltb(request: web.Request) -> web.Response:
+    """A game's HLTB hours/description, split off from `handle_game_details`
+    (#131) so the achievements a person actually opened the page for are
+    never held up behind it — an unmatched game's first visit costs a few
+    HLTB requests (`ensure_title_match`), which used to delay the whole
+    page. The Mini App calls this once the page itself has already
+    rendered, and fills the "Об игре" tab in when it answers."""
+    user = await _require_user(request)
+    title_id = request.match_info.get("title_id", "")
+    repo: Repo = request.app["mini_repo"]
+
+    hltb_block: dict[str, Any] | None = None
+    try:
+        await ensure_title_match(repo, title_id)
+        match = await repo.title_hltb_match(title_id)
+        if match:
+            hltb_id, _score = match
+            anthropic = request.app.get("mini_anthropic_auth")
+            result = await hltb_resolve(repo, hltb_id, anthropic_auth=anthropic)
+            hltb_block = hltb_payload(result, locale=await _user_locale(repo, user.tg_id))
+    except HltbError as exc:
+        log.info("could not resolve HLTB for title %s: %s", title_id, exc)
+    except Exception:
+        # Best-effort: a bad moment here must never surface as an error the
+        # Mini App has to show — the tab just stays without an answer.
+        log.exception("HLTB match/resolve failed for title %s", title_id)
+
+    return web.json_response({"ok": True, "hltb": hltb_block})
 
 
 def _extract_init_data(request: web.Request) -> str:

@@ -1,39 +1,35 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   connectPsn,
   connectSteam,
   connectXbox,
+  deleteAccount,
   disconnectPsn,
   disconnectSteam,
   disconnectXbox,
   fetchMe,
-  isPreview,
   patchChat,
   patchSettings,
   setAccountPublishes,
   syncXbox,
   type MeResponse,
 } from "./api";
-import { Club } from "./Club";
-import { Admin } from "./Admin";
+import { Club } from "./screens/club";
+import { Admin } from "./screens/admin";
+import { GameOpenProvider } from "./components/game";
 import { t, type Locale } from "./i18n";
-import { ConnectForm, Settings, type PlatNotes } from "./Me";
-import { previewMe } from "./preview";
-import { Icon, PageSkel, usePullToRefresh } from "./ui";
-
-const SCREENS = {
-  home: { name: "home" },
-  feed: { name: "feed" },
-  summary: { name: "summary" },
-  settings: { name: "settings" },
-  admin: { name: "admin" },
-  "connect-steam": { name: "connect-steam" },
-  "connect-psn": { name: "connect-psn" },
-} as const;
-
-type Screen = (typeof SCREENS)[keyof typeof SCREENS];
-type DockTab = "feed" | "summary" | "settings";
-type LaunchTab = "home" | "feed" | "summary";
+import { ConnectForm, Settings, type PlatNotes } from "./screens/me";
+import { AppSkel, Icon, usePullToRefresh } from "./components/shared/lib";
+import {
+  ADMIN_SCREENS,
+  asLaunchTab,
+  SCREEN_NAMES,
+  SCREENS,
+  type AdminScreen,
+  type DockTab,
+  type LaunchTab,
+  type Screen,
+} from "./components/shared/constants";
 
 type LoadState =
   | { status: "loading" }
@@ -68,7 +64,7 @@ function launchContext(): {
   return {
     chatId: chatId ? Number(chatId) : null,
     personId: personId ? Number(personId) : null,
-    tab: tab === "summary" ? "summary" : tab === "feed" ? "feed" : "home",
+    tab: asLaunchTab(tab),
   };
 }
 
@@ -82,15 +78,12 @@ export function App() {
   const [flash, setFlash] = useState<string | null>(null);
   const [platNotes, setPlatNotes] = useState<PlatNotes>({});
   const [personOpen, setPersonOpen] = useState(false);
+  // Which admin screen Settings' admin list opened.
+  const [adminScreen, setAdminScreen] = useState<AdminScreen>({ name: ADMIN_SCREENS.USERS });
   // Bumped by pull-to-refresh so Club refetches without remounting the tab.
   const [refreshKey, setRefreshKey] = useState(0);
 
   const reload = useCallback(async () => {
-    if (isPreview()) {
-      setState({ status: "ok", me: previewMe });
-      setChatId((current) => current ?? previewMe.chats[0]?.chat_id ?? null);
-      return;
-    }
     const data = initData();
     if (!data) {
       setState({ status: "need-telegram" });
@@ -122,7 +115,7 @@ export function App() {
     };
   }, [reload]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     window.scrollTo(0, 0);
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
@@ -134,7 +127,7 @@ export function App() {
   });
 
   if (state.status === "loading") {
-    return <PageSkel />;
+    return <AppSkel />;
   }
   if (state.status === "need-telegram") {
     return <p className="error">{t("ru", "needTelegram")}</p>;
@@ -145,7 +138,7 @@ export function App() {
 
   const { me } = state;
   const locale = localeOf(me);
-  const data = isPreview() ? "preview" : initData();
+  const data = initData();
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -178,15 +171,27 @@ export function App() {
     }
   };
 
-  const showChrome = !personOpen && screen.name === "home";
-  const clubPane =
-    screen.name === "feed"
-      ? "feed"
-      : screen.name === "summary"
-        ? "summary"
-        : "home";
+  // Every screen.name comparison the render below needs, computed once —
+  // never a bare string literal re-typed at each call site.
+  const isHome = screen.name === SCREEN_NAMES.HOME;
+  const isFeed = screen.name === SCREEN_NAMES.FEED;
+  const isSummary = screen.name === SCREEN_NAMES.SUMMARY;
+  const isSettings = screen.name === SCREEN_NAMES.SETTINGS;
+  const isAdmin = screen.name === SCREEN_NAMES.ADMIN;
+  const isConnectSteam = screen.name === SCREEN_NAMES.CONNECT_STEAM;
+  const isConnectPsn = screen.name === SCREEN_NAMES.CONNECT_PSN;
+  const isSettingsOrAdmin = isSettings || isAdmin;
+  const isClubPane = isHome || isFeed || isSummary;
+  const isConnectScreen = isConnectSteam || isConnectPsn;
+
+  const showChrome = !personOpen && isHome;
+  const clubPane = isFeed
+    ? SCREEN_NAMES.FEED
+    : isSummary
+      ? SCREEN_NAMES.SUMMARY
+      : SCREEN_NAMES.HOME;
   const goHome = () => {
-    if (screen.name === "home" && !personOpen) {
+    if (isHome && !personOpen) {
       window.scrollTo(0, 0);
       return;
     }
@@ -196,9 +201,7 @@ export function App() {
 
   const goTab = (tab: DockTab) => {
     const already =
-      tab === "settings"
-        ? screen.name === "settings" || screen.name === "admin"
-        : screen.name === tab && !personOpen;
+      tab === SCREEN_NAMES.SETTINGS ? isSettingsOrAdmin : screen.name === tab && !personOpen;
     if (already) {
       window.scrollTo(0, 0);
       return;
@@ -208,20 +211,26 @@ export function App() {
   };
 
   return (
+    <GameOpenProvider
+      data={data}
+      locale={locale}
+      showSecrets={me.settings.show_secrets}
+      meId={me.tg_id}
+    >
     <div
       className={[
         busy ? "busy" : "",
-        showChrome && screen.name === "home" ? "is-home" : "",
+        showChrome && isHome ? "is-home" : "",
         personOpen ? "is-person" : "",
       ]
         .filter(Boolean)
         .join(" ") || undefined}
     >
       {pullIndicator}
-      {busy ? <div className="busy-bar" /> : null}
-      {flash ? <p className="flash">{flash}</p> : null}
+      {busy && <div className="busy-bar" />}
+      {flash && <p className="flash">{flash}</p>}
 
-      {screen.name === "home" || screen.name === "feed" || screen.name === "summary" ? (
+      {isClubPane && (
         <Club
           me={me}
           locale={locale}
@@ -244,13 +253,22 @@ export function App() {
           onPersonVisible={setPersonOpen}
           onSettings={() => setScreen(SCREENS.settings)}
         />
-      ) : null}
+      )}
 
-      {screen.name === "settings" ? (
+      {isSettings && (
         <Settings
           me={me}
           locale={locale}
-          onAdmin={me.is_admin ? () => setScreen(SCREENS.admin) : undefined}
+          data={data}
+          onFlash={setFlash}
+          onAdmin={
+            me.is_admin
+              ? (next) => {
+                  setAdminScreen(next);
+                  setScreen(SCREENS.admin);
+                }
+              : undefined
+          }
           onPatch={(body) =>
             void run(async () => {
               await patchSettings(data, body);
@@ -299,19 +317,23 @@ export function App() {
               await setAccountPublishes(data, platform, publishes, accountId);
             })
           }
+          onDeleteAccount={async () => {
+            await deleteAccount(data);
+          }}
         />
-      ) : null}
+      )}
 
-      {screen.name === "admin" ? (
+      {isAdmin && (
         <Admin
           locale={locale}
           data={data}
+          initial={adminScreen}
           onFlash={setFlash}
           onBack={() => setScreen(SCREENS.settings)}
         />
-      ) : null}
+      )}
 
-      {screen.name === "connect-steam" ? (
+      {isConnectSteam && (
         <ConnectForm
           locale={locale}
           platform="steam"
@@ -327,9 +349,9 @@ export function App() {
             setScreen(SCREENS.settings);
           }}
         />
-      ) : null}
+      )}
 
-      {screen.name === "connect-psn" ? (
+      {isConnectPsn && (
         <ConnectForm
           locale={locale}
           platform="psn"
@@ -345,59 +367,54 @@ export function App() {
             setScreen(SCREENS.settings);
           }}
         />
-      ) : null}
+      )}
 
-      {screen.name === "connect-steam" || screen.name === "connect-psn" ? null : (
+      {!isConnectScreen && (
         <nav className="dock">
           <span
             className="dock-pill"
             style={{
               transform: `translateX(${
-                (screen.name === "settings" || screen.name === "admin"
-                  ? 3
-                  : screen.name === "summary"
-                    ? 2
-                    : screen.name === "feed"
-                      ? 1
-                      : 0) * 100
+                (isSettingsOrAdmin ? 3 : isSummary ? 2 : isFeed ? 1 : 0) * 100
               }%)`,
             }}
             aria-hidden
           />
           <button
             type="button"
-            className={screen.name === "home" && !personOpen ? "is-on" : undefined}
+            className={isHome && !personOpen ? "is-on" : undefined}
             onClick={goHome}
             aria-label={t(locale, "home")}
           >
-            <Icon name="home" filled={screen.name === "home" && !personOpen} />
+            <Icon name="home" filled={isHome && !personOpen} />
           </button>
           <button
             type="button"
-            className={screen.name === "feed" && !personOpen ? "is-on" : undefined}
-            onClick={() => goTab("feed")}
+            className={isFeed && !personOpen ? "is-on" : undefined}
+            onClick={() => goTab(SCREEN_NAMES.FEED)}
             aria-label={t(locale, "feed")}
           >
-            <Icon name="feed" filled={screen.name === "feed" && !personOpen} />
+            <Icon name="feed" filled={isFeed && !personOpen} />
           </button>
           <button
             type="button"
-            className={screen.name === "summary" && !personOpen ? "is-on" : undefined}
-            onClick={() => goTab("summary")}
+            className={isSummary && !personOpen ? "is-on" : undefined}
+            onClick={() => goTab(SCREEN_NAMES.SUMMARY)}
             aria-label={t(locale, "stats")}
           >
-            <Icon name="stats" filled={screen.name === "summary" && !personOpen} />
+            <Icon name="stats" filled={isSummary && !personOpen} />
           </button>
           <button
             type="button"
-            className={screen.name === "settings" || screen.name === "admin" ? "is-on" : undefined}
-            onClick={() => goTab("settings")}
+            className={isSettingsOrAdmin ? "is-on" : undefined}
+            onClick={() => goTab(SCREEN_NAMES.SETTINGS)}
             aria-label={t(locale, "settings")}
           >
-            <Icon name="gear" filled={screen.name === "settings" || screen.name === "admin"} />
+            <Icon name="gear" filled={isSettingsOrAdmin} />
           </button>
         </nav>
       )}
     </div>
+    </GameOpenProvider>
   );
 }

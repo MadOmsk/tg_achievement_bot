@@ -21,6 +21,7 @@ from bot.services.admin_settings import (
 from bot.services.chat_gone import chat_is_gone
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
+from bot.version import is_test
 from bot.views.summary import (
     DAY,
     MONTH,
@@ -107,7 +108,12 @@ class DailySummary:
                     chat.chat_id, text, parse_mode=ParseMode.HTML, reply_markup=markup
                 )
         except Exception as exc:
-            if chat_is_gone(exc):
+            if chat_is_gone(exc) and is_test():
+                # Not a member of a chat copied from production: leave it
+                # active (see the publisher) and count today's report as done.
+                log.info("chat %s is unreachable for the test bot, skipping it", chat.chat_id)
+                await self._repo.mark_daily_report_sent(chat.chat_id, marker)
+            elif chat_is_gone(exc):
                 log.info("chat %s is gone (%s), deactivating", chat.chat_id, exc)
                 await self._repo.deactivate_chat(chat.chat_id)
             else:

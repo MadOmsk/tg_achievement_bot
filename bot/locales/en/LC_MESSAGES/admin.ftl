@@ -173,6 +173,9 @@ admin-system-wipe-prompt =
 
     Achievements, /stats, /summary and the daily summary are untouched — only
     the in-between messages (hints, confirmations, /help and the like).
+admin-send-promo-to-chat = 📢 Send promo to chat
+admin-promo-sent = Promo message sent to chat
+admin-test-notify-sent = Test notifications sent to DM
 
 # New users and user cards
 admin-new-users-screen =

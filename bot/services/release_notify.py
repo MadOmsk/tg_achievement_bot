@@ -124,7 +124,13 @@ async def announce_release_if_needed(
                 )
             sent_count += 1
         except Exception as exc:
-            if chat_is_gone(exc):
+            if chat_is_gone(exc) and is_test:
+                # A test bot usually runs on a copy of production's database
+                # and is simply not a member of those chats: "chat not found"
+                # says nothing about them, and deactivating would empty the
+                # copy's chat list (and the Mini App) on every version bump.
+                log.info("chat %s unreachable for the test bot (%s), left active", chat_id, exc)
+            elif chat_is_gone(exc):
                 log.info("chat %s is gone (%s), deactivating", chat_id, exc)
                 await repo.deactivate_chat(chat_id)
             else:

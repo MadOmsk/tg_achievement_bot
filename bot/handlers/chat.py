@@ -63,6 +63,7 @@ from bot.views.keyboards import (
     with_close_button,
 )
 from bot.views.online import render_online_table
+from bot.views.promo import promo_keyboard, promo_text
 from bot.views.summary import DAY, MONTH, build_summary, full_leaderboard
 
 log = logging.getLogger(__name__)
@@ -835,6 +836,26 @@ async def help_command(
         parse_mode=ParseMode.HTML,
         reply_markup=with_close_button(None, i18n=i18n),
     )
+
+
+@router.message(Command("promo", "pin_promo"))
+async def promo_command(message: Message, bot: Bot, i18n: I18nContext, settings: Settings) -> None:
+    me = await bot.me()
+    bot_username = me.username or ""
+    is_group = message.chat.type in GROUP_TYPES
+    markup = promo_keyboard(
+        bot_username,
+        message.chat.id,
+        mini_app_url=settings.mini_app_url or "",
+        is_group=is_group,
+        locale=i18n.locale,
+    )
+    with stats_category():
+        await message.answer(
+            promo_text(locale=i18n.locale),
+            parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
 
 
 @router.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=IS_NOT_MEMBER >> IS_MEMBER))

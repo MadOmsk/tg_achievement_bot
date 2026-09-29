@@ -221,9 +221,11 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     PRIMARY KEY (platform, xuid, title_id, achievement_id),
     FOREIGN KEY (account_platform, xuid) REFERENCES accounts(platform, external_id)
 );
--- The indexes are NOT created here, on purpose — see migration 037 and the
--- note below: this file runs before any migration, so naming a column that
--- only a migration adds crashes startup for every existing database.
+
+CREATE INDEX IF NOT EXISTS idx_seen_achievements_title_id ON seen_achievements(title_id);
+-- The indexes on migrated columns (unlocked_at, account_platform) are NOT created here,
+-- on purpose — see migration 037 and the note below: this file runs before any migration,
+-- so naming a column that only a migration adds crashes startup for every existing database.
 -- idx_seen_tg_unlocked is gone with `tg_id` itself (#52): who a row belongs
 -- to is account_links' answer now, and the two indexes above are what the
 -- reads actually use. Its old comment here explained why it could not be
@@ -372,6 +374,17 @@ CREATE TABLE IF NOT EXISTS titles (
     cover_hash TEXT,
     cover_checked_at TEXT,
     achievements_checked_at TEXT,
+    -- Which HowLongToBeat entry this game is (#131, migration 063): matched
+    -- automatically, never chosen by a person — bot/services/hltb_match.py
+    -- scores every candidate a search turns up and only keeps one it is
+    -- sure of. NULL until matched or given up on (three failed attempts,
+    -- same shape as platforms_attempts above); `hltb_match_score` is the
+    -- winning score, for telling a confident match from a Steam-appid one
+    -- (always 1.0) apart when the operator needs to check by hand.
+    hltb_id INTEGER,
+    hltb_match_score REAL,
+    hltb_attempts INTEGER NOT NULL DEFAULT 0,
+    hltb_checked_at TEXT,
     updated_at TEXT NOT NULL
 );
 

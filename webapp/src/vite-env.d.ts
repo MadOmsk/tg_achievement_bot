@@ -4,6 +4,7 @@ type TelegramWebApp = {
   initData: string;
   ready: () => void;
   expand: () => void;
+  close?: () => void;
   disableVerticalSwipes?: () => void;
   openLink: (url: string) => void;
   setHeaderColor?: (color: string) => void;

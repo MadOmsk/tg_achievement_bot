@@ -81,3 +81,8 @@ chat-delete-last-done =
     🗑 Deleted this message:
     “{ $preview }”
 chat-delete-last-done-generic = 🗑 Message deleted.
+chat-open-mini-app = Open Mini App
+chat-promo-text =
+    🎮 <b>Gaming Club</b>
+    Tracking Xbox, PlayStation, and Steam achievements and trophies. Chat stats, digests, and leaderboards — in the Mini App.
+

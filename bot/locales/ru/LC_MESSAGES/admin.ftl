@@ -173,6 +173,9 @@ admin-system-wipe-prompt =
 
     Достижений, /stats, /summary и итога дня это не касается — только
     промежуточные сообщения (подсказки, подтверждения, /help и т.п.).
+admin-send-promo-to-chat = 📢 Отправить промо в чат
+admin-promo-sent = Промо-сообщение отправлено в чат
+admin-test-notify-sent = Тестовые уведомления отправлены в личку
 
 # New users and user cards
 admin-new-users-screen =

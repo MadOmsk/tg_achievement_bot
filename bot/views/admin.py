@@ -819,6 +819,11 @@ async def render_chat_card(
             text=_("admin-chat-messages-menu-button"), callback_data=f"a:mdel:{chat_id}"
         )
     )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-send-promo-to-chat"), callback_data=f"a:cpromo:{chat_id}"
+        )
+    )
     builder.row(InlineKeyboardButton(text=_("admin-back-to-chats"), callback_data="a:chats"))
     return text, builder.as_markup()
 

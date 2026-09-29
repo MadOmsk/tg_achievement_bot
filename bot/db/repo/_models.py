@@ -568,30 +568,6 @@ class GameAchievements:
 
 
 @dataclass(slots=True)
-class DroppedGame:
-    """A subscriber's game with few unlocks in the stats month — Mini App
-    "Ну и кто это будет проходить?" strip. Raw identity fields feed `person_name`;
-    the Mini layer builds the display string so naming stays in one chain
-    (#51). `unlocked` is the count *inside the month window*, not lifetime.
-    """
-
-    tg_id: int
-    username: str | None
-    first_name: str | None
-    last_name: str | None
-    gamertag: str | None
-    gamertag_modern: str | None
-    steam_name: str | None
-    psn_name: str | None
-    title_id: str
-    platform: str
-    name: str | None
-    unlocked: int
-    last_earned: str
-    icon_url: str | None = None
-
-
-@dataclass(slots=True)
 class TitleHistoryRow:
     title_id: str
     name: str
@@ -619,6 +595,22 @@ class TitleCoverRow:
     #: only through a person's own token. None when nobody holds this game
     #: any more.
     owner_tg_id: int | None = None
+
+
+@dataclass(slots=True)
+class TitleHltbRow:
+    """One game as the HLTB matcher sees it (#131, migration 063): every name
+    it goes by, what it released on, and the year anybody here first earned
+    something in it — the matcher's own stand-in for a release date, since
+    none of our platforms give the game's."""
+
+    title_id: str
+    platform: str  # xbox_modern / xbox_360 / steam / psn
+    name: str
+    name_en: str | None
+    name_ru: str | None
+    platforms: list[str] = field(default_factory=list)
+    first_played_year: int | None = None
 
 
 @dataclass(slots=True)

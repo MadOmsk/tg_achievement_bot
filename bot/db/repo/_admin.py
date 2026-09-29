@@ -16,6 +16,7 @@ from bot.db.repo._models import (
     ChatTarget,
     HltbCacheRow,
     TitleCoverRow,
+    TitleHltbRow,
 )
 from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS, active_account
 from bot.util import utcnow_iso
@@ -367,6 +368,90 @@ class _AdminRepo:
                 (utcnow_iso(), self.PLATFORMS_LOOKUP_ATTEMPTS, title_id),
             )
         await self._conn.commit()
+
+    # Which HowLongToBeat entry each game is (#131) — asked lazily, never by
+    # a walker: once when a game's first new achievement is published (#131,
+    # poller/fetcher.py and its Steam/PSN counterparts), and again if the
+    # Mini App opens a game page still without one (mini_api's
+    # `ensure_hltb_match`) — an old game nobody's earned anything in lately
+    # gets its match the first time anybody actually looks at it. Either way
+    # the result is one row on `titles`, so it costs nothing the second time,
+    # whoever asks. No owner token needed either: HLTB's search is public.
+    HLTB_MATCH_ATTEMPTS = 3
+
+    _HLTB_MATCH_DUE = (
+        "t.hltb_id IS NULL"
+        f" AND t.hltb_attempts < {HLTB_MATCH_ATTEMPTS}"
+        " AND (t.hltb_checked_at IS NULL"
+        "      OR t.hltb_checked_at < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-1 hour'))"
+    )
+
+    async def title_hltb_match_row(self, title_id: str) -> TitleHltbRow | None:
+        """This game as the matcher needs it — its names, its platforms, and
+        the year anybody here first earned something in it — or `None` when
+        it is already matched, or was asked (and failed) too recently to ask
+        again. The caller (an achievement publish, or a game page with no
+        match yet) skips the attempt entirely on `None`."""
+        cursor = await self._conn.execute(
+            "SELECT t.title_id, t.platform, t.name, t.name_en, t.name_ru, t.platforms,"
+            "  (SELECT MIN(CAST(substr(COALESCE(s.unlocked_at, s.created_at), 1, 4) AS INTEGER))"
+            "   FROM seen_achievements s WHERE s.title_id = t.title_id) AS first_played_year "
+            f"FROM titles t WHERE t.title_id = ? AND {self._HLTB_MATCH_DUE}",
+            (title_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return TitleHltbRow(
+            title_id=row["title_id"],
+            platform=row["platform"] or "",
+            name=row["name"],
+            name_en=row["name_en"],
+            name_ru=row["name_ru"],
+            platforms=json.loads(row["platforms"] or "[]"),
+            first_played_year=row["first_played_year"],
+        )
+
+    async def record_hltb_match(
+        self, title_id: str, hltb_id: int | None, score: float | None
+    ) -> None:
+        """What one match attempt found. `hltb_id=None` counts as a failed
+        attempt, same as `record_platforms_lookup` — after the third, the
+        game leaves the queue for good rather than being asked forever."""
+        if hltb_id is not None:
+            await self._conn.execute(
+                "UPDATE titles SET hltb_id = ?, hltb_match_score = ?, hltb_checked_at = ?,"
+                " hltb_attempts = hltb_attempts + 1 WHERE title_id = ?",
+                (hltb_id, score, utcnow_iso(), title_id),
+            )
+        else:
+            await self._conn.execute(
+                "UPDATE titles SET hltb_attempts = hltb_attempts + 1, hltb_checked_at = ?"
+                " WHERE title_id = ?",
+                (utcnow_iso(), title_id),
+            )
+        await self._conn.commit()
+
+    async def give_up_hltb_match(self, title_id: str) -> None:
+        """A name not worth even searching (a platform's own placeholder, or
+        nothing Latin in it) — skips straight past the three retries instead
+        of spending three ticks finding the same thing out each time."""
+        await self._conn.execute(
+            "UPDATE titles SET hltb_attempts = ?, hltb_checked_at = ? WHERE title_id = ?",
+            (self.HLTB_MATCH_ATTEMPTS, utcnow_iso(), title_id),
+        )
+        await self._conn.commit()
+
+    async def title_hltb_match(self, title_id: str) -> tuple[int, float | None] | None:
+        """The game's own matched entry, for the Mini App's game page —
+        `None` when it has none (not matched yet, or none found)."""
+        cursor = await self._conn.execute(
+            "SELECT hltb_id, hltb_match_score FROM titles "
+            "WHERE title_id = ? AND hltb_id IS NOT NULL",
+            (title_id,),
+        )
+        row = await cursor.fetchone()
+        return (row["hltb_id"], row["hltb_match_score"]) if row else None
 
     async def set_title_total(self, title_id: str, total: int) -> None:
         """How many achievements a game has, without touching anything else
