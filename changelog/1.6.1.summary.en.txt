@@ -1,0 +1,2 @@
+• /promo message is protected from system message auto-cleanup
+• Club promo remains available to all group chat members
