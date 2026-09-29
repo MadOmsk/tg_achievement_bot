@@ -337,10 +337,7 @@ def hub_keyboard(
             )
 
     # In groups: add action rows and management
-    settings_btn = InlineKeyboardButton(
-        text=_hub_text(i18n, "chat-hub-settings-button"),
-        url=f"https://t.me/{bot_username}?start=panel",
-    )
+    settings_btn = settings_button(bot_username, i18n)
     if is_group:
         # Action row 1: who, online, recent
         rows.append(
@@ -415,6 +412,24 @@ def hub_keyboard(
 def help_text(i18n: I18nContext) -> str:
     """The list of chat commands for /help (#19)."""
     return i18n.get("chat-help-text")
+
+
+def private_help_text(i18n: I18nContext) -> str:
+    """/help in a DM (#140): what the bot is and the commands a DM has."""
+    return (
+        i18n.get("chat-help-private-text")
+        + "\n\n"
+        + i18n.get("chat-help-version", version=version())
+    )
+
+
+def settings_button(bot_username: str, i18n: I18nContext) -> InlineKeyboardButton:
+    """Into the person's own panel in a DM — a button, not a bare `/panel`
+    that a tap in a group would send to the group (#133)."""
+    return InlineKeyboardButton(
+        text=_hub_text(i18n, "chat-hub-settings-button"),
+        url=f"https://t.me/{bot_username}?start=panel",
+    )
 
 
 async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:

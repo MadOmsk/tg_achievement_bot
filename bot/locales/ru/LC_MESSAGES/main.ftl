@@ -21,12 +21,6 @@ main-default-player-name = Игрок
 # Bot command descriptions
 main-cmd-panel = Моя панель и настройки
 main-cmd-stats-private = Моя статистика
-main-cmd-connect-xbox = Подключить XBOX
-main-cmd-disconnect-xbox = Отключить XBOX
-main-cmd-connect-steam = Подключить Steam
-main-cmd-disconnect-steam = Отключить Steam
-main-cmd-connect-psn = Подключить PSN
-main-cmd-disconnect-psn = Отключить PSN
 main-cmd-hltb = Сколько идти игру (HowLongToBeat)
 main-cmd-help = Что я умею
 

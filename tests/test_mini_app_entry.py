@@ -78,15 +78,17 @@ async def test_panel_command_in_a_group_sends_a_link_not_a_web_app(i18n, repo) -
     assert app_button.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
 
 
-async def test_help_command_in_a_group_sends_commands_without_markup(i18n, repo) -> None:
+async def test_help_command_in_a_group_links_settings_instead_of_a_bare_panel(i18n, repo) -> None:
+    """#133: a tap on a bare `/panel` in a group sends it to the group; the
+    settings are a button into the DM."""
     message = _FakeMessage(ChatType.SUPERGROUP, CHAT_ID)
 
     await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
 
     buttons = _buttons(message.markups[0])
-    assert len(buttons) == 1
-    assert buttons[0].callback_data == "msg:close"
-    assert "/panel" in message.answers[0]
+    assert [b.url for b in buttons[:1]] == [f"https://t.me/{BOT}?start=panel"]
+    assert buttons[-1].callback_data == "msg:close"
+    assert "в личке, /panel" not in message.answers[0]
 
 
 async def test_help_command_in_a_dm_opens_the_app_itself(i18n, repo) -> None:
@@ -95,10 +97,12 @@ async def test_help_command_in_a_dm_opens_the_app_itself(i18n, repo) -> None:
     await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=APP_URL))
 
     buttons = _buttons(message.markups[0])
+    assert len(buttons) == 1  # the app, nothing else (#140)
     app_button = buttons[0]
     assert app_button.url is None
     assert app_button.web_app is not None
     assert app_button.web_app.url.startswith(APP_URL)
+    assert "/connect_" not in message.answers[0]
 
 
 async def test_help_command_in_a_dm_without_app_url(i18n, repo) -> None:
@@ -106,10 +110,7 @@ async def test_help_command_in_a_dm_without_app_url(i18n, repo) -> None:
 
     await help_command(message, repo, _FakeBot(), i18n, SimpleNamespace(mini_app_url=""))
 
-    buttons = _buttons(message.markups[0])
-    assert not any(button.web_app for button in buttons)
-    assert len(buttons) == 5
-    assert buttons[-1].callback_data == "msg:close"
+    assert message.markups[0] is None
 
 
 async def test_start_in_a_group_gets_no_web_app_button(i18n, repo) -> None:

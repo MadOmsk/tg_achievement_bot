@@ -21,12 +21,6 @@ main-default-player-name = Player
 # Bot command descriptions
 main-cmd-panel = My panel and settings
 main-cmd-stats-private = My stats
-main-cmd-connect-xbox = Connect XBOX
-main-cmd-disconnect-xbox = Disconnect XBOX
-main-cmd-connect-steam = Connect Steam
-main-cmd-disconnect-steam = Disconnect Steam
-main-cmd-connect-psn = Connect PSN
-main-cmd-disconnect-psn = Disconnect PSN
 main-cmd-hltb = How long is this game (HowLongToBeat)
 main-cmd-help = What I can do
 

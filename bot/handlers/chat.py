@@ -48,8 +48,10 @@ from bot.views.chat import (
     help_text,
     hub_keyboard,
     hub_text,
+    private_help_text,
     recent_list,
     render_who_picker,
+    settings_button,
 )
 from bot.views.date_picker import (
     stats_month_calendar_keyboard,
@@ -175,6 +177,7 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
             await message.answer(i18n.get("chat-subscribe-already"))
             return
         await repo.subscribe(message.chat.id, message.from_user.id)
+    me = await message.bot.me()  # type: ignore[union-attr]
     await message.answer(
         i18n.get(
             "chat-subscribe-done",
@@ -182,7 +185,10 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
             # `user.gamertag`, so anyone without Xbox got the generic
             # "твои достижения" instead of their own name.
             gamertag=person_name_of(user, await repo.platform_links_of(message.from_user.id)),
-        )
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[settings_button(me.username or "", i18n)]]
+        ),
     )
 
 
@@ -825,20 +831,31 @@ async def help_command(
     me = await bot.me()
     bot_username = me.username or ""
     if message.chat.type not in GROUP_TYPES:
+        # One button into the app, nothing else (#140): accounts and
+        # settings are /panel's.
         await message.answer(
-            help_text(i18n),
+            private_help_text(i18n),
             parse_mode=ParseMode.HTML,
-            reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=False),
+            reply_markup=promo_keyboard(
+                bot_username,
+                message.chat.id,
+                mini_app_url=settings.mini_app_url or "",
+                is_group=False,
+                locale=i18n.locale,
+            ),
         )
         return
     await message.answer(
         help_text(i18n),
         parse_mode=ParseMode.HTML,
-        reply_markup=with_close_button(None, i18n=i18n),
+        reply_markup=with_close_button(
+            InlineKeyboardMarkup(inline_keyboard=[[settings_button(bot_username, i18n)]]),
+            i18n=i18n,
+        ),
     )
 
 
-@router.message(Command("promo", "pin_promo"))
+@router.message(Command("promo"))
 async def promo_command(message: Message, bot: Bot, i18n: I18nContext, settings: Settings) -> None:
     me = await bot.me()
     bot_username = me.username or ""

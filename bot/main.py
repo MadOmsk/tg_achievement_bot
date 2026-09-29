@@ -443,12 +443,8 @@ async def _publish_command_menu(bot: Bot) -> None:
         private = [
             BotCommand(command="panel", description=_("main-cmd-panel")),
             BotCommand(command="stats", description=_("main-cmd-stats-private")),
-            BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
-            BotCommand(command="disconnect_xbox", description=_("main-cmd-disconnect-xbox")),
-            BotCommand(command="connect_steam", description=_("main-cmd-connect-steam")),
-            BotCommand(command="disconnect_steam", description=_("main-cmd-disconnect-steam")),
-            BotCommand(command="connect_psn", description=_("main-cmd-connect-psn")),
-            BotCommand(command="disconnect_psn", description=_("main-cmd-disconnect-psn")),
+            # /connect_* and /disconnect_* still work, but the menu leaves
+            # them out (#140): /panel is where accounts are linked and unlinked.
             BotCommand(command="hltb", description=_("main-cmd-hltb")),
             BotCommand(command="help", description=_("main-cmd-help")),
         ]

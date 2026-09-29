@@ -3,7 +3,7 @@ chat-subscribe-groups-only = This command is for a group chat — that's where p
 chat-subscribe-connect-first = Connect at least one platform first — buttons below.
 chat-subscribe-already = You're already publishing here.
 chat-subscribe-done = Done. { $gamertag }'s achievements will land here.
-    Rarity and XBOX 360 settings are in a DM, /panel.
+    Which ones get posted — in the settings, button below.
 chat-unsubscribe-not-subscribed = You weren't publishing here anyway.
 chat-unsubscribe-confirm-button = Yes, unsubscribe
 chat-cancel-button = Cancel
@@ -53,8 +53,16 @@ chat-help-text = Chat commands:
     /subscribe — publish my achievements here
     /unsubscribe — stop publishing here
     /help — list of commands
+# /help in a DM (#140): what the bot is, the four commands a DM has, and
+# one button into the Mini App. Connecting and unlinking live in /panel.
+chat-help-private-text =
+    🎮 <b>Gaming Club</b>
+    I watch achievements and trophies on XBOX, PlayStation and Steam and post them to the chats you subscribed in — with stats, summaries and leaderboards. All of it is in the app too.
 
-    Settings are in a DM, /panel.
+    /panel — your panel: accounts, posting, settings
+    /stats — your stats
+    /hltb — how long a game takes (HowLongToBeat)
+    /help — this help
 chat-help-version = <i>Version { $version }</i>
 chat-hub-nobody = Nobody is publishing here yet.
 chat-hub-publishing = Publishing: { $names }
