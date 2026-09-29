@@ -21,9 +21,11 @@ from bot.db.repo import Repo, SteamSchemaAchievement, TitleAchievementRow
 from bot.services.models import ParsedAchievement
 from bot.services.steam.client import (
     RawAchievement,
+    community_descriptions,
     get_global_percentages,
     get_player_achievements,
     get_schema,
+    icon_key,
     store_name,
 )
 from bot.services.translate.auth import AnthropicAuth
@@ -149,6 +151,21 @@ async def fetch_unlocked(
         # GetPlayerAchievements lists the whole game, earned or not.
         await repo.upsert_title_achievements(cat_rows, complete=True)
 
+    # Secret achievements come with no description from any Web API call
+    # (#132); the profile page has it once they are earned.
+    empty = {
+        item.apiname: schema_by_id[item.apiname].icon
+        for item in unlocked
+        if item.apiname in schema_by_id
+        and not item.description
+        and not any(descriptions.get(item.apiname, (None, None)))
+    }
+    if empty:
+        descriptions = {
+            **descriptions,
+            **await fill_from_community(repo, anthropic_auth, steam_id, appid, empty),
+        }
+
     result: list[ParsedAchievement] = []
     for item in unlocked:
         schema_item = schema_by_id.get(item.apiname)
@@ -242,6 +259,45 @@ async def _bilingual_descriptions(
     }
     resolved = await bilingual_descriptions(repo, anthropic_auth, Platform.STEAM, appid, native)
     return {**result, **resolved}
+
+
+# (appid, apiname) pairs this process already looked up on the community
+# page (#132): an achievement the page does not describe either (a private
+# profile, a row that failed to match) is not asked about on every poll.
+_COMMUNITY_TRIED: set[tuple[str, str]] = set()
+
+
+async def fill_from_community(
+    repo: Repo,
+    anthropic_auth: AnthropicAuth,
+    steam_id: str,
+    appid: str,
+    icons: dict[str, str | None],
+) -> dict[str, tuple[str | None, str | None]]:
+    """Descriptions the Web API left empty — secret achievements (#132) —
+    from the profile's achievements page, in both languages, matched by icon,
+    and stored in the catalog like any other description. `icons` is
+    `{apiname: icon_url}` for the achievements to fill; the result holds
+    those it could."""
+    wanted = {
+        apiname: key
+        for apiname, url in icons.items()
+        if (key := icon_key(url)) and (appid, apiname) not in _COMMUNITY_TRIED
+    }
+    if not wanted:
+        return {}
+    _COMMUNITY_TRIED.update((appid, apiname) for apiname in wanted)
+    russian = await community_descriptions(steam_id, appid, language="russian")
+    english = await community_descriptions(steam_id, appid, language="english")
+    native = {
+        apiname: (russian.get(key, (None, None))[1], english.get(key, (None, None))[1])
+        for apiname, key in wanted.items()
+    }
+    native = {apiname: pair for apiname, pair in native.items() if any(pair)}
+    if not native:
+        return {}
+    log.info("steam appid=%s: %s description(s) from the community page", appid, len(native))
+    return await bilingual_descriptions(repo, anthropic_auth, Platform.STEAM, appid, native)
 
 
 # appids whose schema this process already re-fetched (#49) — without it, an

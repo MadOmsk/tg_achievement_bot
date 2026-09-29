@@ -489,6 +489,13 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   any more. A table, because nothing else can know.
 - **Descriptions**: `GetPlayerAchievements` is fetched with `l=english` beside
   `l=russian` only when some achievement in the batch is not cached yet.
+- **A secret achievement's description comes from the profile page** (#132): no
+  Web API call gives it, even once earned. `steam/client.py::community_descriptions`
+  reads `/profiles/<id>/stats/<appid>/achievements/` (the `?xml=1` form is gone),
+  matched to ids by icon file name, the language set by the `Steam_Language`
+  cookie (`?l=` is lost in the redirect to a vanity URL). Asked at poll time for an
+  earned one with no text, and by `poller/description_backfill.py` for history, a
+  game a tick. Best effort: a private page leaves it empty, as before.
 - **Exit poll is delayed 180s** (`STEAM_DELAYED_EXIT_POLL_SECONDS`, #89): `GetPlayerAchievements` sits behind a CDN
   cache for 2–5 minutes and Steam Cloud syncs on exit, so an immediate poll misses
   the session's last achievements. Relaunching the game inside that window cancels

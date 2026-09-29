@@ -455,3 +455,80 @@ async def test_the_store_page_supplies_the_russian_game_name_once(
     assert len(calls) == 2, "the store is asked once per game, not once per poll"
 
     assert await repo.title_names([APPID]) == {APPID: ("Г.О.П.О.Т.А", "G.O.P.O.T.A")}
+
+
+# ---------------------------------------------------------------- #132
+
+
+_PAGE = """
+<div class="achieveRow ">
+  <div class="achieveImgHolder"><img src="https://cdn.example/apps/550/abc123.jpg"></div>
+  <div class="achieveTxtHolder"><div class="achieveTxt">
+    <h3 class="ellipsis">Тайна &amp; секрет</h3>
+    <h5>Найти <b>всё</b>.</h5>
+  </div></div>
+</div>
+<div class="achieveRow ">
+  <div class="achieveImgHolder"><img src="https://cdn.example/apps/550/locked.jpg"></div>
+  <div class="achieveTxtHolder"><div class="achieveTxt">
+    <h3 class="ellipsis">Hidden achievement</h3>
+    <h5></h5>
+  </div></div>
+</div>
+"""
+
+
+def test_community_rows_are_keyed_by_icon_and_unescaped() -> None:
+    from bot.services.steam import client as steam_client
+
+    rows = dict(
+        (steam_client.icon_key(icon), (name, text))
+        for icon, name, text in steam_client._ACHIEVE_ROW_RE.findall(_PAGE)
+    )
+    assert "abc123" in rows
+    assert steam_client.icon_key("https://x/y/abc123.jpg?v=2") == "abc123"
+
+
+async def test_a_secret_achievement_gets_its_description_from_the_community_page(
+    repo: Repo, cipher: TokenCipher, monkeypatch
+) -> None:
+    """#132: the Web API gives a secret achievement no description, even
+    once earned; the profile page does."""
+    steam_achievements._COMMUNITY_TRIED.clear()
+
+    async def fake_player(
+        api_key: str, steam_id: str, appid: str, *, language: str = "russian"
+    ) -> list[RawAchievement]:
+        return [RawAchievement("ACH_SECRET", True, 0, "Тайна", None)]
+
+    async def fake_schema(api_key: str, appid: str) -> list[RawSchemaAchievement]:
+        return [
+            RawSchemaAchievement(apiname="ACH_SECRET", icon="https://x/abc123.jpg", hidden=True)
+        ]
+
+    async def fake_percentages(appid: str) -> dict[str, float]:
+        return {}
+
+    pages: list[str] = []
+
+    async def fake_community(steam_id: str, appid: str, *, language: str):
+        pages.append(language)
+        text = "Найти всё." if language == "russian" else "Find it all."
+        return {"abc123": ("name", text)}
+
+    monkeypatch.setattr(steam_achievements, "get_player_achievements", fake_player)
+    monkeypatch.setattr(steam_achievements, "get_schema", fake_schema)
+    monkeypatch.setattr(steam_achievements, "get_global_percentages", fake_percentages)
+    monkeypatch.setattr(steam_achievements, "community_descriptions", fake_community)
+    auth = _unconfigured_anthropic_auth(repo, cipher)
+
+    result = await fetch_unlocked(repo, auth, "key", STEAM_ID, APPID)
+
+    assert result[0].description == "Найти всё."
+    cached = await repo.get_cached_description("steam", APPID, "ACH_SECRET")
+    assert cached is not None and cached.description_en == "Find it all."
+    assert sorted(pages) == ["english", "russian"]
+
+    # Stored now: the next poll asks the page nothing.
+    await fetch_unlocked(repo, auth, "key", STEAM_ID, APPID)
+    assert len(pages) == 2
