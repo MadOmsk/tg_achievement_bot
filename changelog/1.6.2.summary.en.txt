@@ -1,0 +1,5 @@
+• The button under a notification opens the game's own page
+• "About" tab: genre, publisher, developer, modes, score and time to beat
+• A collapsible game header and games sorted by date or completion
+• One month pick for the feed, summary and profile
+• The Mini App home screen opens faster
