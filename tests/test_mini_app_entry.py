@@ -36,10 +36,14 @@ class _FakeMessage:
         self.chat = SimpleNamespace(id=chat_id, type=chat_type)
         self.answers: list[str] = []
         self.markups: list[object] = []
+        self.stats_categories: list[bool] = []
 
     async def answer(self, text: str, reply_markup=None, **kwargs) -> None:
+        from bot.services.message_log import _stats_category
+
         self.answers.append(text)
         self.markups.append(reply_markup)
+        self.stats_categories.append(_stats_category.get())
 
 
 class _FakeBot:
@@ -183,5 +187,39 @@ async def test_promo_command_in_group(i18n) -> None:
 
     assert len(msg.answers) == 1
     assert "Игровой клуб" in msg.answers[0]
+    assert msg.stats_categories == [True]
     btn = msg.markups[0].inline_keyboard[0][0]
     assert btn.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
+
+
+async def test_admin_chat_send_promo_sets_stats_category(i18n, repo) -> None:
+    from bot.handlers.admin import chat_send_promo
+    from bot.services.message_log import _stats_category
+
+    await repo.upsert_chat(CHAT_ID, "Test Chat", 1)
+
+    class _AdminBot:
+        def __init__(self) -> None:
+            self.sent_categories: list[bool] = []
+
+        async def me(self):
+            return SimpleNamespace(username=BOT)
+
+        async def send_message(self, chat_id: int, text: str, **kwargs):
+            self.sent_categories.append(_stats_category.get())
+
+    callback = SimpleNamespace(
+        data=f"a:csendpromo:{CHAT_ID}",
+        answer=lambda *a, **kw: None,
+    )
+
+    async def _async_answer(*args, **kwargs):
+        pass
+
+    callback.answer = _async_answer
+
+    admin_bot = _AdminBot()
+    settings = SimpleNamespace(mini_app_url=APP_URL)
+
+    await chat_send_promo(callback, repo, admin_bot, i18n, settings)
+    assert admin_bot.sent_categories == [True]

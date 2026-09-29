@@ -51,6 +51,7 @@ from bot.services.admin_settings import (
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
 )
+from bot.services.message_log import stats_category
 from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import link_nickname, person_name, xbox_nickname
 from bot.services.psn.auth import PsnAuth
@@ -1011,12 +1012,13 @@ async def chat_send_promo(
         locale=chat.locale,
     )
     try:
-        await bot.send_message(
-            chat_id,
-            promo_text(locale=chat.locale),
-            parse_mode=ParseMode.HTML,
-            reply_markup=markup,
-        )
+        with stats_category():
+            await bot.send_message(
+                chat_id,
+                promo_text(locale=chat.locale),
+                parse_mode=ParseMode.HTML,
+                reply_markup=markup,
+            )
         await callback.answer(_("admin-promo-sent"))
     except Exception as exc:
         await callback.answer(f"Failed: {exc}", show_alert=True)

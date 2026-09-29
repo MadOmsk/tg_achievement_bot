@@ -16,7 +16,7 @@ Every logged row also carries is_system (2026-09-05 follow-up, "system
 message" auto-delete, poller/message_cleanup.py) — 1 for an intermediate
 message (a prompt, a confirmation, /help, the group hub), 0 for one of the
 "stats" results (/stats, /recent, /summary + the daily итог, achievement
-messages, /online, /hltb's game card) that must never disappear on its own.
+messages, /online, /hltb's game card, /promo pinned card) that must never disappear on its own.
 The middleware has no idea which handler is calling or why, so the handful
 of call sites that produce a "stats" result wrap their own send in
 `stats_category()` below — a ContextVar, because the actual `bot.
