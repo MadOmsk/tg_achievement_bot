@@ -30,8 +30,8 @@ kb-rarity-rare = rare only
 kb-rarity-all = all of them
 
 # Connection controls
-kb-disconnect-confirm = Yes, disconnect
-kb-cancel = Cancel
+kb-disconnect-confirm = 🔌 Yes, disconnect
+kb-cancel = ✖️ Cancel
 # /panel's own connect buttons (#33) — "Connect X" with a 🎮 icon,
 # uniformly for all three; deliberately wordier than the group hub's own
 # short platform-name buttons (chat-hub-*-button), and distinct from
@@ -62,5 +62,5 @@ kb-publishes-partly = 🔔 Partly
 kb-platform-menu = { $icon } { $platform }{ $alert } ▸
 kb-platform-menu-count = { $icon } { $platform } ({ $count }){ $alert } ▸
 kb-locale = 🌐 Language: { $name } ▸
-kb-refresh = Refresh
-kb-open = Open
+kb-refresh = 🔄 Refresh
+kb-open = ↗️ Open
