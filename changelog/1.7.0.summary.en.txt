@@ -1,5 +1,7 @@
+• New panel: a posting switch for each account and up to three PSN accounts
+• One rarity mode for every chat
+• A live sync status while an account is connected
+• Buttons instead of commands for connecting and unlinking
 • The button under a notification opens the game's own page
-• "About" tab: genre, publisher, developer, modes, score and time to beat
-• A collapsible game header and games sorted by date or completion
-• One month pick for the feed, summary and profile
-• The Mini App home screen opens faster
+• Steam secret achievement descriptions and more reliable translations
+• "About" tab: genre, publisher, modes, score and time to beat
