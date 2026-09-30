@@ -138,10 +138,15 @@ class _AccountsRepo:
 
         # Step 1: Find all linked platform accounts for this user
         cursor = await self._conn.execute(
-            "SELECT platform, external_id FROM account_links WHERE tg_id = ?",
+            "SELECT platform, external_id, is_active FROM account_links WHERE tg_id = ?",
             (tg_id,),
         )
-        linked_accounts = [(r["platform"], r["external_id"]) for r in await cursor.fetchall()]
+        link_rows = await cursor.fetchall()
+        linked_accounts = [(r["platform"], r["external_id"]) for r in link_rows]
+        held: dict[str, int] = {}
+        for r in link_rows:
+            if r["is_active"]:
+                held[r["platform"]] = held.get(r["platform"], 0) + 1
 
         from bot.services.avatars import avatar_dir
 
@@ -234,7 +239,9 @@ class _AccountsRepo:
             for platform, external_id in linked_accounts:
                 reset.setdefault(platform, []).append(external_id)
             for platform, external_ids in reset.items():
-                await self.record_platform_reset(tg_id, platform, *external_ids)
+                await self.record_platform_reset(
+                    tg_id, platform, *external_ids, held=held.get(platform, 1)
+                )
 
         if is_admin:
             await self.clear_platform_cooldown(tg_id)
@@ -292,11 +299,18 @@ class _AccountsRepo:
             return int(existing["reset_count"]) + 1
         return 1
 
-    async def record_platform_reset(self, tg_id: int, platform: str, *external_ids: str) -> None:
+    async def record_platform_reset(
+        self, tg_id: int, platform: str, *external_ids: str, held: int = 1
+    ) -> None:
         """Record one deletion/reset: once for the person on this platform
         (`platform_cooldowns`) and once for each account it covered
         (`platform_cooldown_accounts`). Inside the window a count goes up,
         outside it starts again at 1.
+
+        `held` is how many accounts of this platform the person had: on PSN
+        that many re-links are free after a deletion (owner, 2026-09-30). A
+        second deletion inside the window adds none; the allowance and the
+        re-links already made carry over.
         """
         cooldown_hours = await self._cooldown_hours()
         if cooldown_hours <= 0:
@@ -304,21 +318,28 @@ class _AccountsRepo:
         now_iso = utcnow_iso()
 
         cursor = await self._conn.execute(
-            "SELECT reset_count, last_reset_at FROM platform_cooldowns "
+            "SELECT reset_count, last_reset_at, free_relinks, relinks FROM platform_cooldowns "
             "WHERE tg_id = ? AND platform = ?",
             (tg_id, platform),
         )
-        count = self._next_count(await cursor.fetchone(), cooldown_hours)
+        existing = await cursor.fetchone()
+        count = self._next_count(existing, cooldown_hours)
+        if count > 1 and existing is not None:
+            free_relinks, relinks = int(existing["free_relinks"]), int(existing["relinks"])
+        else:
+            free_relinks, relinks = max(1, held), 0
         first = str(external_ids[0]) if external_ids and external_ids[0] else None
         await self._conn.execute(
             "INSERT INTO platform_cooldowns "
-            "(tg_id, platform, external_id, reset_count, last_reset_at) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "(tg_id, platform, external_id, reset_count, last_reset_at, free_relinks, relinks) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(tg_id, platform) DO UPDATE SET "
             "  external_id = COALESCE(excluded.external_id, platform_cooldowns.external_id), "
             "  reset_count = excluded.reset_count, "
-            "  last_reset_at = excluded.last_reset_at",
-            (tg_id, platform, first, count, now_iso),
+            "  last_reset_at = excluded.last_reset_at, "
+            "  free_relinks = excluded.free_relinks, "
+            "  relinks = excluded.relinks",
+            (tg_id, platform, first, count, now_iso, free_relinks, relinks),
         )
 
         for external_id in {str(item) for item in external_ids if item}:
@@ -349,10 +370,10 @@ class _AccountsRepo:
         - reset_count <= 1: 1 free re-link is allowed immediately without cooldown.
         - reset_count > 1 and within window: blocked until elapsed >= window.
         - The account's own count (whoever deleted it — switching Telegram
-          accounts does not dodge it) and, where a person holds one account
-          per platform (Xbox, Steam), the person's count. PSN accounts are
-          protected each on its own (#10): a new one is never blocked by
-          what happened to another.
+          accounts does not dodge it), and the person's own count on this
+          platform. On PSN (several accounts, #10) the person's side counts
+          re-links instead: as many are free as accounts were held at the
+          deletion, and one more inside the window is blocked.
         """
         cooldown_hours = await self._cooldown_hours()
         if cooldown_hours <= 0:
@@ -366,13 +387,17 @@ class _AccountsRepo:
                 (platform, str(external_id)),
             )
             rows.append(await cursor.fetchone())
-        if platform != AccountPlatform.PSN or not external_id:
-            cursor = await self._conn.execute(
-                "SELECT reset_count, last_reset_at FROM platform_cooldowns "
-                "WHERE tg_id = ? AND platform = ?",
-                (tg_id, platform),
-            )
-            rows.append(await cursor.fetchone())
+        cursor = await self._conn.execute(
+            "SELECT reset_count, last_reset_at, free_relinks, relinks FROM platform_cooldowns "
+            "WHERE tg_id = ? AND platform = ?",
+            (tg_id, platform),
+        )
+        person = await cursor.fetchone()
+        if platform != AccountPlatform.PSN:
+            rows.append(person)
+        elif person is not None and int(person["relinks"]) >= int(person["free_relinks"]):
+            # Out of free re-links: blocked as a second deletion would be.
+            rows.append({"reset_count": 2, "last_reset_at": person["last_reset_at"]})
 
         cooldown_seconds = cooldown_hours * 3600
         result = CooldownCheckResult(is_blocked=False)
@@ -393,6 +418,24 @@ class _AccountsRepo:
                     is_blocked=True, remaining_seconds=remaining, reset_count=reset_count
                 )
         return result
+
+    async def note_platform_relink(self, tg_id: int, platform: str) -> None:
+        """One more account linked by this person inside a cooldown window,
+        which is what the PSN allowance counts. Outside a window: nothing."""
+        cooldown_hours = await self._cooldown_hours()
+        if cooldown_hours <= 0:
+            return
+        cursor = await self._conn.execute(
+            "SELECT last_reset_at FROM platform_cooldowns WHERE tg_id = ? AND platform = ?",
+            (tg_id, platform),
+        )
+        row = await cursor.fetchone()
+        if row is None or self._elapsed_seconds(row["last_reset_at"]) >= cooldown_hours * 3600:
+            return
+        await self._conn.execute(
+            "UPDATE platform_cooldowns SET relinks = relinks + 1 WHERE tg_id = ? AND platform = ?",
+            (tg_id, platform),
+        )
 
     async def clear_platform_cooldown(self, tg_id: int, platform: str | None = None) -> None:
         """Clear cooldown records for tg_id (e.g. on admin operations)."""

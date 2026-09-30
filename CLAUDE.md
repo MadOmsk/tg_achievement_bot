@@ -281,12 +281,18 @@ every column. History: #106.
   shared credential see this account's achievements": `NULL` until checked, set at
   connect and by every backfill/resync, never read live from a UI path.
 - **Reset cooldowns** (`platform_cooldowns`, migration 054; per account
-  `platform_cooldown_accounts`, 067): one free re-link after a full reset; further
-  resets inside `account_reset_cooldown_hours` block re-linking. One deletion counts
-  once per platform for the person and once per account. Each account keeps its own
-  count, so switching Telegram accounts does not dodge it and **every PSN account is
-  protected on its own** (owner, 2026-09-30) — the person's count guards only Xbox
-  and Steam. A super-admin's reset clears it.
+  `platform_cooldown_accounts`, 067; PSN allowance, 068), inside
+  `account_reset_cooldown_hours`. Two sides, both checked on every re-link:
+  - **the account's own count** — every account, each PSN account on its own,
+    whoever deleted it, so switching Telegram accounts does not dodge it: one free
+    re-link, a second reset blocks it;
+  - **the person's count on the platform** (the Telegram-account ban): one deletion
+    counts once. Xbox and Steam: one free re-link, a second deletion blocks. PSN
+    counts re-links instead: **as many free as PSN accounts were held at the
+    deletion** (owner, 2026-09-30), one more inside the window is blocked, and a
+    second deletion adds none.
+
+  A super-admin's reset clears both.
 
 ### Achievements and publications
 

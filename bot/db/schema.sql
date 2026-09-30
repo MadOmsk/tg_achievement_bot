@@ -719,6 +719,10 @@ CREATE TABLE IF NOT EXISTS platform_cooldowns (
     external_id    TEXT,
     reset_count    INTEGER NOT NULL DEFAULT 1,
     last_reset_at  TEXT NOT NULL,
+    -- PSN only (068): re-links allowed free after a deletion (the accounts
+    -- held then), and re-links made since.
+    free_relinks   INTEGER NOT NULL DEFAULT 1,
+    relinks        INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (tg_id, platform)
 );
 

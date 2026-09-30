@@ -129,6 +129,16 @@ class _PlatformLinksRepo:
         row = await cursor.fetchone()
         taken_from = row["tg_id"] if row else None
 
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM account_links "
+            "WHERE tg_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
+            (tg_id, platform, external_id),
+        )
+        if await cursor.fetchone() is None:
+            # A link this person did not already have: it spends one of the
+            # re-links a recent deletion left them (PSN, owner 2026-09-30).
+            await self.note_platform_relink(tg_id, platform)  # type: ignore[attr-defined]
+
         # Both deactivations happen before the new link goes in: the account
         # may be held by someone else (idx_links_one_owner), and this person
         # may already hold a different account on the same platform

@@ -285,33 +285,45 @@ async def test_one_deletion_is_one_reset_with_several_psn_accounts(repo: Repo) -
         assert check.reset_count == 1
 
 
-async def test_every_psn_account_is_protected_on_its_own(repo: Repo) -> None:
-    """Each PSN account (#10) keeps its own count: two deletions block both
-    accounts wherever they are re-linked from, and a third, never deleted
-    account links freely."""
-    for _ in range(2):  # two deletions: the second one blocks
+async def test_psn_free_relinks_match_the_accounts_held(repo: Repo) -> None:
+    """Two PSN accounts at the deletion: two re-links free from this
+    Telegram, a third inside the window blocked, even a new account."""
+    await repo.ensure_user(ALICE, "alice")
+    await repo.link_platform_account(ALICE, Platform.PSN, "psn-1", "One")
+    await repo.link_platform_account(ALICE, Platform.PSN, "psn-2", "Two")
+    await repo.delete_user(ALICE, is_admin=False)
+    await repo.ensure_user(ALICE, "alice")
+
+    for external_id in ("psn-1", "psn-2"):
+        check = await repo.check_platform_cooldown(ALICE, Platform.PSN, external_id)
+        assert check.is_blocked is False, external_id
+        await repo.link_platform_account(ALICE, Platform.PSN, external_id, external_id)
+    assert (await repo.check_platform_cooldown(ALICE, Platform.PSN, "psn-3")).is_blocked is True
+
+
+async def test_a_second_deletion_adds_no_psn_relinks(repo: Repo) -> None:
+    await repo.ensure_user(ALICE, "alice")
+    await repo.link_platform_account(ALICE, Platform.PSN, "psn-1", "One")
+    await repo.delete_user(ALICE, is_admin=False)
+    await repo.ensure_user(ALICE, "alice")
+    await repo.link_platform_account(ALICE, Platform.PSN, "psn-1", "One")
+    await repo.delete_user(ALICE, is_admin=False)
+
+    assert (await repo.check_platform_cooldown(ALICE, Platform.PSN, "psn-9")).is_blocked is True
+
+
+async def test_every_psn_account_is_protected_on_its_own_from_another_telegram(
+    repo: Repo,
+) -> None:
+    """Each PSN account keeps its own count: deleted twice, it is blocked
+    from any Telegram account; a never-deleted one links freely from a
+    fresh Telegram account."""
+    for _ in range(2):
         await repo.ensure_user(ALICE, "alice")
         await repo.link_platform_account(ALICE, Platform.PSN, "psn-1", "One")
         await repo.link_platform_account(ALICE, Platform.PSN, "psn-2", "Two")
         await repo.delete_user(ALICE, is_admin=False)
 
-    for who in (ALICE, BOB):
-        for external_id in ("psn-1", "psn-2"):
-            check = await repo.check_platform_cooldown(who, Platform.PSN, external_id)
-            assert check.is_blocked is True, (who, external_id)
-    assert (await repo.check_platform_cooldown(ALICE, Platform.PSN, "psn-3")).is_blocked is False
-
-
-async def test_a_psn_account_deleted_once_keeps_its_free_relink(repo: Repo) -> None:
-    """psn-1 went through two deletions, psn-2 only through the second:
-    psn-2 still has its free re-link."""
-    await repo.ensure_user(ALICE, "alice")
-    await repo.link_platform_account(ALICE, Platform.PSN, "psn-1", "One")
-    await repo.delete_user(ALICE, is_admin=False)
-    await repo.ensure_user(ALICE, "alice")
-    await repo.link_platform_account(ALICE, Platform.PSN, "psn-1", "One")
-    await repo.link_platform_account(ALICE, Platform.PSN, "psn-2", "Two")
-    await repo.delete_user(ALICE, is_admin=False)
-
-    assert (await repo.check_platform_cooldown(ALICE, Platform.PSN, "psn-1")).is_blocked is True
-    assert (await repo.check_platform_cooldown(ALICE, Platform.PSN, "psn-2")).is_blocked is False
+    for external_id in ("psn-1", "psn-2"):
+        assert (await repo.check_platform_cooldown(BOB, Platform.PSN, external_id)).is_blocked
+    assert (await repo.check_platform_cooldown(BOB, Platform.PSN, "psn-3")).is_blocked is False
