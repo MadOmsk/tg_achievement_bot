@@ -12,6 +12,7 @@ from bot.services.hltb import (
     _clean,
     _clean_query,
     _extract_details,
+    _extras_of,
     _from_cache_row,
     _pick_fallback_word,
 )
@@ -107,6 +108,83 @@ def test_extract_details_treats_an_empty_summary_as_no_summary() -> None:
 def test_extract_details_is_none_when_the_page_has_no_next_data_at_all() -> None:
     page = "<html><body>not the page you're looking for</body></html>"
     assert _extract_details(page) == (None, None)
+
+
+def test_extras_of_reads_the_page_and_drops_player_counts() -> None:
+    # Field names and values from a real page (Halo Infinite / It Takes Two).
+    game = {
+        "review_score": 78,
+        "profile_dev": "343 Industries",
+        "profile_pub": "Xbox Game Studios",
+        "game_alias": "",
+        "release_world": "2021-12-08",
+        "release_jp": "0000-00-00",
+        "comp_lvl_sp": 1,
+        "comp_lvl_co": 1,
+        "comp_lvl_mp": 0,
+        "comp_main": 40680,
+        "comp_main_med": 39600,
+        "comp_main_l": 18000,
+        "comp_main_h": 90000,
+        "invested_co": 65370,
+        "invested_mp": 283463,
+        "comp_speed_min": 2400,
+        "comp_speed_med": 10504,
+        "count_comp": 19951,
+        "count_backlog": 24785,
+    }
+    extras = _extras_of(game)
+    assert extras["review_score"] == 78
+    assert extras["developer"] == "343 Industries"
+    assert extras["publisher"] == "Xbox Game Studios"
+    assert "alias" not in extras  # empty on the page — not sent
+    assert extras["releases"] == {"world": "2021-12-08"}  # 0000-00-00 is "unknown"
+    assert extras["modes"] == ["single", "coop"]
+    assert extras["times"]["main"] == {
+        "average": 11.3,
+        "median": 11.0,
+        "fastest": 5.0,
+        "slowest": 25.0,
+    }
+    assert extras["times"]["coop"] == {"average": 18.2}
+    assert "multi" not in extras["times"]  # not a multiplayer game, stray hours ignored
+    assert extras["speedrun"] == {"any": {"best": 0.7, "median": 2.9}}
+    assert not any("count" in key for key in json.dumps(extras).split('"'))
+
+
+def test_extras_of_is_empty_for_a_bare_page() -> None:
+    assert _extras_of({"game_name": "Obscure"}) == {}
+
+
+async def test_cached_row_without_details_is_topped_up_once(repo: Repo, monkeypatch) -> None:
+    from bot.services import hltb
+
+    await repo.hltb_cache_result(
+        HltbCacheRow(
+            hltb_id=7,
+            name="Halo Infinite",
+            release_year=2021,
+            main_hours=11.3,
+            extra_hours=None,
+            completionist_hours=None,
+            game_url="https://howlongtobeat.com/game/7",
+            genre="Shooter",
+            description_en="The Master Chief returns.",
+        )
+    )
+    fetches: list[str] = []
+
+    async def fake_page(url: str) -> dict:
+        fetches.append(url)
+        return {"review_score": 78, "profile_dev": "343 Industries"}
+
+    monkeypatch.setattr(hltb, "_fetch_page_game", fake_page)
+    first = await hltb.resolve(repo, 7)
+    second = await hltb.resolve(repo, 7)
+    assert first.details == {"review_score": 78, "developer": "343 Industries"}
+    assert second.details == first.details
+    assert fetches == ["https://howlongtobeat.com/game/7"]  # read once, then cached
+    assert first.genre == "Shooter"  # the cached genre is kept, not replaced
 
 
 def test_pick_fallback_word_takes_the_first_real_word() -> None:

@@ -44,6 +44,28 @@ export type GameHltb = {
   genre: string | null;
   description: string | null;
   game_url: string | null;
+  details?: GameHltbDetails | null;
+};
+
+export type HltbTimeBucket = {
+  average?: number;
+  median?: number;
+  fastest?: number;
+  slowest?: number;
+};
+
+export type HltbTimeName = "main" | "extra" | "completionist" | "all" | "coop" | "multi";
+
+/** The rest of the game's HLTB page; every field is left out when HLTB has nothing for it. */
+export type GameHltbDetails = {
+  review_score?: number;
+  developer?: string;
+  publisher?: string;
+  alias?: string;
+  releases?: Partial<Record<"world" | "na" | "eu" | "jp", string>>;
+  modes?: Array<"single" | "coop" | "multi">;
+  times?: Partial<Record<HltbTimeName, HltbTimeBucket>>;
+  speedrun?: Partial<Record<"any" | "full", { best?: number; median?: number }>>;
 };
 
 export type GameDetails = {

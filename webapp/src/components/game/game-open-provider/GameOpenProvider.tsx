@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { GameRef } from "../../../api";
 import type { Locale } from "../../../i18n";
 import { GameOpenContext } from "../../shared/lib";
-import { TitleSheet } from "../title-sheet/TitleSheet";
+
+// The game page pulls in Swiper and its own carousels — heavy enough to
+// keep off Home's own critical bundle, loaded only once a game is actually
+// opened (including straight from a Mini App deep link).
+const TitleSheet = lazy(() =>
+  import("../title-sheet/TitleSheet").then((m) => ({ default: m.TitleSheet })),
+);
 
 /**
  * Lets any card open the game's own page. It is portalled to the body so it
@@ -14,15 +20,18 @@ export function GameOpenProvider({
   locale,
   showSecrets,
   meId,
+  initialGame = null,
   children,
 }: {
   data: string;
   locale: Locale;
   showSecrets?: boolean;
   meId: number;
+  /** A game to open right away — a Mini App deep link landing straight on it. */
+  initialGame?: GameRef | null;
   children: ReactNode;
 }) {
-  const [game, setGame] = useState<GameRef | null>(null);
+  const [game, setGame] = useState<GameRef | null>(initialGame);
   const open = useCallback((next: GameRef) => setGame(next), []);
 
   // While a game page covers the app, the app beneath stops being painted
@@ -39,14 +48,16 @@ export function GameOpenProvider({
       {children}
       {game &&
         createPortal(
-          <TitleSheet
-            game={game}
-            data={data}
-            locale={locale}
-            showSecrets={showSecrets}
-            meId={meId}
-            onClose={() => setGame(null)}
-          />,
+          <Suspense fallback={null}>
+            <TitleSheet
+              game={game}
+              data={data}
+              locale={locale}
+              showSecrets={showSecrets}
+              meId={meId}
+              onClose={() => setGame(null)}
+            />
+          </Suspense>,
           // A portal, like every sheet: appended after the ones already open,
           // so the page lands above them.
           document.body,

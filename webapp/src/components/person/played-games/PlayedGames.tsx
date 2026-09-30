@@ -26,8 +26,8 @@ export function PlayedGames({
 }: {
   items: FeedItem[];
   locale: Locale;
-  /** "recent" keeps the feed's own newest-first order; "top" ranks by this month's count. */
-  sort?: "recent" | "top";
+  /** "recent" keeps the feed's own newest-first order; "progress" ranks by completion percentage, games with no known total last. */
+  sort?: "recent" | "progress";
 }) {
   const openGame = useOpenGame();
   const games = new Map<string, Played>();
@@ -39,7 +39,15 @@ export function PlayedGames({
     else games.set(key, { key, last: row, count: 1 });
   }
   const ordered = [...games.values()];
-  if (sort === "top") ordered.sort((a, b) => b.count - a.count);
+  if (sort === "progress") {
+    ordered.sort((a, b) => {
+      const ap = a.last.progress;
+      const bp = b.last.progress;
+      const aPct = ap && ap.total > 0 ? ap.unlocked / ap.total : -1;
+      const bPct = bp && bp.total > 0 ? bp.unlocked / bp.total : -1;
+      return bPct - aPct;
+    });
+  }
   return (
     <div className="played-games">
       {ordered.map(({ key, last, count }) => {

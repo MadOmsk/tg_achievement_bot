@@ -630,6 +630,7 @@ class HltbCacheRow:
     genre: str | None = None
     description_en: str | None = None
     description_ru: str | None = None
+    details: dict | None = None
 
 
 @dataclass(slots=True)

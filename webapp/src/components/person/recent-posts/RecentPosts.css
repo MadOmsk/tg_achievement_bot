@@ -3,7 +3,7 @@
   max-width: 100%;
   margin: 0;
   color: rgba(238, 241, 246, 0.68);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -13,12 +13,12 @@
 }
 
 .unlock-card-copy.is-minimal h2 {
-  margin-top: 4px;
+  margin-top: 8px;
   font-size: 1.1rem;
 }
 
 .unlock-card-copy.is-minimal .minimal-desc {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: rgba(238, 241, 246, 0.6);
   font-size: 0.82rem;
   font-style: italic;
@@ -36,11 +36,11 @@
   inset: auto 0 0 0;
   z-index: 5;
   height: auto;
-  padding: 72px 18px 30px;
+  padding: 48px 16px 34px;
   background: linear-gradient(
     to top,
-    rgba(8, 10, 16, 0.82) 0%,
-    rgba(8, 10, 16, 0.5) 45%,
+    rgba(8, 10, 16, 0.42) 0%,
+    rgba(8, 10, 16, 0.18) 50%,
     rgba(8, 10, 16, 0) 100%
   );
   border: 0;
@@ -50,17 +50,8 @@
 }
 
 .unlock-slider .unlock-card-copy.is-minimal h2 {
-  font-size: 1.35rem;
+  font-size: 1rem;
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.2;
   letter-spacing: -0.02em;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.55);
-}
-
-.unlock-slider .unlock-card-copy.is-minimal .minimal-desc {
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
-}
-
-.unlock-slider .unlock-card-copy.is-minimal .minimal-game {
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }
