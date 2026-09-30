@@ -724,3 +724,13 @@ CREATE TABLE IF NOT EXISTS platform_cooldowns (
 
 CREATE INDEX IF NOT EXISTS idx_platform_cooldowns_ext
     ON platform_cooldowns(platform, external_id);
+
+-- The reset count of each account (#10: every PSN account protected on its own).
+CREATE TABLE IF NOT EXISTS platform_cooldown_accounts (
+    platform       TEXT NOT NULL,
+    external_id    TEXT NOT NULL,
+    tg_id          INTEGER NOT NULL,
+    reset_count    INTEGER NOT NULL DEFAULT 1,
+    last_reset_at  TEXT NOT NULL,
+    PRIMARY KEY (platform, external_id)
+);

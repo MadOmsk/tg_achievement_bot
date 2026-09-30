@@ -280,10 +280,13 @@ every column. History: #106.
 - `accounts.achievements_visible` (#5) is the last *checked* answer to "can the
   shared credential see this account's achievements": `NULL` until checked, set at
   connect and by every backfill/resync, never read live from a UI path.
-- **Reset cooldowns** (`platform_cooldowns`, migration 054): one free re-link after a
-  full reset; further resets inside `account_reset_cooldown_hours` block re-linking.
-  Tracked by `(tg_id, platform)` and `(platform, external_id)`, so switching
-  Telegram accounts does not dodge it. A super-admin's reset clears it.
+- **Reset cooldowns** (`platform_cooldowns`, migration 054; per account
+  `platform_cooldown_accounts`, 067): one free re-link after a full reset; further
+  resets inside `account_reset_cooldown_hours` block re-linking. One deletion counts
+  once per platform for the person and once per account. Each account keeps its own
+  count, so switching Telegram accounts does not dodge it and **every PSN account is
+  protected on its own** (owner, 2026-09-30) — the person's count guards only Xbox
+  and Steam. A super-admin's reset clears it.
 
 ### Achievements and publications
 
