@@ -63,3 +63,28 @@ def test_a_guide_mostly_in_ideographs_is_passed_over() -> None:
     assert g._mostly_ideographs("全成就攻略", ["完成战役 收集全部头骨"] * 10)
     assert not g._mostly_ideographs("100% guide", ["Complete the mission"] * 10)
     assert not g._mostly_ideographs("Гайд", ["Пройдите миссию"] * 10)
+
+
+def test_links_and_embedded_videos_are_kept_as_addresses() -> None:
+    page = (
+        '<div class="guide subSections"><div>'
+        'Watch <a class="bb_link" href="https://www.youtube.com/watch?v=OdlHgtKy3Wk">this</a>.<br>'
+        '<div class="sharedFilePreviewYouTubeVideo sizeFull" id="t8d_J46g6Po"></div>'
+        '<a href="https://example.com/x">https://example.com/x</a>'
+        "</div></div>"
+    )
+    assert g.guide_lines(page) == [
+        "Watch [this](https://www.youtube.com/watch?v=OdlHgtKy3Wk).",
+        "https://www.youtube.com/watch?v=t8d_J46g6Po",
+        "https://example.com/x",
+    ]
+
+
+def test_a_long_tip_is_kept_whole_and_ends_at_the_next_section() -> None:
+    advice = [f"Step {i}: do this part of the run carefully and then move on." for i in range(20)]
+    lines = ["Long One", *advice, "Benefits", "Unrelated text about something else."]
+    guide = g.make_guide("1", "t", lines)
+    tip = g.tip_for([guide], g.Wanted(("Long One",)), {"long one"})
+    assert tip is not None
+    assert tip.text.count("\n") == 19
+    assert "Benefits" not in tip.text

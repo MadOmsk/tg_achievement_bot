@@ -1067,7 +1067,15 @@ sent to a chat.
   the Steam key), each page read as lines; the lines after an achievement's name, up
   to the next one's, are its tip. Lines that only repeat the achievement's own
   description, trailing table headings, guides of screenshots and guides mostly in
-  Chinese/Japanese/Korean give nothing. Re-read a month on, when the page is visited.
+  Chinese/Japanese/Korean give nothing. A tip runs to the next achievement's name or
+  the next section heading (a short line that ends no sentence), 3000 characters at
+  most — never cut mid-advice. Matched against every achievement known for the game,
+  not only its full list: a game whose list was never read still has the names
+  people earned. Re-read a month on, when the page is visited.
+- **Links, videos, pictures** stay in the text: a link as `[label](url)`, a video (a
+  guide's embedded player, a patch's `[previewyoutube]`) and a guide's screenshot as
+  their address alone on a line — the Mini App draws a link, a video card and a
+  picture (`webapp/src/components/game/rich-text/RichText.tsx`).
 - **Steam's community site refuses bursts** (429): guide pages are read one at a
   time, 2.5 s apart, for the whole bot; a refusal pauses every read for 90 s. Pages
   are kept under `data/steam_guides/` for a week, so a re-read costs no request. A

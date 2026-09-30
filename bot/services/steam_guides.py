@@ -49,15 +49,16 @@ _COOLDOWN_SECONDS = 90.0
 _DISK_DIR = Path("data") / "steam_guides"
 _DISK_SECONDS = 7 * 86400
 
-_BODY_LINES = 10
-_BODY_CHARS = 1000
+_BODY_LINES = 40
+_BODY_CHARS = 3000
 _MIN_BODY_CHARS = 20
 # What is left once the description's own words are taken out must still be a
 # sentence's worth, or it is only a section label ("Skulls & Terminals").
 _MIN_TIP_CHARS = 40
 _HEADING_CHARS = 12
 _LABEL_CHARS = 40
-_SENTENCE_END = (".", "!", "?", "…", ")", '"', "'", "»")
+# A line ending so is part of the advice, not a heading; ":" opens a list.
+_SENTENCE_END = (".", "!", "?", "…", ")", '"', "'", "»", ":")
 _SEPARATOR = re.compile(r"\s+[-–—|]\s+|:\s+")
 _BULLET = re.compile(r"^[\s\-–—•*·▪►>]*(?:\d{1,3}[.)]\s+)?")
 _PAGE_END = ("commentthread_area", "rightContents", "responsive_page_frame_footer")
@@ -65,6 +66,16 @@ _TITLE_RE = re.compile(r'<div class="workshopItemTitle">(.*?)</div>', re.DOTALL)
 # Han, kana and hangul.
 _IDEOGRAPHS = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
 _IDEOGRAPH_SHARE = 0.05
+# Links keep their address, an embedded player becomes its YouTube link — the
+# Mini App draws both (a link, a video card).
+_ANCHOR = re.compile(r'<a [^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', re.DOTALL | re.IGNORECASE)
+_PLAYER = re.compile(
+    r'<div class="sharedFilePreviewYouTubeVideo[^"]*" id="([A-Za-z0-9_-]{11})"[^>]*>',
+    re.IGNORECASE,
+)
+_LINK_OR_BULLET = re.compile(r"^(\[.*\]\(https?://|https?://|[-–—•*·▪►>]|\d{1,3}[.)] )")
+# Cached pages from before links and videos were kept are read again.
+_DISK_FORMAT = 2
 _BREAK = re.compile(r"<br\s*/?>|</div>|</li>|</p>|</h\d>|</tr>", re.IGNORECASE)
 
 
@@ -98,6 +109,14 @@ _cooldown_until = 0.0
 _community = asyncio.Lock()
 
 
+def _anchor(match: re.Match[str]) -> str:
+    url = html.unescape(match.group(1)).strip()
+    label = re.sub(r"<[^>]+>", "", match.group(2)).strip()
+    if not label or html.unescape(label) == url:
+        return url
+    return f"[{label}]({url})"
+
+
 def guide_lines(page: str) -> list[str]:
     """A guide page's text as readable lines: pictures, scripts and markup
     gone, every block ending a line."""
@@ -109,6 +128,8 @@ def guide_lines(page: str) -> list[str]:
     if ends:
         body = body[: min(ends)]
     body = re.sub(r"<script.*?</script>|<style.*?</style>", "", body, flags=re.DOTALL)
+    body = _PLAYER.sub(lambda m: f"\nhttps://www.youtube.com/watch?v={m.group(1)}\n", body)
+    body = _ANCHOR.sub(_anchor, body)
     body = _BREAK.sub("\n", body)
     text = html.unescape(re.sub(r"<[^>]+>", "", body)).replace("\xa0", " ")
     lines = (re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n"))
@@ -130,8 +151,13 @@ def make_guide(file_id: str, title: str, lines: list[str]) -> Guide:
 
 
 def _is_label(line: str) -> bool:
-    """A short line that ends no sentence: a heading, not advice."""
-    return len(line) <= _LABEL_CHARS and not line.endswith(_SENTENCE_END)
+    """A short line that ends no sentence, and is no link or list item: a
+    heading, not advice."""
+    return (
+        len(line) <= _LABEL_CHARS
+        and not line.endswith(_SENTENCE_END)
+        and not _LINK_OR_BULLET.match(line)
+    )
 
 
 def _repeats(line: str, descriptions: tuple[str, ...]) -> bool:
@@ -159,10 +185,15 @@ def tip_in(guide: Guide, wanted: Wanted, everything: set[str]) -> str | None:
             body.append(rest)
             size += len(rest)
         for i in range(index + 1, min(index + 1 + _BODY_LINES, len(guide.lines))):
-            if is_header[i] or size >= _BODY_CHARS:
+            line = guide.lines[i]
+            if is_header[i] or size + len(line) > _BODY_CHARS:
                 break
-            body.append(guide.lines[i])
-            size += len(guide.lines[i])
+            # A heading once the advice has begun is the next section
+            # ("Benefits", "Collectibles"), not more of this one.
+            if size >= _MIN_TIP_CHARS and _is_label(line):
+                break
+            body.append(line)
+            size += len(line)
         # A guide that copies the description tells nothing the row does not.
         body = [line for line in body if not _repeats(line, wanted.descriptions)]
         # Table headings ("Ending Achievements", "Description", "How to unlock")
@@ -173,7 +204,7 @@ def tip_in(guide: Guide, wanted: Wanted, everything: set[str]) -> str | None:
             body.pop()
         text = "\n".join(body).strip()
         if len(text) >= _MIN_TIP_CHARS:
-            return text[:_BODY_CHARS]
+            return text
     return None
 
 
@@ -225,9 +256,11 @@ def _recall(file_id: str) -> tuple[bool, Guide | None]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False, None
+    if data.get("format") != _DISK_FORMAT:
+        return False, None
     guide = (
         make_guide(file_id, str(data.get("title", "")), data["lines"])
-        if data.get("lines")
+        if data.get("lines") and data.get("format") == _DISK_FORMAT
         else None
     )
     _guide_memory[file_id] = guide
@@ -238,7 +271,11 @@ def _remember(file_id: str, guide: Guide | None) -> None:
     """Keep what was read, unusable guides included (so they are not read
     again), beside the other downloaded pictures and texts under data/."""
     _guide_memory[file_id] = guide
-    payload = {"title": guide.title, "lines": list(guide.lines)} if guide else {}
+    payload = (
+        {"format": _DISK_FORMAT, "title": guide.title, "lines": list(guide.lines)}
+        if guide
+        else {"format": _DISK_FORMAT}
+    )
     try:
         _DISK_DIR.mkdir(parents=True, exist_ok=True)
         (_DISK_DIR / f"{file_id}.json").write_text(

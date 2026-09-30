@@ -119,6 +119,33 @@ class _CatalogRepo:
             for row in rows
         ]
 
+    async def title_achievement_names(
+        self, platform: str, title_id: str
+    ) -> list[TitleAchievementRow]:
+        """Every achievement known for the game — its whole list, or, for a game
+        whose list was never read, the ones people earned — with its names and
+        descriptions. For matching text (the Steam guides' tips) where knowing
+        the name is enough."""
+        cursor = await self._conn.execute(
+            "SELECT platform, title_id, achievement_id, name_ru, name_en,"
+            "       description_ru, description_en "
+            "FROM title_achievements WHERE platform = ? AND title_id = ? "
+            "ORDER BY rowid ASC",
+            (platform, title_id),
+        )
+        return [
+            TitleAchievementRow(
+                platform=row["platform"],
+                title_id=row["title_id"],
+                achievement_id=row["achievement_id"],
+                name_ru=row["name_ru"],
+                name_en=row["name_en"],
+                description_ru=row["description_ru"],
+                description_en=row["description_en"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
     async def title_achievements_count(self, platform: str, title_id: str) -> int:
         """How many achievements are currently in catalog for this game."""
         cursor = await self._conn.execute(

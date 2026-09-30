@@ -1,26 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import type { GamePatch } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Icon } from "../../shared/lib";
+import { RichLines, withoutLinks } from "../rich-text/RichText";
 
 const FRESH_DAYS = 14;
-// `[label](https://…)` from the backend, or a bare address in the text.
-const LINK = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s)]+)/g;
-
-function openUrl(url: string) {
-  if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(url);
-  else window.open(url, "_blank", "noopener");
-}
-
-/** The words only, for the closed card where a link is not tappable. */
-function withoutLinks(text: string): string {
-  return text.replace(
-    LINK,
-    (_all, label: string | undefined, _url, bare: string | undefined) =>
-      label ?? bare ?? "",
-  );
-}
-
 /** The post as paragraphs, list lines kept together: Steam posts put a blank
  * line between nearly every line, which is far too airy to read. */
 function paragraphsOf(text: string): string[] {
@@ -42,34 +26,6 @@ function previewOf(text: string): string {
     .replace(/^- /gm, "")
     .replace(/\s*\n+\s*/g, " ")
     .trim();
-}
-
-/** A paragraph with its addresses made into links. */
-function linked(paragraph: string): ReactNode[] {
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const match of paragraph.matchAll(LINK)) {
-    const index = match.index ?? 0;
-    if (index > last) parts.push(paragraph.slice(last, index));
-    const url = match[2] ?? match[3];
-    parts.push(
-      <a
-        key={index}
-        href={url}
-        className="patch-link"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openUrl(url);
-        }}
-      >
-        {match[1] ?? url}
-      </a>,
-    );
-    last = index + match[0].length;
-  }
-  if (last < paragraph.length) parts.push(paragraph.slice(last));
-  return parts;
 }
 
 function formatDate(iso: string, locale: Locale): string {
@@ -166,7 +122,7 @@ export function PatchNotes({
                 <span className="patch-card-body">
                   {paragraphsOf(patch.text).map((paragraph, i) => (
                     <span key={i} className="patch-card-p">
-                      {linked(paragraph)}
+                      <RichLines text={paragraph} className="rich-line" />
                     </span>
                   ))}
                 </span>

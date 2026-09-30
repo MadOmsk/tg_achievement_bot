@@ -3,6 +3,7 @@ import { t, type Locale } from "../../../i18n";
 import { Avatar, CoverImg, Icon } from "../../shared/lib";
 import { HeroMarks } from "../../person";
 import { pickLocale } from "../utils";
+import { RichLines } from "../rich-text/RichText";
 
 export function GameAchievementRow({
   row,
@@ -53,11 +54,18 @@ export function GameAchievementRow({
     : canOpen
       ? () => onToggleTip(row.achievement_id)
       : undefined;
-  const Row = onTap ? "button" : "div";
 
   return (
-    <Row
-      type={onTap ? "button" : undefined}
+    <div
+      role={onTap ? "button" : undefined}
+      tabIndex={onTap ? 0 : undefined}
+      onKeyDown={
+        onTap
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") onTap();
+            }
+          : undefined
+      }
       className={[
         "feed-row",
         "has-wrap",
@@ -131,15 +139,11 @@ export function GameAchievementRow({
         <span className="ach-tip">
           <span className="ach-tip-inner">
             <span className="ach-tip-body">
-              {tip.text.split("\n").map((line, i) => (
-                <span key={i} className="ach-tip-line">
-                  {line}
-                </span>
-              ))}
+              <RichLines text={tip.text} className="ach-tip-line" />
             </span>
           </span>
         </span>
       )}
-    </Row>
+    </div>
   );
 }

@@ -58,8 +58,14 @@ _NOT_THE_GAME = re.compile(
 )
 _SEARCH_NOISE = re.compile(r"[™©®℠:,]")
 
+# A video in a post becomes its YouTube link on a line of its own — the Mini
+# App draws it as a video card.
+_BB_YOUTUBE = re.compile(
+    r'\[previewyoutube="?([A-Za-z0-9_-]{11})[^\]]*\].*?\[/previewyoutube\]',
+    re.DOTALL | re.IGNORECASE,
+)
 _BB_BLOCKS = re.compile(
-    r"\[(img|previewyoutube|video|table|code|quote)[^\]]*\].*?\[/\1\]",
+    r"\[(img|video|table|code|quote)[^\]]*\].*?\[/\1\]",
     re.DOTALL | re.IGNORECASE,
 )
 _CLAN_IMAGE = re.compile(r"\{STEAM_CLAN_IMAGE\}\S*")
@@ -97,7 +103,8 @@ def _link(match: re.Match[str]) -> str:
 def plain_text(bbcode: str) -> str:
     """Steam's BBCode reduced to readable paragraphs: pictures, videos and
     tables go, links and headings keep their words, list items become dashes."""
-    text = _BB_BLOCKS.sub("", bbcode)
+    text = _BB_YOUTUBE.sub(r"\nhttps://www.youtube.com/watch?v=\1\n", bbcode)
+    text = _BB_BLOCKS.sub("", text)
     text = _CLAN_IMAGE.sub("", text)
     text = _BB_LINK.sub(_link, text)
     text = _BB_HEADING.sub(r"\n\1\n", text)

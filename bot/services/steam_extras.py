@@ -91,7 +91,7 @@ class SteamExtras:
         api_key = await self._steam_auth.get_key() if self._steam_auth else None
         if not api_key:
             return True
-        catalog = await self._repo.get_title_achievements(platform, title_id)
+        catalog = await self._repo.title_achievement_names(platform, title_id)
         if not catalog:
             # Nothing to match the guides against yet; the catalog refresh
             # comes, and the next call finds it.

@@ -373,6 +373,55 @@
   margin-top: 0;
 }
 
+/* A line of rich text (a tip, a patch) is a block of its own. */
+.rich-line {
+  display: block;
+}
+
+/* A guide's screenshot in a tip. */
+.rich-image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  margin: 8px 0;
+  border-radius: 12px;
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
+/* A YouTube video in a tip or a patch: its picture, a play mark, a tap opens it. */
+.rich-video {
+  position: relative;
+  display: block;
+  max-width: 320px;
+  margin: 8px 0;
+  overflow: hidden;
+  border-radius: 12px;
+  aspect-ratio: 16 / 9;
+  background: #0a0c12;
+  cursor: pointer;
+}
+
+.rich-video img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rich-video-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+}
+
 /* The updates tab: one soft card per patch, the newest first. */
 .patch-list {
   display: flex;

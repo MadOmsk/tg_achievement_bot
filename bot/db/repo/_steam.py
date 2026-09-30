@@ -148,7 +148,7 @@ class _SteamRepo:
         """(tip_en, tip_ru) for each achievement of the game that has a tip."""
         cursor = await self._conn.execute(
             "SELECT achievement_id, tip_en, tip_ru FROM title_achievements"
-            " WHERE platform = ? AND title_id = ? AND listed = 1"
+            " WHERE platform = ? AND title_id = ?"
             " AND (tip_en IS NOT NULL OR tip_ru IS NOT NULL)",
             (platform, title_id),
         )
