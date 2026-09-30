@@ -1,17 +1,9 @@
 # Entry-point messages (bot/main.py) — not aiogram handlers, so these are
 # resolved via bot.i18n.gettext() rather than I18nContext DI.
-# Backfill failure/success DMs (run() -> backfill())
-# Startup and backfill
-main-backfill-failed =
-    I couldn't read back your achievement history. Publishing is off for now,
-    so I don't flood the chat — run /connect_xbox again a little later.
-main-backfill-done = Done: read back { $count } achievements you'd already unlocked — they won't be posted to the chat. From here on I only publish new ones.
 
 # on_linked() — right after a successful Xbox OAuth callback
 main-linked = ✅ XBOX connected: { $gamertag }
 main-linked-subscribed-origin-chat = I also subscribed you to publishing in the chat you came from.
-main-linked-backfill-starting = Reading your achievement history, this will take a minute…
-main-linked-refreshing = Refreshing your stats…
 
 # Default gamertag placeholder used by startup catch-up when the user row
 # has none cached yet.

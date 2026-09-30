@@ -27,6 +27,7 @@ from bot.i18n import translator
 from bot.poller.cadence import debounce_passed, is_dormant
 from bot.poller.publisher import Publisher
 from bot.services.hltb import ensure_title_match
+from bot.services.models import Progress
 from bot.services.psn.achievements import sync_account
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import PsnApiError, account_trophy_level, is_trophy_visible
@@ -49,6 +50,9 @@ class PsnBackfillResult:
 
     stored: int = 0
     private_title_ids: list[str] = field(default_factory=list)
+    games: int = 0
+    # False when the account's trophies could not be read at all.
+    visible: bool = True
 
 
 class PsnFetcher:
@@ -219,7 +223,9 @@ class PsnFetcher:
         """
         self._relink_window[account_id] = window_hours
 
-    async def backfill(self, tg_id: int, account_id: str) -> PsnBackfillResult:
+    async def backfill(
+        self, tg_id: int, account_id: str, *, progress: Progress | None = None
+    ) -> PsnBackfillResult:
         """Mark everything already earned as seen, publishing nothing — same
         principle as Xbox/Steam's own backfill (SPEC 5.6, M-Steam-2d).
         Cheaper than Steam's: trophy_titles() without a limit already lists
@@ -246,7 +252,7 @@ class PsnFetcher:
                 tg_id, Platform.PSN, False, external_id=account_id
             )
             log.info("psn backfill for tg_id=%s skipped: trophies not visible", tg_id)
-            return PsnBackfillResult()
+            return PsnBackfillResult(visible=False)
         await self._repo.set_achievements_visible(tg_id, Platform.PSN, True, external_id=account_id)
 
         # No limit (unlike poll_account) — the whole account's history, not
@@ -262,6 +268,7 @@ class PsnFetcher:
             limit=None,
             anthropic_auth=self._anthropic_auth,
             translation_client=await self._translation_client(),
+            report=progress,
         )
         await self._repo.mark_psn_backfill_done(account_id)
         log.info(
@@ -277,6 +284,7 @@ class PsnFetcher:
         return PsnBackfillResult(
             stored=len(outcome.new_rows),
             private_title_ids=list(outcome.private_title_ids),
+            games=outcome.scanned,
         )
 
     async def refresh_user(self, tg_id: int, account_id: str, online_id: str, locale: str) -> str:

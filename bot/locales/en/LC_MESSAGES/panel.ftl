@@ -10,7 +10,6 @@ panel-login-revoked = 🔘 disconnected
 panel-login-not-connected = 🔘 not connected
 panel-group-hint = Settings live in a DM.
 panel-refreshed = Refreshed
-panel-xbox-not-connected = Connect XBOX first: /connect_xbox
 # panel_chat_subscribe's own message (2026-09-09) — publishing needs any
 # one platform connected, not Xbox specifically; panel-xbox-not-connected
 # above stays as-is for panel_sync, which really is Xbox-only.

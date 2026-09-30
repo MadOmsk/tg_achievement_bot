@@ -41,6 +41,7 @@ from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.handlers import awaiting
+from bot.handlers.backfill import run_steam
 from bot.handlers.delivery import notify_previous_owner, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.steam_fetcher import SteamFetcher
@@ -49,7 +50,6 @@ from bot.services.naming import link_nickname
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import (
     SteamApiError,
-    SteamGameDetailsPrivateError,
     get_profile,
     resolve_steam_id,
 )
@@ -387,9 +387,8 @@ async def _connect(
 
     # Backgrounded (SPEC 9, M-Steam-2d) — a big library is genuinely
     # hundreds of requests, the reply above must not wait for it.
-    await bot.send_message(tg_id, i18n.get("steam-backfill-started"))
     asyncio.create_task(  # noqa: RUF006
-        _backfill_and_notify(bot, steam_fetcher, tg_id, profile.steam_id, i18n)
+        run_steam(bot, steam_fetcher, repo, tg_id, profile.steam_id)
     )
 
 
@@ -427,30 +426,6 @@ async def steam_switch_cancelled(callback: CallbackQuery, i18n: I18nContext) -> 
     await callback.answer()
     with contextlib.suppress(Exception):
         await callback.message.edit_text(i18n.get("connect-switch-cancelled"))
-
-
-async def _backfill_and_notify(
-    bot: Bot, fetcher: SteamFetcher, tg_id: int, steam_id: str, i18n: I18nContext
-) -> None:
-    try:
-        count = await fetcher.backfill(tg_id, steam_id)
-    except SteamGameDetailsPrivateError:
-        # Found live (whalerider84, 2026-09-08): "My Profile" passed the
-        # is_public check above, but the separate "Game details" privacy
-        # setting was still private/friends-only — backfill silently stored
-        # 0, and this person would otherwise only ever see "0 достижений"
-        # with no explanation anywhere. Same fix, same wording as
-        # steam-profile-private, just caught one step later.
-        log.info("connect_steam: game details private for tg_id=%s steam_id=%s", tg_id, steam_id)
-        await bot.send_message(
-            tg_id, i18n.get("steam-game-details-private", privacy_url=PRIVACY_URL)
-        )
-        return
-    except Exception:
-        log.exception("steam backfill for tg_id=%s failed", tg_id)
-        await bot.send_message(tg_id, i18n.get("steam-backfill-failed"))
-        return
-    await bot.send_message(tg_id, i18n.get("steam-backfill-done", count=count))
 
 
 def _disconnect_prompt_keyboard(i18n: I18nContext, *, from_panel: bool) -> InlineKeyboardMarkup:

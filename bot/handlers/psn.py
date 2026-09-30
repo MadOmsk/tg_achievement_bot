@@ -30,6 +30,7 @@ from bot.config import get_settings
 from bot.constants import MAX_PSN_ACCOUNTS, Platform
 from bot.db.repo import Repo
 from bot.handlers import awaiting
+from bot.handlers.backfill import run_psn
 from bot.handlers.delivery import notify_previous_owner, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.psn_fetcher import PsnFetcher
@@ -392,9 +393,8 @@ async def _connect(
         await bot.send_message(tg_id, i18n.get("psn-catch-up-started"))
         return
 
-    await bot.send_message(tg_id, i18n.get("psn-backfill-started"))
     asyncio.create_task(  # noqa: RUF006
-        _backfill_and_notify(bot, psn_fetcher, tg_id, profile.account_id, i18n)
+        run_psn(bot, psn_fetcher, repo, tg_id, profile.account_id, profile.online_id)
     )
 
 
@@ -432,25 +432,6 @@ async def psn_switch_cancelled(callback: CallbackQuery, i18n: I18nContext) -> No
     await callback.answer()
     with contextlib.suppress(Exception):
         await callback.message.edit_text(i18n.get("connect-switch-cancelled"))
-
-
-async def _backfill_and_notify(
-    bot: Bot, fetcher: PsnFetcher, tg_id: int, account_id: str, i18n: I18nContext
-) -> None:
-    try:
-        result = await fetcher.backfill(tg_id, account_id)
-    except Exception:
-        log.exception("psn backfill for tg_id=%s failed", tg_id)
-        await bot.send_message(tg_id, i18n.get("psn-backfill-failed"))
-        return
-    text = i18n.get("psn-backfill-done", count=result.stored)
-    if result.private_title_ids:
-        # #28: the account passed the connect-time visibility check, but some
-        # individual games are still private — say so, with where to fix it,
-        # instead of just silently missing those trophies.
-        note = i18n.get("psn-backfill-private-note", count=len(result.private_title_ids))
-        text += "\n\n" + note
-    await bot.send_message(tg_id, text)
 
 
 def _disconnect_prompt_keyboard(i18n: I18nContext, *, from_panel: bool) -> InlineKeyboardMarkup:

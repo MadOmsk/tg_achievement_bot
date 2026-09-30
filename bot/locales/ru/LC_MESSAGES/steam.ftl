@@ -16,12 +16,8 @@ steam-unresolved-profile-nickname-hint =
     Если присылал ник — я ищу именно по ссылке профиля, не по имени в клиенте: у Steam просто нет способа искать по нему. Ссылку можно скопировать в приложении или на steamcommunity.com → «Изменить профиль».
 steam-profile-private = Профиль есть, но игровая статистика скрыта — я не смогу читать достижения. Сделай её публичной и попробуй снова: { $privacy_url } → «Игровая статистика» → «Всем».
 
-# Backfill and disconnect
+# Connected and disconnect
 steam-connected = Подключил Steam: { $name }.
-steam-backfill-started = Читаю твою историю достижений Steam, это может занять пару минут…
-steam-backfill-failed = Не смог перечитать твою историю достижений Steam. Публикация пока выключена — привяжи аккаунт заново чуть позже: /connect_steam.
-steam-backfill-done = Готово: перечитал { $count } уже выбитых достижений Steam — в чат они не полетят.
-steam-game-details-private = Профиль подключил, но твоя игровая статистика скрыта отдельно от общей приватности профиля — достижения не прочитать. Сделай публичной именно её: { $privacy_url } → «Игровая статистика» → «Всем», и напиши /connect_steam ещё раз.
 steam-disconnect-confirm-button = Да, отключить
 steam-cancel-button = Отмена
 steam-already-disconnected = Steam и так не подключён.

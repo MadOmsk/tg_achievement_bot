@@ -16,12 +16,8 @@ steam-unresolved-profile-nickname-hint =
     If you sent a nickname — I search by the profile URL, not by the name shown in the client: Steam simply has no way to search by that. You can copy the link in the app or on steamcommunity.com → “Edit Profile”.
 steam-profile-private = The profile exists, but its game details are hidden — I can't read achievements. Make them public and try again: { $privacy_url } → “Game details” → “Public”.
 
-# Backfill and disconnect
+# Connected and disconnect
 steam-connected = Steam connected: { $name }.
-steam-backfill-started = Reading your Steam achievement history, this may take a couple of minutes…
-steam-backfill-failed = I couldn't read back your Steam achievement history. Publishing is off for now — link the account again a little later: /connect_steam.
-steam-backfill-done = Done: read back { $count } Steam achievements you'd already unlocked — they won't be posted to the chat.
-steam-game-details-private = I connected the profile, but your game details are hidden separately from the profile's overall privacy — achievements can't be read. Make that specific setting public: { $privacy_url } → “Game details” → “Public”, then run /connect_steam again.
 steam-disconnect-confirm-button = Yes, disconnect
 steam-cancel-button = Cancel
 steam-already-disconnected = Steam isn't connected anyway.

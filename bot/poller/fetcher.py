@@ -12,6 +12,7 @@ from bot.i18n import translator
 from bot.poller.publisher import Publisher
 from bot.services import achievement_icons
 from bot.services.hltb import ensure_title_match
+from bot.services.models import Progress
 from bot.services.platform_format import game_platforms_json
 from bot.services.rows import to_achievement_row
 from bot.services.translate.auth import AnthropicAuth
@@ -362,15 +363,21 @@ class Fetcher:
             if resolved_pair is not None and resolved_pair[0] is not None:
                 item.description = resolved_pair[0]
 
-    async def backfill(self, tg_id: int, xuid: str) -> int:
+    async def backfill(self, tg_id: int, xuid: str, *, progress: Progress | None = None) -> int:
         """Mark everything already unlocked as seen, publishing nothing.
 
         Without this the first poll after connecting would dump thousands of
         old achievements into the chat.
         """
         async with self._backfill_slots:
+            # Three steps, not games: the modern history is one request for
+            # the whole library, so there is no per-game count to show.
+            if progress is not None:
+                await progress(0, 3, 0)
             raw_items = await self._client.all_achievements(tg_id)
             rows = [to_achievement_row(item) for item in raw_items]
+            if progress is not None:
+                await progress(1, 3, len(rows))
 
             # Save any titles learned from all_achievements (contract 2) so older
             # games beyond title_history's window don't stay untitled in the catalog (#77).
@@ -388,7 +395,11 @@ class Fetcher:
             # The whole history, not the 200 most recent the pollers read: the
             # per-title fallback below finds a 360 game only through it (#121).
             history = await self._client.title_history(tg_id, max_items=BACKFILL_HISTORY_ITEMS)
+            if progress is not None:
+                await progress(2, 3, len(rows))
             rows.extend(await self._x360_rows(tg_id, history))
+            if progress is not None:
+                await progress(3, 3, len(rows))
 
             await self._repo.insert_new_achievements(xuid, rows, is_backfill=True)
             await self._save_history(tg_id, xuid, history)

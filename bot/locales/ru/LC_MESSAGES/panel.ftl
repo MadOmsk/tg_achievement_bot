@@ -10,7 +10,6 @@ panel-login-revoked = 🔘 отключён
 panel-login-not-connected = 🔘 не подключён
 panel-group-hint = Настройки — в личке.
 panel-refreshed = Обновил
-panel-xbox-not-connected = Сначала подключи XBOX: /connect_xbox
 # panel_chat_subscribe's own message (2026-09-09) — publishing needs any
 # one platform connected, not Xbox specifically; panel-xbox-not-connected
 # above stays as-is for panel_sync, which really is Xbox-only.
