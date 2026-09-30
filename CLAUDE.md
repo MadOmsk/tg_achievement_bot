@@ -696,7 +696,8 @@ keyboard.
   publish; presence as **one row** (`presence_view.pick_presence`, the same rule
   `/online` uses — names the platform only while online). The rarity mode and the
   timezone are on their buttons, not in the text. Keyboard: timezone, My chats
-  (subscribe / unsubscribe per chat — nothing else is per chat), the rarity mode for
+  (subscribe / unsubscribe per chat — nothing else is per chat), the rarity mode as a
+  carousel ("📣 Публиковать: Все" → Редкие → Никакие, one tap each) for
   every chat (#126), language (#48, DMs only), then one row per platform in the
   display order — `[🟢 XBOX ▸, 🔔 posting switch]` (#10), or one wide "🎮 Подключить X"
   (#33). The platform button opens that platform's screen: profile, the switch,
