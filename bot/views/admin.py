@@ -1055,7 +1055,7 @@ def render_admin_user_delete_confirm_1(name: str, tg_id: int, *, locale: str) ->
         InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
     )
     return Screen(
-        _("admin-delete-confirm-1", name=name, tg_id=tg_id),
+        _("admin-delete-confirm-1", name=name, tg_id=str(tg_id)),
         builder.as_markup(),
     )
 
@@ -1070,6 +1070,6 @@ def render_admin_user_delete_confirm_2(name: str, tg_id: int, *, locale: str) ->
         InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
     )
     return Screen(
-        _("admin-delete-confirm-2", name=name, tg_id=tg_id),
+        _("admin-delete-confirm-2", name=name, tg_id=str(tg_id)),
         builder.as_markup(),
     )

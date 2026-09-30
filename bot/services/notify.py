@@ -56,7 +56,7 @@ class AdminNotifier:
         async def build(locale: str) -> str:
             _ = translator("notify", locale)
             user = await self._repo.get_user(tg_id)
-            name = (user.gamertag if user else None) or _("notify-id", tg_id=tg_id)
+            name = (user.gamertag if user else None) or _("notify-id", tg_id=str(tg_id))
             who = await self._who(tg_id, locale)
             return (
                 f"{_('notify-token-dead-line1', name=name)}\n{who}\n{_('notify-token-dead-line2')}"
@@ -136,7 +136,7 @@ class AdminNotifier:
         _ = translator("notify", locale)
         user = await self._repo.get_user(tg_id)
         username = f"@{user.username}" if user and user.username else _("notify-who-no-username")
-        return _("notify-who", tg_id=tg_id, username=username)
+        return _("notify-who", tg_id=str(tg_id), username=username)
 
     async def _send(self, build: Callable[[str], Awaitable[str]]) -> None:
         for admin_id in self._admin_ids:
