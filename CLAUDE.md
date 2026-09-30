@@ -682,7 +682,7 @@ keyboard.
   2026-09-30): connect, unlink, relogin, the Steam link prompt and the timezone
   picker edit the message they were opened from and end in buttons — "‹ Назад" /
   "‹ В панель" back, "⚙️ Панель" or the next step on. Only what arrives later (a
-  backfill's status, #3 of that list) is a message of its own.
+  backfill's live status, `handlers/backfill.py`) is a message of its own.
 - **Timezones**: the eight offsets this community lives in, "Другой ▸" for the full
   −12…+14 grid, "✏️ Ввести вручную" for one typed offset (`+3`, `+5:30`). Offsets,
   never zone names.
