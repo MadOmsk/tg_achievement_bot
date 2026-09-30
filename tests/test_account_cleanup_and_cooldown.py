@@ -266,3 +266,20 @@ async def test_expired_cooldown_allows_relink(repo: Repo) -> None:
 
     check = await repo.check_platform_cooldown(ALICE, "xbox", XBOX_XUID)
     assert check.is_blocked is False
+
+
+async def test_one_deletion_is_one_reset_with_several_psn_accounts(repo: Repo) -> None:
+    """Two PSN accounts (#10) and a replaced Steam link are still one deletion:
+    the free re-link must survive it (test server, 2026-09-30)."""
+    await repo.ensure_user(ALICE, "alice")
+    await repo.link_platform_account(ALICE, Platform.PSN, "psn-1", "One")
+    await repo.link_platform_account(ALICE, Platform.PSN, "psn-2", "Two")
+    await repo.link_platform_account(ALICE, Platform.STEAM, "1", "A")
+    await repo.link_platform_account(ALICE, Platform.STEAM, "2", "B")
+
+    await repo.delete_user(ALICE, is_admin=False)
+
+    for platform, external_id in ((Platform.PSN, "psn-2"), (Platform.STEAM, "2")):
+        check = await repo.check_platform_cooldown(ALICE, platform, external_id)
+        assert check.is_blocked is False
+        assert check.reset_count == 1

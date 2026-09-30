@@ -225,8 +225,14 @@ class _AccountsRepo:
                     (platform, external_id),
                 )
 
-            # Record cooldown if user-initiated
-            if not is_admin:
+        # One reset per platform, however many accounts it held: several PSN
+        # accounts (#10), or links replaced earlier, are still one deletion —
+        # counted per account, a single deletion used up the free re-link.
+        if not is_admin:
+            reset: dict[str, str] = {}
+            for platform, external_id in linked_accounts:
+                reset.setdefault(platform, external_id)
+            for platform, external_id in reset.items():
                 await self.record_platform_reset(tg_id, platform, external_id)
 
         if is_admin:
