@@ -84,7 +84,7 @@ async def render_chat_card(repo: Repo, tg_id: int, chat_id: int, *, locale: str)
     builder = InlineKeyboardBuilder()
     if chat.is_subscribed:
         text = (
-            i18n.get("panel-chat-card-title", title=title)
+            i18n.get("panel-chat-card-title", title=html_escape(str(title)))
             + "\n\n"
             + i18n.get("panel-publication-enabled")
         )
@@ -97,7 +97,7 @@ async def render_chat_card(repo: Repo, tg_id: int, chat_id: int, *, locale: str)
         )
     else:
         text = (
-            i18n.get("panel-chat-card-title", title=title)
+            i18n.get("panel-chat-card-title", title=html_escape(str(title)))
             + "\n\n"
             + i18n.get("panel-publication-disabled")
         )
@@ -125,7 +125,10 @@ def _panel_identity(user: User, links: list[PlatformLink], locale: str) -> str:
     and the only one whose last resort was a bare `tg_id` with no `id`
     prefix at all."""
     return gettext(
-        "panel", "panel-header-identity", locale=locale, name=person_name_of(user, links)
+        "panel",
+        "panel-header-identity",
+        locale=locale,
+        name=html_escape(person_name_of(user, links)),
     )
 
 
@@ -309,7 +312,7 @@ async def _now_playing(
     # Presence gives no name for PC titles — fall back to the cache the
     # poller fills (SPEC 4), same as the admin card.
     game = presence.game or await repo.title_name(presence.title_id) or presence.title_id
-    return f"{tag}  ·  " + i18n.get("panel-playing", game=game)
+    return f"{tag}  ·  " + i18n.get("panel-playing", game=html_escape(str(game)))
 
 
 def _livelier(a: PsnPresenceRow, b: PsnPresenceRow) -> PsnPresenceRow:
@@ -360,11 +363,13 @@ async def _publication_status(
     chats = await repo.chats_of_user(tg_id)
     if not chats:
         return i18n.get("panel-not-subscribed-anywhere")
-    status = i18n.get("panel-subscribed-in", chats=", ".join(f"«{title}»" for title in chats))
+    status = i18n.get(
+        "panel-subscribed-in", chats=", ".join(f"«{html_escape(str(title))}»" for title in chats)
+    )
     if muted:
         # Which accounts the person switched off (#20), said where the
         # question "where does it post" is answered.
-        status += i18n.get("panel-publishing-without", platforms=", ".join(muted))
+        status += i18n.get("panel-publishing-without", platforms=html_escape(", ".join(muted)))
     return status
 
 
@@ -425,7 +430,10 @@ async def _chat_confirm(
             text=i18n.get("panel-unsub-cancel"), callback_data=f"panel:chat:{chat_id}"
         )
     )
-    return Screen(i18n.get(prompt, title=chat.title or chat.chat_id), builder.as_markup())
+    return Screen(
+        i18n.get(prompt, title=html_escape(str(chat.title or chat.chat_id))),
+        builder.as_markup(),
+    )
 
 
 async def render_panel_delete_confirm_1(*, locale: str) -> Screen:

@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from html import escape as html_escape
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     CallbackQuery,
@@ -118,6 +119,7 @@ async def start_with_payload(
                     ),
                     panel_button(i18n),
                 ),
+                parse_mode=ParseMode.HTML,
             )
             return
         await _send_login_link(message, connect, repo, i18n, origin_chat_id=origin_chat_id)
@@ -176,6 +178,7 @@ async def connect_command(
                 ),
                 panel_button(i18n),
             ),
+            parse_mode=ParseMode.HTML,
         )
         return
     await _send_login_link(message, connect, repo, i18n)
@@ -334,7 +337,7 @@ async def timezone_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
         # Back to the panel it was opened from; the new value is on its
         # button, and a toast says it took.
         screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-        await safe_edit(callback, screen.text, screen.keyboard)
+        await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
         await callback.answer(i18n.get("panel-timezone-toast", offset=offset))
         return
     await safe_edit(
@@ -395,10 +398,14 @@ async def timezone_manual_input(message: Message, repo: Repo, bot: Bot, i18n: I1
         markup = buttons(panel_button(i18n))
     try:
         await bot.edit_message_text(
-            text, chat_id=message.chat.id, message_id=prompt_id, reply_markup=markup
+            text,
+            chat_id=message.chat.id,
+            message_id=prompt_id,
+            reply_markup=markup,
+            parse_mode=ParseMode.HTML,
         )
     except Exception:
-        await message.answer(text, reply_markup=markup)
+        await message.answer(text, reply_markup=markup, parse_mode=ParseMode.HTML)
 
 
 async def _greet(
@@ -491,8 +498,10 @@ def _username(message: Message) -> str | None:
 
 
 def _xbox_name(user: object) -> str:
-    return xbox_nickname(
-        gamertag_modern=getattr(user, "gamertag_modern", None),
-        gamertag=getattr(user, "gamertag", None),
-        xuid=getattr(user, "xuid", None),
+    return html_escape(
+        xbox_nickname(
+            gamertag_modern=getattr(user, "gamertag_modern", None),
+            gamertag=getattr(user, "gamertag", None),
+            xuid=getattr(user, "xuid", None),
+        )
     )

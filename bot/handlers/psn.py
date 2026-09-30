@@ -15,7 +15,7 @@ import logging
 from html import escape as html_escape
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import BaseFilter, Command, CommandObject
 from aiogram.types import (
     CallbackQuery,
@@ -187,6 +187,7 @@ async def psn_add(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> Non
                 ]
             ]
         ),
+        parse_mode=ParseMode.HTML,
     )
     await callback.answer()
 
@@ -197,7 +198,7 @@ async def psn_add_cancel(callback: CallbackQuery, repo: Repo, i18n: I18nContext)
     screen = await render_account_menu(
         repo, callback.from_user.id, Platform.PSN, locale=i18n.locale
     ) or await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
@@ -362,7 +363,8 @@ async def _connect(
             max=MAX_PSN_ACCOUNTS,
         )
         if count > 1
-        else i18n.get("psn-connected", name=profile.online_id),
+        else i18n.get("psn-connected", name=html_escape(profile.online_id)),
+        parse_mode=ParseMode.HTML,
     )
     if taken_from is not None:
         await notify_previous_owner(
@@ -459,7 +461,9 @@ async def disconnect_psn_command(message: Message, repo: Repo, i18n: I18nContext
         # Which one (#10) — the PSN screen has an unlink button per account.
         screen = await render_account_menu(repo, message.chat.id, Platform.PSN, locale=i18n.locale)
         if screen is not None:
-            await message.answer(screen.text, reply_markup=screen.keyboard)
+            await message.answer(
+                screen.text, reply_markup=screen.keyboard, parse_mode=ParseMode.HTML
+            )
             return
     link = links[0]
     await message.answer(
@@ -551,4 +555,4 @@ async def psn_unlink_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nCont
     screen = await render_account_menu(
         repo, callback.from_user.id, Platform.PSN, locale=i18n.locale
     ) or await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)

@@ -24,9 +24,10 @@ import asyncio
 import contextlib
 import logging
 import re
+from html import escape as html_escape
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import BaseFilter, Command, CommandObject
 from aiogram.types import (
     CallbackQuery,
@@ -154,9 +155,13 @@ async def prompt_for_link(
     if callback is not None:
         # From a button: the prompt takes that message's place, with a way
         # back, instead of arriving as two new ones (owner, 2026-09-30).
-        await safe_edit(callback, text, markup, disable_web_page_preview=True)
+        await safe_edit(
+            callback, text, markup, disable_web_page_preview=True, parse_mode=ParseMode.HTML
+        )
         return
-    await bot.send_message(tg_id, text, reply_markup=markup, disable_web_page_preview=True)
+    await bot.send_message(
+        tg_id, text, reply_markup=markup, disable_web_page_preview=True, parse_mode=ParseMode.HTML
+    )
 
 
 def _prompt_screen(
@@ -170,7 +175,7 @@ def _prompt_screen(
     )
     if link is not None:
         return (
-            i18n.get("steam-already-connected", name=link_nickname(link)),  # type: ignore[arg-type]
+            i18n.get("steam-already-connected", name=html_escape(link_nickname(link))),  # type: ignore[arg-type]
             InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
@@ -207,7 +212,7 @@ async def steam_prompt_back(callback: CallbackQuery, repo: Repo, i18n: I18nConte
     screen = await render_account_menu(
         repo, callback.from_user.id, Platform.STEAM, locale=i18n.locale
     ) or await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 

@@ -6,7 +6,7 @@ import logging
 import time
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram_i18n import I18nContext
@@ -65,7 +65,15 @@ async def send_panel(bot: Bot, repo: Repo, tg_id: int, i18n: I18nContext) -> Non
     their panel replaces the previous copy instead of piling up a new one
     every time (Follow-up 2026-09-06)."""
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
-    await send_replacing(bot, repo, tg_id, "panel", screen.text, reply_markup=screen.keyboard)
+    await send_replacing(
+        bot,
+        repo,
+        tg_id,
+        "panel",
+        screen.text,
+        reply_markup=screen.keyboard,
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.message(Command("panel"), F.chat.type == ChatType.PRIVATE)
@@ -81,7 +89,7 @@ async def panel_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContex
 async def panel_refresh(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     await repo.touch_last_online(callback.from_user.id)
     screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer(i18n.get("panel-refreshed"))
 
 
@@ -101,7 +109,7 @@ async def panel_sync(
     await repo.touch_last_online(tg_id)
 
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 
     user = await repo.get_user(tg_id)
     token = await repo.get_token(tg_id) if user and user.xuid else None
@@ -186,7 +194,7 @@ async def panel_sync(
 
     # Redraw panel with newly inserted achievements / gamerscore
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 
     if errors and (len(errors) == attempted_platforms or not (total_titles or total_published)):
         summary = i18n.get("panel-sync-failed")
@@ -253,7 +261,7 @@ async def _redraw_account_menu(
     screen = await render_account_menu(repo, callback.from_user.id, platform, locale=i18n.locale)
     if screen is None:
         screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     if answer:
         await callback.answer()
 
@@ -294,7 +302,7 @@ async def panel_toggle_publishing(callback: CallbackQuery, repo: Repo, i18n: I18
         i18n.get("panel-publishes-on-toast" if publishes else "panel-publishes-off-toast")
     )
     screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 
 
 @router.callback_query(F.data.startswith("panel:accpub:"))
@@ -339,7 +347,7 @@ async def _toggle_one(
 async def panel_rarity(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """The person's rarity mode, for every chat at once (#126)."""
     screen = await render_rarity_picker(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
@@ -354,7 +362,7 @@ async def panel_rarity_set(callback: CallbackQuery, repo: Repo, i18n: I18nContex
     await repo.update_user_settings(callback.from_user.id, rarity_mode=mode)
     await callback.answer(i18n.get(f"chat-hub-toast-{mode}"))
     screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 
 
 @router.callback_query(F.data == "panel:locale")
@@ -373,7 +381,7 @@ async def panel_toggle_locale(callback: CallbackQuery, repo: Repo, i18n: I18nCon
 
     await callback.answer(locale_name(chosen))
     screen = await render_panel(repo, tg_id, locale=chosen)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 
 
 @router.callback_query(F.data == "panel:tz")
@@ -398,7 +406,7 @@ async def panel_chat_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext
 
 async def _redraw_chat_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     screen = await render_chat_list(repo, callback.from_user.id, locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
@@ -409,7 +417,7 @@ async def _redraw_chat_card(
     if screen is None:
         await _redraw_chat_list(callback, repo, i18n)
         return
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
@@ -452,7 +460,7 @@ async def panel_chat_unsub_prompt(callback: CallbackQuery, repo: Repo, i18n: I18
     if screen is None:
         await _redraw_chat_list(callback, repo, i18n)
         return
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
@@ -475,7 +483,7 @@ async def panel_chat_delete_prompt(callback: CallbackQuery, repo: Repo, i18n: I1
     if screen is None:
         await _redraw_chat_list(callback, repo, i18n)
         return
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
@@ -491,14 +499,14 @@ async def panel_chat_delete_confirm(callback: CallbackQuery, repo: Repo, i18n: I
 @router.callback_query(F.data == "panel:delete_account")
 async def panel_delete_account_step1(callback: CallbackQuery, i18n: I18nContext) -> None:
     screen = await render_panel_delete_confirm_1(locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
 @router.callback_query(F.data == "panel:delete:step1")
 async def panel_delete_account_step2(callback: CallbackQuery, i18n: I18nContext) -> None:
     screen = await render_panel_delete_confirm_2(locale=i18n.locale)
-    await safe_edit(callback, screen.text, screen.keyboard)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
