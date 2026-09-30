@@ -54,6 +54,19 @@ function localeOf(me: MeResponse): Locale {
   return me.settings.locale === "en" ? "en" : "ru";
 }
 
+/** The reverse of `bot/services/mini_app.py::_encode_game` — base64url,
+ * padding restored, back to "platform:titleId". `null` on anything that
+ * doesn't actually decode, rather than a page that opens on garbage. */
+function decodeGameToken(token: string): string | null {
+  try {
+    const padded = token + "=".repeat((4 - (token.length % 4)) % 4);
+    const std = padded.replace(/-/g, "+").replace(/_/g, "/");
+    return atob(std);
+  } catch {
+    return null;
+  }
+}
+
 function launchContext(): {
   chatId: number | null;
   personId: number | null;
@@ -65,15 +78,20 @@ function launchContext(): {
   let chatId = q.get("c");
   let personId = q.get("u");
   let tab = q.get("t");
+  // From the query string (a DM's own https URL): plain "platform:titleId",
+  // already percent-decoded by URLSearchParams.
   let game = q.get("g");
-  // g<platform>:<titleId> — see bot/services/mini_app.py, the two must
-  // stay in sync.
-  const parsed = /^c(-?\d+)(?:u(\d+))?(?:t([a-z]+))?(?:g([a-z0-9_]+):([\w.-]+))?$/.exec(start);
+  // From a group's startapp value: base64url of the same string — Telegram's
+  // start_parameter only allows [A-Za-z0-9_-], which a literal ':' falls
+  // outside of (found live, 2026-09-30 review of #145: every group deep
+  // link to a game was silently broken). See bot/services/mini_app.py's
+  // `_encode_game`, which this must stay in sync with.
+  const parsed = /^c(-?\d+)(?:u(\d+))?(?:t([a-z]+))?(?:g([A-Za-z0-9_-]+))?$/.exec(start);
   if (parsed) {
     chatId ??= parsed[1];
     personId ??= parsed[2] ?? null;
     tab ??= parsed[3] ?? null;
-    game ??= parsed[4] && parsed[5] ? `${parsed[4]}:${parsed[5]}` : null;
+    game ??= parsed[4] ? decodeGameToken(parsed[4]) : null;
   }
   // Split on the first ":" only — a title_id is never expected to hold one,
   // but nothing stops it from someday.
