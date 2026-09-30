@@ -30,8 +30,6 @@ from bot.util import humanize_ago
 from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows
 from bot.views.keyboards import (
-    format_offset,
-    format_rarity,
     panel_keyboard,
     rarity_keyboard,
 )
@@ -191,6 +189,10 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         xbox_publishes=xbox_link.publishes if xbox_link else True,
         psn_publishes=platform_publishes(psn_links),
         steam_publishes=steam_link.publishes if steam_link else True,
+        # ❗ on a platform whose achievements the bot cannot see (owner,
+        # 2026-09-30) — for PSN, any one of its accounts.
+        steam_hidden=bool(steam_link and steam_link.achievements_visible is False),
+        psn_hidden=any(link.achievements_visible is False for link in psn_links),
     )
 
     if user is None:
@@ -217,21 +219,31 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
     # counters and "последние достижения" list this body used to carry are
     # gone — the header covers achievements now.
     lines = await _panel_header_lines(repo, user, steam_link, psn_links, i18n)
-    lines += ["", i18n.get("panel-login-xbox-row", status=login)]
-    if steam_link is not None:
-        lines.append(
-            i18n.get(
-                "panel-login-steam-row",
-                name=link_nickname(steam_link),
-                status=visibility_status_text(steam_link, i18n.locale),
-            )
+    # One login row per platform, connected or not, and one per PSN account
+    # (PSN1, PSN2… when there are several): only whether all is well — the
+    # nicknames are in the header, when it was checked is not needed here
+    # (owner, 2026-09-30).
+    not_connected = i18n.get("panel-login-not-connected")
+    lines += ["", i18n.get("panel-login-row", platform="XBOX", status=login)]
+    lines.append(
+        i18n.get(
+            "panel-login-row",
+            platform="Steam",
+            status=(
+                visibility_status_text(steam_link, i18n.locale, with_time=False)
+                if steam_link is not None
+                else not_connected
+            ),
         )
-    for link in psn_links:
+    )
+    if not psn_links:
+        lines.append(i18n.get("panel-login-row", platform="PSN", status=not_connected))
+    for number, link in enumerate(psn_links, start=1):
         lines.append(
             i18n.get(
-                "panel-login-psn-row",
-                name=link_nickname(link),
-                status=visibility_status_text(link, i18n.locale),
+                "panel-login-row",
+                platform=f"PSN{number}" if len(psn_links) > 1 else "PSN",
+                status=visibility_status_text(link, i18n.locale, with_time=False),
             )
         )
     lines.append(
@@ -246,12 +258,6 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
             ),
         )
     )
-    lines.append(
-        i18n.get(
-            "panel-rarity-row",
-            mode=format_rarity(settings_row.rarity_mode if settings_row else RarityMode.ALL, i18n),
-        )
-    )
     if user.xuid or steam_link is not None or psn_link is not None:
         # Every connected platform competes for this row now (issue #1's own
         # tail, closed 2026-09-15) — it used to be gated on `user.xuid` and so
@@ -259,12 +265,6 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
         # row here that still assumed Xbox.
         playing = await _now_playing(repo, user, steam_link, psn_links, i18n)
         lines.append(i18n.get("panel-now-playing-row", playing=playing))
-    lines += [
-        "",
-        # Kept as a text line too (#18): the person should see which
-        # timezone is selected, not just have it on the button label.
-        i18n.get("panel-timezone-row", offset=format_offset(tz_offset, i18n)),
-    ]
     if needs_reconnect:
         lines += ["", i18n.get("panel-reconnect-hint")]
     return Screen("\n".join(lines), keyboard)

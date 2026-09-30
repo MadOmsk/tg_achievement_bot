@@ -685,16 +685,19 @@ keyboard.
   progress), and it says reconnecting will not replay history into chats.
 - **`/panel`** is one self-editing message. Header: the person's identity and one line
   per connected platform, built by the same `platform_header_lines` as `/stats` (#5)
-  with links off. Body: login state per platform (Xbox token; Steam/PSN visibility as
-  last checked), where achievements publish, presence as **one row**
-  (`presence_view.pick_presence`, the same rule `/online` uses — names the platform
-  only while online), the rarity mode, timezone. Keyboard: timezone, My chats
+  with links off. Body: one login row per platform, connected or not (`Вход PSN1:`,
+  `PSN2:` for several accounts) with only its status — 🔘 not connected, ✅, ⚠️,
+  ❓ — no nickname and no check time (owner, 2026-09-30); where achievements
+  publish; presence as **one row** (`presence_view.pick_presence`, the same rule
+  `/online` uses — names the platform only while online). The rarity mode and the
+  timezone are on their buttons, not in the text. Keyboard: timezone, My chats
   (subscribe / unsubscribe per chat — nothing else is per chat), the rarity mode for
   every chat (#126), language (#48, DMs only), then one row per platform in the
   display order — `[🟢 XBOX ▸, 🔔 posting switch]` (#10), or one wide "🎮 Подключить X"
   (#33). The platform button opens that platform's screen: profile, the switch,
   unlink, and for PSN every account (up to three) plus adding one. The panel's switch
-  covers the whole platform ("Частично" when only some PSN accounts post); a dead Xbox
+  covers the whole platform ("Частично" when only some PSN accounts post); a Steam or
+  PSN button carries ❗ while its achievements are hidden (any one PSN account); a dead Xbox
   login puts "🔄 Подключить заново" in its place, and first on the XBOX screen. The
   publication row names what is switched off. Nothing on it is Xbox-gated. It never
   calls a platform API except the explicit sync button.

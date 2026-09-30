@@ -287,6 +287,8 @@ def panel_keyboard(
     xbox_publishes: bool = True,
     psn_publishes: bool | None = True,
     steam_publishes: bool = True,
+    steam_hidden: bool = False,
+    psn_hidden: bool = False,
 ) -> InlineKeyboardMarkup:
     i18n = i18n or static_i18n("keyboards")
 
@@ -299,9 +301,15 @@ def panel_keyboard(
             icon=PLATFORM_ICON[Platform.PSN],
             platform="PSN",
             count=psn_accounts,
+            alert=" ❗" if psn_hidden else "",
         )
         if psn_accounts > 1
-        else i18n.get("kb-platform-menu", icon=PLATFORM_ICON[Platform.PSN], platform="PSN")
+        else i18n.get(
+            "kb-platform-menu",
+            icon=PLATFORM_ICON[Platform.PSN],
+            platform="PSN",
+            alert=" ❗" if psn_hidden else "",
+        )
     )
     platform_rows = [
         _platform_row(
@@ -310,7 +318,10 @@ def panel_keyboard(
             connect_key="kb-panel-connect-xbox",
             connect_cb="relogin",
             label=i18n.get(
-                "kb-platform-menu", icon=PLATFORM_ICON[Platform.XBOX_MODERN], platform="XBOX"
+                "kb-platform-menu",
+                icon=PLATFORM_ICON[Platform.XBOX_MODERN],
+                platform="XBOX",
+                alert="",
             ),
             menu_cb="panel:acc:xbox",
             publish_cb="panel:pub:xbox",
@@ -333,7 +344,10 @@ def panel_keyboard(
             connect_key="kb-panel-connect-steam",
             connect_cb="steam:connect",
             label=i18n.get(
-                "kb-platform-menu", icon=PLATFORM_ICON[Platform.STEAM], platform="Steam"
+                "kb-platform-menu",
+                icon=PLATFORM_ICON[Platform.STEAM],
+                platform="Steam",
+                alert=" ❗" if steam_hidden else "",
             ),
             menu_cb="panel:acc:steam",
             publish_cb="panel:pub:steam",

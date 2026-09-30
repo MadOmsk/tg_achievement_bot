@@ -2,12 +2,12 @@
 # Connection status and sync
 panel-login-active = ✅ активен
 panel-login-invalid = ⚠️ требуется повторный вход
-panel-login-revoked = — отключён
+panel-login-revoked = 🔘 отключён
 # Distinct from panel-login-revoked above (2026-09-09): "отключён" implies a
 # token existed and was deliberately disconnected, "не подключён" is for a
 # person who never linked Xbox at all — same distinction Steam/PSN's own
 # login rows already draw via visibility_status_text's "не проверено".
-panel-login-not-connected = — не подключён
+panel-login-not-connected = 🔘 не подключён
 panel-group-hint = Настройки — в личке.
 panel-refreshed = Обновил
 panel-xbox-not-connected = Сначала подключи XBOX: /connect_xbox
@@ -67,13 +67,11 @@ panel-header-not-connected = 👤 Панель
 # (services/achievements.py::platform_header_lines, #5) rather than a
 # second, hand-duplicated copy of it.
 panel-header-identity = 👤 { $name }
-panel-login-xbox-row = Вход XBOX:   { $status }
+panel-login-row = Вход { $platform }: { $status }
 # No "-connected" suffix (2026-09-09) — these render the same regardless of
 # whether Xbox happens to be connected; the old plain (non-suffixed) keys
 # only ever existed for the Xbox-gated early-return branch that used them,
 # now removed, so this name freed up.
-panel-login-steam-row = Вход Steam:  { $name }  ·  { $status }
-panel-login-psn-row = Вход PSN:    { $name }  ·  { $status }
 # Steam/PSN's achievement/trophy visibility, as of the last actual check
 # (#5) — connect time, or any backfill/resync since. Xbox has no
 # equivalent row here: its own token status (panel-login-xbox-row above)
@@ -81,21 +79,19 @@ panel-login-psn-row = Вход PSN:    { $name }  ·  { $status }
 panel-visibility-visible = ✅ ачивки видны
 panel-visibility-hidden = ⚠️ ачивки скрыты
 panel-visibility-unknown = ❓ не проверено
-panel-publication-row = Публикация:  { $status }
-panel-rarity-row = Ачивки:      { $mode }
+panel-publication-row = Публикация: { $status }
 panel-rarity-prompt =
     Какие ачивки публиковать — во всех твоих чатах сразу.
 
     «Только редкие» считаются по порогу редкости каждого чата.
-panel-now-playing-row = Сейчас:      { $playing }
-panel-timezone-row = Часовой пояс: { $offset }
+panel-now-playing-row = Сейчас: { $playing }
 panel-reconnect-hint = Доступ к XBOX истёк — жми «Подключить заново» ниже.
 panel-no-presence-data = нет данных
 panel-offline = не в сети ({ $ago })
 panel-online-idle = в сети, не играет
 panel-playing = играет — { $game }
 panel-excluded = 🚫 исключён администратором
-panel-not-subscribed-anywhere = — не подписан ни в одном чате
+panel-not-subscribed-anywhere = 🔘 не подписан ни в одном чате
 panel-subscribed-in = ✅ в { $chats }
 panel-publishing-without = {" "}· без { $platforms }
 panel-publishes-on-toast = Публикую ачивки этого аккаунта

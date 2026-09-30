@@ -2,12 +2,12 @@
 # Connection status and sync
 panel-login-active = ✅ active
 panel-login-invalid = ⚠️ needs signing in again
-panel-login-revoked = — disconnected
+panel-login-revoked = 🔘 disconnected
 # Distinct from panel-login-revoked above (2026-09-09): "disconnected"
 # implies a token existed and was deliberately removed, "not connected" is
 # for a person who never linked Xbox at all — same distinction Steam/PSN's
 # own login rows already draw via visibility_status_text's "not checked".
-panel-login-not-connected = — not connected
+panel-login-not-connected = 🔘 not connected
 panel-group-hint = Settings live in a DM.
 panel-refreshed = Refreshed
 panel-xbox-not-connected = Connect XBOX first: /connect_xbox
@@ -70,13 +70,11 @@ panel-header-identity = 👤 { $name }
 # The trailing padding lines these rows up into one column, the same way the
 # Russian file does it — the label lengths differ per language, so the
 # padding is part of the translation rather than something Python adds.
-panel-login-xbox-row = XBOX login:   { $status }
+panel-login-row = { $platform } login: { $status }
 # No "-connected" suffix (2026-09-09) — these render the same regardless of
 # whether Xbox happens to be connected; the old plain (non-suffixed) keys
 # only ever existed for the Xbox-gated early-return branch that used them,
 # now removed, so this name freed up.
-panel-login-steam-row = Steam login:  { $name }  ·  { $status }
-panel-login-psn-row = PSN login:    { $name }  ·  { $status }
 # Steam/PSN's achievement/trophy visibility, as of the last actual check
 # (#5) — connect time, or any backfill/resync since. Xbox has no
 # equivalent row here: its own token status (panel-login-xbox-row above)
@@ -84,21 +82,19 @@ panel-login-psn-row = PSN login:    { $name }  ·  { $status }
 panel-visibility-visible = ✅ achievements visible
 panel-visibility-hidden = ⚠️ achievements hidden
 panel-visibility-unknown = ❓ not checked
-panel-publication-row = Publishing:   { $status }
-panel-rarity-row = Achievements: { $mode }
+panel-publication-row = Publishing: { $status }
 panel-rarity-prompt =
     Which achievements to publish — in all your chats at once.
 
     "Rare only" follows each chat's own rarity threshold.
-panel-now-playing-row = Now:          { $playing }
-panel-timezone-row = Timezone:     { $offset }
+panel-now-playing-row = Now: { $playing }
 panel-reconnect-hint = Your XBOX access has expired — press “Connect again” below.
 panel-no-presence-data = no data
 panel-offline = offline ({ $ago })
 panel-online-idle = online, not playing
 panel-playing = playing — { $game }
 panel-excluded = 🚫 excluded by the administrator
-panel-not-subscribed-anywhere = — not subscribed in any chat
+panel-not-subscribed-anywhere = 🔘 not subscribed in any chat
 panel-subscribed-in = ✅ in { $chats }
 panel-publishing-without = {" "}· except { $platforms }
 panel-publishes-on-toast = Posting this account's achievements

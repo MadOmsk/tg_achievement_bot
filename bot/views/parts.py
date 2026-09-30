@@ -267,7 +267,7 @@ COMPLETED_BADGE_PSN = AchievementBadge.PLATINUM
 COMPLETED_BADGE = AchievementBadge.PLATINUM
 
 
-def visibility_status_text(link: PlatformLink, locale: str) -> str:
+def visibility_status_text(link: PlatformLink, locale: str, *, with_time: bool = True) -> str:
     """Steam/PSN's achievement/trophy visibility as found by the last actual
     check (#5) — shared by /panel's own login row and the admin card
     (2026-09-08, user request: the admin card's status line should read
@@ -277,7 +277,8 @@ def visibility_status_text(link: PlatformLink, locale: str) -> str:
     `chat-stats-no-gamertag` below, rather than duplicating it per module.
 
     Appends when the check last ran, when known — "unknown" has no
-    timestamp to show at all."""
+    timestamp to show at all. The panel leaves it off (`with_time=False`,
+    owner 2026-09-30): there the row only has to say whether all is well."""
     if link.achievements_visible is None:
         return gettext("panel", "panel-visibility-unknown", locale=locale)
     label = gettext(
@@ -285,7 +286,7 @@ def visibility_status_text(link: PlatformLink, locale: str) -> str:
         "panel-visibility-visible" if link.achievements_visible else "panel-visibility-hidden",
         locale=locale,
     )
-    if link.achievements_visible_checked_at:
+    if with_time and link.achievements_visible_checked_at:
         return f"{label} · {humanize_ago(link.achievements_visible_checked_at, locale)}"
     return label
 
