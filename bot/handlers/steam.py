@@ -54,6 +54,7 @@ from bot.services.steam.client import (
     resolve_steam_id,
 )
 from bot.views.keyboards import deep_link_keyboard, switch_keyboard, switch_prompt
+from bot.views.panel import render_account_menu, render_panel
 from bot.views.parts import platform_label
 
 log = logging.getLogger(__name__)
@@ -131,6 +132,8 @@ async def prompt_for_link(
     steam_auth: SteamAuth,
     tg_id: int,
     i18n: I18nContext | StaticI18nContext | None = None,
+    *,
+    callback: CallbackQuery | None = None,
 ) -> None:
     """The shared "now send me the link" step — bare /connect_steam, the
     panel button, and the deep link all go through this one place, so
@@ -147,19 +150,64 @@ async def prompt_for_link(
     # by its own prompt further along, so say what is linked and ask anyway.
     link = await repo.get_platform_link(tg_id, Platform.STEAM)
     awaiting.expect(tg_id, "steam")
+    text, markup = _prompt_screen(link, i18n, from_button=callback is not None)
+    if callback is not None:
+        # From a button: the prompt takes that message's place, with a way
+        # back, instead of arriving as two new ones (owner, 2026-09-30).
+        await safe_edit(callback, text, markup, disable_web_page_preview=True)
+        return
+    await bot.send_message(tg_id, text, reply_markup=markup, disable_web_page_preview=True)
+
+
+def _prompt_screen(
+    link: object, i18n: I18nContext | StaticI18nContext, *, from_button: bool
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    """What is linked (and a way to just unlink it), or how to link — the
+    one prompt, whichever door it was opened through."""
+    back = InlineKeyboardButton(
+        text=i18n.get("kb-back" if from_button else "kb-open-panel"),
+        callback_data="steam:promptback" if from_button else "panel:refresh",
+    )
     if link is not None:
-        await bot.send_message(tg_id, i18n.get("steam-already-connected", name=link_nickname(link)))
-    await bot.send_message(tg_id, i18n.get("steam-link-prompt", privacy_url=PRIVACY_URL))
+        return (
+            i18n.get("steam-already-connected", name=link_nickname(link)),  # type: ignore[arg-type]
+            InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=i18n.get("steam-just-unlink"),
+                            callback_data="steam:disconnectprompt",
+                        )
+                    ],
+                    [back],
+                ]
+            ),
+        )
+    return (
+        i18n.get("steam-link-prompt", privacy_url=PRIVACY_URL),
+        InlineKeyboardMarkup(inline_keyboard=[[back]]) if from_button else None,
+    )
 
 
 @router.callback_query(F.data == "steam:connect")
 async def steam_connect_button(
     callback: CallbackQuery, repo: Repo, steam_auth: SteamAuth, bot: Bot, i18n: I18nContext
 ) -> None:
-    """The panel's own "🎮 Подключить Steam" button (2026-09-05 follow-up) —
-    same prompt-and-wait as everywhere else, panel.py never had a Steam
-    button at all before this."""
-    await prompt_for_link(bot, repo, steam_auth, callback.from_user.id, i18n)
+    """The panel's "🎮 Подключить Steam" and the Steam screen's "🔁 Привязать
+    другой аккаунт" — same prompt-and-wait as everywhere else, in place."""
+    await prompt_for_link(bot, repo, steam_auth, callback.from_user.id, i18n, callback=callback)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "steam:promptback")
+async def steam_prompt_back(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """Leaving the link prompt: no longer waiting for a link, and back to the
+    Steam screen (or the panel, when Steam is not linked)."""
+    awaiting.clear(callback.from_user.id)
+    screen = await render_account_menu(
+        repo, callback.from_user.id, Platform.STEAM, locale=i18n.locale
+    ) or await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard)
     await callback.answer()
 
 

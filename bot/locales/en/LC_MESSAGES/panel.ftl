@@ -32,6 +32,7 @@ panel-disconnect-prompt =
 panel-links-hidden-toast = Hidden
 panel-links-shown-toast = Showing
 panel-timezone-prompt = 🕐 Your timezone — "today" and "this month" are counted by it.
+panel-timezone-toast = Timezone: { $offset }
 panel-my-chats-title = 💬 My chats
 panel-my-chats-empty =
 

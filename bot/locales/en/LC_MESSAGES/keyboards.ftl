@@ -7,6 +7,15 @@ kb-default = default
 kb-tz-other = Other ▸
 kb-tz-manual = ✏️ Enter manually
 kb-tz-skip = Skip
+# Ways back and onward instead of a command to type (owner, 2026-09-30).
+kb-open-panel = ⚙️ Panel
+kb-back-to-panel = ‹ To the panel
+kb-back = ‹ Back
+kb-connect-xbox-again = 🎮 Connect XBOX
+kb-relogin-xbox = 🔄 Connect XBOX again
+kb-open-xbox = 🟢 XBOX ▸
+kb-unlink-xbox = 🔌 Unlink XBOX
+kb-tz-pick = 🕐 Pick a timezone
 kb-connect-xbox = Connect XBOX
 kb-digest-never = never
 # Russian says this with a single genitive plural; English needs the real

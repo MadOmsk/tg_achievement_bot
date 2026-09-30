@@ -678,6 +678,11 @@ keyboard.
 - **`/start` greets and offers all three platforms**; anyone with *any* platform
   linked gets the panel instead (#53). Disconnecting is one tap-to-confirm, never a
   typed word.
+- **A step of the account flow never ends in a command to type** (owner,
+  2026-09-30): connect, unlink, relogin, the Steam link prompt and the timezone
+  picker edit the message they were opened from and end in buttons — "‹ Назад" /
+  "‹ В панель" back, "⚙️ Панель" or the next step on. Only what arrives later (a
+  backfill's status, #3 of that list) is a message of its own.
 - **Timezones**: the eight offsets this community lives in, "Другой ▸" for the full
   −12…+14 grid, "✏️ Ввести вручную" for one typed offset (`+3`, `+5:30`). Offsets,
   never zone names.

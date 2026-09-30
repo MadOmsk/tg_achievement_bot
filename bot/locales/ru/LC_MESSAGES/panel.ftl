@@ -32,6 +32,7 @@ panel-disconnect-prompt =
 panel-links-hidden-toast = Скрыл
 panel-links-shown-toast = Показываю
 panel-timezone-prompt = 🕐 Часовой пояс — по нему считаются «сегодня» и «за месяц».
+panel-timezone-toast = Часовой пояс: { $offset }
 panel-my-chats-title = 💬 Мои чаты
 panel-my-chats-empty =
 

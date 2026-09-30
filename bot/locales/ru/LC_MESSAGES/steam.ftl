@@ -2,7 +2,11 @@
 steam-not-configured = Подключение Steam пока не настроено — обратитесь к администратору.
 steam-connect-group-redirect = Напиши мне в личку — подключим Steam там.
 steam-private-only = Эта команда — в личке.
-steam-already-connected = Сейчас привязан Steam: { $name }. Пришлёшь другой профиль — сменю его; чтобы просто отвязать, есть /disconnect_steam.
+steam-already-connected =
+    Сейчас привязан Steam: <b>{ $name }</b>.
+
+    Пришли ссылку на другой профиль Steam одним сообщением — сменю его.
+steam-just-unlink = 🔌 Просто отвязать Steam
 steam-link-prompt = Пришли ссылку на свой профиль Steam (steamcommunity.com/id/...) или просто ник — подключу по нему.
 
     ⚠️ Игровая статистика должна быть публичной, иначе не смогу читать достижения: { $privacy_url } → «Игровая статистика» → «Всем».

@@ -4,9 +4,9 @@
 connect-xbox-group-redirect = Message me in private — we'll connect XBOX there.
 connect-xbox-private-only = You can only disconnect XBOX in a private chat with the bot.
 connect-timezone-prompt = 🕐 What's your timezone?
-connect-xbox-already-connected = XBOX is already connected. Settings are in /panel.
+connect-xbox-already-connected = XBOX is already connected: <b>{ $name }</b>.
 connect-xbox-already-connected-relogin =
-    XBOX is already connected. To sign in again, run /disconnect_xbox first.
+    XBOX is already connected: <b>{ $name }</b>. To sign in again, unlink it first.
 connect-xbox-not-connected = XBOX isn't connected anyway.
 platform-cooldown-active = Re-connecting { $platform } is temporarily blocked (anti-abuse cooldown). Please try again in { $hours }h { $minutes }m.
 connect-disconnect-yes = Yes, disconnect
@@ -18,15 +18,14 @@ connect-disconnect-prompt =
 
     The permission itself stays in your Microsoft account — only you can remove it, here: { $revoke_url }
 connect-disconnected =
-    Disconnected. You can come back any time — /connect_xbox.
+    ➖ XBOX disconnected. Your achievement history is kept.
 
     The permission in your Microsoft account is removed here: { $revoke_url }
 connect-relogin-prompt =
     Sign in again — old achievements won't fly into the chat, they're already marked as seen.
-connect-optout-done =
-    Got it, no more reminders. I kept your achievement history — you can come back any time via /connect_xbox.
-connect-timezone-skip-done = Fine, skipped. You can change it in /panel.
-connect-timezone-set = Timezone: { $offset }. You can change it in /panel.
+connect-optout-done = Got it, no more reminders. I kept your achievement history.
+connect-timezone-skip-done = Fine, skipped.
+connect-timezone-set = ✅ Timezone: { $offset }.
 connect-timezone-manual-hint =
     Send the offset in a single message, with a sign: for example +3, -5 or +5:30.
 connect-timezone-manual-invalid = That doesn't look like a real timezone. { $hint }

@@ -36,6 +36,10 @@ TZ_SET = "tz:set"
 TZ_MORE = "tz:more"
 TZ_SKIP = "tz:skip"
 TZ_MANUAL = "tz:manual"
+TZ_PICK = "tz:pick"
+# The same picker opened from /panel: its own prefix, so a pick there goes
+# back to the panel instead of ending on a line of its own (owner, 2026-09-30).
+PANEL_TZ = "ptz"
 CLOSE_CALLBACK = "msg:close"
 
 
@@ -77,31 +81,60 @@ def format_offset(minutes: int | None, i18n: I18nContext | None = None) -> str:
     return f"UTC{sign}{hours}" if rest == 0 else f"UTC{sign}{hours}:{rest:02d}"
 
 
-def _offset_button(hours: int, i18n: I18nContext) -> InlineKeyboardButton:
+def _offset_button(hours: int, i18n: I18nContext, *, prefix: str = "tz") -> InlineKeyboardButton:
     minutes = hours * 60
     return InlineKeyboardButton(
-        text=format_offset(minutes, i18n), callback_data=f"{TZ_SET}:{minutes}"
+        text=format_offset(minutes, i18n), callback_data=f"{prefix}:set:{minutes}"
     )
 
 
 def timezone_keyboard(
-    i18n: I18nContext, *, full: bool = False, skippable: bool = True
+    i18n: I18nContext, *, full: bool = False, in_panel: bool = False
 ) -> InlineKeyboardMarkup:
+    """The offsets picker. Right after connecting it can be skipped; opened
+    from /panel it can be left with "‹ Назад" instead, and its buttons carry
+    the panel's own prefix so a pick returns to the panel."""
+    prefix = PANEL_TZ if in_panel else "tz"
     builder = InlineKeyboardBuilder()
     offsets = ALL_OFFSETS_HOURS if full else COMMON_OFFSETS_HOURS
     for hours in offsets:
-        builder.add(_offset_button(hours, i18n))
+        builder.add(_offset_button(hours, i18n, prefix=prefix))
     builder.adjust(4)
 
     if not full:
-        builder.row(InlineKeyboardButton(text=i18n.get("kb-tz-other"), callback_data=TZ_MORE))
+        builder.row(
+            InlineKeyboardButton(text=i18n.get("kb-tz-other"), callback_data=f"{prefix}:more")
+        )
     # Faster than scrolling the full −12..+14 grid, and the only way to enter
     # a half-hour offset like +5:30 at all — the button grid only has whole
     # hours (SPEC 6.1.1).
-    builder.row(InlineKeyboardButton(text=i18n.get("kb-tz-manual"), callback_data=TZ_MANUAL))
-    if skippable:
+    builder.row(
+        InlineKeyboardButton(text=i18n.get("kb-tz-manual"), callback_data=f"{prefix}:manual")
+    )
+    if in_panel:
+        builder.row(back_to_panel_button(i18n, back=True))
+    else:
         builder.row(InlineKeyboardButton(text=i18n.get("kb-tz-skip"), callback_data=TZ_SKIP))
     return builder.as_markup()
+
+
+def panel_button(i18n: I18nContext | StaticI18nContext) -> InlineKeyboardButton:
+    """ "⚙️ Панель" — the way on from a flow's last step (owner, 2026-09-30)."""
+    return InlineKeyboardButton(text=i18n.get("kb-open-panel"), callback_data="panel:refresh")
+
+
+def back_to_panel_button(
+    i18n: I18nContext | StaticI18nContext, *, back: bool = False
+) -> InlineKeyboardButton:
+    """ "‹ В панель" (or "‹ Назад" where the panel is the step before)."""
+    return InlineKeyboardButton(
+        text=i18n.get("kb-back" if back else "kb-back-to-panel"), callback_data="panel:refresh"
+    )
+
+
+def buttons(*rows: InlineKeyboardButton) -> InlineKeyboardMarkup:
+    """One button per row — every flow screen here reads top to bottom."""
+    return InlineKeyboardMarkup(inline_keyboard=[[row] for row in rows])
 
 
 def connect_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:

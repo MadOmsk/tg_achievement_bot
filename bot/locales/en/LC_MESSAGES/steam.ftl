@@ -2,7 +2,11 @@
 steam-not-configured = Steam linking isn't set up yet — ask the administrator.
 steam-connect-group-redirect = Message me privately — we'll connect Steam there.
 steam-private-only = This command works in a DM.
-steam-already-connected = Steam is currently linked to { $name }. Send another profile and I will switch; to just unlink, use /disconnect_steam.
+steam-already-connected =
+    Steam is linked to <b>{ $name }</b> right now.
+
+    Send a link to another Steam profile in one message and I'll switch to it.
+steam-just-unlink = 🔌 Just unlink Steam
 steam-link-prompt = Send me a link to your Steam profile (steamcommunity.com/id/...) or just the vanity name — I'll link it.
 
     ⚠️ Your game details have to be public, or I can't read achievements: { $privacy_url } → “Game details” → “Public”.

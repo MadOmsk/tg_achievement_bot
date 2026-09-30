@@ -4,9 +4,9 @@
 connect-xbox-group-redirect = Напиши мне в личку — подключим XBOX там.
 connect-xbox-private-only = Отключить XBOX можно только в личке с ботом.
 connect-timezone-prompt = 🕐 Твой часовой пояс?
-connect-xbox-already-connected = XBOX уже подключён. Настройки — /panel.
+connect-xbox-already-connected = XBOX уже подключён: <b>{ $name }</b>.
 connect-xbox-already-connected-relogin =
-    XBOX уже подключён. Если нужно войти заново — сначала /disconnect_xbox.
+    XBOX уже подключён: <b>{ $name }</b>. Чтобы войти заново, сначала отвяжи его.
 connect-xbox-not-connected = XBOX и так не подключён.
 platform-cooldown-active = Повторное подключение { $platform } временно заблокировано (антифлуд). Попробуйте через { $hours } ч. { $minutes } мин.
 connect-disconnect-yes = Да, отключить
@@ -18,15 +18,14 @@ connect-disconnect-prompt =
 
     Само разрешение остаётся в аккаунте Microsoft — убрать его можно только самому: { $revoke_url }
 connect-disconnected =
-    Отключил. Вернуться можно в любой момент — /connect_xbox.
+    ➖ Отключил XBOX. История достижений сохранена.
 
     Разрешение в аккаунте Microsoft убирается тут: { $revoke_url }
 connect-relogin-prompt =
     Войди заново — старые достижения в чат не полетят, они уже отмечены как виденные.
-connect-optout-done =
-    Хорошо, больше не напоминаю. Историю достижений сохранил — вернуться можно в любой момент через /connect_xbox.
-connect-timezone-skip-done = Хорошо, пропустил. Поменять — в /panel.
-connect-timezone-set = Часовой пояс: { $offset }. Поменять можно в /panel.
+connect-optout-done = Хорошо, больше не напоминаю. Историю достижений сохранил.
+connect-timezone-skip-done = Хорошо, пропустил.
+connect-timezone-set = ✅ Часовой пояс: { $offset }.
 connect-timezone-manual-hint =
     Пришли смещение одним сообщением, со знаком: например +3, -5 или +5:30.
 connect-timezone-manual-invalid = Это не похоже на реальный часовой пояс. { $hint }

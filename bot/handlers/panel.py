@@ -383,7 +383,7 @@ async def panel_timezone(callback: CallbackQuery, i18n: I18nContext) -> None:
     await safe_edit(
         callback,
         i18n.get("panel-timezone-prompt"),
-        timezone_keyboard(i18n, skippable=False),
+        timezone_keyboard(i18n, in_panel=True),
     )
     await callback.answer()
 

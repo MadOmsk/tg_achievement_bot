@@ -7,6 +7,15 @@ kb-default = по умолчанию
 kb-tz-other = Другой ▸
 kb-tz-manual = ✏️ Ввести вручную
 kb-tz-skip = Пропустить
+# Ways back and onward instead of a command to type (owner, 2026-09-30).
+kb-open-panel = ⚙️ Панель
+kb-back-to-panel = ‹ В панель
+kb-back = ‹ Назад
+kb-connect-xbox-again = 🎮 Подключить XBOX
+kb-relogin-xbox = 🔄 Подключить XBOX заново
+kb-open-xbox = 🟢 XBOX ▸
+kb-unlink-xbox = 🔌 Отвязать XBOX
+kb-tz-pick = 🕐 Выбрать часовой пояс
 kb-connect-xbox = Подключить XBOX
 kb-digest-never = никогда
 kb-digest-from-n = от { $threshold } достижений

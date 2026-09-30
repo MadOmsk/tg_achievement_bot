@@ -112,8 +112,9 @@ async def test_prompt_names_the_linked_account_and_still_asks(repo: Repo, steam_
 
     await prompt_for_link(bot, repo, steam_auth, TG_ID)  # type: ignore[arg-type]
 
-    assert len(bot.sent) == 2
-    assert "Gabe" in bot.sent[0][1]
+    # One message now: what is linked, and the ask for another link.
+    assert len(bot.sent) == 1
+    assert "Gabe" in bot.sent[0][1] and "другой профиль" in bot.sent[0][1]
     assert awaiting.is_expecting(TG_ID, "steam") is True
 
 
