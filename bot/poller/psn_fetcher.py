@@ -31,6 +31,7 @@ from bot.services.models import Progress
 from bot.services.psn.achievements import sync_account
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import PsnApiError, account_trophy_level, is_trophy_visible
+from bot.services.steam_extras import SteamExtras
 from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
@@ -64,7 +65,9 @@ class PsnFetcher:
         publisher: Publisher,
         *,
         anthropic_auth: AnthropicAuth,
+        steam_extras: SteamExtras | None = None,
     ) -> None:
+        self._steam_extras = steam_extras
         self._settings = settings
         self._repo = repo
         self._psn_auth = psn_auth
@@ -205,6 +208,8 @@ class PsnFetcher:
                 await ensure_title_match(self._repo, title_id)
             except Exception:
                 log.exception("HLTB match failed for title %s", title_id)
+            if self._steam_extras is not None:
+                self._steam_extras.ensure_title(title_id)
 
     def expect_relink_catch_up(self, account_id: str, window_hours: int) -> None:
         """Relinking an account the bot already knows needs no backfill at

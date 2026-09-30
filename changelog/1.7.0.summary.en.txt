@@ -5,3 +5,4 @@
 • The button under a notification opens the game's own page
 • Steam secret achievement descriptions and more reliable translations
 • "About" tab: genre, publisher, modes, score and time to beat
+• Achievement tips from Steam guides and a tab with the game's patches

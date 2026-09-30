@@ -105,13 +105,6 @@ export function HltbAbout({
       </span>,
     ]);
   }
-  const openHltb = () => {
-    const url =
-      hltb.game_url ?? `https://howlongtobeat.com/game/${hltb.hltb_id}`;
-    if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(url);
-    else window.open(url, "_blank", "noopener");
-  };
-
   // The hours are the table's last row: the three everyone means by "how
   // long is it" on one line, and a tap unfolds every time as rows of the
   // same table. The description follows.
@@ -167,9 +160,6 @@ export function HltbAbout({
       {hltb.description && (
         <p className="about-game-desc">{hltb.description}</p>
       )}
-      <button type="button" className="about-game-link" onClick={openHltb}>
-        HowLongToBeat →
-      </button>
     </>
   );
 }

@@ -1,4 +1,4 @@
-import type { GameAchievement } from "../../../api";
+import type { AchievementTip, GameAchievement } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, CoverImg, Icon } from "../../shared/lib";
 import { HeroMarks } from "../../person";
@@ -11,6 +11,9 @@ export function GameAchievementRow({
   onToggleReveal,
   compare,
   fallbackIcon,
+  tip,
+  open,
+  onToggleTip,
 }: {
   row: GameAchievement;
   isRevealed: boolean;
@@ -18,6 +21,11 @@ export function GameAchievementRow({
   onToggleReveal: (id: string) => void;
   /** Shown when the achievement has no picture of its own (most catalog rows do not). */
   fallbackIcon?: string | null;
+  /** What the Steam guides say about getting this achievement; a row without one does not open. */
+  tip?: AchievementTip;
+  /** Whether its tip is showing — the page keeps one open at a time in a group. */
+  open: boolean;
+  onToggleTip: (id: string) => void;
   /** Both people's state on this achievement (the compare view). */
   compare?: {
     me: { id: number; name: string; has: boolean };
@@ -37,24 +45,31 @@ export function GameAchievementRow({
 
   const rarity = row.rarity_percent != null ? `${row.rarity_percent}%` : null;
 
-  // A secret still needs a tap to reveal it; an unlocked or ordinary locked
-  // row already shows everything it has (name, description, marks) right
-  // there in the list, so it isn't a button to anything — a tap that opened
-  // a sheet with the same text again was a step, not a shortcut.
-  const Row = isSecret ? "button" : "div";
+  // A secret still needs a tap to reveal it; after that (or straight away for
+  // an ordinary row) a row with a tip opens to it, in its own card.
+  const canOpen = !isSecret && !compare && tip !== undefined;
+  const onTap = isSecret
+    ? () => onToggleReveal(row.achievement_id)
+    : canOpen
+      ? () => onToggleTip(row.achievement_id)
+      : undefined;
+  const Row = onTap ? "button" : "div";
 
   return (
     <Row
-      type={isSecret ? "button" : undefined}
+      type={onTap ? "button" : undefined}
       className={[
         "feed-row",
         "has-wrap",
         isSecret ? "is-secret" : "",
+        canOpen ? "has-tip" : "",
+        open && canOpen ? "is-open" : "",
         row.is_unlocked ? "" : "is-locked-row",
       ]
         .filter(Boolean)
         .join(" ")}
-      onClick={isSecret ? () => onToggleReveal(row.achievement_id) : undefined}
+      aria-expanded={canOpen ? open : undefined}
+      onClick={onTap}
     >
       <CoverImg
         src={row.icon_url || fallbackIcon}
@@ -73,7 +88,12 @@ export function GameAchievementRow({
           <p className="unlock-title">
             <span className={blur}>{name}</span>
           </p>
-          <HeroMarks compact score={score} rarity={rarity} tier={row.trophy_type} />
+          <HeroMarks
+            compact
+            score={score}
+            rarity={rarity}
+            tier={row.trophy_type}
+          />
         </span>
         {compare ? (
           <span className="compare-marks">
@@ -90,14 +110,36 @@ export function GameAchievementRow({
           desc && (
             <p className="unlock-game">
               <span className="unlock-game-lead">
-                <span className={blur ? `unlock-game-name ${blur}` : "unlock-game-name"}>
+                <span
+                  className={
+                    blur ? `unlock-game-name ${blur}` : "unlock-game-name"
+                  }
+                >
                   {desc}
                 </span>
               </span>
             </p>
           )
         )}
+        {canOpen && (
+          <span className="feed-tip-mark" aria-hidden>
+            <Icon name="guide" size={16} />
+          </span>
+        )}
       </span>
+      {canOpen && tip && (
+        <span className="ach-tip">
+          <span className="ach-tip-inner">
+            <span className="ach-tip-body">
+              {tip.text.split("\n").map((line, i) => (
+                <span key={i} className="ach-tip-line">
+                  {line}
+                </span>
+              ))}
+            </span>
+          </span>
+        </span>
+      )}
     </Row>
   );
 }

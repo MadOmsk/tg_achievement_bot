@@ -48,6 +48,7 @@ from bot.poller.fetcher import Fetcher, catch_up_since
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
+from bot.poller.patch_refresh import PatchRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
@@ -70,6 +71,7 @@ from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.release_notify import announce_release_if_needed
 from bot.services.steam.auth import SteamAuth
+from bot.services.steam_extras import SteamExtras
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
@@ -175,13 +177,24 @@ async def run(settings: Settings) -> None:
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
+    steam_extras = SteamExtras(repo, steam_auth)
     fetcher = Fetcher(
-        repo, client, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
+        repo,
+        client,
+        publisher,
+        settings.backfill_concurrency,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
     )
     poller = PresencePoller(settings, repo, client, fetcher)
 
     steam_fetcher = SteamFetcher(
-        repo, steam_auth, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
+        repo,
+        steam_auth,
+        publisher,
+        settings.backfill_concurrency,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
     )
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
     steam_catch_up = SteamCatchUpPoller(settings, repo, steam_fetcher, steam_auth)
@@ -190,7 +203,14 @@ async def run(settings: Settings) -> None:
     # M-PSN-2) — psn_fetcher.tick() scans every linked account directly on
     # its own schedule. psn_presence below is a separate, unrelated poller
     # (issue #1): presence for /online only, never triggers a trophy poll.
-    psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher, anthropic_auth=anthropic_auth)
+    psn_fetcher = PsnFetcher(
+        settings,
+        repo,
+        psn_auth,
+        publisher,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
+    )
     psn_presence = PsnPresencePoller(settings, repo, psn_auth, psn_fetcher=psn_fetcher)
 
     flood_flush = FloodFlush(repo, publisher)
@@ -218,6 +238,7 @@ async def run(settings: Settings) -> None:
         steam_catch_up,
         TitlePlatformsRefresh(repo, client),
         PsnTrophyGroups(repo, psn_auth),
+        PatchRefresh(repo, steam_extras),
     )
 
     async def on_linked(tg_id: int, identity: XboxIdentity, origin_chat_id: int | None) -> None:
@@ -269,6 +290,7 @@ async def run(settings: Settings) -> None:
         notifier=notifier,
         anthropic_auth=anthropic_auth,
         bot=bot,
+        steam_extras=steam_extras,
     )
     await web_server.start()
 

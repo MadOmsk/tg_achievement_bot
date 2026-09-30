@@ -385,6 +385,16 @@ CREATE TABLE IF NOT EXISTS titles (
     hltb_match_score REAL,
     hltb_attempts INTEGER NOT NULL DEFAULT 0,
     hltb_checked_at TEXT,
+    -- The Steam app this game is (migration 069): a Steam game's own title_id,
+    -- else looked up once — HLTB's page first, then Steam's store search — and
+    -- given up on after three failed attempts, like the HLTB entry above. NULL
+    -- also means "has no Steam page" once the attempts are spent.
+    steam_appid INTEGER,
+    steam_appid_attempts INTEGER NOT NULL DEFAULT 0,
+    steam_appid_checked_at TEXT,
+    -- When the achievements' tips (title_achievements.tip_*) were last worked
+    -- out from the Steam app's guides.
+    tips_checked_at TEXT,
     updated_at TEXT NOT NULL
 );
 
@@ -632,11 +642,45 @@ CREATE TABLE IF NOT EXISTS title_achievements (
     -- description stays 0 — it is not counted as the game's list, or a list
     -- of one person's unlocks would pass for the whole game (#119).
     listed          INTEGER NOT NULL DEFAULT 0,
+    -- How to get it, from the Steam community's guides (migration 069): the
+    -- text sits in the column of its own language, the other is NULL until a
+    -- translation fills it (`tip_translation` then says 'llm'). `tip_source`
+    -- is the guide's Steam id.
+    tip_en          TEXT,
+    tip_ru          TEXT,
+    tip_source      TEXT,
+    tip_translation TEXT CHECK (tip_translation IN ('llm')),
     PRIMARY KEY (platform, title_id, achievement_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_title_achievements_title
     ON title_achievements(platform, title_id);
+
+-- One Steam app's guides and patch notes (migration 069) — an Xbox, a
+-- PlayStation and a Steam version of one game share them, so they are read
+-- once for all. `*_checked_at` say when each was last read in full.
+CREATE TABLE IF NOT EXISTS steam_apps (
+    appid              INTEGER PRIMARY KEY,
+    guides_checked_at  TEXT,
+    patches_checked_at TEXT
+);
+
+-- A Steam app's latest patch notes, from its developer's announcements.
+-- `*_ru` stay NULL until a translation fills them.
+CREATE TABLE IF NOT EXISTS game_patches (
+    steam_appid  INTEGER NOT NULL,
+    gid          TEXT    NOT NULL,
+    title        TEXT    NOT NULL,
+    published_at TEXT    NOT NULL,
+    text_en      TEXT,
+    title_ru     TEXT,
+    text_ru      TEXT,
+    created_at   TEXT    NOT NULL,
+    PRIMARY KEY (steam_appid, gid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_game_patches_published
+    ON game_patches(steam_appid, published_at);
 
 
 -- The single live copy of a self-deduplicating message kind (Follow-up

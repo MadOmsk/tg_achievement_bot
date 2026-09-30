@@ -52,6 +52,10 @@ export const fetchPerson = (...args: Parameters<typeof clubApi.fetchPerson>) => 
 export const fetchGame = (...args: Parameters<typeof gamesApi.fetchGame>) => gamesApi.fetchGame(...args);
 export const fetchGameHltb = (...args: Parameters<typeof gamesApi.fetchGameHltb>) =>
   gamesApi.fetchGameHltb(...args);
+export const fetchGameGuides = (...args: Parameters<typeof gamesApi.fetchGameGuides>) =>
+  gamesApi.fetchGameGuides(...args);
+export const fetchGamePatches = (...args: Parameters<typeof gamesApi.fetchGamePatches>) =>
+  gamesApi.fetchGamePatches(...args);
 
 export const fetchAdminHome = (initData: string) => adminApi.fetchHome(initData);
 export const fetchAdminKeys = (initData: string) => adminApi.fetchKeys(initData);

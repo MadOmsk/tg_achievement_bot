@@ -45,7 +45,8 @@
 .skel-rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* The gap of the list it stands in for, where that list sets one. */
+  gap: var(--day-gap, 8px);
 }
 
 .skel-feed-row {
