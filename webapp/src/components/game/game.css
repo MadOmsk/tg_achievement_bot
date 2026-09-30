@@ -76,6 +76,60 @@
   color: rgba(240, 245, 255, 0.9);
 }
 
+/* The collapsed stand-in for the big glowing medal (see HeroPeek/GameHero's
+ * `compact`) — the same plate everything else in this row uses, its bar
+ * full and platinum instead of mid-progress: the same colors
+ * progress.css already gives a finished game's bar elsewhere (the profile's
+ * games list, the hero bar), plus a slow shimmer passing over it so the
+ * plate has some life at rest instead of sitting there static. */
+.game-plate.is-platinum .game-plate-icon {
+  color: #bfe9fa;
+  filter: drop-shadow(0 0 8px rgba(140, 220, 245, 0.6));
+}
+
+.game-plate-fill.is-platinum {
+  --fill-a: rgba(80, 182, 218, 0.7);
+  --fill-b: rgba(226, 247, 255, 1);
+  --fill-glow: rgba(120, 214, 245, 0.7);
+  position: relative;
+  overflow: hidden;
+}
+
+.game-plate-fill.is-platinum::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.65) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: game-plate-shimmer 3.2s ease-in-out infinite;
+}
+
+@keyframes game-plate-shimmer {
+  0%,
+  25% {
+    transform: translateX(-100%);
+  }
+  75%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.game-plate.is-platinum strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  background: linear-gradient(180deg, #ffffff 10%, #bfe9fa 55%, #86c9e6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 /* Achievements / "Об игре" (#131): one Swiper, endlessly looping, switched
  * by tab or by swipe — the same shape the profile's own carousels use, so
  * this page doesn't invent a second interaction for "two things to show
@@ -135,54 +189,95 @@
   flex: 0 0 auto;
 }
 
-/* "Об игре"'s own panel — plain text, no card, no outline: just its own
- * generous spacing so meta, hours and description each read as their own
- * paragraph instead of running together. */
-.about-game-meta {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.84rem;
-}
-
-.about-game-times {
-  display: flex;
-  gap: 28px;
-  margin: 18px 0 0;
-}
-
-.about-game-time {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.about-game-time b {
-  color: #fff;
-  font-size: 1.05rem;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-  line-height: 1.1;
-}
-
-.about-game-time small {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-/* Shown in full straight away — it's the whole point of its own tab, not a
- * teaser competing with the achievements list for room. */
+/* "Об игре"'s own panel — plain text, no card, no outline: the facts table
+ * (its last row, the hours, unfolds), then the description. */
 .about-game-desc {
-  margin: 20px 0 0;
+  margin: 22px 0 0;
   color: var(--text);
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.about-game-facts {
+  margin: 0;
+}
+
+.about-game-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair);
+  font-size: 0.86rem;
+}
+
+.about-game-fact:first-child {
+  padding-top: 0;
+}
+
+.about-game-fact:last-child {
+  border-bottom: 0;
+}
+
+.about-game-fact dt {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+/* The hours row is the one row that opens: its sub-rows are the same table,
+ * just indented and a step quieter. */
+.about-game-fact.is-toggle {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-game-fact.is-sub {
+  padding-left: 14px;
+}
+
+.about-game-fact.is-sub dt,
+.about-game-fact.is-sub dd {
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.about-game-more {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: middle;
+  color: var(--muted);
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+}
+
+.about-game-more.is-open {
+  transform: rotate(-90deg);
+}
+
+.about-game-fact dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-game-score b {
+  font-weight: 750;
+}
+
+.about-game-score small {
+  margin-left: 1px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
 }
 
 .about-game-link {
   display: inline-block;
-  margin: 16px 0 0;
+  margin: 22px 0 0;
   padding: 0;
   border: 0;
   background: none;
@@ -205,7 +300,41 @@
   margin: 0;
 }
 
-.game-hero.is-done {
+/* The hero peeks in at half height at rest — the picture is the same on
+ * every visit, not worth the scroll it cost to get past. Pulling down at
+ * the top of the page (this page's own pull-to-refresh is off) reveals the
+ * rest; letting go snaps it back. The clip owns the edge-to-edge bleed
+ * instead of .game-hero, so overflow:hidden here (needed to hide what's
+ * above the fold) doesn't also clip that same bleed horizontally. */
+.hero-peek {
+  position: relative;
+  overflow: hidden;
+  margin: 0 -18px 4px;
+  transition: height 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hero-peek-inner {
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hero-peek .game-hero {
+  margin: 0 0 16px;
+}
+
+/* The peek/reveal fade touches only the picture, not the progress plate
+ * hanging off it — --peek-fade is set on .hero-peek itself (0 collapsed,
+ * 1 fully open) and read here. */
+.hero-peek .game-cover {
+  mask-image: linear-gradient(to bottom, #000 0%, #000 35%, rgba(0, 0, 0, var(--peek-fade, 1)) 100%);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 35%,
+    rgba(0, 0, 0, var(--peek-fade, 1)) 100%
+  );
+}
+
+.game-hero.is-done:not(.is-compact) {
   margin-bottom: 120px;
 }
 
@@ -384,7 +513,7 @@
   margin-top: 0;
 }
 
-.game-page > *:not(.person-bar):not(.game-hero) {
+.game-page > *:not(.person-bar):not(.game-hero):not(.hero-peek) {
   max-width: 28rem;
   margin-left: auto;
   margin-right: auto;
@@ -413,29 +542,6 @@
 }
 
 
-
-/* The game's small cover in the page's top bar (same slot as the person's
- * avatar). It had no rules at all, so the picture had no size and vanished
- * as soon as it loaded. */
-.person-bar .cover-ph.person-avatar {
-  /* Exactly the profile bar's avatar box (48px), so the title stays where
-   * it was when a profile turns into a game page. */
-  flex: 0 0 48px;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-}
-
-.person-bar .cover-ph.person-avatar > img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.person-bar .cover-ph.person-avatar .cover-ph-mark svg {
-  width: 22px;
-  height: 22px;
-}
 
 /* Title and, under it, whose progress the page shows. */
 .game-head-actions {
@@ -522,6 +628,13 @@
   font-weight: 650;
 }
 
+/* The same tier medals as everywhere else, tightened for the header — up
+ * to four discs next to the back button and title had too little room to
+ * spare, so the count sits inside each disc instead of beside it. */
+.person-bar .tier-medals {
+  gap: 6px;
+}
+
 /* On a game's page the description is not cut to one line: it wraps. */
 .feed-row.has-wrap .unlock-game {
   align-items: flex-start;
@@ -536,9 +649,16 @@
   text-overflow: clip;
   white-space: normal;
   line-height: 1.4;
+  font-size: 0.86rem;
   color: rgba(224, 229, 240, 0.76);
 }
 
 .feed-row.has-wrap {
   align-items: flex-start;
+}
+
+/* Not a button to anything once it isn't secret — no pointer cursor
+ * implying otherwise. */
+.feed-row.has-wrap:not(.is-secret) {
+  cursor: default;
 }

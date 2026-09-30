@@ -197,6 +197,15 @@ button.person-back:focus-visible {
   gap: 1px;
 }
 
+/* Left unset, this fell back to the browser's plain default (1rem) — smaller
+ * and lighter than the count/score sitting next to it on a game page,
+ * though it's the page's actual heading. */
+.person-bar .person-bar-title strong {
+  font-size: 1.1rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
 .person-bar .person-bar-title small {
   color: var(--muted);
   font-size: 0.78rem;

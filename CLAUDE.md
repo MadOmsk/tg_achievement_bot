@@ -975,6 +975,15 @@ History: #112.
   and console exclusives are covered. Read from the page's `__NEXT_DATA__`
   (`profile_summary`, beside `genre`), never from rendered HTML whose class names
   change every deploy.
+- **The same page read also keeps the rest of it** (`hltb_cache.details`, one
+  JSON object, migration 064): rating, developer/publisher, alias, release dates,
+  play modes, co-op/multiplayer hours, each time bucket's median/fastest/slowest,
+  speedrun records. The "Об игре" tab shows a table of genre, release, publisher,
+  developer, modes, score and the average hours; the alias, the spreads and the
+  speedruns are kept in `details` but not shown (owner, 2026-09-29). **HLTB's counts
+  of its own users** (completed, playing, backlog, retired) **are left out on
+  purpose** (owner, 2026-09-29): they describe HLTB's audience, not the game. A
+  row cached before 064 reads the page once more on its next lookup.
 - HLTB is English-only, so the Russian side is always Haiku's
   (`hltb_cache.description_ru`), **lazily** — once per game, the first time someone
   looks it up. No Anthropic key: the English text is shown.

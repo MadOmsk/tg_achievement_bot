@@ -30,18 +30,6 @@ import "./Club.css";
 
 const FRIENDS_PREVIEW = 6;
 
-// The four contexts a month picker can be opened from on this screen — two
-// of them (feed/home) happen to share a spelling with SCREEN_NAMES, the
-// other two (stats/person) exist only here, so this stays its own small
-// enum rather than stretching the navigation one to fit.
-const MONTH_TARGETS = {
-  FEED: SCREEN_NAMES.FEED,
-  HOME: SCREEN_NAMES.HOME,
-  STATS: "stats",
-  PERSON: "person",
-} as const;
-type MonthTarget = (typeof MONTH_TARGETS)[keyof typeof MONTH_TARGETS];
-
 export function Club({
   me,
   locale,
@@ -75,19 +63,16 @@ export function Club({
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [homeFeed, setHomeFeed] = useState<FeedItem[]>([]);
   const [statsFeed, setStatsFeed] = useState<FeedItem[]>([]);
-  const [feedMonth, setFeedMonth] = useState("");
-  const [homeMonth, setHomeMonth] = useState("");
-  const [statsMonth, setStatsMonth] = useState("");
-  const [personMonth, setPersonMonth] = useState("");
+  // One month for every pane (Home, Feed, Stats, a person's profile) — picking
+  // it anywhere moves all of them together instead of each keeping its own.
+  const [selectedMonth, setSelectedMonth] = useState("");
   const [months, setMonths] = useState<string[]>([]);
   const [liveMonth, setLiveMonth] = useState("");
-  const [monthPicker, setMonthPicker] = useState<MonthTarget | null>(null);
-  const [feedBusy, setFeedBusy] = useState(false);
-  const [homeBusy, setHomeBusy] = useState(false);
-  const [statsBusy, setStatsBusy] = useState(false);
+  const [monthPicker, setMonthPicker] = useState(false);
+  const [monthBusy, setMonthBusy] = useState(false);
   const [online, setOnline] = useState<OnlineMember[]>([]);
   const [day, setDay] = useState<SummaryMember[]>([]);
-  const [month, setMonth] = useState<SummaryMember[]>([]);
+  const [monthBoard, setMonthBoard] = useState<SummaryMember[]>([]);
   const [games, setGames] = useState<SummaryGame[]>([]);
   const [monthLabel, setMonthLabel] = useState("");
   const [person, setPerson] = useState<PersonPayload | null>(null);
@@ -97,7 +82,7 @@ export function Club({
   const [query, setQuery] = useState("");
   const [rosterOpen, setRosterOpen] = useState(false);
   const [hltbGame, setHltbGame] = useState<HltbHit | null>(null);
-  const [gameSort, setGameSort] = useState<"recent" | "top">("recent");
+  const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const feedRef = useRef(feed);
   const onlineRef = useRef(online);
@@ -132,17 +117,14 @@ export function Club({
         setFeed(f.value.items);
         setHomeFeed(f.value.items);
         setStatsFeed(f.value.items);
-        setFeedMonth(f.value.month);
-        setHomeMonth(f.value.month);
-        setStatsMonth(f.value.month);
-        setPersonMonth(f.value.month);
+        setSelectedMonth(f.value.month);
         setLiveMonth(f.value.month);
         setMonths(f.value.months);
       }
       if (o.status === "fulfilled") setOnline(o.value.members);
       if (s.status === "fulfilled") {
         setDay(s.value.day);
-        setMonth(s.value.month);
+        setMonthBoard(s.value.month);
         setGames(s.value.games);
         setMonthLabel(s.value.month_label);
       }
@@ -183,7 +165,7 @@ export function Club({
     let cancelled = false;
     // Keep the open profile visible while pull-to-refresh refetches it.
     if (refreshKey === 0) setPersonBusy(true);
-    void fetchPerson(data, activeId, openPersonId, personMonth ? { month: personMonth } : undefined)
+    void fetchPerson(data, activeId, openPersonId, selectedMonth ? { month: selectedMonth } : undefined)
       .then((payload) => {
         if (!cancelled) {
           setPerson(payload);
@@ -217,7 +199,7 @@ export function Club({
     return () => {
       cancelled = true;
     };
-  }, [openPersonId, activeId, data, locale, onFlash, me.tg_id, personMonth, refreshKey]);
+  }, [openPersonId, activeId, data, locale, onFlash, me.tg_id, selectedMonth, refreshKey]);
 
   useEffect(() => {
     onPersonVisible?.(person != null);
@@ -234,62 +216,37 @@ export function Club({
     ? online.filter((m) => matchQuery(m.name, needle))
     : [];
 
+  // One picker for every pane: moving the month refetches the feed, the
+  // summary and "my" games together, so wherever it was opened from, every
+  // other pane already has the right month's data when the person switches to it.
   const pickMonth = (ym: string) => {
-    const target = monthPicker;
-    setMonthPicker(null);
-    if (!activeId || !data || !target) return;
-    if (target === MONTH_TARGETS.FEED) {
-      if (ym === feedMonth) return;
-      setFeedBusy(true);
-      void fetchFeed(data, activeId, { month: ym })
-        .then((payload) => {
-          setFeed(payload.items);
-          setFeedMonth(payload.month);
-          setMonths(payload.months);
-        })
-        .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
-        .finally(() => setFeedBusy(false));
-      return;
-    }
-    if (target === MONTH_TARGETS.HOME) {
-      if (ym === homeMonth) return;
-      setHomeBusy(true);
-      void Promise.all([
-        fetchFeed(data, activeId, { month: ym }),
-        fetchPerson(data, activeId, me.tg_id, { month: ym }),
-      ])
-        .then(([payload, minePayload]) => {
-          setHomeFeed(payload.items);
-          setHomeMonth(payload.month);
-          setMonths(payload.months);
-          setMyPerson(minePayload);
-        })
-        .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
-        .finally(() => setHomeBusy(false));
-      return;
-    }
-    if (target === MONTH_TARGETS.STATS) {
-      if (ym === statsMonth) return;
-      setStatsBusy(true);
-      void Promise.all([
-        fetchSummary(data, activeId, { month: ym }),
-        fetchFeed(data, activeId, { month: ym }),
-      ])
-        .then(([summary, feedPayload]) => {
-          setStatsMonth(feedPayload.month);
-          setMonths(feedPayload.months);
-          setStatsFeed(feedPayload.items);
-          setDay(summary.day);
-          setMonth(summary.month);
-          setGames(summary.games);
-          setMonthLabel(summary.month_label);
-        })
-        .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
-        .finally(() => setStatsBusy(false));
-      return;
-    }
-    if (ym === personMonth) return;
-    setPersonMonth(ym);
+    setMonthPicker(false);
+    if (!activeId || !data || ym === selectedMonth) return;
+    setMonthBusy(true);
+    void Promise.allSettled([
+      fetchFeed(data, activeId, { month: ym }),
+      fetchSummary(data, activeId, { month: ym }),
+      fetchPerson(data, activeId, me.tg_id, { month: ym }),
+    ])
+      .then(([f, s, mine]) => {
+        if (f.status === "fulfilled") {
+          setFeed(f.value.items);
+          setHomeFeed(f.value.items);
+          setStatsFeed(f.value.items);
+          setSelectedMonth(f.value.month);
+          setMonths(f.value.months);
+        } else {
+          onFlash(`${t(locale, "error")}: ${String(f.reason)}`);
+        }
+        if (s.status === "fulfilled") {
+          setDay(s.value.day);
+          setMonthBoard(s.value.month);
+          setGames(s.value.games);
+          setMonthLabel(s.value.month_label);
+        }
+        if (mine.status === "fulfilled") setMyPerson(mine.value);
+      })
+      .finally(() => setMonthBusy(false));
   };
 
   const mine = myPerson?.feed?.length
@@ -298,9 +255,9 @@ export function Club({
   const mineGameCount = new Set(
     mine.filter((row) => row.game).map((row) => `${row.platform}:${row.title_id}`),
   ).size;
-  const monthChip = (ym: string, which: MonthTarget) =>
+  const monthChip = (ym: string) =>
     ym && (
-      <button type="button" className="month-chip" onClick={() => setMonthPicker(which)}>
+      <button type="button" className="month-chip" onClick={() => setMonthPicker(true)}>
         <span>{formatMonth(ym, locale, "chip")}</span>
         <Icon name="forward" size={17} />
       </button>
@@ -311,6 +268,9 @@ export function Club({
   const openProfile =
     openPersonId && person && person.tg_id === openPersonId ? person : null;
   const [scoreOpen, setScoreOpen] = useState(false);
+  // A past month never changes once fetched — pull-to-refresh would just
+  // reset the view back to the live month instead of refreshing anything.
+  const isPastMonth = Boolean(selectedMonth) && Boolean(liveMonth) && selectedMonth !== liveMonth;
 
   if (me.chats.length === 0) {
     return <p className="empty">{t(locale, "noChats")}</p>;
@@ -327,7 +287,7 @@ export function Club({
   if (openProfile) {
     return (
       <>
-        <div className="pane-fade">
+        <div className="pane-fade" data-no-pull={isPastMonth || undefined}>
         <PersonProfile
           person={openProfile}
           status={
@@ -337,7 +297,7 @@ export function Club({
           locale={locale}
           revealed={revealed}
           showSecrets={showSecrets}
-          monthChip={monthChip(personMonth, MONTH_TARGETS.PERSON)}
+          monthChip={monthChip(selectedMonth)}
           onBack={() => {
             setPerson(null);
             onClosePerson?.();
@@ -345,13 +305,13 @@ export function Club({
           onReveal={(key) => setRevealed(new Set(revealed).add(key))}
         />
         </div>
-      {monthPicker === MONTH_TARGETS.PERSON && (
+      {monthPicker && (
         <MonthSheet
           months={months}
-          selected={personMonth}
+          selected={selectedMonth}
           liveMonth={liveMonth}
           locale={locale}
-          onClose={() => setMonthPicker(null)}
+          onClose={() => setMonthPicker(false)}
           onPick={pickMonth}
         />
       )}
@@ -361,7 +321,7 @@ export function Club({
 
   return (
     <>
-      <div className="pane-fade" key={pane}>
+      <div className="pane-fade" key={pane} data-no-pull={isPastMonth || undefined}>
       {pane === SCREEN_NAMES.HOME && (
         <>
           <div className="home-chrome">
@@ -405,7 +365,7 @@ export function Club({
                   />
                 </div>
                 {clubReady ? (
-                  monthChip(homeMonth, MONTH_TARGETS.HOME)
+                  monthChip(selectedMonth)
                 ) : (
                   <span className="skel month-chip-skel" aria-hidden />
                 )}
@@ -432,8 +392,8 @@ export function Club({
               </div>
             ) : (
               <>
-                {homeBusy && <HomeSkel />}
-                {!homeBusy && mine.length > 0 && (
+                {monthBusy && <HomeSkel />}
+                {!monthBusy && mine.length > 0 && (
                   <RecentPosts
                     items={mine}
                     locale={locale}
@@ -442,7 +402,7 @@ export function Club({
                     onReveal={(key) => setRevealed(new Set(revealed).add(key))}
                   />
                 )}
-                {!homeBusy &&
+                {!monthBusy &&
                   mine.length === 0 &&
                   (me.xbox.linked || me.steam.linked || me.psn.linked) && (
                     <p className="empty">{t(locale, "emptyFeed")}</p>
@@ -459,25 +419,25 @@ export function Club({
                     <h1 className="kicker" style={{ margin: 0 }}>
                       {t(locale, "games")}
                     </h1>
-                    {!homeBusy && mineGameCount > 0 && (
+                    {!monthBusy && mineGameCount > 0 && (
                       <span className="section-count">{mineGameCount}</span>
                     )}
                   </span>
-                  {!homeBusy && mineGameCount > 1 && (
+                  {!monthBusy && mineGameCount > 1 && (
                     <button
                       type="button"
                       className="sort-toggle"
-                      aria-label={t(locale, gameSort === "recent" ? "sortTop" : "sortRecent")}
+                      aria-label={t(locale, gameSort === "recent" ? "sortProgress" : "sortRecent")}
                       onClick={() =>
-                        setGameSort((cur) => (cur === "recent" ? "top" : "recent"))
+                        setGameSort((cur) => (cur === "recent" ? "progress" : "recent"))
                       }
                     >
                       <Icon name={gameSort === "recent" ? "sort" : "stats"} size={18} />
                     </button>
                   )}
                 </div>
-                {homeBusy && <RowsSkel count={3} />}
-                {!homeBusy && mine.length > 0 && (
+                {monthBusy && <RowsSkel count={3} />}
+                {!monthBusy && mine.length > 0 && (
                   <PlayedGames items={mine} locale={locale} sort={gameSort} />
                 )}
               </>
@@ -490,12 +450,12 @@ export function Club({
           <header className="page-head is-split">
             <h1>{t(locale, "feed")}</h1>
             {clubReady ? (
-              monthChip(feedMonth, MONTH_TARGETS.FEED)
+              monthChip(selectedMonth)
             ) : (
               <span className="skel month-chip-skel" aria-hidden />
             )}
           </header>
-          {!clubReady || feedBusy ? (
+          {!clubReady || monthBusy ? (
             <FeedSkel head={false} />
           ) : feed.length === 0 ? (
             <p className="empty">{t(locale, "emptyFeed")}</p>
@@ -517,7 +477,7 @@ export function Club({
           <header className="page-head is-split">
             <h1>{t(locale, "stats")}</h1>
             {clubReady ? (
-              monthChip(statsMonth, MONTH_TARGETS.STATS)
+              monthChip(selectedMonth)
             ) : (
               <span className="skel month-chip-skel" aria-hidden />
             )}
@@ -529,13 +489,13 @@ export function Club({
               meId={me.tg_id}
               locale={locale}
               day={day}
-              month={month}
+              month={monthBoard}
               games={games}
               monthLabel={monthLabel}
               feed={statsFeed}
               online={online}
-              monthChip={monthChip(statsMonth, MONTH_TARGETS.STATS)}
-              busy={statsBusy}
+              monthChip={monthChip(selectedMonth)}
+              busy={monthBusy}
               revealed={revealed}
               showSecrets={showSecrets}
               onReveal={(key) => setRevealed(new Set(revealed).add(key))}
@@ -558,19 +518,13 @@ export function Club({
           }}
         />
       )}
-      {monthPicker && monthPicker !== MONTH_TARGETS.PERSON && (
+      {monthPicker && (
         <MonthSheet
           months={months}
-          selected={
-            monthPicker === MONTH_TARGETS.FEED
-              ? feedMonth
-              : monthPicker === MONTH_TARGETS.HOME
-                ? homeMonth
-                : statsMonth
-          }
+          selected={selectedMonth}
           liveMonth={liveMonth}
           locale={locale}
-          onClose={() => setMonthPicker(null)}
+          onClose={() => setMonthPicker(false)}
           onPick={pickMonth}
         />
       )}

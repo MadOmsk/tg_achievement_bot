@@ -670,7 +670,7 @@ class _AdminRepo:
         cursor = await self._conn.execute(
             "SELECT hltb_id, name, release_year, main_hours, extra_hours,"
             " completionist_hours, platforms, game_url, image_url, genre,"
-            " description_en, description_ru "
+            " description_en, description_ru, details "
             "FROM hltb_cache WHERE hltb_id = ?",
             (hltb_id,),
         )
@@ -690,6 +690,7 @@ class _AdminRepo:
             genre=row["genre"],
             description_en=row["description_en"],
             description_ru=row["description_ru"],
+            details=json.loads(row["details"]) if row["details"] else None,
         )
 
     async def hltb_cache_result(self, entry: HltbCacheRow) -> None:
@@ -699,8 +700,8 @@ class _AdminRepo:
             "INSERT OR REPLACE INTO hltb_cache "
             "(hltb_id, name, release_year, main_hours, extra_hours, completionist_hours,"
             " platforms, game_url, image_url, genre, description_en, description_ru,"
-            " cached_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " details, cached_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 entry.hltb_id,
                 entry.name,
@@ -714,6 +715,7 @@ class _AdminRepo:
                 entry.genre,
                 entry.description_en,
                 entry.description_ru,
+                json.dumps(entry.details) if entry.details is not None else None,
                 utcnow_iso(),
             ),
         )

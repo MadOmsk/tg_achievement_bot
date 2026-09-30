@@ -27,8 +27,8 @@ from bot.constants import (
     Platform,
     account_platform_of,
 )
-from bot.db.repo import AchievementRow, PlatformLink, Repo
-from bot.i18n import gettext, translator
+from bot.db.repo import PlatformLink, Repo
+from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.service_health import (
@@ -52,7 +52,6 @@ from bot.services.admin_settings import (
     SHOW_LINKS_KEY,
 )
 from bot.services.message_log import stats_category
-from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import link_nickname, person_name, xbox_nickname
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
@@ -101,7 +100,6 @@ from bot.views.keyboards import (
     next_locale,
     next_rarity_mode,
 )
-from bot.views.notification import format_digest, format_single
 from bot.views.promo import promo_keyboard, promo_text
 
 log = logging.getLogger(__name__)
@@ -1381,113 +1379,3 @@ async def _redraw(callback: CallbackQuery, text: str, markup: InlineKeyboardMark
             # Telegram refuses an edit that changes nothing — harmless.
             pass
     await callback.answer()
-
-
-async def _send_test_notifications_to_admin(
-    bot: Bot,
-    admin_id: int,
-    locale: str,
-    settings: Settings,
-) -> None:
-    """Send test achievement notification, test digest, and test promo message to admin in DM."""
-    me = await bot.me()
-    bot_username = (me.username or "").lstrip("@")
-
-    # 1. Sample single achievement notification
-    sample_item = AchievementRow(
-        platform=Platform.XBOX_MODERN,
-        title_id="test_game_1",
-        achievement_id="test_ach_1",
-        name="Master of the Universe",
-        description="Complete all challenges on Heroic difficulty.",
-        gamerscore=50,
-        rarity_percent=4.2,
-        icon_url="https://images-eds-ssl.xboxlive.com/image?url=27S1DHqE.cHkmFg4nspsd20onq.a6RlSrPILfpIfgG69B6hv5oeObwDwTlW9DupHdRgbFrKl5Sc.TjixYquVchOcOmI_rTy9ypV5EspEr2cKX4NCAPgRf0qys0L0kJccFLpG92BAO_pXyKPkAGEY.QCBnhqZIkuW5fUb5izjBb4-",
-        is_secret=False,
-        unlocked_at=utcnow().isoformat(),
-        title_name="Halo Infinite",
-    )
-    single_text = format_single("PlayerOne", sample_item, "Halo Infinite", locale=locale)
-    btn_text = gettext("chat", "chat-open-mini-app", locale=locale)
-    single_markup = mini_app_open_markup(
-        btn_text,
-        https_url=settings.mini_app_url or "",
-        bot_username=bot_username,
-        chat_id=admin_id,
-        in_group=False,
-    )
-    try:
-        await bot.send_photo(
-            admin_id,
-            photo=sample_item.icon_url,
-            caption=single_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=single_markup,
-        )
-    except Exception:
-        await bot.send_message(
-            admin_id,
-            single_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=single_markup,
-        )
-
-    # 2. Sample digest notification
-    sample_digest_items = [
-        sample_item,
-        AchievementRow(
-            platform=Platform.XBOX_MODERN,
-            title_id="test_game_1",
-            achievement_id="test_ach_2",
-            name="Brothers in Arms",
-            description="Win a co-op match.",
-            gamerscore=25,
-            rarity_percent=12.5,
-            icon_url="https://images.unsplash.com/photo-1612287233207-6f8b960b77b7?w=500",
-            is_secret=False,
-            unlocked_at=utcnow().isoformat(),
-            title_name="Halo Infinite",
-        ),
-    ]
-    digest_text = format_digest("PlayerOne", "Halo Infinite", sample_digest_items, locale=locale)
-    digest_markup = mini_app_open_markup(
-        btn_text,
-        https_url=settings.mini_app_url or "",
-        bot_username=bot_username,
-        chat_id=admin_id,
-        in_group=False,
-    )
-    await bot.send_message(
-        admin_id,
-        digest_text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=digest_markup,
-    )
-
-    # 3. Pinned promo message
-    p_markup = promo_keyboard(
-        bot_username,
-        admin_id,
-        mini_app_url=settings.mini_app_url or "",
-        is_group=False,
-        locale=locale,
-    )
-    await bot.send_message(
-        admin_id,
-        promo_text(locale=locale),
-        parse_mode=ParseMode.HTML,
-        reply_markup=p_markup,
-    )
-
-
-@router.message(Command("test_notify"), F.chat.type == ChatType.PRIVATE)
-async def test_notify_command(
-    message: Message,
-    bot: Bot,
-    i18n: I18nContext,
-    settings: Settings,
-) -> None:
-    if not message.from_user:
-        return
-    await _send_test_notifications_to_admin(bot, message.from_user.id, i18n.locale, settings)
-    await message.answer(translator("admin", i18n.locale)("admin-test-notify-sent"))

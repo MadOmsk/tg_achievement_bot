@@ -114,6 +114,9 @@ class HltbResult:
     genre: str | None
     description_en: str | None = None
     description_ru: str | None = None
+    # The rest of the game's page — see `_extras_of` for the shape. None
+    # until the page has been read for it.
+    details: dict | None = None
     # What the game-page matcher weighs (#131) — search results only, never
     # cached: HLTB's other names for it, "game"/"dlc"/"mod", and how many
     # people logged a completion.
@@ -274,7 +277,8 @@ async def resolve(
     """
     cached = await repo.hltb_get_cached(hltb_id)
     if cached is not None:
-        return await _top_up_translation(repo, _from_cache_row(cached), anthropic_auth)
+        result = await _top_up_details(repo, _from_cache_row(cached))
+        return await _top_up_translation(repo, result, anthropic_auth)
 
     try:
         entry = await HowLongToBeat().async_search_from_id(hltb_id)
@@ -288,9 +292,30 @@ async def resolve(
         # Only for the one game someone actually picked, not every candidate
         # in a 20-result search list — genre and description are both
         # nice-to-haves, one extra request per newly-cached game is fine,
-        # one per search is not. Both come out of the same single fetch.
-        result.genre, result.description_en = await _fetch_page_details(result.game_url)
+        # one per search is not. All of it comes out of the same single fetch.
+        game = await _fetch_page_game(result.game_url)
+        if game is not None:
+            result.genre, result.description_en = _details_of(game)
+            result.details = _extras_of(game)
     result.description_ru = await _translate(result.description_en, anthropic_auth)
+    await _cache(repo, result)
+    return result
+
+
+async def _top_up_details(repo: Repo, result: HltbResult) -> HltbResult:
+    """A row cached before migration 064 has everything but the page's
+    extras — read the page once more for them, then never again. A page
+    that can't be read leaves `details` None and is tried on the next
+    lookup, the same as a missing translation."""
+    if result.details is not None or not result.game_url:
+        return result
+    game = await _fetch_page_game(result.game_url)
+    if game is None:
+        return result
+    result.details = _extras_of(game)
+    genre, description = _details_of(game)
+    result.genre = result.genre or genre
+    result.description_en = result.description_en or description
     await _cache(repo, result)
     return result
 
@@ -351,21 +376,22 @@ async def _cache(repo: Repo, result: HltbResult) -> None:
             genre=result.genre,
             description_en=result.description_en,
             description_ru=result.description_ru,
+            details=result.details,
         )
     )
 
 
 async def _fetch_page_details(game_url: str) -> tuple[str | None, str | None]:
-    """(genre, description), both best-effort — a failure here must not cost
-    the rest of the card (SPEC 1.5's "expected failure, never crash"), so
-    every error just means "no genre and no description this time", logged
-    and swallowed, never raised as HltbError."""
+    """(genre, description) alone, best-effort — for the description backfill
+    script."""
     game = await _fetch_page_game(game_url)
     return _details_of(game) if game is not None else (None, None)
 
 
 async def _fetch_page_game(game_url: str) -> dict | None:
-    """The game's record from its HLTB page, or None — logged, never raised."""
+    """The game's record from its HLTB page, or None — logged, never raised:
+    a failure here must not cost the rest of the card (SPEC 1.5's "expected
+    failure, never crash")."""
     try:
         async with httpx.AsyncClient(timeout=_PAGE_REQUEST_TIMEOUT) as client:
             response = await client.get(game_url, headers=_PAGE_HEADERS)
@@ -412,6 +438,98 @@ def _details_of(game: dict) -> tuple[str | None, str | None]:
     # lines, where a blank line costs a third of what is visible.
     summary = " ".join((game.get("profile_summary") or "").split()) or None
     return genre, summary
+
+
+# HLTB's own time buckets on a game page and the keys our payload names them
+# by. Each has an average (`<prefix>`), a median (`_med`), and the fastest
+# and slowest submissions (`_l`, `_h`), all in seconds.
+_TIME_BUCKETS = (
+    ("main", "comp_main"),
+    ("extra", "comp_plus"),
+    ("completionist", "comp_100"),
+    ("all", "comp_all"),
+    ("coop", "invested_co"),
+    ("multi", "invested_mp"),
+)
+
+
+def _extras_of(game: dict) -> dict:
+    """Everything else worth showing from the page: rating, studio, other
+    names, release dates, play modes, the spread of each time bucket and
+    the speedrun records. HLTB's counts of *who* played it (completions,
+    backlogs, retirements…) are left out on purpose — they describe HLTB's
+    own users, not the game. Hours come out as hours, rounded to a tenth;
+    anything HLTB left empty or zero is dropped rather than sent as 0."""
+    modes = [
+        mode
+        for mode, key in (
+            ("single", "comp_lvl_sp"),
+            ("coop", "comp_lvl_co"),
+            ("multi", "comp_lvl_mp"),
+        )
+        if _as_int(game.get(key))
+    ]
+    times: dict[str, dict[str, float]] = {}
+    for name, prefix in _TIME_BUCKETS:
+        # Co-op/multiplayer hours only count when the game is played that
+        # way — Hollow Knight has three stray "co-op" submissions.
+        if name in ("coop", "multi") and name not in modes:
+            continue
+        bucket = {
+            label: hours
+            for label, suffix in (
+                ("average", ""),
+                ("median", "_med"),
+                ("fastest", "_l"),
+                ("slowest", "_h"),
+            )
+            if (hours := _hours(game.get(prefix + suffix))) is not None
+        }
+        if bucket:
+            times[name] = bucket
+    speedrun = {
+        name: record
+        for name, prefix in (("any", "comp_speed"), ("full", "comp_speed100"))
+        if (
+            record := {
+                label: hours
+                for label, suffix in (("best", "_min"), ("median", "_med"))
+                if (hours := _hours(game.get(prefix + suffix))) is not None
+            }
+        )
+    }
+    releases = {
+        region: date
+        for region in ("world", "na", "eu", "jp")
+        if (date := _text(game.get(f"release_{region}"))) and not date.startswith("0000")
+    }
+    details = {
+        "review_score": _as_int(game.get("review_score")) or None,
+        "developer": _text(game.get("profile_dev")),
+        "publisher": _text(game.get("profile_pub")),
+        "alias": _text(game.get("game_alias")),
+        "releases": releases,
+        "modes": modes,
+        "times": times,
+        "speedrun": speedrun,
+    }
+    return {key: value for key, value in details.items() if value}
+
+
+def _as_int(value: object) -> int:
+    try:
+        return int(value or 0)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return 0
+
+
+def _hours(seconds: object) -> float | None:
+    value = _as_int(seconds)
+    return round(value / 3600, 1) if value > 0 else None
+
+
+def _text(value: object) -> str | None:
+    return value.strip() or None if isinstance(value, str) else None
 
 
 def _as_result(entry: object) -> HltbResult:
@@ -466,6 +584,7 @@ def _from_cache_row(row: HltbCacheRow) -> HltbResult:
         genre=row.genre,
         description_en=row.description_en,
         description_ru=row.description_ru,
+        details=row.details,
     )
 
 

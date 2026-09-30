@@ -408,6 +408,9 @@ CREATE TABLE IF NOT EXISTS hltb_cache (
     -- and the translation is skipped entirely when no Anthropic key is set.
     description_en      TEXT,
     description_ru      TEXT,
+    -- The rest of the HLTB page (rating, studio, modes, spreads, speedruns),
+    -- one JSON object; NULL until the page has been read for it (064).
+    details             TEXT,
     cached_at           TEXT NOT NULL
 );
 
