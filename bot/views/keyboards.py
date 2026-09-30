@@ -236,6 +236,10 @@ def locale_name(locale: str) -> str:
     return LOCALE_NAMES.get(locale, locale)
 
 
+def _rarity_or_all(mode: str) -> str:
+    return mode if mode in RARITY_CHOICES else RarityMode.ALL
+
+
 def next_rarity_mode(current: str) -> str:
     index = RARITY_CHOICES.index(current) if current in RARITY_CHOICES else 0
     return RARITY_CHOICES[(index + 1) % len(RARITY_CHOICES)]
@@ -403,10 +407,11 @@ def panel_keyboard(
             )
         ],
         [InlineKeyboardButton(text=i18n.get("kb-my-chats"), callback_data="panel:chatlist")],
-        # Which achievements go out, in every chat at once (#126).
+        # Which achievements go out, in every chat at once (#126) — a
+        # carousel: a tap moves to the next mode (owner, 2026-09-30).
         [
             InlineKeyboardButton(
-                text=i18n.get("kb-rarity-row", mode=format_rarity(rarity_mode, i18n)),
+                text=i18n.get(f"kb-publish-{_rarity_or_all(rarity_mode)}"),
                 callback_data="panel:rarity",
             )
         ],
@@ -501,18 +506,3 @@ def switch_prompt(
         )
     parts.append(i18n.get("connect-switch-question", incoming=incoming_name))
     return "\n\n".join(parts)
-
-
-def rarity_keyboard(current: str, i18n: I18nContext) -> InlineKeyboardMarkup:
-    """The person's rarity mode, for every chat at once (#126)."""
-    rows = [
-        [
-            InlineKeyboardButton(
-                text=("✅ " if mode == current else "") + format_rarity(mode, i18n).capitalize(),
-                callback_data=f"panel:rarityset:{mode}",
-            )
-        ]
-        for mode in RARITY_CHOICES
-    ]
-    rows.append([InlineKeyboardButton(text=i18n.get("kb-back"), callback_data="panel:refresh")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)

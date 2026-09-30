@@ -83,10 +83,6 @@ panel-visibility-visible = ✅ achievements visible
 panel-visibility-hidden = ⚠️ achievements hidden
 panel-visibility-unknown = ❓ not checked
 panel-publication-row = Publishing: { $status }
-panel-rarity-prompt =
-    Which achievements to publish — in all your chats at once.
-
-    "Rare only" follows each chat's own rarity threshold.
 panel-now-playing-row = Now: { $playing }
 panel-reconnect-hint = Your XBOX access has expired — press “Connect again” below.
 panel-no-presence-data = no data
@@ -132,3 +128,6 @@ panel-delete-confirm-2-yes = 🔥 Permanently delete account
 panel-delete-done = Your account and related data have been deleted. If you ever wish to return, send /start.
 panel-delete-toast = Account deleted
 panel-delete-not-found = Account already deleted.
+panel-rarity-toast-all = Posting every achievement
+panel-rarity-toast-rare = Rare only — by each chat's rarity threshold
+panel-rarity-toast-hidden = Posting nothing

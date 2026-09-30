@@ -31,7 +31,6 @@ from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows
 from bot.views.keyboards import (
     panel_keyboard,
-    rarity_keyboard,
 )
 from bot.views.parts import (
     PLATFORM_ICON,
@@ -460,14 +459,6 @@ async def render_panel_delete_confirm_2(*, locale: str) -> Screen:
     )
     builder.row(InlineKeyboardButton(text=i18n.get("kb-cancel"), callback_data="panel:refresh"))
     return Screen(i18n.get("panel-delete-confirm-2"), builder.as_markup())
-
-
-async def render_rarity_picker(repo: Repo, tg_id: int, *, locale: str) -> Screen:
-    """Which achievements this person publishes, in every chat (#126)."""
-    i18n = await i18n_for(locale)
-    settings_row = await repo.get_user_settings(tg_id)
-    current = settings_row.rarity_mode if settings_row else RarityMode.ALL
-    return Screen(i18n.get("panel-rarity-prompt"), rarity_keyboard(current, i18n))
 
 
 # ---------------------------------------------------------------- account screens (#10)

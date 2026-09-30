@@ -6,7 +6,7 @@
 kb-default = по умолчанию
 kb-tz-other = Другой ▸
 kb-tz-manual = ✏️ Ввести вручную
-kb-tz-skip = Пропустить
+kb-tz-skip = ⏭ Пропустить
 # Ways back and onward instead of a command to type (owner, 2026-09-30).
 kb-open-panel = ⚙️ Панель
 kb-back-to-panel = ‹ В панель
@@ -38,9 +38,12 @@ kb-psn-disconnect = 🔌 Отвязать
 kb-xbox-reconnect = 🔄 Подключить заново
 
 # Panel controls
-kb-timezone-row = Часовой пояс: { $offset } ▸
+kb-timezone-row = 🕐 Часовой пояс: { $offset } ▸
 kb-my-chats = 💬 Мои чаты ▸
-kb-rarity-row = Ачивки: { $mode } ▸
+# The person's rarity mode as a carousel: a tap moves to the next one (owner, 2026-09-30).
+kb-publish-all = 📣 Публиковать: Все
+kb-publish-rare = 💎 Публиковать: Редкие
+kb-publish-hidden = 🔕 Публиковать: Никакие
 kb-sync = 🔄 Синхронизировать
 kb-profile = 👤 Профиль
 kb-xbox-disconnect = 🔌 Отвязать
@@ -52,7 +55,6 @@ kb-publishes-partly = 🔔 Частично
 # /panel's platform buttons (#10): each opens that platform's own screen.
 kb-platform-menu = { $icon } { $platform }{ $alert } ▸
 kb-platform-menu-count = { $icon } { $platform } ({ $count }){ $alert } ▸
-kb-locale = Язык: { $name } ▸
+kb-locale = 🌐 Язык: { $name } ▸
 kb-refresh = Обновить
-kb-back = ‹ Назад
 kb-open = Открыть

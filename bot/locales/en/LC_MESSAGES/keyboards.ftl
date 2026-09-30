@@ -6,7 +6,7 @@
 kb-default = default
 kb-tz-other = Other ▸
 kb-tz-manual = ✏️ Enter manually
-kb-tz-skip = Skip
+kb-tz-skip = ⏭ Skip
 # Ways back and onward instead of a command to type (owner, 2026-09-30).
 kb-open-panel = ⚙️ Panel
 kb-back-to-panel = ‹ To the panel
@@ -44,9 +44,12 @@ kb-psn-disconnect = 🔌 Unlink
 kb-xbox-reconnect = 🔄 Connect again
 
 # Panel controls
-kb-timezone-row = Timezone: { $offset } ▸
+kb-timezone-row = 🕐 Timezone: { $offset } ▸
 kb-my-chats = 💬 My chats ▸
-kb-rarity-row = Achievements: { $mode } ▸
+# The person's rarity mode as a carousel: a tap moves to the next one (owner, 2026-09-30).
+kb-publish-all = 📣 Post: All
+kb-publish-rare = 💎 Post: Rare
+kb-publish-hidden = 🔕 Post: None
 kb-sync = 🔄 Sync now
 kb-profile = 👤 Profile
 kb-xbox-disconnect = 🔌 Unlink
@@ -58,7 +61,6 @@ kb-publishes-partly = 🔔 Partly
 # /panel's platform buttons (#10): each opens that platform's own screen.
 kb-platform-menu = { $icon } { $platform }{ $alert } ▸
 kb-platform-menu-count = { $icon } { $platform } ({ $count }){ $alert } ▸
-kb-locale = Language: { $name } ▸
+kb-locale = 🌐 Language: { $name } ▸
 kb-refresh = Refresh
-kb-back = ‹ Back
 kb-open = Open

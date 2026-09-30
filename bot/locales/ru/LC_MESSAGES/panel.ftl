@@ -80,10 +80,6 @@ panel-visibility-visible = ✅ ачивки видны
 panel-visibility-hidden = ⚠️ ачивки скрыты
 panel-visibility-unknown = ❓ не проверено
 panel-publication-row = Публикация: { $status }
-panel-rarity-prompt =
-    Какие ачивки публиковать — во всех твоих чатах сразу.
-
-    «Только редкие» считаются по порогу редкости каждого чата.
 panel-now-playing-row = Сейчас: { $playing }
 panel-reconnect-hint = Доступ к XBOX истёк — жми «Подключить заново» ниже.
 panel-no-presence-data = нет данных
@@ -130,3 +126,6 @@ panel-delete-confirm-2-yes = 🔥 Точно удалить аккаунт
 panel-delete-done = Ваш аккаунт и связанные данные успешно удалены. Если захотите вернуться, просто отправьте /start.
 panel-delete-toast = Аккаунт удалён
 panel-delete-not-found = Аккаунт уже удалён.
+panel-rarity-toast-all = Публикую все ачивки
+panel-rarity-toast-rare = Только редкие — по порогу редкости каждого чата
+panel-rarity-toast-hidden = Ничего не публикую
