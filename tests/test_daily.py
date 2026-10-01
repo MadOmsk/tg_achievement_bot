@@ -757,3 +757,57 @@ async def test_month_end_wrapup_zero_delay_sends_immediately(repo: Repo) -> None
     assert len(bot.sent) == 2
     assert "<b>Итоги дня</b>" in bot.sent[0][1]
     assert "<b>Итоги месяца</b>" in bot.sent[1][1]
+
+
+class _MarkupBot:
+    def __init__(self) -> None:
+        self.markups: list[object] = []
+
+    async def send_message(self, chat_id: int, text: str, **kwargs: object) -> None:
+        self.markups.append(kwargs.get("reply_markup"))
+
+
+def _callbacks(markup) -> list[str]:
+    if markup is None:
+        return []
+    return [b.callback_data for row in markup.inline_keyboard for b in row]
+
+
+async def test_a_scheduled_report_has_no_close_button(repo: Repo) -> None:
+    """The bot posts it on its own schedule; one member closing it would
+    remove it for the whole chat (owner, 2026-10-01). Paging stays."""
+    from bot.views.keyboards import CLOSE_CALLBACK
+
+    await _chat_with_two_players(repo)
+    await repo.update_chat_settings(
+        CHAT_ID, tz_offset_min=0, daily_summary_time=datetime.now(UTC).strftime("%H:%M")
+    )
+    bot = _MarkupBot()
+    await DailySummary(bot, repo).tick()  # type: ignore[arg-type]
+
+    callbacks = _callbacks(bot.markups[0])
+    assert CLOSE_CALLBACK not in callbacks
+    assert any(cb.startswith("sd:") for cb in callbacks)
+
+
+async def test_a_report_asked_for_keeps_its_close_button(repo: Repo) -> None:
+    from bot.views.keyboards import CLOSE_CALLBACK
+
+    await _chat_with_two_players(repo)
+    built = await build_summary(repo, CHAT_ID, 5.0, utcnow().date(), locale="ru", window=DAY)
+    assert built is not None
+    assert CLOSE_CALLBACK in _callbacks(built[1])
+
+
+def test_paging_a_scheduled_report_does_not_bring_the_close_button_back() -> None:
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    from bot.views.keyboards import CLOSE_CALLBACK, close_button, keep_closability
+
+    nav = [InlineKeyboardButton(text="◀️", callback_data="sd:nav:2026-09-29")]
+    scheduled = InlineKeyboardMarkup(inline_keyboard=[nav])
+    asked_for = InlineKeyboardMarkup(inline_keyboard=[nav, [close_button(locale="ru")]])
+    redrawn = InlineKeyboardMarkup(inline_keyboard=[nav, [close_button(locale="ru")]])
+
+    assert CLOSE_CALLBACK not in _callbacks(keep_closability(scheduled, redrawn))
+    assert CLOSE_CALLBACK in _callbacks(keep_closability(asked_for, redrawn))

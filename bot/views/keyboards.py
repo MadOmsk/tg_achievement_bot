@@ -69,6 +69,29 @@ def with_close_button(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def without_close_button(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
+    """The same keyboard with the close button taken out — for what the bot
+    posts on its own schedule (the day and month reports), which a member
+    should not be able to remove for everyone (owner, 2026-10-01)."""
+    if markup is None:
+        return None
+    rows = [[b for b in row if b.callback_data != CLOSE_CALLBACK] for row in markup.inline_keyboard]
+    rows = [row for row in rows if row]
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+def keep_closability(
+    current: InlineKeyboardMarkup | None, redrawn: InlineKeyboardMarkup | None
+) -> InlineKeyboardMarkup | None:
+    """A message redrawn in place keeps whether it can be closed: a scheduled
+    report paged to another day or month stays without its close button."""
+    if current is not None and not any(
+        b.callback_data == CLOSE_CALLBACK for row in current.inline_keyboard for b in row
+    ):
+        return without_close_button(redrawn)
+    return redrawn
+
+
 def _text(i18n: I18nContext | None, key: str, **kwargs: object) -> str:
     return i18n.get(key, **kwargs) if i18n is not None else gettext("keyboards", key, **kwargs)
 

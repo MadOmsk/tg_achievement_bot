@@ -735,7 +735,9 @@ keyboard.
   block uncapped, in a plain blockquote.
 - **Bot replies to commands carry a "Закрыть" button** (`views/keyboards.py::
   with_close_button`); closing `/online` also stops its auto-refresh. Achievement
-  notifications do not get one.
+  notifications do not get one, nor do the day and month reports the bot posts on
+  its schedule (owner, 2026-10-01) — paging one keeps it without
+  (`keep_closability`); the same report asked for by command keeps its button.
 - **`/delete_last`** removes the bot's latest message in the chat whatever it is —
   **except an achievement notification**, single or digest, which it never takes
   (#101; `bot_messages.is_achievement`, set under the publisher's
