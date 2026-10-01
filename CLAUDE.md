@@ -521,6 +521,10 @@ for this; psnawp uses the private one the PlayStation App uses.
   weaken the design without re-verifying it.
 - **Verify an NPSSO with a real call (`check_alive()`) before saving it** — psnawp's
   token exchange is lazy.
+- **Pacing is psnawp's own limiter, one request every 2 s per client**
+  (`client.py::REQUEST_RATE`, owner, 2026-10-01; the library's default is 3 s).
+  Its bucket file is per process and per instance, so prod, the test server and
+  the dev bot never share one; a game's backfill costs ~5 requests.
 - **Shared-credential health** (all three credentials, `services/credential_health.py`,
   #62): the admin is notified once per alive → dead transition, and once on recovery.
   A death needs `FAILURES_BEFORE_DEAD` consecutive failures, re-checked on the next
