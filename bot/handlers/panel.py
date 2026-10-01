@@ -19,6 +19,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_catch_up import catch_up_steam_account
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.admin_settings import rare_threshold
 from bot.services.naming import link_nickname
 from bot.services.single_message import send_replacing
 from bot.services.steam import client as steam_client  # noqa: F401
@@ -373,7 +374,8 @@ async def panel_rarity(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     settings_row = await repo.get_user_settings(tg_id)
     mode = next_rarity_mode(settings_row.rarity_mode if settings_row else RarityMode.ALL)
     await repo.update_user_settings(tg_id, rarity_mode=mode)
-    await callback.answer(i18n.get(f"panel-rarity-toast-{mode}"))
+    threshold = f"{await rare_threshold(repo):g}"
+    await callback.answer(i18n.get(f"panel-rarity-toast-{mode}", threshold=threshold))
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 

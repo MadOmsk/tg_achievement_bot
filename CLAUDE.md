@@ -339,10 +339,11 @@ every column. History: #106.
 ### Chats and settings
 
 - `chats` + `subscriptions` (who publishes where — nothing else: #126 moved the
-  per-subscription settings out). `chat_settings`: rarity threshold, **digest size**
+  per-subscription settings out). `chat_settings`: **digest size**
   (`digest_threshold`, 99 = never), summary time, timezone, muted games, minimum
   gamerscore, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
-  `locale`. `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
+  `locale` (its `rare_threshold_percent` column is no longer read — the threshold
+  is global, see Publication rules). `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
   new people start from `app_settings['default_rarity_mode']`), timezone, muted games,
   `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
   profile links are one admin switch, `app_settings['show_profile_links']`, on by
@@ -621,12 +622,16 @@ An achievement is published to a chat only if every check passes: the person is
 subscribed there; not admin-excluded; the account's posting switch is on (#20); the
 person's `rarity_mode` isn't `hidden`; in
 `rare` mode a
-known rarity is at or below the chat's threshold (a platform with no rarity at all —
+known rarity is at or below the rarity threshold (a platform with no rarity at all —
 Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
 isn't muted there; it wasn't already published there.
 
-- **The threshold is always `chat_settings.rare_threshold_percent`**, set per chat by
-  an admin. Never hardcode a percentage; a person picks only a mode.
+- **The rarity threshold is one for every chat** (owner, 2026-10-01):
+  `app_settings['rare_threshold_percent']`, 10% until an admin changes it in
+  /admin → global settings; no chat overrides it. The repo reads it wherever a
+  chat's settings are read (`_sql.py::GLOBAL_RARE_THRESHOLD`), so callers still
+  take `chat.rare_threshold_percent`. Never hardcode a percentage; a person picks
+  only a mode.
 - **Digests**: at the chat's `digest_threshold` items (set by an admin, #126) a batch
   becomes one grouped message, grouped by platform and title. Every item is listed, never "и ещё N". The
   gallery dedupes by image URL.
@@ -764,11 +769,12 @@ keyboard.
   set / change / clear the Steam key, PSN NPSSO and Anthropic key (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; global limits, each on its own row with its value and its own
-  input, `0` rendered as "без ограничения"; defaults for new users; the user list;
+  input, `0` rendered as "без ограничения", and the rarity threshold on top; defaults
+  for new users; the user list;
   the chat list and per-chat cards; exclusion; bot-message cleanup.
 - **The per-chat card** keeps its settings in three sub-screens — daily summary,
   anti-flood, message cleanup — each redrawing in place with the card's text above.
-  Settings: rarity threshold, digest size (#126), summary time, timezone, mutes,
+  Settings: digest size (#126), summary time, timezone, mutes,
   minimum gamerscore, summary switch, anti-flood, language (#48).
 - **The per-user card**: the Telegram identity in full (`tg_id` passed to Fluent as a
   string, never `@N`), then one block per platform in the display order — nickname,
@@ -808,7 +814,7 @@ History: #110.
 - Then the badge and the name in quotes, gamerscore (if nonzero) and rarity as a
   bare percentage (if known — no word, owner 2026-09-25), then the description —
   behind a spoiler if secret.
-- **Badges**: `rarity_badge()` — 💎 at or below the chat's rare threshold, 🏆
+- **Badges**: `rarity_badge()` — 💎 at or below the rarity threshold, 🏆
   otherwise (including unknown). PSN shows its tier instead (see PSN).
 
 ### Which platform a screen names (#114, owner, 2026-09-24)
@@ -863,7 +869,7 @@ upper-case. `/panel`'s "now" row names only the family, as its header lines do.
   `views/summary.py::month_window_label`). **No list uses a rolling N-day window.**
 - **The two counter lines** in `/stats` say which window they mean ("За сутки", "С 1
   сентября") and end in the value bracket a games row uses — gamerscore, rare count
-  by this chat's threshold, PSN tiers, zeros dropped (`views/parts.py::value_parts`).
+  by the rarity threshold, PSN tiers, zeros dropped (`views/parts.py::value_parts`).
 - **A `/recent` row leads with PSN's tier where it has one**, and separates game and
   achievement with `·`.
 
@@ -1312,8 +1318,6 @@ actually invocable (`tests/test_handler_wiring.py`).
   different mode per platform. One `rarity_mode` covers all; a platform without rarity
   (Xbox 360) is exempt from `rare` instead of getting a toggle. (#20 settled it differently:
   a posting on/off switch per *account*, not a rarity mode per platform.)
-- **Global rarity settings for every chat at once** — replaced by a per-chat
-  threshold.
 - **Live platform API calls from `/stats`, the summaries, `/online` or the panel** —
   every normal read is cache-only; the panel's own sync button is the exception.
 - **Game descriptions from the Steam store** — HLTB supplies them for every platform

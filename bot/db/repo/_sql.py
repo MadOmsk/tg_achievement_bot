@@ -225,3 +225,12 @@ def rarity_cache_join(prefix: str = "s.") -> str:
 def rarity(prefix: str = "s.") -> str:
     """The percentage to believe: the catalog first, the row as the fallback."""
     return f"COALESCE(rc.rarity_percent, {prefix}rarity_percent)"
+
+
+# The rarity threshold, one for every chat (owner, 2026-10-01): read where a
+# chat's settings are read, so every caller that took the chat's own value
+# gets the global one. chat_settings.rare_threshold_percent is left unread.
+GLOBAL_RARE_THRESHOLD = (
+    "COALESCE((SELECT CAST(value AS REAL) FROM app_settings"
+    " WHERE key = 'rare_threshold_percent'), 10.0)"
+)

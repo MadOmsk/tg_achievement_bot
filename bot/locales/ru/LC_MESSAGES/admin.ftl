@@ -95,8 +95,8 @@ admin-chat-not-found = Чат не найден
 admin-chat-not-found-period = Чат не найден.
 
 # Chat settings prompts
-admin-chat-threshold-prompt =
-    Порог «редкого» достижения в «{ $title }»: { $value }%
+admin-rare-prompt =
+    💎 Порог «редкого» достижения, один для всех чатов: { $value }%
 
     Пришли новое значение одним числом, например 12 или 7.5 — от 0 до 100.
     Действует только на этот чат.
@@ -183,6 +183,7 @@ admin-new-users-screen =
     Действует только на подписки, оформленные с этого момента — уже существующие
     не трогает.
 admin-default-rarity = Ачивки по умолчанию: { $rarity } ▸
+admin-rare-row = 💎 Порог редкости: { $value }% ▸
 admin-show-links = Ссылки на профили в карточках: { $visible } ▸
 admin-users-empty = 👥 Пока никто не подключился.
 admin-users-header = 👥 Пользователи
@@ -263,7 +264,6 @@ admin-chat-card =
 
     Состояние:    { $state }
     Публикуется:  { $subscribers } чел.
-    Порог редк.:  { $threshold }
     Дайджест:     { $digest }
     Итог дня:     { $summary }, в { $time }
     Часовой пояс: { $offset }
@@ -276,7 +276,6 @@ admin-chat-flood-value = { $limit } ач. / { $window } мин
 admin-chat-flood-off = выключен
 admin-no-subscribers = Подписанных пока нет.
 admin-subscribers-list = Подписаны: { $names }
-admin-chat-threshold-button = Порог редкости: { $threshold } ▸
 admin-chat-digest-button = Дайджест: { $digest } ▸
 admin-digest-from = от { $value } ач.
 admin-digest-never = никогда

@@ -127,7 +127,7 @@ panel-delete-done = Ваш аккаунт и связанные данные у�
 panel-delete-toast = Аккаунт удалён
 panel-delete-not-found = Аккаунт уже удалён.
 panel-rarity-toast-all = Публикую все ачивки
-panel-rarity-toast-rare = Только редкие — по порогу редкости каждого чата
+panel-rarity-toast-rare = Только редкие — с редкостью не выше { $threshold }%
 panel-rarity-toast-hidden = Ничего не публикую
 
 # Hidden achievements: what it means, and how to open them (#95).

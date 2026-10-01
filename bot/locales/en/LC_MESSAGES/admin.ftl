@@ -95,8 +95,8 @@ admin-chat-not-found = Chat not found
 admin-chat-not-found-period = Chat not found.
 
 # Chat settings prompts
-admin-chat-threshold-prompt =
-    The "rare" achievement threshold in “{ $title }”: { $value }%
+admin-rare-prompt =
+    💎 The "rare" achievement threshold, one for every chat: { $value }%
 
     Send a new value as one number, for example 12 or 7.5 — from 0 to 100.
     It applies to this chat only.
@@ -183,6 +183,7 @@ admin-new-users-screen =
     Applies only to subscriptions created from now on — existing ones are left
     alone.
 admin-default-rarity = Default achievements: { $rarity } ▸
+admin-rare-row = 💎 Rarity threshold: { $value }% ▸
 admin-show-links = Profile links on cards: { $visible } ▸
 admin-users-empty = 👥 Nobody has connected yet.
 admin-users-header = 👥 Users
@@ -263,7 +264,6 @@ admin-chat-card =
 
     State:         { $state }
     Publishing:    { $subscribers } people
-    Rare below:    { $threshold }
     Digest:        { $digest }
     Daily summary: { $summary }, at { $time }
     Timezone:      { $offset }
@@ -276,7 +276,6 @@ admin-chat-flood-value = { $limit } ach. / { $window } min
 admin-chat-flood-off = off
 admin-no-subscribers = No subscribers yet.
 admin-subscribers-list = Subscribed: { $names }
-admin-chat-threshold-button = Rarity threshold: { $threshold } ▸
 admin-chat-digest-button = Digest: { $digest } ▸
 admin-digest-from = from { $value } ach.
 admin-digest-never = never

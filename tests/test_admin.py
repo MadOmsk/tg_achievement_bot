@@ -157,3 +157,23 @@ async def test_render_user_list_shows_visibility_icons_on_body_and_buttons(
     button_texts = [btn.text for row in markup.inline_keyboard for btn in row]
     assert any("🟢✅⚫⚠️🔵✅" in btn_text for btn_text in button_texts)
     assert any("🔵⚠️" in btn_text for btn_text in button_texts)
+
+
+async def test_the_rarity_threshold_is_a_global_setting(repo: Repo) -> None:
+    """One threshold for every chat (owner, 2026-10-01): a row on the global
+    settings screen, gone from the chat card."""
+    from bot.views.admin import render_chat_card, render_limits, render_rare_prompt
+
+    await repo.upsert_chat(-100, "Гейминг-чат", 1)
+    limits = await render_limits(repo, locale="ru")
+    first = limits.keyboard.inline_keyboard[0][0]
+    assert first.callback_data == "a:rare" and "10%" in first.text
+
+    await repo.set_app_setting("rare_threshold_percent", "7.5")
+    assert "7.5%" in (await render_limits(repo, locale="ru")).keyboard.inline_keyboard[0][0].text
+    assert "7.5%" in (await render_rare_prompt(repo, locale="ru")).text
+
+    text, markup = await render_chat_card(repo, -100, locale="ru")
+    callbacks = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert not any(cb and cb.startswith("a:crt:") for cb in callbacks)
+    assert "Порог" not in text

@@ -18,6 +18,7 @@ from bot.services.admin_settings import (
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
+    RARE_THRESHOLD_KEY,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
     SHOW_LINKS_DEFAULT,
@@ -466,7 +467,9 @@ async def handle_admin_chat_patch(request: web.Request) -> web.Response:
         value = float(body["rare_threshold_percent"])
         if not (RARE_THRESHOLD_MIN <= value <= RARE_THRESHOLD_MAX):
             raise web.HTTPBadRequest(text="bad threshold")
-        fields["rare_threshold_percent"] = value
+        # One for every chat (owner, 2026-10-01): a chat card that still sends
+        # it sets the global value.
+        await repo.set_app_setting(RARE_THRESHOLD_KEY, f"{value:g}")
     if "flood_limit" in body:
         fields["flood_limit"] = int(body["flood_limit"])
     if "flood_window_minutes" in body:

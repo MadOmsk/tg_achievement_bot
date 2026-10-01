@@ -10,6 +10,7 @@ layers belongs under both rather than inside one of them.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from bot.constants import RarityMode, SettingKey, TokenStatus
 from bot.i18n import gettext
@@ -23,6 +24,9 @@ from bot.poller.service_health import (
     DEFAULT_KEY_CHECK_INTERVAL_MIN,
     KEY_CHECK_INTERVAL_KEY,
 )
+
+if TYPE_CHECKING:
+    from bot.db.repo import Repo
 
 # /hltb's own two limits, admin-set like every other number here — the
 # command reads them from this module rather than owning them, so nothing
@@ -68,6 +72,12 @@ VISIBILITY_ICON: dict[bool | None, str] = {
 }
 
 
+# The rarity threshold is one for every chat (owner, 2026-10-01): an
+# achievement at or below it is rare — 💎, and what `rare` mode posts.
+# Its chat_settings column is no longer read. A float, so not one of
+# NUMERIC_SETTINGS' integer rows.
+RARE_THRESHOLD_KEY = "rare_threshold_percent"
+RARE_THRESHOLD_DEFAULT = 10.0
 RARE_THRESHOLD_MIN = 0.01
 RARE_THRESHOLD_MAX = 100.0
 LIMIT_MIN = 1
@@ -87,9 +97,8 @@ FLOOD_WINDOW_MAX = 1440  # 24h — a longer buffer than that stops being "soon"
 FLOOD_LIMIT_DEFAULT = 3
 
 # Chat-scoped keys sharing numeric_setting_input()'s "type a number" flow
-# with the always-global NUMERIC_SETTINGS above (rare_threshold_percent's
-# own comment there explains the split).
-CHAT_SCOPED_KEYS = ("rare_threshold_percent", "flood_limit", "flood_window_minutes")
+# with the always-global NUMERIC_SETTINGS above.
+CHAT_SCOPED_KEYS = ("flood_limit", "flood_window_minutes")
 
 # What a brand-new subscription starts at (Repo.subscribe) — used to be a
 # flat DEFAULT 'all' baked into the subscriptions table (schema.sql), now an
@@ -203,3 +212,12 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
 
 
 TOAST_PREVIEW_MAX_CHARS = 100
+
+
+async def rare_threshold(repo: Repo) -> float:
+    """The rarity threshold every chat uses (owner, 2026-10-01)."""
+    value = await repo.get_app_setting(RARE_THRESHOLD_KEY, str(RARE_THRESHOLD_DEFAULT))
+    try:
+        return float(value or RARE_THRESHOLD_DEFAULT)
+    except ValueError:
+        return RARE_THRESHOLD_DEFAULT

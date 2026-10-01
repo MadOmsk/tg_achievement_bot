@@ -129,7 +129,7 @@ panel-delete-done = Your account and related data have been deleted. If you ever
 panel-delete-toast = Account deleted
 panel-delete-not-found = Account already deleted.
 panel-rarity-toast-all = Posting every achievement
-panel-rarity-toast-rare = Rare only — by each chat's rarity threshold
+panel-rarity-toast-rare = Rare only — at or below the rarity threshold ({ $threshold }%)
 panel-rarity-toast-hidden = Posting nothing
 
 # Hidden achievements: what it means, and how to open them (#95).

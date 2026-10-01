@@ -46,6 +46,7 @@ from bot.services.admin_settings import (
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
+    RARE_THRESHOLD_KEY,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
     SHOW_LINKS_DEFAULT,
@@ -459,14 +460,14 @@ async def numeric_setting_input(
     if pending is None:
         return  # a plain number from an admin who isn't in this flow — ignore
     key, chat_id = pending
-    if key not in NUMERIC_SETTINGS and key not in CHAT_SCOPED_KEYS:
+    if key not in NUMERIC_SETTINGS and key not in CHAT_SCOPED_KEYS and key != RARE_THRESHOLD_KEY:
         # An all-digit PSN Online ID landing here while _awaiting_psn_lookup
         # is pending, say (SPEC 9, M-PSN-1) — not this flow's business, its
         # own handler (below) owns whatever key it registered.
         return
 
-    if key == "rare_threshold_percent":
-        assert chat_id is not None  # only ever chat-scoped now (SPEC 5.5)
+    if key == RARE_THRESHOLD_KEY:
+        # One for every chat (owner, 2026-10-01).
         value = float(message.text.replace(",", "."))
         if not (RARE_THRESHOLD_MIN <= value <= RARE_THRESHOLD_MAX):
             await message.answer(
@@ -478,8 +479,8 @@ async def numeric_setting_input(
             )
             return
         del _awaiting_input[message.from_user.id]
-        await repo.update_chat_settings(chat_id, rare_threshold_percent=value)
-        reply_text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale)
+        await repo.set_app_setting(RARE_THRESHOLD_KEY, f"{value:g}", message.from_user.id)
+        reply_text, markup = (await render_limits(repo, locale=i18n.locale)).as_pair()
         await message.answer(
             _("admin-threshold-saved", value=f"{value:g}", text=reply_text),
             reply_markup=markup,
@@ -544,17 +545,11 @@ async def numeric_setting_input(
 # happens from a chat's own card.
 
 
-@router.callback_query(F.data.startswith("a:crt:"))
-async def chat_rare_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    _awaiting_input[callback.from_user.id] = ("rare_threshold_percent", chat_id)
-    await _redraw(callback, *render_rare_prompt(chat, locale=i18n.locale).as_pair())
+@router.callback_query(F.data == "a:rare")
+async def rare_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """The rarity threshold, one for every chat (owner, 2026-10-01)."""
+    _awaiting_input[callback.from_user.id] = (RARE_THRESHOLD_KEY, None)
+    await _redraw(callback, *(await render_rare_prompt(repo, locale=i18n.locale)).as_pair())
 
 
 @router.callback_query(F.data.startswith("a:cfltoggle:"))
