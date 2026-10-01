@@ -222,7 +222,7 @@ class _ChatStatsRepo:
             + "  LEFT JOIN presence_state xp ON xp.xuid = xb.external_id "
             + active_account("steam", "steam")
             + "  LEFT JOIN steam_presence_state sp ON sp.steam_id = steam.external_id "
-            + active_account("psn", "psn")
+            + active_account("psn", "psn", by_presence=True)
             + "  LEFT JOIN psn_presence_state pp ON pp.account_id = psn.external_id "
             "  WHERE (xb.external_id IS NOT NULL OR steam.external_id IS NOT NULL"
             "         OR psn.external_id IS NOT NULL) AND u.is_excluded = 0"

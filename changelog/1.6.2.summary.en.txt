@@ -1,0 +1,7 @@
+• New panel: a posting switch for each account and up to three PSN accounts
+• "📣 Post: All / Rare / None" — one mode for every chat
+• A live sync status while connecting, and faster PSN syncing
+• Buttons instead of commands for connecting and unlinking
+• The button under a notification opens the game's own page
+• Steam secret achievement descriptions and more reliable translations
+• "About" tab: genre, publisher, modes, score and time to beat

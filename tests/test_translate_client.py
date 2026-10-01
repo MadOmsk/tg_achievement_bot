@@ -145,3 +145,63 @@ async def test_translate_descriptions_handles_a_markdown_fenced_reply(monkeypatc
     result = await translate_descriptions("key", {"WIN": "Win the game"}, target_language="ru")
 
     assert result == {"WIN": "Победи в игре"}
+
+
+class _BatchEchoClient:
+    """Answers each call with one translation per numbered line it was sent,
+    and records how many lines each call carried."""
+
+    def __init__(self) -> None:
+        self.batch_sizes: list[int] = []
+
+    def __call__(self, *, timeout: httpx.Timeout) -> _BatchEchoClient:
+        return self
+
+    async def __aenter__(self) -> _BatchEchoClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def post(self, url: str, headers: dict[str, str], json: dict) -> _FakeResponse:
+        prompt = json["messages"][0]["content"]
+        lines = prompt.split("\n\n", 1)[1].split("\n")
+        self.batch_sizes.append(len(lines))
+        replies = [f"RU:{line.split('. ', 1)[1]}" for line in lines]
+        import json as _json
+
+        return _FakeResponse(200, _messages_response(_json.dumps(replies, ensure_ascii=False)))
+
+
+async def test_a_big_game_goes_out_in_batches(monkeypatch) -> None:
+    """A 1075-description game used to go in one call whose reply could not
+    fit in max_tokens — cut off, unparseable, paid for on every retry."""
+    fake = _BatchEchoClient()
+    monkeypatch.setattr(translate_client.httpx, "AsyncClient", fake)
+    texts = {f"A{i}": f"Do thing {i}" for i in range(1075)}
+
+    result = await translate_descriptions("key", texts, target_language="ru")
+
+    assert max(fake.batch_sizes) <= translate_client._BATCH_SIZE
+    assert sum(fake.batch_sizes) == 1075
+    assert result["A0"] == "RU:Do thing 0"
+    assert result["A1074"] == "RU:Do thing 1074"
+    assert len(result) == 1075
+
+
+async def test_a_reply_cut_off_at_max_tokens_translates_nothing(monkeypatch) -> None:
+    body = {**_messages_response(json.dumps(["Победи"])), "stop_reason": "max_tokens"}
+    monkeypatch.setattr(
+        translate_client.httpx, "AsyncClient", _FakeAsyncClient(200, post_body=body)
+    )
+    assert await translate_descriptions("key", {"A": "Win"}, target_language="ru") == {}
+
+
+async def test_a_reply_with_a_line_missing_is_not_matched_by_position(monkeypatch) -> None:
+    """Three asked, two answered: zipping them would hand B the text of C."""
+    body = _messages_response(json.dumps(["Один", "Три"]))
+    monkeypatch.setattr(
+        translate_client.httpx, "AsyncClient", _FakeAsyncClient(200, post_body=body)
+    )
+    texts = {"A": "One", "B": "Two", "C": "Three"}
+    assert await translate_descriptions("key", texts, target_language="ru") == {}

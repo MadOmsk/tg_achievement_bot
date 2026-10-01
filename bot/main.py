@@ -21,6 +21,7 @@ from bot.config import Settings, get_settings
 from bot.constants import Platform
 from bot.db.repo import Database, Repo
 from bot.handlers import admin as admin_handlers
+from bot.handlers import backfill as backfill_handlers
 from bot.handlers import chat as chat_handlers
 from bot.handlers import connect as connect_handlers
 from bot.handlers import hltb as hltb_handlers
@@ -219,38 +220,6 @@ async def run(settings: Settings) -> None:
         PsnTrophyGroups(repo, psn_auth),
     )
 
-    async def backfill(tg_id: int, xuid: str) -> None:
-        """Runs in the background: five people connecting one evening must not
-        block the poller (SPEC 5.6)."""
-        _ = translator("main", await repo.user_locale(tg_id))
-        try:
-            count = await fetcher.backfill(tg_id, xuid)
-        except Exception:
-            log.exception("backfill for tg_id=%s failed", tg_id)
-            await bot.send_message(tg_id, _("main-backfill-failed"))
-            return
-        await bot.send_message(tg_id, _("main-backfill-done", count=count))
-
-    async def refresh_after_reconnect(tg_id: int, xuid: str) -> None:
-        """store_identity sets gamerscore = NULL on every connect (it does
-        not know the real value yet); without a refresh a person who logs
-        back in sees "0" until the next presence event happens to touch
-        title_history (bug found live: justdrunkzero showed 0 right after
-        reconnecting).
-
-        Runs the *full* backfill, not just a title_history refresh — the
-        first fix here did the smaller one on the theory that a reconnect's
-        history is already complete, which turned out false: seen_achievements
-        only grows through live polling and catch_up (both bounded to
-        recently-touched games), so anything not replayed since the initial
-        connect silently never lands there, and "Всего"/"За месяц" drift low
-        forever (SPEC 5.4). backfill() is idempotent and never publishes, so
-        re-running it on every reconnect is safe and fixes both at once."""
-        try:
-            await fetcher.backfill(tg_id, xuid)
-        except Exception:
-            log.exception("post-reconnect backfill failed for tg_id=%s", tg_id)
-
     async def on_linked(tg_id: int, identity: XboxIdentity, origin_chat_id: int | None) -> None:
         """Runs in the web callback, right after the account is stored."""
         # No achievements yet means this account is new to the bot, not someone
@@ -277,14 +246,15 @@ async def run(settings: Settings) -> None:
                 link_i18n.get("connect-timezone-prompt"),
                 reply_markup=timezone_keyboard(link_i18n),
             )
-        if is_new:
-            await bot.send_message(tg_id, _("main-linked-backfill-starting"))
-            asyncio.create_task(backfill(tg_id, identity.xuid))  # noqa: RUF006
-        else:
-            # A silent background refresh would leave the panel showing a
-            # stale 0 for a few seconds with nothing telling the user why.
-            await bot.send_message(tg_id, _("main-linked-refreshing"))
-            asyncio.create_task(refresh_after_reconnect(tg_id, identity.xuid))  # noqa: RUF006
+        # New or signing in again, the whole history is (re)read: a reconnect's
+        # history is not complete either — seen_achievements only grows
+        # through live polls and catch-up, both bounded to recent games, so a
+        # re-run is what keeps "Всего"/"За месяц" honest (SPEC 5.4). Either
+        # way the person watches it happen in one status message (owner,
+        # 2026-09-30) instead of a "reading…" line and silence.
+        asyncio.create_task(  # noqa: RUF006
+            backfill_handlers.run_xbox(bot, fetcher, repo, tg_id, identity.xuid)
+        )
 
     web_server = OAuthServer(
         settings,
@@ -322,6 +292,7 @@ async def run(settings: Settings) -> None:
     dispatcher.include_router(hltb_handlers.router)
     dispatcher.include_router(steam_handlers.router)
     dispatcher.include_router(psn_handlers.router)
+    dispatcher.include_router(backfill_handlers.router)
 
     async def startup_catch_up() -> None:
         """Pick up what happened while the bot was down (SPEC 5.8).
@@ -364,6 +335,10 @@ async def run(settings: Settings) -> None:
                 )
             except Exception:
                 log.exception("catch-up for tg_id=%s failed", target.tg_id)
+        # Once per database: 360 games titlehub forgot, and their totals (#91, #92).
+        await fetcher.fill_x360_gaps_once(
+            [(target.tg_id, target.xuid) for target in await repo.pollable_users()]
+        )
 
         if await steam_auth.get_key() is not None:
             for steam_target in await repo.steam_pollable_users():
@@ -439,12 +414,8 @@ async def _publish_command_menu(bot: Bot) -> None:
         private = [
             BotCommand(command="panel", description=_("main-cmd-panel")),
             BotCommand(command="stats", description=_("main-cmd-stats-private")),
-            BotCommand(command="connect_xbox", description=_("main-cmd-connect-xbox")),
-            BotCommand(command="disconnect_xbox", description=_("main-cmd-disconnect-xbox")),
-            BotCommand(command="connect_steam", description=_("main-cmd-connect-steam")),
-            BotCommand(command="disconnect_steam", description=_("main-cmd-disconnect-steam")),
-            BotCommand(command="connect_psn", description=_("main-cmd-connect-psn")),
-            BotCommand(command="disconnect_psn", description=_("main-cmd-disconnect-psn")),
+            # /connect_* and /disconnect_* still work, but the menu leaves
+            # them out (#140): /panel is where accounts are linked and unlinked.
             BotCommand(command="hltb", description=_("main-cmd-hltb")),
             BotCommand(command="help", description=_("main-cmd-help")),
         ]

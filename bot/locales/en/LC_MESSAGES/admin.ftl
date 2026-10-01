@@ -175,7 +175,6 @@ admin-system-wipe-prompt =
     the in-between messages (hints, confirmations, /help and the like).
 admin-send-promo-to-chat = 📢 Send promo to chat
 admin-promo-sent = Promo message sent to chat
-admin-test-notify-sent = Test notifications sent to DM
 
 # New users and user cards
 admin-new-users-screen =
@@ -184,7 +183,7 @@ admin-new-users-screen =
     Applies only to subscriptions created from now on — existing ones are left
     alone.
 admin-default-rarity = Default achievements: { $rarity } ▸
-admin-default-links = Profile visible to others: { $visible } ▸
+admin-show-links = Profile links on cards: { $visible } ▸
 admin-users-empty = 👥 Nobody has connected yet.
 admin-users-header = 👥 Users
 admin-users-columns = Columns: last seen · achievements today / this month
@@ -212,6 +211,7 @@ admin-xbox-header = 🟢 XBOX: { $gamertag }
 admin-xuid-tag = XUID { $xuid }
 admin-login-row =   Login: { $login }
 admin-online-row =   Online: { $online }
+admin-muted-row =   🔇 posting switched off by the owner
 admin-steam-header = ⚫ Steam: { $name }
 admin-steamid-tag = id { $external_id }
 admin-psn-header = 🔵 PSN: { $name }
@@ -229,6 +229,9 @@ admin-refresh-psn = 🔄 Refresh PSN
 admin-reset-xbox = 🗑 Reset XBOX
 admin-reset-steam = 🗑 Reset Steam
 admin-reset-psn = 🗑 Reset PSN
+# One pair per PSN account when a person holds several (#10).
+admin-refresh-psn-account = 🔄 Refresh PSN: { $name }
+admin-reset-psn-account = 🗑 Reset PSN: { $name }
 admin-reset-confirm-prompt =
     Wipe this user's { $platform } data and sync it again from scratch?
 
@@ -261,6 +264,7 @@ admin-chat-card =
     State:         { $state }
     Publishing:    { $subscribers } people
     Rare below:    { $threshold }
+    Digest:        { $digest }
     Daily summary: { $summary }, at { $time }
     Timezone:      { $offset }
     Min G:         { $min_score }
@@ -273,6 +277,9 @@ admin-chat-flood-off = off
 admin-no-subscribers = No subscribers yet.
 admin-subscribers-list = Subscribed: { $names }
 admin-chat-threshold-button = Rarity threshold: { $threshold } ▸
+admin-chat-digest-button = Digest: { $digest } ▸
+admin-digest-from = from { $value } ach.
+admin-digest-never = never
 admin-chat-summary-button = Daily summary: { $state }
 admin-chat-time-button = Summary time: { $time } ({ $offset }) ▸
 admin-chat-flood-toggle-button = Anti-flood filter: { $state }

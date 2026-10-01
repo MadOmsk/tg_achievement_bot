@@ -108,11 +108,11 @@ async def test_prompt_replies_not_configured_without_arming(
     assert awaiting.is_expecting(TG_ID, "psn") is False
 
 
-async def test_prompt_names_the_linked_account_and_still_asks(
+async def test_prompt_names_the_linked_accounts_and_offers_another(
     repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Same as Steam's own (#52, user report) — a linked account is not a
-    reason to refuse; switching is guarded by its own confirmation later."""
+    """#10: with PSN linked, /connect_psn offers to add another account
+    (up to three) instead of asking for an Online ID straight away."""
     auth = await _configured_auth(repo, cipher, monkeypatch)
     await repo.ensure_user(TG_ID, "igor")
     await repo.link_platform_account(TG_ID, "psn", "acc-1", "SuperOmsk")
@@ -121,9 +121,25 @@ async def test_prompt_names_the_linked_account_and_still_asks(
 
     await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
 
-    assert len(bot.sent) == 2
-    assert "SuperOmsk" in bot.sent[0][1]
-    assert awaiting.is_expecting(TG_ID, "psn") is True
+    assert len(bot.sent) == 1
+    assert "SuperOmsk" in bot.sent[0][1] and "1 из 3" in bot.sent[0][1]
+    assert awaiting.is_expecting(TG_ID, "psn") is False
+
+
+async def test_prompt_at_the_limit_says_so(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    await repo.ensure_user(TG_ID, "igor")
+    for n in (1, 2, 3):
+        await repo.link_platform_account(TG_ID, "psn", f"acc-{n}", f"Nick{n}")
+    bot = FakeBot()
+    awaiting.clear(TG_ID)
+
+    await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
+
+    assert "максимум" in bot.sent[0][1]
+    assert awaiting.is_expecting(TG_ID, "psn") is False
 
 
 async def test_prompt_arms_the_wait_and_sends_the_link_prompt(

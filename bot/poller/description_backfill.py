@@ -31,7 +31,9 @@ import logging
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.services.description_backfill import fill_xbox_title_any_owner
+from bot.services.steam.achievements import fill_from_community
 from bot.services.translate.auth import AnthropicAuth
+from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.client import XboxClient
 
 log = logging.getLogger(__name__)
@@ -55,6 +57,11 @@ log = logging.getLogger(__name__)
 TITLES_PER_TICK = 10
 
 XBOX_PLATFORMS = (Platform.XBOX_MODERN, Platform.XBOX_360)
+# Steam and PSN keep their English text in the catalog already, so their gap is
+# closed without asking the platform again: only the translator is called (#127).
+STORED_TEXT_PLATFORMS = (Platform.STEAM, Platform.PSN)
+# One game a tick: two public page requests, no API key (#132).
+STEAM_SECRET_TITLES_PER_TICK = 1
 
 
 class DescriptionBackfill:
@@ -79,6 +86,59 @@ class DescriptionBackfill:
         self._unanswerable: set[tuple[str, str]] = set()
 
     async def tick(self) -> None:
+        await self._tick_xbox()
+        await self._tick_stored_text()
+        await self._tick_steam_secrets()
+
+    async def _tick_steam_secrets(self) -> None:
+        """Steam's secret achievements earned before #132, stored with no
+        description: read from the holder's profile page, a game a tick
+        (two page requests). `fill_from_community` remembers what it tried,
+        so a private page is not asked again until a restart."""
+        for steam_id, appid, icons in await self._repo.steam_titles_without_secret_descriptions(
+            STEAM_SECRET_TITLES_PER_TICK + len(self._unanswerable)
+        ):
+            if (Platform.STEAM, appid) in self._unanswerable:
+                continue
+            self._unanswerable.add((Platform.STEAM, appid))
+            try:
+                await fill_from_community(self._repo, self._anthropic_auth, steam_id, appid, icons)
+            except Exception:
+                log.exception("steam secret descriptions failed for appid=%s", appid)
+            return
+
+    async def _tick_stored_text(self) -> None:
+        """Steam and PSN (#127): their earned achievements whose descriptions
+        never reached the translator — Steam's when its catalog looked whole,
+        both when a refresh stored the English under "ru". The text is
+        already here; only the translation is missing."""
+        titles = await self._repo.uncached_description_titles(
+            STORED_TEXT_PLATFORMS, self._titles_per_tick + len(self._unanswerable)
+        )
+        remaining = self._titles_per_tick
+        for platform, title_id, _owner in titles:
+            if remaining <= 0:
+                break
+            if (platform, title_id) in self._unanswerable:
+                continue
+            remaining -= 1
+            pending = await self._repo.untranslated_descriptions(platform, title_id)
+            native = {
+                achievement_id: (russian if russian and russian != english else english, english)
+                for achievement_id, (russian, english) in pending.items()
+            }
+            try:
+                if native:
+                    await bilingual_descriptions(
+                        self._repo, self._anthropic_auth, platform, title_id, native
+                    )
+            except Exception:
+                log.exception("description backfill failed for %s/%s", platform, title_id)
+            # Whatever happened, a second try in this process would repeat it:
+            # translated rows leave the queue, a missing key keeps `fallback`.
+            self._unanswerable.add((platform, title_id))
+
+    async def _tick_xbox(self) -> None:
         titles = await self._repo.uncached_description_titles(
             XBOX_PLATFORMS, self._titles_per_tick + len(self._unanswerable)
         )

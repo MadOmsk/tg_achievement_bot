@@ -26,10 +26,17 @@ from bot.services.chat_gone import chat_is_gone
 from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import achievement_category
 from bot.services.mini_app import mini_app_open_markup
-from bot.services.naming import NO_NICKNAME, account_nickname, person_name_of, xbox_nickname
+from bot.services.naming import (
+    NO_NICKNAME,
+    account_nickname,
+    link_nickname,
+    person_name_of,
+    xbox_nickname,
+)
 from bot.util import parse_iso, utcnow
 from bot.version import is_test
 from bot.views.notification import format_digest, format_single
+from bot.views.parts import platform_label
 
 log = logging.getLogger(__name__)
 
@@ -115,7 +122,14 @@ class Publisher:
         except Exception:
             return ""
 
-    async def _markup_for(self, chat_id: int, locale: str) -> InlineKeyboardMarkup | None:
+    async def _markup_for(
+        self,
+        chat_id: int,
+        locale: str,
+        *,
+        person_id: int | None = None,
+        game: tuple[str, str] | None = None,
+    ) -> InlineKeyboardMarkup | None:
         if not self._settings or not (self._settings.mini_app_url or "").strip():
             return None
         in_group = chat_id < 0
@@ -128,6 +142,8 @@ class Publisher:
             https_url=self._settings.mini_app_url,
             bot_username=bot_username,
             chat_id=chat_id,
+            person_id=person_id,
+            game=game,
             in_group=in_group,
         )
 
@@ -166,6 +182,12 @@ class Publisher:
         path would silently swallow genuinely new trophies.
         """
         if not achievements:
+            return
+        # The person's own switch for this account (#20): muted, it stays
+        # stored and counted, and posts nowhere.
+        if not await self._repo.account_publishes(
+            tg_id, account_platform_of(achievements[0].platform), xuid
+        ):
             return
         if window_hours is not None:
             cutoff = utcnow() - timedelta(hours=window_hours)
@@ -219,7 +241,12 @@ class Publisher:
                 for a in allowed:
                     if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
                         a.game_platforms = plat_map[a.title_id]
-            markup = await self._markup_for(chat.chat_id, chat.locale)
+            # One `publish()` call is always one game (title_name/xuid are
+            # singular above), so every item in `allowed` shares it.
+            game_ref = (allowed[0].platform, allowed[0].title_id) if allowed else None
+            markup = await self._markup_for(
+                chat.chat_id, chat.locale, person_id=tg_id, game=game_ref
+            )
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
                     PublishJob(
@@ -319,7 +346,7 @@ class Publisher:
 
     async def _progress_for(
         self, achievements: list[AchievementRow], account_id: str | None = None
-    ) -> dict[tuple[str, str, str | None], TitleProgress]:
+    ) -> dict[tuple, TitleProgress]:
         """ "47/50" per game, for whichever games have a known total (#46).
 
         Looked up once per batch rather than per achievement: a digest of
@@ -342,21 +369,28 @@ class Publisher:
         the counter never appeared in a real message at all: the poller
         builds its rows from the platform response (`to_achievement_row`),
         which has no `xuid` to put there, so every lookup was skipped.
+
+        Each answer is also filed under `(platform, title_id, group,
+        account)`: the anti-flood digest can carry two PSN accounts of one
+        person in the same game, and each block shows its own account's
+        progress (#10). The three-part key keeps the first account's.
         """
-        result: dict[tuple[str, str, str | None], TitleProgress] = {}
+        result: dict[tuple, TitleProgress] = {}
         for item in achievements:
             external_id = item.xuid or account_id
             if not external_id:
                 continue
             for group_id in {item.trophy_group_id, None}:
                 key = (item.platform, item.title_id, group_id)
-                if key in result:
+                account_key = (*key, item.xuid)
+                if account_key in result:
                     continue
                 found = await self._repo.title_progress(
                     account_platform_of(item.platform), external_id, item.title_id, group_id
                 )
                 if found is not None:
-                    result[key] = found
+                    result[account_key] = found
+                    result.setdefault(key, found)
         return result
 
     async def publish_flood_digest(
@@ -382,8 +416,18 @@ class Publisher:
         user = await self._repo.get_user(tg_id)
         links = await self._repo.platform_links_of(tg_id)
         platforms = {account_platform_of(item.platform) for item in achievements}
+        accounts = {(account_platform_of(item.platform), item.xuid) for item in achievements}
         name: str | None = None
-        if len(platforms) == 1:
+        # Two PSN accounts are one platform but not one account (#10): the
+        # header then names the person, and every block its account.
+        account_names: dict[str, str] = {}
+        if len(accounts) > 1 and len(platforms) < len(accounts):
+            for link in links:
+                if any(link.external_id == xuid for _platform, xuid in accounts):
+                    account_names[link.external_id] = (
+                        f"{platform_label(link.platform, locale)}: {link_nickname(link)}"
+                    )
+        if len(platforms) == 1 and len(accounts) == 1:
             single_plat = next(iter(platforms))
             if single_plat == AccountPlatform.XBOX:
                 name = (
@@ -396,7 +440,16 @@ class Publisher:
                     else None
                 )
             else:
-                link = next((lnk for lnk in links if lnk.platform == single_plat), None)
+                single_xuid = next(iter(accounts))[1]
+                link = next(
+                    (
+                        lnk
+                        for lnk in links
+                        if lnk.platform == single_plat
+                        and (single_xuid is None or lnk.external_id == single_xuid)
+                    ),
+                    None,
+                )
                 if link is not None:
                     name = account_nickname(
                         link.platform,
@@ -415,6 +468,7 @@ class Publisher:
                     a.game_platforms = plat_map[a.title_id]
 
         progress_map = await self._progress_for(achievements)
+        game_ref: tuple[str, str] | None = None
         if len(achievements) == 1:
             item = achievements[0]
             text = format_single(
@@ -422,9 +476,13 @@ class Publisher:
                 item,
                 item.title_name,
                 locale=locale,
-                progress=progress_map.get((item.platform, item.title_id, item.trophy_group_id)),
+                progress=progress_map.get(
+                    (item.platform, item.title_id, item.trophy_group_id, item.xuid)
+                )
+                or progress_map.get((item.platform, item.title_id, item.trophy_group_id)),
             )
             gallery = _gallery([item])
+            game_ref = (item.platform, item.title_id)
         else:
             text = format_digest(
                 name,
@@ -432,10 +490,16 @@ class Publisher:
                 achievements,
                 locale=locale,
                 progress=progress_map,
+                account_names=account_names,
             )
             gallery = _gallery(achievements)
+            # The flood digest can mix games — only link straight to one
+            # when there was, in fact, only one.
+            titles = {(a.platform, a.title_id) for a in achievements}
+            if len(titles) == 1:
+                game_ref = next(iter(titles))
 
-        markup = await self._markup_for(chat_id, locale)
+        markup = await self._markup_for(chat_id, locale, person_id=tg_id, game=game_ref)
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,

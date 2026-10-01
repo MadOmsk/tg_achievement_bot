@@ -46,10 +46,10 @@ async def _setup_chat(
     await repo.update_chat_settings(
         CHAT_ID, flood_limit=flood_limit, flood_window_minutes=flood_window_minutes
     )
-    # digest_threshold is a separate, unrelated mechanism (lives on the
-    # subscription) — pushed out of reach so these tests aren't accidentally
+    # digest_threshold is a separate, unrelated mechanism (the chat's since
+    # #126) — pushed out of reach so these tests aren't accidentally
     # exercising it too when several achievements land in one publish() call.
-    await repo.update_subscription_digest_threshold(CHAT_ID, TG_ID, 99)
+    await repo.update_chat_settings(CHAT_ID, digest_threshold=99)
 
 
 async def test_flood_filter_allows_the_limit_then_buffers_the_rest(repo: Repo) -> None:
@@ -112,7 +112,7 @@ async def test_flood_filter_never_starts_a_timer_for_a_filtered_out_achievement(
     rarity_mode=hidden means nothing is ever notified here, so nothing
     should ever touch notification_throttle either."""
     await _setup_chat(repo, flood_limit=1)
-    await repo.update_subscription_rarity_mode(CHAT_ID, TG_ID, RarityMode.HIDDEN)
+    await repo.update_user_settings(TG_ID, rarity_mode=RarityMode.HIDDEN)
     publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
     item = achievement("z1")
     await repo.insert_new_achievements(XUID, [item], is_backfill=False)
@@ -300,3 +300,24 @@ async def test_flood_flush_multiple_psn_trophies_uses_platform_nickname(
     assert "Justdrunkzero" in job.text
     assert "Igor" not in job.text
     assert "получает 2 трофея" in job.text
+
+
+async def test_a_muted_account_posts_nothing_and_holds_nothing_back(repo: Repo) -> None:
+    """The owner's own switch (#20): the achievements stay stored and
+    counted, and nothing reaches a chat — not now, and not later as a
+    flushed anti-flood digest either."""
+    await _setup_chat(repo, flood_limit=0)
+    await repo.set_account_publishes(TG_ID, "xbox", XUID, False)
+    publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+    item = achievement("m1")
+    await repo.insert_new_achievements(XUID, [item], is_backfill=False)
+
+    await publisher.publish(TG_ID, XUID, "Gamer", [item])
+
+    assert publisher._queue.qsize() == 0
+    assert await repo.unpublished_achievements(TG_ID, CHAT_ID) == []
+    assert await repo.has_any_achievements(XUID)
+
+    await repo.set_account_publishes(TG_ID, "xbox", XUID, True)
+    await publisher.publish(TG_ID, XUID, "Gamer", [item])
+    assert publisher._queue.qsize() == 1

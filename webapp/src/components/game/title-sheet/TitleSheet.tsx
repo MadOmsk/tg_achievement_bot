@@ -7,7 +7,6 @@ import "swiper/css/effect-fade";
 import {
   fetchGame,
   fetchGameHltb,
-  type FeedItem,
   type GameAchievement,
   type GameDetails,
   type GameHltb,
@@ -15,16 +14,13 @@ import {
 } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import {
-  CoverImg,
   RowsSkel,
   Icon,
   TierMedals,
   asTier,
   type ScoreCupLine,
   type TierCounts,
-  Sheet,
 } from "../../shared/lib";
-import { UnlockCard } from "../../person";
 import {
   COMPLETION_BADGES,
   PLATFORMS,
@@ -32,10 +28,11 @@ import {
 import {
   groupLabel,
   pickLocale,
-  trophyBadge,
   type FilterType,
 } from "../utils";
 import { GameHero } from "../game-hero/GameHero";
+import { HeroPeek } from "../game-hero/HeroPeek";
+import { HltbAbout } from "../hltb-about/HltbAbout";
 import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
 
 /**
@@ -116,7 +113,6 @@ export function TitleSheet({
   const [showEarned, setShowEarned] = useState(true);
   const showAllSecrets = initialShowSecrets;
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
-  const [selectedAch, setSelectedAch] = useState<GameAchievement | null>(null);
   // Achievements / "Об игре": one Swiper, endlessly looping, switched by tab
   // or by swipe — the same shape the profile's own carousels use.
   const [tabSwiper, setTabSwiper] = useState<SwiperInstance | null>(null);
@@ -363,52 +359,6 @@ export function TitleSheet({
     return sections.filter((s) => s.rows.length > 0);
   }, [filteredAchievements, groups, locale, showGroups, title]);
 
-  const selectedFeedItem = useMemo<FeedItem | null>(() => {
-    if (!selectedAch) return null;
-    return {
-      tg_id: 0,
-      person: "",
-      name:
-        pickLocale(
-          locale,
-          selectedAch.name_ru,
-          selectedAch.name_en,
-          selectedAch.achievement_id,
-        ) || t(locale, "secret"),
-      game: title,
-      gamerscore: selectedAch.gamerscore || 0,
-      rarity_percent: selectedAch.rarity_percent,
-      platform: game.platform,
-      unlocked_at: selectedAch.unlocked_at,
-      is_secret: selectedAch.is_secret,
-      title_id: game.title_id,
-      achievement_id: selectedAch.achievement_id,
-      // Many catalog rows carry no picture of their own: the game's stands in.
-      icon_url: selectedAch.icon_url || cover,
-      game_icon_url: cover,
-      description: pickLocale(
-        locale,
-        selectedAch.description_ru,
-        selectedAch.description_en,
-      ),
-      trophy_type: selectedAch.trophy_type,
-      tier_badge: trophyBadge(selectedAch.trophy_type),
-      progress: {
-        unlocked,
-        total,
-      },
-    };
-  }, [
-    cover,
-    game.platform,
-    game.title_id,
-    locale,
-    selectedAch,
-    title,
-    total,
-    unlocked,
-  ]);
-
   const content = (
     <>
       <header className="account-bar person-bar">
@@ -422,15 +372,14 @@ export function TitleSheet({
             >
               <Icon name="back" size={26} />
             </button>
-            <CoverImg src={cover} kind="game" className="person-avatar" />
             <span className="person-bar-title">
               <strong>{title}</strong>
-              {viewed && <small>{viewed.name}</small>}
+              {viewed?.name && <small>{viewed.name}</small>}
             </span>
           </div>
           {earnedLine &&
             (game.platform === PLATFORMS.PSN ? (
-              <TierMedals counts={tierCounts} />
+              <TierMedals counts={tierCounts} discSize={18} numbersInside />
             ) : (
               <span className="game-bar-score">
                 <strong>{earnedLine.count}</strong>
@@ -440,14 +389,19 @@ export function TitleSheet({
         </div>
       </header>
 
-      <GameHero
-        cover={cover}
-        pct={pct}
-        total={total}
-        isCompleted={isCompleted}
-        loading={busy}
-        locale={locale}
-      />
+      <HeroPeek>
+        {(open) => (
+          <GameHero
+            cover={cover}
+            pct={pct}
+            total={total}
+            isCompleted={isCompleted}
+            loading={busy}
+            locale={locale}
+            compact={!open}
+          />
+        )}
+      </HeroPeek>
 
       {busy ? (
         <>
@@ -526,7 +480,6 @@ export function TitleSheet({
                       isRevealed={isRevealed}
                       locale={locale}
                       onToggleReveal={toggleReveal}
-                      onSelect={setSelectedAch}
                       fallbackIcon={cover}
                       compare={
                         comparing && other
@@ -630,7 +583,6 @@ export function TitleSheet({
                             isRevealed={isRevealed}
                             locale={locale}
                             onToggleReveal={toggleReveal}
-                            onSelect={setSelectedAch}
                             fallbackIcon={cover}
                             compare={
                               comparing && other
@@ -655,70 +607,18 @@ export function TitleSheet({
             <SwiperSlide>
               <div className="game-tab-panel">
                 {hltbInfo ? (
-                  <>
-                    {(hltbInfo.release_year || hltbInfo.genre) && (
-                      <p className="about-game-meta">
-                        {[hltbInfo.release_year, hltbInfo.genre].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
-                    {(hltbInfo.main_hours != null ||
-                      hltbInfo.extra_hours != null ||
-                      hltbInfo.completionist_hours != null) && (
-                      <div className="about-game-times">
-                        {hltbInfo.main_hours != null && (
-                          <span className="about-game-time">
-                            <b>
-                              {hltbInfo.main_hours} {t(locale, "hours")}
-                            </b>
-                            <small>{t(locale, "hltbMain")}</small>
-                          </span>
-                        )}
-                        {hltbInfo.extra_hours != null && (
-                          <span className="about-game-time">
-                            <b>
-                              {hltbInfo.extra_hours} {t(locale, "hours")}
-                            </b>
-                            <small>{t(locale, "hltbExtra")}</small>
-                          </span>
-                        )}
-                        {hltbInfo.completionist_hours != null && (
-                          <span className="about-game-time">
-                            <b>
-                              {hltbInfo.completionist_hours} {t(locale, "hours")}
-                            </b>
-                            <small>{t(locale, "hltbComplete")}</small>
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {hltbInfo.description && (
-                      <p className="about-game-desc">{hltbInfo.description}</p>
-                    )}
-                    <button
-                      type="button"
-                      className="about-game-link"
-                      onClick={() => {
-                        const hltb = hltbInfo;
-                        const url =
-                          hltb.game_url ?? `https://howlongtobeat.com/game/${hltb.hltb_id}`;
-                        if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(url);
-                        else window.open(url, "_blank", "noopener");
-                      }}
-                    >
-                      HowLongToBeat →
-                    </button>
-                  </>
+                  <HltbAbout hltb={hltbInfo} locale={locale} />
                 ) : (
                   // Still out on its own request (#131) — the achievements tab
                   // never waited on this, so it just fills in once it answers.
                   <>
-                    <span className="skel line" style={{ width: "40%" }} />
-                    <div className="about-game-times">
-                      <span className="skel line" style={{ width: 56, height: 26 }} />
-                      <span className="skel line" style={{ width: 56, height: 26 }} />
-                      <span className="skel line" style={{ width: 56, height: 26 }} />
-                    </div>
-                    <span className="skel line" style={{ width: "92%", marginTop: 18 }} />
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div key={i} className="about-game-fact">
+                        <span className="skel line" style={{ width: 70 }} />
+                        <span className="skel line" style={{ width: 120 }} />
+                      </div>
+                    ))}
+                    <span className="skel line" style={{ width: "92%", marginTop: 26 }} />
                     <span className="skel line" style={{ width: "80%", marginTop: 6 }} />
                   </>
                 )}
@@ -728,29 +628,6 @@ export function TitleSheet({
         </>
       )}
 
-      {selectedFeedItem && (
-        <Sheet
-          mid
-          onClose={() => setSelectedAch(null)}
-        >
-          <div className="sheet-unlock">
-            <UnlockCard
-              item={selectedFeedItem}
-              locale={locale}
-              secret={Boolean(
-                selectedAch?.is_secret &&
-                  !showAllSecrets &&
-                  !revealedIds.has(selectedAch.achievement_id),
-              )}
-              author={false}
-              gameInCopy
-              onReveal={() =>
-                selectedAch && toggleReveal(selectedAch.achievement_id)
-              }
-            />
-          </div>
-        </Sheet>
-      )}
     </>
   );
 

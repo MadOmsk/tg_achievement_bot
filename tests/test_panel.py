@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 from bot.db.repo import Repo
-from bot.views.panel import render_panel
+from bot.views.panel import render_account_menu, render_panel
 
 TG_ID = 1
 
 
-async def test_no_accounts_shows_only_xbox_not_connected(repo: Repo) -> None:
+async def test_no_accounts_shows_every_platform_not_connected(repo: Repo) -> None:
+    """Every platform has its login row, connected or not (owner, 2026-09-30)."""
     await repo.ensure_user(TG_ID, "someone")
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert "Вход XBOX:   — не подключён" in text
-    assert "Вход Steam" not in text
+    assert "Вход XBOX: 🔘 не подключён" in text
+    assert "Вход Steam: 🔘 не подключён" in text
+    assert "Вход PSN: 🔘 не подключён" in text
 
 
 async def test_steam_linked_without_xbox_shows_both_lines(repo: Repo) -> None:
@@ -23,8 +25,9 @@ async def test_steam_linked_without_xbox_shows_both_lines(repo: Repo) -> None:
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert "Вход XBOX:   — не подключён" in text
-    assert "Вход Steam:  Gabe" in text
+    assert "Вход XBOX: 🔘 не подключён" in text
+    assert "Вход Steam: ❓ не проверено" in text
+    assert "Gabe" not in text.split("\n\n", 1)[1]  # the nickname stays in the header
 
 
 async def test_steam_or_psn_only_person_still_gets_the_full_settings_body(repo: Repo) -> None:
@@ -41,12 +44,12 @@ async def test_steam_or_psn_only_person_still_gets_the_full_settings_body(repo: 
     text, markup = (await render_panel(repo, TG_ID)).as_pair()
 
     assert "Публикация:" in text
-    assert "Часовой пояс:" in text
+    assert "Часовой пояс:" not in text  # on its button (owner, 2026-09-30)
     callback_datas = {b.callback_data for row in markup.inline_keyboard for b in row}
     assert "panel:tz" in callback_datas
     assert "panel:chatlist" in callback_datas
     assert "panel:sync" in callback_datas
-    assert "panel:linkstoggle" in callback_datas
+    assert "panel:linkstoggle" not in callback_datas
 
 
 async def test_xbox_connected_without_steam_has_no_steam_line(repo: Repo) -> None:
@@ -55,8 +58,8 @@ async def test_xbox_connected_without_steam_has_no_steam_line(repo: Repo) -> Non
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert "Вход XBOX:   " in text
-    assert "Вход Steam" not in text
+    assert "Вход XBOX: " in text
+    assert "Вход Steam: 🔘 не подключён" in text
 
 
 async def test_both_platforms_linked_show_both_lines(repo: Repo) -> None:
@@ -66,8 +69,8 @@ async def test_both_platforms_linked_show_both_lines(repo: Repo) -> None:
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert "Вход XBOX:   " in text
-    assert "Вход Steam:  Gabe" in text
+    assert "Вход XBOX: " in text
+    assert "Вход Steam: ❓ не проверено" in text
 
 
 async def test_steam_status_shows_visibility_and_when_it_was_checked(repo: Repo) -> None:
@@ -82,53 +85,64 @@ async def test_steam_status_shows_visibility_and_when_it_was_checked(repo: Repo)
 
     await repo.set_achievements_visible(TG_ID, "steam", True)
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
-    assert "✅ ачивки видны · " in text
+    # Only whether all is well — not when it was checked (owner, 2026-09-30).
+    assert "Вход Steam: ✅ ачивки видны\n" in text
 
 
 async def test_psn_linked_gets_its_own_profile_button(repo: Repo) -> None:
-    """Follow-up 2026-09-06 — the panel's "👤 Профиль" row, same as XBOX and
-    Steam already had (2026-09-05)."""
+    """Follow-up 2026-09-06 — a PSN profile button, now on the PSN screen
+    behind the panel's platform button (#10), named "PSN: nick"."""
     await repo.ensure_user(TG_ID, "someone")
     await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
     await repo.link_platform_account(TG_ID, "psn", "internal-account-id", "superomsk")
 
-    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
+    screen = await render_account_menu(repo, TG_ID, "psn", locale="ru")
 
-    row = next(
-        row
-        for row in markup.inline_keyboard
-        if any(b.callback_data == "psn:disconnectprompt" for b in row)
-    )
-    assert any(b.url == "https://psnprofiles.com/superomsk" for b in row)
+    assert screen is not None
+    buttons = [b for row in screen.keyboard.inline_keyboard for b in row]
+    profile = next(b for b in buttons if b.url)
+    assert profile.url == "https://psnprofiles.com/superomsk"
+    assert profile.text == "👤 PSN: superomsk"
+    assert "psn:unlink:internal-account-id" in [b.callback_data for b in buttons]
 
 
-async def test_show_profile_links_defaults_off(repo: Repo) -> None:
+async def test_several_psn_accounts_each_get_a_line_and_their_own_switch(repo: Repo) -> None:
+    """#10: one header and login line per PSN account; the panel's switch
+    reads "Частично" when only some of them post, and the publication row
+    names the muted one."""
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "SuperOmsk")
+    await repo.link_platform_account(TG_ID, "psn", "acc-2", "OmskSecond")
+    await repo.set_account_publishes(TG_ID, "psn", "acc-2", False)
+    await repo.upsert_chat(-100, "XBOX CG", None)
+    await repo.subscribe(-100, TG_ID)
+
+    text, markup = (await render_panel(repo, TG_ID)).as_pair()
+
+    assert "Вход PSN1: " in text and "Вход PSN2: " in text
+    assert text.index("SuperOmsk") < text.index("OmskSecond")
+    assert "без PSN: OmskSecond" in text
+    buttons = {b.callback_data: b.text for row in markup.inline_keyboard for b in row}
+    assert buttons["panel:acc:psn"] == "🔵 PSN (2) ▸"
+    assert buttons["panel:pub:psn"] == "🔔 Частично"
+
+    screen = await render_account_menu(repo, TG_ID, "psn", locale="ru")
+    assert screen is not None
+    assert "2 аккаунта из 3" in screen.text
+    datas = [b.callback_data for row in screen.keyboard.inline_keyboard for b in row]
+    assert "panel:psnpub:acc-2" in datas and "psn:add" in datas
+
+
+async def test_a_dead_xbox_login_opens_its_screen_with_reconnect_first(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
     await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
+    await repo.save_refresh_token(TG_ID, b"encrypted")
+    await repo.set_token_status(TG_ID, "invalid")
 
-    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
+    screen = await render_account_menu(repo, TG_ID, "xbox", locale="ru")
 
-    toggle = next(
-        b for row in markup.inline_keyboard for b in row if b.callback_data == "panel:linkstoggle"
-    )
-    assert "нет" in toggle.text
-
-
-async def test_show_profile_links_admin_default_applies_to_new_users(repo: Repo) -> None:
-    """Repo.ensure_user reads app_settings['default_show_profile_links'] the
-    same way subscribe() reads default_rarity_mode — an admin-picked
-    starting point for someone who has never had a user_settings row
-    before (Follow-up 2026-09-06)."""
-    await repo.set_app_setting("default_show_profile_links", "1")
-    await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
-
-    _text, markup = (await render_panel(repo, TG_ID)).as_pair()
-
-    toggle = next(
-        b for row in markup.inline_keyboard for b in row if b.callback_data == "panel:linkstoggle"
-    )
-    assert "да" in toggle.text
+    assert screen is not None
+    assert screen.keyboard.inline_keyboard[0][0].callback_data == "relogin"
 
 
 async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(repo: Repo) -> None:
@@ -148,7 +162,7 @@ async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(re
     assert "Последние достижения" not in text
     # Kept (#18 decisions): current presence and the timezone text line.
     assert "Сейчас:" in text
-    assert "Часовой пояс:" in text
+    assert "Часовой пояс:" not in text
 
 
 async def test_header_lists_every_connected_platform(repo: Repo) -> None:
@@ -185,7 +199,7 @@ async def test_now_row_names_the_platform_the_person_is_actually_playing_on(
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert "Сейчас:      🔵 PlayStation  ·  играет — Ghost of Tsushima" in text
+    assert "Сейчас: 🔵 PlayStation  ·  играет — Ghost of Tsushima" in text
 
 
 async def test_a_steam_only_person_gets_a_now_row_at_all(repo: Repo) -> None:
@@ -197,7 +211,7 @@ async def test_a_steam_only_person_gets_a_now_row_at_all(repo: Repo) -> None:
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert "Сейчас:      ⚫ Steam  ·  играет — Dota 2" in text
+    assert "Сейчас: ⚫ Steam  ·  играет — Dota 2" in text
 
 
 async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
@@ -210,26 +224,26 @@ async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert "Сейчас:      не в сети" in text
+    assert "Сейчас: не в сети" in text
     assert "Steam  ·  не в сети" not in text
 
 
-async def test_panel_steam_row_uses_naming_chain_fallback(repo: Repo) -> None:
+async def test_panel_steam_header_uses_naming_chain_fallback(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
     await repo.link_platform_account(TG_ID, "steam", "76561197960287930", None)
     await repo.set_platform_secondary_name(TG_ID, "steam", "gaben_vanity")
 
     text, _ = (await render_panel(repo, TG_ID)).as_pair()
-    assert "Вход Steam:  gaben_vanity" in text
+    assert "Steam: gaben_vanity" in text
 
 
-async def test_panel_psn_row_uses_naming_chain_fallback(repo: Repo) -> None:
+async def test_panel_psn_header_uses_naming_chain_fallback(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
     await repo.link_platform_account(TG_ID, "psn", "2130000000000000000", None)
     await repo.set_platform_secondary_name(TG_ID, "psn", "old_psn_tag")
 
     text, _ = (await render_panel(repo, TG_ID)).as_pair()
-    assert "Вход PSN:    old_psn_tag" in text
+    assert "PlayStation: old_psn_tag" in text
 
 
 async def test_panel_has_delete_account_button_above_sync(repo: Repo) -> None:
@@ -498,3 +512,22 @@ async def test_panel_sync_multi_platform_and_cooldown(
     assert len(psn_calls) == 1
     # Toast informed about cooldown:
     assert any("мин" in a for a in cb2.answers)
+
+
+async def test_a_platform_whose_achievements_are_hidden_gets_a_mark(repo: Repo) -> None:
+    """❗ on the platform's own button (owner, 2026-09-30) — for PSN, when any
+    one of its accounts is hidden."""
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "One")
+    await repo.link_platform_account(TG_ID, "psn", "acc-2", "Two")
+    await repo.set_achievements_visible(TG_ID, "steam", True)
+    await repo.set_achievements_visible(TG_ID, "psn", True, external_id="acc-1")
+    await repo.set_achievements_visible(TG_ID, "psn", False, external_id="acc-2")
+
+    text, markup = (await render_panel(repo, TG_ID)).as_pair()
+
+    buttons = {b.callback_data: b.text for row in markup.inline_keyboard for b in row}
+    assert buttons["panel:acc:steam"] == "⚫ Steam ▸"
+    assert buttons["panel:acc:psn"] == "🔵 PSN (2) ❗ ▸"
+    assert "Вход PSN2: ⚠️ ачивки скрыты" in text

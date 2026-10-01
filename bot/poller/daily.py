@@ -22,6 +22,7 @@ from bot.services.chat_gone import chat_is_gone
 from bot.services.message_log import stats_category
 from bot.services.stats import local_now
 from bot.version import is_test
+from bot.views.keyboards import without_close_button
 from bot.views.summary import (
     DAY,
     MONTH,
@@ -102,6 +103,8 @@ class DailySummary:
             await self._repo.mark_daily_report_sent(chat.chat_id, marker)
             return
         text, markup = built
+        # Posted by the bot on its own schedule: nobody closes it for everyone.
+        markup = without_close_button(markup)
         try:
             with stats_category():
                 await self._bot.send_message(

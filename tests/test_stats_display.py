@@ -392,9 +392,9 @@ async def test_games_list_includes_steam_games(repo: Repo) -> None:
     assert "Left 4 Dead 2" in text
 
 
-async def test_nicknames_are_plain_text_by_default(repo: Repo) -> None:
-    """show_profile_links defaults to 0 (Follow-up 2026-09-06) — no <a href>
-    anywhere until the person opts in."""
+async def test_nicknames_are_plain_text_once_the_admin_turns_links_off(repo: Repo) -> None:
+    """Profile links are the admin's one switch, on by default (2026-09-29)."""
+    await repo.set_app_setting("show_profile_links", "0")
     await repo.ensure_user(1, "someone")
     await repo.link_xbox_account(1, XUID, "Someone", 0)
     await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
@@ -407,11 +407,10 @@ async def test_nicknames_are_plain_text_by_default(repo: Repo) -> None:
     assert "<a href" not in text
 
 
-async def test_nicknames_link_out_once_the_person_opts_in(repo: Repo) -> None:
+async def test_nicknames_link_out_by_default(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.link_xbox_account(1, XUID, "Someone", 0)
     await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
-    await repo.update_user_settings(1, show_profile_links=1)
 
     user = await repo.get_user(1)
     assert user is not None
@@ -434,7 +433,6 @@ async def test_opted_in_but_no_gamertag_yet_stays_plain(repo: Repo) -> None:
     profile-button guard) — an empty gamertag has no page to link to."""
     await repo.ensure_user(1, "someone")
     await repo.link_xbox_account(1, XUID, "", 0)
-    await repo.update_user_settings(1, show_profile_links=1)
 
     user = await repo.get_user(1)
     assert user is not None
@@ -955,7 +953,6 @@ async def test_send_stats_card_disables_the_link_preview(repo: Repo) -> None:
     to, unlike connect.py's and panel.py's own links."""
     await repo.ensure_user(1, "someone")
     await repo.link_xbox_account(1, XUID, "Someone", 0)
-    await repo.update_user_settings(1, show_profile_links=1)
     user = await repo.get_user(1)
     assert user is not None
     text = await build_stats_text(repo, user, CHAT_ID)
@@ -1134,6 +1131,8 @@ async def test_who_stats_button_sends_card_with_reply_markup(repo: Repo) -> None
 
 
 async def test_stats_card_uses_gamertag_modern_for_xbox_line(repo: Repo) -> None:
+    # Links off: the profile *link* rightly carries the classic gamertag.
+    await repo.set_app_setting("show_profile_links", "0")
     await repo.ensure_user(1, "lostinawave")
     await repo.link_xbox_account(1, "2535472202229574", "BoAKoAaB", 500)
     # Set display_name (gamertag_modern) in accounts

@@ -20,6 +20,7 @@ from bot.db.repo import AchievementRow, Repo
 from bot.i18n import translator
 from bot.poller.publisher import Publisher
 from bot.services.hltb import ensure_title_match
+from bot.services.models import Progress
 from bot.services.rows import to_achievement_row
 from bot.services.steam.achievements import fetch_unlocked
 from bot.services.steam.auth import SteamAuth, SteamNotConfiguredError
@@ -263,7 +264,7 @@ class SteamFetcher:
         if complete:
             await self._repo.set_app_setting(LIBRARY_TOPUP_KEY, utcnow_iso())
 
-    async def backfill(self, tg_id: int, steam_id: str) -> int:
+    async def backfill(self, tg_id: int, steam_id: str, *, progress: Progress | None = None) -> int:
         """Mark everything already unlocked as seen, publishing nothing —
         same principle as Xbox's backfill (SPEC 5.6), just spread over one
         request per played game instead of one call for the whole library
@@ -284,8 +285,12 @@ class SteamFetcher:
                 raise
             await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
             rows: list[AchievementRow] = []
+            done = 0
+            if progress is not None:
+                await progress(0, len(games), 0)
 
             async def one(game: OwnedGame) -> None:
+                nonlocal done
                 async with self._game_slots:
                     try:
                         parsed = await fetch_unlocked(
@@ -298,8 +303,11 @@ class SteamFetcher:
                         )
                     except SteamApiError as exc:
                         log.info("steam backfill of appid=%s skipped: %s", game.appid, exc)
-                        return
+                        parsed = []
                     rows.extend(to_achievement_row(item) for item in parsed)
+                    done += 1
+                    if progress is not None:
+                        await progress(done, len(games), len(rows))
 
             await asyncio.gather(*(one(game) for game in games))
             await self._repo.insert_new_achievements_steam(tg_id, steam_id, rows, is_backfill=True)

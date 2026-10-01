@@ -75,5 +75,7 @@ export type AdminChatRow = {
   min_gamerscore: number;
   flood_limit: number;
   flood_window_minutes: number;
+  /** One person's achievements at once that make one digest; 99 = never (#126). */
+  digest_threshold: number;
   locale: string;
 };

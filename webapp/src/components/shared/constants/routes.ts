@@ -19,6 +19,7 @@ export const USER_ROUTES = {
   DISCONNECT_PSN: "/disconnect/psn",
   SYNC_XBOX: "/sync/xbox",
   CHAT: (chatId: number) => `/chats/${chatId}`,
+  ACCOUNT: (platform: string) => `/accounts/${platform}`,
 } as const;
 
 export const CLUB_ROUTES = {

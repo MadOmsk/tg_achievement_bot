@@ -267,7 +267,7 @@ COMPLETED_BADGE_PSN = AchievementBadge.PLATINUM
 COMPLETED_BADGE = AchievementBadge.PLATINUM
 
 
-def visibility_status_text(link: PlatformLink, locale: str) -> str:
+def visibility_status_text(link: PlatformLink, locale: str, *, with_time: bool = True) -> str:
     """Steam/PSN's achievement/trophy visibility as found by the last actual
     check (#5) — shared by /panel's own login row and the admin card
     (2026-09-08, user request: the admin card's status line should read
@@ -277,7 +277,8 @@ def visibility_status_text(link: PlatformLink, locale: str) -> str:
     `chat-stats-no-gamertag` below, rather than duplicating it per module.
 
     Appends when the check last ran, when known — "unknown" has no
-    timestamp to show at all."""
+    timestamp to show at all. The panel leaves it off (`with_time=False`,
+    owner 2026-09-30): there the row only has to say whether all is well."""
     if link.achievements_visible is None:
         return gettext("panel", "panel-visibility-unknown", locale=locale)
     label = gettext(
@@ -285,9 +286,59 @@ def visibility_status_text(link: PlatformLink, locale: str) -> str:
         "panel-visibility-visible" if link.achievements_visible else "panel-visibility-hidden",
         locale=locale,
     )
-    if link.achievements_visible_checked_at:
+    if with_time and link.achievements_visible_checked_at:
         return f"{label} · {humanize_ago(link.achievements_visible_checked_at, locale)}"
     return label
+
+
+async def xbox_value_parts(
+    repo: Repo, *, tg_id: int, xuid: str, gamerscore: int | None, locale: str
+) -> list[str]:
+    """What an XBOX account line says after the name: lifetime count,
+    completions, gamerscore. Shared by the header lines below and /panel's
+    XBOX screen (#10)."""
+    # A lifetime Xbox count (2026-09-08, user request) — see
+    # repo.py::xbox_achievement_count's own docstring for why this is
+    # trustworthy for modern Xbox and CLAUDE.md's Statistics rules for
+    # the one remaining x360-specific gap this doesn't close.
+    xbox_count = await repo.xbox_achievement_count(tg_id)
+    xbox_completed = await repo.xbox_completed_games_count(xuid)
+    parts = [plural_achievements(xbox_count, locale)]
+    if xbox_completed:
+        parts.append(f"{xbox_completed} {COMPLETED_BADGE_XBOX}")
+    parts.append(f"gamerscore {thousands(gamerscore or 0)}")
+    return parts
+
+
+async def link_value_parts(repo: Repo, *, tg_id: int, link: PlatformLink, locale: str) -> list[str]:
+    """The same for a PSN or Steam account. PSN is counted per account (#10):
+    a person holding several gets one line each, and the person-wide total is
+    what every counter and games list sums up."""
+    is_psn = link.platform == Platform.PSN
+    count = (
+        await repo.account_achievement_count(link.platform, link.external_id)
+        if is_psn
+        else await repo.platform_achievement_count(tg_id, link.platform)
+    )
+    # PSN calls its own achievements "trophies" everywhere (CLAUDE.md).
+    parts = [plural_trophies(count, locale) if is_psn else plural_achievements(count, locale)]
+    if is_psn:
+        # PSN's own equivalent of a 100%-completed game (#19) — a platinum
+        # is only awarded once every other trophy in that game is earned.
+        platinum = await repo.account_platinum_count(link.external_id)
+        if platinum:
+            parts.append(f"{platinum} {COMPLETED_BADGE_PSN}")
+        # The account-wide level, cached by poller/psn_fetcher.py and never
+        # fetched here (SPEC 1.5's cache-only rule).
+        if link.psn_trophy_level is not None:
+            parts.append(
+                gettext("chat", "chat-stats-psn-level", locale=locale, level=link.psn_trophy_level)
+            )
+    elif link.platform == Platform.STEAM:
+        completed = await repo.steam_completed_games_count(tg_id)
+        if completed:
+            parts.append(f"{completed} {COMPLETED_BADGE_STEAM}")
+    return parts
 
 
 async def platform_header_lines(
@@ -305,8 +356,9 @@ async def platform_header_lines(
     """The per-platform header lines shared by /stats' card and /panel's own
     header (2026-09-08, user request: "пусть одни одинаково формируются" —
     /panel used to reimplement this on its own, HTML-identical but
-    hand-duplicated). One line per connected platform: nickname/name first,
-    then lifetime count, completions, gamerscore (Xbox) or level (PSN).
+    hand-duplicated). One line per connected account — several for PSN
+    (#10): nickname first, then lifetime count, completions, gamerscore
+    (Xbox) or level (PSN).
 
     `show_links` is the only thing that differs between callers: /stats
     gates it on the *target's* own show_profile_links, while /panel's own
@@ -321,16 +373,9 @@ async def platform_header_lines(
         gamertag_html = html_escape(nick if nick != NO_NICKNAME else no_gamertag)
         if show_links and gamertag:
             gamertag_html = link_html(xbox_profile_url(gamertag), gamertag_html)
-        # A lifetime Xbox count (2026-09-08, user request) — see
-        # repo.py::xbox_achievement_count's own docstring for why this is
-        # trustworthy for modern Xbox and CLAUDE.md's Statistics rules for
-        # the one remaining x360-specific gap this doesn't close.
-        xbox_count = await repo.xbox_achievement_count(tg_id)
-        xbox_completed = await repo.xbox_completed_games_count(xuid)
-        parts = [plural_achievements(xbox_count, locale)]
-        if xbox_completed:
-            parts.append(f"{xbox_completed} {COMPLETED_BADGE_XBOX}")
-        parts.append(f"gamerscore {thousands(gamerscore or 0)}")
+        parts = await xbox_value_parts(
+            repo, tg_id=tg_id, xuid=xuid, gamerscore=gamerscore, locale=locale
+        )
         lines.append(
             f"{PLATFORM_ICON[Platform.XBOX_MODERN]} XBOX: {gamertag_html}  ·  "
             + "  ·  ".join(parts)
@@ -339,50 +384,17 @@ async def platform_header_lines(
     # Sorted here rather than trusted from the caller (2026-09-13): one of
     # the two callers used to pass Steam before PSN and the other the other
     # way round, which is how the same header rendered two different orders.
+    # A stable sort, so several PSN accounts keep the order they were linked.
     for link in sorted(platform_links, key=lambda item: platform_display_rank(item.platform)):
         icon = PLATFORM_ICON.get(link.platform, PLATFORM_ICON_UNKNOWN)
         label = platform_label(link.platform, locale)
-        # A lifetime Steam/PSN count has always been fine here — a Steam
-        # backfill has no title cap (GetOwnedGames sees the whole owned-
-        # games library) and PSN's own poller scans every trophy title
-        # directly; neither carries the x360-specific gap
-        # repo.py::xbox_achievement_count's own docstring flags for Xbox.
-        count = await repo.platform_achievement_count(tg_id, link.platform)
         name_html = html_escape(link_nickname(link))
         if show_links:
             url = platform_profile_url(
                 link.platform, external_id=link.external_id, display_name=link.display_name
             )
             name_html = link_html(url, name_html)
-
-        # PSN calls its own achievements "trophies" everywhere (CLAUDE.md).
-        is_psn = link.platform == Platform.PSN
-        link_parts = [
-            plural_trophies(count, locale) if is_psn else plural_achievements(count, locale)
-        ]
-        if is_psn:
-            # PSN's own equivalent of a 100%-completed game (#19) — a
-            # platinum is only awarded once every other trophy in that game
-            # is earned, so this count already *is* that.
-            platinum = await repo.psn_platinum_count(tg_id)
-            if platinum:
-                link_parts.append(f"{platinum} {COMPLETED_BADGE_PSN}")
-            # PSN's own account-wide level (Follow-up 2026-09-06) — cached
-            # by poller/psn_fetcher.py, never fetched here (SPEC 1.5's
-            # cache-only rule); absent until the poller has had a chance to
-            # set it (right after backfill, or a one-off backfill for an
-            # account linked before this feature existed —
-            # scripts/backfill_psn_levels.py, #23).
-            if link.psn_trophy_level is not None:
-                link_parts.append(
-                    gettext(
-                        "chat", "chat-stats-psn-level", locale=locale, level=link.psn_trophy_level
-                    )
-                )
-        elif link.platform == Platform.STEAM:
-            completed = await repo.steam_completed_games_count(tg_id)
-            if completed:
-                link_parts.append(f"{completed} {COMPLETED_BADGE_STEAM}")
+        link_parts = await link_value_parts(repo, tg_id=tg_id, link=link, locale=locale)
         lines.append(f"{icon} {label}: {name_html}  ·  " + "  ·  ".join(link_parts))
 
     return lines

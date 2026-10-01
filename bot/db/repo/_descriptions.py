@@ -254,6 +254,62 @@ class _DescriptionsRepo:
         )
         return [(row["platform"], row["title_id"], row["tg_id"]) for row in await cursor.fetchall()]
 
+    async def steam_titles_without_secret_descriptions(
+        self, limit: int
+    ) -> list[tuple[str, str, dict[str, str | None]]]:
+        """Steam games whose earned secret achievements have no description
+        anywhere (#132), as `(steam_id, appid, {apiname: icon_url})` — one
+        current holder per game, whose public page shows them."""
+        cursor = await self._conn.execute(
+            "SELECT al.external_id AS steam_id, s.title_id, s.achievement_id,"
+            "       COALESCE(d.icon_url, s.icon_url) AS icon_url "
+            "FROM seen_achievements s "
+            + OWNED_BY_PERSON
+            + _CATALOG_ROW
+            + "WHERE s.platform = 'steam' AND s.is_secret = 1"
+            "  AND TRIM(COALESCE(d.description_ru, d.description_en, s.description, '')) = '' "
+            "  AND s.title_id IN ("
+            "    SELECT s2.title_id FROM seen_achievements s2 "
+            "    LEFT JOIN title_achievements d2 ON d2.platform = s2.platform"
+            "      AND d2.title_id = s2.title_id AND d2.achievement_id = s2.achievement_id "
+            "    WHERE s2.platform = 'steam' AND s2.is_secret = 1"
+            "      AND TRIM(COALESCE(d2.description_ru, d2.description_en, s2.description, ''))"
+            "        = '' "
+            "    GROUP BY s2.title_id LIMIT ?) "
+            "ORDER BY s.title_id, al.external_id",
+            (limit,),
+        )
+        found: dict[str, tuple[str, dict[str, str | None]]] = {}
+        for row in await cursor.fetchall():
+            steam_id, icons = found.setdefault(row["title_id"], (row["steam_id"], {}))
+            if row["steam_id"] == steam_id:
+                icons[row["achievement_id"]] = row["icon_url"]
+        return [(steam_id, appid, icons) for appid, (steam_id, icons) in found.items()]
+
+    async def untranslated_descriptions(
+        self, platform: str, title_id: str
+    ) -> dict[str, tuple[str | None, str]]:
+        """`{achievement_id: (description_ru, description_en)}` for one game's
+        earned achievements whose descriptions never went through the
+        translator (or are waiting on it, `fallback`) — for a platform whose
+        English text is already stored, so no request is needed (#127)."""
+        cursor = await self._conn.execute(
+            "SELECT s.achievement_id, d.description_ru,"
+            "       COALESCE(d.description_en, s.description) AS english "
+            "FROM seen_achievements s "
+            + OWNED_BY_PERSON
+            + _CATALOG_ROW
+            + "WHERE s.platform = ? AND s.title_id = ?"
+            "  AND (d.description_source IS NULL OR d.description_source = 'fallback')"
+            "  AND TRIM(COALESCE(d.description_en, s.description, '')) <> '' "
+            "GROUP BY s.achievement_id",
+            (platform, title_id),
+        )
+        return {
+            row["achievement_id"]: (row["description_ru"], row["english"])
+            for row in await cursor.fetchall()
+        }
+
     async def cached_descriptions(
         self, keys: list[tuple[str, str, str]]
     ) -> dict[tuple[str, str, str], CachedDescription]:

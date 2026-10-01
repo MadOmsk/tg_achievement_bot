@@ -30,7 +30,7 @@ from psnawp_api.models.trophies import TrophyTitle
 
 from bot.constants import Platform, PresenceState
 from bot.db.repo import AchievementRow, Repo, TitleAchievementRow
-from bot.services.models import ParsedAchievement
+from bot.services.models import ParsedAchievement, Progress
 from bot.services.psn.client import (
     EarnedTrophy,
     PsnApiError,
@@ -92,6 +92,7 @@ async def sync_account(
     anthropic_auth: AnthropicAuth,
     translation_client: PSNAWP | None,
     limit: int | None = TITLES_TO_SCAN,
+    report: Progress | None = None,
 ) -> PsnSyncOutcome:
     """Scan `limit` of this account's most recently-touched games, persist
     every newly-earned trophy, and advance each game's progress cache — one
@@ -115,7 +116,11 @@ async def sync_account(
     titles = await trophy_titles_for_account(client, account_id, limit=limit)
     outcome = PsnSyncOutcome(scanned=len(titles))
 
-    for title in titles:
+    for index, title in enumerate(titles):
+        # Reported at the top: the body below leaves early in half a dozen
+        # places, and every game counts as walked all the same.
+        if report is not None:
+            await report(index, len(titles), len(outcome.new_rows))
         # The denominator of the "24/74" beside a notification's game line
         # (#46), stored for every title this scan walks — not only for the
         # ones that moved, which is what it used to be and why a game nobody
@@ -283,6 +288,8 @@ async def sync_account(
         else:
             outcome.new_rows.extend(inserted)
 
+    if report is not None:
+        await report(len(titles), len(titles), len(outcome.new_rows))
     return outcome
 
 
@@ -371,7 +378,7 @@ async def _bilingual_descriptions(
     cached: dict[int, str] = {}
     for trophy_id, english_text in candidates.items():
         cat_row = cat_by_id.get(str(trophy_id))
-        if cat_row and cat_row.description_ru:
+        if cat_row and cat_row.description_ru and cat_row.description_source:  # #127
             cached[trophy_id] = cat_row.description_ru
             continue
         row = await repo.get_cached_description(

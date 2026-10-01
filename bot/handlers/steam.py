@@ -24,9 +24,10 @@ import asyncio
 import contextlib
 import logging
 import re
+from html import escape as html_escape
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import BaseFilter, Command, CommandObject
 from aiogram.types import (
     CallbackQuery,
@@ -41,6 +42,7 @@ from bot.config import get_settings
 from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.handlers import awaiting
+from bot.handlers.backfill import run_steam
 from bot.handlers.delivery import notify_previous_owner, safe_edit
 from bot.i18n import StaticI18nContext, static_i18n
 from bot.poller.steam_fetcher import SteamFetcher
@@ -49,11 +51,11 @@ from bot.services.naming import link_nickname
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import (
     SteamApiError,
-    SteamGameDetailsPrivateError,
     get_profile,
     resolve_steam_id,
 )
 from bot.views.keyboards import deep_link_keyboard, switch_keyboard, switch_prompt
+from bot.views.panel import render_account_menu, render_panel
 from bot.views.parts import platform_label
 
 log = logging.getLogger(__name__)
@@ -131,6 +133,8 @@ async def prompt_for_link(
     steam_auth: SteamAuth,
     tg_id: int,
     i18n: I18nContext | StaticI18nContext | None = None,
+    *,
+    callback: CallbackQuery | None = None,
 ) -> None:
     """The shared "now send me the link" step — bare /connect_steam, the
     panel button, and the deep link all go through this one place, so
@@ -147,19 +151,68 @@ async def prompt_for_link(
     # by its own prompt further along, so say what is linked and ask anyway.
     link = await repo.get_platform_link(tg_id, Platform.STEAM)
     awaiting.expect(tg_id, "steam")
+    text, markup = _prompt_screen(link, i18n, from_button=callback is not None)
+    if callback is not None:
+        # From a button: the prompt takes that message's place, with a way
+        # back, instead of arriving as two new ones (owner, 2026-09-30).
+        await safe_edit(
+            callback, text, markup, disable_web_page_preview=True, parse_mode=ParseMode.HTML
+        )
+        return
+    await bot.send_message(
+        tg_id, text, reply_markup=markup, disable_web_page_preview=True, parse_mode=ParseMode.HTML
+    )
+
+
+def _prompt_screen(
+    link: object, i18n: I18nContext | StaticI18nContext, *, from_button: bool
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    """What is linked (and a way to just unlink it), or how to link — the
+    one prompt, whichever door it was opened through."""
+    back = InlineKeyboardButton(
+        text=i18n.get("kb-back" if from_button else "kb-open-panel"),
+        callback_data="steam:promptback" if from_button else "panel:refresh",
+    )
     if link is not None:
-        await bot.send_message(tg_id, i18n.get("steam-already-connected", name=link_nickname(link)))
-    await bot.send_message(tg_id, i18n.get("steam-link-prompt", privacy_url=PRIVACY_URL))
+        return (
+            i18n.get("steam-already-connected", name=html_escape(link_nickname(link))),  # type: ignore[arg-type]
+            InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=i18n.get("steam-just-unlink"),
+                            callback_data="steam:disconnectprompt",
+                        )
+                    ],
+                    [back],
+                ]
+            ),
+        )
+    return (
+        i18n.get("steam-link-prompt", privacy_url=PRIVACY_URL),
+        InlineKeyboardMarkup(inline_keyboard=[[back]]) if from_button else None,
+    )
 
 
 @router.callback_query(F.data == "steam:connect")
 async def steam_connect_button(
     callback: CallbackQuery, repo: Repo, steam_auth: SteamAuth, bot: Bot, i18n: I18nContext
 ) -> None:
-    """The panel's own "🎮 Подключить Steam" button (2026-09-05 follow-up) —
-    same prompt-and-wait as everywhere else, panel.py never had a Steam
-    button at all before this."""
-    await prompt_for_link(bot, repo, steam_auth, callback.from_user.id, i18n)
+    """The panel's "🎮 Подключить Steam" and the Steam screen's "🔁 Привязать
+    другой аккаунт" — same prompt-and-wait as everywhere else, in place."""
+    await prompt_for_link(bot, repo, steam_auth, callback.from_user.id, i18n, callback=callback)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "steam:promptback")
+async def steam_prompt_back(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """Leaving the link prompt: no longer waiting for a link, and back to the
+    Steam screen (or the panel, when Steam is not linked)."""
+    awaiting.clear(callback.from_user.id)
+    screen = await render_account_menu(
+        repo, callback.from_user.id, Platform.STEAM, locale=i18n.locale
+    ) or await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 
@@ -387,9 +440,8 @@ async def _connect(
 
     # Backgrounded (SPEC 9, M-Steam-2d) — a big library is genuinely
     # hundreds of requests, the reply above must not wait for it.
-    await bot.send_message(tg_id, i18n.get("steam-backfill-started"))
     asyncio.create_task(  # noqa: RUF006
-        _backfill_and_notify(bot, steam_fetcher, tg_id, profile.steam_id, i18n)
+        run_steam(bot, steam_fetcher, repo, tg_id, profile.steam_id)
     )
 
 
@@ -427,30 +479,6 @@ async def steam_switch_cancelled(callback: CallbackQuery, i18n: I18nContext) -> 
     await callback.answer()
     with contextlib.suppress(Exception):
         await callback.message.edit_text(i18n.get("connect-switch-cancelled"))
-
-
-async def _backfill_and_notify(
-    bot: Bot, fetcher: SteamFetcher, tg_id: int, steam_id: str, i18n: I18nContext
-) -> None:
-    try:
-        count = await fetcher.backfill(tg_id, steam_id)
-    except SteamGameDetailsPrivateError:
-        # Found live (whalerider84, 2026-09-08): "My Profile" passed the
-        # is_public check above, but the separate "Game details" privacy
-        # setting was still private/friends-only — backfill silently stored
-        # 0, and this person would otherwise only ever see "0 достижений"
-        # with no explanation anywhere. Same fix, same wording as
-        # steam-profile-private, just caught one step later.
-        log.info("connect_steam: game details private for tg_id=%s steam_id=%s", tg_id, steam_id)
-        await bot.send_message(
-            tg_id, i18n.get("steam-game-details-private", privacy_url=PRIVACY_URL)
-        )
-        return
-    except Exception:
-        log.exception("steam backfill for tg_id=%s failed", tg_id)
-        await bot.send_message(tg_id, i18n.get("steam-backfill-failed"))
-        return
-    await bot.send_message(tg_id, i18n.get("steam-backfill-done", count=count))
 
 
 def _disconnect_prompt_keyboard(i18n: I18nContext, *, from_panel: bool) -> InlineKeyboardMarkup:

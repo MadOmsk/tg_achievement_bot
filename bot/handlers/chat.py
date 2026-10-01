@@ -48,8 +48,10 @@ from bot.views.chat import (
     help_text,
     hub_keyboard,
     hub_text,
+    private_help_text,
     recent_list,
     render_who_picker,
+    settings_button,
 )
 from bot.views.date_picker import (
     stats_month_calendar_keyboard,
@@ -59,6 +61,7 @@ from bot.views.date_picker import (
 )
 from bot.views.keyboards import (
     CLOSE_CALLBACK,
+    keep_closability,
     next_rarity_mode,
     with_close_button,
 )
@@ -175,6 +178,7 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
             await message.answer(i18n.get("chat-subscribe-already"))
             return
         await repo.subscribe(message.chat.id, message.from_user.id)
+    me = await message.bot.me()  # type: ignore[union-attr]
     await message.answer(
         i18n.get(
             "chat-subscribe-done",
@@ -182,7 +186,10 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
             # `user.gamertag`, so anyone without Xbox got the generic
             # "твои достижения" instead of their own name.
             gamertag=person_name_of(user, await repo.platform_links_of(message.from_user.id)),
-        )
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[settings_button(me.username or "", i18n)]]
+        ),
     )
 
 
@@ -628,7 +635,11 @@ async def summary_month_nav_callback(
     if built is not None:
         text, markup = built
         with contextlib.suppress(Exception):
-            await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+            await callback.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keep_closability(callback.message.reply_markup, markup),
+            )
 
 
 @router.callback_query(F.data.startswith("sm:cal:"))
@@ -651,7 +662,9 @@ async def summary_month_cal_callback(
     )
     await callback.answer()
     with contextlib.suppress(Exception):
-        await callback.message.edit_reply_markup(reply_markup=markup)
+        await callback.message.edit_reply_markup(
+            reply_markup=keep_closability(callback.message.reply_markup, markup)
+        )
 
 
 @router.callback_query(F.data.startswith("sd:nav:"))
@@ -676,7 +689,11 @@ async def summary_day_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I1
     if built is not None:
         text, markup = built
         with contextlib.suppress(Exception):
-            await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+            await callback.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keep_closability(callback.message.reply_markup, markup),
+            )
 
 
 @router.callback_query(F.data.startswith("sd:cal:"))
@@ -696,7 +713,9 @@ async def summary_day_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I1
     )
     await callback.answer()
     with contextlib.suppress(Exception):
-        await callback.message.edit_reply_markup(reply_markup=markup)
+        await callback.message.edit_reply_markup(
+            reply_markup=keep_closability(callback.message.reply_markup, markup)
+        )
 
 
 @router.callback_query(F.data.startswith("summary:all:"))
@@ -825,20 +844,31 @@ async def help_command(
     me = await bot.me()
     bot_username = me.username or ""
     if message.chat.type not in GROUP_TYPES:
+        # One button into the app, nothing else (#140): accounts and
+        # settings are /panel's.
         await message.answer(
-            help_text(i18n),
+            private_help_text(i18n),
             parse_mode=ParseMode.HTML,
-            reply_markup=_hub_markup(bot_username, message.chat.id, i18n, settings, is_group=False),
+            reply_markup=promo_keyboard(
+                bot_username,
+                message.chat.id,
+                mini_app_url=settings.mini_app_url or "",
+                is_group=False,
+                locale=i18n.locale,
+            ),
         )
         return
     await message.answer(
         help_text(i18n),
         parse_mode=ParseMode.HTML,
-        reply_markup=with_close_button(None, i18n=i18n),
+        reply_markup=with_close_button(
+            InlineKeyboardMarkup(inline_keyboard=[[settings_button(bot_username, i18n)]]),
+            i18n=i18n,
+        ),
     )
 
 
-@router.message(Command("promo", "pin_promo"))
+@router.message(Command("promo"))
 async def promo_command(message: Message, bot: Bot, i18n: I18nContext, settings: Settings) -> None:
     me = await bot.me()
     bot_username = me.username or ""
@@ -903,21 +933,16 @@ async def subscribe_button(
 
     await repo.upsert_chat(message.chat.id, message.chat.title, callback.from_user.id)
     async with _subscription_lock(message.chat.id, callback.from_user.id):
-        current_mode = await repo.get_subscription_rarity_mode(
-            message.chat.id, callback.from_user.id
-        )
-        if current_mode is None:
+        # Subscribing here, or — once subscribed — cycling the person's own
+        # rarity mode, which since #126 applies to every chat they are in.
+        settings_row = await repo.get_user_settings(callback.from_user.id)
+        current_mode = settings_row.rarity_mode if settings_row else RarityMode.ALL
+        if not await repo.is_subscribed(message.chat.id, callback.from_user.id):
             await repo.subscribe(message.chat.id, callback.from_user.id)
-            current_mode = (
-                await repo.get_subscription_rarity_mode(message.chat.id, callback.from_user.id)
-                or RarityMode.ALL
-            )
             toast = i18n.get(f"chat-hub-toast-{current_mode}")
         else:
             new_mode = next_rarity_mode(current_mode)
-            await repo.update_subscription_rarity_mode(
-                message.chat.id, callback.from_user.id, new_mode
-            )
+            await repo.update_user_settings(callback.from_user.id, rarity_mode=new_mode)
             toast = i18n.get(f"chat-hub-toast-{new_mode}")
 
     await callback.answer(toast)

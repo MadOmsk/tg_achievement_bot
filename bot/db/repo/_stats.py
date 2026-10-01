@@ -403,6 +403,28 @@ class _StatsRepo:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
+    async def account_platinum_count(self, account_id: str) -> int:
+        """`psn_platinum_count` for one PSN account (#10) — a person
+        holding several sees one line per account."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE platform = 'psn' AND xuid = ? AND trophy_type = 'platinum'",
+            (account_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def account_count_since(self, platform: str, external_id: str, since: str) -> int:
+        """What one account earned inside a window (#10) — the admin card's
+        "today" for each of a person's PSN accounts."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements s "
+            f"WHERE s.account_platform = ? AND s.xuid = ? AND {earned_since()}",
+            (platform, external_id, since),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
     async def steam_completed_games_count(self, tg_id: int) -> int:
         """Steam's own equivalent (#19) — harder than Xbox/PSN: there's no
         per-user, per-game "total achievements" cached directly. Joins a

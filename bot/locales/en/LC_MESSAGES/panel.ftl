@@ -2,15 +2,14 @@
 # Connection status and sync
 panel-login-active = ✅ active
 panel-login-invalid = ⚠️ needs signing in again
-panel-login-revoked = — disconnected
+panel-login-revoked = 🔘 disconnected
 # Distinct from panel-login-revoked above (2026-09-09): "disconnected"
 # implies a token existed and was deliberately removed, "not connected" is
 # for a person who never linked Xbox at all — same distinction Steam/PSN's
 # own login rows already draw via visibility_status_text's "not checked".
-panel-login-not-connected = — not connected
+panel-login-not-connected = 🔘 not connected
 panel-group-hint = Settings live in a DM.
 panel-refreshed = Refreshed
-panel-xbox-not-connected = Connect XBOX first: /connect_xbox
 # panel_chat_subscribe's own message (2026-09-09) — publishing needs any
 # one platform connected, not Xbox specifically; panel-xbox-not-connected
 # above stays as-is for panel_sync, which really is Xbox-only.
@@ -33,6 +32,7 @@ panel-disconnect-prompt =
 panel-links-hidden-toast = Hidden
 panel-links-shown-toast = Showing
 panel-timezone-prompt = 🕐 Your timezone — "today" and "this month" are counted by it.
+panel-timezone-toast = Timezone: { $offset }
 panel-my-chats-title = 💬 My chats
 panel-my-chats-empty =
 
@@ -41,18 +41,10 @@ panel-back = ‹ Back
 panel-chat-card-title = 💬 { $title }
 panel-publication-enabled = Publishing: ✅ on
 panel-publication-disabled = Publishing: ⏸ off
-panel-achievements-mode = Achievements: { $mode }
-panel-digest-row = Digest: { $threshold } ▸
 panel-unsubscribe = Unsubscribe
 panel-subscribe = Subscribe
 panel-remove-from-list = Remove from the list
 panel-back-to-chat-list = ‹ Back to the chat list
-panel-digest-menu =
-    One digest instead of separate messages
-
-    If this many achievements or more are unlocked at once in one game, this chat gets a single combined message.
-panel-digest-set-never-toast = Never
-panel-digest-set-from-toast = From { $value }
 panel-subscribed-toast = Subscribed
 panel-unsub-prompt = Stop publishing your achievements in “{ $title }”?
 panel-unsub-yes = Yes, unsubscribe
@@ -78,13 +70,11 @@ panel-header-identity = 👤 { $name }
 # The trailing padding lines these rows up into one column, the same way the
 # Russian file does it — the label lengths differ per language, so the
 # padding is part of the translation rather than something Python adds.
-panel-login-xbox-row = XBOX login:   { $status }
+panel-login-row = { $platform } login: { $status }
 # No "-connected" suffix (2026-09-09) — these render the same regardless of
 # whether Xbox happens to be connected; the old plain (non-suffixed) keys
 # only ever existed for the Xbox-gated early-return branch that used them,
 # now removed, so this name freed up.
-panel-login-steam-row = Steam login:  { $name }  ·  { $status }
-panel-login-psn-row = PSN login:    { $name }  ·  { $status }
 # Steam/PSN's achievement/trophy visibility, as of the last actual check
 # (#5) — connect time, or any backfill/resync since. Xbox has no
 # equivalent row here: its own token status (panel-login-xbox-row above)
@@ -92,17 +82,39 @@ panel-login-psn-row = PSN login:    { $name }  ·  { $status }
 panel-visibility-visible = ✅ achievements visible
 panel-visibility-hidden = ⚠️ achievements hidden
 panel-visibility-unknown = ❓ not checked
-panel-publication-row = Publishing:   { $status }
-panel-now-playing-row = Now:          { $playing }
-panel-timezone-row = Timezone:     { $offset }
+panel-publication-row = Publishing: { $status }
+panel-now-playing-row = Now: { $playing }
 panel-reconnect-hint = Your XBOX access has expired — press “Connect again” below.
 panel-no-presence-data = no data
 panel-offline = offline ({ $ago })
 panel-online-idle = online, not playing
 panel-playing = playing — { $game }
 panel-excluded = 🚫 excluded by the administrator
-panel-not-subscribed-anywhere = — not subscribed in any chat
+panel-not-subscribed-anywhere = 🔘 not subscribed in any chat
 panel-subscribed-in = ✅ in { $chats }
+panel-publishing-without = {" "}· except { $platforms }
+panel-publishes-on-toast = Posting this account's achievements
+panel-publishes-off-toast = This account's achievements are no longer posted
+
+# A platform's own screen behind its /panel button (#10).
+panel-account-title = { $icon } <b>{ $platform }</b>
+panel-account-login = Login: { $status }
+panel-account-publication = Posting: { $state }
+panel-account-publishes-on = 🔔 on
+panel-account-publishes-off = 🔇 off
+panel-psn-title = { $icon } <b>PSN</b> · { $count ->
+    [one] { $count } account
+   *[other] { $count } accounts
+} of { $max }
+panel-psn-account-state = {"    "}{ $login } · { $state }
+panel-psn-summed = Trophies of every account add up in stats and summaries.
+kb-account-profile = 👤 { $platform } profile: { $name }
+kb-account-psn = 👤 PSN: { $name }
+kb-account-publication-on = 🔔 Posting: on
+kb-account-publication-off = 🔇 Posting: off
+kb-account-unlink = 🔌 Unlink { $platform }
+kb-account-relink = 🔁 Link another account
+kb-psn-add = ➕ Link another PSN account
 
 panel-delete-account = 🗑 Delete account
 panel-delete-confirm-1 =
@@ -116,3 +128,6 @@ panel-delete-confirm-2-yes = 🔥 Permanently delete account
 panel-delete-done = Your account and related data have been deleted. If you ever wish to return, send /start.
 panel-delete-toast = Account deleted
 panel-delete-not-found = Account already deleted.
+panel-rarity-toast-all = Posting every achievement
+panel-rarity-toast-rare = Rare only — by each chat's rarity threshold
+panel-rarity-toast-hidden = Posting nothing

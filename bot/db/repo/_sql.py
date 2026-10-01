@@ -42,7 +42,9 @@ OWNED_BY_PERSON_EXISTS = (
 )
 
 
-def active_account(alias: str, platform: str, *, on: str = "u.tg_id") -> str:
+def active_account(
+    alias: str, platform: str, *, on: str = "u.tg_id", by_presence: bool = False
+) -> str:
     """The two LEFT JOINs that reach one platform's *currently linked*
     account for a person, exposed under `alias` so a query can keep reading
     `alias.display_name` the way it read `platform_links.display_name`
@@ -51,11 +53,34 @@ def active_account(alias: str, platform: str, *, on: str = "u.tg_id") -> str:
     Two joins rather than one because who has an account and what the
     account is are now separate facts; `is_active` is the whole point — an
     account somebody used to hold must contribute nothing.
+
+    Always **one** account, even where a person holds several (PSN, #10) —
+    otherwise every such query would return that person once per account.
+    The first one linked, which is also whose nickname names the person
+    (services/naming.py); `by_presence` picks instead the one that is
+    playing or online right now, for the screens that answer "where is this
+    person" (/online).
     """
     link = f"{alias}_link"
+    if by_presence and platform == "psn":
+        order = (
+            "ORDER BY CASE WHEN x_p.state = 'Online' AND x_p.title_id IS NOT NULL THEN 2"
+            "              WHEN x_p.state = 'Online' THEN 1 ELSE 0 END DESC,"
+            "         x_p.updated_at DESC, x.linked_at, x.rowid "
+        )
+        source = (
+            "FROM account_links x "
+            "LEFT JOIN psn_presence_state x_p ON x_p.account_id = x.external_id "
+        )
+    else:
+        order = "ORDER BY x.linked_at, x.rowid "
+        source = "FROM account_links x "
     return (
         f"LEFT JOIN account_links {link} ON {link}.tg_id = {on}"
-        f"   AND {link}.platform = '{platform}' AND {link}.is_active = 1 "
+        f"   AND {link}.platform = '{platform}' AND {link}.is_active = 1"
+        f"   AND {link}.rowid = (SELECT x.rowid {source}"
+        f"      WHERE x.tg_id = {on} AND x.platform = '{platform}' AND x.is_active = 1"
+        f"      {order}LIMIT 1) "
         f"LEFT JOIN accounts {alias} ON {alias}.platform = {link}.platform"
         f"   AND {alias}.external_id = {link}.external_id "
     )
@@ -126,6 +151,16 @@ def earned_since(prefix: str = "s.") -> str:
     """The window filter both of the above compose into: one `?`, bound to
     the start of the window."""
     return f"{earned_date_is_real(prefix)} AND {earned_at(prefix)} >= ?"
+
+
+# A person whose rarity mode is "none" publishes nothing, and is left out of a
+# chat's lists that are about what gets published (#126: the mode is the
+# person's, not the subscription's). Takes the users alias.
+def publishes(user_alias: str = "u") -> str:
+    return (
+        "NOT EXISTS (SELECT 1 FROM user_settings us_mode"
+        f" WHERE us_mode.tg_id = {user_alias}.tg_id AND us_mode.rarity_mode = 'hidden')"
+    )
 
 
 # --------------------------------------------------------------- names (#61)

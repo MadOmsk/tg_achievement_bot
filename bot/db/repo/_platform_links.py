@@ -89,7 +89,7 @@ class _PlatformLinksRepo:
     _LINK_COLUMNS = (
         "SELECT al.tg_id, al.platform, al.external_id, a.display_name, a.secondary_name,"
         "       al.linked_at, a.psn_trophy_level, a.achievements_visible,"
-        "       a.achievements_visible_checked_at "
+        "       a.achievements_visible_checked_at, al.publishes "
         "FROM account_links al "
         "JOIN accounts a ON a.platform = al.platform AND a.external_id = al.external_id "
     )
@@ -129,6 +129,16 @@ class _PlatformLinksRepo:
         row = await cursor.fetchone()
         taken_from = row["tg_id"] if row else None
 
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM account_links "
+            "WHERE tg_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
+            (tg_id, platform, external_id),
+        )
+        if await cursor.fetchone() is None:
+            # A link this person did not already have: it spends one of the
+            # re-links a recent deletion left them (PSN, owner 2026-09-30).
+            await self.note_platform_relink(tg_id, platform)  # type: ignore[attr-defined]
+
         # Both deactivations happen before the new link goes in: the account
         # may be held by someone else (idx_links_one_owner), and this person
         # may already hold a different account on the same platform
@@ -139,11 +149,14 @@ class _PlatformLinksRepo:
             "WHERE platform = ? AND external_id = ? AND is_active = 1",
             (now, platform, external_id),
         )
-        await self._conn.execute(
-            "UPDATE account_links SET is_active = 0, unlinked_at = ? "
-            "WHERE tg_id = ? AND platform = ? AND is_active = 1",
-            (now, tg_id, platform),
-        )
+        # PSN keeps the person's other accounts (#10): a new one is added
+        # beside them, up to the limit handlers/psn.py enforces.
+        if platform != AccountPlatform.PSN:
+            await self._conn.execute(
+                "UPDATE account_links SET is_active = 0, unlinked_at = ? "
+                "WHERE tg_id = ? AND platform = ? AND is_active = 1",
+                (now, tg_id, platform),
+            )
         await self._conn.execute(
             "INSERT INTO account_links (tg_id, platform, external_id, is_active, linked_at) "
             "VALUES (?, ?, ?, 1, ?) "
@@ -155,7 +168,13 @@ class _PlatformLinksRepo:
         return taken_from
 
     async def update_platform_names(
-        self, tg_id: int, platform: str, display_name: str, secondary_name: str | None = None
+        self,
+        tg_id: int,
+        platform: str,
+        display_name: str,
+        secondary_name: str | None = None,
+        *,
+        external_id: str | None = None,
     ) -> bool:
         """Opportunistic refresh only (SPEC 9, M-Steam-2c, widened to every
         platform by #51) — each poller already holds a fresh nickname inside
@@ -173,7 +192,9 @@ class _PlatformLinksRepo:
             "       secondary_name = COALESCE(?, secondary_name), updated_at = ? "
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
-            "  WHERE tg_id = ? AND platform = ? AND is_active = 1)"
+            "  WHERE tg_id = ? AND platform = ? AND is_active = 1"
+            # One account's nickname, where a person holds several (#10).
+            "    AND (? IS NULL OR external_id = ?))"
             "  AND (display_name IS NOT ? OR (? IS NOT NULL AND secondary_name IS NOT ?))",
             (
                 display_name,
@@ -181,6 +202,8 @@ class _PlatformLinksRepo:
                 utcnow_iso(),
                 tg_id,
                 platform,
+                external_id,
+                external_id,
                 display_name,
                 secondary_name,
                 secondary_name,
@@ -190,7 +213,12 @@ class _PlatformLinksRepo:
         return cursor.rowcount > 0
 
     async def set_platform_secondary_name(
-        self, tg_id: int, platform: str, secondary_name: str | None
+        self,
+        tg_id: int,
+        platform: str,
+        secondary_name: str | None,
+        *,
+        external_id: str | None = None,
     ) -> None:
         """The chain's middle step on its own — PSN's previous online ID when
         a rename is noticed (or backfilled once from Sony's legacy endpoint),
@@ -199,18 +227,32 @@ class _PlatformLinksRepo:
             "UPDATE accounts SET secondary_name = ?, updated_at = ? "
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
-            "  WHERE tg_id = ? AND platform = ? AND is_active = 1)",
-            (secondary_name, utcnow_iso(), tg_id, platform),
+            "  WHERE tg_id = ? AND platform = ? AND is_active = 1"
+            "    AND (? IS NULL OR external_id = ?))",
+            (secondary_name, utcnow_iso(), tg_id, platform, external_id, external_id),
         )
         await self._conn.commit()
 
     async def get_platform_link(self, tg_id: int, platform: str) -> PlatformLink | None:
+        """The person's account on a platform — the first one linked, where
+        a person may hold several (PSN, #10)."""
         cursor = await self._conn.execute(
-            self._LINK_COLUMNS + "WHERE al.tg_id = ? AND al.platform = ? AND al.is_active = 1",
+            self._LINK_COLUMNS + "WHERE al.tg_id = ? AND al.platform = ? AND al.is_active = 1 "
+            "ORDER BY al.linked_at, al.rowid LIMIT 1",
             (tg_id, platform),
         )
         row = await cursor.fetchone()
         return _as_platform_link(row) if row is not None else None
+
+    async def platform_links_for(self, tg_id: int, platform: str) -> list[PlatformLink]:
+        """Every account this person holds on one platform, first linked
+        first — several only on PSN (#10)."""
+        cursor = await self._conn.execute(
+            self._LINK_COLUMNS + "WHERE al.tg_id = ? AND al.platform = ? AND al.is_active = 1 "
+            "ORDER BY al.linked_at, al.rowid",
+            (tg_id, platform),
+        )
+        return [_as_platform_link(row) for row in await cursor.fetchall()]
 
     async def platform_links_of(
         self, tg_id: int, *, include_xbox: bool = False
@@ -237,7 +279,9 @@ class _PlatformLinksRepo:
             # rather than by decision.
             self._LINK_COLUMNS
             + clause
-            + "ORDER BY CASE al.platform WHEN 'xbox' THEN 0 WHEN 'psn' THEN 1 ELSE 2 END",
+            + "ORDER BY CASE al.platform WHEN 'xbox' THEN 0 WHEN 'psn' THEN 1 ELSE 2 END,"
+            # Several PSN accounts (#10): first linked first, everywhere.
+            "  al.linked_at, al.rowid",
             (tg_id,),
         )
         return [_as_platform_link(row) for row in await cursor.fetchall()]
@@ -253,25 +297,31 @@ class _PlatformLinksRepo:
         )
         return [_as_platform_link(row) for row in await cursor.fetchall()]
 
-    async def set_psn_trophy_level(self, tg_id: int, level: int) -> None:
+    async def set_psn_trophy_level(
+        self, tg_id: int, level: int, *, account_id: str | None = None
+    ) -> None:
         await self._conn.execute(
             "UPDATE accounts SET psn_trophy_level = ?, updated_at = ? "
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
-            "  WHERE tg_id = ? AND platform = 'psn' AND is_active = 1)",
-            (level, utcnow_iso(), tg_id),
+            "  WHERE tg_id = ? AND platform = 'psn' AND is_active = 1"
+            "    AND (? IS NULL OR external_id = ?))",
+            (level, utcnow_iso(), tg_id, account_id, account_id),
         )
         await self._conn.commit()
 
-    async def set_achievements_visible(self, tg_id: int, platform: str, visible: bool) -> None:
+    async def set_achievements_visible(
+        self, tg_id: int, platform: str, visible: bool, *, external_id: str | None = None
+    ) -> None:
         now = utcnow_iso()
         await self._conn.execute(
             "UPDATE accounts SET achievements_visible = ?,"
             "       achievements_visible_checked_at = ?, updated_at = ? "
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
-            "  WHERE tg_id = ? AND platform = ? AND is_active = 1)",
-            (int(visible), now, now, tg_id, platform),
+            "  WHERE tg_id = ? AND platform = ? AND is_active = 1"
+            "    AND (? IS NULL OR external_id = ?))",
+            (int(visible), now, now, tg_id, platform, external_id, external_id),
         )
         await self._conn.commit()
 
@@ -283,6 +333,25 @@ class _PlatformLinksRepo:
             "UPDATE account_links SET is_active = 0, unlinked_at = ? "
             "WHERE tg_id = ? AND platform = ? AND is_active = 1",
             (utcnow_iso(), tg_id, platform),
+        )
+        await self._conn.commit()
+
+    async def unlink_account(self, tg_id: int, platform: str, external_id: str) -> None:
+        """One account of several (#10) — the others stay linked."""
+        await self._conn.execute(
+            "UPDATE account_links SET is_active = 0, unlinked_at = ? "
+            "WHERE tg_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
+            (utcnow_iso(), tg_id, platform, external_id),
+        )
+        await self._conn.commit()
+
+    async def set_platform_publishes(self, tg_id: int, platform: str, publishes: bool) -> None:
+        """The panel's per-platform switch (#10): every account the person
+        holds there at once."""
+        await self._conn.execute(
+            "UPDATE account_links SET publishes = ?"
+            " WHERE tg_id = ? AND platform = ? AND is_active = 1",
+            (1 if publishes else 0, tg_id, platform),
         )
         await self._conn.commit()
 
@@ -606,6 +675,28 @@ class _PlatformLinksRepo:
         )
         return await cursor.fetchone() is not None
 
+    async def account_publishes(self, tg_id: int, platform: str, external_id: str) -> bool:
+        """Whether this person announces this account's achievements (#20).
+        An account with no current link answers True: the publisher has
+        nothing else to go on, and chat targets already need a person."""
+        cursor = await self._conn.execute(
+            "SELECT publishes FROM account_links"
+            " WHERE tg_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
+            (tg_id, platform, external_id),
+        )
+        row = await cursor.fetchone()
+        return bool(row["publishes"]) if row else True
+
+    async def set_account_publishes(
+        self, tg_id: int, platform: str, external_id: str, publishes: bool
+    ) -> None:
+        await self._conn.execute(
+            "UPDATE account_links SET publishes = ?"
+            " WHERE tg_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
+            (1 if publishes else 0, tg_id, platform, external_id),
+        )
+        await self._conn.commit()
+
     async def any_active_external_id(self, platform: str) -> str | None:
         """Find any active external_id linked for this platform (e.g. for catalog queries)."""
         cursor = await self._conn.execute(
@@ -629,4 +720,5 @@ def _as_platform_link(row) -> PlatformLink:
             bool(row["achievements_visible"]) if row["achievements_visible"] is not None else None
         ),
         achievements_visible_checked_at=row["achievements_visible_checked_at"],
+        publishes=bool(row["publishes"]) if "publishes" in row.keys() else True,
     )

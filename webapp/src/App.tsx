@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   connectPsn,
   connectSteam,
@@ -10,15 +10,26 @@ import {
   fetchMe,
   patchChat,
   patchSettings,
+  setAccountPublishes,
   syncXbox,
+  type GameRef,
   type MeResponse,
 } from "./api";
 import { Club } from "./screens/club";
-import { Admin } from "./screens/admin";
-import { GameOpenProvider } from "./components/game";
+// Straight from its own file, not the ./components/game barrel — that barrel
+// also re-exports TitleSheet (and its game.css), which GameOpenProvider now
+// loads lazily; importing it through the barrel would pull TitleSheet back
+// into this eager chunk regardless.
+import { GameOpenProvider } from "./components/game/game-open-provider/GameOpenProvider";
+import "./components/game/game.css";
 import { t, type Locale } from "./i18n";
-import { ConnectForm, Settings, type PlatNotes } from "./screens/me";
+import type { PlatNotes } from "./screens/me";
 import { AppSkel, Icon, usePullToRefresh } from "./components/shared/lib";
+
+// Off Home's own critical path — loaded on first visit to each, not upfront.
+const Admin = lazy(() => import("./screens/admin").then((m) => ({ default: m.Admin })));
+const Settings = lazy(() => import("./screens/me").then((m) => ({ default: m.Settings })));
+const ConnectForm = lazy(() => import("./screens/me").then((m) => ({ default: m.ConnectForm })));
 import {
   ADMIN_SCREENS,
   asLaunchTab,
@@ -44,26 +55,64 @@ function localeOf(me: MeResponse): Locale {
   return me.settings.locale === "en" ? "en" : "ru";
 }
 
+/** The reverse of `bot/services/mini_app.py::_encode_game` — base64url,
+ * padding restored, back to "platform:titleId". `null` on anything that
+ * doesn't actually decode, rather than a page that opens on garbage. */
+function decodeGameToken(token: string): string | null {
+  try {
+    const padded = token + "=".repeat((4 - (token.length % 4)) % 4);
+    const std = padded.replace(/-/g, "+").replace(/_/g, "/");
+    return atob(std);
+  } catch {
+    return null;
+  }
+}
+
 function launchContext(): {
   chatId: number | null;
   personId: number | null;
   tab: LaunchTab;
+  game: GameRef | null;
 } {
   const q = new URLSearchParams(window.location.search);
   const start = window.Telegram?.WebApp?.initDataUnsafe?.start_param ?? "";
   let chatId = q.get("c");
   let personId = q.get("u");
   let tab = q.get("t");
-  const parsed = /^c(-?\d+)(?:u(\d+))?(?:t([a-z]+))?$/.exec(start);
+  // From the query string (a DM's own https URL): plain "platform:titleId",
+  // already percent-decoded by URLSearchParams.
+  let game = q.get("g");
+  // From a group's startapp value: base64url of the same string — Telegram's
+  // start_parameter only allows [A-Za-z0-9_-], which a literal ':' falls
+  // outside of (found live, 2026-09-30 review of #145: every group deep
+  // link to a game was silently broken). See bot/services/mini_app.py's
+  // `_encode_game`, which this must stay in sync with.
+  const parsed = /^c(-?\d+)(?:u(\d+))?(?:t([a-z]+))?(?:g([A-Za-z0-9_-]+))?$/.exec(start);
   if (parsed) {
     chatId ??= parsed[1];
     personId ??= parsed[2] ?? null;
     tab ??= parsed[3] ?? null;
+    game ??= parsed[4] ? decodeGameToken(parsed[4]) : null;
   }
+  // Split on the first ":" only — a title_id is never expected to hold one,
+  // but nothing stops it from someday.
+  const colon = game?.indexOf(":") ?? -1;
+  const personNum = personId ? Number(personId) : null;
   return {
     chatId: chatId ? Number(chatId) : null,
-    personId: personId ? Number(personId) : null,
+    personId: personNum,
     tab: asLaunchTab(tab),
+    // Whose progress the game page opens on: the achievement's own owner,
+    // not necessarily whoever tapped the link — the name is filled in once
+    // the game page's own fetch resolves who that is (see TitleSheet).
+    game:
+      game && colon > 0 && colon < game.length - 1
+        ? {
+            platform: game.slice(0, colon),
+            title_id: game.slice(colon + 1),
+            person: personNum ? { tg_id: personNum, name: "" } : null,
+          }
+        : null,
   };
 }
 
@@ -215,6 +264,7 @@ export function App() {
       locale={locale}
       showSecrets={me.settings.show_secrets}
       meId={me.tg_id}
+      initialGame={launch.game}
     >
     <div
       className={[
@@ -229,7 +279,10 @@ export function App() {
       {busy && <div className="busy-bar" />}
       {flash && <p className="flash">{flash}</p>}
 
-      {isClubPane && (
+      {/* Kept mounted (just hidden) off the club pane, not unmounted:
+          leaving it and coming back — e.g. through Settings — used to reset
+          every pane's month and refetch from scratch. */}
+      <div style={isClubPane ? undefined : { display: "none" }}>
         <Club
           me={me}
           locale={locale}
@@ -252,9 +305,10 @@ export function App() {
           onPersonVisible={setPersonOpen}
           onSettings={() => setScreen(SCREENS.settings)}
         />
-      )}
+      </div>
 
       {isSettings && (
+        <Suspense fallback={null}>
         <Settings
           me={me}
           locale={locale}
@@ -300,10 +354,10 @@ export function App() {
               await disconnectSteam(data);
             })
           }
-          onDisconnectPsn={() =>
+          onDisconnectPsn={(accountId) =>
             void runPlat("psn", async () => {
               if (!window.confirm(t(locale, "confirmDisconnect"))) return;
-              await disconnectPsn(data);
+              await disconnectPsn(data, accountId);
             })
           }
           onSync={() =>
@@ -311,13 +365,20 @@ export function App() {
               await syncXbox(data);
             })
           }
+          onTogglePublish={(platform, publishes, accountId) =>
+            void runPlat(platform, async () => {
+              await setAccountPublishes(data, platform, publishes, accountId);
+            })
+          }
           onDeleteAccount={async () => {
             await deleteAccount(data);
           }}
         />
+        </Suspense>
       )}
 
       {isAdmin && (
+        <Suspense fallback={null}>
         <Admin
           locale={locale}
           data={data}
@@ -325,9 +386,11 @@ export function App() {
           onFlash={setFlash}
           onBack={() => setScreen(SCREENS.settings)}
         />
+        </Suspense>
       )}
 
       {isConnectSteam && (
+        <Suspense fallback={null}>
         <ConnectForm
           locale={locale}
           platform="steam"
@@ -343,9 +406,11 @@ export function App() {
             setScreen(SCREENS.settings);
           }}
         />
+        </Suspense>
       )}
 
       {isConnectPsn && (
+        <Suspense fallback={null}>
         <ConnectForm
           locale={locale}
           platform="psn"
@@ -361,6 +426,7 @@ export function App() {
             setScreen(SCREENS.settings);
           }}
         />
+        </Suspense>
       )}
 
       {!isConnectScreen && (

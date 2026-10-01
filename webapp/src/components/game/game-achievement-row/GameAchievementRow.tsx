@@ -9,7 +9,6 @@ export function GameAchievementRow({
   isRevealed,
   locale,
   onToggleReveal,
-  onSelect,
   compare,
   fallbackIcon,
 }: {
@@ -17,7 +16,6 @@ export function GameAchievementRow({
   isRevealed: boolean;
   locale: Locale;
   onToggleReveal: (id: string) => void;
-  onSelect: (row: GameAchievement) => void;
   /** Shown when the achievement has no picture of its own (most catalog rows do not). */
   fallbackIcon?: string | null;
   /** Both people's state on this achievement (the compare view). */
@@ -39,9 +37,15 @@ export function GameAchievementRow({
 
   const rarity = row.rarity_percent != null ? `${row.rarity_percent}%` : null;
 
+  // A secret still needs a tap to reveal it; an unlocked or ordinary locked
+  // row already shows everything it has (name, description, marks) right
+  // there in the list, so it isn't a button to anything — a tap that opened
+  // a sheet with the same text again was a step, not a shortcut.
+  const Row = isSecret ? "button" : "div";
+
   return (
-    <button
-      type="button"
+    <Row
+      type={isSecret ? "button" : undefined}
       className={[
         "feed-row",
         "has-wrap",
@@ -50,13 +54,7 @@ export function GameAchievementRow({
       ]
         .filter(Boolean)
         .join(" ")}
-      onClick={() => {
-        if (isSecret) {
-          onToggleReveal(row.achievement_id);
-        } else {
-          onSelect(row);
-        }
-      }}
+      onClick={isSecret ? () => onToggleReveal(row.achievement_id) : undefined}
     >
       <CoverImg
         src={row.icon_url || fallbackIcon}
@@ -100,6 +98,6 @@ export function GameAchievementRow({
           )
         )}
       </span>
-    </button>
+    </Row>
   );
 }

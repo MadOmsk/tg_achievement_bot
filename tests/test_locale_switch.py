@@ -67,14 +67,14 @@ def test_language_names_are_endonyms() -> None:
 async def test_the_panel_offers_a_language_button(i18n: I18nContext) -> None:
     markup = panel_keyboard(180, i18n)
     labels = [button.text for row in markup.inline_keyboard for button in row]
-    assert any(label.startswith("Язык: Русский") for label in labels)
+    assert any(label.startswith("🌐 Язык: Русский") for label in labels)
 
 
 async def test_the_panel_keyboard_is_english_for_an_english_context() -> None:
     english = await build_i18n_context("en")
     markup = panel_keyboard(180, english)
     labels = [button.text for row in markup.inline_keyboard for button in row]
-    assert any(label.startswith("Language: English") for label in labels)
+    assert any(label.startswith("🌐 Language: English") for label in labels)
 
 
 async def test_the_panel_toggle_flips_the_persons_own_locale(repo: Repo, i18n: I18nContext) -> None:

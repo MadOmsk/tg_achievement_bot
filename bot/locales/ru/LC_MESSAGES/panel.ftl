@@ -2,15 +2,14 @@
 # Connection status and sync
 panel-login-active = ✅ активен
 panel-login-invalid = ⚠️ требуется повторный вход
-panel-login-revoked = — отключён
+panel-login-revoked = 🔘 отключён
 # Distinct from panel-login-revoked above (2026-09-09): "отключён" implies a
 # token existed and was deliberately disconnected, "не подключён" is for a
 # person who never linked Xbox at all — same distinction Steam/PSN's own
 # login rows already draw via visibility_status_text's "не проверено".
-panel-login-not-connected = — не подключён
+panel-login-not-connected = 🔘 не подключён
 panel-group-hint = Настройки — в личке.
 panel-refreshed = Обновил
-panel-xbox-not-connected = Сначала подключи XBOX: /connect_xbox
 # panel_chat_subscribe's own message (2026-09-09) — publishing needs any
 # one platform connected, not Xbox specifically; panel-xbox-not-connected
 # above stays as-is for panel_sync, which really is Xbox-only.
@@ -33,6 +32,7 @@ panel-disconnect-prompt =
 panel-links-hidden-toast = Скрыл
 panel-links-shown-toast = Показываю
 panel-timezone-prompt = 🕐 Часовой пояс — по нему считаются «сегодня» и «за месяц».
+panel-timezone-toast = Часовой пояс: { $offset }
 panel-my-chats-title = 💬 Мои чаты
 panel-my-chats-empty =
 
@@ -41,18 +41,10 @@ panel-back = ‹ Назад
 panel-chat-card-title = 💬 { $title }
 panel-publication-enabled = Публикация: ✅ включена
 panel-publication-disabled = Публикация: ⏸ выключена
-panel-achievements-mode = Ачивки: { $mode }
-panel-digest-row = Сводка: { $threshold } ▸
 panel-unsubscribe = Отписаться
 panel-subscribe = Подписаться
 panel-remove-from-list = Удалить из списка
 panel-back-to-chat-list = ‹ К списку чатов
-panel-digest-menu =
-    Сводка вместо отдельных сообщений
-
-    Если за один раз в одной игре выбито столько достижений или больше — в этот чат уйдёт одно сводное сообщение.
-panel-digest-set-never-toast = Никогда
-panel-digest-set-from-toast = От { $value }
 panel-subscribed-toast = Подписал
 panel-unsub-prompt = Перестать публиковать твои достижения в «{ $title }»?
 panel-unsub-yes = Да, отписаться
@@ -75,13 +67,11 @@ panel-header-not-connected = 👤 Панель
 # (services/achievements.py::platform_header_lines, #5) rather than a
 # second, hand-duplicated copy of it.
 panel-header-identity = 👤 { $name }
-panel-login-xbox-row = Вход XBOX:   { $status }
+panel-login-row = Вход { $platform }: { $status }
 # No "-connected" suffix (2026-09-09) — these render the same regardless of
 # whether Xbox happens to be connected; the old plain (non-suffixed) keys
 # only ever existed for the Xbox-gated early-return branch that used them,
 # now removed, so this name freed up.
-panel-login-steam-row = Вход Steam:  { $name }  ·  { $status }
-panel-login-psn-row = Вход PSN:    { $name }  ·  { $status }
 # Steam/PSN's achievement/trophy visibility, as of the last actual check
 # (#5) — connect time, or any backfill/resync since. Xbox has no
 # equivalent row here: its own token status (panel-login-xbox-row above)
@@ -89,17 +79,40 @@ panel-login-psn-row = Вход PSN:    { $name }  ·  { $status }
 panel-visibility-visible = ✅ ачивки видны
 panel-visibility-hidden = ⚠️ ачивки скрыты
 panel-visibility-unknown = ❓ не проверено
-panel-publication-row = Публикация:  { $status }
-panel-now-playing-row = Сейчас:      { $playing }
-panel-timezone-row = Часовой пояс: { $offset }
+panel-publication-row = Публикация: { $status }
+panel-now-playing-row = Сейчас: { $playing }
 panel-reconnect-hint = Доступ к XBOX истёк — жми «Подключить заново» ниже.
 panel-no-presence-data = нет данных
 panel-offline = не в сети ({ $ago })
 panel-online-idle = в сети, не играет
 panel-playing = играет — { $game }
 panel-excluded = 🚫 исключён администратором
-panel-not-subscribed-anywhere = — не подписан ни в одном чате
+panel-not-subscribed-anywhere = 🔘 не подписан ни в одном чате
 panel-subscribed-in = ✅ в { $chats }
+panel-publishing-without = {" "}· без { $platforms }
+panel-publishes-on-toast = Публикую ачивки этого аккаунта
+panel-publishes-off-toast = Ачивки этого аккаунта больше не публикуются
+
+# A platform's own screen behind its /panel button (#10).
+panel-account-title = { $icon } <b>{ $platform }</b>
+panel-account-login = Вход: { $status }
+panel-account-publication = Публикация: { $state }
+panel-account-publishes-on = 🔔 включена
+panel-account-publishes-off = 🔇 выключена
+panel-psn-title = { $icon } <b>PSN</b> · { $count ->
+    [one] { $count } аккаунт
+    [few] { $count } аккаунта
+   *[other] { $count } аккаунтов
+} из { $max }
+panel-psn-account-state = {"    "}{ $login } · { $state }
+panel-psn-summed = Трофеи всех аккаунтов складываются в статистике и сводках.
+kb-account-profile = 👤 Профиль { $platform }: { $name }
+kb-account-psn = 👤 PSN: { $name }
+kb-account-publication-on = 🔔 Публикация: включена
+kb-account-publication-off = 🔇 Публикация: выключена
+kb-account-unlink = 🔌 Отвязать { $platform }
+kb-account-relink = 🔁 Привязать другой аккаунт
+kb-psn-add = ➕ Привязать ещё аккаунт PSN
 
 panel-delete-account = 🗑 Удалить аккаунт
 panel-delete-confirm-1 =
@@ -113,3 +126,6 @@ panel-delete-confirm-2-yes = 🔥 Точно удалить аккаунт
 panel-delete-done = Ваш аккаунт и связанные данные успешно удалены. Если захотите вернуться, просто отправьте /start.
 panel-delete-toast = Аккаунт удалён
 panel-delete-not-found = Аккаунт уже удалён.
+panel-rarity-toast-all = Публикую все ачивки
+panel-rarity-toast-rare = Только редкие — по порогу редкости каждого чата
+panel-rarity-toast-hidden = Ничего не публикую

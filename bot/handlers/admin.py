@@ -27,8 +27,8 @@ from bot.constants import (
     Platform,
     account_platform_of,
 )
-from bot.db.repo import AchievementRow, Repo
-from bot.i18n import gettext, translator
+from bot.db.repo import PlatformLink, Repo
+from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.service_health import (
@@ -40,8 +40,6 @@ from bot.services.admin_settings import (
     CHAT_SCOPED_KEYS,
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
-    DEFAULT_SHOW_LINKS_DEFAULT,
-    DEFAULT_SHOW_LINKS_KEY,
     FLOOD_LIMIT_DEFAULT,
     FLOOD_LIMIT_MAX,
     FLOOD_LIMIT_MIN,
@@ -50,9 +48,10 @@ from bot.services.admin_settings import (
     NUMERIC_SETTINGS,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
+    SHOW_LINKS_DEFAULT,
+    SHOW_LINKS_KEY,
 )
 from bot.services.message_log import stats_category
-from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import link_nickname, person_name, xbox_nickname
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import (
@@ -96,11 +95,11 @@ from bot.views.admin import (
 )
 from bot.views.admin_home import render_admin_home
 from bot.views.keyboards import (
+    DIGEST_CHOICES,
     format_offset,
     next_locale,
     next_rarity_mode,
 )
-from bot.views.notification import format_digest, format_single
 from bot.views.promo import promo_keyboard, promo_text
 
 log = logging.getLogger(__name__)
@@ -410,13 +409,12 @@ async def default_rarity_cycle(callback: CallbackQuery, repo: Repo, i18n: I18nCo
     await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
 
 
-@router.callback_query(F.data == "a:defaultlinks")
-async def default_show_links_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    current = await repo.get_int_setting(DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT))
-    await repo.set_app_setting(
-        DEFAULT_SHOW_LINKS_KEY, "0" if current else "1", callback.from_user.id
-    )
-    await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
+@router.callback_query(F.data == "a:showlinks")
+async def show_links_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """Profile links on cards, for everybody (owner, 2026-09-29)."""
+    current = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
+    await repo.set_app_setting(SHOW_LINKS_KEY, "0" if current else "1", callback.from_user.id)
+    await _redraw(callback, *(await render_limits(repo, locale=i18n.locale)).as_pair())
 
 
 # ------------------------------------------------------ free-text numeric settings
@@ -815,8 +813,26 @@ _SYNC_NOT_CONNECTED_KEY = {
 }
 
 
+async def _account_link(
+    repo: Repo, platform: str, tg_id: int, account_id: str | None
+) -> PlatformLink | None:
+    """The Steam/PSN link a button is about: the one named by `account_id`
+    (a PSN account among several, #10), else the person's only one."""
+    platform_value = Platform.STEAM if platform == "steam" else Platform.PSN
+    if account_id is None:
+        return await repo.get_platform_link(tg_id, platform_value)
+    links = await repo.platform_links_for(tg_id, platform_value)
+    return next((link for link in links if link.external_id == account_id), None)
+
+
+def _parse_account(data: str) -> tuple[str, int, str | None]:
+    """`a:<action>:<platform>:<tg_id>[:<account_id>]` → its three values."""
+    parts = data.split(":")
+    return parts[2], int(parts[3]), parts[4] if len(parts) > 4 else None
+
+
 async def _sync_target(
-    repo: Repo, platform: str, tg_id: int, *, locale: str
+    repo: Repo, platform: str, tg_id: int, *, locale: str, account_id: str | None = None
 ) -> tuple[str, str] | None:
     """(external_id, display_name) for user_refresh below, or None if this
     platform isn't connected for this person — Xbox resolves through
@@ -828,9 +844,7 @@ async def _sync_target(
         if user is None or not user.xuid:
             return None
         return user.xuid, user.gamertag or _("admin-default-player")
-    link = await repo.get_platform_link(
-        tg_id, Platform.STEAM if platform == "steam" else Platform.PSN
-    )
+    link = await _account_link(repo, platform, tg_id, account_id)
     if link is None:
         return None
     return link.external_id, link_nickname(link)
@@ -857,10 +871,9 @@ async def user_refresh(
     # two lines up — to the string "a", so the next `_("key")` raised
     # TypeError and this button had never once worked (found 2026-09-13 by
     # capturing the real screens; the same slip killed "🗑 Сброс" below).
-    _prefix, _action, platform, tg_id_s = callback.data.split(":")
-    tg_id = int(tg_id_s)
+    platform, tg_id, account_id = _parse_account(callback.data)
 
-    target = await _sync_target(repo, platform, tg_id, locale=i18n.locale)
+    target = await _sync_target(repo, platform, tg_id, locale=i18n.locale, account_id=account_id)
     if target is None:
         await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
         return
@@ -954,6 +967,29 @@ async def chats_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> 
 async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
+    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
+
+
+@router.callback_query(F.data.startswith("a:mdig:"))
+async def chat_digest_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.rsplit(":", 1)[1])
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="digest")
+    )
+
+
+@router.callback_query(F.data.startswith("a:cdig:"))
+async def chat_digest_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """The chat's digest size (#126)."""
+    assert callback.data is not None
+    chat_id_raw, value_raw = callback.data.split(":")[2:]
+    chat_id, value = int(chat_id_raw), int(value_raw)
+    if value not in DIGEST_CHOICES:
+        await callback.answer()
+        return
+    await repo.update_chat_settings(chat_id, digest_threshold=value)
+    await callback.answer()
     await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
 
 
@@ -1177,13 +1213,24 @@ async def chat_system_wipe_all_confirm(
 
 
 @router.callback_query(F.data.startswith("a:reset:"))
-async def reset_platform_confirm(callback: CallbackQuery, i18n: I18nContext) -> None:
+async def reset_platform_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """ "Сброс базы" is destructive and not undoable (user request 2026-09-08)
     — same one-tap-confirm shape as /disconnect_steam's own prompt, not an
     instant action behind a single tap."""
     assert callback.data is not None
-    _prefix, _action, platform, tg_id_s = callback.data.split(":")  # not `_`, see user_refresh
-    await _redraw(callback, *render_reset_confirm(platform, tg_id_s, locale=i18n.locale).as_pair())
+    platform, tg_id, account_id = _parse_account(callback.data)
+    account_name = None
+    if account_id is not None:
+        link = await _account_link(repo, platform, tg_id, account_id)
+        account_name = link_nickname(link) if link else account_id
+    screen = render_reset_confirm(
+        platform,
+        str(tg_id),
+        locale=i18n.locale,
+        account_id=account_id,
+        account_name=account_name,
+    )
+    await _redraw(callback, *screen.as_pair())
 
 
 @router.callback_query(F.data.startswith("a:resetok:"))
@@ -1199,8 +1246,7 @@ async def reset_platform_confirmed(
     assert callback.data is not None
     # Four parts here too, and `_` stays the translator (see user_refresh):
     # this one unpacked four into three and raised ValueError instead.
-    _prefix, _action, platform, tg_id_s = callback.data.split(":")
-    tg_id = int(tg_id_s)
+    platform, tg_id, account_id = _parse_account(callback.data)
     await callback.answer(_("admin-refreshing"))
 
     try:
@@ -1210,7 +1256,7 @@ async def reset_platform_confirmed(
             await repo.reset_xbox_data(tg_id, user.xuid)
             await fetcher.backfill(tg_id, user.xuid)
         elif platform == "steam":
-            link = await repo.get_platform_link(tg_id, Platform.STEAM)
+            link = await _account_link(repo, platform, tg_id, account_id)
             assert link is not None
             # The account's own id, not the person's: since #52 the history
             # belongs to the account, and this call used to be handed `tg_id`,
@@ -1219,7 +1265,7 @@ async def reset_platform_confirmed(
             await repo.reset_steam_data(link.external_id)
             await steam_fetcher.backfill(tg_id, link.external_id)
         else:
-            link = await repo.get_platform_link(tg_id, Platform.PSN)
+            link = await _account_link(repo, platform, tg_id, account_id)
             assert link is not None
             await repo.reset_psn_data(tg_id, link.external_id)
             await psn_fetcher.backfill(tg_id, link.external_id)
@@ -1333,113 +1379,3 @@ async def _redraw(callback: CallbackQuery, text: str, markup: InlineKeyboardMark
             # Telegram refuses an edit that changes nothing — harmless.
             pass
     await callback.answer()
-
-
-async def _send_test_notifications_to_admin(
-    bot: Bot,
-    admin_id: int,
-    locale: str,
-    settings: Settings,
-) -> None:
-    """Send test achievement notification, test digest, and test promo message to admin in DM."""
-    me = await bot.me()
-    bot_username = (me.username or "").lstrip("@")
-
-    # 1. Sample single achievement notification
-    sample_item = AchievementRow(
-        platform=Platform.XBOX_MODERN,
-        title_id="test_game_1",
-        achievement_id="test_ach_1",
-        name="Master of the Universe",
-        description="Complete all challenges on Heroic difficulty.",
-        gamerscore=50,
-        rarity_percent=4.2,
-        icon_url="https://images-eds-ssl.xboxlive.com/image?url=27S1DHqE.cHkmFg4nspsd20onq.a6RlSrPILfpIfgG69B6hv5oeObwDwTlW9DupHdRgbFrKl5Sc.TjixYquVchOcOmI_rTy9ypV5EspEr2cKX4NCAPgRf0qys0L0kJccFLpG92BAO_pXyKPkAGEY.QCBnhqZIkuW5fUb5izjBb4-",
-        is_secret=False,
-        unlocked_at=utcnow().isoformat(),
-        title_name="Halo Infinite",
-    )
-    single_text = format_single("PlayerOne", sample_item, "Halo Infinite", locale=locale)
-    btn_text = gettext("chat", "chat-open-mini-app", locale=locale)
-    single_markup = mini_app_open_markup(
-        btn_text,
-        https_url=settings.mini_app_url or "",
-        bot_username=bot_username,
-        chat_id=admin_id,
-        in_group=False,
-    )
-    try:
-        await bot.send_photo(
-            admin_id,
-            photo=sample_item.icon_url,
-            caption=single_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=single_markup,
-        )
-    except Exception:
-        await bot.send_message(
-            admin_id,
-            single_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=single_markup,
-        )
-
-    # 2. Sample digest notification
-    sample_digest_items = [
-        sample_item,
-        AchievementRow(
-            platform=Platform.XBOX_MODERN,
-            title_id="test_game_1",
-            achievement_id="test_ach_2",
-            name="Brothers in Arms",
-            description="Win a co-op match.",
-            gamerscore=25,
-            rarity_percent=12.5,
-            icon_url="https://images.unsplash.com/photo-1612287233207-6f8b960b77b7?w=500",
-            is_secret=False,
-            unlocked_at=utcnow().isoformat(),
-            title_name="Halo Infinite",
-        ),
-    ]
-    digest_text = format_digest("PlayerOne", "Halo Infinite", sample_digest_items, locale=locale)
-    digest_markup = mini_app_open_markup(
-        btn_text,
-        https_url=settings.mini_app_url or "",
-        bot_username=bot_username,
-        chat_id=admin_id,
-        in_group=False,
-    )
-    await bot.send_message(
-        admin_id,
-        digest_text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=digest_markup,
-    )
-
-    # 3. Pinned promo message
-    p_markup = promo_keyboard(
-        bot_username,
-        admin_id,
-        mini_app_url=settings.mini_app_url or "",
-        is_group=False,
-        locale=locale,
-    )
-    await bot.send_message(
-        admin_id,
-        promo_text(locale=locale),
-        parse_mode=ParseMode.HTML,
-        reply_markup=p_markup,
-    )
-
-
-@router.message(Command("test_notify"), F.chat.type == ChatType.PRIVATE)
-async def test_notify_command(
-    message: Message,
-    bot: Bot,
-    i18n: I18nContext,
-    settings: Settings,
-) -> None:
-    if not message.from_user:
-        return
-    await _send_test_notifications_to_admin(bot, message.from_user.id, i18n.locale, settings)
-    await message.answer(translator("admin", i18n.locale)("admin-test-notify-sent"))

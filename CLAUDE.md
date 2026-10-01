@@ -40,8 +40,9 @@ admin controls, and predictable behavior, not public SaaS scale.
   process only answers `/api/mini/*` next to `/auth/callback`). Slash commands and
   chat notifications stay — the Mini App is an extra door, not a replacement.
 - No `/compare` or `/top` (see the appendix).
-- No per-platform visibility toggles: one `rarity_mode` per person per chat, for
-  every platform (see the appendix).
+- One `rarity_mode` per person, for every platform and every chat — not one per
+  platform (see the appendix). What a person *can* switch off is a whole account's
+  posts (#20).
 - No live platform API calls from normal read-only commands or panels.
 - No multi-tenant hosting model.
 
@@ -267,7 +268,9 @@ every column. History: #106.
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
   generations). `account_links (tg_id, platform, external_id, is_active, linked_at,
-  unlinked_at)` says who holds it now and who held it before.
+  unlinked_at, publishes)` says who holds it now and who held it before, and whether
+  the holder announces its achievements (#20: the person's own switch per account; a
+  muted account still counts in stats, summaries and `/online`).
 - **Unlinking never deletes**: the link is deactivated, the account and its history
   stay, and relinking finds them. `idx_links_one_active_per_platform` allows one
   account per platform per person — **dropping it is all multi-account support
@@ -277,10 +280,19 @@ every column. History: #106.
 - `accounts.achievements_visible` (#5) is the last *checked* answer to "can the
   shared credential see this account's achievements": `NULL` until checked, set at
   connect and by every backfill/resync, never read live from a UI path.
-- **Reset cooldowns** (`platform_cooldowns`, migration 054): one free re-link after a
-  full reset; further resets inside `account_reset_cooldown_hours` block re-linking.
-  Tracked by `(tg_id, platform)` and `(platform, external_id)`, so switching
-  Telegram accounts does not dodge it. A super-admin's reset clears it.
+- **Reset cooldowns** (`platform_cooldowns`, migration 054; per account
+  `platform_cooldown_accounts`, 067; PSN allowance, 068), inside
+  `account_reset_cooldown_hours`. Two sides, both checked on every re-link:
+  - **the account's own count** — every account, each PSN account on its own,
+    whoever deleted it, so switching Telegram accounts does not dodge it: one free
+    re-link, a second reset blocks it;
+  - **the person's count on the platform** (the Telegram-account ban): one deletion
+    counts once. Xbox and Steam: one free re-link, a second deletion blocks. PSN
+    counts re-links instead: **as many free as PSN accounts were held at the
+    deletion** (owner, 2026-09-30), one more inside the window is blocked, and a
+    second deletion adds none.
+
+  A super-admin's reset clears both.
 
 ### Achievements and publications
 
@@ -323,13 +335,15 @@ every column. History: #106.
 
 ### Chats and settings
 
-- `chats` + `subscriptions` (who publishes where; `rarity_mode` and
-  `digest_threshold` are per person *per chat*). `chat_settings`: rarity threshold,
-  summary time, timezone, muted games, minimum gamerscore, daily-summary switch,
-  anti-flood `flood_limit`/`flood_window_minutes`, `locale`. `user_settings`:
-  timezone, muted games, `show_profile_links` (off by default; new users start from
-  `app_settings['default_show_profile_links']`), `show_secrets` (Mini App only),
-  `locale`.
+- `chats` + `subscriptions` (who publishes where — nothing else: #126 moved the
+  per-subscription settings out). `chat_settings`: rarity threshold, **digest size**
+  (`digest_threshold`, 99 = never), summary time, timezone, muted games, minimum
+  gamerscore, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
+  `locale`. `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
+  new people start from `app_settings['default_rarity_mode']`), timezone, muted games,
+  `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
+  profile links are one admin switch, `app_settings['show_profile_links']`, on by
+  default — owner, 2026-09-29.) Somebody in many chats used to set the mode in each (#126).
 - **Anti-flood state**: `notification_throttle (tg_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
@@ -374,7 +388,16 @@ every column. History: #106.
     untranslated, `description_ru` NULL, re-offered to the translator), NULL (never
     through the translator yet: rendered as it is, and still queued). Only
     `services/translate/descriptions.py::bilingual_descriptions` sets it, and a
-    catalog refresh never overwrites a description that has one.
+    catalog refresh never overwrites a description that has one. **A Russian side
+    is trusted only when `description_source` is set** (#127): a platform with no
+    Russian answers the Russian request with its English, and a catalog refresh
+    that stored it under `description_ru` once made every poll skip the
+    translator. **Russian means Cyrillic** (`util.looks_russian`, owner): text with
+    Cyrillic, or with no letters at all ("100%"). Anything else — the English off by
+    a period, "<Translated text>", another language — goes to the translator; the
+    old test, "differs from the English", let all of those through as native.
+    `poller/description_backfill.py` translates Steam/PSN rows from the English
+    already stored, without a platform request.
   - **Names**: the platform's own two strings, **never translated**, from the same
     two locale requests. Each platform's main call fixes one language (Xbox/PSN
     English, Steam Russian), which is why both are kept.
@@ -433,6 +456,13 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   `startup_catch_up` bounds each account at 120s (`STARTUP_CATCH_UP_DEADLINE_SECONDS`)
   so one slow account cannot hold up the rest. Errors format with `{exc!r}`: a
   connection-level httpx error often stringifies to nothing.
+- **Xbox 360 history comes from the achievements service's own lists** (#91, #92):
+  contract 1 `/achievements` with no titleId gives every 360 unlock page by page, and
+  `/history/titles` every 360 game with its name and total. Titlehub forgets games not
+  played for a while; these do not. Backfill uses them (game by game through titlehub
+  only if refused), and linked accounts are topped up once at startup
+  (`Fetcher.fill_x360_gaps_once`, marked in `app_settings`). A forgotten game's total
+  on `titles.achievements_total` is what lets a finished one count as 🌀.
 - **Descriptions.** The contract-2 backfill brings the whole library in one request
   but in no language, so `poller/description_backfill.py` fills the bilingual cache
   a few titles per tick — a poller rather than a script because of the one-process
@@ -468,6 +498,13 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   any more. A table, because nothing else can know.
 - **Descriptions**: `GetPlayerAchievements` is fetched with `l=english` beside
   `l=russian` only when some achievement in the batch is not cached yet.
+- **A secret achievement's description comes from the profile page** (#132): no
+  Web API call gives it, even once earned. `steam/client.py::community_descriptions`
+  reads `/profiles/<id>/stats/<appid>/achievements/` (the `?xml=1` form is gone),
+  matched to ids by icon file name, the language set by the `Steam_Language`
+  cookie (`?l=` is lost in the redirect to a vanity URL). Asked at poll time for an
+  earned one with no text, and by `poller/description_backfill.py` for history, a
+  game a tick. Best effort: a private page leaves it empty, as before.
 - **Exit poll is delayed 180s** (`STEAM_DELAYED_EXIT_POLL_SECONDS`, #89): `GetPlayerAchievements` sits behind a CDN
   cache for 2–5 minutes and Steam Cloud syncs on exit, so an immediate poll misses
   the session's last achievements. Relaunching the game inside that window cancels
@@ -484,6 +521,10 @@ for this; psnawp uses the private one the PlayStation App uses.
   weaken the design without re-verifying it.
 - **Verify an NPSSO with a real call (`check_alive()`) before saving it** — psnawp's
   token exchange is lazy.
+- **Pacing is psnawp's own limiter, one request every 2 s per client**
+  (`client.py::REQUEST_RATE`, owner, 2026-10-01; the library's default is 3 s).
+  Its bucket file is per process and per instance, so prod, the test server and
+  the dev bot never share one; a game's backfill costs ~5 requests.
 - **Shared-credential health** (all three credentials, `services/credential_health.py`,
   #62): the admin is notified once per alive → dead transition, and once on recovery.
   A death needs `FAILURES_BEFORE_DEAD` consecutive failures, re-checked on the next
@@ -574,15 +615,17 @@ History: #108.
 History: #108.
 
 An achievement is published to a chat only if every check passes: the person is
-subscribed there; not admin-excluded; `rarity_mode` isn't `hidden`; in `rare` mode a
+subscribed there; not admin-excluded; the account's posting switch is on (#20); the
+person's `rarity_mode` isn't `hidden`; in
+`rare` mode a
 known rarity is at or below the chat's threshold (a platform with no rarity at all —
 Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
 isn't muted there; it wasn't already published there.
 
 - **The threshold is always `chat_settings.rare_threshold_percent`**, set per chat by
   an admin. Never hardcode a percentage; a person picks only a mode.
-- **Digests**: at `subscriptions.digest_threshold` items a batch becomes one grouped
-  message, grouped by platform and title. Every item is listed, never "и ещё N". The
+- **Digests**: at the chat's `digest_threshold` items (set by an admin, #126) a batch
+  becomes one grouped message, grouped by platform and title. Every item is listed, never "и ещё N". The
   gallery dedupes by image URL.
 - **Nothing may fail for being too long** (#68): `services/message_limits.py` is a
   request middleware that cuts any outgoing text to Telegram's limit (4096 message,
@@ -648,6 +691,11 @@ keyboard.
 - **`/start` greets and offers all three platforms**; anyone with *any* platform
   linked gets the panel instead (#53). Disconnecting is one tap-to-confirm, never a
   typed word.
+- **A step of the account flow never ends in a command to type** (owner,
+  2026-09-30): connect, unlink, relogin, the Steam link prompt and the timezone
+  picker edit the message they were opened from and end in buttons — "‹ Назад" /
+  "‹ В панель" back, "⚙️ Панель" or the next step on. Only what arrives later (a
+  backfill's live status, `handlers/backfill.py`) is a message of its own.
 - **Timezones**: the eight offsets this community lives in, "Другой ▸" for the full
   −12…+14 grid, "✏️ Ввести вручную" for one typed offset (`+3`, `+5:30`). Offsets,
   never zone names.
@@ -655,14 +703,23 @@ keyboard.
   progress), and it says reconnecting will not replay history into chats.
 - **`/panel`** is one self-editing message. Header: the person's identity and one line
   per connected platform, built by the same `platform_header_lines` as `/stats` (#5)
-  with links off. Body: login state per platform (Xbox token; Steam/PSN visibility as
-  last checked), where achievements publish, presence as **one row**
-  (`presence_view.pick_presence`, the same rule `/online` uses — names the platform
-  only while online), timezone. Keyboard: one row per platform in the display order
-  — `[Profile, Disconnect]` or one wide "🎮 Подключить X" (#33) — then timezone, My
-  chats, sync, `show_profile_links`, language (#48, DMs only), per-chat subscription
-  cards. Nothing on it is Xbox-gated. Own profile links always show (only the owner
-  sees it). It never calls a platform API except the explicit sync button.
+  with links off. Body: one login row per platform, connected or not (`Вход PSN1:`,
+  `PSN2:` for several accounts) with only its status — 🔘 not connected, ✅, ⚠️,
+  ❓ — no nickname and no check time (owner, 2026-09-30); where achievements
+  publish; presence as **one row** (`presence_view.pick_presence`, the same rule
+  `/online` uses — names the platform only while online). The rarity mode and the
+  timezone are on their buttons, not in the text. Keyboard: timezone, My chats
+  (subscribe / unsubscribe per chat — nothing else is per chat), the rarity mode as a
+  carousel ("📣 Публиковать: Все" → Редкие → Никакие, one tap each) for
+  every chat (#126), language (#48, DMs only), then one row per platform in the
+  display order — `[🟢 XBOX ▸, 🔔 posting switch]` (#10), or one wide "🎮 Подключить X"
+  (#33). The platform button opens that platform's screen: profile, the switch,
+  unlink, and for PSN every account (up to three) plus adding one. The panel's switch
+  covers the whole platform ("Частично" when only some PSN accounts post); a Steam or
+  PSN button carries ❗ while its achievements are hidden (any one PSN account); a dead Xbox
+  login puts "🔄 Подключить заново" in its place, and first on the XBOX screen. The
+  publication row names what is switched off. Nothing on it is Xbox-gated. It never
+  calls a platform API except the explicit sync button.
 
 ### Group chat
 
@@ -673,16 +730,18 @@ keyboard.
 - **`/stats`**: cached stats and games; header `👤` + the person (chain 1), each
   platform on its own line. **`/who`** picks a known member and opens their `/stats`;
   its buttons name the person (#40).
-- **Profile links** appear only when the person *the card is about* has
-  `show_profile_links` on — no exception for your own card, because the message is
-  the same whoever asked.
+- **Profile links** on cards follow the admin's one switch (`app_settings
+  ['show_profile_links']`, on by default, /admin → global settings; owner,
+  2026-09-29) — no longer each person's own setting.
 - **`chat_seen`** tracks anyone who wrote in the group; `/online` and `/who` use it,
   not just subscribers.
 - **A capped leaderboard** gets one button that replaces the message with the same
   block uncapped, in a plain blockquote.
 - **Bot replies to commands carry a "Закрыть" button** (`views/keyboards.py::
   with_close_button`); closing `/online` also stops its auto-refresh. Achievement
-  notifications do not get one.
+  notifications do not get one, nor do the day and month reports the bot posts on
+  its schedule (owner, 2026-10-01) — paging one keeps it without
+  (`keep_closability`); the same report asked for by command keeps its button.
 - **`/delete_last`** removes the bot's latest message in the chat whatever it is —
   **except an achievement notification**, single or digest, which it never takes
   (#101; `bot_messages.is_achievement`, set under the publisher's
@@ -703,8 +762,8 @@ keyboard.
   the chat list and per-chat cards; exclusion; bot-message cleanup.
 - **The per-chat card** keeps its settings in three sub-screens — daily summary,
   anti-flood, message cleanup — each redrawing in place with the card's text above.
-  Settings: rarity threshold, summary time, timezone, mutes, minimum gamerscore,
-  summary switch, anti-flood, language (#48).
+  Settings: rarity threshold, digest size (#126), summary time, timezone, mutes,
+  minimum gamerscore, summary switch, anti-flood, language (#48).
 - **The per-user card**: the Telegram identity in full (`tg_id` passed to Fluent as a
   string, never `@N`), then one block per platform in the display order — nickname,
   lifetime count with completions (🌀/👾/💠) and level, today's count, diagnostics.
@@ -932,6 +991,15 @@ History: #112.
   and console exclusives are covered. Read from the page's `__NEXT_DATA__`
   (`profile_summary`, beside `genre`), never from rendered HTML whose class names
   change every deploy.
+- **The same page read also keeps the rest of it** (`hltb_cache.details`, one
+  JSON object, migration 064): rating, developer/publisher, alias, release dates,
+  play modes, co-op/multiplayer hours, each time bucket's median/fastest/slowest,
+  speedrun records. The "Об игре" tab shows a table of genre, release, publisher,
+  developer, modes, score and the average hours; the alias, the spreads and the
+  speedruns are kept in `details` but not shown (owner, 2026-09-29). **HLTB's counts
+  of its own users** (completed, playing, backlog, retired) **are left out on
+  purpose** (owner, 2026-09-29): they describe HLTB's audience, not the game. A
+  row cached before 064 reads the page once more on its next lookup.
 - HLTB is English-only, so the Russian side is always Haiku's
   (`hltb_cache.description_ru`), **lazily** — once per game, the first time someone
   looks it up. No Anthropic key: the English text is shown.
@@ -1007,7 +1075,7 @@ History: #112.
 - **PSN profile links point at PSNProfiles** (#30) — Sony has had no public trophy
   page since 2021. A first visit to an unindexed profile shows "not tracked" and
   indexes it. The bot never checks the link (automated requests get 403).
-- Profile links in `/stats`/`/who` follow the card owner's `show_profile_links`.
+- Profile links in `/stats`/`/who` follow the admin's global switch.
 
 ## Operations
 
@@ -1174,6 +1242,11 @@ History: #112.
   code. `scripts/render_screen.py <screen>` prints it; `--send` puts it in the owner's
   DM, keyboard and all — the only form a layout can be judged in. The preview message
   carries only the rendered screen; caveats and questions go in the chat reply.
+- **Screens that lead into each other are one navigable mockup, not a pile of
+  messages** (owner, 2026-09-25): a single message whose buttons move between the
+  proposed screens (edit in place), with every action a stub that changes nothing
+  real. Before it, one plain text message says that it is a mockup and what it is
+  for, so nobody mistakes it for the working bot.
 
   ```bash
   python scripts/render_screen.py --list
@@ -1231,8 +1304,8 @@ actually invocable (`tests/test_handler_wiring.py`).
   the useful group views; a leaderboard command was not worth the surface.
 - **A visibility toggle per platform** — tried twice, rejected twice: nobody needs a
   different mode per platform. One `rarity_mode` covers all; a platform without rarity
-  (Xbox 360) is exempt from `rare` instead of getting a toggle. (Reconsideration is
-  open as #20.)
+  (Xbox 360) is exempt from `rare` instead of getting a toggle. (#20 settled it differently:
+  a posting on/off switch per *account*, not a rarity mode per platform.)
 - **Global rarity settings for every chat at once** — replaced by a per-chat
   threshold.
 - **Live platform API calls from `/stats`, the summaries, `/online` or the panel** —

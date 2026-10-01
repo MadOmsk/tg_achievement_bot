@@ -139,7 +139,7 @@ class _FakeClient:
 
 
 async def test_build_client_wraps_bad_npsso_as_token_dead(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _boom(npsso: str) -> object:
+    def _boom(npsso: str, **kwargs: object) -> object:
         raise PSNAWPAuthenticationError("bad npsso")
 
     monkeypatch.setattr(psn_client, "PSNAWP", _boom)
@@ -154,7 +154,7 @@ async def test_build_client_wraps_unexpected_errors_as_setup_error(
     rate-limiter its temp dir, raising a bare FileNotFoundError that wasn't
     about the NPSSO at all — must not be mistaken for PsnTokenDeadError."""
 
-    def _boom(npsso: str) -> object:
+    def _boom(npsso: str, **kwargs: object) -> object:
         raise FileNotFoundError("no usable temp dir")
 
     monkeypatch.setattr(psn_client, "PSNAWP", _boom)
@@ -162,13 +162,12 @@ async def test_build_client_wraps_unexpected_errors_as_setup_error(
         await build_client("whatever")
 
 
-async def test_build_client_with_no_headers_omits_the_kwarg_entirely(
+async def test_build_client_with_no_headers_omits_the_headers_kwarg(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The default call must look exactly like it did before `headers` was
-    added (2026-09-09, #48) — a bare positional call, not `headers=None` —
-    so every pre-existing fake in this suite (and PSNAWP itself) keeps
-    working unchanged."""
+    """No `headers=None` in the default call — PSNAWP keeps its own en-US
+    defaults (#48). Only the pacing is ours (2026-10-01): one request every
+    2 s instead of the library's 3."""
     calls: list[tuple[tuple, dict]] = []
 
     def _fake(*args: object, **kwargs: object) -> object:
@@ -178,7 +177,7 @@ async def test_build_client_with_no_headers_omits_the_kwarg_entirely(
     monkeypatch.setattr(psn_client, "PSNAWP", _fake)
     await build_client("whatever")
 
-    assert calls == [(("whatever",), {})]
+    assert calls == [(("whatever",), {"rate_limit": psn_client.REQUEST_RATE})]
 
 
 async def test_build_client_passes_through_custom_headers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -191,7 +190,12 @@ async def test_build_client_passes_through_custom_headers(monkeypatch: pytest.Mo
     monkeypatch.setattr(psn_client, "PSNAWP", _fake)
     await build_client("whatever", headers=psn_client.TRANSLATION_HEADERS)
 
-    assert calls == [(("whatever",), {"headers": psn_client.TRANSLATION_HEADERS})]
+    assert calls == [
+        (
+            ("whatever",),
+            {"headers": psn_client.TRANSLATION_HEADERS, "rate_limit": psn_client.REQUEST_RATE},
+        )
+    ]
 
 
 async def test_check_alive_true_and_false() -> None:

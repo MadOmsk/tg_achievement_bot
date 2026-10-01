@@ -15,7 +15,7 @@ from typing import Any
 from aiohttp import web
 
 from bot.config import Settings
-from bot.constants import Platform, RarityMode
+from bot.constants import MAX_PSN_ACCOUNTS, AccountPlatform, Platform, RarityMode
 from bot.db.repo import Repo
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
@@ -43,7 +43,6 @@ from bot.services.steam.client import (
 )
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
-from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import load_avatar_bytes
@@ -117,6 +116,7 @@ def setup_mini_api(
     app.router.add_post("/api/mini/connect/psn", handle_connect_psn)
     app.router.add_post("/api/mini/disconnect/psn", handle_disconnect_psn)
     app.router.add_post("/api/mini/sync", handle_sync)
+    app.router.add_patch("/api/mini/accounts/{platform}", handle_patch_account)
     app.router.add_get("/api/mini/chats", handle_chats)
     app.router.add_patch("/api/mini/chats/{chat_id}", handle_patch_chat)
     app.router.add_get("/api/mini/chats/{chat_id}/feed", handle_chat_feed)
@@ -189,10 +189,13 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 fields["tz_offset_min"] = int(raw)
             except (TypeError, ValueError) as exc:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
-    if "show_profile_links" in body:
-        fields["show_profile_links"] = 1 if body["show_profile_links"] else 0
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
+    if "rarity_mode" in body:
+        mode = str(body["rarity_mode"])
+        if mode not in {RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN}:
+            raise web.HTTPBadRequest(text="bad rarity_mode")
+        fields["rarity_mode"] = mode
 
     if not fields:
         raise web.HTTPBadRequest(text="no settings")
@@ -315,12 +318,10 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
     if not raw:
         return web.json_response({"ok": False, "error": "missing_identity"}, status=400)
 
-    existing = await repo.get_platform_link(user.tg_id, Platform.PSN)
-    if existing is not None:
-        return web.json_response(
-            {"ok": False, "error": "already_linked", "display_name": existing.display_name},
-            status=409,
-        )
+    # Up to MAX_PSN_ACCOUNTS accounts (#10); the limit is checked again
+    # below once the Online ID is resolved, since relinking one already held
+    # is not an addition.
+    held = await repo.platform_links_for(user.tg_id, Platform.PSN)
 
     try:
         client = await psn_auth.get_client()
@@ -335,6 +336,13 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
 
     if not await is_trophy_visible(client, profile.account_id):
         return web.json_response({"ok": False, "error": "private"}, status=400)
+    if (
+        all(link.external_id != profile.account_id for link in held)
+        and len(held) >= MAX_PSN_ACCOUNTS
+    ):
+        return web.json_response(
+            {"ok": False, "error": "limit", "max": MAX_PSN_ACCOUNTS}, status=409
+        )
 
     await repo.ensure_user(user.tg_id, user.username)
     cooldown = await repo.check_platform_cooldown(user.tg_id, Platform.PSN, profile.account_id)
@@ -351,7 +359,9 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
     await repo.link_platform_account(
         user.tg_id, Platform.PSN, profile.account_id, profile.online_id
     )
-    await repo.set_achievements_visible(user.tg_id, Platform.PSN, True)
+    await repo.set_achievements_visible(
+        user.tg_id, Platform.PSN, True, external_id=profile.account_id
+    )
     log.info("mini connect_psn: tg_id=%s account_id=%s", user.tg_id, profile.account_id)
     asyncio.create_task(  # noqa: RUF006
         _psn_backfill(psn_fetcher, user.tg_id, profile.account_id)
@@ -367,13 +377,19 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
 
 
 async def handle_disconnect_psn(request: web.Request) -> web.Response:
+    """Every PSN account, or the one `account_id` names (#10)."""
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    link = await repo.get_platform_link(user.tg_id, Platform.PSN)
-    await repo.unlink_platform_account(user.tg_id, Platform.PSN)
-    if link is not None:
-        await repo.delete_psn_poll_state(link.external_id)
-    return web.json_response({"ok": True, "already": link is None})
+    body = await _json_body(request) if request.can_read_body else {}
+    account_id = str(body.get("account_id") or "").strip() or None
+    links = await repo.platform_links_for(user.tg_id, Platform.PSN)
+    if account_id is not None:
+        links = [link for link in links if link.external_id == account_id]
+    for link in links:
+        # `psn_poll_state` stays: it is #21's gate, and a relink through the
+        # bot skips backfill (see handlers/psn.py::disconnect_psn_confirm).
+        await repo.unlink_account(user.tg_id, Platform.PSN, link.external_id)
+    return web.json_response({"ok": True, "already": not links})
 
 
 async def handle_sync(request: web.Request) -> web.Response:
@@ -416,6 +432,31 @@ async def handle_sync(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "titles": titles, "published": published})
 
 
+async def handle_patch_account(request: web.Request) -> web.Response:
+    """The owner's switch for one linked account's posts (#20)."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    platform = request.match_info.get("platform", "")
+    if platform not in (AccountPlatform.XBOX, AccountPlatform.PSN, AccountPlatform.STEAM):
+        raise web.HTTPBadRequest(text="bad platform")
+    body = await _json_body(request)
+    if "publishes" not in body:
+        raise web.HTTPBadRequest(text="no publishes")
+    publishes = bool(body["publishes"])
+    account_id = str(body.get("account_id") or "").strip() or None
+    if account_id is None:
+        # The whole platform — every PSN account at once (#10).
+        if await repo.get_platform_link(user.tg_id, platform) is None:
+            raise web.HTTPNotFound(text="not linked")
+        await repo.set_platform_publishes(user.tg_id, platform, publishes)
+        return await handle_me(request)
+    links = await repo.platform_links_for(user.tg_id, platform)
+    if all(link.external_id != account_id for link in links):
+        raise web.HTTPNotFound(text="not linked")
+    await repo.set_account_publishes(user.tg_id, platform, account_id, publishes)
+    return await handle_me(request)
+
+
 async def handle_chats(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
@@ -427,8 +468,6 @@ async def handle_chats(request: web.Request) -> web.Response:
                     "chat_id": c.chat_id,
                     "title": c.title,
                     "is_subscribed": c.is_subscribed,
-                    "rarity_mode": c.rarity_mode,
-                    "digest_threshold": c.digest_threshold,
                 }
                 for c in chats
             ]
@@ -451,35 +490,10 @@ async def handle_patch_chat(request: web.Request) -> web.Response:
 
     body = await _json_body(request)
     action = str(body.get("action") or "").strip()
-    if not action:
-        if "rarity_mode" in body:
-            action = "set_rarity"
-        elif "digest_threshold" in body:
-            action = "set_digest"
 
-    if action == "cycle_rarity":
-        if not chat.is_subscribed:
-            return web.json_response({"ok": False, "error": "not_subscribed"}, status=400)
-        mode = next_rarity_mode(chat.rarity_mode or RarityMode.ALL)
-        await repo.update_subscription_rarity_mode(chat_id, user.tg_id, mode)
-    elif action == "set_rarity":
-        if not chat.is_subscribed:
-            return web.json_response({"ok": False, "error": "not_subscribed"}, status=400)
-        mode = str(body.get("rarity_mode") or "").strip()
-        if mode not in {RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN}:
-            raise web.HTTPBadRequest(text="bad rarity_mode")
-        await repo.update_subscription_rarity_mode(chat_id, user.tg_id, mode)
-    elif action == "set_digest":
-        if not chat.is_subscribed:
-            return web.json_response({"ok": False, "error": "not_subscribed"}, status=400)
-        try:
-            value = int(body["digest_threshold"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise web.HTTPBadRequest(text="bad digest_threshold") from exc
-        if value not in DIGEST_CHOICES:
-            raise web.HTTPBadRequest(text="bad digest_threshold")
-        await repo.update_subscription_digest_threshold(chat_id, user.tg_id, value)
-    elif action == "subscribe":
+    # The rarity mode is the person's and the digest size the chat's since
+    # #126 — settings (`PATCH /settings`) and the admin's chat card own them.
+    if action == "subscribe":
         # Needs at least one linked platform — same rule as /subscribe.
         db_user = await repo.get_user(user.tg_id)
         steam = await repo.get_platform_link(user.tg_id, Platform.STEAM)
@@ -506,8 +520,6 @@ async def handle_patch_chat(request: web.Request) -> web.Response:
                 "chat_id": refreshed.chat_id,
                 "title": refreshed.title,
                 "is_subscribed": refreshed.is_subscribed,
-                "rarity_mode": refreshed.rarity_mode,
-                "digest_threshold": refreshed.digest_threshold,
             },
         }
     )

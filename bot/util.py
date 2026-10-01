@@ -105,3 +105,20 @@ def cooldown_minutes_left(last: float | None, now: float, cooldown_seconds: int)
     if waited >= cooldown_seconds:
         return 0
     return int((cooldown_seconds - waited) // 60) + 1
+
+
+_CYRILLIC = re.compile(r"[А-Яа-яЁё]")
+_LETTER = re.compile(r"[^\W\d_]")
+
+
+def looks_russian(text: str | None) -> bool:
+    """Whether a "Russian" description really is one (owner, 2026-09-25, #127).
+
+    Cyrillic, or no letters at all ("100%", "???" read the same in any
+    language). The earlier test — "differs from the English" — let through
+    the platforms' own placeholders ("<Translated text>", "TRP012D") and any
+    English that differed by a comma, and published them as translations.
+    """
+    if not text:
+        return False
+    return bool(_CYRILLIC.search(text)) or not _LETTER.search(text)

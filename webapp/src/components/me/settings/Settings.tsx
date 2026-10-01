@@ -1,9 +1,10 @@
 import { useState } from "react";
-import type { MeResponse } from "../../../api";
-import { t, timezoneLabel, type Locale } from "../../../i18n";
+import type { AccountPlatform, MeResponse } from "../../../api";
+import { rarityLabel, t, timezoneLabel, type Locale } from "../../../i18n";
 import { BackHead, Chevron, Icon, Toggle } from "../../shared/lib";
 import {
   PLATFORMS,
+  RARITY_MODES,
   SETTINGS_PANES,
   TIMEZONES,
   type AdminScreen,
@@ -11,7 +12,7 @@ import {
 } from "../../shared/constants";
 import { AdminSection } from "../../admin";
 import { ChatSettingsCard } from "../chat-settings-card/ChatSettingsCard";
-import { PlatformCard, type PlatNotes } from "../platform-card/PlatformCard";
+import { PlatformCard, type AccountRow, type PlatNotes } from "../platform-card/PlatformCard";
 import "./Settings.css";
 
 export function Settings({
@@ -31,6 +32,7 @@ export function Settings({
   onDisconnectPsn,
   onSync,
   onDeleteAccount,
+  onTogglePublish,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -39,8 +41,8 @@ export function Settings({
   onPatch: (body: {
     locale?: Locale;
     tz_offset_min?: number | null;
-    show_profile_links?: boolean;
     show_secrets?: boolean;
+    rarity_mode?: string;
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onAdmin?: (screen: AdminScreen) => void;
@@ -50,17 +52,71 @@ export function Settings({
   onConnectPsn: () => void;
   onDisconnectXbox: () => void;
   onDisconnectSteam: () => void;
-  onDisconnectPsn: () => void;
+  onDisconnectPsn: (accountId?: string) => void;
   onSync: () => void;
   onDeleteAccount: () => Promise<void>;
+  onTogglePublish?: (platform: AccountPlatform, publishes: boolean, accountId?: string) => void;
 }) {
   const [pane, setPane] = useState<SettingsPane>(SETTINGS_PANES.ROOT);
   const [deleting, setDeleting] = useState(false);
   const tz = me.settings.tz_offset_min;
   const tzOptions = TIMEZONES;
 
-  const xboxName =
-    me.xbox.gamertag_modern || me.xbox.gamertag || t(locale, "notLinked");
+  const toggle = (platform: AccountPlatform, publishes: boolean, accountId?: string) =>
+    onTogglePublish ? () => onTogglePublish(platform, !publishes, accountId) : undefined;
+
+  const xboxAccounts: AccountRow[] = me.xbox.linked
+    ? [
+        {
+          key: "xbox",
+          name: me.xbox.gamertag_modern || me.xbox.gamertag || t(locale, "notLinked"),
+          profileUrl: me.xbox.profile_url,
+          publishes: me.xbox.publishes !== false,
+          onTogglePublish: toggle("xbox", me.xbox.publishes !== false),
+          onDisconnect: onDisconnectXbox,
+        },
+      ]
+    : [];
+
+  // Several PSN accounts (#10), each named "PSN: nick" — a bare nickname
+  // does not say which platform the row is (owner).
+  const psnAccounts: AccountRow[] = !me.psn.linked
+    ? []
+    : (
+        me.psn.accounts ?? [
+          {
+            account_id: me.psn.account_id,
+            name: me.psn.online_id || me.psn.account_id,
+            publishes: me.psn.publishes !== false,
+            profile_url: me.psn.profile_url,
+          },
+        ]
+      ).map((account) => ({
+        key: account.account_id,
+        name: `PSN: ${account.name}`,
+        profileUrl: account.profile_url,
+        publishes: account.publishes,
+        onTogglePublish: toggle("psn", account.publishes, account.account_id),
+        onDisconnect: () => onDisconnectPsn(account.account_id),
+      }));
+  const psnMax = me.psn.linked ? (me.psn.max_accounts ?? 1) : 1;
+  const psnHidden =
+    me.psn.linked &&
+    (me.psn.achievements_visible === false ||
+      (me.psn.accounts ?? []).some((account) => account.achievements_visible === false));
+
+  const steamAccounts: AccountRow[] = me.steam.linked
+    ? [
+        {
+          key: "steam",
+          name: me.steam.display_name || me.steam.steam_id,
+          profileUrl: me.steam.profile_url,
+          publishes: me.steam.publishes !== false,
+          onTogglePublish: toggle("steam", me.steam.publishes !== false),
+          onDisconnect: onDisconnectSteam,
+        },
+      ]
+    : [];
 
   if (pane === SETTINGS_PANES.ACHIEVEMENTS) {
     return (
@@ -71,6 +127,21 @@ export function Settings({
           onBack={() => setPane(SETTINGS_PANES.ROOT)}
         />
         <div className="glass-card">
+          {/* One mode for every chat this person publishes to (#126). */}
+          <label className="ios-row">
+            <span>{t(locale, "rarity")}</span>
+            <select
+              className="tz-select"
+              value={me.settings.rarity_mode ?? RARITY_MODES.ALL}
+              onChange={(e) => onPatch({ rarity_mode: e.target.value })}
+            >
+              <option value={RARITY_MODES.ALL}>{rarityLabel(RARITY_MODES.ALL, locale)}</option>
+              <option value={RARITY_MODES.RARE}>{rarityLabel(RARITY_MODES.RARE, locale)}</option>
+              <option value={RARITY_MODES.HIDDEN}>
+                {rarityLabel(RARITY_MODES.HIDDEN, locale)}
+              </option>
+            </select>
+          </label>
           <div className="ios-row">
             <span>{t(locale, "showSecrets")}</span>
             <Toggle
@@ -78,16 +149,6 @@ export function Settings({
               label={t(locale, "showSecrets")}
               onClick={() =>
                 onPatch({ show_secrets: !me.settings.show_secrets })
-              }
-            />
-          </div>
-          <div className="ios-row">
-            <span>{t(locale, "showLinks")}</span>
-            <Toggle
-              on={me.settings.show_profile_links}
-              label={t(locale, "showLinks")}
-              onClick={() =>
-                onPatch({ show_profile_links: !me.settings.show_profile_links })
               }
             />
           </div>
@@ -221,13 +282,11 @@ export function Settings({
         </button>
       </div>
       <PlatformCard
-        linked={me.xbox.linked}
-        name={xboxName}
         mark={PLATFORMS.XBOX}
-        profileUrl={me.xbox.profile_url}
+        title="XBOX"
+        accounts={xboxAccounts}
         locale={locale}
         onConnect={onConnectXbox}
-        onDisconnect={onDisconnectXbox}
         onSync={me.xbox.linked ? onSync : undefined}
         notes={[
           me.xbox.needs_reconnect ? { kind: "error", text: t(locale, "reconnectHint") } : null,
@@ -236,30 +295,29 @@ export function Settings({
       />
 
       <PlatformCard
-        linked={me.psn.linked}
-        name={me.psn.linked ? me.psn.online_id || me.psn.account_id : ""}
         mark={PLATFORMS.PSN}
-        profileUrl={me.psn.linked ? me.psn.profile_url : null}
+        title={
+          psnAccounts.length > 1
+            ? `PSN · ${psnAccounts.length} ${t(locale, "of")} ${psnMax}`
+            : "PSN"
+        }
+        accounts={psnAccounts}
         locale={locale}
         onConnect={onConnectPsn}
-        onDisconnect={onDisconnectPsn}
+        onAdd={psnAccounts.length && psnAccounts.length < psnMax ? onConnectPsn : undefined}
         onSync={me.psn.linked ? onSync : undefined}
         notes={[
-          me.psn.linked && me.psn.achievements_visible === false
-            ? { kind: "warn", text: t(locale, "hiddenPsn") }
-            : null,
+          psnHidden ? { kind: "warn", text: t(locale, "hiddenPsn") } : null,
           notes?.psn,
         ]}
       />
 
       <PlatformCard
-        linked={me.steam.linked}
-        name={me.steam.linked ? me.steam.display_name || me.steam.steam_id : ""}
         mark={PLATFORMS.STEAM}
-        profileUrl={me.steam.linked ? me.steam.profile_url : null}
+        title="Steam"
+        accounts={steamAccounts}
         locale={locale}
         onConnect={onConnectSteam}
-        onDisconnect={onDisconnectSteam}
         onSync={me.steam.linked ? onSync : undefined}
         notes={[
           me.steam.linked && me.steam.achievements_visible === false
@@ -268,7 +326,6 @@ export function Settings({
           notes?.steam,
         ]}
       />
-
 
       {me.is_admin && onAdmin && (
         <AdminSection

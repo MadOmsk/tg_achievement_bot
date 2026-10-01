@@ -32,6 +32,7 @@ def hltb_payload(result: HltbResult, *, locale: str) -> dict[str, Any]:
         "image_url": result.image_url,
         "genre": result.genre,
         "description": description,
+        "details": result.details,
     }
 
 

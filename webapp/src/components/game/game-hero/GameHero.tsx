@@ -16,6 +16,7 @@ export function GameHero({
   isCompleted,
   loading = false,
   locale,
+  compact = false,
 }: {
   cover: string | null;
   pct: number;
@@ -24,14 +25,27 @@ export function GameHero({
   /** The game is still being fetched: an empty plate stands in. */
   loading?: boolean;
   locale: Locale;
+  /** Collapsed (HeroPeek at rest): a plain platinum plate instead of the big
+   * glowing medal — the rays and shine are sized for the full picture and
+   * only make sense once it's actually open. */
+  compact?: boolean;
 }) {
   const width = `${Math.min(100, Math.max(0, pct))}%`;
+  const done = isCompleted && !loading;
   return (
-    <div className={isCompleted && !loading ? "game-hero is-done" : "game-hero"}>
+    <div
+      className={[
+        "game-hero",
+        done && "is-done",
+        done && compact && "is-compact",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div className="game-cover">
         <CoverImg src={cover} kind="game" className="game-cover-back" />
         <FitImg src={cover} mode="width" kind="game" />
-        {isCompleted && !loading && (
+        {done && !compact && (
           <>
             <i className="game-rays" aria-hidden />
             <i className="game-shine" aria-hidden />
@@ -39,7 +53,17 @@ export function GameHero({
           </>
         )}
       </div>
-      {isCompleted && !loading ? (
+      {done && compact ? (
+        <div className="game-plate is-platinum">
+          <span className="game-plate-icon" aria-hidden>
+            <Icon name="cup" size={26} filled />
+          </span>
+          <span className="game-plate-bar is-platinum" aria-hidden>
+            <span className="game-plate-fill is-platinum" style={{ width: "100%" }} />
+          </span>
+          <strong>100%</strong>
+        </div>
+      ) : done ? (
         <div className="game-medal">
           <span className="game-medal-disc" aria-hidden>
             <Icon name="cup" size={52} filled />

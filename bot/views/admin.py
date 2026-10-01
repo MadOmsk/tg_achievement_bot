@@ -12,10 +12,13 @@ reason: poller/admin_refresh.py redraws it on a timer.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.constants import (
+    AccountPlatform,
     Platform,
     PresenceState,
     TokenStatus,
@@ -25,14 +28,14 @@ from bot.i18n import translator
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
-    DEFAULT_SHOW_LINKS_DEFAULT,
-    DEFAULT_SHOW_LINKS_KEY,
     FLOOD_LIMIT_MAX,
     FLOOD_LIMIT_MIN,
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
     PAGE_SIZE,
+    SHOW_LINKS_DEFAULT,
+    SHOW_LINKS_KEY,
     STATUS_ICON,
     TOAST_PREVIEW_MAX_CHARS,
     VISIBILITY_ICON,
@@ -40,6 +43,7 @@ from bot.services.admin_settings import (
 )
 from bot.services.naming import (
     account_nickname,
+    link_nickname,
     person_name,
     subscriber_names,
     xbox_nickname,
@@ -56,6 +60,8 @@ from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
     COMMON_OFFSETS_HOURS,
+    DIGEST_CHOICES,
+    DIGEST_NEVER,
     format_offset,
     format_rarity,
     locale_name,
@@ -207,9 +213,6 @@ async def render_new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, Inl
         DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT
     )
     assert default_rarity_mode is not None  # a default was given above
-    default_show_links = await repo.get_int_setting(
-        DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT)
-    )
 
     text = _("admin-new-users-screen")
     keyboard = InlineKeyboardMarkup(
@@ -221,15 +224,6 @@ async def render_new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, Inl
                         rarity=format_rarity(default_rarity_mode),
                     ),
                     callback_data="a:defaultrarity",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=_(
-                        "admin-default-links",
-                        visible=_("admin-yes") if default_show_links else _("admin-no"),
-                    ),
-                    callback_data="a:defaultlinks",
                 )
             ],
             [InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")],
@@ -387,7 +381,14 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
         _("admin-login-row", login=login),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
+        *_muted_line(await repo.get_platform_link(user.tg_id, AccountPlatform.XBOX), _),
     ]
+
+
+def _muted_line(link: PlatformLink | None, _: Callable[..., str]) -> list[str]:
+    """One more line only when the owner switched this account's posts off
+    (#20) — the answer to "why does nothing of theirs appear in chat"."""
+    return [_("admin-muted-row")] if link is not None and not link.publishes else []
 
 
 async def _steam_admin_block(
@@ -437,6 +438,7 @@ async def _steam_admin_block(
         _("admin-login-row", login=visibility_status_text(link, locale)),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
+        *_muted_line(link, _),
     ]
 
 
@@ -450,8 +452,9 @@ async def _psn_admin_block(
     tracking is unrelated to it, so this block gets its "last online" line
     back same as the other two platforms."""
     _ = translator("admin", locale)
-    count = await repo.platform_achievement_count(link.tg_id, Platform.PSN)
-    platinum = await repo.psn_platinum_count(link.tg_id)
+    # This account's own figures (#10): a person may hold several.
+    count = await repo.account_achievement_count(Platform.PSN, link.external_id)
+    platinum = await repo.account_platinum_count(link.external_id)
     parts = [plural_trophies(count, locale)]
     if platinum:
         parts.append(f"{platinum} {COMPLETED_BADGE_PSN}")
@@ -491,6 +494,7 @@ async def _psn_admin_block(
         _("admin-login-row", login=visibility_status_text(link, locale)),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
+        *_muted_line(link, _),
     ]
 
 
@@ -500,16 +504,15 @@ async def render_user_card(
     _ = translator("admin", locale)
     user = await repo.get_user(tg_id)
     steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_link = await repo.get_platform_link(tg_id, Platform.PSN)
+    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
     # Used to bail out on `not user.xuid` alone (2026-09-05 follow-up) — a
     # A Steam-only person got a "user not found" result in the admin panel,
     # same class of gap /stats had before it learned to work without Xbox.
-    if user is None or (not user.xuid and steam_link is None and psn_link is None):
+    if user is None or (not user.xuid and steam_link is None and not psn_links):
         return _("admin-user-not-found"), _back_home(locale=locale)
 
-    today_xbox, today_steam, today_psn = await repo.achievement_platform_breakdown(
-        tg_id, today_cutoff_utc()
-    )
+    today = today_cutoff_utc()
+    today_xbox, today_steam, _today_psn = await repo.achievement_platform_breakdown(tg_id, today)
     chats = await repo.chats_of_user(tg_id)
 
     # Telegram identity first (2026-09-08 user request), then one block per
@@ -522,8 +525,10 @@ async def render_user_card(
     if user.xuid:
         lines += await _xbox_admin_block(repo, user, today_xbox, locale=locale)
         lines.append("")
-    if psn_link is not None:
-        lines += await _psn_admin_block(repo, psn_link, today_psn, locale=locale)
+    # One block per PSN account (#10), each with its own "today".
+    for link in psn_links:
+        today_psn = await repo.account_count_since(Platform.PSN, link.external_id, today)
+        lines += await _psn_admin_block(repo, link, today_psn, locale=locale)
         lines.append("")
     if steam_link is not None:
         lines += await _steam_admin_block(repo, steam_link, today_steam, locale=locale)
@@ -557,10 +562,19 @@ async def render_user_card(
             ),
             InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{tg_id}"),
         )
-    if psn_link is not None:
+    for link in psn_links:
+        # Each account has its own pair (#10), named when there are several
+        # — "PSN: nick", never a bare nickname (owner).
+        account = f"{tg_id}:{link.external_id}"
+        if len(psn_links) > 1:
+            name = link_nickname(link)
+            refresh = _("admin-refresh-psn-account", name=name)
+            reset = _("admin-reset-psn-account", name=name)
+        else:
+            refresh, reset = _("admin-refresh-psn"), _("admin-reset-psn")
         builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-psn"), callback_data=f"a:sync:psn:{tg_id}"),
-            InlineKeyboardButton(text=_("admin-reset-psn"), callback_data=f"a:reset:psn:{tg_id}"),
+            InlineKeyboardButton(text=refresh, callback_data=f"a:sync:psn:{account}"),
+            InlineKeyboardButton(text=reset, callback_data=f"a:reset:psn:{account}"),
         )
     if steam_link is not None:
         builder.row(
@@ -607,6 +621,12 @@ async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeybo
     return _("admin-chats-header"), keyboard
 
 
+def _digest_label(threshold: int, _: Callable[..., str]) -> str:
+    if threshold >= DIGEST_NEVER:
+        return _("admin-digest-never")
+    return _("admin-digest-from", value=threshold)
+
+
 async def render_chat_card(
     repo: Repo, chat_id: int, *, locale: str, section: str | None = None
 ) -> tuple[str, InlineKeyboardMarkup]:
@@ -641,6 +661,7 @@ async def render_chat_card(
         offset=zone_label,
         min_score=chat.min_gamerscore,
         flood=flood_label,
+        digest=_digest_label(chat.digest_threshold, _),
         locale_name=locale_name(chat.locale),
         names=(
             _("admin-subscribers-list", names=", ".join(names))
@@ -691,6 +712,32 @@ async def render_chat_card(
         builder.row(back_to_card)
         return text, builder.as_markup()
 
+    if section == "digest":
+        # How many achievements of one person at once make one digest —
+        # the chat's, since #126 (it was each person's, per subscription).
+        builder.row(
+            *[
+                InlineKeyboardButton(
+                    text=("✅ " if value == chat.digest_threshold else "")
+                    + (_("admin-digest-never") if value >= DIGEST_NEVER else str(value)),
+                    callback_data=f"a:cdig:{chat_id}:{value}",
+                )
+                for value in DIGEST_CHOICES[:4]
+            ]
+        )
+        builder.row(
+            *[
+                InlineKeyboardButton(
+                    text=("✅ " if value == chat.digest_threshold else "")
+                    + (_("admin-digest-never") if value >= DIGEST_NEVER else str(value)),
+                    callback_data=f"a:cdig:{chat_id}:{value}",
+                )
+                for value in DIGEST_CHOICES[4:]
+            ]
+        )
+        builder.row(back_to_card)
+        return text, builder.as_markup()
+
     if section == "messages":
         # One wipe action per row here: these are the destructive ones, and a
         # cramped row of four 🗑 buttons was exactly what made them easy to
@@ -720,6 +767,12 @@ async def render_chat_card(
         InlineKeyboardButton(
             text=_("admin-chat-threshold-button", threshold=threshold_label),
             callback_data=f"a:crt:{chat_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-chat-digest-button", digest=_digest_label(chat.digest_threshold, _)),
+            callback_data=f"a:mdig:{chat_id}",
         )
     )
     builder.row(
@@ -822,8 +875,15 @@ async def render_limits(repo: Repo, *, locale: str) -> Screen:
         (key, spec, await repo.get_app_setting(key, str(spec.default)))
         for key, spec in NUMERIC_SETTINGS.items()
     ]
-    keyboard = InlineListing(
-        rows=button_rows(
+    show_links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=_("admin-show-links", visible=_("admin-yes") if show_links else _("admin-no")),
+                callback_data="a:showlinks",
+            )
+        ],
+        *button_rows(
             settings,
             lambda item: (
                 f"{_setting_label(item[1], locale=locale)}: "
@@ -831,8 +891,8 @@ async def render_limits(repo: Repo, *, locale: str) -> Screen:
             ),
             lambda item: f"a:limit:{item[0]}",
         ),
-        tail=_back_row(locale=locale),
-    ).markup()
+    ]
+    keyboard = InlineListing(rows=rows, tail=_back_row(locale=locale)).markup()
     return Screen(_("admin-limits-screen"), keyboard)
 
 
@@ -939,22 +999,31 @@ def render_wipe_prompt(chat: ChatTarget, count: int, hours: int, *, locale: str)
 RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
 
 
-def render_reset_confirm(platform: str, tg_id: str, *, locale: str) -> Screen:
+def render_reset_confirm(
+    platform: str,
+    tg_id: str,
+    *,
+    locale: str,
+    account_id: str | None = None,
+    account_name: str | None = None,
+) -> Screen:
     """ "Сброс базы" is destructive and not undoable (2026-09-08 user
     request) — same one-tap-confirm shape as /disconnect_steam's own
-    prompt, not an instant action behind a single tap."""
+    prompt, not an instant action behind a single tap. `account_id` picks
+    one of several PSN accounts (#10)."""
     _ = translator("admin", locale)
+    target = f"{tg_id}:{account_id}" if account_id else tg_id
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{tg_id}"
+            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{target}"
         ),
         InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
     )
-    return Screen(
-        _("admin-reset-confirm-prompt", platform=RESET_PLATFORM_NAMES[platform]),
-        builder.as_markup(),
-    )
+    name = RESET_PLATFORM_NAMES[platform]
+    if account_name:
+        name = f"{name}: {account_name}"
+    return Screen(_("admin-reset-confirm-prompt", platform=name), builder.as_markup())
 
 
 def render_system_wipe_prompt(
@@ -986,7 +1055,7 @@ def render_admin_user_delete_confirm_1(name: str, tg_id: int, *, locale: str) ->
         InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
     )
     return Screen(
-        _("admin-delete-confirm-1", name=name, tg_id=tg_id),
+        _("admin-delete-confirm-1", name=name, tg_id=str(tg_id)),
         builder.as_markup(),
     )
 
@@ -1001,6 +1070,6 @@ def render_admin_user_delete_confirm_2(name: str, tg_id: int, *, locale: str) ->
         InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
     )
     return Screen(
-        _("admin-delete-confirm-2", name=name, tg_id=tg_id),
+        _("admin-delete-confirm-2", name=name, tg_id=str(tg_id)),
         builder.as_markup(),
     )

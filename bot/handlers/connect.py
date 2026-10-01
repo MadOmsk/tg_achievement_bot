@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from html import escape as html_escape
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ParseMode
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     CallbackQuery,
@@ -25,21 +26,28 @@ from bot.handlers.panel import send_panel
 from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
+from bot.services.naming import xbox_nickname
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.util import parse_utc_offset
 from bot.views.keyboards import (
+    PANEL_TZ,
     TZ_MANUAL,
     TZ_MORE,
+    TZ_PICK,
     TZ_SET,
     TZ_SKIP,
+    back_to_panel_button,
+    buttons,
     connect_keyboard,
     deep_link_keyboard,
     format_offset,
     onboarding_keyboard,
+    panel_button,
     timezone_keyboard,
 )
+from bot.views.panel import render_panel
 
 log = logging.getLogger(__name__)
 
@@ -103,7 +111,16 @@ async def start_with_payload(
         # once the login actually succeeds (see on_linked in bot/main.py).
         user = await repo.get_user(person_id)
         if user is not None and user.xuid:
-            await message.answer(i18n.get("connect-xbox-already-connected"))
+            await message.answer(
+                i18n.get("connect-xbox-already-connected", name=_xbox_name(user)),
+                reply_markup=buttons(
+                    InlineKeyboardButton(
+                        text=i18n.get("kb-open-xbox"), callback_data="panel:acc:xbox"
+                    ),
+                    panel_button(i18n),
+                ),
+                parse_mode=ParseMode.HTML,
+            )
             return
         await _send_login_link(message, connect, repo, i18n, origin_chat_id=origin_chat_id)
         return
@@ -153,7 +170,16 @@ async def connect_command(
     await repo.ensure_user(person_id, _username(message))
     user = await repo.get_user(person_id)
     if user is not None and user.xuid:
-        await message.answer(i18n.get("connect-xbox-already-connected-relogin"))
+        await message.answer(
+            i18n.get("connect-xbox-already-connected-relogin", name=_xbox_name(user)),
+            reply_markup=buttons(
+                InlineKeyboardButton(
+                    text=i18n.get("kb-unlink-xbox"), callback_data="panel:disconnect"
+                ),
+                panel_button(i18n),
+            ),
+            parse_mode=ParseMode.HTML,
+        )
         return
     await _send_login_link(message, connect, repo, i18n)
 
@@ -218,6 +244,10 @@ async def disconnect_confirm(
     await safe_edit(
         callback,
         i18n.get("connect-disconnected", revoke_url=REVOKE_URL),
+        buttons(
+            InlineKeyboardButton(text=i18n.get("kb-connect-xbox-again"), callback_data="relogin"),
+            back_to_panel_button(i18n),
+        ),
         disable_web_page_preview=True,
     )
     await callback.answer()
@@ -225,13 +255,13 @@ async def disconnect_confirm(
 
 @router.callback_query(F.data == "relogin")
 async def relogin(callback: CallbackQuery, connect: ConnectService, i18n: I18nContext) -> None:
-    """Button from the "access expired" reminder (SPEC 5.1.1)."""
+    """Button from the "access expired" reminder (SPEC 5.1.1), the panel's
+    connect and reconnect buttons, and the steps after unlinking: the login
+    link in place, with a way back (owner, 2026-09-30)."""
     url = connect.start_login(callback.from_user.id)
-    if isinstance(callback.message, Message):
-        await callback.message.answer(
-            i18n.get("connect-relogin-prompt"),
-            reply_markup=connect_keyboard(url, i18n),
-        )
+    markup = connect_keyboard(url, i18n)
+    markup.inline_keyboard.append([back_to_panel_button(i18n)])
+    await safe_edit(callback, i18n.get("connect-relogin-prompt"), markup)
     await callback.answer()
 
 
@@ -247,47 +277,91 @@ async def optout(
     await notifier.user_disconnected(
         tg_id, (user.gamertag if user else None) or f"id{tg_id}", "disconnect-button"
     )
-    await safe_edit(callback, i18n.get("connect-optout-done"))
+    await safe_edit(
+        callback,
+        i18n.get("connect-optout-done"),
+        buttons(
+            InlineKeyboardButton(text=i18n.get("kb-relogin-xbox"), callback_data="relogin"),
+            panel_button(i18n),
+        ),
+    )
     await callback.answer()
 
 
-@router.callback_query(F.data == TZ_MORE)
+def _in_panel(data: str | None) -> bool:
+    return bool(data) and data.startswith(f"{PANEL_TZ}:")  # type: ignore[union-attr]
+
+
+def _tz_prompt(i18n: I18nContext, in_panel: bool) -> str:
+    return i18n.get("panel-timezone-prompt" if in_panel else "connect-timezone-prompt")
+
+
+@router.callback_query(F.data.in_({TZ_MORE, f"{PANEL_TZ}:more"}))
 async def timezone_full_list(callback: CallbackQuery, i18n: I18nContext) -> None:
+    in_panel = _in_panel(callback.data)
     await safe_edit(
-        callback, i18n.get("connect-timezone-prompt"), timezone_keyboard(i18n, full=True)
+        callback, _tz_prompt(i18n, in_panel), timezone_keyboard(i18n, full=True, in_panel=in_panel)
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == TZ_PICK)
+async def timezone_pick_again(callback: CallbackQuery, i18n: I18nContext) -> None:
+    await safe_edit(callback, i18n.get("connect-timezone-prompt"), timezone_keyboard(i18n))
     await callback.answer()
 
 
 @router.callback_query(F.data == TZ_SKIP)
 async def timezone_skip(callback: CallbackQuery, i18n: I18nContext) -> None:
-    await safe_edit(callback, i18n.get("connect-timezone-skip-done"))
+    await safe_edit(
+        callback,
+        i18n.get("connect-timezone-skip-done"),
+        buttons(
+            InlineKeyboardButton(text=i18n.get("kb-tz-pick"), callback_data=TZ_PICK),
+            panel_button(i18n),
+        ),
+    )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith(f"{TZ_SET}:"))
+@router.callback_query(F.data.startswith(f"{TZ_SET}:") | F.data.startswith(f"{PANEL_TZ}:set:"))
 async def timezone_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     minutes = int(callback.data.rsplit(":", 1)[1])
     await repo.ensure_user(callback.from_user.id, callback.from_user.username)
     await repo.update_user_settings(callback.from_user.id, tz_offset_min=minutes)
     _awaiting_manual_tz.pop(callback.from_user.id, None)
+    offset = format_offset(minutes, i18n)
 
-    await safe_edit(callback, i18n.get("connect-timezone-set", offset=format_offset(minutes, i18n)))
+    if _in_panel(callback.data):
+        # Back to the panel it was opened from; the new value is on its
+        # button, and a toast says it took.
+        screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+        await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
+        await callback.answer(i18n.get("panel-timezone-toast", offset=offset))
+        return
+    await safe_edit(
+        callback, i18n.get("connect-timezone-set", offset=offset), buttons(panel_button(i18n))
+    )
     await callback.answer()
 
 
-# tg_id -> id of the prompt message to restore on a bad reply. Module-level
-# and in-memory, same as admin.py's _awaiting_input — losing it on a restart
-# just means asking again, nothing worth persisting to disk for.
-_awaiting_manual_tz: dict[int, int] = {}
+# tg_id -> (id of the prompt message, opened from /panel?) — the prompt is
+# where the answer lands. Module-level and in-memory, same as admin.py's
+# _awaiting_input — losing it on a restart just means asking again.
+_awaiting_manual_tz: dict[int, tuple[int, bool]] = {}
 
 
-@router.callback_query(F.data == TZ_MANUAL)
+@router.callback_query(F.data.in_({TZ_MANUAL, f"{PANEL_TZ}:manual"}))
 async def timezone_manual_prompt(callback: CallbackQuery, i18n: I18nContext) -> None:
+    in_panel = _in_panel(callback.data)
     if isinstance(callback.message, Message):
-        _awaiting_manual_tz[callback.from_user.id] = callback.message.message_id
-    await safe_edit(callback, i18n.get("connect-timezone-manual-hint"))
+        _awaiting_manual_tz[callback.from_user.id] = (callback.message.message_id, in_panel)
+    await safe_edit(
+        callback,
+        i18n.get("connect-timezone-manual-hint"),
+        buttons(back_to_panel_button(i18n, back=True)) if in_panel else None,
+    )
     await callback.answer()
 
 
@@ -297,22 +371,41 @@ async def timezone_manual_prompt(callback: CallbackQuery, i18n: I18nContext) -> 
 @router.message(
     F.chat.type == ChatType.PRIVATE, F.text.regexp(r"(?i)^(?:utc)?\s*[+-]\d{1,2}(?::[0-5]\d)?$")
 )
-async def timezone_manual_input(message: Message, repo: Repo, i18n: I18nContext) -> None:
+async def timezone_manual_input(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     assert message.from_user is not None and message.text is not None
-    prompt_id = _awaiting_manual_tz.pop(message.from_user.id, None)
-    if prompt_id is None:
+    waiting = _awaiting_manual_tz.pop(message.from_user.id, None)
+    if waiting is None:
         return  # a stray signed number from someone not in this flow — ignore
+    prompt_id, in_panel = waiting
 
     minutes = parse_utc_offset(message.text)
     if minutes is None:  # out of −12..+14 range — the regex alone can't catch that
-        _awaiting_manual_tz[message.from_user.id] = prompt_id
+        _awaiting_manual_tz[message.from_user.id] = waiting
         hint = i18n.get("connect-timezone-manual-hint")
         await message.answer(i18n.get("connect-timezone-manual-invalid", hint=hint))
         return
 
     await repo.ensure_user(message.from_user.id, message.from_user.username)
     await repo.update_user_settings(message.from_user.id, tz_offset_min=minutes)
-    await message.answer(i18n.get("connect-timezone-set", offset=format_offset(minutes, i18n)))
+    offset = format_offset(minutes, i18n)
+    # The answer lands in the prompt it was asked in (owner, 2026-09-30): the
+    # panel again, or the "set" line with its way on.
+    if in_panel:
+        screen = await render_panel(repo, message.from_user.id, locale=i18n.locale)
+        text, markup = screen.text, screen.keyboard
+    else:
+        text = i18n.get("connect-timezone-set", offset=offset)
+        markup = buttons(panel_button(i18n))
+    try:
+        await bot.edit_message_text(
+            text,
+            chat_id=message.chat.id,
+            message_id=prompt_id,
+            reply_markup=markup,
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        await message.answer(text, reply_markup=markup, parse_mode=ParseMode.HTML)
 
 
 async def _greet(
@@ -402,3 +495,13 @@ def _person_id(message: Message) -> int | None:
 def _username(message: Message) -> str | None:
     from_user = getattr(message, "from_user", None)
     return from_user.username if from_user else None
+
+
+def _xbox_name(user: object) -> str:
+    return html_escape(
+        xbox_nickname(
+            gamertag_modern=getattr(user, "gamertag_modern", None),
+            gamertag=getattr(user, "gamertag", None),
+            xuid=getattr(user, "xuid", None),
+        )
+    )

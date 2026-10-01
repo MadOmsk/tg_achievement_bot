@@ -31,9 +31,11 @@ def _signed_init_data(bot_token: str, user_id: int) -> str:
     return urlencode(pairs)
 
 
-async def test_patch_chat_without_action_infers_rarity_and_digest(
+async def test_the_rarity_mode_is_a_setting_not_a_chat_field(
     repo: Repo, settings: Settings
 ) -> None:
+    """Since #126 the mode is the person's (PATCH /settings) and a chat's
+    patch no longer carries it; the digest size is the chat admin's."""
     app = web.Application(middlewares=[cors_middleware()])
     setup_mini_api(app, settings, repo)
 
@@ -51,26 +53,49 @@ async def test_patch_chat_without_action_infers_rarity_and_digest(
     client = TestClient(TestServer(app))
     await client.start_server()
     try:
-        # Patch rarity_mode without explicit action (#98)
         resp = await client.patch(
-            f"/api/mini/chats/{chat_id}",
-            json={"rarity_mode": "rare"},
-            headers=headers,
+            "/api/mini/settings", json={"rarity_mode": "rare"}, headers=headers
         )
         assert resp.status == 200
-        data = await resp.json()
-        assert data["ok"] is True
-        assert data["chat"]["rarity_mode"] == "rare"
+        assert (await resp.json())["settings"]["rarity_mode"] == "rare"
 
-        # Patch digest_threshold without explicit action (#98)
         resp = await client.patch(
-            f"/api/mini/chats/{chat_id}",
-            json={"digest_threshold": 5},
-            headers=headers,
+            "/api/mini/settings", json={"rarity_mode": "sometimes"}, headers=headers
+        )
+        assert resp.status == 400
+
+        resp = await client.patch(
+            f"/api/mini/chats/{chat_id}", json={"rarity_mode": "all"}, headers=headers
+        )
+        assert resp.status == 400  # no action: nothing per chat to set any more
+    finally:
+        await client.close()
+
+
+async def test_an_account_switch_turns_its_posts_off(repo: Repo, settings: Settings) -> None:
+    """The owner's switch for one linked account (#20)."""
+    app = web.Application(middlewares=[cors_middleware()])
+    setup_mini_api(app, settings, repo)
+    user_id = 42
+    await repo.ensure_user(user_id, "testuser")
+    await repo.link_platform_account(user_id, "psn", "acc-1", "Gamer")
+    headers = {
+        "X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), user_id)
+    }
+
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        resp = await client.patch(
+            "/api/mini/accounts/psn", json={"publishes": False}, headers=headers
         )
         assert resp.status == 200
-        data = await resp.json()
-        assert data["ok"] is True
-        assert data["chat"]["digest_threshold"] == 5
+        assert (await resp.json())["psn"]["publishes"] is False
+        assert not await repo.account_publishes(user_id, "psn", "acc-1")
+
+        resp = await client.patch(
+            "/api/mini/accounts/steam", json={"publishes": False}, headers=headers
+        )
+        assert resp.status == 404  # nothing linked there
     finally:
         await client.close()

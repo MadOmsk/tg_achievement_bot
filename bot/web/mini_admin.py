@@ -15,13 +15,13 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale, translator
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
-    DEFAULT_SHOW_LINKS_DEFAULT,
-    DEFAULT_SHOW_LINKS_KEY,
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
     RARE_THRESHOLD_MAX,
     RARE_THRESHOLD_MIN,
+    SHOW_LINKS_DEFAULT,
+    SHOW_LINKS_KEY,
 )
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
@@ -33,7 +33,7 @@ from bot.services.steam.auth import SteamAuth, SteamKeyInvalidError
 from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED
 from bot.services.translate.auth import AnthropicAuth, AnthropicKeyInvalidError
 from bot.util import utcnow
-from bot.views.keyboards import next_rarity_mode
+from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ async def build_admin_limits(repo: Repo, *, locale: str) -> dict[str, Any]:
 
 async def build_admin_defaults(repo: Repo) -> dict[str, Any]:
     rarity = await repo.get_app_setting(DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT)
-    links = await repo.get_int_setting(DEFAULT_SHOW_LINKS_KEY, int(DEFAULT_SHOW_LINKS_DEFAULT))
+    links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
     return {"rarity_mode": rarity or RarityMode.ALL, "show_profile_links": bool(links)}
 
 
@@ -166,7 +166,8 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
 async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
     user = await repo.get_user(tg_id)
     steam = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn = await repo.get_platform_link(tg_id, Platform.PSN)
+    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    psn = psn_links[0] if psn_links else None
     if user is None or (not user.xuid and steam is None and psn is None):
         return None
     chats = await repo.chats_of_user(tg_id)
@@ -191,11 +192,25 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
         }
     psn_block = None
     if psn is not None:
+        # The first account's fields, the person's sum, and every account
+        # on its own (#10) for the per-account refresh/reset.
         psn_block = {
             "name": psn.display_name,
             "external_id": psn.external_id,
             "trophy_count": await repo.platform_achievement_count(tg_id, Platform.PSN),
             "trophy_level": psn.psn_trophy_level,
+            "accounts": [
+                {
+                    "name": link.display_name,
+                    "external_id": link.external_id,
+                    "trophy_count": await repo.account_achievement_count(
+                        Platform.PSN, link.external_id
+                    ),
+                    "trophy_level": link.psn_trophy_level,
+                    "publishes": link.publishes,
+                }
+                for link in psn_links
+            ],
         }
     return {
         "tg_id": tg_id,
@@ -232,6 +247,7 @@ def serialize_admin_chat(chat: Any) -> dict[str, Any]:
         "min_gamerscore": chat.min_gamerscore,
         "flood_limit": chat.flood_limit,
         "flood_window_minutes": chat.flood_window_minutes,
+        "digest_threshold": chat.digest_threshold,
         "locale": chat.locale,
     }
 
@@ -383,7 +399,7 @@ async def handle_admin_defaults_patch(request: web.Request) -> web.Response:
         await repo.set_app_setting(DEFAULT_RARITY_MODE_KEY, mode, admin.tg_id)
     if "show_profile_links" in body:
         await repo.set_app_setting(
-            DEFAULT_SHOW_LINKS_KEY,
+            SHOW_LINKS_KEY,
             "1" if body["show_profile_links"] else "0",
             admin.tg_id,
         )
@@ -415,7 +431,8 @@ async def handle_admin_user_patch(request: web.Request) -> web.Response:
     action = body.get("action")
     platform = str(body.get("platform") or "")
     if action in ("sync", "reset") and platform in ("xbox", "steam", "psn"):
-        await _admin_platform_action(request, tg_id, platform, action)
+        account_id = str(body.get("account_id") or "").strip() or None
+        await _admin_platform_action(request, tg_id, platform, action, account_id)
     payload = await build_admin_user(repo, tg_id)
     if payload is None:
         raise web.HTTPNotFound()
@@ -459,6 +476,11 @@ async def handle_admin_chat_patch(request: web.Request) -> web.Response:
         fields["flood_window_minutes"] = window
     if "min_gamerscore" in body:
         fields["min_gamerscore"] = int(body["min_gamerscore"])
+    if "digest_threshold" in body:
+        digest = int(body["digest_threshold"])
+        if digest not in DIGEST_CHOICES:
+            raise web.HTTPBadRequest(text="bad digest_threshold")
+        fields["digest_threshold"] = digest
     if "daily_summary" in body:
         fields["daily_summary"] = 1 if body["daily_summary"] else 0
     if "daily_summary_time" in body:
@@ -516,7 +538,7 @@ async def handle_admin_chat_action(request: web.Request) -> web.Response:
 
 
 async def _admin_platform_action(
-    request: web.Request, tg_id: int, platform: str, action: str
+    request: web.Request, tg_id: int, platform: str, action: str, account_id: str | None = None
 ) -> None:
     repo: Repo = request.app["mini_repo"]
     xbox = request.app.get("mini_xbox_fetcher")
@@ -545,7 +567,10 @@ async def _admin_platform_action(
                 tg_id, link.external_id, link.display_name or link.external_id, locale
             )
         return
-    link = await repo.get_platform_link(tg_id, Platform.PSN)
+    links = await repo.platform_links_for(tg_id, Platform.PSN)
+    if account_id is not None:
+        links = [item for item in links if item.external_id == account_id]
+    link = links[0] if links else None
     if link is None or psn_fetcher is None:
         raise web.HTTPBadRequest(text="psn not linked")
     if action == "reset":

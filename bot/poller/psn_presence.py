@@ -130,9 +130,13 @@ class PsnPresencePoller:
         if not online_id or online_id == target.online_id:
             return
         previous = target.online_id
-        await self._repo.update_platform_names(target.tg_id, Platform.PSN, online_id)
+        await self._repo.update_platform_names(
+            target.tg_id, Platform.PSN, online_id, external_id=target.account_id
+        )
         if previous:
-            await self._repo.set_platform_secondary_name(target.tg_id, Platform.PSN, previous)
+            await self._repo.set_platform_secondary_name(
+                target.tg_id, Platform.PSN, previous, external_id=target.account_id
+            )
             log.info("psn account %s renamed: %s -> %s", target.account_id, previous, online_id)
 
     def _is_due(self, target: PsnPresenceTarget) -> bool:

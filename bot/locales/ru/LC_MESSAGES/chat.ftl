@@ -3,7 +3,7 @@ chat-subscribe-groups-only = Эта команда для группового �
 chat-subscribe-connect-first = Сначала подключи хотя бы одну платформу — кнопки ниже.
 chat-subscribe-already = Ты уже публикуешься здесь.
 chat-subscribe-done = Готово. Ачивки { $gamertag } будут прилетать сюда.
-    Настройки редкости и XBOX 360 — в личке, /panel.
+    Какие именно публиковать — в настройках, кнопка ниже.
 chat-unsubscribe-not-subscribed = Ты здесь и не публиковался.
 chat-unsubscribe-confirm-button = Да, отписаться
 chat-cancel-button = Отмена
@@ -53,15 +53,23 @@ chat-help-text = Команды чата:
     /subscribe — подписаться на публикации
     /unsubscribe — отписаться от публикаций
     /help — список команд
+# /help in a DM (#140): what the bot is, the four commands a DM has, and
+# one button into the Mini App. Connecting and unlinking live in /panel.
+chat-help-private-text =
+    🎮 <b>Игровой клуб</b>
+    Слежу за достижениями и трофеями на XBOX, PlayStation и в Steam и публикую их в чаты, где ты подписан, — со статистикой, сводками и лидербордами. Всё это — и в приложении.
 
-    Настройки — в личке, /panel.
+    /panel — твоя панель: аккаунты, публикация, настройки
+    /stats — твоя статистика
+    /hltb — сколько идти игру (HowLongToBeat)
+    /help — эта справка
 chat-help-version = <i>Версия { $version }</i>
 chat-hub-nobody = Пока здесь никто не публикуется.
 chat-hub-publishing = Публикуются: { $names }
 chat-hub-publish-button = 🔔 Настройка уведомлений
 chat-hub-toast-all = Публикую все достижения
 chat-hub-toast-rare = Только редкие
-chat-hub-toast-hidden = Ничего не публикую здесь
+chat-hub-toast-hidden = Ничего не публикую
 chat-hub-xbox-button = 🔗 XBOX
 chat-hub-steam-button = 🎮 Steam
 chat-hub-psn-button = 🎮 PSN

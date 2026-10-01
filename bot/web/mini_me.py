@@ -4,8 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from bot.constants import Platform, PresenceState, TokenStatus
+from bot.constants import (
+    MAX_PSN_ACCOUNTS,
+    AccountPlatform,
+    Platform,
+    PresenceState,
+    TokenStatus,
+)
 from bot.db.repo import PlatformLink, Repo, User
+from bot.services.admin_settings import SHOW_LINKS_DEFAULT, SHOW_LINKS_KEY
+from bot.services.naming import link_nickname
 from bot.services.profile_links import (
     psn_profile_url,
     steam_profile_url,
@@ -28,13 +36,15 @@ async def build_me_payload(
     user = await repo.get_user(tg_id)
     settings_row = await repo.get_user_settings(tg_id)
     steam = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn = await repo.get_platform_link(tg_id, Platform.PSN)
+    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    psn = psn_links[0] if psn_links else None
     token = await repo.get_token(tg_id) if user and user.xuid else None
     chats = await repo.user_chats(tg_id)
 
     locale = (settings_row.locale if settings_row else None) or "ru"
     tz_offset = settings_row.tz_offset_min if settings_row else None
-    show_links = bool(settings_row and settings_row.show_profile_links)
+    # The admin's switch for everybody (owner, 2026-09-29), no longer a person's.
+    show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
     show_secrets = bool(settings_row and settings_row.show_secrets)
 
     xbox_count = await repo.xbox_achievement_count(tg_id) if user and user.xuid else 0
@@ -61,6 +71,8 @@ async def build_me_payload(
             "tz_offset_min": tz_offset,
             "show_profile_links": show_links,
             "show_secrets": show_secrets,
+            # Which achievements go out, in every chat (#126).
+            "rarity_mode": settings_row.rarity_mode if settings_row else "all",
         },
         "xbox": await _xbox_block(
             repo,
@@ -85,6 +97,7 @@ async def build_me_payload(
         "psn": await _psn_block(
             repo,
             psn,
+            psn_links,
             psn_count,
             psn_platinum,
             psn_tiers,
@@ -98,8 +111,6 @@ async def build_me_payload(
                 "chat_id": c.chat_id,
                 "title": c.title,
                 "is_subscribed": c.is_subscribed,
-                "rarity_mode": c.rarity_mode,
-                "digest_threshold": c.digest_threshold,
             }
             for c in chats
         ],
@@ -123,8 +134,13 @@ async def _xbox_block(
     presence = None
     if linked and user and user.xuid:
         presence = await _xbox_presence(repo, user.xuid)
+    xbox_link = (
+        await repo.get_platform_link(user.tg_id, AccountPlatform.XBOX) if linked and user else None
+    )
     return {
         "linked": linked,
+        # The owner's switch for this account's posts (#20).
+        "publishes": xbox_link.publishes if xbox_link else True,
         "gamertag": gamertag,
         "gamertag_modern": user.gamertag_modern if user else None,
         "xuid": user.xuid if user else None,
@@ -156,6 +172,7 @@ async def _steam_block(
     presence = await _steam_presence(repo, link.external_id)
     return {
         "linked": True,
+        "publishes": link.publishes,
         "steam_id": link.external_id,
         "display_name": link.display_name,
         "secondary_name": link.secondary_name,
@@ -174,6 +191,7 @@ async def _steam_block(
 async def _psn_block(
     repo: Repo,
     link: PlatformLink | None,
+    links: list[PlatformLink],
     count: int,
     platinum: int,
     tiers: tuple[int, int, int, int],
@@ -186,8 +204,31 @@ async def _psn_block(
         return {"linked": False}
     presence = await _psn_presence(repo, link.external_id)
     name = link.display_name
+    # Several accounts (#10): the block's counts are the person's sum, the
+    # account fields the first one linked; `accounts` lists them all.
+    accounts = []
+    for item in links:
+        accounts.append(
+            {
+                "account_id": item.external_id,
+                "online_id": item.display_name,
+                "name": link_nickname(item),
+                "publishes": item.publishes,
+                "trophy_count": await repo.account_achievement_count(
+                    Platform.PSN, item.external_id
+                ),
+                "platinum_count": await repo.account_platinum_count(item.external_id),
+                "trophy_level": item.psn_trophy_level,
+                "visibility": visibility_status_text(item, locale),
+                "achievements_visible": item.achievements_visible,
+                "profile_url": psn_profile_url(item.display_name) if item.display_name else None,
+            }
+        )
     return {
         "linked": True,
+        "publishes": all(item.publishes for item in links),
+        "accounts": accounts,
+        "max_accounts": MAX_PSN_ACCOUNTS,
         "account_id": link.external_id,
         "online_id": name,
         "secondary_name": link.secondary_name,

@@ -23,6 +23,7 @@ from bot.db.repo import (
     User,
 )
 from bot.i18n import DEFAULT_LOCALE, gettext
+from bot.services.admin_settings import SHOW_LINKS_DEFAULT, SHOW_LINKS_KEY
 from bot.services.mini_app import mini_app_group_url, mini_app_open_url
 from bot.services.naming import (
     person_name,
@@ -127,7 +128,8 @@ async def build_stats_text(
         return None
 
     settings_row = await repo.get_user_settings(target.tg_id)
-    show_links = bool(settings_row and settings_row.show_profile_links)
+    # The admin's switch, for everybody at once (owner, 2026-09-29).
+    show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
 
     locale = _locale_of(i18n)
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
@@ -337,10 +339,7 @@ def hub_keyboard(
             )
 
     # In groups: add action rows and management
-    settings_btn = InlineKeyboardButton(
-        text=_hub_text(i18n, "chat-hub-settings-button"),
-        url=f"https://t.me/{bot_username}?start=panel",
-    )
+    settings_btn = settings_button(bot_username, i18n)
     if is_group:
         # Action row 1: who, online, recent
         rows.append(
@@ -415,6 +414,24 @@ def hub_keyboard(
 def help_text(i18n: I18nContext) -> str:
     """The list of chat commands for /help (#19)."""
     return i18n.get("chat-help-text")
+
+
+def private_help_text(i18n: I18nContext) -> str:
+    """/help in a DM (#140): what the bot is and the commands a DM has."""
+    return (
+        i18n.get("chat-help-private-text")
+        + "\n\n"
+        + i18n.get("chat-help-version", version=version())
+    )
+
+
+def settings_button(bot_username: str, i18n: I18nContext) -> InlineKeyboardButton:
+    """Into the person's own panel in a DM — a button, not a bare `/panel`
+    that a tap in a group would send to the group (#133)."""
+    return InlineKeyboardButton(
+        text=_hub_text(i18n, "chat-hub-settings-button"),
+        url=f"https://t.me/{bot_username}?start=panel",
+    )
 
 
 async def hub_text(repo: Repo, chat_id: int, i18n: I18nContext) -> str:

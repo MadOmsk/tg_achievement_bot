@@ -1,6 +1,12 @@
 import { BaseApi } from "../base/baseApi";
 import { API_BASE_ROUTES, USER_ROUTES } from "../../components/shared/constants/routes";
-import type { ChatPatchBody, ChatRow, MeResponse, UserSettingsPatch } from "./userApiModels";
+import type {
+  AccountPlatform,
+  ChatPatchBody,
+  ChatRow,
+  MeResponse,
+  UserSettingsPatch,
+} from "./userApiModels";
 
 export class UserApi extends BaseApi {
   constructor(baseUrl: string = API_BASE_ROUTES.MINI) {
@@ -60,8 +66,28 @@ export class UserApi extends BaseApi {
     );
   }
 
-  disconnectPsn(initData: string): Promise<{ ok: boolean }> {
-    return this.post<{ ok: boolean }>(initData, USER_ROUTES.DISCONNECT_PSN);
+  /** Every PSN account, or the one `accountId` names (#10). */
+  disconnectPsn(initData: string, accountId?: string): Promise<{ ok: boolean }> {
+    return this.post<{ ok: boolean }>(
+      initData,
+      USER_ROUTES.DISCONNECT_PSN,
+      accountId ? { account_id: accountId } : {},
+    );
+  }
+
+  /** The owner's switch for a platform's posts (#20), or for one of its PSN
+   * accounts when `accountId` is given (#10). */
+  setAccountPublishes(
+    initData: string,
+    platform: AccountPlatform,
+    publishes: boolean,
+    accountId?: string,
+  ): Promise<MeResponse> {
+    return this.patch<MeResponse>(
+      initData,
+      USER_ROUTES.ACCOUNT(platform),
+      accountId ? { publishes, account_id: accountId } : { publishes },
+    );
   }
 
   syncXbox(initData: string): Promise<{ ok: boolean; queued?: boolean; reason?: string }> {

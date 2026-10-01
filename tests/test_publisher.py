@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+
 from bot.db.repo import AchievementRow
 from bot.poller.publisher import _gallery
 
@@ -116,7 +118,10 @@ async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) ->
     assert job.reply_markup is not None
     button = job.reply_markup.inline_keyboard[0][0]
     assert button.text == "Открыть Mini App"
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}"
+    encoded_game = (
+        base64.urlsafe_b64encode(f"{item.platform}:{item.title_id}".encode()).decode().rstrip("=")
+    )
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{encoded_game}"
 
 
 async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
@@ -129,7 +134,7 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
     await repo.ensure_user(tg_id)
     await repo.upsert_chat(chat_id, "Test Chat", tg_id)
     await repo.subscribe(chat_id, tg_id)
-    await repo.update_subscription_digest_threshold(chat_id, tg_id, 2)
+    await repo.update_chat_settings(chat_id, digest_threshold=2)  # the chat's since #126
 
     settings = SimpleNamespace(mini_app_url="https://app.example.com")
     pub = Publisher(bot=None, repo=repo, settings=settings, bot_username="testbot")
@@ -142,7 +147,12 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
     assert job.reply_markup is not None
     button = job.reply_markup.inline_keyboard[0][0]
     assert button.text == "Открыть Mini App"
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}"
+    encoded_game = (
+        base64.urlsafe_b64encode(f"{items[0].platform}:{items[0].title_id}".encode())
+        .decode()
+        .rstrip("=")
+    )
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{encoded_game}"
 
 
 async def test_publisher_no_markup_when_no_mini_app_url(repo) -> None:

@@ -5,12 +5,13 @@ import {
   postAdminChatAction,
   type AdminChatRow,
 } from "../../../api";
-import { formatOffset, t, timezoneLabel, type Locale } from "../../../i18n";
+import { digestLabel, formatOffset, t, timezoneLabel, type Locale } from "../../../i18n";
 import { BackHead, GlassWait, Toggle, Chevron } from "../../shared/lib";
 import {
   ADMIN_CHAT_ACTIONS,
   TIMEZONES,
   type AdminChatAction,
+  DIGEST_CHOICES,
 } from "../../shared/constants";
 
 export function AdminChatDetail({
@@ -138,6 +139,22 @@ export function AdminChatDetail({
                   }
                 }}
               />
+            </label>
+            <label className="ios-row admin-limit-row">
+              <span className="admin-limit-copy">
+                <strong>{t(locale, "digest")}</strong>
+              </span>
+              <select
+                className="tz-select"
+                value={chat.digest_threshold}
+                onChange={(e) => onPatch({ digest_threshold: Number(e.target.value) })}
+              >
+                {DIGEST_CHOICES.map((n) => (
+                  <option key={n} value={n}>
+                    {digestLabel(n, locale)}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="ios-row admin-limit-row">
               <span className="admin-limit-copy">

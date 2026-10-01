@@ -16,6 +16,7 @@ the genuine endpoint, not just parsed against a guessed shape.
 
 from __future__ import annotations
 
+import html
 import logging
 import re
 from dataclasses import dataclass, replace
@@ -33,6 +34,7 @@ BASE_URL = "https://api.steampowered.com"
 # per game, ever, and for exactly one field — this is not the store
 # *description* source that was tried and rejected (CLAUDE.md's appendix).
 STORE_URL = "https://store.steampowered.com"
+COMMUNITY_URL = "https://steamcommunity.com"
 
 log = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
@@ -412,6 +414,65 @@ async def get_player_achievements(
         for item in stats.get("achievements") or []
         if item.get("apiname")
     ]
+
+
+# One achievement row on a profile's achievements page: its icon, then its
+# name and description. The icon is what ties a row to an `apiname` — the
+# page never shows the id, and names can repeat.
+_ACHIEVE_ROW_RE = re.compile(
+    r'class="achieveRow[^"]*".*?<img src="([^"]+)".*?<h3[^>]*>(.*?)</h3>\s*<h5[^>]*>(.*?)</h5>',
+    re.S,
+)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def icon_key(url: str | None) -> str | None:
+    """The file name of an achievement icon, which the Web API schema and the
+    community page share — the one way to match the page's rows to ids."""
+    if not url:
+        return None
+    return url.rsplit("/", 1)[-1].split("?", 1)[0].rsplit(".", 1)[0] or None
+
+
+async def community_descriptions(
+    steam_id: str, appid: str, *, language: str
+) -> dict[str, tuple[str, str]]:
+    """`{icon_key: (name, description)}` from the person's public
+    achievements page (#132).
+
+    The Web API never gives a secret achievement's description — not in the
+    schema, and not in `GetPlayerAchievements` even once it is earned — while
+    the profile page shows it for every unlocked one. Its `?xml=1` form is
+    gone (Steam answers with the HTML page), so the page is read. Best effort:
+    a private profile, a layout change or an outage gives `{}`, and the
+    achievement keeps no description, as before.
+    """
+    try:
+        await _limiter.acquire()
+        # The language rides on Steam's own cookie: `?l=` is dropped by the
+        # redirect to a vanity URL (`/id/<name>/…`), and the page then comes
+        # back in English whatever was asked.
+        async with httpx.AsyncClient(
+            timeout=REQUEST_TIMEOUT,
+            follow_redirects=True,
+            cookies={"Steam_Language": language},
+        ) as client:
+            response = await client.get(
+                f"{COMMUNITY_URL}/profiles/{steam_id}/stats/{appid}/achievements/",
+                params={"l": language},
+            )
+            response.raise_for_status()
+            page = response.text
+    except Exception:
+        log.info("steam community page for appid=%s unavailable", appid, exc_info=True)
+        return {}
+    result: dict[str, tuple[str, str]] = {}
+    for icon, name, description in _ACHIEVE_ROW_RE.findall(page):
+        key = icon_key(icon)
+        text = html.unescape(_TAG_RE.sub("", description)).strip()
+        if key and text:
+            result[key] = (html.unescape(_TAG_RE.sub("", name)).strip(), text)
+    return result
 
 
 async def get_schema(

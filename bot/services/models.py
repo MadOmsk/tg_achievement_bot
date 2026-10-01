@@ -11,6 +11,7 @@ a platform client never knows about Telegram or the database).
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -47,3 +48,8 @@ class ParsedAchievement:
     device: str | None = None
     # Available platforms for the title (JSON string e.g. '["XboxOne", "XboxSeriesX"]')
     game_platforms: str | None = None
+
+
+#: `(done, total, found)` after each step of a backfill — the person's own
+#: status message (handlers/backfill.py) redraws from it, every few seconds.
+Progress = Callable[[int, int, int], Awaitable[None]]

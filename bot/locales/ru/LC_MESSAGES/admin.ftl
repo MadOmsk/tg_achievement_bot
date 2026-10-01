@@ -175,7 +175,6 @@ admin-system-wipe-prompt =
     промежуточные сообщения (подсказки, подтверждения, /help и т.п.).
 admin-send-promo-to-chat = 📢 Отправить промо в чат
 admin-promo-sent = Промо-сообщение отправлено в чат
-admin-test-notify-sent = Тестовые уведомления отправлены в личку
 
 # New users and user cards
 admin-new-users-screen =
@@ -184,7 +183,7 @@ admin-new-users-screen =
     Действует только на подписки, оформленные с этого момента — уже существующие
     не трогает.
 admin-default-rarity = Ачивки по умолчанию: { $rarity } ▸
-admin-default-links = Профиль виден другим: { $visible } ▸
+admin-show-links = Ссылки на профили в карточках: { $visible } ▸
 admin-users-empty = 👥 Пока никто не подключился.
 admin-users-header = 👥 Пользователи
 admin-users-columns = Колонки: когда был в сети · достижений сегодня / за месяц
@@ -212,6 +211,7 @@ admin-xbox-header = 🟢 XBOX: { $gamertag }
 admin-xuid-tag = XUID { $xuid }
 admin-login-row =   Вход: { $login }
 admin-online-row =   В сети: { $online }
+admin-muted-row =   🔇 публикация выключена владельцем
 admin-steam-header = ⚫ Steam: { $name }
 admin-steamid-tag = id { $external_id }
 admin-psn-header = 🔵 PSN: { $name }
@@ -229,6 +229,9 @@ admin-refresh-psn = 🔄 Обновить PSN
 admin-reset-xbox = 🗑 Сброс XBOX
 admin-reset-steam = 🗑 Сброс Steam
 admin-reset-psn = 🗑 Сброс PSN
+# One pair per PSN account when a person holds several (#10).
+admin-refresh-psn-account = 🔄 Обновить PSN: { $name }
+admin-reset-psn-account = 🗑 Сброс PSN: { $name }
 admin-reset-confirm-prompt =
     Стереть базу { $platform } для этого пользователя и синхронизировать заново?
 
@@ -261,6 +264,7 @@ admin-chat-card =
     Состояние:    { $state }
     Публикуется:  { $subscribers } чел.
     Порог редк.:  { $threshold }
+    Дайджест:     { $digest }
     Итог дня:     { $summary }, в { $time }
     Часовой пояс: { $offset }
     Мин. G:       { $min_score }
@@ -273,6 +277,9 @@ admin-chat-flood-off = выключен
 admin-no-subscribers = Подписанных пока нет.
 admin-subscribers-list = Подписаны: { $names }
 admin-chat-threshold-button = Порог редкости: { $threshold } ▸
+admin-chat-digest-button = Дайджест: { $digest } ▸
+admin-digest-from = от { $value } ач.
+admin-digest-never = никогда
 admin-chat-summary-button = Итог дня: { $state }
 admin-chat-time-button = Время итога: { $time } ({ $offset }) ▸
 admin-chat-flood-toggle-button = Антиспам-фильтр: { $state }

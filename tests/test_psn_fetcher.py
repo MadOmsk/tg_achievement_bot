@@ -61,6 +61,7 @@ def _fake_sync(monkeypatch, outcomes):
         anthropic_auth=None,
         translation_client=None,
         limit=None,
+        report=None,
     ):
         calls.append(
             {

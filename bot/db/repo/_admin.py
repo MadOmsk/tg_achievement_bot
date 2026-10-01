@@ -175,7 +175,7 @@ class _AdminRepo:
             "SELECT c.chat_id, c.title, c.is_active, s.min_gamerscore,"
             "       s.daily_summary, s.muted_title_ids, s.rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
-            "       s.locale,"
+            "       s.locale, s.digest_threshold,"
             "       (SELECT COUNT(*) FROM subscriptions WHERE chat_id = c.chat_id) AS subs "
             "FROM chats c JOIN chat_settings s ON s.chat_id = c.chat_id "
             "ORDER BY c.is_active DESC, c.title"
@@ -192,6 +192,7 @@ class _AdminRepo:
                 flood_limit=row["flood_limit"],
                 flood_window_minutes=row["flood_window_minutes"],
                 locale=row["locale"],
+                digest_threshold=row["digest_threshold"],
                 is_active=bool(row["is_active"]),
                 daily_summary=bool(row["daily_summary"]),
                 subscribers=int(row["subs"]),
@@ -209,6 +210,7 @@ class _AdminRepo:
             "flood_limit",
             "flood_window_minutes",
             "locale",
+            "digest_threshold",
         }
         unknown = set(fields) - allowed
         if unknown:
@@ -668,7 +670,7 @@ class _AdminRepo:
         cursor = await self._conn.execute(
             "SELECT hltb_id, name, release_year, main_hours, extra_hours,"
             " completionist_hours, platforms, game_url, image_url, genre,"
-            " description_en, description_ru "
+            " description_en, description_ru, details "
             "FROM hltb_cache WHERE hltb_id = ?",
             (hltb_id,),
         )
@@ -688,6 +690,7 @@ class _AdminRepo:
             genre=row["genre"],
             description_en=row["description_en"],
             description_ru=row["description_ru"],
+            details=json.loads(row["details"]) if row["details"] else None,
         )
 
     async def hltb_cache_result(self, entry: HltbCacheRow) -> None:
@@ -697,8 +700,8 @@ class _AdminRepo:
             "INSERT OR REPLACE INTO hltb_cache "
             "(hltb_id, name, release_year, main_hours, extra_hours, completionist_hours,"
             " platforms, game_url, image_url, genre, description_en, description_ru,"
-            " cached_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " details, cached_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 entry.hltb_id,
                 entry.name,
@@ -712,6 +715,7 @@ class _AdminRepo:
                 entry.genre,
                 entry.description_en,
                 entry.description_ru,
+                json.dumps(entry.details) if entry.details is not None else None,
                 utcnow_iso(),
             ),
         )
