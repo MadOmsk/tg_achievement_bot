@@ -158,14 +158,22 @@ migration — and is shown at the end of `/help`.
 
 ## Contributing
 
-- Pull requests target **`prerelease`**, never `main`.
-- Describe what changed for players in the notes of the **next** version
-  (`changelog/<A.B.C>.*`); a version already released is never edited.
-- User-facing text lives only in `bot/locales/` (Russian and English, kept in
-  parity by a test); code, comments, commits and issues are in English.
-- A screen is agreed before it is built: `scripts/render_screen.py` draws any
-  screen from real data and can send it to the operator's DM.
-- New paid calls (Anthropic) come with a limit on how often they can run.
+1. **Work in a branch of your own.** It is yours: run your own bot from it with
+   your own `.env` and your own keys (Anthropic included), and try whatever you
+   like.
+2. **Propose the result as a pull request into `prerelease`** — never into `main`.
+3. Once merged, it is built and deployed to the test server. The repository's
+   admin tests it and releases it to production (`prerelease` → `main`).
+
+What a pull request should bring:
+- what changed for players, in the notes of the **next** version
+  (`changelog/<A.B.C>.*`) — a version already released is never edited;
+- user-facing text only in `bot/locales/` (Russian and English, kept in parity by
+  a test); code, comments, commits and issues in English;
+- green tests and ruff; a new screen agreed first (`scripts/render_screen.py` draws
+  any screen from real data and can send it to the admin's DM);
+- new migrations, which the admin rehearses on a copy of production before the
+  release.
 
 Everything else — data model, platform quirks, publication rules — is in
 [CLAUDE.md](CLAUDE.md).
