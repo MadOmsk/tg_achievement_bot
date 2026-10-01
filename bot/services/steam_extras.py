@@ -160,20 +160,16 @@ class SteamExtras:
     ) -> dict[str, str] | None:
         """{achievement id: tip} for what Haiku picked in this guide; empty
         without a key or when the model gave nothing usable. The model is asked
-        only when this guide, or the game's list, is not what it was last time:
-        otherwise the answer given then stands (the tips stored from this guide, or
-        none when it gave none)."""
+        only when this guide, or what the game's list tells it, is not what it was
+        last time: otherwise the stored answer is cut into tips again, so a guide
+        that was asked once never costs another call, kept or not."""
         api_key = await self._anthropic_auth.get_key() if self._anthropic_auth else None
         if not api_key:
             return {}
         fingerprint = _fingerprint(guide, catalog)
         before = await self._repo.guide_read(title_id, guide.file_id)
         if before is not None and before[0] == fingerprint:
-            if before[1] == 0:
-                return {}
-            kept = await self._repo.tips_from_guide(platform, title_id, guide.file_id)
-            if kept:
-                return kept
+            return _tips_of(guide, before[1])
         numbers = {
             normalize(name): number
             for number, row in enumerate(catalog, start=1)
@@ -186,23 +182,13 @@ class SteamExtras:
             if normalize(line) in numbers
         }
         sections = await locate_sections(
-            api_key,
-            guide.lines,
-            [
-                (row.name_en or row.name_ru or "", row.description_en or row.description_ru or "")
-                for row in catalog
-            ],
-            marks,
+            api_key, guide.lines, [_asked_about(row) for row in catalog], marks
         )
         if sections is None:
             return None
-        found: dict[str, str] = {}
-        for index, ranges in sections.items():
-            text = tip_from_lines(guide, ranges)
-            if text:
-                found[catalog[index].achievement_id] = text
-        await self._repo.save_guide_read(title_id, guide.file_id, fingerprint, len(found))
-        return found
+        answer = {catalog[index].achievement_id: ranges for index, ranges in sections.items()}
+        await self._repo.save_guide_read(title_id, guide.file_id, fingerprint, answer)
+        return _tips_of(guide, answer)
 
     async def refresh_patches(self, appid: int) -> None:
         """Read the app's patch notes now. Steam unreachable: nothing changes,
@@ -226,21 +212,30 @@ class SteamExtras:
         )
 
 
+def _asked_about(row) -> tuple[str, str]:
+    """An achievement as the model is shown it: one name, one description."""
+    return (row.name_en or row.name_ru or "", row.description_en or row.description_ru or "")
+
+
+def _tips_of(guide: Guide, answer: dict[str, list[tuple[int, int]]]) -> dict[str, str]:
+    found: dict[str, str] = {}
+    for achievement_id, ranges in answer.items():
+        text = tip_from_lines(guide, ranges)
+        if text:
+            found[achievement_id] = text
+    return found
+
+
 def _fingerprint(guide: Guide, catalog: list) -> str:
-    """What a question to the model depends on: the guide's lines and the game's
-    achievements with their names and descriptions."""
+    """Exactly what a question to the model depends on: the guide's lines, and each
+    achievement as the prompt shows it plus both names (the name marks use them).
+    A translation filled in later, which the prompt does not show, changes nothing."""
     digest = hashlib.sha256()
     for line in guide.lines:
         digest.update(line.encode("utf-8"))
         digest.update(b"\n")
     for row in catalog:
-        parts = (
-            row.achievement_id,
-            row.name_en,
-            row.name_ru,
-            row.description_en,
-            row.description_ru,
-        )
+        parts = (row.achievement_id, row.name_en, row.name_ru, *_asked_about(row))
         digest.update("\x1f".join(str(part or "") for part in parts).encode("utf-8"))
         digest.update(b"\n")
     return digest.hexdigest()

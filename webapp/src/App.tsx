@@ -19,11 +19,14 @@ import { Club } from "./screens/club";
 // also re-exports TitleSheet (and its game.css), which GameOpenProvider now
 // loads lazily; importing it through the barrel would pull TitleSheet back
 // into this eager chunk regardless.
-import { GameOpenProvider } from "./components/game/game-open-provider/GameOpenProvider";
+import {
+  GameOpenProvider,
+  preloadTitleSheet,
+} from "./components/game/game-open-provider/GameOpenProvider";
 import "./components/game/game.css";
 import { t, type Locale } from "./i18n";
 import type { PlatNotes } from "./screens/me";
-import { AppSkel, Icon, usePullToRefresh } from "./components/shared/lib";
+import { AppSkel, GameSkel, Icon, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 const Admin = lazy(() => import("./screens/admin").then((m) => ({ default: m.Admin })));
@@ -127,6 +130,13 @@ export function App() {
   const [personOpen, setPersonOpen] = useState(false);
   // Which admin screen Settings' admin list opened.
   const [adminScreen, setAdminScreen] = useState<AdminScreen>({ name: ADMIN_SCREENS.USERS });
+  // Opened straight on a game (a notification's button), the home page is not
+  // loaded behind it: it would only compete with the game for the network.
+  // It is built once the game page is left.
+  const [homeWanted, setHomeWanted] = useState(launch.game === null);
+  const onGameChange = useCallback((open: boolean) => {
+    if (!open) setHomeWanted(true);
+  }, []);
   // Bumped by pull-to-refresh so Club refetches without remounting the tab.
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -153,6 +163,7 @@ export function App() {
   useEffect(() => {
     window.Telegram?.WebApp?.setHeaderColor?.("#0a0c12");
     window.Telegram?.WebApp?.setBackgroundColor?.("#0a0c12");
+    if (launchContext().game) preloadTitleSheet();
     let cancelled = false;
     void reload().catch((err: unknown) => {
       if (!cancelled) setState({ status: "error", message: String(err) });
@@ -174,7 +185,7 @@ export function App() {
   });
 
   if (state.status === "loading") {
-    return <AppSkel />;
+    return launch.game ? <GameSkel /> : <AppSkel />;
   }
   if (state.status === "need-telegram") {
     return <p className="error">{t("ru", "needTelegram")}</p>;
@@ -264,6 +275,7 @@ export function App() {
       showSecrets={me.settings.show_secrets}
       meId={me.tg_id}
       initialGame={launch.game}
+      onGameChange={onGameChange}
     >
     <div
       className={[
@@ -282,6 +294,7 @@ export function App() {
           leaving it and coming back — e.g. through Settings — used to reset
           every pane's month and refetch from scratch. */}
       <div style={isClubPane ? undefined : { display: "none" }}>
+        {homeWanted && (
         <Club
           me={me}
           locale={locale}
@@ -304,6 +317,7 @@ export function App() {
           onPersonVisible={setPersonOpen}
           onSettings={() => setScreen(SCREENS.settings)}
         />
+        )}
       </div>
 
       {isSettings && (

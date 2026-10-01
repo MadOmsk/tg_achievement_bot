@@ -19,6 +19,7 @@ import json
 import logging
 import re
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -100,7 +101,11 @@ class Guide:
 
 
 _locks: dict[int, asyncio.Lock] = {}
-_guide_memory: dict[str, Guide | None] = {}
+# The last few guides read, with when their text was fetched: the same week-long
+# life as the copy on disk, and a bound, so a process that runs for months neither
+# keeps a stale guide nor every guide it ever read.
+_MEMORY_GUIDES = 32
+_guide_memory: OrderedDict[str, tuple[float, Guide | None]] = OrderedDict()
 _cooldown_until = 0.0
 _refusals = 0
 _community = asyncio.Lock()
@@ -229,11 +234,17 @@ class GuideSet:
 def _recall(file_id: str) -> tuple[bool, Guide | None]:
     """A guide read before — in memory, or on disk from an earlier run — and
     whether it was usable. `known` is False when it has never been read."""
-    if file_id in _guide_memory:
-        return True, _guide_memory[file_id]
+    kept = _guide_memory.get(file_id)
+    if kept is not None:
+        fetched_at, guide = kept
+        if time.time() - fetched_at <= _DISK_SECONDS:
+            _guide_memory.move_to_end(file_id)
+            return True, guide
+        del _guide_memory[file_id]
     path = _DISK_DIR / f"{file_id}.json"
     try:
-        if time.time() - path.stat().st_mtime > _DISK_SECONDS:
+        fetched_at = path.stat().st_mtime
+        if time.time() - fetched_at > _DISK_SECONDS:
             return False, None
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -245,14 +256,21 @@ def _recall(file_id: str) -> tuple[bool, Guide | None]:
         if data.get("lines") and data.get("format") == _DISK_FORMAT
         else None
     )
-    _guide_memory[file_id] = guide
+    _keep(file_id, guide, fetched_at)
     return True, guide
+
+
+def _keep(file_id: str, guide: Guide | None, fetched_at: float) -> None:
+    _guide_memory[file_id] = (fetched_at, guide)
+    _guide_memory.move_to_end(file_id)
+    while len(_guide_memory) > _MEMORY_GUIDES:
+        _guide_memory.popitem(last=False)
 
 
 def _remember(file_id: str, guide: Guide | None) -> None:
     """Keep what was read, unusable guides included (so they are not read
     again), beside the other downloaded pictures and texts under data/."""
-    _guide_memory[file_id] = guide
+    _keep(file_id, guide, time.time())
     payload = (
         {"format": _DISK_FORMAT, "title": guide.title, "lines": list(guide.lines)}
         if guide

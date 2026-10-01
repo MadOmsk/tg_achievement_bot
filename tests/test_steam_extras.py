@@ -445,3 +445,66 @@ async def test_an_unchanged_guide_gives_back_its_tips_without_the_model(
     await se.SteamExtras(repo, steam_auth, _Key()).refresh_tips(TITLE)  # type: ignore[arg-type]
     assert asked["n"] == 1
     assert await repo.title_tips("xbox_modern", TITLE) == first
+
+
+async def test_a_guide_whose_tips_lost_to_a_later_one_is_never_asked_again(
+    repo: Repo, steam_auth: SteamAuth, steam, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(repo)
+    first = _guide()
+    second = make_guide("g2", "Second", list(first.lines))
+    asked: list[str] = []
+
+    async def guides_of(appid, api_key, stop_when=None):
+        read = []
+        for guide in (first, second):
+            read.append(guide)
+            if stop_when is not None and await stop_when(guide):
+                return GuideSet(read, True)
+        return GuideSet(read, True)
+
+    async def locate(api_key, lines, achievements, marks=None):
+        asked.append("g")
+        # The first guide covers one achievement, the second fills half the list.
+        return {0: [(3, 3)]} if len(asked) == 1 else {0: [(3, 3)], 1: [(5, 5)], 2: [(7, 7)]}
+
+    monkeypatch.setattr(se, "guides_of", guides_of)
+    monkeypatch.setattr(se, "locate_sections", locate)
+    await se.SteamExtras(repo, steam_auth, _Key()).fill_title(TITLE)  # type: ignore[arg-type]
+    assert len(asked) == 2
+    assert {source for _, source in (await _sources(repo)).items()} == {"g2"}
+
+    # Nothing changed: both answers are stored, neither guide is bought again.
+    await se.SteamExtras(repo, steam_auth, _Key()).refresh_tips(TITLE)  # type: ignore[arg-type]
+    assert len(asked) == 2
+
+
+async def _sources(repo: Repo) -> dict[str, str]:
+    cursor = await repo._conn.execute(
+        "SELECT achievement_id, tip_source FROM title_achievements"
+        " WHERE title_id = ? AND tip_source IS NOT NULL",
+        (TITLE,),
+    )
+    return {row["achievement_id"]: row["tip_source"] for row in await cursor.fetchall()}
+
+
+async def test_a_translation_filled_in_later_does_not_buy_the_guide_again(
+    repo: Repo, steam_auth: SteamAuth, steam, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(repo)
+    asked = {"n": 0}
+
+    async def locate(api_key, lines, achievements, marks=None):
+        asked["n"] += 1
+        return {0: [(3, 3)], 1: [(5, 5)], 2: [(7, 7)]}
+
+    monkeypatch.setattr(se, "locate_sections", locate)
+    await se.SteamExtras(repo, steam_auth, _Key()).fill_title(TITLE)  # type: ignore[arg-type]
+    # The translator fills a Russian side the prompt never shows (it shows English).
+    await repo._conn.execute(
+        "UPDATE title_achievements SET description_ru = 'Сделай это' WHERE title_id = ?",
+        (TITLE,),
+    )
+    await repo._conn.commit()
+    await se.SteamExtras(repo, steam_auth, _Key()).refresh_tips(TITLE)  # type: ignore[arg-type]
+    assert asked["n"] == 1

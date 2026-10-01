@@ -838,8 +838,10 @@ async def handle_game_guides(request: web.Request) -> web.Response:
     """The tip the Steam community's guides give for each achievement of this
     game, in the reader's language where there is one. Stored when the game's
     first new achievement was published; a game still without them is filled
-    now. `complete: false` while Steam still holds some guides back — the Mini
-    App asks again a little later and the rest fill in."""
+    in the background, never while the request waits (a read of Steam's guides
+    and the model takes minutes when Steam is slow). `complete: false` until
+    the fill is done — the Mini App asks again a little later and the tips
+    fill in."""
     user = await _require_user(request)
     platform = request.match_info.get("platform", "").lower()
     title_id = request.match_info.get("title_id", "")
@@ -847,11 +849,8 @@ async def handle_game_guides(request: web.Request) -> web.Response:
     complete = True
     extras = _extras(request)
     if await extras.tips_due(title_id):
-        try:
-            complete = await extras.fill_title(title_id)
-        except Exception:
-            # Best-effort: whatever is stored is still worth showing.
-            log.exception("steam extras failed for title %s", title_id)
+        extras.ensure_title(title_id)
+        complete = False
     locale = await _user_locale(repo, user.tg_id)
     tips: dict[str, dict[str, str]] = {}
     for achievement_id, (tip_en, tip_ru) in (await repo.title_tips(platform, title_id)).items():

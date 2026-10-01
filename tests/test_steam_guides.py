@@ -123,3 +123,21 @@ def test_pieces_of_a_section_are_joined_without_what_lies_between() -> None:
         "There are ten scanners in total; each is found once.\n"
         "The first is in Garbage, north of the depot."
     )
+
+
+def test_the_guides_kept_in_memory_age_out_and_are_bounded(monkeypatch) -> None:
+    monkeypatch.setattr(g, "_guide_memory", g.OrderedDict())
+    monkeypatch.setattr(g, "_DISK_DIR", g.Path("no-such-dir-for-tests"))
+    now = {"t": 1_000_000.0}
+    monkeypatch.setattr(g.time, "time", lambda: now["t"])
+
+    g._keep("old", g.make_guide("old", "t", ["x"]), now["t"])
+    assert g._recall("old")[0] is True
+    now["t"] += g._DISK_SECONDS + 1
+    assert g._recall("old") == (False, None)
+    assert "old" not in g._guide_memory
+
+    for i in range(g._MEMORY_GUIDES + 5):
+        g._keep(str(i), None, now["t"])
+    assert len(g._guide_memory) == g._MEMORY_GUIDES
+    assert "0" not in g._guide_memory

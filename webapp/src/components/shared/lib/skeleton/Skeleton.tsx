@@ -39,6 +39,23 @@ export function HomeSkel() {
   );
 }
 
+/** The app opened straight on a game: its page, not the home page. */
+export function GameSkel() {
+  return (
+    <div className="app-skel" aria-busy="true" aria-live="polite">
+      <div className="app-skel-head">
+        <span className="skel line" style={{ width: "58%", height: 20 }} />
+      </div>
+      <span className="skel app-skel-hero" />
+      <div className="game-skel-tabs">
+        <span className="skel line" style={{ width: 118, height: 15 }} />
+        <span className="skel line" style={{ width: 84, height: 15 }} />
+      </div>
+      <RowsSkel count={6} />
+    </div>
+  );
+}
+
 /**
  * The app while it first loads, drawn as the home page it becomes: the header
  * (avatar, greeting, nick), the search field, the big picture, the friends

@@ -3,6 +3,7 @@ yet is filled on the visit, a filled one costs no request to Steam."""
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -92,6 +93,13 @@ async def test_tips_and_patches_are_filled_once_and_then_read_from_the_database(
     client = TestClient(TestServer(app))
     await client.start_server()
     try:
+        # The first look starts the fill in the background and answers at once.
+        resp = await client.get(f"/api/mini/games/xbox_modern/{TITLE}/guides", headers=headers)
+        body = await resp.json()
+        assert body["complete"] is False
+        assert body["tips"] == {}
+        await asyncio.gather(*app["mini_steam_extras"]._running.values())
+
         for _ in range(2):
             resp = await client.get(f"/api/mini/games/xbox_modern/{TITLE}/guides", headers=headers)
             body = await resp.json()

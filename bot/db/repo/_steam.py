@@ -9,6 +9,7 @@ version of one game share them — so their read times live on `steam_apps`.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import aiosqlite
@@ -101,39 +102,44 @@ class _SteamRepo:
         row = await cursor.fetchone()
         return (row["guides_checked_at"], row["patches_checked_at"]) if row else (None, None)
 
-    async def guide_read(self, title_id: str, guide_id: str) -> tuple[str, int] | None:
-        """(fingerprint, tips found) of the last time the model was asked about this
-        guide for this game, or None when it never was."""
+    async def guide_read(
+        self, title_id: str, guide_id: str
+    ) -> tuple[str, dict[str, list[tuple[int, int]]]] | None:
+        """(fingerprint, answer) of the last time the model was asked about this
+        guide for this game — the answer as {achievement id: [(first, last), ...]}
+        line ranges — or None when it never was."""
         cursor = await self._conn.execute(
-            "SELECT fingerprint, found FROM title_guide_reads WHERE title_id = ? AND guide_id = ?",
+            "SELECT fingerprint, answer FROM title_guide_reads WHERE title_id = ? AND guide_id = ?",
             (title_id, guide_id),
         )
         row = await cursor.fetchone()
-        return (row["fingerprint"], int(row["found"])) if row else None
+        if row is None:
+            return None
+        try:
+            stored = json.loads(row["answer"])
+            answer = {
+                str(key): [(int(a), int(b)) for a, b in ranges] for key, ranges in stored.items()
+            }
+        except (ValueError, TypeError, AttributeError):
+            return None
+        return row["fingerprint"], answer
 
     async def save_guide_read(
-        self, title_id: str, guide_id: str, fingerprint: str, found: int
+        self,
+        title_id: str,
+        guide_id: str,
+        fingerprint: str,
+        answer: dict[str, list[tuple[int, int]]],
     ) -> None:
         await self._conn.execute(
-            "INSERT INTO title_guide_reads (title_id, guide_id, fingerprint, found, checked_at)"
+            "INSERT INTO title_guide_reads (title_id, guide_id, fingerprint, answer, checked_at)"
             " VALUES (?, ?, ?, ?, ?)"
             " ON CONFLICT(title_id, guide_id) DO UPDATE SET"
-            "  fingerprint = excluded.fingerprint, found = excluded.found,"
+            "  fingerprint = excluded.fingerprint, answer = excluded.answer,"
             "  checked_at = excluded.checked_at",
-            (title_id, guide_id, fingerprint, found, utcnow_iso()),
+            (title_id, guide_id, fingerprint, json.dumps(answer), utcnow_iso()),
         )
         await self._conn.commit()
-
-    async def tips_from_guide(self, platform: str, title_id: str, guide_id: str) -> dict[str, str]:
-        """The tips stored for this game that were taken from this guide, by
-        achievement id, in whichever language they are written."""
-        cursor = await self._conn.execute(
-            "SELECT achievement_id, COALESCE(tip_en, tip_ru) AS text FROM title_achievements"
-            " WHERE platform = ? AND title_id = ? AND tip_source = ?"
-            " AND (tip_en IS NOT NULL OR tip_ru IS NOT NULL)",
-            (platform, title_id, guide_id),
-        )
-        return {row["achievement_id"]: row["text"] for row in await cursor.fetchall()}
 
     async def mark_steam_guides_read(self, appid: int) -> None:
         await self._conn.execute(

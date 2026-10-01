@@ -1085,11 +1085,12 @@ sent to a chat.
   one does, what each gives is kept, the earlier guide's account of an achievement
   standing. A guide naming fewer than three achievements on lines of their own is
   passed over, and so is one the model finds to be in neither English nor Russian (it
-  is asked, by the same call). The model is asked about a guide only when it, or
-  the game's list, has changed since last time (`title_guide_reads`, a fingerprint):
-  an unchanged guide gives back its stored tips, one that gave nothing is not asked
-  again — the guard on the cost of every monthly re-read. 8000 characters at most,
-  cut at a line.
+  is asked, by the same call). **A guide is bought from the model once**
+  (`title_guide_reads`): its fingerprint covers exactly what the prompt shows (the
+  guide's lines, each achievement's shown name and description, both names for the
+  name marks — a Russian side filled in later changes nothing), and the answer itself
+  (the line ranges) is stored beside it, so a hit cuts the tips again whether they
+  were kept or lost to a later guide. 8000 characters at most, cut at a line.
   PlayStation's platinum gets none. No Anthropic key: tips are not read and nothing is
   stamped as read; a model that could not be asked leaves the game to be read again.
   Guides mostly in Chinese/Japanese/Korean are passed over; a tip needs words
@@ -1103,9 +1104,11 @@ sent to a chat.
   picture (`webapp/src/components/game/rich-text/RichText.tsx`).
 - **Steam's community site refuses bursts** (429): guide pages are read one at a
   time, 2.5 s apart, for the whole bot; a refusal pauses every read for 90 s. Pages
-  are kept under `data/steam_guides/` for a week, so a re-read costs no request. A
-  read cut short keeps its tips but not its time stamp: the next visit (the Mini App
-  asks again while `complete` is false) reads the rest.
+  are kept under `data/steam_guides/` for a week, so a re-read costs no request; the
+  last few are also kept in memory, bounded and aged the same week. A read cut short
+  keeps its tips but not its time stamp. **The guides endpoint never waits for a
+  fill**: it starts one in the background and answers with what is stored and
+  `complete: false`, and the Mini App asks again until it is true.
 - **Patches**: the developer's own announcements (`GetNewsForApp`, `feeds=
   steam_community_announcements` — on a busy day the default feed is other sites'
   articles only), a post tagged `patchnotes` or titled like a patch (update, patch,
