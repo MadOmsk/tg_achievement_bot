@@ -5,15 +5,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import TelegramNetworkError
 from aiogram.types import (
     BotCommand,
     BotCommandScopeAllGroupChats,
     BotCommandScopeAllPrivateChats,
     MenuButtonWebApp,
+    User,
     WebAppInfo,
 )
 
@@ -374,7 +377,7 @@ async def run(settings: Settings) -> None:
     await _publish_command_menu(bot)
     await _publish_mini_app_menu(bot, settings)
 
-    me = await bot.me()
+    me = await _me_with_retries(bot)
     bot_version = version()
     log.info("bot @%s is up (v%s)", me.username, bot_version)
     asyncio.create_task(  # noqa: RUF006
@@ -389,6 +392,21 @@ async def run(settings: Settings) -> None:
         await auth.close()
         await bot.session.close()
         await database.close()
+
+
+# Telegram unreachable for a minute at start-up (found live on the dev
+# server, 2026-10-01) is a blip, not a reason to give up: ~2 minutes in all.
+_ME_RETRY_DELAYS = (5, 10, 20, 30, 60)
+
+
+async def _me_with_retries(bot: Bot) -> User:
+    for delay in _ME_RETRY_DELAYS:
+        try:
+            return await bot.me()
+        except TelegramNetworkError as exc:
+            log.warning("telegram unreachable at start-up (%r), retrying in %ss", exc, delay)
+            await asyncio.sleep(delay)
+    return await bot.me()
 
 
 async def _publish_command_menu(bot: Bot) -> None:
@@ -473,6 +491,16 @@ def main() -> None:
                 asyncio.run(run(settings))
             except (KeyboardInterrupt, SystemExit):
                 log.info("stopped")
+            except Exception:
+                # A start-up that failed before polling began leaves resources
+                # nobody closes — an open aiosqlite connection's thread is not a
+                # daemon — and the interpreter would wait on it forever: a
+                # process that looks alive and does nothing, which systemd does
+                # not restart (found live on the dev server, 2026-10-01). Exit
+                # for real, with a failure code systemd answers.
+                log.exception("the bot stopped on an error")
+                logging.shutdown()
+                os._exit(1)
     except AlreadyRunningError:
         # Not a traceback: this is a normal thing to do by mistake.
         print(gettext("main", "main-already-running"), file=sys.stderr)

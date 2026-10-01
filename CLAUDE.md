@@ -254,7 +254,10 @@ every column. History: #106.
   database skipping versions meets both halves of the bring-up at once.
 - **A failed bring-up stops the process.** `connect()` closes the connection before
   re-raising; an open aiosqlite connection keeps a non-daemon thread alive and the
-  bot neither serves nor exits.
+  bot neither serves nor exits. The same holds for anything later in `run()`
+  before polling starts: `main()` ends a run that raised with `os._exit(1)`, so
+  systemd (`Restart=on-failure`) starts it again, and `bot.me()` at start-up is
+  retried for ~2 minutes because Telegram is sometimes briefly unreachable.
 - **A database ahead of the code refuses to start** (`SchemaTooNewError`, #56) —
   that is how an older build learns a newer one already migrated its file.
 - **Rehearse a migration on a copy of production before the release that carries
