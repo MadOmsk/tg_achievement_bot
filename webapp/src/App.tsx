@@ -25,13 +25,17 @@ import {
 } from "./components/game/game-open-provider/GameOpenProvider";
 import "./components/game/game.css";
 import { t, type Locale } from "./i18n";
-import type { PlatNotes } from "./screens/me";
-import { AppSkel, GameSkel, Icon, usePullToRefresh } from "./components/shared/lib";
+import { ConnectForm, Settings, type PlatNotes } from "./screens/me";
+import { AppSkel, GameSkel, Icon, PageSkel, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
-const Admin = lazy(() => import("./screens/admin").then((m) => ({ default: m.Admin })));
-const Settings = lazy(() => import("./screens/me").then((m) => ({ default: m.Settings })));
-const ConnectForm = lazy(() => import("./screens/me").then((m) => ({ default: m.ConnectForm })));
+// Settings and the connect forms are a few kilobytes and sit behind the dock like
+// every other tab, so they ship with the app and open at once. Only the admin
+// screens, which most people never see, load on their own — fetched while the
+// app is idle once it is up, so even they open without a wait.
+const loadAdmin = () => import("./screens/admin");
+const Admin = lazy(() => loadAdmin().then((m) => ({ default: m.Admin })));
+const PRELOAD_AFTER_MS = 1500;
 import {
   ADMIN_SCREENS,
   asLaunchTab,
@@ -172,6 +176,13 @@ export function App() {
       cancelled = true;
     };
   }, [reload]);
+
+  const isAdminUser = state.status === "ok" && state.me.is_admin;
+  useEffect(() => {
+    if (!isAdminUser) return;
+    const id = window.setTimeout(() => void loadAdmin(), PRELOAD_AFTER_MS);
+    return () => window.clearTimeout(id);
+  }, [isAdminUser]);
 
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
@@ -321,7 +332,6 @@ export function App() {
       </div>
 
       {isSettings && (
-        <Suspense fallback={null}>
         <Settings
           me={me}
           locale={locale}
@@ -382,11 +392,10 @@ export function App() {
             await deleteAccount(data);
           }}
         />
-        </Suspense>
       )}
 
       {isAdmin && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<PageSkel />}>
         <Admin
           locale={locale}
           data={data}
@@ -398,7 +407,6 @@ export function App() {
       )}
 
       {isConnectSteam && (
-        <Suspense fallback={null}>
         <ConnectForm
           locale={locale}
           platform="steam"
@@ -414,11 +422,9 @@ export function App() {
             setScreen(SCREENS.settings);
           }}
         />
-        </Suspense>
       )}
 
       {isConnectPsn && (
-        <Suspense fallback={null}>
         <ConnectForm
           locale={locale}
           platform="psn"
@@ -434,7 +440,6 @@ export function App() {
             setScreen(SCREENS.settings);
           }}
         />
-        </Suspense>
       )}
 
       {!isConnectScreen && (

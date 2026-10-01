@@ -15,7 +15,7 @@ import {
 import { t, type Locale } from "../../i18n";
 import { GameHits, GameSheet, useHltbSearch } from "../hltb";
 import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
-import { AccountBar, Avatar, EmptyState, FeedSkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -327,7 +327,7 @@ export function Club({
 
   return (
     <>
-      <div className="pane-fade" key={pane} data-no-pull={isPastMonth || undefined}>
+      <div key={pane} data-no-pull={isPastMonth || undefined}>
       {pane === SCREEN_NAMES.HOME && (
         <>
           <div className="home-chrome">
@@ -381,7 +381,7 @@ export function Club({
               </div>
             </div>
           </div>
-          {!clubReady && !needle && <HomeSkel />}
+          {!clubReady && !needle && <HomeBodySkel />}
           {(clubReady || needle) &&
             (needle ? (
               <div className="search-pane">
