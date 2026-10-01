@@ -719,7 +719,10 @@ keyboard.
   (#33). The platform button opens that platform's screen: profile, the switch,
   unlink, and for PSN every account (up to three) plus adding one. The panel's switch
   covers the whole platform ("Частично" when only some PSN accounts post); a Steam or
-  PSN button carries ❗ while its achievements are hidden (any one PSN account); a dead Xbox
+  PSN button carries ❗ while its achievements are hidden (any one PSN account), and
+  that platform's screen then says what it means and puts "🔓 Как открыть ачивки"
+  (per hidden PSN account) as its top button — the steps, a link to the settings, and
+  "🔄 Проверить снова", which re-reads the account with the live status (#95); a dead Xbox
   login puts "🔄 Подключить заново" in its place, and first on the XBOX screen. The
   publication row names what is switched off. Nothing on it is Xbox-gated. It never
   calls a platform API except the explicit sync button.

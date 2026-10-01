@@ -131,3 +131,35 @@ panel-delete-not-found = Account already deleted.
 panel-rarity-toast-all = Posting every achievement
 panel-rarity-toast-rare = Rare only — by each chat's rarity threshold
 panel-rarity-toast-hidden = Posting nothing
+
+# Hidden achievements: what it means, and how to open them (#95).
+panel-hidden-steam =
+    ⚠️ Your Steam achievements are hidden. The bot can't see them: it won't post new ones or show them in the app. How to open them — the button below.
+panel-hidden-psn =
+    ⚠️ Trophies of { $name } are hidden. The bot can't see them: it won't post new ones or show them in the app. How to open them — the button below.
+kb-howto-steam = 🔓 How to open achievements
+kb-howto-psn = 🔓 How to open { $name }'s trophies
+kb-steam-privacy = ⚙️ Open Steam settings
+kb-recheck = 🔄 Check again
+panel-howto-steam =
+    🔓 <b>Steam: how to open achievements</b>
+
+    The bot only sees what is public on Steam.
+
+    1. Open the privacy settings: { $privacy_url }
+    2. “My profile” → “Public”.
+    3. “Game details” → “Public” — Steam hides it separately from the profile.
+
+    Changes apply at once. Then press “Check again”.
+panel-howto-psn =
+    🔓 <b>PSN { $name }: how to open trophies</b>
+
+    The bot only sees trophies visible to everyone.
+
+    In the PS App:
+    1. Settings → Privacy.
+    2. “Trophy level and game collection” → “Anyone”.
+
+    Single games can be hidden too — their trophies stay invisible even when the whole profile is open.
+
+    Then press “Check again”.

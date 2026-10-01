@@ -25,7 +25,11 @@ from bot.db.repo import PlatformLink, PsnPresenceRow, Repo, User, UserChatRow
 from bot.i18n import gettext, i18n_for
 from bot.services.naming import link_nickname, person_name_of, xbox_nickname
 from bot.services.presence_view import pick_presence
-from bot.services.profile_links import platform_profile_url, xbox_profile_url
+from bot.services.profile_links import (
+    STEAM_PRIVACY_URL,
+    platform_profile_url,
+    xbox_profile_url,
+)
 from bot.util import humanize_ago
 from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows
@@ -528,6 +532,12 @@ async def render_account_menu(
         ]
     )
     builder = InlineKeyboardBuilder()
+    # Hidden achievements first (#95): what it means, and the way out on top.
+    if platform == AccountPlatform.STEAM and link.achievements_visible is False:
+        text += "\n\n" + i18n.get("panel-hidden-steam")
+        builder.row(
+            InlineKeyboardButton(text=i18n.get("kb-howto-steam"), callback_data="panel:howto:steam")
+        )
     if (
         platform == AccountPlatform.XBOX
         and token is not None
@@ -578,6 +588,15 @@ async def _psn_menu(repo: Repo, tg_id: int, i18n: I18nContext) -> Screen | None:
         "",
     ]
     builder = InlineKeyboardBuilder()
+    # Hidden trophies first (#95): one explanation and one way out per account.
+    hidden = [link for link in links if link.achievements_visible is False]
+    for link in hidden:
+        builder.row(
+            InlineKeyboardButton(
+                text=i18n.get("kb-howto-psn", name=link_nickname(link)),
+                callback_data=f"panel:howto:psn:{link.external_id}",
+            )
+        )
     for link in links:
         name = link_nickname(link)
         parts = await link_value_parts(repo, tg_id=tg_id, link=link, locale=i18n.locale)
@@ -608,7 +627,44 @@ async def _psn_menu(repo: Repo, tg_id: int, i18n: I18nContext) -> Screen | None:
         )
     if len(links) > 1:
         lines += ["", i18n.get("panel-psn-summed")]
+    for link in hidden:
+        lines += ["", i18n.get("panel-hidden-psn", name=html_escape(link_nickname(link)))]
     if len(links) < MAX_PSN_ACCOUNTS:
         builder.row(InlineKeyboardButton(text=i18n.get("kb-psn-add"), callback_data="psn:add"))
     builder.row(_back(i18n))
     return Screen("\n".join(lines), builder.as_markup())
+
+
+async def render_privacy_howto(
+    repo: Repo, tg_id: int, platform: str, account_id: str | None, *, locale: str
+) -> Screen | None:
+    """How to open hidden achievements on one account (#95): the steps, and
+    "check again", which reads the account anew in this same message. None
+    when the account is not linked any more."""
+    i18n = await i18n_for(locale)
+    builder = InlineKeyboardBuilder()
+    if platform == AccountPlatform.STEAM:
+        link = await repo.get_platform_link(tg_id, AccountPlatform.STEAM)
+        if link is None:
+            return None
+        text = i18n.get("panel-howto-steam", privacy_url=STEAM_PRIVACY_URL)
+        builder.row(InlineKeyboardButton(text=i18n.get("kb-steam-privacy"), url=STEAM_PRIVACY_URL))
+        builder.row(InlineKeyboardButton(text=i18n.get("kb-recheck"), callback_data="bf:steam"))
+        builder.row(_back_to(i18n, "panel:acc:steam"))
+        return Screen(text, builder.as_markup())
+    links = await repo.platform_links_for(tg_id, AccountPlatform.PSN)
+    link = next((item for item in links if item.external_id == account_id), None)
+    if link is None:
+        return None
+    text = i18n.get("panel-howto-psn", name=html_escape(link_nickname(link)))
+    builder.row(
+        InlineKeyboardButton(
+            text=i18n.get("kb-recheck"), callback_data=f"bf:psn:{link.external_id}"
+        )
+    )
+    builder.row(_back_to(i18n, "panel:acc:psn"))
+    return Screen(text, builder.as_markup())
+
+
+def _back_to(i18n: I18nContext, callback: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=i18n.get("kb-back"), callback_data=callback)
