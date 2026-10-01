@@ -64,8 +64,13 @@ _BB_YOUTUBE = re.compile(
     r'\[previewyoutube="?([A-Za-z0-9_-]{11})[^\]]*\].*?\[/previewyoutube\]',
     re.DOTALL | re.IGNORECASE,
 )
+# A table becomes lines, a row each, its cells joined by " ¦ " — the Mini
+# App draws consecutive such lines as a table.
+_BB_TABLE = re.compile(r"\[table[^\]]*\](.*?)\[/table\]", re.DOTALL | re.IGNORECASE)
+_BB_CELL_END = re.compile(r"\[/t[dh]\]", re.IGNORECASE)
+_BB_ROW_END = re.compile(r"\[/tr\]", re.IGNORECASE)
 _BB_BLOCKS = re.compile(
-    r"\[(img|video|table|code|quote)[^\]]*\].*?\[/\1\]",
+    r"\[(img|video|code|quote)[^\]]*\].*?\[/\1\]",
     re.DOTALL | re.IGNORECASE,
 )
 _CLAN_IMAGE = re.compile(r"\{STEAM_CLAN_IMAGE\}\S*")
@@ -100,10 +105,20 @@ def _link(match: re.Match[str]) -> str:
     return f"[{label}]({url})"
 
 
+def _table(match: re.Match[str]) -> str:
+    body = _BB_CELL_END.sub(" ¦ ", match.group(1))
+    body = _BB_ROW_END.sub("\n", body)
+    body = re.sub(r"\[/?[a-z0-9*]+[^\]]*\]", "", body)
+    rows = (re.sub(r"[ \t]+", " ", row).strip() for row in body.split("\n"))
+    rows = (re.sub(r"(\s*¦)+$", "", row).strip() for row in rows)
+    return "\n" + "\n".join(row for row in rows if row) + "\n"
+
+
 def plain_text(bbcode: str) -> str:
     """Steam's BBCode reduced to readable paragraphs: pictures, videos and
     tables go, links and headings keep their words, list items become dashes."""
     text = _BB_YOUTUBE.sub(r"\nhttps://www.youtube.com/watch?v=\1\n", bbcode)
+    text = _BB_TABLE.sub(_table, text)
     text = _BB_BLOCKS.sub("", text)
     text = _CLAN_IMAGE.sub("", text)
     text = _BB_LINK.sub(_link, text)

@@ -15,7 +15,7 @@ import {
 import { t, type Locale } from "../../i18n";
 import { GameHits, GameSheet, useHltbSearch } from "../hltb";
 import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
-import { AccountBar, Avatar, FeedSkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, EmptyState, FeedSkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -255,6 +255,12 @@ export function Club({
   const mineGameCount = new Set(
     mine.filter((row) => row.game).map((row) => `${row.platform}:${row.title_id}`),
   ).size;
+  // An empty month points at the month before it, when there is one.
+  const earlier = months[months.indexOf(selectedMonth) + 1];
+  const previousMonthAction =
+    selectedMonth && earlier
+      ? { label: t(locale, "emptyPrevMonth"), onClick: () => pickMonth(earlier) }
+      : undefined;
   const monthChip = (ym: string) =>
     ym && (
       <button type="button" className="month-chip" onClick={() => setMonthPicker(true)}>
@@ -405,7 +411,12 @@ export function Club({
                 {!monthBusy &&
                   mine.length === 0 &&
                   (me.xbox.linked || me.steam.linked || me.psn.linked) && (
-                    <p className="empty">{t(locale, "emptyFeed")}</p>
+                    <EmptyState
+                      title={t(locale, isPastMonth ? "emptyTitlePast" : "emptyTitleNow")}
+                      hint={t(locale, "emptyHomeHint")}
+                      action={previousMonthAction}
+                      slide
+                    />
                   )}
                 <FriendsStrip
                   members={others}
@@ -414,31 +425,35 @@ export function Club({
                   onOpen={openPerson}
                   onSeeAll={() => setRosterOpen(true)}
                 />
-                <div className="section-head achievements-head">
-                  <span className="section-title-group">
-                    <h1 className="kicker" style={{ margin: 0 }}>
-                      {t(locale, "games")}
-                    </h1>
-                    {!monthBusy && mineGameCount > 0 && (
-                      <span className="section-count">{mineGameCount}</span>
+                {(monthBusy || mine.length > 0) && (
+                  <>
+                    <div className="section-head achievements-head">
+                      <span className="section-title-group">
+                        <h1 className="kicker" style={{ margin: 0 }}>
+                          {t(locale, "games")}
+                        </h1>
+                        {!monthBusy && mineGameCount > 0 && (
+                          <span className="section-count">{mineGameCount}</span>
+                        )}
+                      </span>
+                      {!monthBusy && mineGameCount > 1 && (
+                        <button
+                          type="button"
+                          className="sort-toggle"
+                          aria-label={t(locale, gameSort === "recent" ? "sortProgress" : "sortRecent")}
+                          onClick={() =>
+                            setGameSort((cur) => (cur === "recent" ? "progress" : "recent"))
+                          }
+                        >
+                          <Icon name={gameSort === "recent" ? "sort" : "stats"} size={18} />
+                        </button>
+                      )}
+                    </div>
+                    {monthBusy && <RowsSkel count={3} />}
+                    {!monthBusy && mine.length > 0 && (
+                      <PlayedGames items={mine} locale={locale} sort={gameSort} />
                     )}
-                  </span>
-                  {!monthBusy && mineGameCount > 1 && (
-                    <button
-                      type="button"
-                      className="sort-toggle"
-                      aria-label={t(locale, gameSort === "recent" ? "sortProgress" : "sortRecent")}
-                      onClick={() =>
-                        setGameSort((cur) => (cur === "recent" ? "progress" : "recent"))
-                      }
-                    >
-                      <Icon name={gameSort === "recent" ? "sort" : "stats"} size={18} />
-                    </button>
-                  )}
-                </div>
-                {monthBusy && <RowsSkel count={3} />}
-                {!monthBusy && mine.length > 0 && (
-                  <PlayedGames items={mine} locale={locale} sort={gameSort} />
+                  </>
                 )}
               </>
             ))}
@@ -458,7 +473,12 @@ export function Club({
           {!clubReady || monthBusy ? (
             <FeedSkel head={false} />
           ) : feed.length === 0 ? (
-            <p className="empty">{t(locale, "emptyFeed")}</p>
+            <EmptyState
+              title={t(locale, isPastMonth ? "emptyTitlePast" : "emptyTitleNow")}
+              hint={t(locale, "emptyFeedHint")}
+              action={previousMonthAction}
+              slide
+            />
           ) : (
             <FeedPosts
               items={feed}

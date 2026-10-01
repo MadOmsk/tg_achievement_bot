@@ -62,3 +62,11 @@ def test_a_games_extras_in_the_store_are_not_the_game() -> None:
 def test_a_video_in_a_post_becomes_its_youtube_link() -> None:
     text = n.plain_text('[p]Hi[/p][previewyoutube="F23N860w9Og;full"][/previewyoutube][p]Bye[/p]')
     assert "https://www.youtube.com/watch?v=F23N860w9Og" in text.split("\n")
+
+
+def test_a_table_in_a_post_becomes_rows_of_cells() -> None:
+    text = n.plain_text(
+        "[p]Intro[/p][table][tr][th]Name[/th][th]Value[/th][/tr]"
+        "[tr][td]HP[/td][td]100[/td][/tr][/table][p]After[/p]"
+    )
+    assert "Name \u00a6 Value\nHP \u00a6 100" in text

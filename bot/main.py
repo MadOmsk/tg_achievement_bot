@@ -177,7 +177,7 @@ async def run(settings: Settings) -> None:
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
-    steam_extras = SteamExtras(repo, steam_auth)
+    steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
     fetcher = Fetcher(
         repo,
         client,

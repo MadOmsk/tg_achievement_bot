@@ -5,10 +5,10 @@ for a week (it refuses bursts, and a re-read would otherwise start again); the
 tips worked out from it are stored with each achievement (services/
 steam_extras.py, title_achievements.tip_*).
 Steam's guide search (the same Web API key the bot already holds) names a
-game's most popular "achievement" guides; each is read as plain lines, and the
-lines that follow an achievement's name — up to the next achievement's name —
-are its tip. A guide made of screenshots, or of bare lists of names, gives
-nothing and is passed over.
+game's most popular "achievement" guides; each is read as plain lines. Which
+lines are which achievement's tip is for a model to say
+(services/translate/guide_tips.py): guides are laid out differently by everyone
+and rules guessing it broke on each new one.
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ import json
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
-
-from bot.services.hltb_match import normalize
 
 log = logging.getLogger(__name__)
 
@@ -46,21 +46,15 @@ _QUERY_TRENDING = 3
 GUIDES_READ = 7
 _GUIDE_GAP_SECONDS = 2.5
 _COOLDOWN_SECONDS = 90.0
+_COOLDOWN_MAX_SECONDS = 900.0
 _DISK_DIR = Path("data") / "steam_guides"
 _DISK_SECONDS = 7 * 86400
 
-_BODY_LINES = 40
-_BODY_CHARS = 3000
-_MIN_BODY_CHARS = 20
+# A very long tip (a table of every artifact) is cut at a line, not mid-line.
+_BODY_CHARS = 8000
 # What is left once the description's own words are taken out must still be a
 # sentence's worth, or it is only a section label ("Skulls & Terminals").
 _MIN_TIP_CHARS = 40
-_HEADING_CHARS = 12
-_LABEL_CHARS = 40
-# A line ending so is part of the advice, not a heading; ":" opens a list.
-_SENTENCE_END = (".", "!", "?", "…", ")", '"', "'", "»", ":")
-_SEPARATOR = re.compile(r"\s+[-–—|]\s+|:\s+")
-_BULLET = re.compile(r"^[\s\-–—•*·▪►>]*(?:\d{1,3}[.)]\s+)?")
 _PAGE_END = ("commentthread_area", "rightContents", "responsive_page_frame_footer")
 _TITLE_RE = re.compile(r'<div class="workshopItemTitle">(.*?)</div>', re.DOTALL)
 # Han, kana and hangul.
@@ -73,9 +67,28 @@ _PLAYER = re.compile(
     r'<div class="sharedFilePreviewYouTubeVideo[^"]*" id="([A-Za-z0-9_-]{11})"[^>]*>',
     re.IGNORECASE,
 )
-_LINK_OR_BULLET = re.compile(r"^(\[.*\]\(https?://|https?://|[-–—•*·▪►>]|\d{1,3}[.)] )")
+# An address alone on its line — a picture, a video, a bare link.
+_MEDIA_LINE = re.compile(r"^(?:\[[^\]]*\]\()?https?://\S+\)?$")
 # Cached pages from before links and videos were kept are read again.
-_DISK_FORMAT = 2
+_DISK_FORMAT = 9
+# A guide's own pictures (its screenshots) carry this class; icons and
+# emoticons do not. A picture is often wrapped in a link to its page on Steam,
+# and the picture is what is wanted, not the link.
+_IMAGE_TAG = re.compile(r"<img [^>]*>", re.IGNORECASE)
+_LINKED_IMAGE = re.compile(r"<a [^>]*>\s*(<img [^>]*>)\s*</a>", re.IGNORECASE)
+_SRC = re.compile(r'src="(https?://[^"]+)"', re.IGNORECASE)
+# A table row is one line, its cells joined by this mark (U+00A6); the Mini App
+# draws consecutive such lines as a table.
+CELL = " ¦ "
+_CELL_END = re.compile(r"</t[dh]>", re.IGNORECASE)
+# Steam's own guide tables are divs, a row of cells each.
+_DIV_CELL = re.compile(r'<div class="bb_table_t[dh]"[^>]*>(.*?)</div>', re.DOTALL)
+_CELL_PICTURE = re.compile(r"<a [^>]*>\s*<img [^>]*>\s*</a>|<img [^>]*>", re.IGNORECASE)
+# A column of small pictures says nothing in text; its heading goes with it.
+_PICTURE_HEADING = re.compile(r"^(?:icon|image|picture|иконка|картинка)\s*¦\s*", re.IGNORECASE)
+# Steam names the site after a link, "[mapgenie.io]"; the link's words are its name.
+_LINK_HOST = re.compile(r'<span class="bb_link_host">.*?</span>', re.DOTALL | re.IGNORECASE)
+_LIST_ITEM = re.compile(r"<li[^>]*>\s*", re.IGNORECASE)
 _BREAK = re.compile(r"<br\s*/?>|</div>|</li>|</p>|</h\d>|</tr>", re.IGNORECASE)
 
 
@@ -84,37 +97,56 @@ class Guide:
     file_id: str
     title: str
     lines: tuple[str, ...]
-    # Each line's possible achievement name, normalized once.
-    heads: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class Tip:
-    text: str
-    guide_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class Wanted:
-    """One achievement a tip is looked for: its names and its own descriptions
-    (a guide that only repeats the description says nothing)."""
-
-    names: tuple[str, ...]
-    descriptions: tuple[str, ...] = ()
 
 
 _locks: dict[int, asyncio.Lock] = {}
 _guide_memory: dict[str, Guide | None] = {}
 _cooldown_until = 0.0
+_refusals = 0
 _community = asyncio.Lock()
 
 
+def _unwrapped(url: str) -> str:
+    """Steam sends outside links through its own filter page; the address it
+    guards is what the reader should get."""
+    if urlsplit(url).path.rstrip("/") != "/linkfilter":
+        return url
+    target = parse_qs(urlsplit(url).query).get("u", [""])[0]
+    target = html.unescape(target)
+    return target if target.startswith(("http://", "https://")) else url
+
+
 def _anchor(match: re.Match[str]) -> str:
-    url = html.unescape(match.group(1)).strip()
+    url = _unwrapped(html.unescape(match.group(1)).strip())
     label = re.sub(r"<[^>]+>", "", match.group(2)).strip()
-    if not label or html.unescape(label) == url:
+    if not label:
+        return ""
+    if html.unescape(label) == url:
         return url
     return f"[{label}]({url})"
+
+
+def _repaired(text: str) -> str:
+    """Some guides reach Steam with their apostrophes already destroyed
+    ("you���ve"). Between two letters it was an apostrophe; anywhere
+    else it is nothing worth showing."""
+    text = re.sub(r"(?<=\w)�+(?=\w)", "’", text)
+    return text.replace("�", "")
+
+
+def _cell(match: re.Match[str]) -> str:
+    """A table cell as its text and the joining mark; a cell of only a picture
+    is nothing, so it cannot tear its row apart."""
+    text = _CELL_PICTURE.sub("", match.group(1))
+    return text + CELL if text.strip() else ""
+
+
+def _image(match: re.Match[str]) -> str:
+    tag = match.group(0)
+    src = _SRC.search(tag)
+    if "sharedFilePreviewImage" not in tag or src is None:
+        return ""
+    return f"\n{html.unescape(src.group(1))}\n"
 
 
 def guide_lines(page: str) -> list[str]:
@@ -129,96 +161,46 @@ def guide_lines(page: str) -> list[str]:
         body = body[: min(ends)]
     body = re.sub(r"<script.*?</script>|<style.*?</style>", "", body, flags=re.DOTALL)
     body = _PLAYER.sub(lambda m: f"\nhttps://www.youtube.com/watch?v={m.group(1)}\n", body)
+    body = _DIV_CELL.sub(_cell, body)
+    body = _LINKED_IMAGE.sub(r"\1", body)
+    body = _IMAGE_TAG.sub(_image, body)
+    body = _LINK_HOST.sub("", body)
     body = _ANCHOR.sub(_anchor, body)
+    body = _LIST_ITEM.sub("\n- ", body)
+    body = _CELL_END.sub(CELL, body)
     body = _BREAK.sub("\n", body)
     text = html.unescape(re.sub(r"<[^>]+>", "", body)).replace("\xa0", " ")
-    lines = (re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n"))
-    return [line for line in lines if line]
-
-
-def _head_and_rest(line: str) -> tuple[str, str]:
-    """A line split into what may be an achievement's name and what follows it
-    on the same line ("Name: how to get it")."""
-    line = _BULLET.sub("", line, count=1)
-    parts = _SEPARATOR.split(line, maxsplit=1)
-    return (parts[0], parts[1]) if len(parts) == 2 else (line, "")
+    text = _repaired(text)
+    cleaned = (re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n"))
+    # A row ends after its last cell, not with the mark; a row of empty cells is nothing.
+    rows = (_PICTURE_HEADING.sub("", re.sub(r"(\s*¦)+$", "", line).strip()) for line in cleaned)
+    return [row for row in rows if row and row != "¦"]
 
 
 def make_guide(file_id: str, title: str, lines: list[str]) -> Guide:
-    return Guide(
-        file_id, title, tuple(lines), tuple(normalize(_head_and_rest(line)[0]) for line in lines)
-    )
+    return Guide(file_id, title, tuple(lines))
 
 
-def _is_label(line: str) -> bool:
-    """A short line that ends no sentence, and is no link or list item: a
-    heading, not advice."""
-    return (
-        len(line) <= _LABEL_CHARS
-        and not line.endswith(_SENTENCE_END)
-        and not _LINK_OR_BULLET.match(line)
-    )
-
-
-def _repeats(line: str, descriptions: tuple[str, ...]) -> bool:
-    """The line only says what the achievement's own description says."""
-    said = normalize(line)
-    for description in descriptions:
-        own = normalize(description)
-        if own and own in said and len(said) - len(own) < _MIN_BODY_CHARS:
-            return True
-    return False
-
-
-def tip_in(guide: Guide, wanted: Wanted, everything: set[str]) -> str | None:
-    """The lines a guide gives under one achievement's name, or None.
-    `everything` holds every achievement's normalized name in the game."""
-    targets = {normalize(n) for n in wanted.names if n}
-    is_header = [head in everything for head in guide.heads]
-    for index, head in enumerate(guide.heads):
-        if head not in targets:
-            continue
-        body: list[str] = []
-        size = 0
-        rest = _head_and_rest(guide.lines[index])[1]
-        if rest:
-            body.append(rest)
-            size += len(rest)
-        for i in range(index + 1, min(index + 1 + _BODY_LINES, len(guide.lines))):
-            line = guide.lines[i]
-            if is_header[i] or size + len(line) > _BODY_CHARS:
-                break
-            # A heading once the advice has begun is the next section
-            # ("Benefits", "Collectibles"), not more of this one.
-            if size >= _MIN_TIP_CHARS and _is_label(line):
+def tip_from_lines(guide: Guide, ranges: list[tuple[int, int]]) -> str | None:
+    """The guide's lines in `ranges` (0-based, inclusive) as one tip: what a model
+    pointed at, copied as it is and cut at a line when very long."""
+    body: list[str] = []
+    size = 0
+    for first, last in ranges:
+        for line in guide.lines[first : last + 1]:
+            if size + len(line) > _BODY_CHARS:
                 break
             body.append(line)
             size += len(line)
-        # A guide that copies the description tells nothing the row does not.
-        body = [line for line in body if not _repeats(line, wanted.descriptions)]
-        # Table headings ("Ending Achievements", "Description", "How to unlock")
-        # trail a section: short, and no sentence's end. The tip itself stays.
-        while len(body) > 1 and _is_label(body[-1]):
-            body.pop()
-        if body and len(body[-1]) <= _HEADING_CHARS:
-            body.pop()
-        text = "\n".join(body).strip()
-        if len(text) >= _MIN_TIP_CHARS:
-            return text
-    return None
+    text = "\n".join(body).strip()
+    return text if has_prose(text) else None
 
 
-def everything_named(catalog: list[Wanted]) -> set[str]:
-    return {normalize(n) for wanted in catalog for n in wanted.names if n}
-
-
-def tip_for(guides: list[Guide], wanted: Wanted, everything: set[str]) -> Tip | None:
-    """The first guide's tip for this achievement."""
-    for guide in guides:
-        text = tip_in(guide, wanted, everything)
-        if text:
-            return Tip(text, guide.file_id)
-    return None
+def has_prose(text: str) -> bool:
+    """Whether a tip says anything in words. Pictures, videos and bare links
+    alone are no advice — a screenshot of the achievement's own tile is not one."""
+    words = "\n".join(line for line in text.split("\n") if not _MEDIA_LINE.match(line.strip()))
+    return len(words.strip()) >= _MIN_TIP_CHARS
 
 
 def _mostly_ideographs(title: str, lines: list[str]) -> bool:
@@ -304,17 +286,22 @@ async def _read_guide(client: httpx.AsyncClient, file_id: str, title: str) -> Gu
     return make_guide(file_id, title, lines)
 
 
-async def guides_of(appid: int, api_key: str) -> GuideSet:
+StopWhen = Callable[[Guide], Awaitable[bool]]
+
+
+async def guides_of(appid: int, api_key: str, stop_when: StopWhen | None = None) -> GuideSet:
     """A game's most popular achievement guides, most popular first. One read
     per app at a time: a published achievement and a visit to the page may
     both ask, and the second waits for the first. Pages already read come
-    from the disk cache, so a second read costs no request to the site."""
+    from the disk cache, so a second read costs no request to the site.
+    `stop_when` is asked about each guide as it is read, and the first one it
+    accepts ends the reading: the rest are never fetched."""
     async with _locks.setdefault(appid, asyncio.Lock()):
-        return await _fetch_guides(appid, api_key)
+        return await _fetch_guides(appid, api_key, stop_when)
 
 
-async def _fetch_guides(appid: int, api_key: str) -> GuideSet:
-    global _cooldown_until
+async def _fetch_guides(appid: int, api_key: str, stop_when: StopWhen | None) -> GuideSet:
+    global _cooldown_until, _refusals
     try:
         async with httpx.AsyncClient(
             headers=_HEADERS, timeout=_TIMEOUT, follow_redirects=True
@@ -347,7 +334,7 @@ async def _fetch_guides(appid: int, api_key: str) -> GuideSet:
                     # kept, so the next look picks up where this one stopped.
                     if time.monotonic() < _cooldown_until:
                         complete = False
-                        break
+                        continue
                     try:
                         async with _community:
                             known, guide = _recall(file_id)
@@ -356,17 +343,27 @@ async def _fetch_guides(appid: int, api_key: str) -> GuideSet:
                                     client, file_id, str(f.get("title") or "")
                                 )
                                 _remember(file_id, guide)
+                                _refusals = 0
                                 await asyncio.sleep(_GUIDE_GAP_SECONDS)
                     except _RateLimited:
-                        _cooldown_until = time.monotonic() + _COOLDOWN_SECONDS
+                        # Each refusal in a row doubles the pause: a block that does
+                        # not lift is not helped by asking every minute and a half.
+                        _cooldown_until = time.monotonic() + min(
+                            _COOLDOWN_SECONDS * 2**_refusals, _COOLDOWN_MAX_SECONDS
+                        )
+                        _refusals += 1
                         log.info("steam guides for %s: rate limited, %s read", appid, len(guides))
                         complete = False
-                        break
+                        continue
                     except _Transient:
                         complete = False
                         continue
                 if guide is not None:
                     guides.append(guide)
+                    if stop_when is not None and await stop_when(guide):
+                        # What was wanted is found: the guides left are not read, and
+                        # nothing is left to come back for.
+                        return GuideSet(guides, True)
     except (httpx.HTTPError, ValueError, KeyError) as exc:
         # The key rides in this request's URL: log the class, never the message.
         log.info("steam guides lookup failed for %s: %s", appid, type(exc).__name__)

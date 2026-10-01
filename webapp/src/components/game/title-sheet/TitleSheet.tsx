@@ -38,6 +38,7 @@ import { GameHero } from "../game-hero/GameHero";
 import { HeroPeek } from "../game-hero/HeroPeek";
 import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
 import { GameTabBar } from "../game-tab-bar/GameTabBar";
+import { recall, remember } from "../game-cache";
 
 // The tabs nobody sees at first are their own chunks, fetched when opened.
 const HltbAbout = lazy(() =>
@@ -50,6 +51,7 @@ const PatchNotes = lazy(() =>
 const GUIDES_WAIT_MS = 8000;
 const GUIDES_RETRY_MS = 20000;
 const GUIDES_TRIES = 4;
+const GUIDES_REFRESH_MS = 30000;
 
 const groupOf = (row: GameAchievement) => row.trophy_group_id ?? "default";
 
@@ -68,14 +70,21 @@ export function TitleSheet({
   meId: number;
   onClose: () => void;
 }) {
-  const [details, setDetails] = useState<GameDetails | null>(null);
-  const [busy, setBusy] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   // Whose progress is on the page: the person whose card it was opened from
   // (or yours when it was opened from your own). "Compare" adds yours beside
   // theirs, in the one list.
   const other = game.person && game.person.tg_id !== meId ? game.person : null;
   const viewed = other;
+  // What the page showed the last time this game was open: drawn at once, the
+  // fresh answers replace it when they arrive.
+  const gameKey = `${game.platform}:${game.title_id}`;
+  const detailsKey = `${gameKey}:${viewed?.tg_id ?? "me"}`;
+  const seenDetails = recall<GameDetails>("details", detailsKey);
+  const [details, setDetails] = useState<GameDetails | null>(
+    seenDetails ?? null,
+  );
+  const [busy, setBusy] = useState(seenDetails === undefined);
+  const [error, setError] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
   const [myDetails, setMyDetails] = useState<GameDetails | null>(null);
   // Always opens on what was earned; the lock flips to what is still to earn.
@@ -88,14 +97,16 @@ export function TitleSheet({
   // The tab swiper sizes itself to its slide (autoHeight): a card that opens
   // inside a slide has to tell it, or the rest of the text is cut off.
   // What the Steam guides say about each achievement: a row with a tip opens.
+  const seenTips = recall<Record<string, AchievementTip>>("tips", gameKey);
   const [guideTips, setGuideTips] = useState<Record<string, AchievementTip>>(
-    {},
+    seenTips ?? {},
   );
-  const [guidesReady, setGuidesReady] = useState(false);
+  const [guidesReady, setGuidesReady] = useState(seenTips !== undefined);
   useEffect(() => {
     let cancelled = false;
-    setGuideTips({});
-    setGuidesReady(false);
+    const known = recall<Record<string, AchievementTip>>("tips", gameKey);
+    setGuideTips(known ?? {});
+    setGuidesReady(known !== undefined);
     // The first look at a game reads several guides and can take a while: the
     // page waits for it, but not past a limit — the tips still land when they
     // arrive, they just are not part of the first picture then.
@@ -112,6 +123,7 @@ export function TitleSheet({
         .then((res) => {
           if (cancelled) return;
           setGuideTips(res.tips ?? {});
+          if (res.complete) remember("tips", gameKey, res.tips ?? {});
           if (!res.complete && tries < GUIDES_TRIES) {
             retry = window.setTimeout(ask, GUIDES_RETRY_MS);
           }
@@ -125,18 +137,36 @@ export function TitleSheet({
         });
     };
     ask();
+    // Coming back to the app after a while asks again: what the guides held
+    // when the page opened is not what they hold now.
+    let askedAt = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - askedAt < GUIDES_REFRESH_MS) return;
+      askedAt = Date.now();
+      window.clearTimeout(retry);
+      tries = 0;
+      ask();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
       window.clearTimeout(limit);
       window.clearTimeout(retry);
     };
-  }, [data, game.platform, game.title_id]);
+  }, [data, game.platform, game.title_id, gameKey]);
 
   // Which achievement's tip is showing, per group of the list (a PSN game's
   // DLC is a group of its own): opening one closes the other in its group.
   const [openTips, setOpenTips] = useState<Record<string, string | null>>({});
   const toggleTip = useCallback((group: string, id: string) => {
     setOpenTips((cur) => ({ ...cur, [group]: cur[group] === id ? null : id }));
+  }, []);
+  const [tabEpoch, setTabEpoch] = useState(0);
+  const collapseAll = useCallback(() => {
+    setOpenTips({});
+    setTabEpoch((n) => n + 1);
   }, []);
   const refreshTabHeight = useCallback(() => {
     tabSwiper?.updateAutoHeight(0);
@@ -153,12 +183,14 @@ export function TitleSheet({
   // `undefined` while that request is still out, `null` once it has
   // answered with no match.
   const [hltbInfo, setHltbInfo] = useState<GameHltb | null | undefined>(
-    undefined,
+    recall<GameHltb | null>("hltb", gameKey),
   );
 
   useEffect(() => {
     let cancelled = false;
-    setBusy(true);
+    const known = recall<GameDetails>("details", detailsKey);
+    setDetails(known ?? null);
+    setBusy(known === undefined);
     setError(null);
     void fetchGame(data, game.platform, game.title_id, {
       tgId: viewed?.tg_id,
@@ -166,6 +198,7 @@ export function TitleSheet({
       .then((res) => {
         if (cancelled) return;
         setDetails(res);
+        remember("details", detailsKey, res);
         setBusy(false);
       })
       .catch((err: unknown) => {
@@ -176,14 +209,16 @@ export function TitleSheet({
     return () => {
       cancelled = true;
     };
-  }, [data, game.platform, game.title_id, viewed?.tg_id]);
+  }, [data, game.platform, game.title_id, viewed?.tg_id, detailsKey]);
 
   useEffect(() => {
     let cancelled = false;
-    setHltbInfo(undefined);
+    setHltbInfo(recall<GameHltb | null>("hltb", gameKey));
     void fetchGameHltb(data, game.platform, game.title_id)
       .then((res) => {
-        if (!cancelled) setHltbInfo(res.hltb);
+        if (cancelled) return;
+        setHltbInfo(res.hltb);
+        remember("hltb", gameKey, res.hltb);
       })
       .catch(() => {
         // Best-effort, same as the endpoint itself: a game simply keeps
@@ -196,13 +231,17 @@ export function TitleSheet({
   }, [data, game.platform, game.title_id]);
 
   // The updates tab's number needs them before the tab is opened.
-  const [patches, setPatches] = useState<GamePatch[] | undefined>(undefined);
+  const [patches, setPatches] = useState<GamePatch[] | undefined>(
+    recall<GamePatch[]>("patches", gameKey),
+  );
   useEffect(() => {
     let cancelled = false;
-    setPatches(undefined);
+    setPatches(recall<GamePatch[]>("patches", gameKey));
     void fetchGamePatches(data, game.platform, game.title_id)
       .then((res) => {
-        if (!cancelled) setPatches(res.patches);
+        if (cancelled) return;
+        setPatches(res.patches);
+        remember("patches", gameKey, res.patches);
       })
       .catch(() => {
         if (!cancelled) setPatches([]);
@@ -471,7 +510,7 @@ export function TitleSheet({
               </div>
             </div>
           </div>
-          <div className="game-tab-panel feed" style={{ marginTop: 14 }}>
+          <div className="game-tab-panel feed">
             <RowsSkel count={6} />
           </div>
         </>
@@ -534,6 +573,9 @@ export function TitleSheet({
             loop
             autoHeight
             speed={320}
+            threshold={24}
+            onSlideChangeTransitionEnd={collapseAll}
+            touchAngle={35}
             onSwiper={setTabSwiper}
           >
             <SwiperSlide>
@@ -608,6 +650,7 @@ export function TitleSheet({
                     <PatchNotes
                       patches={patches}
                       locale={locale}
+                      collapseKey={tabEpoch}
                       onLayout={refreshTabHeight}
                     />
                   </Suspense>

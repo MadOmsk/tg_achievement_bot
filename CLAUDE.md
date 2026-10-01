@@ -145,8 +145,8 @@ name, or when the tree goes stale.
 │   │   │                         (fetch_unlocked + schema/rarity cache)
 │   │   ├── psn/                  auth.py (NPSSO, PsnAuth), client.py (to_thread wrapper),
 │   │   │                         achievements.py (sync_account, one game at a time, #26)
-│   │   └── translate/            Anthropic API via raw httpx, *descriptions only*, never names:
-│   │                             client.py, descriptions.py (cache-or-translate), auth.py (#17 shape)
+│   │   └── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
+│   │                             client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
 │   │
 │   ├── poller/                  APScheduler jobs, one tick a minute
 │   │   ├── scheduler.py, cadence.py              job assembly; shared interval/dormancy math
@@ -358,7 +358,7 @@ every column. History: #106.
   (#1, unrelated to the trophy scan). PSN scan progress: `psn_title_progress`,
   `psn_poll_state`. Xbox history: `title_history`. Steam: `steam_schema_cache`,
   `steam_rarity_cache`. HLTB: `hltb_cache`. Steam guides and patches: `steam_apps`,
-  `game_patches` (see Steam guides and patches).
+  `game_patches`, `title_guide_reads` (see Steam guides and patches).
 - **`titles`** — one row per game: names (`name`, `name_ru`, `name_en`),
   `achievements_total`, `platform`, `platforms` (#79), cover art (`icon_url` +
   `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at`, and which
@@ -1070,14 +1070,33 @@ sent to a chat.
   by the Xbox, PlayStation and Steam versions of one game; tips belong to our
   achievement (`title_achievements.tip_*`).
 - **Tips**: the most popular "achievement" guides (`IPublishedFileService/QueryFiles`,
-  the Steam key), each page read as lines; the lines after an achievement's name, up
-  to the next one's, are its tip. Lines that only repeat the achievement's own
-  description, trailing table headings, guides of screenshots and guides mostly in
-  Chinese/Japanese/Korean give nothing. A tip runs to the next achievement's name or
-  the next section heading (a short line that ends no sentence), 3000 characters at
-  most — never cut mid-advice. Matched against every achievement known for the game,
-  not only its full list: a game whose list was never read still has the names
-  people earned. Re-read a month on, when the page is visited.
+  the Steam key), each page read as numbered lines. **Only a guide that names its
+  achievements on lines of their own is used** (owner, 2026-10-01: every other
+  layout came out crooked, and rules or word lists guessing at it broke on each new
+  guide): such a guide is cut into blocks, one from each name to the next, and
+  Haiku (`services/translate/guide_tips.py`) picks, inside each block, the lines that
+  help to get that achievement — leaving out what the description already says and
+  what the author says to the reader (greetings, thanks, credits, translation notes),
+  in several pieces where those sit inside. It answers only with line numbers of the
+  block; the tip is those lines copied from the guide, so nothing is invented and
+  pictures, videos, lists and tables survive. The guides are taken most popular
+  first, and **the first one that fills at least half of the game's achievements is the
+  only one used** — the others are not even read from Steam (owner, 2026-10-01); until
+  one does, what each gives is kept, the earlier guide's account of an achievement
+  standing. A guide naming fewer than three achievements on lines of their own is
+  passed over, and so is one the model finds to be in neither English nor Russian (it
+  is asked, by the same call). The model is asked about a guide only when it, or
+  the game's list, has changed since last time (`title_guide_reads`, a fingerprint):
+  an unchanged guide gives back its stored tips, one that gave nothing is not asked
+  again — the guard on the cost of every monthly re-read. 8000 characters at most,
+  cut at a line.
+  PlayStation's platinum gets none. No Anthropic key: tips are not read and nothing is
+  stamped as read; a model that could not be asked leaves the game to be read again.
+  Guides mostly in Chinese/Japanese/Korean are passed over; a tip needs words
+  (pictures, videos and bare links alone count as no tip). A visit reads tips only
+  for a game whose tips were never worked out; a set a month old is re-read by
+  `poller/patch_refresh.py`, one game a tick, only for games played in the last 30
+  days — so a crowd opening a game, or thousands of games, never means a read each.
 - **Links, videos, pictures** stay in the text: a link as `[label](url)`, a video (a
   guide's embedded player, a patch's `[previewyoutube]`) and a guide's screenshot as
   their address alone on a line — the Mini App draws a link, a video card and a

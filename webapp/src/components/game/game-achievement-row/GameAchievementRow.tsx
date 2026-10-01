@@ -1,9 +1,38 @@
+import { useEffect, useRef } from "react";
 import type { AchievementTip, GameAchievement } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, CoverImg, Icon } from "../../shared/lib";
 import { HeroMarks } from "../../person";
 import { pickLocale } from "../utils";
 import { RichLines } from "../rich-text/RichText";
+
+const SETTLE_MS = 340;
+const BREATHING_ROOM = 10;
+
+/** A card that opens or closes changes the page's height: a big one closed leaves
+ * its top above the screen, under the bar. Once it has settled, its top is brought
+ * back into view. */
+function useKeepInView(open: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    const id = window.setTimeout(() => {
+      const row = ref.current;
+      const page = row?.closest<HTMLElement>(".game-page");
+      if (!row || !page) return;
+      const bar = page.querySelector<HTMLElement>(".person-bar");
+      const floor = (bar?.getBoundingClientRect().bottom ?? 0) + BREATHING_ROOM;
+      const top = row.getBoundingClientRect().top;
+      if (top < floor) page.scrollBy({ top: top - floor, behavior: "smooth" });
+    }, SETTLE_MS);
+    return () => window.clearTimeout(id);
+  }, [open]);
+  return ref;
+}
 
 export function GameAchievementRow({
   row,
@@ -34,6 +63,7 @@ export function GameAchievementRow({
   };
 }) {
   const isSecret = row.is_secret && !isRevealed;
+  const rowRef = useKeepInView(open);
 
   const name =
     pickLocale(locale, row.name_ru, row.name_en, row.achievement_id) ||
@@ -57,6 +87,7 @@ export function GameAchievementRow({
 
   return (
     <div
+      ref={rowRef}
       role={onTap ? "button" : undefined}
       tabIndex={onTap ? 0 : undefined}
       onKeyDown={
@@ -71,7 +102,7 @@ export function GameAchievementRow({
         "has-wrap",
         isSecret ? "is-secret" : "",
         canOpen ? "has-tip" : "",
-        open && canOpen ? "is-open" : "",
+        open && canOpen ? "is-open swiper-no-swiping" : "",
         row.is_unlocked ? "" : "is-locked-row",
       ]
         .filter(Boolean)

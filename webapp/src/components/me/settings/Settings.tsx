@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AccountPlatform, MeResponse } from "../../../api";
+import type { MeResponse } from "../../../api";
 import { rarityLabel, t, timezoneLabel, type Locale } from "../../../i18n";
 import { BackHead, Chevron, Icon, Toggle } from "../../shared/lib";
 import {
@@ -32,7 +32,6 @@ export function Settings({
   onDisconnectPsn,
   onSync,
   onDeleteAccount,
-  onTogglePublish,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -55,15 +54,11 @@ export function Settings({
   onDisconnectPsn: (accountId?: string) => void;
   onSync: () => void;
   onDeleteAccount: () => Promise<void>;
-  onTogglePublish?: (platform: AccountPlatform, publishes: boolean, accountId?: string) => void;
 }) {
   const [pane, setPane] = useState<SettingsPane>(SETTINGS_PANES.ROOT);
   const [deleting, setDeleting] = useState(false);
   const tz = me.settings.tz_offset_min;
   const tzOptions = TIMEZONES;
-
-  const toggle = (platform: AccountPlatform, publishes: boolean, accountId?: string) =>
-    onTogglePublish ? () => onTogglePublish(platform, !publishes, accountId) : undefined;
 
   const xboxAccounts: AccountRow[] = me.xbox.linked
     ? [
@@ -71,8 +66,6 @@ export function Settings({
           key: "xbox",
           name: me.xbox.gamertag_modern || me.xbox.gamertag || t(locale, "notLinked"),
           profileUrl: me.xbox.profile_url,
-          publishes: me.xbox.publishes !== false,
-          onTogglePublish: toggle("xbox", me.xbox.publishes !== false),
           onDisconnect: onDisconnectXbox,
         },
       ]
@@ -95,8 +88,6 @@ export function Settings({
         key: account.account_id,
         name: `PSN: ${account.name}`,
         profileUrl: account.profile_url,
-        publishes: account.publishes,
-        onTogglePublish: toggle("psn", account.publishes, account.account_id),
         onDisconnect: () => onDisconnectPsn(account.account_id),
       }));
   const psnMax = me.psn.linked ? (me.psn.max_accounts ?? 1) : 1;
@@ -111,8 +102,6 @@ export function Settings({
           key: "steam",
           name: me.steam.display_name || me.steam.steam_id,
           profileUrl: me.steam.profile_url,
-          publishes: me.steam.publishes !== false,
-          onTogglePublish: toggle("steam", me.steam.publishes !== false),
           onDisconnect: onDisconnectSteam,
         },
       ]

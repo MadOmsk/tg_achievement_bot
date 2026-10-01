@@ -665,6 +665,18 @@ CREATE TABLE IF NOT EXISTS steam_apps (
     patches_checked_at TEXT
 );
 
+-- What was asked of the model about one guide for one game (migration 070): the
+-- fingerprint of the guide's text and the game's achievements, and how many tips
+-- came of it. The model is asked again only when the fingerprint changes.
+CREATE TABLE IF NOT EXISTS title_guide_reads (
+    title_id    TEXT    NOT NULL,
+    guide_id    TEXT    NOT NULL,
+    fingerprint TEXT    NOT NULL,
+    found       INTEGER NOT NULL,
+    checked_at  TEXT    NOT NULL,
+    PRIMARY KEY (title_id, guide_id)
+);
+
 -- A Steam app's latest patch notes, from its developer's announcements.
 -- `*_ru` stay NULL until a translation fills them.
 CREATE TABLE IF NOT EXISTS game_patches (

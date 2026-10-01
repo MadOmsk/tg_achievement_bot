@@ -42,6 +42,7 @@ from bot.services.steam.client import (
     resolve_steam_id,
 )
 from bot.services.steam_extras import SteamExtras
+from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
 from bot.web.mini_admin import setup_admin_routes
@@ -95,7 +96,7 @@ def setup_mini_api(
     app["mini_notifier"] = notifier
     app["mini_anthropic_auth"] = anthropic_auth
     app["mini_bot"] = bot
-    app["mini_steam_extras"] = steam_extras or SteamExtras(repo, steam_auth)
+    app["mini_steam_extras"] = steam_extras or SteamExtras(repo, steam_auth, anthropic_auth)
 
     if title_catalog is None:
         title_catalog = TitleCatalogService(
@@ -855,7 +856,8 @@ async def handle_game_guides(request: web.Request) -> web.Response:
     tips: dict[str, dict[str, str]] = {}
     for achievement_id, (tip_en, tip_ru) in (await repo.title_tips(platform, title_id)).items():
         text = (tip_ru or tip_en) if locale == "ru" else (tip_en or tip_ru)
-        if text:
+        # Tips stored before pictures stopped counting as advice are dropped here.
+        if text and has_prose(text):
             tips[achievement_id] = {"text": text}
     return web.json_response({"ok": True, "tips": tips, "complete": complete})
 

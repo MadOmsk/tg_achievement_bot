@@ -10,7 +10,6 @@ import {
   fetchMe,
   patchChat,
   patchSettings,
-  setAccountPublishes,
   syncXbox,
   type GameRef,
   type MeResponse,
@@ -363,11 +362,6 @@ export function App() {
           onSync={() =>
             void runPlat("xbox", async () => {
               await syncXbox(data);
-            })
-          }
-          onTogglePublish={(platform, publishes, accountId) =>
-            void runPlat(platform, async () => {
-              await setAccountPublishes(data, platform, publishes, accountId);
             })
           }
           onDeleteAccount={async () => {

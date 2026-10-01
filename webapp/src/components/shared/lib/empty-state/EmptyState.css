@@ -1,0 +1,82 @@
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 26px 20px;
+  border-radius: 8px;
+  background:
+    radial-gradient(ellipse at 50% 30%, var(--mint-dim), transparent 68%),
+    var(--glass-2);
+  text-align: center;
+}
+
+.empty-state-mark {
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+  color: var(--mint-2);
+  filter: drop-shadow(0 0 16px rgba(155, 182, 255, 0.5));
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.empty-state-hint {
+  max-width: 17em;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.empty-state-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 6px 4px;
+  border: 0;
+  background: none;
+  color: var(--mint);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 650;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Where the home page keeps its gallery, the same square slide, edge to edge. */
+.empty-state.is-slide {
+  aspect-ratio: 1 / 1;
+  margin: 0 -18px 28px;
+  padding: 32px 30px;
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse at 50% 34%, rgba(155, 182, 255, 0.22), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01));
+}
+
+.empty-state.is-slide .empty-state-mark {
+  margin-bottom: 18px;
+}
+
+.empty-state.is-slide .empty-state-title {
+  font-size: 1.6rem;
+}
+
+.empty-state.is-slide .empty-state-hint {
+  font-size: 1rem;
+}
+
+.empty-state.is-slide .empty-state-action {
+  margin-top: 22px;
+  font-size: 1rem;
+}

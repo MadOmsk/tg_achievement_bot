@@ -46,31 +46,48 @@ async def test_tips_and_patches_are_filled_once_and_then_read_from_the_database(
         calls["patches"] += 1
         return [Patch(gid="p1", title="Small patch", date="2022-03-08", text="Fixes.")]
 
-    async def guides_of(appid, api_key):
+    async def guides_of(appid, api_key, stop_when=None):
         calls["guides"] += 1
-        lines = ["Intro"] * 8 + [
+        lines = ["Intro"] * 6 + [
+            "First Steps",
+            "Walk out of the house.",
             "Hidden Room",
             "Behind the bookcase on the second floor; push it twice to open the passage.",
+            "Third Room",
+            "Look under the stairs.",
         ]
-        return GuideSet([make_guide("g1", "Guide", lines)], True)
+        guide = make_guide("g1", "Guide", lines)
+        if stop_when is not None and await stop_when(guide):
+            return GuideSet([guide], True)
+        return GuideSet([guide], True)
 
     monkeypatch.setattr(se, "find_appid", find_appid)
     monkeypatch.setattr(se, "fetch_patches", fetch_patches)
+
+    async def locate_sections(api_key, lines, achievements, marks=None, sections=()):
+        return {1: [(9, 9)]}
+
+    class Key:
+        async def get_key(self) -> str:
+            return "sk-test"
+
     monkeypatch.setattr(se, "guides_of", guides_of)
+    monkeypatch.setattr(se, "locate_sections", locate_sections)
 
     await repo.ensure_user(42, "me")
     await repo.upsert_title(TITLE, "Haven", "xbox_modern")
     await repo.upsert_title_achievements(
         [
             TitleAchievementRow(
-                platform="xbox_modern", title_id=TITLE, achievement_id="2", name_en="Hidden Room"
+                platform="xbox_modern", title_id=TITLE, achievement_id=aid, name_en=name
             )
+            for aid, name in (("1", "First Steps"), ("2", "Hidden Room"), ("3", "Third Room"))
         ],
         complete=True,
     )
 
     app = web.Application(middlewares=[cors_middleware()])
-    setup_mini_api(app, settings, repo, steam_auth=steam_auth)
+    setup_mini_api(app, settings, repo, steam_auth=steam_auth, anthropic_auth=Key())
     headers = {"X-Telegram-Init-Data": _init_data(settings.bot_token.get_secret_value(), 42)}
     client = TestClient(TestServer(app))
     await client.start_server()

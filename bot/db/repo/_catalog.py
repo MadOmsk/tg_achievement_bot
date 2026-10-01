@@ -124,12 +124,15 @@ class _CatalogRepo:
     ) -> list[TitleAchievementRow]:
         """Every achievement known for the game — its whole list, or, for a game
         whose list was never read, the ones people earned — with its names and
-        descriptions. For matching text (the Steam guides' tips) where knowing
-        the name is enough."""
+        descriptions, except PlayStation's platinum. For matching text (the Steam
+        guides' tips) where knowing the name is enough."""
         cursor = await self._conn.execute(
             "SELECT platform, title_id, achievement_id, name_ru, name_en,"
             "       description_ru, description_en "
             "FROM title_achievements WHERE platform = ? AND title_id = ? "
+            # PlayStation's platinum is for having every other trophy: no guide
+            # has anything to say about it.
+            "  AND COALESCE(trophy_type, '') <> 'platinum' "
             "ORDER BY rowid ASC",
             (platform, title_id),
         )

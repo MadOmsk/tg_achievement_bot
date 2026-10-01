@@ -11,25 +11,32 @@ Nothing is sent to a chat (owner, 2026-09-30).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
-from datetime import timedelta
 
 from bot.db.repo import Repo, StoredPatch
+from bot.services.hltb_match import normalize
 from bot.services.steam.auth import SteamAuth
-from bot.services.steam_guides import Wanted, everything_named, guides_of, tip_for
+from bot.services.steam_guides import Guide, guides_of, tip_from_lines
 from bot.services.steam_news import fetch_patches, find_appid
-from bot.util import parse_iso, utcnow
+from bot.services.translate.auth import AnthropicAuth
+from bot.services.translate.guide_tips import locate_sections
 
 log = logging.getLogger(__name__)
 
 # Guides hardly change once written; a month keeps new ones coming in.
-TIPS_TTL = timedelta(days=30)
 
 
 class SteamExtras:
-    def __init__(self, repo: Repo, steam_auth: SteamAuth | None) -> None:
+    def __init__(
+        self,
+        repo: Repo,
+        steam_auth: SteamAuth | None,
+        anthropic_auth: AnthropicAuth | None = None,
+    ) -> None:
         self._repo = repo
         self._steam_auth = steam_auth
+        self._anthropic_auth = anthropic_auth
         self._locks: dict[str, asyncio.Lock] = {}
         # Background fills in flight: a reference keeps each alive until done.
         self._running: dict[str, asyncio.Task[bool]] = {}
@@ -65,7 +72,7 @@ class SteamExtras:
     async def fill_title(self, title_id: str) -> bool:
         """Everything the game's Steam side has that is not stored yet: its app,
         its patches (if the app was never read), its tips (if never worked out
-        or a month old). True once the tips are complete — False while Steam
+        yet). True once the tips are complete — False while Steam
         still holds some guides back, and a later call picks up the rest."""
         async with self._locks.setdefault(title_id, asyncio.Lock()):
             appid = await self.appid(title_id)
@@ -75,9 +82,20 @@ class SteamExtras:
             if patches_at is None:
                 await self.refresh_patches(appid)
             title = await self._repo.title_steam(title_id)
-            if title is None or not _tips_due(title.tips_checked_at):
+            # A visit only fills tips that were never worked out; a month-old
+            # set is the schedule's job (`refresh_tips`), so a crowd opening
+            # one game cannot send Steam a read each.
+            if title is None or title.tips_checked_at is not None:
                 return True
             return await self._fill_tips(title.platform, title_id, appid)
+
+    async def refresh_tips(self, title_id: str) -> None:
+        """Read the game's guides again, whatever is stored. The scheduled path."""
+        async with self._locks.setdefault(title_id, asyncio.Lock()):
+            title = await self._repo.title_steam(title_id)
+            if title is None or title.steam_appid is None:
+                return
+            await self._fill_tips(title.platform, title_id, title.steam_appid)
 
     async def tips_due(self, title_id: str) -> bool:
         title = await self._repo.title_steam(title_id)
@@ -85,7 +103,7 @@ class SteamExtras:
             return False
         if title.steam_appid is None:
             return title.appid_due
-        return _tips_due(title.tips_checked_at)
+        return title.tips_checked_at is None
 
     async def _fill_tips(self, platform: str, title_id: str, appid: int) -> bool:
         api_key = await self._steam_auth.get_key() if self._steam_auth else None
@@ -96,22 +114,36 @@ class SteamExtras:
             # Nothing to match the guides against yet; the catalog refresh
             # comes, and the next call finds it.
             return True
-        found = await guides_of(appid, api_key)
-        wanted = [
-            Wanted(
-                names=tuple(n for n in (row.name_en, row.name_ru) if n),
-                descriptions=tuple(d for d in (row.description_en, row.description_ru) if d),
-            )
-            for row in catalog
-        ]
-        everything = everything_named(wanted)
+        # Which lines of a guide are an achievement's tip is for the model to say;
+        # without its key there is nothing to do and nothing is stamped as read.
+        if not (self._anthropic_auth and await self._anthropic_auth.get_key()):
+            return True
         tips: dict[str, tuple[str, str]] = {}
-        for row, want in zip(catalog, wanted, strict=True):
-            tip = tip_for(found.guides, want, everything)
-            if tip is not None:
-                tips[row.achievement_id] = (tip.text, tip.guide_id)
-        await self._repo.replace_title_tips(platform, title_id, tips, complete=found.complete)
-        if found.complete:
+        asked_in_vain = False
+
+        async def take(guide: Guide) -> bool:
+            """A guide (most popular first) that fills at least half of the game's
+            achievements is a good one: it is taken, and that is all, the others are
+            not even read. Until one does, what each gives is kept, the first
+            guide's account of an achievement standing."""
+            nonlocal asked_in_vain
+            pointed = await self._pointed_at(platform, title_id, guide, catalog)
+            if pointed is None:
+                asked_in_vain = True
+                return False
+            if len(pointed) * 2 >= len(catalog):
+                tips.clear()
+                tips.update({i: (text, guide.file_id) for i, text in pointed.items()})
+                return True
+            for achievement_id, text in pointed.items():
+                tips.setdefault(achievement_id, (text, guide.file_id))
+            return False
+
+        found = await guides_of(appid, api_key, take)
+        # A model that could not be asked leaves the game to be read again.
+        complete = found.complete and not asked_in_vain
+        await self._repo.replace_title_tips(platform, title_id, tips, complete=complete)
+        if complete:
             await self._repo.mark_steam_guides_read(appid)
         log.info(
             "steam tips for %s (app %s): %s of %s%s",
@@ -119,9 +151,58 @@ class SteamExtras:
             appid,
             len(tips),
             len(catalog),
-            "" if found.complete else ", more to read",
+            "" if complete else ", more to read",
         )
-        return found.complete
+        return complete
+
+    async def _pointed_at(
+        self, platform: str, title_id: str, guide: Guide, catalog: list
+    ) -> dict[str, str] | None:
+        """{achievement id: tip} for what Haiku picked in this guide; empty
+        without a key or when the model gave nothing usable. The model is asked
+        only when this guide, or the game's list, is not what it was last time:
+        otherwise the answer given then stands (the tips stored from this guide, or
+        none when it gave none)."""
+        api_key = await self._anthropic_auth.get_key() if self._anthropic_auth else None
+        if not api_key:
+            return {}
+        fingerprint = _fingerprint(guide, catalog)
+        before = await self._repo.guide_read(title_id, guide.file_id)
+        if before is not None and before[0] == fingerprint:
+            if before[1] == 0:
+                return {}
+            kept = await self._repo.tips_from_guide(platform, title_id, guide.file_id)
+            if kept:
+                return kept
+        numbers = {
+            normalize(name): number
+            for number, row in enumerate(catalog, start=1)
+            for name in (row.name_en, row.name_ru)
+            if name
+        }
+        marks = {
+            i: numbers[normalize(line)]
+            for i, line in enumerate(guide.lines)
+            if normalize(line) in numbers
+        }
+        sections = await locate_sections(
+            api_key,
+            guide.lines,
+            [
+                (row.name_en or row.name_ru or "", row.description_en or row.description_ru or "")
+                for row in catalog
+            ],
+            marks,
+        )
+        if sections is None:
+            return None
+        found: dict[str, str] = {}
+        for index, ranges in sections.items():
+            text = tip_from_lines(guide, ranges)
+            if text:
+                found[catalog[index].achievement_id] = text
+        await self._repo.save_guide_read(title_id, guide.file_id, fingerprint, len(found))
+        return found
 
     async def refresh_patches(self, appid: int) -> None:
         """Read the app's patch notes now. Steam unreachable: nothing changes,
@@ -145,8 +226,21 @@ class SteamExtras:
         )
 
 
-def _tips_due(checked_at: str | None) -> bool:
-    if checked_at is None:
-        return True
-    when = parse_iso(checked_at)
-    return when is None or utcnow() - when > TIPS_TTL
+def _fingerprint(guide: Guide, catalog: list) -> str:
+    """What a question to the model depends on: the guide's lines and the game's
+    achievements with their names and descriptions."""
+    digest = hashlib.sha256()
+    for line in guide.lines:
+        digest.update(line.encode("utf-8"))
+        digest.update(b"\n")
+    for row in catalog:
+        parts = (
+            row.achievement_id,
+            row.name_en,
+            row.name_ru,
+            row.description_en,
+            row.description_ru,
+        )
+        digest.update("\x1f".join(str(part or "") for part in parts).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()

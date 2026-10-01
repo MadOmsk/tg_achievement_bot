@@ -18,6 +18,11 @@ from bot.util import utcnow
 TITLE = "1924130173"
 
 
+class _Key:
+    async def get_key(self) -> str:
+        return "sk-test"
+
+
 def _guide() -> Guide:
     return make_guide(
         "g1",
@@ -29,6 +34,8 @@ def _guide() -> Guide:
             "Walk out of the house and talk to the old man by the well, then follow him.",
             "Hidden Room",
             "Behind the bookcase on the second floor; push it twice to open the passage.",
+            "Third Room",
+            "Look under the stairs for the hatch and pull the rusty ring.",
             "Another",
             "Line",
             "More",
@@ -48,7 +55,12 @@ async def _seed(repo: Repo, *, platform: str = "xbox_modern", title_id: str = TI
                 name_en=name,
                 description_en="Do the thing",
             )
-            for aid, name in (("1", "First Steps"), ("2", "Hidden Room"), ("3", "Never Covered"))
+            for aid, name in (
+                ("1", "First Steps"),
+                ("2", "Hidden Room"),
+                ("3", "Third Room"),
+                ("4", "Never Covered"),
+            )
         ],
         complete=True,
     )
@@ -67,24 +79,33 @@ def steam(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
         calls["patches"] += 1
         return [Patch(gid="p1", title="Small patch", date="2022-03-08", text="Fixes.")]
 
-    async def guides_of(appid, api_key):
+    async def guides_of(appid, api_key, stop_when=None):
         calls["guides"] += 1
-        return GuideSet([_guide()], complete["value"])
+        guide = _guide()
+        if stop_when is not None and await stop_when(guide):
+            return GuideSet([guide], True)
+        return GuideSet([guide], complete["value"])
 
     monkeypatch.setattr(se, "find_appid", find_appid)
     monkeypatch.setattr(se, "fetch_patches", fetch_patches)
+
+    async def locate_sections(api_key, lines, achievements, marks=None, sections=()):
+        # The model points at the lines under "First Steps" and "Hidden Room".
+        return {0: [(3, 3)], 1: [(5, 5)], 2: [(7, 7)]}
+
     monkeypatch.setattr(se, "guides_of", guides_of)
+    monkeypatch.setattr(se, "locate_sections", locate_sections)
     calls["complete"] = complete  # type: ignore[assignment]
     return calls
 
 
 async def test_a_game_is_filled_once(repo: Repo, steam_auth: SteamAuth, steam) -> None:
     await _seed(repo)
-    extras = se.SteamExtras(repo, steam_auth)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
 
     assert await extras.fill_title(TITLE) is True
     tips = await repo.title_tips("xbox_modern", TITLE)
-    assert set(tips) == {"1", "2"}
+    assert set(tips) == {"1", "2", "3"}
     assert tips["1"][0].startswith("Walk out of the house")
     assert [p.title for p in await repo.game_patches(983970, 10)] == ["Small patch"]
 
@@ -92,19 +113,33 @@ async def test_a_game_is_filled_once(repo: Repo, steam_auth: SteamAuth, steam) -
     assert (steam["appid"], steam["patches"], steam["guides"]) == (1, 1, 1)
 
 
-async def test_a_partial_read_keeps_its_tips_and_is_asked_again(
-    repo: Repo, steam_auth: SteamAuth, steam
+async def test_a_game_is_read_again_until_a_guide_fills_half_of_it(
+    repo: Repo, steam_auth: SteamAuth, steam, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _seed(repo)
-    steam["complete"]["value"] = False
-    extras = se.SteamExtras(repo, steam_auth)
+    steam["complete"]["value"] = False  # Steam holds the other guides back
+    pointed = {"value": {}}
 
+    async def locate(api_key, lines, achievements, marks=None):
+        return pointed["value"]
+
+    monkeypatch.setattr(se, "locate_sections", locate)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
+
+    # No guide read so far is of use: the game is asked again later.
     assert await extras.fill_title(TITLE) is False
-    assert set(await repo.title_tips("xbox_modern", TITLE)) == {"1", "2"}
+    assert await repo.title_tips("xbox_modern", TITLE) == {}
     assert await extras.tips_due(TITLE)
 
-    steam["complete"]["value"] = True
+    # A guide that fills half the achievements ends the reading; the rest are not wanted.
+    # (A guide the model found nothing in is remembered; forget it, as a changed
+    # guide would, and the next look is the one that finds the tips.)
+    await repo._conn.execute("DELETE FROM title_guide_reads")
+    await repo._conn.commit()
+    pointed["value"] = {0: [(3, 3)], 1: [(5, 5)]}
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
     assert await extras.fill_title(TITLE) is True
+    assert set(await repo.title_tips("xbox_modern", TITLE)) == {"1", "2"}
     assert not await extras.tips_due(TITLE)
 
 
@@ -120,7 +155,7 @@ async def test_a_game_with_no_steam_page_is_given_up_on(
         return None
 
     monkeypatch.setattr(se, "find_appid", find_appid)
-    extras = se.SteamExtras(repo, steam_auth)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
     for _ in range(3):
         await extras.fill_title(TITLE)
         # The next attempt waits an hour; pretend it has passed.
@@ -132,7 +167,7 @@ async def test_a_game_with_no_steam_page_is_given_up_on(
 
 async def test_a_steam_game_is_its_own_app(repo: Repo, steam_auth: SteamAuth, steam) -> None:
     await _seed(repo, platform="steam", title_id="553850")
-    extras = se.SteamExtras(repo, steam_auth)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
     assert await extras.appid("553850") == 553850
     assert steam["appid"] == 0
 
@@ -150,7 +185,7 @@ async def test_ensure_title_does_not_wait_for_the_fill(
         return None
 
     monkeypatch.setattr(se, "find_appid", find_appid)
-    extras = se.SteamExtras(repo, steam_auth)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
     extras.ensure_title(TITLE)
     extras.ensure_title(TITLE)  # already running: not started twice
     await asyncio.wait_for(started.wait(), 1)
@@ -233,3 +268,180 @@ async def test_migration_069_adds_the_steam_side_to_an_existing_database(tmp_pat
     assert tuple(title) == (None, 0)
     assert tuple(tip) == (None, None)
     assert {"steam_apps", "game_patches"} <= tables
+
+
+async def test_a_read_that_finds_nothing_keeps_the_tips_already_stored(
+    repo: Repo, steam_auth: SteamAuth, steam
+) -> None:
+    await _seed(repo)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
+    await extras.fill_title(TITLE)
+    assert set(await repo.title_tips("xbox_modern", TITLE)) == {"1", "2", "3"}
+
+    await repo.replace_title_tips("xbox_modern", TITLE, {}, complete=True)
+
+    assert set(await repo.title_tips("xbox_modern", TITLE)) == {"1", "2", "3"}
+
+
+async def test_a_visit_never_rereads_old_tips_but_the_schedule_does(
+    repo: Repo, steam_auth: SteamAuth, steam
+) -> None:
+    await _seed(repo)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
+    assert await extras.fill_title(TITLE) is True
+    reads = steam["guides"]
+
+    await repo._conn.execute(
+        "UPDATE titles SET tips_checked_at = '2020-01-01T00:00:00' WHERE title_id = ?", (TITLE,)
+    )
+    await repo._conn.commit()
+    assert not await extras.tips_due(TITLE)
+    assert await extras.fill_title(TITLE) is True
+    assert steam["guides"] == reads
+
+    await extras.refresh_tips(TITLE)
+    assert steam["guides"] == reads + 1
+
+
+async def test_a_section_the_model_points_at_is_copied_from_the_guide(
+    repo: Repo, steam_auth: SteamAuth, steam, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(repo)
+    asked = {"n": 0}
+
+    async def locate(api_key, lines, achievements, marks=None, sections=()):
+        asked["n"] += 1
+        assert [a[0] for a in achievements] == [
+            "First Steps",
+            "Hidden Room",
+            "Third Room",
+            "Never Covered",
+        ]
+        # The name lines are told to the model as marks.
+        assert marks == {2: 1, 4: 2, 6: 3}
+        # "Never Covered" is found by the model though no line of the guide names it;
+        # its section is two pieces with a line left out between them.
+        return {3: [(8, 8), (10, 11)]}
+
+    monkeypatch.setattr(se, "locate_sections", locate)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
+    assert await extras.fill_title(TITLE) is True
+
+    tips = await repo.title_tips("xbox_modern", TITLE)
+    assert (
+        tips["4"][0] == "Another\nMore\nFiller text to pass the ten-line minimum of a usable guide."
+    )
+    assert set(tips) == {"4"}
+    await extras.refresh_tips(TITLE)
+    assert asked["n"] == 1
+
+
+async def test_without_an_anthropic_key_nothing_is_read_or_stamped(
+    repo: Repo, steam_auth: SteamAuth, steam
+) -> None:
+    await _seed(repo)
+    extras = se.SteamExtras(repo, steam_auth)
+    assert await extras.fill_title(TITLE) is True
+    assert await repo.title_tips("xbox_modern", TITLE) == {}
+    assert steam["guides"] == 0
+    assert await extras.tips_due(TITLE)
+
+
+async def test_a_model_that_finds_nothing_leaves_no_tips(
+    repo: Repo, steam_auth: SteamAuth, steam, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(repo)
+
+    async def locate(api_key, lines, achievements, marks=None, sections=()):
+        return {}
+
+    monkeypatch.setattr(se, "locate_sections", locate)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
+    await extras.fill_title(TITLE)
+    assert await repo.title_tips("xbox_modern", TITLE) == {}
+
+
+async def test_a_model_that_cannot_be_asked_leaves_the_game_unread(
+    repo: Repo, steam_auth: SteamAuth, steam, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(repo)
+
+    async def locate(api_key, lines, achievements, marks=None, sections=()):
+        return None
+
+    monkeypatch.setattr(se, "locate_sections", locate)
+    extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
+    assert await extras.fill_title(TITLE) is False
+    assert await extras.tips_due(TITLE)
+
+
+async def test_a_platinum_is_never_a_candidate_for_a_tip(repo: Repo) -> None:
+    await repo.upsert_title("NPWR1_00", "A Game", "psn")
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="psn",
+                title_id="NPWR1_00",
+                achievement_id=aid,
+                name_en=name,
+                trophy_type=tier,
+            )
+            for aid, name, tier in (("0", "A Game", "platinum"), ("1", "Do it", "bronze"))
+        ],
+        complete=True,
+    )
+    names = await repo.title_achievement_names("psn", "NPWR1_00")
+    assert [row.achievement_id for row in names] == ["1"]
+
+
+async def test_a_guide_that_gave_nothing_is_not_asked_again_until_something_changes(
+    repo: Repo, steam_auth: SteamAuth, steam, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(repo)
+    asked = {"n": 0}
+
+    async def locate(api_key, lines, achievements, marks=None):
+        asked["n"] += 1
+        return {}
+
+    monkeypatch.setattr(se, "locate_sections", locate)
+    await se.SteamExtras(repo, steam_auth, _Key()).fill_title(TITLE)  # type: ignore[arg-type]
+    await se.SteamExtras(repo, steam_auth, _Key()).refresh_tips(TITLE)  # type: ignore[arg-type]
+    assert asked["n"] == 1
+
+    # A new achievement in the game's list changes the question.
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id=TITLE,
+                achievement_id="5",
+                name_en="Fresh One",
+                description_en="Do it",
+            )
+        ],
+        complete=True,
+    )
+    await se.SteamExtras(repo, steam_auth, _Key()).refresh_tips(TITLE)  # type: ignore[arg-type]
+    assert asked["n"] == 2
+
+
+async def test_an_unchanged_guide_gives_back_its_tips_without_the_model(
+    repo: Repo, steam_auth: SteamAuth, steam, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _seed(repo)
+    asked = {"n": 0}
+
+    async def locate(api_key, lines, achievements, marks=None):
+        asked["n"] += 1
+        return {0: [(3, 3)], 1: [(5, 5)], 2: [(7, 7)]}
+
+    monkeypatch.setattr(se, "locate_sections", locate)
+    await se.SteamExtras(repo, steam_auth, _Key()).fill_title(TITLE)  # type: ignore[arg-type]
+    first = await repo.title_tips("xbox_modern", TITLE)
+    assert asked["n"] == 1 and len(first) == 3
+
+    # A month on, by a bot that has restarted: nothing changed, nothing is asked.
+    await se.SteamExtras(repo, steam_auth, _Key()).refresh_tips(TITLE)  # type: ignore[arg-type]
+    assert asked["n"] == 1
+    assert await repo.title_tips("xbox_modern", TITLE) == first

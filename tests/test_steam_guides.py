@@ -1,4 +1,4 @@
-"""Tips from the Steam community's guides: what counts as a tip, and what does not."""
+"""Reading a Steam guide page as lines, and taking a tip out of the lines a model chose."""
 
 from __future__ import annotations
 
@@ -22,12 +22,6 @@ PAGE = """
 </body></html>
 """
 
-CATALOG = [
-    g.Wanted(("Get some!",), ("Fire at least 150 rounds in one burst",)),
-    g.Wanted(("Relentless",), ("Finish a hunt in 30 seconds",)),
-    g.Wanted(("Doing your part",), ("Complete at least 100 missions.",)),
-]
-
 
 def _guide() -> g.Guide:
     return g.make_guide("1", "100% Achievement Guide", g.guide_lines(PAGE))
@@ -37,26 +31,6 @@ def test_guide_lines_keep_the_guide_and_drop_the_page_around_it() -> None:
     lines = g.guide_lines(PAGE)
     assert "Get some!" in lines
     assert "comments" not in lines
-
-
-def test_a_tip_is_the_advice_under_the_name() -> None:
-    tip = g.tip_for([_guide()], CATALOG[0], g.everything_named(CATALOG))
-    assert tip is not None
-    assert "machine gun" in tip.text
-    assert tip.guide_id == "1"
-
-
-def test_the_description_and_trailing_table_headings_are_not_a_tip() -> None:
-    tip = g.tip_for([_guide()], CATALOG[1], g.everything_named(CATALOG))
-    assert tip is not None
-    assert tip.text.startswith("Easiest to do on a new save file.")
-    assert "Finish a hunt" not in tip.text
-    for heading in ("Ending Achievements", "Description", "How to unlock"):
-        assert heading not in tip.text
-
-
-def test_a_guide_that_only_repeats_the_description_gives_no_tip() -> None:
-    assert g.tip_for([_guide()], CATALOG[2], g.everything_named(CATALOG)) is None
 
 
 def test_a_guide_mostly_in_ideographs_is_passed_over() -> None:
@@ -80,11 +54,72 @@ def test_links_and_embedded_videos_are_kept_as_addresses() -> None:
     ]
 
 
-def test_a_long_tip_is_kept_whole_and_ends_at_the_next_section() -> None:
-    advice = [f"Step {i}: do this part of the run carefully and then move on." for i in range(20)]
-    lines = ["Long One", *advice, "Benefits", "Unrelated text about something else."]
-    guide = g.make_guide("1", "t", lines)
-    tip = g.tip_for([guide], g.Wanted(("Long One",)), {"long one"})
-    assert tip is not None
-    assert tip.text.count("\n") == 19
-    assert "Benefits" not in tip.text
+def test_a_table_row_is_one_line_its_cells_joined() -> None:
+    page = (
+        '<div class="guide subSections"><table class="bb_table">'
+        "<tr><td>Artifact</td><td>Anomaly type</td><td>Rarity</td></tr>"
+        "<tr><td>Battery</td><td>Electro</td><td>Common</td></tr></table>After.</div>"
+    )
+    assert g.guide_lines(page) == [
+        "Artifact \u00a6 Anomaly type \u00a6 Rarity",
+        "Battery \u00a6 Electro \u00a6 Common",
+        "After.",
+    ]
+
+
+def test_pictures_videos_and_bare_links_alone_are_no_tip() -> None:
+    pictures = (
+        "https://images.steamusercontent.com/ugc/1/AA/\nhttps://www.youtube.com/watch?v=OdlHgtKy3Wk"
+    )
+    assert not g.has_prose(pictures)
+    assert not g.has_prose("[a link](https://example.com/x)")
+    assert g.has_prose(pictures + "\nSwim into the school of fish fifteen times to get it.")
+
+    lines = ["Kraken", "https://images.steamusercontent.com/ugc/1/AA/"]
+    guide = g.make_guide("1", "t", lines + ["x"] * 10)
+    assert g.tip_from_lines(guide, [(0, 1)]) is None
+
+
+def test_steams_link_filter_is_unwrapped() -> None:
+    page = (
+        '<div class="guide subSections"><div class="subSectionContent">'
+        '<a href="https://steamcommunity.com/linkfilter/?u=https%3A%2F%2Fmapgenie.io%2Fmap">map</a>'
+        "</div></div>"
+    )
+    assert "[map](https://mapgenie.io/map)" in "\n".join(g.guide_lines(page))
+
+
+def test_steams_div_tables_are_rows_of_cells() -> None:
+    page = (
+        '<div class="guide subSections"><div class="subSectionContent">Below:<br>'
+        '<div class="bb_table"><div class="bb_table_tr"><div class="bb_table_th">Artifact</div>'
+        '<div class="bb_table_th">Rarity</div></div><div class="bb_table_tr">'
+        '<div class="bb_table_td">Battery</div><div class="bb_table_td">Common</div></div>'
+        "</div></div></div>"
+    )
+    assert g.guide_lines(page) == ["Below:", "Artifact ¦ Rarity", "Battery ¦ Common"]
+
+
+def test_destroyed_apostrophes_are_repaired() -> None:
+    page = (
+        '<div class="guide subSections"><div class="subSectionContent">'
+        "If you\ufffd\ufffd\ufffdve finished, it hasn\ufffd\ufffd\ufffdt unlocked \ufffd yet."
+        "</div></div>"
+    )
+    assert g.guide_lines(page) == ["If you\u2019ve finished, it hasn\u2019t unlocked yet."]
+
+
+def test_pieces_of_a_section_are_joined_without_what_lies_between() -> None:
+    lines = [
+        "Scanning complete",
+        "Welcome to the guide! Thank you for reading.",
+        "There are ten scanners in total; each is found once.",
+        "This guide is translated with Google Translate, #StandWithUkraine",
+        "The first is in Garbage, north of the depot.",
+    ]
+    guide = g.make_guide("1", "t", lines + ["x"] * 10)
+    text = g.tip_from_lines(guide, [(2, 2), (4, 4)])
+    assert text == (
+        "There are ten scanners in total; each is found once.\n"
+        "The first is in Garbage, north of the depot."
+    )

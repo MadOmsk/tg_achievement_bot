@@ -24,6 +24,8 @@ DEFAULT_REFRESH_HOURS = 6
 APPS_PER_TICK = 3
 # Games somebody earned something in this recently are the ones worth watching.
 ACTIVE_DAYS = 30
+# Guides hardly change; a game's tips are re-read this rarely, one game a tick.
+TIPS_REFRESH_DAYS = 30
 
 
 class PatchRefresh:
@@ -47,3 +49,14 @@ class PatchRefresh:
                 await self._extras.refresh_patches(appid)
             except Exception:
                 log.exception("patch refresh failed for steam app %s", appid)
+
+        stale_tips = await self._repo.titles_due_for_tips(
+            played_since=(now - timedelta(days=ACTIVE_DAYS)).isoformat(timespec="seconds"),
+            stale_before=(now - timedelta(days=TIPS_REFRESH_DAYS)).isoformat(timespec="seconds"),
+            limit=1,
+        )
+        for title_id in stale_tips:
+            try:
+                await self._extras.refresh_tips(title_id)
+            except Exception:
+                log.exception("tips refresh failed for title %s", title_id)
