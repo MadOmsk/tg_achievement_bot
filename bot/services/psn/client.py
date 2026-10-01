@@ -33,6 +33,7 @@ from psnawp_api.core.psnawp_exceptions import (
 )
 from psnawp_api.models.trophies import TrophyTitle
 from psnawp_api.models.trophies.trophy_constants import PlatformType, TrophyRarity, TrophyType
+from pyrate_limiter import Duration, Rate
 
 from bot.constants import PresenceState
 from bot.services.rate_limiter import RateLimiter
@@ -46,6 +47,13 @@ log = logging.getLogger(__name__)
 # we don't actually know.
 RATE_WINDOWS: tuple[tuple[int, float], ...] = ((20_000, 86400.0),)
 _limiter = RateLimiter(RATE_WINDOWS)
+
+# psnawp's own pacing, per client (its bucket file is per process and per
+# instance, so prod, the test server and the dev bot never share one). The
+# library's default is one request every 3 s, which made a first backfill
+# take ~15 s a game; 2 s is the owner's choice (2026-10-01) — faster, still
+# well inside the 300-per-15-minutes Sony is said to tolerate.
+REQUEST_RATE = Rate(1, Duration.SECOND * 2)
 
 
 def request_count_today() -> int:
@@ -256,8 +264,8 @@ async def build_client(npsso: str, *, headers: dict[str, str] | None = None) -> 
     exactly as before."""
     try:
         if headers is None:
-            return await _call(PSNAWP, npsso)
-        return await _call(PSNAWP, npsso, headers=headers)
+            return await _call(PSNAWP, npsso, rate_limit=REQUEST_RATE)
+        return await _call(PSNAWP, npsso, headers=headers, rate_limit=REQUEST_RATE)
     except PSNAWPAuthenticationError as exc:
         raise PsnTokenDeadError(str(exc)) from None
     except PsnApiError:

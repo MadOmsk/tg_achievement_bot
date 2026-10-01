@@ -61,6 +61,7 @@ from bot.views.date_picker import (
 )
 from bot.views.keyboards import (
     CLOSE_CALLBACK,
+    keep_closability,
     next_rarity_mode,
     with_close_button,
 )
@@ -634,7 +635,11 @@ async def summary_month_nav_callback(
     if built is not None:
         text, markup = built
         with contextlib.suppress(Exception):
-            await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+            await callback.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keep_closability(callback.message.reply_markup, markup),
+            )
 
 
 @router.callback_query(F.data.startswith("sm:cal:"))
@@ -657,7 +662,9 @@ async def summary_month_cal_callback(
     )
     await callback.answer()
     with contextlib.suppress(Exception):
-        await callback.message.edit_reply_markup(reply_markup=markup)
+        await callback.message.edit_reply_markup(
+            reply_markup=keep_closability(callback.message.reply_markup, markup)
+        )
 
 
 @router.callback_query(F.data.startswith("sd:nav:"))
@@ -682,7 +689,11 @@ async def summary_day_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I1
     if built is not None:
         text, markup = built
         with contextlib.suppress(Exception):
-            await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+            await callback.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keep_closability(callback.message.reply_markup, markup),
+            )
 
 
 @router.callback_query(F.data.startswith("sd:cal:"))
@@ -702,7 +713,9 @@ async def summary_day_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I1
     )
     await callback.answer()
     with contextlib.suppress(Exception):
-        await callback.message.edit_reply_markup(reply_markup=markup)
+        await callback.message.edit_reply_markup(
+            reply_markup=keep_closability(callback.message.reply_markup, markup)
+        )
 
 
 @router.callback_query(F.data.startswith("summary:all:"))

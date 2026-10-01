@@ -28,11 +28,14 @@ _READ_TIMEOUT_SECONDS = 30.0
 
 _LANGUAGE_NAME = {"ru": "Russian", "en": "English"}
 
-# A generous ceiling, not a per-item budget — one call already covers a
-# whole game's worth of descriptions (batched by the caller,
-# services/translate/descriptions.py), so this only needs to be large
-# enough for the biggest achievement list in practice, not tuned per call.
+# The reply ceiling for one call. A whole game used to go in one call, and
+# the biggest one waiting on production (a Steam game with 1075 untranslated
+# descriptions, ~20k output tokens) could never fit: the reply was cut off,
+# failed to parse, and was paid for again on every retry. Calls now carry
+# at most `_BATCH_SIZE` descriptions (~19 output tokens each on real data,
+# 2026-10-01), so a reply stays well under this.
 _MAX_OUTPUT_TOKENS = 4096
+_BATCH_SIZE = 40
 
 
 class AnthropicApiError(Exception):
@@ -84,10 +87,10 @@ async def translate_descriptions(
 ) -> dict[str, str]:
     """Translate a batch of achievement *descriptions* — never names, never
     called for those (2026-09-09 user request) — in one call, keyed by
-    whatever id the caller wants back (an achievement_id in practice). Meant
-    to cover one whole game's worth of descriptions per call (batched by the
-    caller) rather than one call per achievement, both for cost and so a
-    backfill of a large game doesn't fire dozens of requests back to back.
+    whatever id the caller wants back (an achievement_id in practice). The
+    caller hands over one whole game; it goes out in calls of `_BATCH_SIZE`
+    descriptions — not one call per achievement (cost), not one per game
+    (a big game's reply did not fit, see `_MAX_OUTPUT_TOKENS`).
 
     Returns whatever the model actually translated, keyed the same way —
     never raises on a malformed or partial response, just logs and returns
@@ -98,6 +101,20 @@ async def translate_descriptions(
     """
     if not texts:
         return {}
+    ids = list(texts.keys())
+    result: dict[str, str] = {}
+    # One game's list split into calls of `_BATCH_SIZE`: a chunk that fails
+    # loses only its own descriptions, and no reply outgrows its ceiling.
+    for start in range(0, len(ids), _BATCH_SIZE):
+        chunk = {key: texts[key] for key in ids[start : start + _BATCH_SIZE]}
+        result.update(await _translate_batch(api_key, chunk, target_language=target_language))
+    return result
+
+
+async def _translate_batch(
+    api_key: str, texts: dict[str, str], *, target_language: str
+) -> dict[str, str]:
+    """One call: at most `_BATCH_SIZE` descriptions, all or nothing."""
     language = _LANGUAGE_NAME[target_language]
     # Numbered plain-text lines, not JSON-in-JSON — asking the model to echo
     # arbitrary ids back verbatim as JSON keys risks it "fixing" or
@@ -131,16 +148,27 @@ async def translate_descriptions(
         return {}
 
     try:
-        content = response.json()["content"][0]["text"]
+        payload = response.json()
+        if payload.get("stop_reason") == "max_tokens":
+            log.warning("anthropic translate: reply cut off at %s tokens", _MAX_OUTPUT_TOKENS)
+            return {}
+        content = payload["content"][0]["text"]
         translations = json.loads(_strip_json_fence(content))
-    except (KeyError, IndexError, ValueError) as exc:
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
         log.warning("anthropic translate: could not parse response: %r", exc)
         return {}
     if not isinstance(translations, list):
         log.warning("anthropic translate: expected a JSON array, got %s", type(translations))
         return {}
-
-    return dict(zip(ids, translations, strict=False))
+    # A reply with a line missing or added cannot be matched back to ids:
+    # every description after the gap would get its neighbour's text. None
+    # is better than a wrong one.
+    if len(translations) != len(ids):
+        log.warning(
+            "anthropic translate: asked for %s translations, got %s", len(ids), len(translations)
+        )
+        return {}
+    return dict(zip(ids, translations, strict=True))
 
 
 async def translate_game_description(
