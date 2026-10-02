@@ -1,2 +1,2 @@
-people-new-follower = 👤 { $name } подписался на тебя.
-people-new-friend = 🤝 { $name } подписался на тебя, теперь вы друзья.
+people-new-follower = 👤 Новый подписчик: { $name }
+people-new-friend = 🤝 { $name } — теперь вы друзья

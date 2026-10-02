@@ -73,3 +73,7 @@
 .feed-switch {
   padding-left: 3px;
 }
+
+.people-list + .kicker {
+  margin-top: 20px;
+}

@@ -1,2 +1,2 @@
-people-new-follower = 👤 { $name } started following you.
-people-new-friend = 🤝 { $name } followed you back, you are friends now.
+people-new-follower = 👤 New follower: { $name }
+people-new-friend = 🤝 { $name } — you are friends now

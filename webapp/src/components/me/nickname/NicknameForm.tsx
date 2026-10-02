@@ -86,11 +86,6 @@ export function NicknameForm({
           disabled={locked}
           aria-label={t(locale, "nickname")}
         />
-        {handle.number !== null && (
-          <p className="nick-hint">
-            <b>{handle.display}</b> · {t(locale, "nicknameDigits")}
-          </p>
-        )}
         <p className="nick-hint">
           {locked && waitUntil
             ? `${t(locale, "nicknameNext")} ${waitUntil.toLocaleDateString(locale)}`
