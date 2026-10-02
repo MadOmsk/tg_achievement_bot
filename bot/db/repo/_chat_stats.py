@@ -134,7 +134,9 @@ class _ChatStatsRepo:
             for row in await cursor.fetchall()
         ]
 
-    async def chat_member_presence(self, chat_id: int) -> list[ChatPresenceRow]:
+    async def chat_member_presence(
+        self, chat_id: int, *, members: Sequence[int] | None = None
+    ) -> list[ChatPresenceRow]:
         """Every connected, non-excluded member *known to be in this chat*,
         with his last known presence — for /online (SPEC 6.3). "Known to be
         in this chat" is the union of who publishes here (`subscriptions`)
@@ -193,12 +195,21 @@ class _ChatStatsRepo:
         back to the Telegram name there, plain (no "@"), so nobody gets
         pinged by the auto-refreshing table.
         """
+        # A hand-picked list of people (the Mini App's "following" scope, #157)
+        # stands in for the chat's membership; ids are integers formatted here.
+        if members is None:
+            member_sql = (
+                "  SELECT tg_id FROM subscriptions WHERE chat_id = ? "
+                "  UNION "
+                "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
+            )
+            member_params: tuple[int, ...] = (chat_id, chat_id)
+        else:
+            ids = ",".join(str(int(m)) for m in members) or "NULL"
+            member_sql = f"  SELECT tg_id FROM users WHERE tg_id IN ({ids})"
+            member_params = ()
         cursor = await self._conn.execute(
-            "WITH member AS ("
-            "  SELECT tg_id FROM subscriptions WHERE chat_id = ? "
-            "  UNION "
-            "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
-            "), presence AS ("
+            "WITH member AS (" + member_sql + "), presence AS ("
             "  SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "         u.last_name, " + XBOX_COLUMNS + ","
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
@@ -288,7 +299,7 @@ class _ChatStatsRepo:
             "  CASE winner WHEN 'steam' THEN steam_display_name"
             "              WHEN 'psn' THEN psn_display_name"
             "              ELSE COALESCE(gamertag_modern, gamertag) END COLLATE NOCASE",
-            (chat_id, chat_id),
+            member_params,
         )
         return [
             ChatPresenceRow(

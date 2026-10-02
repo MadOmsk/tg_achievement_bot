@@ -133,7 +133,7 @@ export function Club({
     const load = async () => {
       const [f, o, s, mine] = await Promise.allSettled([
         fetchFeed(data, scopeRef ?? activeId),
-        fetchOnline(data, activeId),
+        fetchOnline(data, scopeRef ?? activeId),
         fetchSummary(data, scopeRef ?? activeId),
         // Own unlocks from every linked platform — not the chat feed slice,
         // which is dominated by whoever unlocked most recently in-group.

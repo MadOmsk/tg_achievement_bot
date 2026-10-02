@@ -173,8 +173,10 @@ async def build_feed_payload(
     }
 
 
-async def build_online_payload(repo: Repo, chat_id: int, *, locale: str) -> dict[str, Any]:
-    rows = await repo.chat_member_presence(chat_id)
+async def build_online_payload(
+    repo: Repo, chat_id: int, *, locale: str, members: list[int] | None = None
+) -> dict[str, Any]:
+    rows = await repo.chat_member_presence(chat_id, members=members)
     return {"members": [_presence_json(row, locale) for row in rows]}
 
 

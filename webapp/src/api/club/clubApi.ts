@@ -24,8 +24,11 @@ export class ClubApi extends BaseApi {
     });
   }
 
-  fetchOnline(initData: string, chatId: number): Promise<{ members: OnlineMember[] }> {
-    return this.get<{ members: OnlineMember[] }>(initData, CLUB_ROUTES.ONLINE, { chat_id: chatId });
+  fetchOnline(
+    initData: string,
+    chatId: number | "following",
+  ): Promise<{ members: OnlineMember[] }> {
+    return this.get<{ members: OnlineMember[] }>(initData, CLUB_ROUTES.ONLINE, scopeQuery(chatId));
   }
 
   fetchSummary(

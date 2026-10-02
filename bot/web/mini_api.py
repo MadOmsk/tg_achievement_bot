@@ -614,6 +614,12 @@ async def handle_chat_feed(request: web.Request) -> web.Response:
 
 
 async def handle_chat_online(request: web.Request) -> web.Response:
+    scoped = await _following_scope(request)
+    if scoped is not None:
+        user, repo, members, _tz = scoped
+        locale = await _user_locale(repo, user.tg_id)
+        payload = await build_online_payload(repo, MEMBERS_CHAT, locale=locale, members=members)
+        return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
     locale = await _user_locale(repo, user.tg_id)
     payload = await build_online_payload(repo, chat_id, locale=locale)

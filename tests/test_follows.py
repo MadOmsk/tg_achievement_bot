@@ -245,3 +245,25 @@ async def test_a_private_profile_shows_only_the_name(repo: Repo, settings) -> No
         assert body["feed"] == [] and body["games"] == []
     finally:
         await client.close()
+
+
+async def test_online_in_the_following_scope_lists_only_followed_people(
+    repo: Repo, settings
+) -> None:
+    for tg_id in (42, 7, 8):
+        await repo.ensure_user(tg_id, f"user{tg_id}")
+        await repo.link_xbox_account(tg_id, f"x{tg_id}", f"Tag{tg_id}", 0)
+    await repo.follow(await repo.person_id(42), await repo.person_id(7))
+
+    app = web.Application(middlewares=[cors_middleware()])
+    setup_mini_api(app, settings, repo)
+    headers = {"X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), 42)}
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        body = await (
+            await client.get("/api/mini/club/online?scope=following", headers=headers)
+        ).json()
+        assert sorted(m["tg_id"] for m in body["members"]) == [7, 42]
+    finally:
+        await client.close()
