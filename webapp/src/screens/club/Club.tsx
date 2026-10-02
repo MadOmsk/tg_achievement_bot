@@ -377,7 +377,6 @@ export function Club({
                       <ScoreCup
                         locale={locale}
                         lines={meScoreLines(me, locale)}
-                        onEmpty={onSettings}
                         markSize={12}
                         open={scoreOpen}
                         onOpenChange={setScoreOpen}
@@ -417,6 +416,7 @@ export function Club({
                     <EmptyState
                       title={t(locale, "welcomeTitle")}
                       hint={t(locale, "welcomeText")}
+                      action={onSettings ? { label: t(locale, "connect"), onClick: onSettings } : undefined}
                       slide
                     />
                   )}
