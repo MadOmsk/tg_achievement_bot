@@ -265,8 +265,9 @@ export function Settings({
 
   return (
     <>
-      <header className="page-head">
+      <header className="page-head is-split">
         <h1>{t(locale, "settings")}</h1>
+        {me.handle && <span className="page-sub">{me.handle.display}</span>}
       </header>
 
       <p className="kicker">{t(locale, "general")}</p>

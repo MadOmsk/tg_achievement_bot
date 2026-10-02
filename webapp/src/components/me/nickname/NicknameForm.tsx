@@ -67,7 +67,7 @@ export function NicknameForm({
         />
       )}
       <form
-        className="glass-card connect-form"
+        className="nick-form"
         onSubmit={(e) => {
           e.preventDefault();
           send();
