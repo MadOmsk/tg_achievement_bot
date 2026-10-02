@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { userApi } from "../../api";
 import { t, type Locale } from "../../i18n";
-import { Icon } from "../../components/shared/lib";
 import "./Login.css";
 
 type TelegramUser = Record<string, string | number>;
@@ -62,9 +61,7 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
 
   return (
     <div className="login">
-      <span className="login-mark" aria-hidden>
-        <Icon name="cup" size={40} />
-      </span>
+      <img className="login-mark" src="/logo.svg" alt="" width={96} height={96} />
       <h1>{t(locale, "loginTitle")}</h1>
       <p className="login-text">{t(locale, "loginText")}</p>
       {bot === null && <p className="plat-note is-warn">{t(locale, "loginUnavailable")}</p>}
