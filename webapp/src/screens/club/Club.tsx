@@ -5,7 +5,6 @@ import {
   fetchPerson,
   fetchSummary,
   type FeedItem,
-  type HltbHit,
   type MeResponse,
   type OnlineMember,
   type PersonPayload,
@@ -13,9 +12,8 @@ import {
   type SummaryMember,
 } from "../../api";
 import { t, type Locale } from "../../i18n";
-import { GameHits, GameSheet, useHltbSearch } from "../hltb";
-import { FeedPosts, HiddenProfile, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
-import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { FeedPosts, HiddenProfile, PersonProfile, PlayedGames, RecentPosts } from "../person";
+import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -45,6 +43,7 @@ export function Club({
   onClosePerson,
   onPersonVisible,
   onSettings,
+  onFind,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -62,6 +61,8 @@ export function Club({
   onClosePerson?: () => void;
   onPersonVisible?: (open: boolean) => void;
   onSettings?: () => void;
+  /** Open the People tab with its search focused. */
+  onFind: () => void;
 }) {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [homeFeed, setHomeFeed] = useState<FeedItem[]>([]);
@@ -82,9 +83,7 @@ export function Club({
   const [myPerson, setMyPerson] = useState<PersonPayload | null>(null);
   const [clubReady, setClubReady] = useState(false);
   const [personBusy, setPersonBusy] = useState(false);
-  const [query, setQuery] = useState("");
   const [rosterOpen, setRosterOpen] = useState(false);
-  const [hltbGame, setHltbGame] = useState<HltbHit | null>(null);
   const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const feedRef = useRef(feed);
@@ -108,7 +107,7 @@ export function Club({
   }, [activeId, data, me.tg_id, scopeRef]);
 
   useEffect(() => {
-    if (!activeId || !data) return;
+    if (!data) return;
     let cancelled = false;
     const load = async () => {
       const [f, o, s, mine] = await Promise.allSettled([
@@ -117,7 +116,9 @@ export function Club({
         fetchSummary(data, scopeRef ?? activeId),
         // Own unlocks from every linked platform — not the chat feed slice,
         // which is dominated by whoever unlocked most recently in-group.
-        fetchPerson(data, activeId, me.tg_id),
+        // A profile page is read inside a chat; with none, the home page falls
+        // back to the feed below.
+        activeId ? fetchPerson(data, activeId, me.tg_id) : Promise.reject(new Error("no chat")),
       ]);
       if (cancelled) return;
       if (f.status === "fulfilled") {
@@ -217,23 +218,19 @@ export function Club({
     onOpenPerson?.(tgId);
   };
 
-  const needle = query.trim();
-  const gameSearch = useHltbSearch(data, needle, locale, onFlash);
-  const peopleHits = needle
-    ? online.filter((m) => matchQuery(m.name, needle))
-    : [];
-
   // One picker for every pane: moving the month refetches the feed, the
   // summary and "my" games together, so wherever it was opened from, every
   // other pane already has the right month's data when the person switches to it.
   const pickMonth = (ym: string) => {
     setMonthPicker(false);
-    if (!activeId || !data || ym === selectedMonth) return;
+    if (!data || ym === selectedMonth) return;
     setMonthBusy(true);
     void Promise.allSettled([
       fetchFeed(data, scopeRef ?? activeId, { month: ym }),
       fetchSummary(data, scopeRef ?? activeId, { month: ym }),
-      fetchPerson(data, activeId, me.tg_id, { month: ym }),
+      activeId
+        ? fetchPerson(data, activeId, me.tg_id, { month: ym })
+        : Promise.reject(new Error("no chat")),
     ])
       .then(([f, s, mine]) => {
         if (f.status === "fulfilled") {
@@ -284,10 +281,6 @@ export function Club({
   // A past month never changes once fetched — pull-to-refresh would just
   // reset the view back to the live month instead of refreshing anything.
   const isPastMonth = Boolean(selectedMonth) && Boolean(liveMonth) && selectedMonth !== liveMonth;
-
-  if (me.chats.length === 0) {
-    return <p className="empty">{t(locale, "noChats")}</p>;
-  }
 
   if (openPersonId && personBusy) {
     return (
@@ -398,26 +391,15 @@ export function Club({
                 )}
               </div>
               <div className="home-top-search">
-                <SearchBar locale={locale} value={query} onChange={setQuery} />
+                <button type="button" className="find-btn" onClick={onFind}>
+                  <Icon name="search" size={18} />
+                  <span>{t(locale, "find")}</span>
+                </button>
               </div>
             </div>
           </div>
-          {!clubReady && !needle && <HomeBodySkel />}
-          {(clubReady || needle) &&
-            (needle ? (
-              <div className="search-pane">
-                {peopleHits.length > 0 && (
-                  <PeopleHits members={peopleHits} locale={locale} onOpen={openPerson} />
-                )}
-                <GameHits
-                  hits={gameSearch.hits}
-                  busy={gameSearch.busy}
-                  searched={gameSearch.searched}
-                  locale={locale}
-                  onOpen={setHltbGame}
-                />
-              </div>
-            ) : (
+          {!clubReady && <HomeBodySkel />}
+          {clubReady && (
               <>
                 {monthBusy && <HomeSkel />}
                 {!monthBusy && mine.length > 0 && (
@@ -429,6 +411,15 @@ export function Club({
                     onReveal={(key) => setRevealed(new Set(revealed).add(key))}
                   />
                 )}
+                {!monthBusy &&
+                  !(me.xbox.linked || me.steam.linked || me.psn.linked) && (
+                    <EmptyState
+                      title={t(locale, "welcomeTitle")}
+                      hint={t(locale, "welcomeText")}
+                      action={onSettings ? { label: t(locale, "welcomeAction"), onClick: onSettings } : undefined}
+                      slide
+                    />
+                  )}
                 {!monthBusy &&
                   mine.length === 0 &&
                   (me.xbox.linked || me.steam.linked || me.psn.linked) && (
@@ -445,6 +436,7 @@ export function Club({
                   limit={FRIENDS_PREVIEW}
                   onOpen={openPerson}
                   onSeeAll={() => setRosterOpen(true)}
+                  onFind={onFind}
                 />
                 {(monthBusy || mine.length > 0) && (
                   <>
@@ -477,7 +469,7 @@ export function Club({
                   </>
                 )}
               </>
-            ))}
+          )}
         </>
       )}
 
@@ -581,15 +573,6 @@ export function Club({
           locale={locale}
           onClose={() => setMonthPicker(false)}
           onPick={pickMonth}
-        />
-      )}
-      {hltbGame && (
-        <GameSheet
-          preview={hltbGame}
-          data={data}
-          locale={locale}
-          onClose={() => setHltbGame(null)}
-          onFlash={onFlash}
         />
       )}
     </>

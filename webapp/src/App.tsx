@@ -144,6 +144,8 @@ export function App() {
   const [flash, setFlash] = useState<string | null>(null);
   const [platNotes, setPlatNotes] = useState<PlatNotes>({});
   const [personOpen, setPersonOpen] = useState(false);
+  // The Find button on Home lands on People with the search focused.
+  const [focusSearch, setFocusSearch] = useState(false);
   // Which admin screen Settings' admin list opened.
   const [adminScreen, setAdminScreen] = useState<AdminScreen>({ name: ADMIN_SCREENS.USERS });
   // Opened straight on a game (a notification's button), the home page is not
@@ -332,6 +334,7 @@ export function App() {
       return;
     }
     setPersonId(null);
+    setFocusSearch(false);
     setScreen(SCREENS[tab]);
   };
 
@@ -384,12 +387,23 @@ export function App() {
           onPane={(next) => setScreen(SCREENS[next])}
           onPersonVisible={setPersonOpen}
           onSettings={() => setScreen(SCREENS.settings)}
+          onFind={() => {
+            setFocusSearch(true);
+            setPersonId(null);
+            setScreen(SCREENS.people);
+          }}
         />
         )}
       </div>
 
       {isPeople && (
-        <People locale={locale} data={data} refreshKey={refreshKey} onFlash={setFlash} />
+        <People
+          locale={locale}
+          data={data}
+          refreshKey={refreshKey}
+          focusSearch={focusSearch}
+          onFlash={setFlash}
+        />
       )}
 
       {isSettings && (

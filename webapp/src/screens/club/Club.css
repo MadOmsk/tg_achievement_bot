@@ -346,3 +346,38 @@
   overflow: hidden;
   background: rgba(255, 255, 255, 0.06);
 }
+
+.find-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(10, 12, 18, 0.28);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.find-btn.is-wide {
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.home-top .find-btn {
+  flex: 1 1 auto;
+}
+
+.friends-empty {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}

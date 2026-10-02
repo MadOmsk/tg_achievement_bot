@@ -20,11 +20,14 @@ export function People({
   locale,
   data,
   refreshKey,
+  focusSearch,
   onFlash,
 }: {
   locale: Locale;
   data: string;
   refreshKey: number;
+  /** Opened through the Find button: put the cursor in the search field. */
+  focusSearch?: boolean;
   onFlash: (message: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -123,7 +126,7 @@ export function People({
       <header className="page-head">
         <h1>{t(locale, "people")}</h1>
       </header>
-      <SearchBar locale={locale} value={query} onChange={setQuery} />
+      <SearchBar locale={locale} value={query} onChange={setQuery} focusKey={focusSearch} />
       {searching ? (
         hits === null ? null : hits.length === 0 ? (
           <p className="empty">{t(locale, "noResults")}</p>
