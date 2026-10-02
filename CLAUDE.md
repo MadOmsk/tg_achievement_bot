@@ -732,7 +732,9 @@ elsewhere in this file still describe the bot.
   app — everyone (default), friends, nobody. The one rule is
   `services/people.can_view` (a block either way first, then the setting; oneself
   always); nickname and avatar are not activity and stay visible. Routes:
-  `GET/PUT /api/mini/me/privacy`. Nothing reads it yet — the screens that show
+  `GET/PUT /api/mini/me/privacy`. Enforced on a person's page (`/club/people` answers `hidden: true` with
+  the name only) and in the «Подписки» scope. **Not** on a chat's own feed, ranking or
+  `/online`: those show what the chat was already told. Every new screen that shows
   another person's activity must call `repo.can_view_activity`. Publishing to
   chats is unrelated and works as before.
 - **Publishing** (shipped): Settings → Публикация has the rarity mode, secrets, a
@@ -741,8 +743,7 @@ elsewhere in this file still describe the bot.
 - **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
   became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
   dock tab; the `summary` screen name and `?t=summary` links still work). **Not yet:**
-  a global person profile (opening someone outside your chat falls back to a
-  minimal card) and the home strip of followed people. **Scope**: the Feed and the
+  the home strip of followed people. **Scope**: the Feed and the
   Ranking carry chips — «Подписки» (oneself plus followed people whose privacy lets
   the viewer see them) and one per chat — remembered on the device; `?scope=following`
   on `/club/feed` and `/club/summary`, answered by the same queries through

@@ -219,3 +219,29 @@ async def test_the_following_scope_feeds_and_ranks_only_followed_people(
         assert [item["name"] for item in feed["items"]] == ["a42"]
     finally:
         await client.close()
+
+
+async def test_a_private_profile_shows_only_the_name(repo: Repo, settings) -> None:
+    await repo.ensure_user(42, "viewer")
+    await repo.ensure_user(7, "secretive")
+    await repo.upsert_chat(-100, "Chat", 42)
+    await repo.subscribe(-100, 42)
+    await repo.subscribe(-100, 7)
+    target = await repo.person_id(7)
+
+    app = web.Application(middlewares=[cors_middleware()])
+    setup_mini_api(app, settings, repo)
+    headers = {"X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), 42)}
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        url = "/api/mini/club/people?chat_id=-100&tg_id=7"
+        assert "hidden" not in await (await client.get(url, headers=headers)).json()
+
+        await repo.set_activity_visible(target, "friends")
+        body = await (await client.get(url, headers=headers)).json()
+        assert body["hidden"] is True
+        assert body["name"] == "secretive"
+        assert body["feed"] == [] and body["games"] == []
+    finally:
+        await client.close()

@@ -16,7 +16,7 @@ from aiohttp import web
 
 from bot.config import Settings
 from bot.constants import MAX_PSN_ACCOUNTS, AccountPlatform, Platform, RarityMode
-from bot.db.repo import HandleInvalid, HandleTooSoon, Repo
+from bot.db.repo import HandleInvalid, HandleTooSoon, Repo, User
 from bot.db.repo._sql import MEMBERS_CHAT
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
@@ -27,6 +27,7 @@ from bot.services import achievement_icons
 from bot.services.connect import ConnectService
 from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
+from bot.services.naming import person_name_of
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -736,6 +737,21 @@ async def handle_chat_person(request: web.Request) -> web.Response:
     if target is None:
         raise web.HTTPNotFound(text="person not found")
     locale = await _user_locale(repo, user.tg_id)
+    if not await _may_see_activity(repo, user.tg_id, target_id):
+        # The nickname and avatar are public; what they did is not (#157).
+        return web.json_response(
+            {
+                "tg_id": target.tg_id,
+                "name": await _public_name(repo, target),
+                "hidden": True,
+                "platforms": [],
+                "today": {"count": 0, "score": 0, "xbox": 0, "steam": 0, "psn": 0},
+                "week": {"count": 0, "xbox": 0, "steam": 0, "psn": 0},
+                "month": {"count": 0, "score": 0, "xbox": 0, "steam": 0, "psn": 0},
+                "games": [],
+                "feed": [],
+            }
+        )
     month = request.query.get("month") or None
     try:
         payload = await build_person_payload(
@@ -744,6 +760,19 @@ async def handle_chat_person(request: web.Request) -> web.Response:
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad month") from exc
     return web.json_response(payload)
+
+
+async def _may_see_activity(repo: Repo, viewer_tg: int, target_tg: int) -> bool:
+    """The one privacy check for a person's page (#157), by Telegram id."""
+    viewer = await repo.person_id(viewer_tg)
+    target = await repo.person_id(target_tg)
+    if viewer is None or target is None:
+        return True
+    return await repo.can_view_activity(viewer, target)
+
+
+async def _public_name(repo: Repo, target: User) -> str:
+    return person_name_of(target, await repo.platform_links_of(target.tg_id))
 
 
 async def _require_chat_member(request: web.Request) -> tuple[MiniAppUser, int, Repo]:

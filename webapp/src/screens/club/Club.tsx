@@ -14,7 +14,7 @@ import {
 } from "../../api";
 import { t, type Locale } from "../../i18n";
 import { GameHits, GameSheet, useHltbSearch } from "../hltb";
-import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
+import { FeedPosts, HiddenProfile, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
 import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
@@ -314,6 +314,20 @@ export function Club({
       <div className="pane-fade person-wait">
         <PersonSkel />
       </div>
+    );
+  }
+
+  if (openProfile?.hidden) {
+    return (
+      <HiddenProfile
+        tgId={openProfile.tg_id}
+        name={openProfile.name}
+        locale={locale}
+        onBack={() => {
+          setPerson(null);
+          onClosePerson?.();
+        }}
+      />
     );
   }
 

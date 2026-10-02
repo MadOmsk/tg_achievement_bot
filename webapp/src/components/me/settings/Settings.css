@@ -341,3 +341,9 @@
 .connect-form .nick-hint {
   margin-top: -6px;
 }
+
+.hidden-profile {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 20px;
+}
