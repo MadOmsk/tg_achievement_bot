@@ -82,6 +82,42 @@ async def check_alive(api_key: str) -> bool:
     return True
 
 
+async def ask_model(
+    api_key: str, prompt: str, *, max_tokens: int = _MAX_OUTPUT_TOKENS, what: str = "request"
+) -> str | None:
+    """One question to Haiku, answered in plain text; None when it could not be
+    asked or answered (logged as `what`). Temperature 0: the same question, the same
+    answer as far as the model allows."""
+    try:
+        async with httpx.AsyncClient(timeout=_long_timeout()) as client:
+            response = await client.post(
+                f"{API_BASE}/messages",
+                headers=_headers(api_key),
+                json={
+                    "model": HAIKU_MODEL,
+                    "max_tokens": max_tokens,
+                    "temperature": 0,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+    except httpx.RequestError as exc:
+        log.warning("anthropic %s failed: %r", what, exc)
+        return None
+    if response.status_code != 200:
+        log.warning("anthropic %s failed: HTTP %s", what, response.status_code)
+        return None
+    try:
+        return response.json()["content"][0]["text"]
+    except (KeyError, IndexError, ValueError) as exc:
+        log.warning("anthropic %s: could not parse response: %r", what, exc)
+        return None
+
+
+def _long_timeout() -> httpx.Timeout:
+    # A whole guide in, a game's worth of text out: minutes are fine here.
+    return httpx.Timeout(connect=10.0, read=180.0, write=20.0, pool=10.0)
+
+
 async def translate_descriptions(
     api_key: str, texts: dict[str, str], *, target_language: str
 ) -> dict[str, str]:

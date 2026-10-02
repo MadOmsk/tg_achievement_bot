@@ -5,15 +5,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import TelegramNetworkError
 from aiogram.types import (
     BotCommand,
     BotCommandScopeAllGroupChats,
     BotCommandScopeAllPrivateChats,
     MenuButtonWebApp,
+    User,
     WebAppInfo,
 )
 
@@ -48,6 +51,7 @@ from bot.poller.fetcher import Fetcher, catch_up_since
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
+from bot.poller.patch_refresh import PatchRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
@@ -70,6 +74,7 @@ from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.release_notify import announce_release_if_needed
 from bot.services.steam.auth import SteamAuth
+from bot.services.steam_extras import SteamExtras
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
@@ -175,13 +180,24 @@ async def run(settings: Settings) -> None:
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
+    steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
     fetcher = Fetcher(
-        repo, client, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
+        repo,
+        client,
+        publisher,
+        settings.backfill_concurrency,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
     )
     poller = PresencePoller(settings, repo, client, fetcher)
 
     steam_fetcher = SteamFetcher(
-        repo, steam_auth, publisher, settings.backfill_concurrency, anthropic_auth=anthropic_auth
+        repo,
+        steam_auth,
+        publisher,
+        settings.backfill_concurrency,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
     )
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
     steam_catch_up = SteamCatchUpPoller(settings, repo, steam_fetcher, steam_auth)
@@ -190,7 +206,14 @@ async def run(settings: Settings) -> None:
     # M-PSN-2) — psn_fetcher.tick() scans every linked account directly on
     # its own schedule. psn_presence below is a separate, unrelated poller
     # (issue #1): presence for /online only, never triggers a trophy poll.
-    psn_fetcher = PsnFetcher(settings, repo, psn_auth, publisher, anthropic_auth=anthropic_auth)
+    psn_fetcher = PsnFetcher(
+        settings,
+        repo,
+        psn_auth,
+        publisher,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
+    )
     psn_presence = PsnPresencePoller(settings, repo, psn_auth, psn_fetcher=psn_fetcher)
 
     flood_flush = FloodFlush(repo, publisher)
@@ -218,6 +241,7 @@ async def run(settings: Settings) -> None:
         steam_catch_up,
         TitlePlatformsRefresh(repo, client),
         PsnTrophyGroups(repo, psn_auth),
+        PatchRefresh(repo, steam_extras),
     )
 
     async def on_linked(tg_id: int, identity: XboxIdentity, origin_chat_id: int | None) -> None:
@@ -269,6 +293,7 @@ async def run(settings: Settings) -> None:
         notifier=notifier,
         anthropic_auth=anthropic_auth,
         bot=bot,
+        steam_extras=steam_extras,
     )
     await web_server.start()
 
@@ -374,7 +399,7 @@ async def run(settings: Settings) -> None:
     await _publish_command_menu(bot)
     await _publish_mini_app_menu(bot, settings)
 
-    me = await bot.me()
+    me = await _me_with_retries(bot)
     bot_version = version()
     log.info("bot @%s is up (v%s)", me.username, bot_version)
     asyncio.create_task(  # noqa: RUF006
@@ -389,6 +414,21 @@ async def run(settings: Settings) -> None:
         await auth.close()
         await bot.session.close()
         await database.close()
+
+
+# Telegram unreachable for a minute at start-up (found live on the dev
+# server, 2026-10-01) is a blip, not a reason to give up: ~2 minutes in all.
+_ME_RETRY_DELAYS = (5, 10, 20, 30, 60)
+
+
+async def _me_with_retries(bot: Bot) -> User:
+    for delay in _ME_RETRY_DELAYS:
+        try:
+            return await bot.me()
+        except TelegramNetworkError as exc:
+            log.warning("telegram unreachable at start-up (%r), retrying in %ss", exc, delay)
+            await asyncio.sleep(delay)
+    return await bot.me()
 
 
 async def _publish_command_menu(bot: Bot) -> None:
@@ -473,6 +513,16 @@ def main() -> None:
                 asyncio.run(run(settings))
             except (KeyboardInterrupt, SystemExit):
                 log.info("stopped")
+            except Exception:
+                # A start-up that failed before polling began leaves resources
+                # nobody closes — an open aiosqlite connection's thread is not a
+                # daemon — and the interpreter would wait on it forever: a
+                # process that looks alive and does nothing, which systemd does
+                # not restart (found live on the dev server, 2026-10-01). Exit
+                # for real, with a failure code systemd answers.
+                log.exception("the bot stopped on an error")
+                logging.shutdown()
+                os._exit(1)
     except AlreadyRunningError:
         # Not a traceback: this is a normal thing to do by mistake.
         print(gettext("main", "main-already-running"), file=sys.stderr)

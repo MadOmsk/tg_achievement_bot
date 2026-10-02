@@ -75,3 +75,7 @@ def link_html(url: str | None, escaped_text: str) -> str:
     if url is None:
         return escaped_text
     return f'<a href="{url}">{escaped_text}</a>'
+
+
+# Where a Steam user opens their profile and "Game details" to everyone (#95).
+STEAM_PRIVACY_URL = "https://steamcommunity.com/my/edit/settings"

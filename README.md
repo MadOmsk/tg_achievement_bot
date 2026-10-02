@@ -19,8 +19,8 @@ what changed in each release is in [changelog/](changelog/).
   game (`47/50`), rarity, description (secret ones behind a spoiler). Several at once
   become one digest; an anti-flood filter holds back a burst and sends it later as
   one message.
-- Each member picks what gets posted — all, rare only, or nothing; "rare" follows
-  the chat's own rarity threshold.
+- Each member picks what gets posted — all, rare only, or nothing; "rare" means at or
+  below the bot's rarity threshold (10% by default, set in `/admin`).
 - Day and month reports on a schedule, plus `/stats`, `/online`, `/recent`, `/who`,
   `/hltb` (HowLongToBeat completion times) and a settings hub.
 

@@ -32,6 +32,7 @@ from bot.services.steam.client import (
     get_presence_batch,
     rate_limit_usage,
 )
+from bot.services.steam_extras import SteamExtras
 from bot.services.translate.auth import AnthropicAuth
 from bot.util import parse_iso, utcnow_iso
 
@@ -62,8 +63,10 @@ class SteamFetcher:
         concurrency: int = 2,
         *,
         anthropic_auth: AnthropicAuth,
+        steam_extras: SteamExtras | None = None,
     ) -> None:
         self._repo = repo
+        self._steam_extras = steam_extras
         self._steam_auth = steam_auth
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
@@ -112,6 +115,8 @@ class SteamFetcher:
             await ensure_title_match(self._repo, title_id)
         except Exception:
             log.exception("HLTB match failed for title %s", title_id)
+        if self._steam_extras is not None:
+            self._steam_extras.ensure_title(title_id)
 
     async def refresh_user(self, tg_id: int, steam_id: str, persona_name: str, locale: str) -> str:
         """An out-of-turn look at one person, for the admin card (SPEC 6.4)

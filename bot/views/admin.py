@@ -40,6 +40,7 @@ from bot.services.admin_settings import (
     TOAST_PREVIEW_MAX_CHARS,
     VISIBILITY_ICON,
     NumericSetting,
+    rare_threshold,
 )
 from bot.services.naming import (
     account_nickname,
@@ -643,7 +644,6 @@ async def render_chat_card(
         return _("admin-chat-not-found-period"), _back_home(locale=locale)
 
     names = subscriber_names(await repo.chat_subscribers(chat_id))
-    threshold_label = f"{chat.rare_threshold_percent:g}%"
     zone_label = format_offset(chat.tz_offset_min)
     flood_label = (
         _("admin-chat-flood-value", limit=chat.flood_limit, window=chat.flood_window_minutes)
@@ -655,7 +655,6 @@ async def render_chat_card(
         title=chat.title or chat_id,
         state=_("admin-active") if chat.is_active else _("admin-inactive"),
         subscribers=chat.subscribers,
-        threshold=threshold_label,
         summary=_("admin-yes") if chat.daily_summary else _("admin-no"),
         time=chat.daily_summary_time,
         offset=zone_label,
@@ -763,12 +762,6 @@ async def render_chat_card(
 
     # The root card: one entry per group, each carrying the state a person
     # would otherwise have to open the submenu to read.
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-threshold-button", threshold=threshold_label),
-            callback_data=f"a:crt:{chat_id}",
-        )
-    )
     builder.row(
         InlineKeyboardButton(
             text=_("admin-chat-digest-button", digest=_digest_label(chat.digest_threshold, _)),
@@ -879,6 +872,12 @@ async def render_limits(repo: Repo, *, locale: str) -> Screen:
     rows = [
         [
             InlineKeyboardButton(
+                text=_("admin-rare-row", value=f"{await rare_threshold(repo):g}"),
+                callback_data="a:rare",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text=_("admin-show-links", visible=_("admin-yes") if show_links else _("admin-no")),
                 callback_data="a:showlinks",
             )
@@ -928,13 +927,13 @@ def _chat_input_screen(key: str, chat_id: int, *, locale: str, **fields: object)
     return Screen(_(key, **fields), builder.as_markup())
 
 
-def render_rare_prompt(chat: ChatTarget, *, locale: str) -> Screen:
-    return _chat_input_screen(
-        "admin-chat-threshold-prompt",
-        chat.chat_id,
-        locale=locale,
-        title=chat.title or chat.chat_id,
-        value=f"{chat.rare_threshold_percent:g}",
+async def render_rare_prompt(repo: Repo, *, locale: str) -> Screen:
+    """The rarity threshold, one for every chat (owner, 2026-10-01)."""
+    _ = translator("admin", locale)
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
+    return Screen(
+        _("admin-rare-prompt", value=f"{await rare_threshold(repo):g}"), builder.as_markup()
     )
 
 

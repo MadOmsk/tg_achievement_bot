@@ -19,6 +19,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_catch_up import catch_up_steam_account
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.admin_settings import rare_threshold
 from bot.services.naming import link_nickname
 from bot.services.single_message import send_replacing
 from bot.services.steam import client as steam_client  # noqa: F401
@@ -39,6 +40,7 @@ from bot.views.panel import (
     render_panel,
     render_panel_delete_confirm_1,
     render_panel_delete_confirm_2,
+    render_privacy_howto,
     render_unsub_prompt,
 )
 
@@ -284,6 +286,26 @@ async def panel_account_menu(callback: CallbackQuery, repo: Repo, i18n: I18nCont
     await _redraw_account_menu(callback, repo, platform, i18n)
 
 
+@router.callback_query(F.data.startswith("panel:howto:"))
+async def panel_privacy_howto(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """How to open hidden achievements on one account (#95), in place."""
+    assert callback.data is not None
+    parts = callback.data.split(":", 3)
+    platform = parts[2]
+    account_id = parts[3] if len(parts) > 3 else None
+    screen = await render_privacy_howto(
+        repo, callback.from_user.id, platform, account_id, locale=i18n.locale
+    ) or await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(
+        callback,
+        screen.text,
+        screen.keyboard,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("panel:pub:"))
 async def panel_toggle_publishing(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """The person's own switch for a whole platform (#20, #10): announce its
@@ -352,7 +374,8 @@ async def panel_rarity(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     settings_row = await repo.get_user_settings(tg_id)
     mode = next_rarity_mode(settings_row.rarity_mode if settings_row else RarityMode.ALL)
     await repo.update_user_settings(tg_id, rarity_mode=mode)
-    await callback.answer(i18n.get(f"panel-rarity-toast-{mode}"))
+    threshold = f"{await rare_threshold(repo):g}"
+    await callback.answer(i18n.get(f"panel-rarity-toast-{mode}", threshold=threshold))
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 

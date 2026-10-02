@@ -133,6 +133,8 @@ name, or when the tree goes stale.
 │   │   ├── hltb.py               howlongtobeatpy wrapper, cached in hltb_cache; ensure_title_match
 │   │   │                         is the lazy trigger for hltb_match.py below
 │   │   ├── hltb_match.py         which HLTB entry a game is, scored automatically (no DB access)
+│   │   ├── steam_extras.py       a game's Steam side: its app, achievement tips, patches — stored
+│   │   ├── steam_guides.py, steam_news.py   Steam community guides / announcements (no DB access)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -143,8 +145,8 @@ name, or when the tree goes stale.
 │   │   │                         (fetch_unlocked + schema/rarity cache)
 │   │   ├── psn/                  auth.py (NPSSO, PsnAuth), client.py (to_thread wrapper),
 │   │   │                         achievements.py (sync_account, one game at a time, #26)
-│   │   └── translate/            Anthropic API via raw httpx, *descriptions only*, never names:
-│   │                             client.py, descriptions.py (cache-or-translate), auth.py (#17 shape)
+│   │   └── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
+│   │                             client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
 │   │
 │   ├── poller/                  APScheduler jobs, one tick a minute
 │   │   ├── scheduler.py, cadence.py              job assembly; shared interval/dormancy math
@@ -156,6 +158,7 @@ name, or when the tree goes stale.
 │   │   ├── daily.py              scheduled summaries and the two on-demand summary commands (#14)
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
 │   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
+│   │   ├── patch_refresh.py      played games' patch notes, re-read every few hours
 │   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
@@ -254,7 +257,10 @@ every column. History: #106.
   database skipping versions meets both halves of the bring-up at once.
 - **A failed bring-up stops the process.** `connect()` closes the connection before
   re-raising; an open aiosqlite connection keeps a non-daemon thread alive and the
-  bot neither serves nor exits.
+  bot neither serves nor exits. The same holds for anything later in `run()`
+  before polling starts: `main()` ends a run that raised with `os._exit(1)`, so
+  systemd (`Restart=on-failure`) starts it again, and `bot.me()` at start-up is
+  retried for ~2 minutes because Telegram is sometimes briefly unreachable.
 - **A database ahead of the code refuses to start** (`SchemaTooNewError`, #56) —
   that is how an older build learns a newer one already migrated its file.
 - **Rehearse a migration on a copy of production before the release that carries
@@ -336,10 +342,11 @@ every column. History: #106.
 ### Chats and settings
 
 - `chats` + `subscriptions` (who publishes where — nothing else: #126 moved the
-  per-subscription settings out). `chat_settings`: rarity threshold, **digest size**
+  per-subscription settings out). `chat_settings`: **digest size**
   (`digest_threshold`, 99 = never), summary time, timezone, muted games, minimum
   gamerscore, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
-  `locale`. `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
+  `locale` (its `rare_threshold_percent` column is no longer read — the threshold
+  is global, see Publication rules). `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
   new people start from `app_settings['default_rarity_mode']`), timezone, muted games,
   `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
   profile links are one admin switch, `app_settings['show_profile_links']`, on by
@@ -354,12 +361,14 @@ every column. History: #106.
 - **Presence**: `presence_state` (Xbox), `steam_presence_state`, `psn_presence_state`
   (#1, unrelated to the trophy scan). PSN scan progress: `psn_title_progress`,
   `psn_poll_state`. Xbox history: `title_history`. Steam: `steam_schema_cache`,
-  `steam_rarity_cache`. HLTB: `hltb_cache`.
+  `steam_rarity_cache`. HLTB: `hltb_cache`. Steam guides and patches: `steam_apps`,
+  `game_patches`, `title_guide_reads` (see Steam guides and patches).
 - **`titles`** — one row per game: names (`name`, `name_ru`, `name_en`),
   `achievements_total`, `platform`, `platforms` (#79), cover art (`icon_url` +
   `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at`, and which
   HLTB entry it is (`hltb_id`/`hltb_match_score`/`hltb_attempts`/`hltb_checked_at`,
-  see HowLongToBeat's own "Automatic title matching").
+  see HowLongToBeat's own "Automatic title matching"), and which Steam app it is
+  (`steam_appid`/`steam_appid_attempts`/`steam_appid_checked_at`, `tips_checked_at`).
 - **All three platforms localize a game's title** (#61). PSN's comes in the same call
   as its trophy groups; Xbox's rides on the `ru-RU` contract-4 response already
   fetched for descriptions (x360 keeps the titlehub name); Steam's needs the
@@ -402,6 +411,10 @@ every column. History: #106.
     two locale requests. Each platform's main call fixes one language (Xbox/PSN
     English, Steam Russian), which is why both are kept.
   - Icons are cached under `data/achievements/{platform}/{title_id}/`.
+  - **Tips** (`tip_en`/`tip_ru`/`tip_source`/`tip_translation`): how to get it, from
+    the Steam community's guides. The text sits in its own language's column; the
+    other stays NULL until a translation fills it and says so (`tip_translation =
+    'llm'`, like `description_source`). None are translated yet (owner, 2026-09-30).
 - **What a message renders from**: `services/descriptions_view.py` swaps in the
   reader's language from the catalog per chat, falling back to the other language
   and then to `seen_achievements`' own snapshot. Rows are copied, never mutated —
@@ -618,12 +631,16 @@ An achievement is published to a chat only if every check passes: the person is
 subscribed there; not admin-excluded; the account's posting switch is on (#20); the
 person's `rarity_mode` isn't `hidden`; in
 `rare` mode a
-known rarity is at or below the chat's threshold (a platform with no rarity at all —
+known rarity is at or below the rarity threshold (a platform with no rarity at all —
 Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
 isn't muted there; it wasn't already published there.
 
-- **The threshold is always `chat_settings.rare_threshold_percent`**, set per chat by
-  an admin. Never hardcode a percentage; a person picks only a mode.
+- **The rarity threshold is one for every chat** (owner, 2026-10-01):
+  `app_settings['rare_threshold_percent']`, 10% until an admin changes it in
+  /admin → global settings; no chat overrides it. The repo reads it wherever a
+  chat's settings are read (`_sql.py::GLOBAL_RARE_THRESHOLD`), so callers still
+  take `chat.rare_threshold_percent`. Never hardcode a percentage; a person picks
+  only a mode.
 - **Digests**: at the chat's `digest_threshold` items (set by an admin, #126) a batch
   becomes one grouped message, grouped by platform and title. Every item is listed, never "и ещё N". The
   gallery dedupes by image URL.
@@ -716,7 +733,10 @@ keyboard.
   (#33). The platform button opens that platform's screen: profile, the switch,
   unlink, and for PSN every account (up to three) plus adding one. The panel's switch
   covers the whole platform ("Частично" when only some PSN accounts post); a Steam or
-  PSN button carries ❗ while its achievements are hidden (any one PSN account); a dead Xbox
+  PSN button carries ❗ while its achievements are hidden (any one PSN account), and
+  that platform's screen then says what it means and puts "🔓 Как открыть ачивки"
+  (per hidden PSN account) as its top button — the steps, a link to the settings, and
+  "🔄 Проверить снова", which re-reads the account with the live status (#95); a dead Xbox
   login puts "🔄 Подключить заново" in its place, and first on the XBOX screen. The
   publication row names what is switched off. Nothing on it is Xbox-gated. It never
   calls a platform API except the explicit sync button.
@@ -758,11 +778,12 @@ keyboard.
   set / change / clear the Steam key, PSN NPSSO and Anthropic key (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; global limits, each on its own row with its value and its own
-  input, `0` rendered as "без ограничения"; defaults for new users; the user list;
+  input, `0` rendered as "без ограничения", and the rarity threshold on top; defaults
+  for new users; the user list;
   the chat list and per-chat cards; exclusion; bot-message cleanup.
 - **The per-chat card** keeps its settings in three sub-screens — daily summary,
   anti-flood, message cleanup — each redrawing in place with the card's text above.
-  Settings: rarity threshold, digest size (#126), summary time, timezone, mutes,
+  Settings: digest size (#126), summary time, timezone, mutes,
   minimum gamerscore, summary switch, anti-flood, language (#48).
 - **The per-user card**: the Telegram identity in full (`tg_id` passed to Fluent as a
   string, never `@N`), then one block per platform in the display order — nickname,
@@ -802,7 +823,7 @@ History: #110.
 - Then the badge and the name in quotes, gamerscore (if nonzero) and rarity as a
   bare percentage (if known — no word, owner 2026-09-25), then the description —
   behind a spoiler if secret.
-- **Badges**: `rarity_badge()` — 💎 at or below the chat's rare threshold, 🏆
+- **Badges**: `rarity_badge()` — 💎 at or below the rarity threshold, 🏆
   otherwise (including unknown). PSN shows its tier instead (see PSN).
 
 ### Which platform a screen names (#114, owner, 2026-09-24)
@@ -857,7 +878,7 @@ upper-case. `/panel`'s "now" row names only the family, as its header lines do.
   `views/summary.py::month_window_label`). **No list uses a rolling N-day window.**
 - **The two counter lines** in `/stats` say which window they mean ("За сутки", "С 1
   сентября") and end in the value bracket a games row uses — gamerscore, rare count
-  by this chat's threshold, PSN tiers, zeros dropped (`views/parts.py::value_parts`).
+  by the rarity threshold, PSN tiers, zeros dropped (`views/parts.py::value_parts`).
 - **A `/recent` row leads with PSN's tier where it has one**, and separates game and
   achievement with `·`.
 
@@ -1039,6 +1060,73 @@ picked.
   call** — showing another game's hours is worse than showing none. Verified by hand
   against ~200 real games from this community's library: no wrong match, only
   occasional correct refusals (a placeholder platform name, an ambiguous subtitle).
+
+## Steam guides and patches
+
+What Steam knows about a game beyond its achievements, for the Mini App's game
+page (owner, 2026-09-30): a tip for each achievement from the Steam community's
+guides, and the developer's patch notes in an "Обновления" tab. Nothing of it is
+sent to a chat.
+
+- **Which Steam app a game is** (`titles.steam_appid`): a Steam game's own `title_id`;
+  otherwise found once, like its HLTB entry — the appid HLTB's page lists (exact),
+  else Steam's store search by name (`steam_news.pick_appid`, a confident match only:
+  store "apps" include a game's DLC and sets). Three failed attempts an hour apart,
+  then known to have none. Console exclusives have none, so no tips and no tab.
+- **Filled like HLTB** (`services/steam_extras.py`): right after a game's first new
+  achievement is published — the fetchers call `SteamExtras.ensure_title` after
+  `ensure_title_match`, since the appid comes from the HLTB page — in a background
+  task, never on the publishing path. A game nobody earned anything in lately is
+  filled when its page is first opened.
+- **Guides and patches belong to the Steam app** (`steam_apps`, `game_patches`), shared
+  by the Xbox, PlayStation and Steam versions of one game; tips belong to our
+  achievement (`title_achievements.tip_*`).
+- **Tips**: the most popular "achievement" guides (`IPublishedFileService/QueryFiles`,
+  the Steam key), each page read as numbered lines. **Only a guide that names its
+  achievements on lines of their own is used** (owner, 2026-10-01: every other
+  layout came out crooked, and rules or word lists guessing at it broke on each new
+  guide): such a guide is cut into blocks, one from each name to the next, and
+  Haiku (`services/translate/guide_tips.py`) picks, inside each block, the lines that
+  help to get that achievement — leaving out what the description already says and
+  what the author says to the reader (greetings, thanks, credits, translation notes),
+  in several pieces where those sit inside. It answers only with line numbers of the
+  block; the tip is those lines copied from the guide, so nothing is invented and
+  pictures, videos, lists and tables survive. The guides are taken most popular
+  first, and **the first one that fills at least half of the game's achievements is the
+  only one used** — the others are not even read from Steam (owner, 2026-10-01); until
+  one does, what each gives is kept, the earlier guide's account of an achievement
+  standing. A guide naming fewer than three achievements on lines of their own is
+  passed over, and so is one the model finds to be in neither English nor Russian (it
+  is asked, by the same call). **A guide is bought from the model once**
+  (`title_guide_reads`): its fingerprint covers exactly what the prompt shows (the
+  guide's lines, each achievement's shown name and description, both names for the
+  name marks — a Russian side filled in later changes nothing), and the answer itself
+  (the line ranges) is stored beside it, so a hit cuts the tips again whether they
+  were kept or lost to a later guide. 8000 characters at most, cut at a line.
+  PlayStation's platinum gets none. No Anthropic key: tips are not read and nothing is
+  stamped as read; a model that could not be asked leaves the game to be read again.
+  Guides mostly in Chinese/Japanese/Korean are passed over; a tip needs words
+  (pictures, videos and bare links alone count as no tip). A visit reads tips only
+  for a game whose tips were never worked out; a set a month old is re-read by
+  `poller/patch_refresh.py`, one game a tick, only for games played in the last 30
+  days — so a crowd opening a game, or thousands of games, never means a read each.
+- **Links, videos, pictures** stay in the text: a link as `[label](url)`, a video (a
+  guide's embedded player, a patch's `[previewyoutube]`) and a guide's screenshot as
+  their address alone on a line — the Mini App draws a link, a video card and a
+  picture (`webapp/src/components/game/rich-text/RichText.tsx`).
+- **Steam's community site refuses bursts** (429): guide pages are read one at a
+  time, 2.5 s apart, for the whole bot; a refusal pauses every read for 90 s. Pages
+  are kept under `data/steam_guides/` for a week, so a re-read costs no request; the
+  last few are also kept in memory, bounded and aged the same week. A read cut short
+  keeps its tips but not its time stamp. **The guides endpoint never waits for a
+  fill**: it starts one in the background and answers with what is stored and
+  `complete: false`, and the Mini App asks again until it is true.
+- **Patches**: the developer's own announcements (`GetNewsForApp`, `feeds=
+  steam_community_announcements` — on a busy day the default feed is other sites'
+  articles only), a post tagged `patchnotes` or titled like a patch (update, patch,
+  hotfix, a version number; not a demo or playtest). Re-read by
+  `poller/patch_refresh.py` for games somebody earned something in over the last 30
+  days, every `patch_refresh_hours` (6, /admin), three apps a tick.
 
 ## Versioning
 
@@ -1306,8 +1394,6 @@ actually invocable (`tests/test_handler_wiring.py`).
   different mode per platform. One `rarity_mode` covers all; a platform without rarity
   (Xbox 360) is exempt from `rare` instead of getting a toggle. (#20 settled it differently:
   a posting on/off switch per *account*, not a rarity mode per platform.)
-- **Global rarity settings for every chat at once** — replaced by a per-chat
-  threshold.
 - **Live platform API calls from `/stats`, the summaries, `/online` or the panel** —
   every normal read is cache-only; the panel's own sync button is the exception.
 - **Game descriptions from the Steam store** — HLTB supplies them for every platform

@@ -18,7 +18,7 @@ from bot.db.repo._models import (
     TitleCoverRow,
     TitleHltbRow,
 )
-from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS, active_account
+from bot.db.repo._sql import GLOBAL_RARE_THRESHOLD, XBOX_ACCOUNT, XBOX_COLUMNS, active_account
 from bot.util import utcnow_iso
 
 
@@ -173,7 +173,8 @@ class _AdminRepo:
     async def admin_chats(self) -> list[ChatTarget]:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, c.is_active, s.min_gamerscore,"
-            "       s.daily_summary, s.muted_title_ids, s.rare_threshold_percent,"
+            "       s.daily_summary, s.muted_title_ids,"
+            f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
             "       s.locale, s.digest_threshold,"
             "       (SELECT COUNT(*) FROM subscriptions WHERE chat_id = c.chat_id) AS subs "
@@ -204,7 +205,6 @@ class _AdminRepo:
         allowed = {
             "min_gamerscore",
             "daily_summary",
-            "rare_threshold_percent",
             "daily_summary_time",
             "tz_offset_min",
             "flood_limit",

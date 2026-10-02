@@ -23,6 +23,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
+from bot.poller.patch_refresh import PatchRefresh
 from bot.poller.presence import PresencePoller
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.psn_presence import PsnPresencePoller
@@ -65,6 +66,7 @@ class PollerScheduler:
         steam_catch_up: SteamCatchUpPoller,
         title_platforms: TitlePlatformsRefresh,
         psn_trophy_groups: PsnTrophyGroups,
+        patch_refresh: PatchRefresh | None = None,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -87,6 +89,7 @@ class PollerScheduler:
         self._cover_refresh = cover_refresh
         self._title_platforms = title_platforms
         self._psn_trophy_groups = psn_trophy_groups
+        self._patch_refresh = patch_refresh
         self._steam_catch_up = steam_catch_up
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -153,6 +156,14 @@ class PollerScheduler:
             coalesce=True,
             max_instances=1,
         )
+        if self._patch_refresh is not None:
+            self._scheduler.add_job(
+                self._patch_refresh.tick,
+                IntervalTrigger(seconds=TICK_SECONDS),
+                id="patch_refresh",
+                coalesce=True,
+                max_instances=1,
+            )
         self._scheduler.add_job(
             self._daily_history,
             CronTrigger(hour=4, minute=0),

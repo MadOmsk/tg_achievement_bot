@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 from bot.db.repo._models import ChatDailySettings, ChatTarget, UserChatRow
+from bot.db.repo._sql import GLOBAL_RARE_THRESHOLD
 from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.util import utcnow_iso
 
@@ -121,7 +122,8 @@ class _ChatsRepo:
     async def publication_targets(self, tg_id: int) -> list[ChatTarget]:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, s.min_gamerscore, s.muted_title_ids,"
-            "       s.rare_threshold_percent, s.daily_summary_time, s.tz_offset_min,"
+            f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
+            "       s.daily_summary_time, s.tz_offset_min,"
             "       s.flood_limit, s.flood_window_minutes, s.locale, s.digest_threshold,"
             "       COALESCE(us.rarity_mode, 'all') AS rarity_mode "
             "FROM subscriptions sub "
@@ -163,7 +165,8 @@ class _ChatsRepo:
 
     async def get_chat_daily_settings(self, chat_id: int) -> ChatDailySettings:
         cursor = await self._conn.execute(
-            "SELECT rare_threshold_percent, daily_summary_time, tz_offset_min, locale "
+            f"SELECT {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
+            " daily_summary_time, tz_offset_min, locale "
             "FROM chat_settings WHERE chat_id = ?",
             (chat_id,),
         )

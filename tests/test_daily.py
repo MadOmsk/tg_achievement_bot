@@ -382,17 +382,20 @@ async def test_summary_has_no_show_all_button_under_the_limit(repo: Repo) -> Non
     assert not any(b.callback_data and b.callback_data.startswith("summary:all:") for b in buttons)
 
 
-async def test_chat_rare_threshold_defaults_and_updates(repo: Repo) -> None:
-    """Every chat has a real threshold from creation, no shared fallback
-    (SPEC 5.5) — admin_chats()/publication_targets() both read this column."""
+async def test_the_rare_threshold_is_one_for_every_chat(repo: Repo) -> None:
+    """One threshold for every chat (owner, 2026-10-01): 10% until an admin
+    sets it, and every reader of a chat's settings gets the same value."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await repo.upsert_chat(CHAT_ID - 1, "Второй чат", 1)
 
-    chat = next(c for c in await repo.admin_chats() if c.chat_id == CHAT_ID)
-    assert chat.rare_threshold_percent == 10.0  # the hardcoded default for new chats
+    chats = [c for c in await repo.admin_chats() if c.chat_id in (CHAT_ID, CHAT_ID - 1)]
+    assert {c.rare_threshold_percent for c in chats} == {10.0}
+    assert (await repo.get_chat_daily_settings(CHAT_ID)).rare_threshold_percent == 10.0
 
-    await repo.update_chat_settings(CHAT_ID, rare_threshold_percent=7.5)
-    chat = next(c for c in await repo.admin_chats() if c.chat_id == CHAT_ID)
-    assert chat.rare_threshold_percent == 7.5
+    await repo.set_app_setting("rare_threshold_percent", "7.5")
+    chats = [c for c in await repo.admin_chats() if c.chat_id in (CHAT_ID, CHAT_ID - 1)]
+    assert {c.rare_threshold_percent for c in chats} == {7.5}
+    assert (await repo.get_chat_daily_settings(CHAT_ID - 1)).rare_threshold_percent == 7.5
 
 
 async def test_chat_own_summary_time_and_zone_decide_when_it_fires(repo: Repo) -> None:
