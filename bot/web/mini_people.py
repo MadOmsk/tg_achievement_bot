@@ -237,6 +237,8 @@ async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: i
         return
     relation = await repo.relation(other, me)
     settings = await repo.get_user_settings(target.tg_id)
+    if settings is not None and not settings.notify_followers:
+        return
     locale = settings.locale if settings else "ru"
     key = "people-new-friend" if relation.friends else "people-new-follower"
     try:

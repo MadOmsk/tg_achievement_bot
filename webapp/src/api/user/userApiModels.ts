@@ -54,6 +54,8 @@ export type MeResponse = {
     rarity_mode: string;
     /** Who sees this person's activity in the app (#157). */
     activity_visible?: "all" | "friends" | "nobody";
+    /** A DM from the bot when someone follows this person (#157). */
+    notify_followers?: boolean;
   };
   xbox: {
     linked: boolean;
@@ -126,6 +128,7 @@ export type UserSettingsPatch = Partial<{
   show_profile_links: boolean;
   show_secrets: boolean;
   rarity_mode: string;
+  notify_followers: boolean;
 }>;
 
 // A chat only says whether a person publishes there (#126): the rarity

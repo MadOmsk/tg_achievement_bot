@@ -26,36 +26,51 @@ export function FollowsSheet({
   onFlash: (message: string) => void;
 }) {
   const [kind, setKind] = useState<Kind>("following");
-  const [rows, setRows] = useState<PersonRow[] | null>(null);
+  // Both lists at once, so each count is known before switching to it.
+  const [lists, setLists] = useState<Record<Kind, PersonRow[]> | null>(null);
+  const rows = lists ? lists[kind] : null;
 
   useEffect(() => {
     let cancelled = false;
-    setRows(null);
-    const call = kind === "following" ? peopleApi.following(data) : peopleApi.followers(data);
-    call
-      .then((res) => {
-        if (!cancelled) setRows(res.people);
+    Promise.all([peopleApi.following(data), peopleApi.followers(data)])
+      .then(([following, followers]) => {
+        if (!cancelled) setLists({ following: following.people, followers: followers.people });
       })
       .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`));
     return () => {
       cancelled = true;
     };
-  }, [kind, data, locale, onFlash]);
+  }, [data, locale, onFlash]);
 
   const apply = (id: number, relation: Relation) =>
-    setRows((list) => list?.map((row) => (row.id === id ? { ...row, relation } : row)) ?? null);
+    setLists((all) =>
+      all
+        ? {
+            following: all.following.map((row) => (row.id === id ? { ...row, relation } : row)),
+            followers: all.followers.map((row) => (row.id === id ? { ...row, relation } : row)),
+          }
+        : all,
+    );
 
   return (
     <Sheet onClose={onClose} mid>
       <div className="sheet-content score-sheet picker-sheet follows-sheet">
-        <h2>
+        <h2 className="follows-head">
           <Dropdown
             className="dd-trigger follows-switch"
             align="start"
             value={kind}
             options={[
-              { value: "following" as Kind, label: t(locale, "peopleFollowing") },
-              { value: "followers" as Kind, label: t(locale, "peopleFollowers") },
+              {
+                value: "following" as Kind,
+                label: t(locale, "peopleFollowing"),
+                hint: lists ? String(lists.following.length) : undefined,
+              },
+              {
+                value: "followers" as Kind,
+                label: t(locale, "peopleFollowers"),
+                hint: lists ? String(lists.followers.length) : undefined,
+              },
             ]}
             onChange={setKind}
             trigger={
@@ -65,6 +80,7 @@ export function FollowsSheet({
               </>
             }
           />
+          {rows && <span className="follows-count">{rows.length}</span>}
         </h2>
         {rows === null ? (
           <div className="picker-list" aria-busy="true">
@@ -95,7 +111,6 @@ export function FollowsSheet({
                   <Avatar name={row.handle} tgId={row.tg_id ?? undefined} size={40} />
                   <span className="picker-row-copy">
                     <strong>{row.handle}</strong>
-                    {row.relation.friends && <p>{t(locale, "friendsBtn")}</p>}
                   </span>
                 </button>
                 <FollowButton

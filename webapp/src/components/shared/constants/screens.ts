@@ -51,6 +51,7 @@ export const SETTINGS_PANES = {
   ROOT: "root",
   PUBLISHING: "publishing",
   PRIVACY: "privacy",
+  NOTIFICATIONS: "notifications",
   NICKNAME: "nickname",
 } as const;
 export type SettingsPane = (typeof SETTINGS_PANES)[keyof typeof SETTINGS_PANES];

@@ -55,3 +55,20 @@
   font-size: 0.9rem;
   line-height: 1.45;
 }
+
+.picker-list .follows-line .picker-row.is-person:first-child {
+  padding: 12px 0;
+}
+
+.follows-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.follows-count {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}

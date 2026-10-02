@@ -103,6 +103,7 @@ async def build_me_payload(
             "show_secrets": show_secrets,
             # Which achievements go out, in every chat (#126).
             "rarity_mode": settings_row.rarity_mode if settings_row else "all",
+            "notify_followers": bool(settings_row.notify_followers) if settings_row else True,
             # Who sees this person's activity in the app (#157).
             "activity_visible": await _activity_visible(repo, tg_id),
         },

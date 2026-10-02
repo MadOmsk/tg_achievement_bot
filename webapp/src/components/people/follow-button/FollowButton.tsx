@@ -49,7 +49,7 @@ export function FollowButton({
   if (relation.following) {
     return (
       <Dropdown
-        className="btn sm is-quiet follow-btn"
+        className="dd-trigger follow-btn follow-state"
         value=""
         options={[
           { value: "unfollow", label: t(locale, "unfollow") },

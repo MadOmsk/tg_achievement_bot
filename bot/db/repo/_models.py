@@ -76,6 +76,8 @@ class UserSettings:
     locale: str = "ru"
     # Which achievements this person publishes, in every chat (#126).
     rarity_mode: str = RarityMode.ALL
+    # A DM when someone follows this person (#157).
+    notify_followers: bool = True
 
 
 @dataclass(slots=True)
@@ -743,6 +745,7 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         show_secrets=bool(row["show_secrets"]) if "show_secrets" in keys else False,
         locale=row["locale"],
         rarity_mode=row["rarity_mode"] if "rarity_mode" in keys else RarityMode.ALL,
+        notify_followers=bool(row["notify_followers"]) if "notify_followers" in keys else True,
     )
 
 

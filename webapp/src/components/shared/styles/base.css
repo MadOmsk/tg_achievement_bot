@@ -303,3 +303,35 @@ a.btn {
 html.has-game-page #root {
   visibility: hidden;
 }
+
+/* No focus ring or tap flash on the app's buttons: Android's WebView leaves one on a
+ * button after it is tapped (a dropdown keeps focus while its menu is open). */
+.btn,
+.dd-trigger,
+.dd-item,
+.fr-row,
+.see-all {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:focus,
+.dd-trigger:focus,
+.dd-item:focus,
+.fr-row:focus,
+.see-all:focus {
+  outline: none;
+}
+
+/* A follow state reads like every other dropdown: muted text and ⌄, no pill. */
+.dd-trigger.follow-state {
+  min-height: 34px;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.dd-trigger.follow-state .dd-arrow {
+  color: inherit;
+}

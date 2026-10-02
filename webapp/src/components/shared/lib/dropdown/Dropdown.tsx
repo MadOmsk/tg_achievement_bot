@@ -109,11 +109,8 @@ export function Dropdown<T extends string | number>({
                     if (o.value !== value) onChange(o.value);
                   }}
                 >
-                  <span className="dd-label">
-                    {o.label}
-                    {o.hint && <small>{o.hint}</small>}
-                  </span>
-                  {o.value === value && <span className="dd-check">✓</span>}
+                  <span className="dd-label">{o.label}</span>
+                  {o.hint && <span className="dd-hint">{o.hint}</span>}
                 </button>
               ))}
             </div>

@@ -231,6 +231,8 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
+    if "notify_followers" in body:
+        fields["notify_followers"] = 1 if body["notify_followers"] else 0
     if "rarity_mode" in body:
         mode = str(body["rarity_mode"])
         if mode not in {RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN}:

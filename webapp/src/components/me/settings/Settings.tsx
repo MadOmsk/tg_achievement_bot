@@ -55,6 +55,7 @@ export function Settings({
     tz_offset_min?: number | null;
     show_secrets?: boolean;
     rarity_mode?: string;
+    notify_followers?: boolean;
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onNickname: (handle: string) => Promise<void>;
@@ -148,6 +149,22 @@ export function Settings({
           back();
         }}
       />
+    );
+  }
+
+  if (pane === SETTINGS_PANES.NOTIFICATIONS) {
+    return (
+      <>
+        <BackHead title={t(locale, "notifications")} backLabel={t(locale, "back")} onBack={back} />
+        <Group>
+          <ToggleRow
+            label={t(locale, "notifyFollowers")}
+            sub={t(locale, "notifyFollowersHint")}
+            on={me.settings.notify_followers !== false}
+            onChange={(on) => onPatch({ notify_followers: on })}
+          />
+        </Group>
+      </>
     );
   }
 
@@ -281,6 +298,10 @@ export function Settings({
           />
         )}
         <NavRow label={t(locale, "privacy")} onClick={() => setPane(SETTINGS_PANES.PRIVACY)} />
+        <NavRow
+          label={t(locale, "notifications")}
+          onClick={() => setPane(SETTINGS_PANES.NOTIFICATIONS)}
+        />
         <NavRow
           label={t(locale, "publishing")}
           value={me.chats.filter((c) => c.is_subscribed).length || undefined}

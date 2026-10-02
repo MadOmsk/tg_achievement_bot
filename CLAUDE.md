@@ -725,7 +725,8 @@ elsewhere in this file still describe the bot.
   the other's search and lists; the blocked one cannot follow). Search is by
   nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
   People from a shared chat (subscribed or seen writing) are suggested. A new
-  follower is told in one DM (`people-new-follower` / `people-new-friend`); friends'
+  follower is told in one DM, unless they turned it off in Settings → Уведомления
+  (`user_settings.notify_followers`, migration 075) (`people-new-follower` / `people-new-friend`); friends'
   achievements are never sent as DMs. These tables and routes speak in **person
   ids** (`users.id`), `tg_id` is sent along only for the avatar.
   Code: `db/repo/_follows.py`, `services/people.py`, `web/mini_people.py`.

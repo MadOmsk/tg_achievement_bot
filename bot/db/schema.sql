@@ -131,7 +131,9 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- language_code: plenty of this Russian-speaking community run Telegram
     -- itself in English, and auto-switching them would be a silent
     -- regression rather than a feature. Explicit opt-in, default 'ru'.
-    locale           TEXT    NOT NULL DEFAULT 'ru'
+    locale           TEXT    NOT NULL DEFAULT 'ru',
+    -- A DM when someone follows this person (#157, migration 075).
+    notify_followers INTEGER NOT NULL DEFAULT 1
 );
 
 -- Rare-achievement threshold, daily-summary time and its timezone are always
