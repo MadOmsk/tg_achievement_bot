@@ -763,6 +763,13 @@ elsewhere in this file still describe the bot.
   the Mini App's host (`xbox.sultanpharm.com`, `test.xbox.sultanpharm.com`, and the
   dev tunnel) or the widget refuses to render. A session serves only a person with a
   Telegram id until the tables move to the person id (#156 step 2).
+- **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
+  `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
+  `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
+  `NumberRow`, `CheckRow`, `RowLink`, and `SettingsSkel` while loading. A screen
+  composes these and never styles a row of its own; destructive actions are red rows in
+  a last group of their own. The Mini App's admin sets the global rarity threshold under
+  «Общие правила» (`/api/mini/admin/defaults`), not on a chat's card.
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 

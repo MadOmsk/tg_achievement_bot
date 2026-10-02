@@ -1,7 +1,16 @@
 import { useState } from "react";
 import type { AccountPlatform, MeResponse } from "../../../api";
 import { rarityLabel, t, timezoneLabel, type Locale } from "../../../i18n";
-import { BackHead, Chevron, Icon, Toggle } from "../../shared/lib";
+import {
+  BackHead,
+  ChoiceRow,
+  Group,
+  InfoRow,
+  NavRow,
+  PlatformLogo,
+  SelectRow,
+  ToggleRow,
+} from "../../shared/lib";
 import {
   PLATFORMS,
   RARITY_MODES,
@@ -66,7 +75,6 @@ export function Settings({
   const [pane, setPane] = useState<SettingsPane>(SETTINGS_PANES.ROOT);
   const [deleting, setDeleting] = useState(false);
   const tz = me.settings.tz_offset_min;
-  const tzOptions = TIMEZONES;
 
   const xboxAccounts: AccountRow[] = me.xbox.linked
     ? [
@@ -94,7 +102,7 @@ export function Settings({
         ]
       ).map((account) => ({
         key: account.account_id,
-        name: `PSN: ${account.name}`,
+        name: account.name,
         profileUrl: account.profile_url,
         onDisconnect: () => onDisconnectPsn(account.account_id),
       }));
@@ -115,43 +123,45 @@ export function Settings({
       ]
     : [];
 
+  const back = () => setPane(SETTINGS_PANES.ROOT);
+  const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+  const rarityOptions = [RARITY_MODES.ALL, RARITY_MODES.RARE, RARITY_MODES.HIDDEN].map((m) => ({
+    value: m as string,
+    label: cap(rarityLabel(m, locale)),
+  }));
+  // A sentinel for "no timezone set": a select's options are all of one type.
+  const TZ_UNSET = -100000;
+  const tzOptions = [
+    { value: TZ_UNSET, label: t(locale, "tzUnset") },
+    ...TIMEZONES.map((z) => ({ value: z.min, label: timezoneLabel(z, locale) })),
+  ];
+
   if (pane === SETTINGS_PANES.NICKNAME && me.handle) {
     return (
       <NicknameForm
         locale={locale}
         handle={me.handle}
-        onBack={() => setPane(SETTINGS_PANES.ROOT)}
+        onBack={back}
         onSubmit={async (value) => {
           await onNickname(value);
-          setPane(SETTINGS_PANES.ROOT);
+          back();
         }}
       />
     );
   }
 
   if (pane === SETTINGS_PANES.PRIVACY) {
-    return (
-      <PrivacyPane
-        locale={locale}
-        data={data}
-        onBack={() => setPane(SETTINGS_PANES.ROOT)}
-        onFlash={onFlash}
-      />
-    );
+    return <PrivacyPane locale={locale} data={data} onBack={back} onFlash={onFlash} />;
   }
 
   if (pane === SETTINGS_PANES.PUBLISHING) {
     // One switch per game account (#20): a muted account still counts in stats.
-    const accountSwitches: Array<{
-      key: string;
-      label: string;
-      on: boolean;
-      toggle: () => void;
-    }> = [];
+    const accountSwitches: Array<{ key: string; mark: string; label: string; on: boolean; toggle: () => void }> = [];
     if (me.xbox.linked) {
       accountSwitches.push({
         key: "xbox",
-        label: `XBOX: ${me.xbox.gamertag_modern || me.xbox.gamertag || ""}`,
+        mark: PLATFORMS.XBOX,
+        label: me.xbox.gamertag_modern || me.xbox.gamertag || "Xbox",
         on: me.xbox.publishes !== false,
         toggle: () => onAccountPublishes("xbox", me.xbox.publishes === false),
       });
@@ -166,7 +176,8 @@ export function Settings({
       ]) {
         accountSwitches.push({
           key: `psn-${account.account_id}`,
-          label: `PSN: ${account.name}`,
+          mark: PLATFORMS.PSN,
+          label: account.name,
           on: account.publishes !== false,
           toggle: () => onAccountPublishes("psn", account.publishes === false, account.account_id),
         });
@@ -176,88 +187,66 @@ export function Settings({
     if (steam.linked) {
       accountSwitches.push({
         key: "steam",
-        label: `Steam: ${steam.display_name || steam.steam_id}`,
+        mark: PLATFORMS.STEAM,
+        label: steam.display_name || steam.steam_id,
         on: steam.publishes !== false,
         toggle: () => onAccountPublishes("steam", steam.publishes === false),
       });
     }
     return (
       <>
-        <BackHead
-          title={t(locale, "publishing")}
-          backLabel={t(locale, "back")}
-          onBack={() => setPane(SETTINGS_PANES.ROOT)}
-        />
-        <p className="settings-hint">{t(locale, "publishingHint")}</p>
-        <div className="glass-card">
+        <BackHead title={t(locale, "publishing")} backLabel={t(locale, "back")} onBack={back} />
+        <Group hint={t(locale, "publishingHint")}>
           {/* One mode for every chat this person publishes to (#126). */}
-          <label className="ios-row">
-            <span>{t(locale, "rarity")}</span>
-            <select
-              className="tz-select"
-              value={me.settings.rarity_mode ?? RARITY_MODES.ALL}
-              onChange={(e) => onPatch({ rarity_mode: e.target.value })}
-            >
-              <option value={RARITY_MODES.ALL}>{rarityLabel(RARITY_MODES.ALL, locale)}</option>
-              <option value={RARITY_MODES.RARE}>{rarityLabel(RARITY_MODES.RARE, locale)}</option>
-              <option value={RARITY_MODES.HIDDEN}>
-                {rarityLabel(RARITY_MODES.HIDDEN, locale)}
-              </option>
-            </select>
-          </label>
-          <div className="ios-row">
-            <span>{t(locale, "showSecrets")}</span>
-            <Toggle
-              on={me.settings.show_secrets}
-              label={t(locale, "showSecrets")}
-              onClick={() => onPatch({ show_secrets: !me.settings.show_secrets })}
-            />
-          </div>
-        </div>
+          <ChoiceRow
+            label={t(locale, "rarity")}
+            value={me.settings.rarity_mode ?? RARITY_MODES.ALL}
+            options={rarityOptions}
+            onChange={(v) => onPatch({ rarity_mode: v })}
+          />
+          <ToggleRow
+            label={t(locale, "showSecrets")}
+            on={me.settings.show_secrets}
+            onChange={(on) => onPatch({ show_secrets: on })}
+          />
+        </Group>
 
-        <p className="kicker">{t(locale, "publishingChats")}</p>
-        {me.chats.length === 0 ? (
-          <p className="empty">{t(locale, "noChats")}</p>
-        ) : (
-          <div className="glass-card">
-            {me.chats.map((chat) => (
-              <div key={chat.chat_id} className="ios-row">
-                <span>{chat.title || String(chat.chat_id)}</span>
-                <Toggle
-                  on={chat.is_subscribed}
-                  label={chat.title || String(chat.chat_id)}
-                  onClick={() => {
-                    // Turning it off silences the chat for this person, so ask first.
-                    if (
-                      chat.is_subscribed &&
-                      !window.confirm(
-                        `${chat.title || chat.chat_id}\n\n${t(locale, "confirmUnsubscribe")}`,
-                      )
-                    ) {
-                      return;
-                    }
-                    onChatPatch(chat.chat_id, {
-                      action: chat.is_subscribed ? "unsubscribe" : "subscribe",
-                    });
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        )}
+        <Group title={t(locale, "publishingChats")}>
+          {me.chats.length === 0 ? (
+            <InfoRow label={t(locale, "noChatsShort")} />
+          ) : (
+            me.chats.map((chat) => (
+              <ToggleRow
+                key={chat.chat_id}
+                label={chat.title || String(chat.chat_id)}
+                on={chat.is_subscribed}
+                onChange={() => {
+                  // Turning it off silences the chat for this person, so ask first.
+                  if (
+                    chat.is_subscribed &&
+                    !window.confirm(`${chat.title || chat.chat_id}\n\n${t(locale, "confirmUnsubscribe")}`)
+                  ) {
+                    return;
+                  }
+                  onChatPatch(chat.chat_id, { action: chat.is_subscribed ? "unsubscribe" : "subscribe" });
+                }}
+              />
+            ))
+          )}
+        </Group>
 
         {accountSwitches.length > 0 && (
-          <>
-            <p className="kicker">{t(locale, "publishingAccounts")}</p>
-            <div className="glass-card">
-              {accountSwitches.map((item) => (
-                <div key={item.key} className="ios-row">
-                  <span>{item.label}</span>
-                  <Toggle on={item.on} label={item.label} onClick={item.toggle} />
-                </div>
-              ))}
-            </div>
-          </>
+          <Group title={t(locale, "publishingAccounts")}>
+            {accountSwitches.map((item) => (
+              <ToggleRow
+                key={item.key}
+                lead={<PlatformLogo platform={item.mark} size={20} />}
+                label={item.label}
+                on={item.on}
+                onChange={item.toggle}
+              />
+            ))}
+          </Group>
         )}
       </>
     );
@@ -265,99 +254,98 @@ export function Settings({
 
   return (
     <>
-      <header className="page-head is-split">
+      <header className="page-head">
         <h1>{t(locale, "settings")}</h1>
-        {me.handle && <span className="page-sub">{me.handle.display}</span>}
       </header>
 
-      <p className="kicker">{t(locale, "general")}</p>
-      <div className="glass-card">
+      <Group title={t(locale, "groupProfile")}>
         {me.handle && (
-          <button
-            type="button"
-            className="ios-row"
+          <NavRow
+            label={t(locale, "nickname")}
+            value={me.handle.display}
             onClick={() => setPane(SETTINGS_PANES.NICKNAME)}
-          >
-            <span>{t(locale, "nickname")}</span>
-            <span className="ios-value">
-              {me.handle.display}
-              <Chevron />
-            </span>
-          </button>
+          />
         )}
-        <div className="ios-row">
-          <span>{t(locale, "language")}</span>
-          <div
-            className="segment"
-            role="group"
-            aria-label={t(locale, "language")}
-          >
-            <button
-              type="button"
-              className={locale === "ru" ? "is-on" : undefined}
-              onClick={() => onPatch({ locale: "ru" })}
-            >
-              RU
-            </button>
-            <button
-              type="button"
-              className={locale === "en" ? "is-on" : undefined}
-              onClick={() => onPatch({ locale: "en" })}
-            >
-              EN
-            </button>
-          </div>
-        </div>
-        <label className="ios-row">
-          <span>{t(locale, "timezone")}</span>
-          <select
-            className="tz-select"
-            value={tz ?? ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              onPatch({ tz_offset_min: v === "" ? null : Number(v) });
-            }}
-            aria-label={t(locale, "timezone")}
-          >
-            <option value="">{t(locale, "tzUnset")}</option>
-            {tzOptions.map((z) => (
-              <option key={z.min} value={z.min}>
-                {timezoneLabel(z, locale)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          className="ios-row"
+        <NavRow label={t(locale, "privacy")} onClick={() => setPane(SETTINGS_PANES.PRIVACY)} />
+        <NavRow
+          label={t(locale, "publishing")}
+          value={me.chats.filter((c) => c.is_subscribed).length || undefined}
           onClick={() => setPane(SETTINGS_PANES.PUBLISHING)}
-        >
-          <span>{t(locale, "publishing")}</span>
-          <span className="ios-value">
-            {me.chats.filter((c) => c.is_subscribed).length || "—"}
-            <Chevron />
-          </span>
-        </button>
-        <button
-          type="button"
-          className="ios-row"
-          onClick={() => setPane(SETTINGS_PANES.PRIVACY)}
-        >
-          <span>{t(locale, "privacy")}</span>
-          <span className="ios-value">
-            <Chevron />
-          </span>
-        </button>
-      </div>
+        />
+      </Group>
 
-      <div className="accounts-head">
-        <p className="kicker">{t(locale, "accounts")}</p>
-        <button
-          type="button"
-          className="accounts-delete"
-          aria-label={t(locale, "deleteAccount")}
-          title={t(locale, "deleteAccount")}
+      <Group title={t(locale, "groupGeneral")}>
+        <ChoiceRow
+          label={t(locale, "language")}
+          value={locale}
+          options={[
+            { value: "ru", label: "RU" },
+            { value: "en", label: "EN" },
+          ]}
+          onChange={(v) => onPatch({ locale: v as Locale })}
+        />
+        <SelectRow
+          label={t(locale, "timezone")}
+          value={tz ?? TZ_UNSET}
+          options={tzOptions}
+          onChange={(v) => onPatch({ tz_offset_min: v === TZ_UNSET ? null : v })}
+        />
+      </Group>
+
+      <Group title={t(locale, "accounts")}>
+        <PlatformCard
+          mark={PLATFORMS.XBOX}
+          title="Xbox"
+          accounts={xboxAccounts}
+          locale={locale}
+          onConnect={onConnectXbox}
+          onSync={me.xbox.linked ? onSync : undefined}
+          notes={[
+            me.xbox.needs_reconnect ? { kind: "error", text: t(locale, "reconnectHint") } : null,
+            notes?.xbox,
+          ]}
+        />
+        <PlatformCard
+          mark={PLATFORMS.PSN}
+          title="PlayStation"
+          accounts={psnAccounts}
+          locale={locale}
+          onConnect={onConnectPsn}
+          onAdd={psnAccounts.length && psnAccounts.length < psnMax ? onConnectPsn : undefined}
+          onSync={me.psn.linked ? onSync : undefined}
+          notes={[psnHidden ? { kind: "warn", text: t(locale, "hiddenPsn") } : null, notes?.psn]}
+        />
+        <PlatformCard
+          mark={PLATFORMS.STEAM}
+          title="Steam"
+          accounts={steamAccounts}
+          locale={locale}
+          onConnect={onConnectSteam}
+          onSync={me.steam.linked ? onSync : undefined}
+          notes={[
+            me.steam.linked && me.steam.achievements_visible === false
+              ? { kind: "warn", text: t(locale, "hiddenSteam") }
+              : null,
+            notes?.steam,
+          ]}
+        />
+      </Group>
+
+      {me.is_admin && onAdmin && (
+        <AdminSection
+          data={data}
+          locale={locale}
+          onNavigate={onAdmin}
+          onFail={(err) => onFlash(`${t(locale, "error")}: ${String(err)}`)}
+        />
+      )}
+
+      <Group>
+        {onLogout && <NavRow danger label={t(locale, "logout")} onClick={onLogout} />}
+        <NavRow
+          danger
           disabled={deleting}
+          label={t(locale, "deleteAccount")}
           onClick={async () => {
             // Telegram's own confirmation, like turning off publishing to a chat.
             if (!window.confirm(t(locale, "deleteWarning"))) return;
@@ -373,72 +361,8 @@ export function Settings({
               setDeleting(false);
             }
           }}
-        >
-          <Icon name="trash" size={20} />
-        </button>
-      </div>
-      <PlatformCard
-        mark={PLATFORMS.XBOX}
-        title="XBOX"
-        accounts={xboxAccounts}
-        locale={locale}
-        onConnect={onConnectXbox}
-        onSync={me.xbox.linked ? onSync : undefined}
-        notes={[
-          me.xbox.needs_reconnect ? { kind: "error", text: t(locale, "reconnectHint") } : null,
-          notes?.xbox,
-        ]}
-      />
-
-      <PlatformCard
-        mark={PLATFORMS.PSN}
-        title={
-          psnAccounts.length > 1
-            ? `PSN · ${psnAccounts.length} ${t(locale, "of")} ${psnMax}`
-            : "PSN"
-        }
-        accounts={psnAccounts}
-        locale={locale}
-        onConnect={onConnectPsn}
-        onAdd={psnAccounts.length && psnAccounts.length < psnMax ? onConnectPsn : undefined}
-        onSync={me.psn.linked ? onSync : undefined}
-        notes={[
-          psnHidden ? { kind: "warn", text: t(locale, "hiddenPsn") } : null,
-          notes?.psn,
-        ]}
-      />
-
-      <PlatformCard
-        mark={PLATFORMS.STEAM}
-        title="Steam"
-        accounts={steamAccounts}
-        locale={locale}
-        onConnect={onConnectSteam}
-        onSync={me.steam.linked ? onSync : undefined}
-        notes={[
-          me.steam.linked && me.steam.achievements_visible === false
-            ? { kind: "warn", text: t(locale, "hiddenSteam") }
-            : null,
-          notes?.steam,
-        ]}
-      />
-
-      {onLogout && (
-        <div className="glass-card">
-          <button type="button" className="ios-row danger" onClick={onLogout}>
-            <span>{t(locale, "logout")}</span>
-          </button>
-        </div>
-      )}
-
-      {me.is_admin && onAdmin && (
-        <AdminSection
-          data={data}
-          locale={locale}
-          onNavigate={onAdmin}
-          onFail={(err) => onFlash(`${t(locale, "error")}: ${String(err)}`)}
         />
-      )}
+      </Group>
     </>
   );
 }

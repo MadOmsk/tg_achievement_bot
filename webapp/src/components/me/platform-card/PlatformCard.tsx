@@ -1,4 +1,4 @@
-import { Icon, PlatformLogo } from "../../shared/lib";
+import { Icon, InfoRow, NavRow, PlatformLogo, RowLink } from "../../shared/lib";
 import { t, type Locale } from "../../../i18n";
 
 export type PlatNote = { kind: "error" | "warn" | "info"; text: string };
@@ -11,8 +11,8 @@ export type AccountRow = {
   onDisconnect: () => void;
 };
 
-/** One platform: its name, then every account it holds — profile, sync and unlink
- * as icons in the account's own row (owner, 2026-10-01). */
+/** One platform as rows of the Accounts group: "connect" when nothing is linked,
+ * otherwise each account with profile, sync and unlink as icons (owner, 2026-10-01). */
 export function PlatformCard({
   mark,
   title,
@@ -32,11 +32,11 @@ export function PlatformCard({
   onSync?: () => void;
   notes?: Array<PlatNote | null | undefined>;
 }) {
-  const linked = accounts.length > 0;
-  const single = accounts.length === 1;
-  // Profile, sync and unlink as icons in the row of the account they belong to.
+  const logo = <PlatformLogo platform={mark} size={20} />;
+  const shownNotes = (notes ?? []).filter((n): n is PlatNote => Boolean(n));
+
   const icons = (account: AccountRow, withSync: boolean) => (
-    <div className="plat-card-icons" role="group">
+    <span className="fr-icons" role="group">
       {account.profileUrl ? (
         <a
           href={account.profileUrl}
@@ -52,20 +52,11 @@ export function PlatformCard({
           <Icon name="link" size={16} />
         </span>
       )}
-      {withSync && onSync ? (
-        <button
-          type="button"
-          onClick={onSync}
-          aria-label={t(locale, "sync")}
-          title={t(locale, "sync")}
-        >
+      {withSync && onSync && (
+        <button type="button" onClick={onSync} aria-label={t(locale, "sync")} title={t(locale, "sync")}>
           <Icon name="sync" size={16} />
         </button>
-      ) : withSync ? (
-        <span className="is-disabled" aria-hidden>
-          <Icon name="sync" size={16} />
-        </span>
-      ) : null}
+      )}
       <button
         type="button"
         className="is-danger"
@@ -75,47 +66,41 @@ export function PlatformCard({
       >
         <Icon name="off" size={16} />
       </button>
-    </div>
+    </span>
   );
-  return (
-    <div className={linked ? "plat-card is-linked" : "plat-card"}>
-      <div className="plat-card-main">
-        <PlatformLogo platform={mark} size={22} />
-        <strong className="plat-card-nick">
-          {linked ? (single ? accounts[0].name : title) : title}
-        </strong>
-        {linked ? (
-          single ? (
-            icons(accounts[0], true)
-          ) : null
-        ) : (
-          <button type="button" className="btn sm" onClick={onConnect}>
-            {t(locale, "connect")}
-          </button>
-        )}
-      </div>
-      {linked && !single
-        ? accounts.map((account) => (
-            <div key={account.key} className="plat-card-main plat-card-sub">
-              <strong className="plat-card-nick">{account.name}</strong>
-              {icons(account, false)}
-            </div>
-          ))
-        : null}
-      {linked && onAdd ? (
-        <div className="plat-buttons plat-buttons-foot">
-          <button type="button" className="btn sm ghost" onClick={onAdd}>
-            {t(locale, "addPsnAccount")}
-          </button>
-        </div>
-      ) : null}
-      {(notes ?? [])
-        .filter((n): n is PlatNote => Boolean(n))
-        .map((note) => (
-          <p key={`${note.kind}:${note.text}`} className={`plat-note is-${note.kind}`}>
+
+  if (accounts.length === 0) {
+    return (
+      <>
+        <InfoRow lead={logo} label={title}>
+          <RowLink onClick={onConnect}>{t(locale, "connect")}</RowLink>
+        </InfoRow>
+        {shownNotes.map((note) => (
+          <p key={note.text} className={`fr-note is-${note.kind}`}>
             {note.text}
           </p>
         ))}
-    </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {accounts.map((account, i) => (
+        <InfoRow
+          key={account.key}
+          lead={i === 0 ? logo : <span />}
+          label={account.name}
+        >
+          {icons(account, i === 0)}
+        </InfoRow>
+      ))}
+      {onAdd && <NavRow lead={<span />} label={t(locale, "addAccount")} onClick={onAdd} />}
+      {shownNotes.map((note) => (
+        <p key={note.text} className={`fr-note is-${note.kind}`}>
+          {note.text}
+        </p>
+      ))}
+    </>
   );
 }

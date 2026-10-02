@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { peopleApi, type ActivityVisible, type PersonRow } from "../../../api/people/peopleApi";
 import { t, type Locale } from "../../../i18n";
-import { BackHead } from "../../shared/lib";
+import { BackHead, CheckRow, Group, InfoRow, RowLink, SettingsSkel } from "../../shared/lib";
 
 const CHOICES: Array<{ value: ActivityVisible; key: "privacyAll" | "privacyFriends" | "privacyNobody" }> = [
   { value: "all", key: "privacyAll" },
@@ -9,9 +9,8 @@ const CHOICES: Array<{ value: ActivityVisible; key: "privacyAll" | "privacyFrien
   { value: "nobody", key: "privacyNobody" },
 ];
 
-/** The one privacy setting (#157): who sees my activity in the app. The nickname
- * and avatar stay visible; publishing to chats is a separate screen. Below it,
- * the people you blocked, each with a way to undo it. */
+/** The one privacy setting (#157): who sees my activity in the app. Below it, the
+ * people you blocked, each with a way to undo it. */
 export function PrivacyPane({
   locale,
   data,
@@ -44,45 +43,38 @@ export function PrivacyPane({
   return (
     <>
       <BackHead title={t(locale, "privacy")} backLabel={t(locale, "back")} onBack={onBack} />
-      <p className="kicker">{t(locale, "privacyWho")}</p>
-      <div className="glass-card">
-        {CHOICES.map((choice) => (
-          <button
-            key={choice.value}
-            type="button"
-            className="ios-row"
-            onClick={() => choose(choice.value)}
-          >
-            <span>{t(locale, choice.key)}</span>
-            {value === choice.value && <span className="ios-value">✓</span>}
-          </button>
-        ))}
-      </div>
-      <p className="settings-hint">{t(locale, "privacyHint")}</p>
+      {value === null ? (
+        <SettingsSkel groups={[3]} />
+      ) : (
+        <Group title={t(locale, "privacyWho")} hint={t(locale, "privacyHint")}>
+          {CHOICES.map((choice) => (
+            <CheckRow
+              key={choice.value}
+              label={t(locale, choice.key)}
+              checked={value === choice.value}
+              onClick={() => choose(choice.value)}
+            />
+          ))}
+        </Group>
+      )}
 
       {blocked.length > 0 && (
-        <>
-          <p className="kicker">{t(locale, "blockedTitle")}</p>
-          <div className="glass-card">
-            {blocked.map((row) => (
-              <div key={row.id} className="ios-row">
-                <span>{row.handle}</span>
-                <button
-                  type="button"
-                  className="btn sm"
-                  onClick={() =>
-                    void peopleApi
-                      .unblock(data, row.id)
-                      .then(() => setBlocked((rows) => rows.filter((item) => item.id !== row.id)))
-                      .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
-                  }
-                >
-                  {t(locale, "unblock")}
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
+        <Group title={t(locale, "blockedTitle")}>
+          {blocked.map((row) => (
+            <InfoRow key={row.id} label={row.handle}>
+              <RowLink
+                onClick={() =>
+                  void peopleApi
+                    .unblock(data, row.id)
+                    .then(() => setBlocked((rows) => rows.filter((item) => item.id !== row.id)))
+                    .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
+                }
+              >
+                {t(locale, "unblock")}
+              </RowLink>
+            </InfoRow>
+          ))}
+        </Group>
       )}
     </>
   );

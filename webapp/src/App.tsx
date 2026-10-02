@@ -33,7 +33,7 @@ import { t, type Locale } from "./i18n";
 import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/me";
 import { People } from "./screens/people";
 import { Login } from "./screens/login";
-import { AppSkel, GameSkel, Icon, PageSkel, usePullToRefresh } from "./components/shared/lib";
+import { AppSkel, GameSkel, Icon, SettingsSkel, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 // Settings and the connect forms are a few kilobytes and sit behind the dock like
@@ -490,7 +490,7 @@ export function App() {
       )}
 
       {isAdmin && (
-        <Suspense fallback={<PageSkel />}>
+        <Suspense fallback={<SettingsSkel />}>
         <Admin
           locale={locale}
           data={data}
