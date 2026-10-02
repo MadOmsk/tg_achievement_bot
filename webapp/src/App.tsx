@@ -9,6 +9,8 @@ import {
   disconnectSteam,
   disconnectXbox,
   fetchMe,
+  logout,
+  WEB_SESSION,
   patchChat,
   patchSettings,
   putHandle,
@@ -30,6 +32,7 @@ import "./components/game/game.css";
 import { t, type Locale } from "./i18n";
 import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/me";
 import { People } from "./screens/people";
+import { Login } from "./screens/login";
 import { AppSkel, GameSkel, Icon, PageSkel, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
@@ -54,11 +57,16 @@ import {
 type LoadState =
   | { status: "loading" }
   | { status: "need-telegram" }
+  | { status: "login" }
   | { status: "error"; message: string }
   | { status: "ok"; me: MeResponse };
 
+// Open in a plain browser, signed in through Telegram Login (#157): the session
+// cookie signs requests, and this stands in for Init Data.
+let webSession = false;
+
 function initData(): string {
-  return window.Telegram?.WebApp?.initData ?? "";
+  return window.Telegram?.WebApp?.initData || (webSession ? WEB_SESSION : "");
 }
 
 function localeOf(me: MeResponse): Locale {
@@ -149,10 +157,17 @@ export function App() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const reload = useCallback(async () => {
-    const data = initData();
+    let data = initData();
     if (!data) {
-      setState({ status: "need-telegram" });
-      return;
+      // Not inside Telegram: a browser, signed in or not.
+      try {
+        await fetchMe(WEB_SESSION);
+        webSession = true;
+        data = WEB_SESSION;
+      } catch {
+        setState({ status: "login" });
+        return;
+      }
     }
     const me = await fetchMe(data);
     setState({ status: "ok", me });
@@ -204,6 +219,18 @@ export function App() {
   }
   if (state.status === "need-telegram") {
     return <p className="error">{t("ru", "needTelegram")}</p>;
+  }
+  if (state.status === "login") {
+    return (
+      <Login
+        locale={navigator.language.startsWith("ru") ? "ru" : "en"}
+        onSignedIn={() => {
+          webSession = true;
+          setState({ status: "loading" });
+          void reload().catch((err: unknown) => setState({ status: "error", message: String(err) }));
+        }}
+      />
+    );
   }
   if (state.status === "error") {
     return <p className="error">{state.message}</p>;
@@ -394,6 +421,16 @@ export function App() {
               await setAccountPublishes(data, platform, publishes, accountId);
             })
           }
+          onLogout={
+            webSession
+              ? () => {
+                  void logout().finally(() => {
+                    webSession = false;
+                    setState({ status: "login" });
+                  });
+                }
+              : undefined
+          }
           onNickname={async (value) => {
             await putHandle(data, value);
             await reload();
@@ -404,7 +441,8 @@ export function App() {
           onConnectXbox={() =>
             void runPlat("xbox", async () => {
               const { authorize_url } = await connectXbox(data);
-              window.Telegram?.WebApp?.openLink(authorize_url);
+              if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(authorize_url);
+              else window.open(authorize_url, "_blank");
               return t(locale, "openMicrosoft");
             })
           }

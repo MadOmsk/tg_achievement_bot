@@ -47,7 +47,7 @@ from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
-from bot.web import mini_people
+from bot.web import mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import load_avatar_bytes
@@ -113,6 +113,7 @@ def setup_mini_api(
 
     app.router.add_get("/api/mini/health", handle_health)
     mini_people.register(app, _require_user)
+    mini_session.register(app)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
@@ -1012,7 +1013,14 @@ async def handle_game_patches(request: web.Request) -> web.Response:
 
 
 async def _require_user(request: web.Request) -> MiniAppUser:
-    init_data = _extract_init_data(request)
+    try:
+        init_data = _extract_init_data(request)
+    except web.HTTPUnauthorized:
+        # Neither header: a browser signed in through Telegram Login (#157).
+        signed_in = await mini_session.session_user(request)
+        if signed_in is not None:
+            return signed_in
+        raise
     settings: Settings = request.app["mini_settings"]
     try:
         return validate_init_data(init_data, settings.bot_token.get_secret_value())

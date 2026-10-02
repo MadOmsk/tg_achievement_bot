@@ -24,6 +24,7 @@ export function Settings({
   onPatch,
   onChatPatch,
   onNickname,
+  onLogout,
   onAccountPublishes,
   onAdmin,
   onFlash,
@@ -48,6 +49,8 @@ export function Settings({
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onNickname: (handle: string) => Promise<void>;
+  /** Set only in a plain browser, where a session can be ended. */
+  onLogout?: () => void;
   onAccountPublishes: (platform: AccountPlatform, publishes: boolean, accountId?: string) => void;
   onAdmin?: (screen: AdminScreen) => void;
   onFlash: (message: string) => void;
@@ -361,7 +364,8 @@ export function Settings({
             try {
               await onDeleteAccount();
               window.alert(t(locale, "deleteDone"));
-              window.Telegram?.WebApp?.close?.();
+              if (window.Telegram?.WebApp?.close) window.Telegram.WebApp.close();
+              else window.location.reload();
             } catch (err) {
               onFlash(`${t(locale, "error")}: ${String(err)}`);
             } finally {
@@ -417,6 +421,14 @@ export function Settings({
           notes?.steam,
         ]}
       />
+
+      {onLogout && (
+        <div className="glass-card">
+          <button type="button" className="ios-row danger" onClick={onLogout}>
+            <span>{t(locale, "logout")}</span>
+          </button>
+        </div>
+      )}
 
       {me.is_admin && onAdmin && (
         <AdminSection

@@ -1,0 +1,43 @@
+.login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-height: 70dvh;
+  justify-content: center;
+  padding: 24px 8px;
+  text-align: center;
+}
+
+.login-mark {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.login h1 {
+  margin: 6px 0 0;
+}
+
+.login-text,
+.login-soon {
+  max-width: 28ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.login-widget {
+  min-height: 44px;
+  margin-top: 6px;
+}
+
+.login-soon {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}

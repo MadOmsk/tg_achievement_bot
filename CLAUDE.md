@@ -43,8 +43,9 @@ admin controls, and predictable behavior, not public SaaS scale.
   outside Telegram it shows a sign-in screen, and a person signs in **through a
   messenger** — Telegram now (Telegram Login), WhatsApp later — one person with
   several messenger logins. The other methods listed in #156 (email, Discord, phone,
-  Google, a platform account) are not planned for now. Not built yet; new code must
-  not assume that every person has a Telegram id.
+  Google, a platform account) are not planned for now. **Telegram Login is built**
+  (see "Browser sign-in" under People, nicknames and follows); WhatsApp is not. New
+  code must not assume that every person has a Telegram id.
 - No `/compare` or `/top` (see the appendix).
 - One `rarity_mode` per person, for every platform and every chat — not one per
   platform (see the appendix). What a person *can* switch off is a whole account's
@@ -750,6 +751,18 @@ elsewhere in this file still describe the bot.
   `_sql.member_source` (a list of people standing in for `subscriptions`, chat id 0). Home's strip of people and `/club/online` follow the same chip. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
+- **Browser sign-in** (shipped, Telegram only; migration 074): in a plain browser the
+  Mini App shows a sign-in screen with Telegram's Login Widget. `POST
+  /api/mini/auth/telegram` checks the widget's signature (`mini_auth.
+  validate_login_widget`: HMAC with SHA-256 of the bot token, at most 10 minutes old)
+  and sets an HttpOnly, SameSite=Lax cookie `ab_session`; `web_sessions` keeps only a
+  hash of its token (30 days). A request with no Init Data header falls back to that
+  cookie (`_require_user`); a *bad* Init Data header is never rescued by it. CORS
+  never allows credentials, so only the same origin carries the cookie. `POST
+  /api/mini/auth/logout` ends it. **Setup per bot**: BotFather `/setdomain` must name
+  the Mini App's host (`xbox.sultanpharm.com`, `test.xbox.sultanpharm.com`, and the
+  dev tunnel) or the widget refuses to render. A session serves only a person with a
+  Telegram id until the tables move to the person id (#156 step 2).
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 

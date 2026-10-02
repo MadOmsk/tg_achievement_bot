@@ -830,3 +830,14 @@ CREATE TABLE IF NOT EXISTS blocks (
     CHECK (person_id != blocked_id)
 );
 CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks (blocked_id);
+
+-- Browser sessions (#157, migration 074): only a hash of the cookie's token.
+CREATE TABLE IF NOT EXISTS web_sessions (
+    token_hash   TEXT PRIMARY KEY,
+    person_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    expires_at   TEXT NOT NULL,
+    user_agent   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_web_sessions_person ON web_sessions (person_id);

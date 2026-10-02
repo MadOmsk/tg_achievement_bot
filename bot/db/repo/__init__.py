@@ -109,6 +109,7 @@ from bot.db.repo._models import (
 )
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
+from bot.db.repo._sessions import _SessionsRepo
 from bot.db.repo._stats import _StatsRepo
 from bot.db.repo._steam import StoredPatch, TitleSteam, _SteamRepo
 
@@ -181,6 +182,7 @@ class Repo(
     _SteamRepo,
     _HandlesRepo,
     _FollowsRepo,
+    _SessionsRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

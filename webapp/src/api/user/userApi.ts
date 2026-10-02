@@ -1,4 +1,4 @@
-import { BaseApi } from "../base/baseApi";
+import { BaseApi, WEB_SESSION } from "../base/baseApi";
 import { API_BASE_ROUTES, USER_ROUTES } from "../../components/shared/constants/routes";
 import type {
   AccountPlatform,
@@ -20,10 +20,23 @@ export class UserApi extends BaseApi {
   async fetchAvatarBlob(initData: string, tgId: number): Promise<Blob | null> {
     const url = this.buildUrl(USER_ROUTES.AVATAR(tgId));
     const response = await fetch(url, {
-      headers: { "X-Telegram-Init-Data": initData },
+      headers: this.initHeaders(initData),
     });
     if (!response.ok) return null;
     return response.blob();
+  }
+
+  /** The bot a browser's Telegram Login Widget belongs to (#157). */
+  authConfig(): Promise<{ bot_username: string | null }> {
+    return this.get(WEB_SESSION, "/auth/config");
+  }
+
+  loginTelegram(user: Record<string, string | number>): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/telegram", user);
+  }
+
+  logout(): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/logout");
   }
 
   deleteAccount(initData: string): Promise<{ ok: boolean }> {
