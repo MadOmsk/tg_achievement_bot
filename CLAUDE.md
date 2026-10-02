@@ -35,15 +35,16 @@ admin controls, and predictable behavior, not public SaaS scale.
 
 ### Non-goals
 
-- No public web UI outside Telegram *today*. The only browser surfaces are the
+- No web UI of its own beyond the Mini App. Today the only browser surfaces are the
   Microsoft OAuth callback and the Telegram Mini App (`webapp/`, served separately;
   this process only answers `/api/mini/*` next to `/auth/callback`). Slash commands
   and chat notifications stay — the Mini App is an extra door, not a replacement.
-  **Other ways to sign in are planned** (owner, 2026-10-02; #156): email, Discord, a
-  phone number (possibly together with email), Google, and a verified platform
-  account (Xbox's Microsoft login exists; PSN and Steam are not ready). None is
-  built yet, and where a non-Telegram sign-in lives is still to be decided — but
-  new code must not assume that every person has a Telegram id.
+  **The same Mini App is to open in a plain browser too** (owner, 2026-10-02; #157):
+  outside Telegram it shows a sign-in screen, and a person signs in **through a
+  messenger** — Telegram now (Telegram Login), WhatsApp later — one person with
+  several messenger logins. The other methods listed in #156 (email, Discord, phone,
+  Google, a platform account) are not planned for now. Not built yet; new code must
+  not assume that every person has a Telegram id.
 - No `/compare` or `/top` (see the appendix).
 - One `rarity_mode` per person, for every platform and every chat — not one per
   platform (see the appendix). What a person *can* switch off is a whole account's
@@ -274,8 +275,13 @@ every column. History: #106.
 
 ### People and accounts (#52)
 
-- `users` is keyed by Telegram `tg_id` and holds only the Telegram identity. **This
-  is changing** (#156): a person gets an id of their own, and each way to sign in
+- `users` has an id of its own (`users.id`, migration 071; #156 step 1) and keeps
+  the Telegram identity as `tg_id` — unique, and empty for a person who will sign in
+  another way. **Every other table still points at `users(tg_id)`** until it moves to
+  the person id (step 2), so code still treats `tg_id` as the person for now.
+  071 rebuilds `users` with foreign keys switched off inside the script itself (the
+  pragma does nothing inside a transaction), so a migration that rebuilds a parent
+  table follows the same shape. **The rest is changing** (#156): each way to sign in
   (Telegram, later email and the rest) becomes a field on the person. A person may
   then have no Telegram and no platform account at all — someone who signed in by
   email only to follow friends. Merging two people is the person's own request:
@@ -684,6 +690,31 @@ isn't muted there; it wasn't already published there.
 
 User-facing text is Russian by default and English where a chat or person picked it
 (Localization). History: #109.
+
+### People, nicknames and follows (planned, #157)
+
+Agreed with the owner on 2026-10-02, built in stages on top of #156's person id;
+until a stage ships, the rules elsewhere in this file still describe the bot.
+
+- **A person is named by a nickname only** — never by their Telegram first and last
+  name, anywhere (the Mini App, group messages, DMs). A nickname is 3–20 Latin
+  letters and digits, unique ignoring case; a taken one gets four random digits,
+  `RideTheSun#4821`, always shown after it. Nobody picks or edits the digits; a
+  change to a free nickname drops them. One change per 30 days. Existing people get
+  one generated (Telegram username, else a platform nickname, else `Player`) and
+  confirm or change it on their next visit.
+- **Follows, as on Xbox**: following is one-way and needs no consent; following
+  each other makes two people friends. The feed shows the people one follows. A
+  person can remove a follower and block someone. Search is by nickname only;
+  people from a shared chat are suggested.
+- **Privacy is one setting**: who sees my activity in the app — everyone (default),
+  friends, nobody. Publishing to chats is unrelated and works as before.
+- **Publishing**: one screen with the rarity mode, a switch per chat and a switch
+  per game account (#20).
+- **The Mini App's dock**: Home · Feed · People · Settings; the statistics move
+  into Feed (Feed | Ranking, scoped to "following" or one chat).
+- **Design**: every new screen follows the Mini App as it is — its tokens, glass
+  surfaces and spacing, no extra outlines.
 
 ### Naming people and accounts (#51)
 

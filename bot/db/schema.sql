@@ -1,13 +1,15 @@
 -- Full schema, SPEC section 3. Applied once to an empty database; later changes
 -- go to db/migrations/ so an existing bot.db is never recreated from scratch.
 
--- Telegram users. Only the Telegram identity lives here (#52): an Xbox
--- account is an `accounts` row like any other, reached through the active
--- link in `account_links`, and used to be cached in xuid/gamertag/gamerscore
--- columns beside these. A second copy of a fact is a second version of it
--- waiting to happen.
+-- People. A person has an id of their own (#156, migration 071); a Telegram
+-- account is one way to sign in, kept as `tg_id` — unique, and empty for a
+-- person who signs in some other way. Other tables still point at
+-- users(tg_id) until they move to the person id. Only the identity lives here
+-- (#52): an Xbox account is an `accounts` row like any other, reached through
+-- the active link in `account_links`.
 CREATE TABLE IF NOT EXISTS users (
-    tg_id           INTEGER PRIMARY KEY CHECK (tg_id > 0),
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    tg_id           INTEGER UNIQUE CHECK (tg_id IS NULL OR tg_id > 0),
     username        TEXT,                 -- for /stats @user, refreshed on every message
     -- /stats' header identity (Follow-up 2026-09-06) — refreshed the same
     -- way username is, on every message (handlers/chat.py's message
