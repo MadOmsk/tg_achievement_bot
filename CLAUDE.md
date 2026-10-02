@@ -742,12 +742,12 @@ elsewhere in this file still describe the bot.
   the one privacy setting and the list of blocked people.
 - **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
   became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
-  dock tab; the `summary` screen name and `?t=summary` links still work). **Not yet:**
-  the home strip of followed people. **Scope**: the Feed and the
+  dock tab; the `summary` screen name and `?t=summary` links still work).
+  **Scope**: the Feed and the
   Ranking carry chips — «Подписки» (oneself plus followed people whose privacy lets
   the viewer see them) and one per chat — remembered on the device; `?scope=following`
   on `/club/feed` and `/club/summary`, answered by the same queries through
-  `_sql.member_source` (a list of people standing in for `subscriptions`, chat id 0). The People tab (`webapp/src/screens/people`) has search by
+  `_sql.member_source` (a list of people standing in for `subscriptions`, chat id 0). Home's strip of people and `/club/online` follow the same chip. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
