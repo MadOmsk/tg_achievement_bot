@@ -133,6 +133,8 @@ name, or when the tree goes stale.
 │   │   ├── hltb.py               howlongtobeatpy wrapper, cached in hltb_cache; ensure_title_match
 │   │   │                         is the lazy trigger for hltb_match.py below
 │   │   ├── hltb_match.py         which HLTB entry a game is, scored automatically (no DB access)
+│   │   ├── steam_extras.py       a game's Steam side: its app, achievement tips, patches — stored
+│   │   ├── steam_guides.py, steam_news.py   Steam community guides / announcements (no DB access)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -143,8 +145,8 @@ name, or when the tree goes stale.
 │   │   │                         (fetch_unlocked + schema/rarity cache)
 │   │   ├── psn/                  auth.py (NPSSO, PsnAuth), client.py (to_thread wrapper),
 │   │   │                         achievements.py (sync_account, one game at a time, #26)
-│   │   └── translate/            Anthropic API via raw httpx, *descriptions only*, never names:
-│   │                             client.py, descriptions.py (cache-or-translate), auth.py (#17 shape)
+│   │   └── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
+│   │                             client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
 │   │
 │   ├── poller/                  APScheduler jobs, one tick a minute
 │   │   ├── scheduler.py, cadence.py              job assembly; shared interval/dormancy math
@@ -156,6 +158,7 @@ name, or when the tree goes stale.
 │   │   ├── daily.py              scheduled summaries and the two on-demand summary commands (#14)
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
 │   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
+│   │   ├── patch_refresh.py      played games' patch notes, re-read every few hours
 │   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
@@ -354,12 +357,14 @@ every column. History: #106.
 - **Presence**: `presence_state` (Xbox), `steam_presence_state`, `psn_presence_state`
   (#1, unrelated to the trophy scan). PSN scan progress: `psn_title_progress`,
   `psn_poll_state`. Xbox history: `title_history`. Steam: `steam_schema_cache`,
-  `steam_rarity_cache`. HLTB: `hltb_cache`.
+  `steam_rarity_cache`. HLTB: `hltb_cache`. Steam guides and patches: `steam_apps`,
+  `game_patches`, `title_guide_reads` (see Steam guides and patches).
 - **`titles`** — one row per game: names (`name`, `name_ru`, `name_en`),
   `achievements_total`, `platform`, `platforms` (#79), cover art (`icon_url` +
   `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at`, and which
   HLTB entry it is (`hltb_id`/`hltb_match_score`/`hltb_attempts`/`hltb_checked_at`,
-  see HowLongToBeat's own "Automatic title matching").
+  see HowLongToBeat's own "Automatic title matching"), and which Steam app it is
+  (`steam_appid`/`steam_appid_attempts`/`steam_appid_checked_at`, `tips_checked_at`).
 - **All three platforms localize a game's title** (#61). PSN's comes in the same call
   as its trophy groups; Xbox's rides on the `ru-RU` contract-4 response already
   fetched for descriptions (x360 keeps the titlehub name); Steam's needs the
@@ -402,6 +407,10 @@ every column. History: #106.
     two locale requests. Each platform's main call fixes one language (Xbox/PSN
     English, Steam Russian), which is why both are kept.
   - Icons are cached under `data/achievements/{platform}/{title_id}/`.
+  - **Tips** (`tip_en`/`tip_ru`/`tip_source`/`tip_translation`): how to get it, from
+    the Steam community's guides. The text sits in its own language's column; the
+    other stays NULL until a translation fills it and says so (`tip_translation =
+    'llm'`, like `description_source`). None are translated yet (owner, 2026-09-30).
 - **What a message renders from**: `services/descriptions_view.py` swaps in the
   reader's language from the catalog per chat, falling back to the other language
   and then to `seen_achievements`' own snapshot. Rows are copied, never mutated —
@@ -1039,6 +1048,73 @@ picked.
   call** — showing another game's hours is worse than showing none. Verified by hand
   against ~200 real games from this community's library: no wrong match, only
   occasional correct refusals (a placeholder platform name, an ambiguous subtitle).
+
+## Steam guides and patches
+
+What Steam knows about a game beyond its achievements, for the Mini App's game
+page (owner, 2026-09-30): a tip for each achievement from the Steam community's
+guides, and the developer's patch notes in an "Обновления" tab. Nothing of it is
+sent to a chat.
+
+- **Which Steam app a game is** (`titles.steam_appid`): a Steam game's own `title_id`;
+  otherwise found once, like its HLTB entry — the appid HLTB's page lists (exact),
+  else Steam's store search by name (`steam_news.pick_appid`, a confident match only:
+  store "apps" include a game's DLC and sets). Three failed attempts an hour apart,
+  then known to have none. Console exclusives have none, so no tips and no tab.
+- **Filled like HLTB** (`services/steam_extras.py`): right after a game's first new
+  achievement is published — the fetchers call `SteamExtras.ensure_title` after
+  `ensure_title_match`, since the appid comes from the HLTB page — in a background
+  task, never on the publishing path. A game nobody earned anything in lately is
+  filled when its page is first opened.
+- **Guides and patches belong to the Steam app** (`steam_apps`, `game_patches`), shared
+  by the Xbox, PlayStation and Steam versions of one game; tips belong to our
+  achievement (`title_achievements.tip_*`).
+- **Tips**: the most popular "achievement" guides (`IPublishedFileService/QueryFiles`,
+  the Steam key), each page read as numbered lines. **Only a guide that names its
+  achievements on lines of their own is used** (owner, 2026-10-01: every other
+  layout came out crooked, and rules or word lists guessing at it broke on each new
+  guide): such a guide is cut into blocks, one from each name to the next, and
+  Haiku (`services/translate/guide_tips.py`) picks, inside each block, the lines that
+  help to get that achievement — leaving out what the description already says and
+  what the author says to the reader (greetings, thanks, credits, translation notes),
+  in several pieces where those sit inside. It answers only with line numbers of the
+  block; the tip is those lines copied from the guide, so nothing is invented and
+  pictures, videos, lists and tables survive. The guides are taken most popular
+  first, and **the first one that fills at least half of the game's achievements is the
+  only one used** — the others are not even read from Steam (owner, 2026-10-01); until
+  one does, what each gives is kept, the earlier guide's account of an achievement
+  standing. A guide naming fewer than three achievements on lines of their own is
+  passed over, and so is one the model finds to be in neither English nor Russian (it
+  is asked, by the same call). **A guide is bought from the model once**
+  (`title_guide_reads`): its fingerprint covers exactly what the prompt shows (the
+  guide's lines, each achievement's shown name and description, both names for the
+  name marks — a Russian side filled in later changes nothing), and the answer itself
+  (the line ranges) is stored beside it, so a hit cuts the tips again whether they
+  were kept or lost to a later guide. 8000 characters at most, cut at a line.
+  PlayStation's platinum gets none. No Anthropic key: tips are not read and nothing is
+  stamped as read; a model that could not be asked leaves the game to be read again.
+  Guides mostly in Chinese/Japanese/Korean are passed over; a tip needs words
+  (pictures, videos and bare links alone count as no tip). A visit reads tips only
+  for a game whose tips were never worked out; a set a month old is re-read by
+  `poller/patch_refresh.py`, one game a tick, only for games played in the last 30
+  days — so a crowd opening a game, or thousands of games, never means a read each.
+- **Links, videos, pictures** stay in the text: a link as `[label](url)`, a video (a
+  guide's embedded player, a patch's `[previewyoutube]`) and a guide's screenshot as
+  their address alone on a line — the Mini App draws a link, a video card and a
+  picture (`webapp/src/components/game/rich-text/RichText.tsx`).
+- **Steam's community site refuses bursts** (429): guide pages are read one at a
+  time, 2.5 s apart, for the whole bot; a refusal pauses every read for 90 s. Pages
+  are kept under `data/steam_guides/` for a week, so a re-read costs no request; the
+  last few are also kept in memory, bounded and aged the same week. A read cut short
+  keeps its tips but not its time stamp. **The guides endpoint never waits for a
+  fill**: it starts one in the background and answers with what is stored and
+  `complete: false`, and the Mini App asks again until it is true.
+- **Patches**: the developer's own announcements (`GetNewsForApp`, `feeds=
+  steam_community_announcements` — on a busy day the default feed is other sites'
+  articles only), a post tagged `patchnotes` or titled like a patch (update, patch,
+  hotfix, a version number; not a demo or playtest). Re-read by
+  `poller/patch_refresh.py` for games somebody earned something in over the last 30
+  days, every `patch_refresh_hours` (6, /admin), three apps a tick.
 
 ## Versioning
 

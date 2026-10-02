@@ -111,11 +111,15 @@
 
 .played-bar-fill {
   /* What was earned before this month is toned down; the month's own stretch
-   * (var(--month) of the fill, at its end) keeps the bar's full colour. */
+   * (var(--month) of the fill, at its end) keeps the bar's full colour, and the
+   * step between the two is a long, eased fade rather than an edge. */
   background:
     linear-gradient(
       90deg,
-      rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 10px),
+      rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 56px),
+      rgba(12, 15, 22, 0.32) calc(100% - var(--month, 0%) - 40px),
+      rgba(12, 15, 22, 0.17) calc(100% - var(--month, 0%) - 22px),
+      rgba(12, 15, 22, 0.05) calc(100% - var(--month, 0%) - 8px),
       transparent calc(100% - var(--month, 0%))
     ),
     linear-gradient(90deg, var(--fill-a), var(--fill-b));
@@ -126,7 +130,10 @@
   background:
     linear-gradient(
       90deg,
-      rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 10px),
+      rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 56px),
+      rgba(12, 15, 22, 0.32) calc(100% - var(--month, 0%) - 40px),
+      rgba(12, 15, 22, 0.17) calc(100% - var(--month, 0%) - 22px),
+      rgba(12, 15, 22, 0.05) calc(100% - var(--month, 0%) - 8px),
       transparent calc(100% - var(--month, 0%))
     ),
     linear-gradient(90deg, var(--fill-a), var(--fill-b));

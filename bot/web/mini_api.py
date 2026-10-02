@@ -41,6 +41,8 @@ from bot.services.steam.client import (
     get_profile,
     resolve_steam_id,
 )
+from bot.services.steam_extras import SteamExtras
+from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
 from bot.web.mini_admin import setup_admin_routes
@@ -81,6 +83,7 @@ def setup_mini_api(
     anthropic_auth: Any = None,
     bot: Any = None,
     title_catalog: TitleCatalogService | None = None,
+    steam_extras: SteamExtras | None = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -93,6 +96,7 @@ def setup_mini_api(
     app["mini_notifier"] = notifier
     app["mini_anthropic_auth"] = anthropic_auth
     app["mini_bot"] = bot
+    app["mini_steam_extras"] = steam_extras or SteamExtras(repo, steam_auth, anthropic_auth)
 
     if title_catalog is None:
         title_catalog = TitleCatalogService(
@@ -139,6 +143,8 @@ def setup_mini_api(
     app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/hltb", handle_game_hltb)
+    app.router.add_get("/api/mini/games/{platform}/{title_id}/patches", handle_game_patches)
+    app.router.add_get("/api/mini/games/{platform}/{title_id}/guides", handle_game_guides)
     setup_admin_routes(app)
     setup_hltb_routes(app)
 
@@ -818,6 +824,75 @@ def _extract_init_data(request: web.Request) -> str:
     if header.startswith(AUTH_HEADER_PREFIX):
         return header[len(AUTH_HEADER_PREFIX) :].strip()
     raise web.HTTPUnauthorized(text="missing initData")
+
+
+# How many of a game's patches its "Обновления" tab lists.
+PATCHES_SHOWN = 10
+
+
+def _extras(request: web.Request) -> SteamExtras:
+    return request.app["mini_steam_extras"]
+
+
+async def handle_game_guides(request: web.Request) -> web.Response:
+    """The tip the Steam community's guides give for each achievement of this
+    game, in the reader's language where there is one. Stored when the game's
+    first new achievement was published; a game still without them is filled
+    in the background, never while the request waits (a read of Steam's guides
+    and the model takes minutes when Steam is slow). `complete: false` until
+    the fill is done — the Mini App asks again a little later and the tips
+    fill in."""
+    user = await _require_user(request)
+    platform = request.match_info.get("platform", "").lower()
+    title_id = request.match_info.get("title_id", "")
+    repo: Repo = request.app["mini_repo"]
+    complete = True
+    extras = _extras(request)
+    if await extras.tips_due(title_id):
+        extras.ensure_title(title_id)
+        complete = False
+    locale = await _user_locale(repo, user.tg_id)
+    tips: dict[str, dict[str, str]] = {}
+    for achievement_id, (tip_en, tip_ru) in (await repo.title_tips(platform, title_id)).items():
+        text = (tip_ru or tip_en) if locale == "ru" else (tip_en or tip_ru)
+        # Tips stored before pictures stopped counting as advice are dropped here.
+        if text and has_prose(text):
+            tips[achievement_id] = {"text": text}
+    return web.json_response({"ok": True, "tips": tips, "complete": complete})
+
+
+async def handle_game_patches(request: web.Request) -> web.Response:
+    """A game's latest patches, from what is stored — poller/patch_refresh.py
+    keeps them fresh. A Steam app never read yet is read now; one with no Steam
+    page at all answers an empty list."""
+    user = await _require_user(request)
+    title_id = request.match_info.get("title_id", "")
+    repo: Repo = request.app["mini_repo"]
+    extras = _extras(request)
+    patches = []
+    try:
+        appid = await extras.appid(title_id)
+        if appid is not None:
+            _guides_at, patches_at = await repo.steam_app_checked(appid)
+            if patches_at is None:
+                await extras.refresh_patches(appid)
+            patches = await repo.game_patches(appid, PATCHES_SHOWN)
+    except Exception:
+        log.exception("steam patches failed for title %s", title_id)
+    ru = await _user_locale(repo, user.tg_id) == "ru"
+    return web.json_response(
+        {
+            "ok": True,
+            "patches": [
+                {
+                    "title": (p.title_ru if ru and p.title_ru else p.title),
+                    "date": p.published_at,
+                    "text": (p.text_ru if ru and p.text_ru else p.text_en) or "",
+                }
+                for p in patches
+            ],
+        }
+    )
 
 
 async def _require_user(request: web.Request) -> MiniAppUser:

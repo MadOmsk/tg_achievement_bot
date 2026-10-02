@@ -1,6 +1,14 @@
 import { BaseApi } from "../base/baseApi";
-import { API_BASE_ROUTES, GAMES_ROUTES } from "../../components/shared/constants/routes";
-import type { GameDetails, GameHltbResponse } from "./gamesApiModels";
+import {
+  API_BASE_ROUTES,
+  GAMES_ROUTES,
+} from "../../components/shared/constants/routes";
+import type {
+  GameDetails,
+  GameGuidesResponse,
+  GameHltbResponse,
+  GamePatchesResponse,
+} from "./gamesApiModels";
 
 export class GamesApi extends BaseApi {
   constructor(baseUrl: string = API_BASE_ROUTES.GAMES) {
@@ -25,8 +33,39 @@ export class GamesApi extends BaseApi {
   /** HowLongToBeat's own card for this game (#131) — its own request, so a
    * game's first-ever match (a few HLTB requests) never delays the
    * achievements `fetchGame` above already answers with. */
-  fetchGameHltb(initData: string, platform: string, titleId: string): Promise<GameHltbResponse> {
-    return this.get<GameHltbResponse>(initData, GAMES_ROUTES.HLTB(platform, titleId));
+  fetchGameHltb(
+    initData: string,
+    platform: string,
+    titleId: string,
+  ): Promise<GameHltbResponse> {
+    return this.get<GameHltbResponse>(
+      initData,
+      GAMES_ROUTES.HLTB(platform, titleId),
+    );
+  }
+
+  /** The Steam guides' tip for each achievement — asked once when the page opens. */
+  fetchGameGuides(
+    initData: string,
+    platform: string,
+    titleId: string,
+  ): Promise<GameGuidesResponse> {
+    return this.get<GameGuidesResponse>(
+      initData,
+      GAMES_ROUTES.GUIDES(platform, titleId),
+    );
+  }
+
+  /** The game's latest patches from Steam — its own request, never awaited by the page. */
+  fetchGamePatches(
+    initData: string,
+    platform: string,
+    titleId: string,
+  ): Promise<GamePatchesResponse> {
+    return this.get<GamePatchesResponse>(
+      initData,
+      GAMES_ROUTES.PATCHES(platform, titleId),
+    );
   }
 }
 

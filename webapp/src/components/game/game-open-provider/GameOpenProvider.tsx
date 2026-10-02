@@ -7,9 +7,14 @@ import { GameOpenContext } from "../../shared/lib";
 // The game page pulls in Swiper and its own carousels — heavy enough to
 // keep off Home's own critical bundle, loaded only once a game is actually
 // opened (including straight from a Mini App deep link).
-const TitleSheet = lazy(() =>
-  import("../title-sheet/TitleSheet").then((m) => ({ default: m.TitleSheet })),
-);
+const loadTitleSheet = () => import("../title-sheet/TitleSheet");
+const TitleSheet = lazy(() => loadTitleSheet().then((m) => ({ default: m.TitleSheet })));
+
+/** Starts fetching the game page's code — for an app opened straight on a game,
+ * while it still asks who is looking. */
+export function preloadTitleSheet(): void {
+  void loadTitleSheet();
+}
 
 /**
  * Lets any card open the game's own page. It is portalled to the body so it
@@ -21,6 +26,7 @@ export function GameOpenProvider({
   showSecrets,
   meId,
   initialGame = null,
+  onGameChange,
   children,
 }: {
   data: string;
@@ -29,6 +35,8 @@ export function GameOpenProvider({
   meId: number;
   /** A game to open right away — a Mini App deep link landing straight on it. */
   initialGame?: GameRef | null;
+  /** Told whether a game page is open, each time that changes. */
+  onGameChange?: (open: boolean) => void;
   children: ReactNode;
 }) {
   const [game, setGame] = useState<GameRef | null>(initialGame);
@@ -37,6 +45,10 @@ export function GameOpenProvider({
   // While a game page covers the app, the app beneath stops being painted
   // (see base.css): a long feed of blurred, filtered cards under a full-screen
   // layer was eating the phone's graphics memory, and that showed as artifacts.
+  useEffect(() => {
+    onGameChange?.(game !== null);
+  }, [game, onGameChange]);
+
   useEffect(() => {
     if (!game) return;
     const html = document.documentElement;

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { PersonPayload } from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import { Avatar, Icon, ScoreCup, isOnline } from "../../shared/lib";
+import { Avatar, EmptyState, Icon, ScoreCup, isOnline } from "../../shared/lib";
 import {
   COMPLETION_BADGES,
   PLATFORMS,
@@ -134,8 +134,14 @@ export function PersonProfile({
           onReveal={onReveal}
         />
       ) : (
-        <p className="empty">{t(locale, "emptyFeed")}</p>
+        <EmptyState
+          title={t(locale, "emptyPersonTitle")}
+          hint={t(locale, "emptyFeedHint")}
+          slide
+        />
       )}
+      {feed.length > 0 && (
+        <>
       <div className="section-head achievements-head">
         <span className="section-title-group">
           <h1 className="kicker" style={{ margin: 0 }}>
@@ -154,8 +160,8 @@ export function PersonProfile({
           </button>
         )}
       </div>
-      {(feed.length > 0) && (
-        <PlayedGames items={feed} locale={locale} sort={gameSort} />
+      <PlayedGames items={feed} locale={locale} sort={gameSort} />
+        </>
       )}
     </>
   );
