@@ -25,7 +25,6 @@ import {
   statusOf,
 } from "../../components/club";
 import { Icon } from "../../components/shared/lib/icon/Icon";
-import { ScopeChips, type FeedScope } from "../../components/club/scope-chips/ScopeChips";
 import { SCREEN_NAMES, type ClubPane } from "../../components/shared/constants";
 import "./Club.css";
 
@@ -93,28 +92,9 @@ export function Club({
   feedRef.current = feed;
   onlineRef.current = online;
 
-  // What the Feed and the Ranking are about: the people you follow, or a chat.
-  // Remembered per device; "following" only stands while it can be asked for.
-  const [scope, setScope] = useState<FeedScope>(() => {
-    try {
-      const saved = window.localStorage.getItem("club-scope");
-      if (saved === "following") return "following";
-      const chat = Number(saved);
-      if (saved && me.chats.some((c) => c.chat_id === chat)) return chat;
-    } catch {
-      /* storage may be blocked */
-    }
-    return chatId ?? me.chats[0]?.chat_id ?? "following";
-  });
-  const changeScope = (next: FeedScope) => {
-    setScope(next);
-    try {
-      window.localStorage.setItem("club-scope", String(next));
-    } catch {
-      /* storage may be blocked */
-    }
-  };
-  const scopeRef = scope === "following" || me.chats.some((c) => c.chat_id === scope) ? scope : null;
+  // The Feed, the Ranking and the people strip are always about the people you
+  // follow and yourself (#157); chats are only a way to find people to follow.
+  const scopeRef = "following" as const;
 
   const showSecrets = me.settings.show_secrets;
   // The friends are everybody but you.
@@ -518,12 +498,6 @@ export function Club({
               <span className="skel month-chip-skel" aria-hidden />
             )}
           </header>
-          <ScopeChips
-            locale={locale}
-            chats={me.chats}
-            value={scopeRef ?? "following"}
-            onChange={changeScope}
-          />
           {!clubReady || monthBusy ? (
             <FeedSkel head={false} />
           ) : feed.length === 0 ? (
@@ -563,12 +537,6 @@ export function Club({
               <span className="skel month-chip-skel" aria-hidden />
             )}
           </header>
-          <ScopeChips
-            locale={locale}
-            chats={me.chats}
-            value={scopeRef ?? "following"}
-            onChange={changeScope}
-          />
           {!clubReady ? (
             <StatsSkel head={false} />
           ) : (

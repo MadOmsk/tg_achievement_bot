@@ -96,12 +96,14 @@ def register(app: web.Application, require_user: RequireUser) -> None:
             # Someone who blocked you is simply not there.
             raise web.HTTPNotFound(text="no such person")
         followers_count, following_count = await repo.follow_counts(other)
+        can_view = await repo.can_view_activity(me, other)
         return web.json_response(
             {
                 **person_json(row),
                 "followers": followers_count,
                 "following": following_count,
-                "can_view": await repo.can_view_activity(me, other),
+                "can_view": can_view,
+                "activity": await _activity(request, repo, me, other) if can_view else None,
             }
         )
 
@@ -166,6 +168,31 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     router.add_get("/api/mini/me/blocked", blocked)
     router.add_get("/api/mini/me/privacy", get_activity)
     router.add_put("/api/mini/me/privacy", put_activity)
+
+
+async def _activity(request: web.Request, repo: Repo, me: int, other: int) -> dict[str, Any] | None:
+    """What the person card shows of someone's play: now, the accounts with their
+    counts, this month, and the latest unlocks. Only called once the privacy
+    check has passed."""
+    from bot.web.mini_chat import build_person_payload
+
+    target_row = await repo.person_row(other)
+    if target_row is None or target_row.tg_id is None:
+        return None
+    target = await repo.get_user(target_row.tg_id)
+    viewer_row = await repo.person_row(me)
+    settings = (
+        await repo.get_user_settings(viewer_row.tg_id) if viewer_row and viewer_row.tg_id else None
+    )
+    if target is None:
+        return None
+    payload = await build_person_payload(repo, target, locale=settings.locale if settings else "ru")
+    return {
+        "presence": payload.get("presence"),
+        "platforms": payload["platforms"],
+        "month": payload["month"],
+        "recent": payload["feed"][:3],
+    }
 
 
 async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: int) -> None:

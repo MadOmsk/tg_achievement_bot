@@ -267,3 +267,25 @@ async def test_online_in_the_following_scope_lists_only_followed_people(
         assert sorted(m["tg_id"] for m in body["members"]) == [7, 42]
     finally:
         await client.close()
+
+
+async def test_the_person_card_carries_their_play_when_visible(repo: Repo, settings) -> None:
+    await repo.ensure_user(42, "viewer")
+    await repo.ensure_user(7, "player7")
+    await repo.link_xbox_account(7, "x7", "Tag7", 1500)
+    other = await repo.person_id(7)
+    app = web.Application(middlewares=[cors_middleware()])
+    setup_mini_api(app, settings, repo)
+    headers = {"X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), 42)}
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        body = await (await client.get(f"/api/mini/people/{other}", headers=headers)).json()
+        assert body["activity"]["platforms"][0]["gamerscore"] == 1500
+        assert body["activity"]["recent"] == []
+
+        await repo.set_activity_visible(other, "nobody")
+        body = await (await client.get(f"/api/mini/people/{other}", headers=headers)).json()
+        assert body["can_view"] is False and body["activity"] is None
+    finally:
+        await client.close()

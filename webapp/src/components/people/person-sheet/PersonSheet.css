@@ -1,0 +1,136 @@
+.person-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 26px 20px 12px;
+}
+
+.ps-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.ps-head h2 {
+  margin: 10px 0 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.ps-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.ps-stats {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.ps-stats > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ps-stats strong {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-stats span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.ps-hidden {
+  margin: -6px 0 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.ps-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ps-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 0;
+}
+
+.ps-row + .ps-row {
+  border-top: 1px solid var(--hair);
+}
+
+.ps-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ps-row-main strong,
+.ps-row-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-row-main small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.ps-row-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.ps-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ps-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ps-quiet {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+}
+
+.ps-quiet button {
+  border: 0;
+  background: none;
+  padding: 10px 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.ps-quiet button.is-danger {
+  color: #ff8a96;
+}

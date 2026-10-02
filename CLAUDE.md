@@ -744,11 +744,11 @@ elsewhere in this file still describe the bot.
 - **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
   became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
   dock tab; the `summary` screen name and `?t=summary` links still work).
-  **Scope**: the Feed and the
-  Ranking carry chips — «Подписки» (oneself plus followed people whose privacy lets
-  the viewer see them) and one per chat — remembered on the device; `?scope=following`
-  on `/club/feed` and `/club/summary`, answered by the same queries through
-  `_sql.member_source` (a list of people standing in for `subscriptions`, chat id 0). Home's strip of people and `/club/online` follow the same chip. The People tab (`webapp/src/screens/people`) has search by
+  **Scope** (owner, 2026-10-02): there is no chat picker — the Feed, the Ranking, Home's
+  strip of people and `/club/online` are always about oneself plus the followed people
+  whose privacy lets the viewer see them (`?scope=following`, answered by the same
+  queries through `_sql.member_source`, a list of people standing in for
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Browser sign-in** (shipped, Telegram only; migration 074): in a plain browser the

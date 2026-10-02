@@ -11,6 +11,7 @@ export function FollowButton({
   relation,
   onChange,
   onFlash,
+  wide,
 }: {
   locale: Locale;
   data: string;
@@ -18,6 +19,8 @@ export function FollowButton({
   relation: Relation;
   onChange: (relation: Relation) => void;
   onFlash: (message: string) => void;
+  /** The full-width primary button of the person card. */
+  wide?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   if (relation.blocked) return null;
@@ -43,7 +46,10 @@ export function FollowButton({
   return (
     <button
       type="button"
-      className={relation.following ? "btn sm follow-btn is-on" : "btn sm follow-btn"}
+      className={[wide ? "btn" : "btn sm", "follow-btn", relation.following ? "is-on" : ""]
+        .filter(Boolean)
+        .join(" ")}
+      style={wide ? { width: "100%" } : undefined}
       disabled={busy}
       onClick={toggle}
     >

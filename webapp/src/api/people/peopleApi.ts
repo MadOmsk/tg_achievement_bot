@@ -22,6 +22,26 @@ export type PersonProfile = PersonRow & {
   following: number;
   /** May the viewer see this person's activity (their privacy setting)? */
   can_view: boolean;
+  /** Their play, when their privacy lets the viewer see it. */
+  activity: {
+    presence: { state: string | null; playing: boolean; title_name?: string | null } | null;
+    platforms: Array<{
+      platform: string;
+      name: string | null;
+      achievement_count?: number;
+      trophy_count?: number;
+    }>;
+    month: { count: number };
+    recent: Array<{
+      platform: string;
+      title_id: string;
+      achievement_id: string;
+      name: string;
+      game: string | null;
+      icon_url: string | null;
+      is_secret: boolean;
+    }>;
+  } | null;
 };
 
 export type ActivityVisible = "all" | "friends" | "nobody";
