@@ -28,6 +28,7 @@ import {
 import "./components/game/game.css";
 import { t, type Locale } from "./i18n";
 import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/me";
+import { People } from "./screens/people";
 import { AppSkel, GameSkel, Icon, PageSkel, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
@@ -267,6 +268,7 @@ export function App() {
   const isHome = screen.name === SCREEN_NAMES.HOME;
   const isFeed = screen.name === SCREEN_NAMES.FEED;
   const isSummary = screen.name === SCREEN_NAMES.SUMMARY;
+  const isPeople = screen.name === SCREEN_NAMES.PEOPLE;
   const isSettings = screen.name === SCREEN_NAMES.SETTINGS;
   const isAdmin = screen.name === SCREEN_NAMES.ADMIN;
   const isConnectSteam = screen.name === SCREEN_NAMES.CONNECT_STEAM;
@@ -292,7 +294,11 @@ export function App() {
 
   const goTab = (tab: DockTab) => {
     const already =
-      tab === SCREEN_NAMES.SETTINGS ? isSettingsOrAdmin : screen.name === tab && !personOpen;
+      tab === SCREEN_NAMES.SETTINGS
+        ? isSettingsOrAdmin
+        : tab === SCREEN_NAMES.FEED
+          ? (isFeed || isSummary) && !personOpen
+          : screen.name === tab && !personOpen;
     if (already) {
       window.scrollTo(0, 0);
       return;
@@ -347,11 +353,16 @@ export function App() {
             setPersonId(id);
           }}
           onClosePerson={() => setPersonId(null)}
+          onPane={(next) => setScreen(SCREENS[next])}
           onPersonVisible={setPersonOpen}
           onSettings={() => setScreen(SCREENS.settings)}
         />
         )}
       </div>
+
+      {isPeople && (
+        <People locale={locale} data={data} refreshKey={refreshKey} onFlash={setFlash} />
+      )}
 
       {isSettings && (
         <Settings
@@ -474,7 +485,7 @@ export function App() {
             className="dock-pill"
             style={{
               transform: `translateX(${
-                (isSettingsOrAdmin ? 3 : isSummary ? 2 : isFeed ? 1 : 0) * 100
+                (isSettingsOrAdmin ? 3 : isPeople ? 2 : isFeed || isSummary ? 1 : 0) * 100
               }%)`,
             }}
             aria-hidden
@@ -489,19 +500,19 @@ export function App() {
           </button>
           <button
             type="button"
-            className={isFeed && !personOpen ? "is-on" : undefined}
+            className={(isFeed || isSummary) && !personOpen ? "is-on" : undefined}
             onClick={() => goTab(SCREEN_NAMES.FEED)}
             aria-label={t(locale, "feed")}
           >
-            <Icon name="feed" filled={isFeed && !personOpen} />
+            <Icon name="feed" filled={(isFeed || isSummary) && !personOpen} />
           </button>
           <button
             type="button"
-            className={isSummary && !personOpen ? "is-on" : undefined}
-            onClick={() => goTab(SCREEN_NAMES.SUMMARY)}
-            aria-label={t(locale, "stats")}
+            className={isPeople ? "is-on" : undefined}
+            onClick={() => goTab(SCREEN_NAMES.PEOPLE)}
+            aria-label={t(locale, "people")}
           >
-            <Icon name="stats" filled={isSummary && !personOpen} />
+            <Icon name="people" filled={isPeople} />
           </button>
           <button
             type="button"

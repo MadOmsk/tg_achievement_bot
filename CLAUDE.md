@@ -696,7 +696,7 @@ User-facing text is Russian by default and English where a chat or person picked
 ### People, nicknames and follows (#157)
 
 Agreed with the owner on 2026-10-02, built in stages on top of #156's person id.
-**Shipped: nicknames and the follows backend** (the Mini App screens for follows are not built yet). The rest is planned; until a stage ships, the rules
+**Shipped: nicknames, the follows backend and the People tab.** The rest is planned; until a stage ships, the rules
 elsewhere in this file still describe the bot.
 
 - **A person is named by a nickname only** (shipped) — never by their Telegram first
@@ -737,8 +737,13 @@ elsewhere in this file still describe the bot.
   chats is unrelated and works as before.
 - **Publishing**: one screen with the rarity mode, a switch per chat and a switch
   per game account (#20).
-- **The Mini App's dock**: Home · Feed · People · Settings; the statistics move
-  into Feed (Feed | Ranking, scoped to "following" or one chat).
+- **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
+  became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
+  dock tab; the `summary` screen name and `?t=summary` links still work). **Not yet:**
+  scoping the feed and ranking by "following" / one chat, and the home strip of
+  followed people. The People tab (`webapp/src/screens/people`) has search by
+  nickname, following, followers and shared-chat suggestions, a follow button on each
+  row and a person sheet (remove follower, block).
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 

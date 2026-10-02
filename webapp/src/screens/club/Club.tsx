@@ -37,6 +37,7 @@ export function Club({
   openPersonId,
   data,
   pane,
+  onPane,
   refreshKey = 0,
   onChat: _onChat,
   onFlash,
@@ -51,6 +52,8 @@ export function Club({
   openPersonId?: number | null;
   data: string;
   pane: ClubPane;
+  /** Switch between the Feed and the Ranking, which share one dock tab. */
+  onPane: (pane: ClubPane) => void;
   /** Increment to refetch club data without leaving the current pane. */
   refreshKey?: number;
   onChat: (chatId: number) => void;
@@ -463,7 +466,14 @@ export function Club({
       {pane === SCREEN_NAMES.FEED && (
         <>
           <header className="page-head is-split">
-            <h1>{t(locale, "feed")}</h1>
+            <div className="segment feed-switch" role="group">
+              <button type="button" className={"is-on"} onClick={() => onPane(SCREEN_NAMES.FEED)}>
+                {t(locale, "feed")}
+              </button>
+              <button type="button" className={undefined} onClick={() => onPane(SCREEN_NAMES.SUMMARY)}>
+                {t(locale, "ranking")}
+              </button>
+            </div>
             {clubReady ? (
               monthChip(selectedMonth)
             ) : (
@@ -495,7 +505,14 @@ export function Club({
       {pane === SCREEN_NAMES.SUMMARY && (
         <>
           <header className="page-head is-split">
-            <h1>{t(locale, "stats")}</h1>
+            <div className="segment feed-switch" role="group">
+              <button type="button" className={undefined} onClick={() => onPane(SCREEN_NAMES.FEED)}>
+                {t(locale, "feed")}
+              </button>
+              <button type="button" className={"is-on"} onClick={() => onPane(SCREEN_NAMES.SUMMARY)}>
+                {t(locale, "ranking")}
+              </button>
+            </div>
             {clubReady ? (
               monthChip(selectedMonth)
             ) : (
