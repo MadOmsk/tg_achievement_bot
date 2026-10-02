@@ -35,10 +35,15 @@ admin controls, and predictable behavior, not public SaaS scale.
 
 ### Non-goals
 
-- No public web UI outside Telegram. The only browser surfaces are the Microsoft
-  OAuth callback and the Telegram Mini App (`webapp/`, served separately; this
-  process only answers `/api/mini/*` next to `/auth/callback`). Slash commands and
-  chat notifications stay — the Mini App is an extra door, not a replacement.
+- No public web UI outside Telegram *today*. The only browser surfaces are the
+  Microsoft OAuth callback and the Telegram Mini App (`webapp/`, served separately;
+  this process only answers `/api/mini/*` next to `/auth/callback`). Slash commands
+  and chat notifications stay — the Mini App is an extra door, not a replacement.
+  **Other ways to sign in are planned** (owner, 2026-10-02; #156): email, Discord, a
+  phone number (possibly together with email), Google, and a verified platform
+  account (Xbox's Microsoft login exists; PSN and Steam are not ready). None is
+  built yet, and where a non-Telegram sign-in lives is still to be decided — but
+  new code must not assume that every person has a Telegram id.
 - No `/compare` or `/top` (see the appendix).
 - One `rarity_mode` per person, for every platform and every chat — not one per
   platform (see the appendix). What a person *can* switch off is a whole account's
@@ -269,7 +274,13 @@ every column. History: #106.
 
 ### People and accounts (#52)
 
-- `users` is keyed by Telegram `tg_id` and holds only the Telegram identity.
+- `users` is keyed by Telegram `tg_id` and holds only the Telegram identity. **This
+  is changing** (#156): a person gets an id of their own, and each way to sign in
+  (Telegram, later email and the rest) becomes a field on the person. A person may
+  then have no Telegram and no platform account at all — someone who signed in by
+  email only to follow friends. Merging two people is the person's own request:
+  the same platform accounts (or one side empty) merge at once; a conflict (two
+  different Steam ids) is put to the person, and settings come from the fresher side.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
