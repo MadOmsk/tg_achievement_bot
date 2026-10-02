@@ -170,8 +170,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
-  padding: 12px 0 calc(10px + env(safe-area-inset-bottom, 0px));
+  gap: 12px;
+  padding: 14px 0 calc(8px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--hair);
 }
 
@@ -194,4 +194,33 @@
 
 .ps-quiet button.is-danger {
   color: #ff8a96;
+}
+
+.ps-skel-line {
+  width: 90px;
+  height: 14px;
+  margin-top: 4px;
+}
+
+.ps-skel-tile {
+  height: 66px;
+  border-radius: 14px;
+}
+
+.ps-skel-label {
+  width: 110px;
+  height: 11px;
+  margin: 3px 0 8px;
+}
+
+.ps-skel-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
+.ps-skel-text {
+  flex: 1;
+  height: 14px;
+  max-width: 60%;
 }

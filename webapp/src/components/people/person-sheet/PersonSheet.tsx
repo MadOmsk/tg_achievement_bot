@@ -79,12 +79,46 @@ export function PersonSheet({
           />
           <div className="ps-head-copy">
             <h2>{person.handle}</h2>
-            {(status || tie) && (
-              <p className="ps-sub">{[tie, status].filter(Boolean).join(" · ")}</p>
+            {profile === null ? (
+              <span className="skel ps-skel-line" aria-hidden />
+            ) : (
+              (status || tie) && (
+                <p className="ps-sub">{[tie, status].filter(Boolean).join(" · ")}</p>
+              )
             )}
           </div>
         </div>
 
+        {profile === null && (
+          // The card opens at its loaded height and shape; nothing jumps when it fills.
+          <>
+            <div className="ps-stats" aria-hidden>
+              <span className="skel ps-skel-tile" />
+              <span className="skel ps-skel-tile" />
+              <span className="skel ps-skel-tile" />
+            </div>
+            <div className="ps-section" aria-hidden>
+              <span className="skel ps-skel-label" />
+              {[0, 1].map((i) => (
+                <div key={i} className="ps-row">
+                  <span className="skel ps-skel-icon" />
+                  <span className="skel ps-skel-text" />
+                </div>
+              ))}
+            </div>
+            <div className="ps-section" aria-hidden>
+              <span className="skel ps-skel-label" />
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="ps-row">
+                  <span className="skel ps-skel-icon" />
+                  <span className="skel ps-skel-text" />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {profile !== null && (
         <div className="ps-stats">
           <div>
             <strong>{profile?.followers ?? "–"}</strong>
@@ -101,6 +135,7 @@ export function PersonSheet({
             </div>
           )}
         </div>
+        )}
 
         {profile && !profile.can_view && (
           <p className="ps-hidden">{t(locale, "activityHidden")}</p>
