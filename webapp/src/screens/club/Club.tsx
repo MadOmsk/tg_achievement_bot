@@ -96,6 +96,7 @@ export function Club({
   const scopeRef = "following" as const;
 
   const showSecrets = me.settings.show_secrets;
+  const hasAccounts = me.xbox.linked || me.steam.linked || me.psn.linked;
   // The friends are everybody but you.
   const others = online.filter((m) => m.tg_id !== me.tg_id);
   const activeId =
@@ -384,7 +385,7 @@ export function Club({
                     }
                   />
                 </div>
-                {clubReady ? (
+                {!hasAccounts ? null : clubReady ? (
                   monthChip(selectedMonth)
                 ) : (
                   <span className="skel month-chip-skel" aria-hidden />
@@ -412,17 +413,16 @@ export function Club({
                   />
                 )}
                 {!monthBusy &&
-                  !(me.xbox.linked || me.steam.linked || me.psn.linked) && (
+                  !hasAccounts && (
                     <EmptyState
                       title={t(locale, "welcomeTitle")}
                       hint={t(locale, "welcomeText")}
-                      action={onSettings ? { label: t(locale, "welcomeAction"), onClick: onSettings } : undefined}
                       slide
                     />
                   )}
                 {!monthBusy &&
                   mine.length === 0 &&
-                  (me.xbox.linked || me.steam.linked || me.psn.linked) && (
+                  hasAccounts && (
                     <EmptyState
                       title={t(locale, isPastMonth ? "emptyTitlePast" : "emptyTitleNow")}
                       hint={t(locale, "emptyHomeHint")}

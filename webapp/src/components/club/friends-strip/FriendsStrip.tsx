@@ -26,12 +26,12 @@ export function FriendsStrip({
           <h1 className="kicker" style={{ margin: 0 }}>
             {t(locale, "friends")}
           </h1>
+          <button type="button" className="see-all" onClick={onFind}>
+            <span>{t(locale, "find")}</span>
+            <Icon name="forward" size={16} />
+          </button>
         </div>
         <p className="friends-empty">{t(locale, "friendsEmpty")}</p>
-        <button type="button" className="find-btn is-wide" onClick={onFind}>
-          <Icon name="search" size={18} />
-          <span>{t(locale, "find")}</span>
-        </button>
       </>
     );
   }
