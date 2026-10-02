@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { MeResponse } from "../../../api";
+import type { AccountPlatform, MeResponse } from "../../../api";
 import { rarityLabel, t, timezoneLabel, type Locale } from "../../../i18n";
 import { BackHead, Chevron, Icon, Toggle } from "../../shared/lib";
 import {
@@ -12,7 +12,7 @@ import {
 } from "../../shared/constants";
 import { AdminSection } from "../../admin";
 import { NicknameForm } from "../nickname/NicknameForm";
-import { ChatSettingsCard } from "../chat-settings-card/ChatSettingsCard";
+import { PrivacyPane } from "../privacy/PrivacyPane";
 import { PlatformCard, type AccountRow, type PlatNotes } from "../platform-card/PlatformCard";
 import "./Settings.css";
 
@@ -24,6 +24,7 @@ export function Settings({
   onPatch,
   onChatPatch,
   onNickname,
+  onAccountPublishes,
   onAdmin,
   onFlash,
   onConnectSteam,
@@ -47,6 +48,7 @@ export function Settings({
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onNickname: (handle: string) => Promise<void>;
+  onAccountPublishes: (platform: AccountPlatform, publishes: boolean, accountId?: string) => void;
   onAdmin?: (screen: AdminScreen) => void;
   onFlash: (message: string) => void;
   onConnectXbox: () => void;
@@ -124,14 +126,66 @@ export function Settings({
     );
   }
 
-  if (pane === SETTINGS_PANES.ACHIEVEMENTS) {
+  if (pane === SETTINGS_PANES.PRIVACY) {
+    return (
+      <PrivacyPane
+        locale={locale}
+        data={data}
+        onBack={() => setPane(SETTINGS_PANES.ROOT)}
+        onFlash={onFlash}
+      />
+    );
+  }
+
+  if (pane === SETTINGS_PANES.PUBLISHING) {
+    // One switch per game account (#20): a muted account still counts in stats.
+    const accountSwitches: Array<{
+      key: string;
+      label: string;
+      on: boolean;
+      toggle: () => void;
+    }> = [];
+    if (me.xbox.linked) {
+      accountSwitches.push({
+        key: "xbox",
+        label: `XBOX: ${me.xbox.gamertag_modern || me.xbox.gamertag || ""}`,
+        on: me.xbox.publishes !== false,
+        toggle: () => onAccountPublishes("xbox", me.xbox.publishes === false),
+      });
+    }
+    if (me.psn.linked) {
+      for (const account of me.psn.accounts ?? [
+        {
+          account_id: me.psn.account_id,
+          name: me.psn.online_id || me.psn.account_id,
+          publishes: me.psn.publishes !== false,
+        },
+      ]) {
+        accountSwitches.push({
+          key: `psn-${account.account_id}`,
+          label: `PSN: ${account.name}`,
+          on: account.publishes !== false,
+          toggle: () => onAccountPublishes("psn", account.publishes === false, account.account_id),
+        });
+      }
+    }
+    const steam = me.steam;
+    if (steam.linked) {
+      accountSwitches.push({
+        key: "steam",
+        label: `Steam: ${steam.display_name || steam.steam_id}`,
+        on: steam.publishes !== false,
+        toggle: () => onAccountPublishes("steam", steam.publishes === false),
+      });
+    }
     return (
       <>
         <BackHead
-          title={t(locale, "homeAchievements")}
+          title={t(locale, "publishing")}
           backLabel={t(locale, "back")}
           onBack={() => setPane(SETTINGS_PANES.ROOT)}
         />
+        <p className="settings-hint">{t(locale, "publishingHint")}</p>
         <div className="glass-card">
           {/* One mode for every chat this person publishes to (#126). */}
           <label className="ios-row">
@@ -153,36 +207,54 @@ export function Settings({
             <Toggle
               on={me.settings.show_secrets}
               label={t(locale, "showSecrets")}
-              onClick={() =>
-                onPatch({ show_secrets: !me.settings.show_secrets })
-              }
+              onClick={() => onPatch({ show_secrets: !me.settings.show_secrets })}
             />
           </div>
         </div>
-      </>
-    );
-  }
 
-  if (pane === SETTINGS_PANES.CHATS) {
-    return (
-      <>
-        <BackHead
-          title={t(locale, "myChats")}
-          backLabel={t(locale, "back")}
-          onBack={() => setPane(SETTINGS_PANES.ROOT)}
-        />
-        <p className="settings-hint">{t(locale, "myChatsHint")}</p>
+        <p className="kicker">{t(locale, "publishingChats")}</p>
         {me.chats.length === 0 ? (
           <p className="empty">{t(locale, "noChats")}</p>
         ) : (
-          me.chats.map((chat) => (
-            <ChatSettingsCard
-              key={chat.chat_id}
-              chat={chat}
-              locale={locale}
-              onPatch={onChatPatch}
-            />
-          ))
+          <div className="glass-card">
+            {me.chats.map((chat) => (
+              <div key={chat.chat_id} className="ios-row">
+                <span>{chat.title || String(chat.chat_id)}</span>
+                <Toggle
+                  on={chat.is_subscribed}
+                  label={chat.title || String(chat.chat_id)}
+                  onClick={() => {
+                    // Turning it off silences the chat for this person, so ask first.
+                    if (
+                      chat.is_subscribed &&
+                      !window.confirm(
+                        `${chat.title || chat.chat_id}\n\n${t(locale, "confirmUnsubscribe")}`,
+                      )
+                    ) {
+                      return;
+                    }
+                    onChatPatch(chat.chat_id, {
+                      action: chat.is_subscribed ? "unsubscribe" : "subscribe",
+                    });
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {accountSwitches.length > 0 && (
+          <>
+            <p className="kicker">{t(locale, "publishingAccounts")}</p>
+            <div className="glass-card">
+              {accountSwitches.map((item) => (
+                <div key={item.key} className="ios-row">
+                  <span>{item.label}</span>
+                  <Toggle on={item.on} label={item.label} onClick={item.toggle} />
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </>
     );
@@ -254,21 +326,21 @@ export function Settings({
         <button
           type="button"
           className="ios-row"
-          onClick={() => setPane(SETTINGS_PANES.ACHIEVEMENTS)}
+          onClick={() => setPane(SETTINGS_PANES.PUBLISHING)}
         >
-          <span>{t(locale, "homeAchievements")}</span>
+          <span>{t(locale, "publishing")}</span>
           <span className="ios-value">
+            {me.chats.filter((c) => c.is_subscribed).length || "—"}
             <Chevron />
           </span>
         </button>
         <button
           type="button"
           className="ios-row"
-          onClick={() => setPane(SETTINGS_PANES.CHATS)}
+          onClick={() => setPane(SETTINGS_PANES.PRIVACY)}
         >
-          <span>{t(locale, "myChats")}</span>
+          <span>{t(locale, "privacy")}</span>
           <span className="ios-value">
-            {me.chats.filter((c) => c.is_subscribed).length || "—"}
             <Chevron />
           </span>
         </button>

@@ -12,6 +12,7 @@ import {
   patchChat,
   patchSettings,
   putHandle,
+  setAccountPublishes,
   syncXbox,
   type GameRef,
   type MeResponse,
@@ -386,6 +387,11 @@ export function App() {
           onChatPatch={(chatId, body) =>
             void run(async () => {
               await patchChat(data, chatId, body);
+            })
+          }
+          onAccountPublishes={(platform, publishes, accountId) =>
+            void run(async () => {
+              await setAccountPublishes(data, platform, publishes, accountId);
             })
           }
           onNickname={async (value) => {

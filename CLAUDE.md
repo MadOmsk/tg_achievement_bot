@@ -696,7 +696,7 @@ User-facing text is Russian by default and English where a chat or person picked
 ### People, nicknames and follows (#157)
 
 Agreed with the owner on 2026-10-02, built in stages on top of #156's person id.
-**Shipped: nicknames, the follows backend and the People tab.** The rest is planned; until a stage ships, the rules
+**Shipped: nicknames, the follows backend, the People tab, and the Publishing and Privacy screens.** The rest is planned; until a stage ships, the rules
 elsewhere in this file still describe the bot.
 
 - **A person is named by a nickname only** (shipped) — never by their Telegram first
@@ -735,8 +735,9 @@ elsewhere in this file still describe the bot.
   `GET/PUT /api/mini/me/privacy`. Nothing reads it yet — the screens that show
   another person's activity must call `repo.can_view_activity`. Publishing to
   chats is unrelated and works as before.
-- **Publishing**: one screen with the rarity mode, a switch per chat and a switch
-  per game account (#20).
+- **Publishing** (shipped): Settings → Публикация has the rarity mode, secrets, a
+  switch per chat and a switch per game account (#20). Settings → Приватность has
+  the one privacy setting and the list of blocked people.
 - **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
   became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
   dock tab; the `summary` screen name and `?t=summary` links still work). **Not yet:**
