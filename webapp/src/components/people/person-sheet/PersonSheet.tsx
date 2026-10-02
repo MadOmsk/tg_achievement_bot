@@ -77,6 +77,7 @@ export function PersonSheet({
             tgId={person.tg_id ?? undefined}
             online={online}
             playing={Boolean(presence?.playing)}
+            platform={presence?.platform}
             size={56}
           />
           <div className="ps-head-copy">

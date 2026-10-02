@@ -24,7 +24,12 @@ export type PersonProfile = PersonRow & {
   can_view: boolean;
   /** Their play, when their privacy lets the viewer see it. */
   activity: {
-    presence: { state: string | null; playing: boolean; title_name?: string | null } | null;
+    presence: {
+      state: string | null;
+      playing: boolean;
+      platform?: string | null;
+      title_name?: string | null;
+    } | null;
     platforms: Array<{
       platform: string;
       name: string | null;
