@@ -191,8 +191,30 @@ async def _activity(request: web.Request, repo: Repo, me: int, other: int) -> di
         "presence": payload.get("presence"),
         "platforms": payload["platforms"],
         "month": payload["month"],
-        "recent": payload["feed"][:3],
+        "games": _month_games(payload["feed"]),
     }
+
+
+def _month_games(feed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The games behind this month's unlocks, most recently played first, each
+    with how many it gave — the card's horizontal strip."""
+    games: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in feed:
+        key = (item["platform"], item["title_id"])
+        if not item.get("game"):
+            continue
+        game = games.setdefault(
+            key,
+            {
+                "platform": item["platform"],
+                "title_id": item["title_id"],
+                "name": item["game"],
+                "cover": item.get("game_icon_url"),
+                "count": 0,
+            },
+        )
+        game["count"] += 1
+    return list(games.values())
 
 
 async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: int) -> None:

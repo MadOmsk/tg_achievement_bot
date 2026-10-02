@@ -32,14 +32,12 @@ export type PersonProfile = PersonRow & {
       trophy_count?: number;
     }>;
     month: { count: number };
-    recent: Array<{
+    games: Array<{
       platform: string;
       title_id: string;
-      achievement_id: string;
       name: string;
-      game: string | null;
-      icon_url: string | null;
-      is_secret: boolean;
+      cover: string | null;
+      count: number;
     }>;
   } | null;
 };

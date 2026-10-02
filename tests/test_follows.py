@@ -282,7 +282,7 @@ async def test_the_person_card_carries_their_play_when_visible(repo: Repo, setti
     try:
         body = await (await client.get(f"/api/mini/people/{other}", headers=headers)).json()
         assert body["activity"]["platforms"][0]["gamerscore"] == 1500
-        assert body["activity"]["recent"] == []
+        assert body["activity"]["games"] == []
 
         await repo.set_activity_visible(other, "nobody")
         body = await (await client.get(f"/api/mini/people/{other}", headers=headers)).json()

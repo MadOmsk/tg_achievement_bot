@@ -6,33 +6,21 @@
 .person-sheet {
   display: flex;
   flex-direction: column;
-  align-self: stretch;
-  width: 100%;
-  min-height: 0;
-  box-sizing: border-box;
-  padding: 22px 18px 0;
-  text-align: left;
-}
-
-.ps-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  margin: -4px -4px 0;
-  padding: 4px 4px 0;
-  display: flex;
-  flex-direction: column;
   gap: 22px;
-  padding-bottom: 18px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 22px 18px 4px;
+  text-align: left;
 }
 
 .ps-head {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .ps-head-copy {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -41,7 +29,7 @@
 
 .ps-head h2 {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   font-weight: 750;
   letter-spacing: -0.02em;
   overflow: hidden;
@@ -49,10 +37,14 @@
   white-space: nowrap;
 }
 
+.ps-head .follow-btn {
+  flex: none;
+}
+
 .ps-sub {
   margin: 0;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.84rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -91,12 +83,18 @@
 }
 
 .ps-label {
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   color: var(--muted);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.ps-count {
+  margin-left: 6px;
+  color: var(--text);
+  letter-spacing: 0;
 }
 
 .ps-hidden {
@@ -110,7 +108,7 @@
   align-items: center;
   gap: 12px;
   min-height: 52px;
-  padding: 8px 0;
+  padding: 6px 0;
 }
 
 .ps-row + .ps-row {
@@ -120,26 +118,9 @@
 .ps-row-main {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ps-row-main strong,
-.ps-row-main small,
-.ps-row-main span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ps-row-main strong {
-  font-weight: 650;
-}
-
-.ps-row-main small {
-  color: var(--muted);
-  font-size: 0.78rem;
 }
 
 .ps-row-value {
@@ -156,35 +137,68 @@
   height: 40px;
 }
 
-.ps-icon {
-  flex: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  object-fit: cover;
-  background: rgba(255, 255, 255, 0.06);
+.ps-games {
+  display: flex;
+  gap: 12px;
+  margin: 0 -18px;
+  padding: 2px 18px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.ps-actions {
+.ps-games::-webkit-scrollbar {
+  display: none;
+}
+
+.ps-game {
   flex: none;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 12px;
-  padding: 14px 0 calc(8px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--hair);
+  gap: 3px;
+  width: 104px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ps-game-cover,
+.ps-game-cover img {
+  width: 104px;
+  height: 104px;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.ps-game strong {
+  margin-top: 5px;
+  font-size: 0.82rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-game small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 650;
 }
 
 .ps-quiet {
   display: flex;
   justify-content: center;
   gap: 22px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .ps-quiet button {
   border: 0;
   background: none;
-  padding: 8px 0;
+  padding: 10px 0;
   color: var(--muted);
   font: inherit;
   font-size: 0.85rem;
@@ -198,7 +212,7 @@
 
 .ps-skel-line {
   width: 90px;
-  height: 14px;
+  height: 13px;
   margin-top: 4px;
 }
 
@@ -210,7 +224,7 @@
 .ps-skel-label {
   width: 110px;
   height: 11px;
-  margin: 3px 0 8px;
+  margin: 3px 0 9px;
 }
 
 .ps-skel-icon {
@@ -225,8 +239,20 @@
   max-width: 60%;
 }
 
-.ps-count {
-  margin-left: 6px;
-  color: var(--text);
-  letter-spacing: 0;
+.ps-skel-cover {
+  width: 104px;
+  height: 104px;
+  border-radius: 14px;
+}
+
+.ps-skel-name {
+  width: 84px;
+  height: 12px;
+  margin-top: 8px;
+}
+
+.ps-skel-count {
+  width: 28px;
+  height: 10px;
+  margin-top: 4px;
 }

@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { peopleApi, type PersonProfile, type PersonRow, type Relation } from "../../../api/people/peopleApi";
 import { t, type Locale } from "../../../i18n";
-import { Avatar, PlatformLogo, Sheet } from "../../shared/lib";
+import { Avatar, CoverImg, PlatformLogo, Sheet, useOpenGame } from "../../shared/lib";
 import { FollowButton } from "../follow-button/FollowButton";
 import "./PersonSheet.css";
 
-/** A person's card in the People tab (#157): who they are and what they are doing
- * now, how many follow them, their accounts and latest unlocks (when their privacy
- * lets you see them), then follow — and, quietly below, remove follower and block. */
+/** A person's card in the People tab (#157): who they are, the follow button beside
+ * the name, how many follow them, their accounts and this month's games (when their
+ * privacy lets you see them), and quiet remove-follower and block links below. */
 export function PersonSheet({
   locale,
   data,
@@ -25,6 +25,7 @@ export function PersonSheet({
 }) {
   const [profile, setProfile] = useState<PersonProfile | null>(null);
   const [busy, setBusy] = useState(false);
+  const openGame = useOpenGame();
   const relation = person.relation;
 
   useEffect(() => {
@@ -64,22 +65,23 @@ export function PersonSheet({
     : relation.followed_by
       ? t(locale, "followsYou")
       : "";
+  const loading = profile === null;
+  const games = activity?.games ?? [];
 
   return (
     <Sheet onClose={onClose} mid>
       <div className="person-sheet">
-        <div className="ps-scroll">
         <div className="ps-head">
           <Avatar
             name={person.handle}
             tgId={person.tg_id ?? undefined}
             online={online}
             playing={Boolean(presence?.playing)}
-            size={64}
+            size={56}
           />
           <div className="ps-head-copy">
             <h2>{person.handle}</h2>
-            {profile === null ? (
+            {loading ? (
               <span className="skel ps-skel-line" aria-hidden />
             ) : (
               (status || tie) && (
@@ -87,9 +89,17 @@ export function PersonSheet({
               )
             )}
           </div>
+          <FollowButton
+            locale={locale}
+            data={data}
+            personId={person.id}
+            relation={relation}
+            onChange={onChange}
+            onFlash={onFlash}
+          />
         </div>
 
-        {profile === null && (
+        {loading ? (
           // The card opens at its loaded height and shape; nothing jumps when it fills.
           <>
             <div className="ps-stats" aria-hidden>
@@ -98,7 +108,7 @@ export function PersonSheet({
             </div>
             <div className="ps-section" aria-hidden>
               <span className="skel ps-skel-label" />
-              {[0, 1].map((i) => (
+              {[0].map((i) => (
                 <div key={i} className="ps-row">
                   <span className="skel ps-skel-icon" />
                   <span className="skel ps-skel-text" />
@@ -107,116 +117,110 @@ export function PersonSheet({
             </div>
             <div className="ps-section" aria-hidden>
               <span className="skel ps-skel-label" />
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="ps-row">
-                  <span className="skel ps-skel-icon" />
-                  <span className="skel ps-skel-text" />
-                </div>
-              ))}
+              <div className="ps-games">
+                {[0, 1, 2].map((i) => (
+                  <span key={i} className="ps-game">
+                    <span className="skel ps-skel-cover" />
+                    <span className="skel ps-skel-name" />
+                    <span className="skel ps-skel-count" />
+                  </span>
+                ))}
+              </div>
             </div>
+          </>
+        ) : (
+          <>
+            <div className="ps-stats">
+              <div>
+                <strong>{profile.followers}</strong>
+                <span>{t(locale, "followersCount")}</span>
+              </div>
+              <div>
+                <strong>{profile.following}</strong>
+                <span>{t(locale, "followingCount")}</span>
+              </div>
+            </div>
+
+            {!profile.can_view && <p className="ps-hidden">{t(locale, "activityHidden")}</p>}
+
+            {activity && activity.platforms.length > 0 && (
+              <div className="ps-section">
+                <p className="ps-label">{t(locale, "accounts")}</p>
+                {activity.platforms.map((p) => (
+                  <div key={p.platform} className="ps-row">
+                    <span className="ps-mark">
+                      <PlatformLogo platform={p.platform} size={22} />
+                    </span>
+                    <span className="ps-row-main">{p.name}</span>
+                    <span className="ps-row-value">
+                      {p.achievement_count ?? p.trophy_count ?? 0}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {games.length > 0 && (
+              <div className="ps-section">
+                <p className="ps-label">
+                  {t(locale, "personMonthGames")}
+                  <span className="ps-count">{games.length}</span>
+                </p>
+                <div className="ps-games">
+                  {games.map((game) => (
+                    <button
+                      key={`${game.platform}:${game.title_id}`}
+                      type="button"
+                      className="ps-game"
+                      onClick={() =>
+                        openGame?.({
+                          platform: game.platform,
+                          title_id: game.title_id,
+                          name: game.name,
+                          icon_url: game.cover,
+                          person:
+                            person.tg_id != null ? { tg_id: person.tg_id, name: person.handle } : null,
+                        })
+                      }
+                    >
+                      <CoverImg src={game.cover} className="ps-game-cover" />
+                      <strong>{game.name}</strong>
+                      <small>+{game.count}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
 
-        {profile !== null && (
-        <div className="ps-stats">
-          <div>
-            <strong>{profile?.followers ?? "–"}</strong>
-            <span>{t(locale, "followersCount")}</span>
-          </div>
-          <div>
-            <strong>{profile?.following ?? "–"}</strong>
-            <span>{t(locale, "followingCount")}</span>
-          </div>
-        </div>
-        )}
-
-        {profile && !profile.can_view && (
-          <p className="ps-hidden">{t(locale, "activityHidden")}</p>
-        )}
-
-        {activity && activity.platforms.length > 0 && (
-          <div className="ps-section">
-            <p className="ps-label">{t(locale, "accounts")}</p>
-            {activity.platforms.map((p) => (
-              <div key={p.platform} className="ps-row">
-                <span className="ps-mark">
-                  <PlatformLogo platform={p.platform} size={22} />
-                </span>
-                <span className="ps-row-main">{p.name}</span>
-                <span className="ps-row-value">
-                  {p.achievement_count ?? p.trophy_count ?? 0}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activity && activity.recent.length > 0 && (
-          <div className="ps-section">
-            <p className="ps-label">
-              {t(locale, "recentUnlocks")}
-              {activity.month.count > 0 && <span className="ps-count">{activity.month.count}</span>}
-            </p>
-            {activity.recent.map((item) => (
-              <div key={`${item.platform}:${item.title_id}:${item.achievement_id}`} className="ps-row">
-                {item.icon_url ? (
-                  <img className="ps-icon" src={item.icon_url} alt="" loading="lazy" />
-                ) : (
-                  <span className="ps-icon" aria-hidden />
-                )}
-                <span className="ps-row-main">
-                  <strong>{item.is_secret ? t(locale, "secretAchievement") : item.name}</strong>
-                  {item.game && <small>{item.game}</small>}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        </div>
-
-        <div className="ps-actions">
-          <FollowButton
-            locale={locale}
-            data={data}
-            personId={person.id}
-            relation={relation}
-            onChange={onChange}
-            onFlash={onFlash}
-            wide
-          />
-          <div className="ps-quiet">
-            {relation.followed_by && !relation.blocked && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => act(peopleApi.removeFollower(data, person.id))}
-              >
-                {t(locale, "removeFollower")}
-              </button>
-            )}
-            {relation.blocked ? (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => act(peopleApi.unblock(data, person.id))}
-              >
-                {t(locale, "unblock")}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="is-danger"
-                disabled={busy}
-                onClick={() => {
-                  if (!window.confirm(t(locale, "confirmBlock"))) return;
-                  act(peopleApi.block(data, person.id));
-                }}
-              >
-                {t(locale, "block")}
-              </button>
-            )}
-          </div>
+        <div className="ps-quiet">
+          {relation.followed_by && !relation.blocked && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => act(peopleApi.removeFollower(data, person.id))}
+            >
+              {t(locale, "removeFollower")}
+            </button>
+          )}
+          {relation.blocked ? (
+            <button type="button" disabled={busy} onClick={() => act(peopleApi.unblock(data, person.id))}>
+              {t(locale, "unblock")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="is-danger"
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm(t(locale, "confirmBlock"))) return;
+                act(peopleApi.block(data, person.id));
+              }}
+            >
+              {t(locale, "block")}
+            </button>
+          )}
         </div>
       </div>
     </Sheet>
