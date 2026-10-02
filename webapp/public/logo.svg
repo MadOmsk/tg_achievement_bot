@@ -13,5 +13,10 @@
   <rect width="512" height="512" rx="116" fill="url(#glow)"/>
   <circle cx="212" cy="256" r="104" fill="#ffffff"/>
   <circle cx="300" cy="256" r="104" fill="#9db8ff" fill-opacity=".55"/>
-  <polygon points="256.0,214.0 266.6,243.4 297.8,244.4 273.1,263.6 281.9,293.6 256.0,276.0 230.1,293.6 238.9,263.6 214.2,244.4 245.4,243.4" fill="#2b3a74" stroke="#2b3a74" stroke-width="8" stroke-linejoin="round"/>
+  <g transform="translate(256 258) scale(0.36) translate(-256 -251)" fill="#2b3a74" stroke="#2b3a74">
+    <path d="M168 142h176v66a88 88 0 0 1-176 0z" stroke="none"/>
+    <path d="M168 176h-22c-30 0-30 62 0 62h26M344 176h22c30 0 30 62 0 62h-26" fill="none" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="243" y="292" width="26" height="46" stroke="none"/>
+    <rect x="196" y="334" width="120" height="26" rx="13" stroke="none"/>
+  </g>
 </svg>

@@ -390,12 +390,6 @@ export function Club({
                   <span className="skel month-chip-skel" aria-hidden />
                 )}
               </div>
-              <div className="home-top-search">
-                <button type="button" className="find-btn" onClick={onFind}>
-                  <Icon name="search" size={18} />
-                  <span>{t(locale, "find")}</span>
-                </button>
-              </div>
             </div>
           </div>
           {!clubReady && <HomeBodySkel />}

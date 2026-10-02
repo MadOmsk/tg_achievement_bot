@@ -67,19 +67,22 @@ export function PersonSheet({
 
   return (
     <Sheet onClose={onClose} mid>
-      <div className="sheet-content person-sheet">
+      <div className="person-sheet">
+        <div className="ps-scroll">
         <div className="ps-head">
           <Avatar
             name={person.handle}
             tgId={person.tg_id ?? undefined}
             online={online}
             playing={Boolean(presence?.playing)}
-            size={88}
+            size={64}
           />
-          <h2>{person.handle}</h2>
-          {(status || tie) && (
-            <p className="ps-sub">{[tie, status].filter(Boolean).join(" · ")}</p>
-          )}
+          <div className="ps-head-copy">
+            <h2>{person.handle}</h2>
+            {(status || tie) && (
+              <p className="ps-sub">{[tie, status].filter(Boolean).join(" · ")}</p>
+            )}
+          </div>
         </div>
 
         <div className="ps-stats">
@@ -104,10 +107,13 @@ export function PersonSheet({
         )}
 
         {activity && activity.platforms.length > 0 && (
-          <div className="ps-list">
+          <div className="ps-section">
+            <p className="ps-label">{t(locale, "accounts")}</p>
             {activity.platforms.map((p) => (
               <div key={p.platform} className="ps-row">
-                <PlatformLogo platform={p.platform} size={22} />
+                <span className="ps-mark">
+                  <PlatformLogo platform={p.platform} size={22} />
+                </span>
                 <span className="ps-row-main">{p.name}</span>
                 <span className="ps-row-value">
                   {p.achievement_count ?? p.trophy_count ?? 0}
@@ -118,7 +124,8 @@ export function PersonSheet({
         )}
 
         {activity && activity.recent.length > 0 && (
-          <div className="ps-list">
+          <div className="ps-section">
+            <p className="ps-label">{t(locale, "recentUnlocks")}</p>
             {activity.recent.map((item) => (
               <div key={`${item.platform}:${item.title_id}:${item.achievement_id}`} className="ps-row">
                 {item.icon_url ? (
@@ -127,13 +134,15 @@ export function PersonSheet({
                   <span className="ps-icon" aria-hidden />
                 )}
                 <span className="ps-row-main">
-                  <strong>{item.is_secret ? "•••" : item.name}</strong>
+                  <strong>{item.is_secret ? t(locale, "secretAchievement") : item.name}</strong>
                   {item.game && <small>{item.game}</small>}
                 </span>
               </div>
             ))}
           </div>
         )}
+
+        </div>
 
         <div className="ps-actions">
           <FollowButton

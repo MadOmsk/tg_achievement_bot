@@ -64,10 +64,9 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
       <img className="login-mark" src="/logo.svg" alt="" width={96} height={96} />
       <h1>{t(locale, "loginTitle")}</h1>
       <p className="login-text">{t(locale, "loginText")}</p>
-      {bot === null && <p className="plat-note is-warn">{t(locale, "loginUnavailable")}</p>}
+      {bot === null && <p className="login-text">{t(locale, "loginUnavailable")}</p>}
       <div ref={holder} className="login-widget" />
-      {error && <p className="plat-note is-error">{error}</p>}
-      <p className="login-soon">{t(locale, "loginWhatsapp")}</p>
+      {error && <p className="login-error">{error}</p>}
     </div>
   );
 }

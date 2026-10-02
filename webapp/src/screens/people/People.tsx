@@ -126,7 +126,9 @@ export function People({
       <header className="page-head">
         <h1>{t(locale, "people")}</h1>
       </header>
-      <SearchBar locale={locale} value={query} onChange={setQuery} focusKey={focusSearch} />
+      <SearchBar locale={locale} value={query} onChange={setQuery} focusKey={focusSearch}
+        placeholder={t(locale, "searchPeople")}
+      />
       {searching ? (
         hits === null ? null : hits.length === 0 ? (
           <p className="empty">{t(locale, "noResults")}</p>
