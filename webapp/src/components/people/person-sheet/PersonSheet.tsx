@@ -95,7 +95,6 @@ export function PersonSheet({
             <div className="ps-stats" aria-hidden>
               <span className="skel ps-skel-tile" />
               <span className="skel ps-skel-tile" />
-              <span className="skel ps-skel-tile" />
             </div>
             <div className="ps-section" aria-hidden>
               <span className="skel ps-skel-label" />
@@ -128,12 +127,6 @@ export function PersonSheet({
             <strong>{profile?.following ?? "–"}</strong>
             <span>{t(locale, "followingCount")}</span>
           </div>
-          {activity && (
-            <div>
-              <strong>{activity.month.count}</strong>
-              <span>{t(locale, "perMonth")}</span>
-            </div>
-          )}
         </div>
         )}
 
@@ -160,7 +153,10 @@ export function PersonSheet({
 
         {activity && activity.recent.length > 0 && (
           <div className="ps-section">
-            <p className="ps-label">{t(locale, "recentUnlocks")}</p>
+            <p className="ps-label">
+              {t(locale, "recentUnlocks")}
+              {activity.month.count > 0 && <span className="ps-count">{activity.month.count}</span>}
+            </p>
             {activity.recent.map((item) => (
               <div key={`${item.platform}:${item.title_id}:${item.achievement_id}`} className="ps-row">
                 {item.icon_url ? (
