@@ -281,6 +281,9 @@ every column. History: #106.
   email only to follow friends. Merging two people is the person's own request:
   the same platform accounts (or one side empty) merge at once; a conflict (two
   different Steam ids) is put to the person, and settings come from the fresher side.
+  **A super-admin stays an ordinary person named by `ADMIN_TG_IDS`** (owner,
+  2026-10-02): no role field. So a super-admin must always keep a Telegram id —
+  nothing (unlinking a login, a merge) may leave them without one.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
