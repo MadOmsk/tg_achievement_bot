@@ -109,8 +109,14 @@ class XboxAuthService:
     # ------------------------------------------------------------- sign-in
 
     def authorization_url(self, state: str) -> str:
-        """URL of the Microsoft consent screen. `state` carries the tg_id."""
-        return self._manager().generate_authorization_url(state)
+        """URL of the Microsoft consent screen. `state` carries the tg_id.
+
+        `prompt=select_account` makes Microsoft ask which account to use instead
+        of signing in silently with whichever one the browser remembers: one
+        browser often serves several Telegram accounts, and a silent sign-in kept
+        offering an Xbox account somebody else already holds."""
+        url = self._manager().generate_authorization_url(state)
+        return url + ("&" if "?" in url else "?") + "prompt=select_account"
 
     async def exchange_code(self, code: str) -> XboxIdentity:
         """Finish the OAuth callback: code -> tokens -> XUID and gamertag.

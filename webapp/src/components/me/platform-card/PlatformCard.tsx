@@ -1,4 +1,4 @@
-import { Icon, InfoRow, NavRow, PlatformLogo, RowLink } from "../../shared/lib";
+import { Icon, InfoRow, NavRow, PlatformLogo } from "../../shared/lib";
 import { t, type Locale } from "../../../i18n";
 
 export type PlatNote = { kind: "error" | "warn" | "info"; text: string };
@@ -73,7 +73,9 @@ export function PlatformCard({
     return (
       <>
         <InfoRow lead={logo} label={title}>
-          <RowLink onClick={onConnect}>{t(locale, "connect")}</RowLink>
+          <button type="button" className="btn sm" onClick={onConnect}>
+            {t(locale, "connect")}
+          </button>
         </InfoRow>
         {shownNotes.map((note) => (
           <p key={note.text} className={`fr-note is-${note.kind}`}>

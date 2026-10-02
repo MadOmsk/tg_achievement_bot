@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AccountPlatform, MeResponse } from "../../../api";
-import { rarityLabel, t, timezoneLabel, type Locale } from "../../../i18n";
+import { t, timezoneLabel, type Locale } from "../../../i18n";
 import {
   BackHead,
   ChoiceRow,
@@ -124,11 +124,12 @@ export function Settings({
     : [];
 
   const back = () => setPane(SETTINGS_PANES.ROOT);
-  const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-  const rarityOptions = [RARITY_MODES.ALL, RARITY_MODES.RARE, RARITY_MODES.HIDDEN].map((m) => ({
-    value: m as string,
-    label: cap(rarityLabel(m, locale)),
-  }));
+  // Said as what goes to the chats, not as a rarity: "everything", "only rare", "nothing".
+  const publishOptions = [
+    { value: RARITY_MODES.ALL as string, label: t(locale, "publishAll") },
+    { value: RARITY_MODES.RARE as string, label: t(locale, "publishRare") },
+    { value: RARITY_MODES.HIDDEN as string, label: t(locale, "publishNone") },
+  ];
   // A sentinel for "no timezone set": a select's options are all of one type.
   const TZ_UNSET = -100000;
   const tzOptions = [
@@ -151,7 +152,15 @@ export function Settings({
   }
 
   if (pane === SETTINGS_PANES.PRIVACY) {
-    return <PrivacyPane locale={locale} data={data} onBack={back} onFlash={onFlash} />;
+    return (
+      <PrivacyPane
+        locale={locale}
+        data={data}
+        initial={me.settings.activity_visible ?? "all"}
+        onBack={back}
+        onFlash={onFlash}
+      />
+    );
   }
 
   if (pane === SETTINGS_PANES.PUBLISHING) {
@@ -196,22 +205,27 @@ export function Settings({
     return (
       <>
         <BackHead title={t(locale, "publishing")} backLabel={t(locale, "back")} onBack={back} />
-        <Group hint={t(locale, "publishingHint")}>
-          {/* One mode for every chat this person publishes to (#126). */}
-          <ChoiceRow
-            label={t(locale, "rarity")}
-            value={me.settings.rarity_mode ?? RARITY_MODES.ALL}
-            options={rarityOptions}
-            onChange={(v) => onPatch({ rarity_mode: v })}
-          />
+        {/* First what the app shows you; then what goes to the chats: what,
+            where, from which accounts — one question per group. */}
+        <Group>
           <ToggleRow
             label={t(locale, "showSecrets")}
             on={me.settings.show_secrets}
             onChange={(on) => onPatch({ show_secrets: on })}
           />
         </Group>
+        <Group title={t(locale, "publishingWhat")}>
+          {/* One mode for every chat this person publishes to (#126). */}
+          <SelectRow
+            label={t(locale, "publishingWhich")}
+            sub={t(locale, "publishingWhatHint")}
+            value={me.settings.rarity_mode ?? RARITY_MODES.ALL}
+            options={publishOptions}
+            onChange={(v) => onPatch({ rarity_mode: v })}
+          />
+        </Group>
 
-        <Group title={t(locale, "publishingChats")}>
+        <Group title={t(locale, "publishingWhere")}>
           {me.chats.length === 0 ? (
             <InfoRow label={t(locale, "noChatsShort")} />
           ) : (
@@ -236,7 +250,7 @@ export function Settings({
         </Group>
 
         {accountSwitches.length > 0 && (
-          <Group title={t(locale, "publishingAccounts")}>
+          <Group title={t(locale, "publishingFrom")}>
             {accountSwitches.map((item) => (
               <ToggleRow
                 key={item.key}

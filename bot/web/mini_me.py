@@ -46,6 +46,11 @@ async def handle_block(repo: Repo, tg_id: int) -> dict[str, Any] | None:
     }
 
 
+async def _activity_visible(repo: Repo, tg_id: int) -> str:
+    person = await repo.person_id(tg_id)
+    return await repo.activity_visible(person) if person is not None else "all"
+
+
 async def build_me_payload(
     repo: Repo,
     *,
@@ -98,6 +103,8 @@ async def build_me_payload(
             "show_secrets": show_secrets,
             # Which achievements go out, in every chat (#126).
             "rarity_mode": settings_row.rarity_mode if settings_row else "all",
+            # Who sees this person's activity in the app (#157).
+            "activity_visible": await _activity_visible(repo, tg_id),
         },
         "xbox": await _xbox_block(
             repo,

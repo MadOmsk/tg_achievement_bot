@@ -825,7 +825,9 @@ async def handle_game_details(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     catalog_service: TitleCatalogService = request.app["mini_title_catalog"]
 
-    # Whose progress: the caller's own unless another club member is named.
+    # Whose progress: the caller's own unless somebody else is named — anybody
+    # whose privacy setting lets the caller see their activity (#157), not only
+    # people from a shared chat.
     viewed_id = user.tg_id
     raw_viewed = request.query.get("tg_id")
     if raw_viewed:
@@ -836,10 +838,8 @@ async def handle_game_details(request: web.Request) -> web.Response:
     if viewed_id != user.tg_id:
         if await repo.get_user(viewed_id) is None:
             raise web.HTTPNotFound(text="person not found")
-        mine = {c.chat_id for c in await repo.user_chats(user.tg_id)}
-        theirs = {c.chat_id for c in await repo.user_chats(viewed_id)}
-        if not mine & theirs:
-            raise web.HTTPForbidden(text="not a member")
+        if not await _may_see_activity(repo, user.tg_id, viewed_id):
+            raise web.HTTPForbidden(text="activity hidden")
 
     checklist = await catalog_service.get_title_checklist_for_user(
         platform, title_id, tg_id=viewed_id, force=force

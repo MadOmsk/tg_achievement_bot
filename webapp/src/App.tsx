@@ -403,6 +403,10 @@ export function App() {
           refreshKey={refreshKey}
           focusSearch={focusSearch}
           onFlash={setFlash}
+          onOpenProfile={(id) => {
+            setPersonId(id);
+            setScreen(SCREENS.home);
+          }}
         />
       )}
 
@@ -568,9 +572,9 @@ export function App() {
             type="button"
             className={isPeople ? "is-on" : undefined}
             onClick={() => goTab(SCREEN_NAMES.PEOPLE)}
-            aria-label={t(locale, "people")}
+            aria-label={t(locale, "searchTitle")}
           >
-            <Icon name="people" filled={isPeople} />
+            <Icon name="search" filled={isPeople} />
           </button>
           <button
             type="button"

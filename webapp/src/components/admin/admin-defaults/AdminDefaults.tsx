@@ -5,7 +5,7 @@ import {
   type AdminDefaults as AdminDefaultsType,
 } from "../../../api";
 import { rarityLabel, t, type Locale } from "../../../i18n";
-import { BackHead, ChoiceRow, Group, NumberRow, SettingsSkel, ToggleRow } from "../../shared/lib";
+import { BackHead, Group, NumberRow, SelectRow, SettingsSkel, ToggleRow } from "../../shared/lib";
 import { RARITY_MODES } from "../../shared/constants";
 
 /** Rules that hold for everybody: the rarity threshold, new people's mode and
@@ -53,7 +53,7 @@ export function AdminDefaults({
             />
           </Group>
           <Group hint={t(locale, "adminRulesRarityHint")}>
-            <ChoiceRow
+            <SelectRow
               label={t(locale, "defaultsRarity")}
               value={defaults.rarity_mode}
               options={modes}

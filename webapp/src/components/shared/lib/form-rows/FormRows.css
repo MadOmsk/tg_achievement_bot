@@ -50,6 +50,13 @@
   box-sizing: border-box;
 }
 
+.fr-sub {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 .fr-row.is-static {
   cursor: default;
 }
@@ -80,7 +87,7 @@
 }
 
 .fr-label {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -105,8 +112,8 @@
 }
 
 .fr-value {
-  flex: 0 1 auto;
-  max-width: 55%;
+  flex: 0 0 auto;
+  max-width: 60%;
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 650;
@@ -116,15 +123,6 @@
   white-space: nowrap;
 }
 
-.fr-select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  font-size: 16px;
-}
 
 .fr-number {
   flex: none;

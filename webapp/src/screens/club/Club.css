@@ -353,3 +353,37 @@
   font-size: 0.9rem;
   line-height: 1.45;
 }
+
+.pane-switch {
+  gap: 8px;
+}
+
+.pane-switch h1 {
+  margin: 0;
+}
+
+.pane-switch .dd-arrow {
+  width: 18px;
+  height: 18px;
+  color: var(--text);
+}
+
+.section-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.friends + .achievements-head,
+.friends-empty + .achievements-head {
+  margin-top: 14px;
+}
+
+.friends:has(+ .achievements-head) {
+  margin-bottom: 4px;
+}
+
+.month-chip .dd-arrow {
+  transform: none;
+  margin-top: 0;
+}

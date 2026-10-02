@@ -144,6 +144,7 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+.see-all,
 .section-head .see-all,
 .rows-head .see-all {
   display: inline-flex;

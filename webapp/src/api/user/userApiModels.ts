@@ -52,6 +52,8 @@ export type MeResponse = {
     show_secrets: boolean;
     /** Which achievements go out, in every chat (#126). */
     rarity_mode: string;
+    /** Who sees this person's activity in the app (#157). */
+    activity_visible?: "all" | "friends" | "nobody";
   };
   xbox: {
     linked: boolean;

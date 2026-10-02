@@ -1,0 +1,57 @@
+.follows-switch {
+  gap: 8px;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+}
+
+.follows-switch .dd-arrow {
+  color: var(--text);
+}
+
+.follows-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.follows-line:last-child {
+  border-bottom: 0;
+}
+
+.follows-line .picker-row {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.follows-line .follow-btn {
+  flex: none;
+}
+
+.follows-skel-ava {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.follows-skel-name {
+  width: 40%;
+  height: 14px;
+}
+
+.follows-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.follows-empty p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}

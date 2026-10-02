@@ -109,10 +109,6 @@ class _FollowsRepo:
         )
         await self._conn.commit()
 
-    async def remove_follower(self, me: int, other: int) -> None:
-        """Make `other` stop following `me`, without a block."""
-        await self.unfollow(other, me)
-
     async def block(self, me: int, other: int) -> bool:
         if me == other:
             return False

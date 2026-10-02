@@ -13,17 +13,18 @@ import {
 } from "../../api";
 import { t, type Locale } from "../../i18n";
 import { FeedPosts, HiddenProfile, PersonProfile, PlayedGames, RecentPosts } from "../person";
-import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
   MonthSheet,
-  RosterSheet,
   formatMonth,
   statusOf,
 } from "../../components/club";
 import { Icon } from "../../components/shared/lib/icon/Icon";
 import { SCREEN_NAMES, type ClubPane } from "../../components/shared/constants";
+import { FollowsSheet } from "../../components/club/follows-sheet/FollowsSheet";
+import { PersonSheet, type SheetPerson } from "../../components/people/person-sheet/PersonSheet";
 import "./Club.css";
 
 const FRIENDS_PREVIEW = 6;
@@ -86,6 +87,7 @@ export function Club({
   const [rosterOpen, setRosterOpen] = useState(false);
   const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [author, setAuthor] = useState<SheetPerson | null>(null);
   const feedRef = useRef(feed);
   const onlineRef = useRef(online);
   feedRef.current = feed;
@@ -218,6 +220,20 @@ export function Club({
   const openPerson = (tgId: number) => {
     onOpenPerson?.(tgId);
   };
+  // Someone's card: from a feed author, or from the nickname on a profile.
+  const authorSheet = author && (
+    <PersonSheet
+      locale={locale}
+      data={data}
+      person={author}
+      onClose={() => setAuthor(null)}
+      onFlash={onFlash}
+      onOpenProfile={(id) => {
+        setAuthor(null);
+        if (id !== openPersonId) openPerson(id);
+      }}
+    />
+  );
 
   // One picker for every pane: moving the month refetches the feed, the
   // summary and "my" games together, so wherever it was opened from, every
@@ -266,11 +282,31 @@ export function Club({
     selectedMonth && earlier
       ? { label: t(locale, "emptyPrevMonth"), onClick: () => pickMonth(earlier) }
       : undefined;
+  // The Feed and the Ranking share one dock tab; the page title picks between
+  // them, and more views can join the list later.
+  const paneSwitch = (
+    <Dropdown
+      className="dd-trigger pane-switch"
+      align="start"
+      value={pane === SCREEN_NAMES.SUMMARY ? SCREEN_NAMES.SUMMARY : SCREEN_NAMES.FEED}
+      options={[
+        { value: SCREEN_NAMES.FEED, label: t(locale, "feed") },
+        { value: SCREEN_NAMES.SUMMARY, label: t(locale, "ranking") },
+      ]}
+      onChange={(next) => onPane(next)}
+      trigger={
+        <>
+          <h1>{t(locale, pane === SCREEN_NAMES.SUMMARY ? "ranking" : "feed")}</h1>
+          <DropdownArrow />
+        </>
+      }
+    />
+  );
   const monthChip = (ym: string) =>
     ym && (
       <button type="button" className="month-chip" onClick={() => setMonthPicker(true)}>
         <span>{formatMonth(ym, locale, "chip")}</span>
-        <Icon name="forward" size={17} />
+        <DropdownArrow />
       </button>
     );
   // No provisional, half-loaded view: the page stays on the skeleton until
@@ -278,7 +314,6 @@ export function Club({
   // is ready, so it appears once, whole, instead of in visible stages.
   const openProfile =
     openPersonId && person && person.tg_id === openPersonId ? person : null;
-  const [scoreOpen, setScoreOpen] = useState(false);
   // A past month never changes once fetched — pull-to-refresh would just
   // reset the view back to the live month instead of refreshing anything.
   const isPastMonth = Boolean(selectedMonth) && Boolean(liveMonth) && selectedMonth !== liveMonth;
@@ -311,6 +346,7 @@ export function Club({
         <div className="pane-fade" data-no-pull={isPastMonth || undefined}>
         <PersonProfile
           person={openProfile}
+          onOpenCard={() => setAuthor({ tg_id: openProfile.tg_id, handle: openProfile.name })}
           status={
             statusOf(online.find((m) => m.tg_id === openProfile.tg_id)) ??
             t(locale, "notOnline")
@@ -326,6 +362,7 @@ export function Club({
           onReveal={(key) => setRevealed(new Set(revealed).add(key))}
         />
         </div>
+        {authorSheet}
       {monthPicker && (
         <MonthSheet
           months={months}
@@ -368,7 +405,7 @@ export function Club({
                   <AccountBar
                     me={me}
                     locale={locale}
-                    onProfile={() => setScoreOpen(true)}
+                    onProfile={() => undefined}
                     status={
                       statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
                       t(locale, "notOnline")
@@ -378,8 +415,6 @@ export function Club({
                         locale={locale}
                         lines={meScoreLines(me, locale)}
                         markSize={12}
-                        open={scoreOpen}
-                        onOpenChange={setScoreOpen}
                       />
                     }
                   />
@@ -470,14 +505,7 @@ export function Club({
       {pane === SCREEN_NAMES.FEED && (
         <>
           <header className="page-head is-split">
-            <div className="segment feed-switch" role="group">
-              <button type="button" className={"is-on"} onClick={() => onPane(SCREEN_NAMES.FEED)}>
-                {t(locale, "feed")}
-              </button>
-              <button type="button" className={undefined} onClick={() => onPane(SCREEN_NAMES.SUMMARY)}>
-                {t(locale, "ranking")}
-              </button>
-            </div>
+            {paneSwitch}
             {clubReady ? (
               monthChip(selectedMonth)
             ) : (
@@ -500,7 +528,15 @@ export function Club({
               revealed={revealed}
               showSecrets={showSecrets}
               onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-              onOpenPerson={openPerson}
+              onOpenPerson={(id) => {
+                // The author's card first; the full profile is a tap away in it.
+                if (id === me.tg_id) {
+                  openPerson(id);
+                  return;
+                }
+                const post = feed.find((row) => row.tg_id === id);
+                setAuthor({ tg_id: id, handle: post?.person ?? "" });
+              }}
             />
           )}
         </>
@@ -509,14 +545,7 @@ export function Club({
       {pane === SCREEN_NAMES.SUMMARY && (
         <>
           <header className="page-head is-split">
-            <div className="segment feed-switch" role="group">
-              <button type="button" className={undefined} onClick={() => onPane(SCREEN_NAMES.FEED)}>
-                {t(locale, "feed")}
-              </button>
-              <button type="button" className={"is-on"} onClick={() => onPane(SCREEN_NAMES.SUMMARY)}>
-                {t(locale, "ranking")}
-              </button>
-            </div>
+            {paneSwitch}
             {clubReady ? (
               monthChip(selectedMonth)
             ) : (
@@ -549,14 +578,19 @@ export function Club({
       </div>
 
       {rosterOpen && (
-        <RosterSheet
-          members={others}
+        <FollowsSheet
           locale={locale}
+          data={data}
           onClose={() => setRosterOpen(false)}
           onOpen={(id) => {
             setRosterOpen(false);
             openPerson(id);
           }}
+          onFind={() => {
+            setRosterOpen(false);
+            onFind();
+          }}
+          onFlash={onFlash}
         />
       )}
       {monthPicker && (
@@ -569,6 +603,7 @@ export function Club({
           onPick={pickMonth}
         />
       )}
+      {authorSheet}
     </>
   );
 }

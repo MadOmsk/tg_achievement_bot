@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
-import { peopleApi, type PersonProfile, type PersonRow, type Relation } from "../../../api/people/peopleApi";
+import { peopleApi, type PersonProfile, type Relation } from "../../../api/people/peopleApi";
 import { t, type Locale } from "../../../i18n";
-import { Avatar, CoverImg, PlatformLogo, Sheet, useOpenGame } from "../../shared/lib";
+import { Avatar, CoverImg, Dropdown, PlatformLogo, Sheet, useOpenGame } from "../../shared/lib";
 import { FollowButton } from "../follow-button/FollowButton";
 import "./PersonSheet.css";
 
 /** A person's card in the People tab (#157): who they are, the follow button beside
  * the name, how many follow them, their accounts and this month's games (when their
  * privacy lets you see them), and quiet remove-follower and block links below. */
+const EMPTY: Relation = { following: false, followed_by: false, friends: false, blocked: false };
+
+export type SheetPerson = {
+  id?: number | null;
+  tg_id: number | null;
+  handle: string;
+  relation?: Relation;
+};
+
 export function PersonSheet({
   locale,
   data,
@@ -15,37 +24,55 @@ export function PersonSheet({
   onClose,
   onChange,
   onFlash,
+  onOpenProfile,
 }: {
   locale: Locale;
   data: string;
-  person: PersonRow;
+  /** Who: a row from the People lists, or just the author of a feed post. */
+  person: SheetPerson;
   onClose: () => void;
-  onChange: (relation: Relation) => void;
+  onChange?: (relation: Relation) => void;
   onFlash: (message: string) => void;
+  /** Tapping the avatar or the nickname opens the full profile. */
+  onOpenProfile?: (tgId: number) => void;
 }) {
   const [profile, setProfile] = useState<PersonProfile | null>(null);
   const [busy, setBusy] = useState(false);
+  const [own, setOwn] = useState<Relation | null>(person.relation ?? null);
   const openGame = useOpenGame();
-  const relation = person.relation;
+  const relation = own ?? profile?.relation ?? EMPTY;
+  const personId = person.id ?? profile?.id ?? null;
+  const tgId = person.tg_id ?? profile?.tg_id ?? null;
+  const handle = profile?.handle ?? person.handle;
 
   useEffect(() => {
     let cancelled = false;
-    peopleApi
-      .profile(data, person.id)
-      .then((res) => {
+    const call =
+      person.id != null
+        ? peopleApi.profile(data, person.id)
+        : person.tg_id != null
+          ? peopleApi.profileByTg(data, person.tg_id)
+          : null;
+    call
+      ?.then((res) => {
         if (!cancelled) setProfile(res);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [data, person.id, relation.following, relation.blocked, relation.followed_by]);
+  }, [data, person.id, person.tg_id, own?.following, own?.blocked, own?.followed_by]);
+
+  const changed = (next: Relation) => {
+    setOwn(next);
+    onChange?.(next);
+  };
 
   const act = (call: Promise<{ relation: Relation }>) => {
     if (busy) return;
     setBusy(true);
     void call
-      .then((res) => onChange(res.relation))
+      .then((res) => changed(res.relation))
       .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
       .finally(() => setBusy(false));
   };
@@ -60,28 +87,37 @@ export function PersonSheet({
       : activity
         ? t(locale, "notOnline")
         : "";
-  const tie = relation.friends
-    ? t(locale, "friendsBtn")
-    : relation.followed_by
-      ? t(locale, "followsYou")
-      : "";
+  // "Friends" already reads on the button; only a one-way follower is said here.
+  const tie = relation.followed_by && !relation.following ? t(locale, "followsYou") : "";
   const loading = profile === null;
   const games = activity?.games ?? [];
+
+  const toProfile = tgId != null && onOpenProfile ? () => onOpenProfile(tgId) : undefined;
 
   return (
     <Sheet onClose={onClose} mid>
       <div className="person-sheet">
         <div className="ps-head">
+          <button type="button" className="ps-avatar" onClick={toProfile} disabled={!toProfile}>
           <Avatar
-            name={person.handle}
-            tgId={person.tg_id ?? undefined}
+            name={handle}
+            tgId={tgId ?? undefined}
             online={online}
             playing={Boolean(presence?.playing)}
             platform={presence?.platform}
             size={56}
           />
+          </button>
           <div className="ps-head-copy">
-            <h2>{person.handle}</h2>
+            <h2>
+              {toProfile ? (
+                <button type="button" className="ps-name" onClick={toProfile}>
+                  {handle}
+                </button>
+              ) : (
+                handle
+              )}
+            </h2>
             {loading ? (
               <span className="skel ps-skel-line" aria-hidden />
             ) : (
@@ -90,14 +126,32 @@ export function PersonSheet({
               )
             )}
           </div>
-          <FollowButton
-            locale={locale}
-            data={data}
-            personId={person.id}
-            relation={relation}
-            onChange={onChange}
-            onFlash={onFlash}
-          />
+          {personId != null && (
+            <>
+              <FollowButton
+                locale={locale}
+                data={data}
+                personId={personId}
+                relation={relation}
+                onChange={changed}
+                onFlash={onFlash}
+              />
+              {!relation.following && !relation.blocked && (
+                // Not following yet: blocking waits behind "⋯".
+                <Dropdown
+                  className="dd-trigger ps-more"
+                  label={t(locale, "more")}
+                  value=""
+                  options={[{ value: "block", label: t(locale, "block"), danger: true }]}
+                  onChange={() => {
+                    if (busy || !window.confirm(t(locale, "confirmBlock"))) return;
+                    act(peopleApi.block(data, personId));
+                  }}
+                  trigger={<span aria-hidden>⋯</span>}
+                />
+              )}
+            </>
+          )}
         </div>
 
         {loading ? (
@@ -180,7 +234,7 @@ export function PersonSheet({
                           name: game.name,
                           icon_url: game.cover,
                           person:
-                            person.tg_id != null ? { tg_id: person.tg_id, name: person.handle } : null,
+                            tgId != null ? { tg_id: tgId, name: handle } : null,
                         })
                       }
                     >
@@ -195,34 +249,6 @@ export function PersonSheet({
           </>
         )}
 
-        <div className="ps-quiet">
-          {relation.followed_by && !relation.blocked && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => act(peopleApi.removeFollower(data, person.id))}
-            >
-              {t(locale, "removeFollower")}
-            </button>
-          )}
-          {relation.blocked ? (
-            <button type="button" disabled={busy} onClick={() => act(peopleApi.unblock(data, person.id))}>
-              {t(locale, "unblock")}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="is-danger"
-              disabled={busy}
-              onClick={() => {
-                if (!window.confirm(t(locale, "confirmBlock"))) return;
-                act(peopleApi.block(data, person.id));
-              }}
-            >
-              {t(locale, "block")}
-            </button>
-          )}
-        </div>
       </div>
     </Sheet>
   );

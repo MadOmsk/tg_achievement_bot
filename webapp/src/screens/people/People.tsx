@@ -4,6 +4,8 @@ import { t, type Locale } from "../../i18n";
 import { Avatar, EmptyState, SearchBar } from "../../components/shared/lib";
 import { PersonSheet } from "../../components/people/person-sheet/PersonSheet";
 import { FollowButton } from "../../components/people/follow-button/FollowButton";
+import { GameHits, GameSheet, useHltbSearch } from "../../components/hltb";
+import type { HltbHit } from "../../api";
 import "./People.css";
 
 const SEARCH_MIN = 3;
@@ -22,6 +24,7 @@ export function People({
   refreshKey,
   focusSearch,
   onFlash,
+  onOpenProfile,
 }: {
   locale: Locale;
   data: string;
@@ -29,12 +32,16 @@ export function People({
   /** Opened through the Find button: put the cursor in the search field. */
   focusSearch?: boolean;
   onFlash: (message: string) => void;
+  /** Open someone's full profile page. */
+  onOpenProfile?: (tgId: number) => void;
 }) {
   const [query, setQuery] = useState("");
   const [lists, setLists] = useState<Lists | null>(null);
   const [hits, setHits] = useState<PersonRow[] | null>(null);
   const [open, setOpen] = useState<PersonRow | null>(null);
   const searchSeq = useRef(0);
+  const [game, setGame] = useState<HltbHit | null>(null);
+  const games = useHltbSearch(data, query, locale, onFlash);
 
   const load = useCallback(async () => {
     try {
@@ -116,25 +123,39 @@ export function People({
       </>
     );
 
-  const searching = query.trim().length >= SEARCH_MIN;
+  // Games are found from two letters, people from three (their nicknames).
+  const searching = query.trim().length >= 2;
   const empty =
     lists !== null &&
-    lists.following.length + lists.followers.length + lists.suggested.length === 0;
+    lists.suggested.length === 0;
 
   return (
     <>
       <header className="page-head">
-        <h1>{t(locale, "people")}</h1>
+        <h1>{t(locale, "searchTitle")}</h1>
       </header>
       <SearchBar locale={locale} value={query} onChange={setQuery} focusKey={focusSearch}
-        placeholder={t(locale, "searchPeople")}
+        placeholder={t(locale, "searchHint")}
       />
       {searching ? (
-        hits === null ? null : hits.length === 0 ? (
-          <p className="empty">{t(locale, "noResults")}</p>
-        ) : (
-          <div className="people-list">{hits.map(line)}</div>
-        )
+        <div className="search-pane">
+          {hits && hits.length > 0 && (
+            <>
+              <p className="kicker">{t(locale, "people")}</p>
+              <div className="people-list">{hits.map(line)}</div>
+            </>
+          )}
+          <GameHits
+            hits={games.hits}
+            busy={games.busy}
+            searched={games.searched}
+            locale={locale}
+            onOpen={setGame}
+          />
+          {!games.busy && games.searched && games.hits.length === 0 && hits?.length === 0 && (
+            <p className="empty">{t(locale, "noResults")}</p>
+          )}
+        </div>
       ) : (
         <>
           {query.trim() !== "" && <p className="people-hint">{t(locale, "searchMin")}</p>}
@@ -145,8 +166,6 @@ export function People({
             />
           ) : (
             <>
-              {section("peopleFollowing", lists.following)}
-              {section("peopleFollowers", lists.followers)}
               {section("peopleSuggested", lists.suggested)}
             </>
           )}
@@ -159,6 +178,23 @@ export function People({
           person={open}
           onClose={() => setOpen(null)}
           onChange={(relation) => apply(open.id, relation)}
+          onFlash={onFlash}
+          onOpenProfile={
+            onOpenProfile
+              ? (id) => {
+                  setOpen(null);
+                  onOpenProfile(id);
+                }
+              : undefined
+          }
+        />
+      )}
+      {game && (
+        <GameSheet
+          preview={game}
+          data={data}
+          locale={locale}
+          onClose={() => setGame(null)}
           onFlash={onFlash}
         />
       )}

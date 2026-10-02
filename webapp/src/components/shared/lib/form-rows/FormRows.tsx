@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Chevron } from "../rows/Rows";
+import { Dropdown, DropdownArrow } from "../dropdown/Dropdown";
 import { Toggle } from "../toggle/Toggle";
 import "./FormRows.css";
 
@@ -41,7 +42,7 @@ function Label({ label, sub, lead }: { label: ReactNode; sub?: ReactNode; lead?:
       {lead && <span className="fr-lead">{lead}</span>}
       <span className="fr-label">
         <span className="fr-text">{label}</span>
-        {sub && <small>{sub}</small>}
+        {sub && <small className="fr-sub">{sub}</small>}
       </span>
     </>
   );
@@ -156,7 +157,7 @@ export function ChoiceRow<T extends string>({
   );
 }
 
-/** Many options: the value and a chevron, the system picker underneath. */
+/** Many options: the value and a small arrow; the app's own dropdown opens. */
 export function SelectRow<T extends string | number>({
   label,
   sub,
@@ -172,26 +173,20 @@ export function SelectRow<T extends string | number>({
 }) {
   const shown = options.find((o) => o.value === value)?.label ?? "";
   return (
-    <label className="fr-row">
-      <Label label={label} sub={sub} />
-      <span className="fr-value">{shown}</span>
-      <Chevron />
-      <select
-        className="fr-select"
-        value={String(value)}
-        aria-label={typeof label === "string" ? label : undefined}
-        onChange={(e) => {
-          const picked = options.find((o) => String(o.value) === e.target.value);
-          if (picked) onChange(picked.value);
-        }}
-      >
-        {options.map((o) => (
-          <option key={String(o.value)} value={String(o.value)}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Dropdown
+      className="fr-row"
+      value={value}
+      options={options}
+      onChange={onChange}
+      label={typeof label === "string" ? label : undefined}
+      trigger={
+        <>
+          <Label label={label} sub={sub} />
+          <span className="fr-value">{shown}</span>
+          <DropdownArrow />
+        </>
+      }
+    />
   );
 }
 

@@ -720,8 +720,8 @@ elsewhere in this file still describe the bot.
     `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.
 - **Follows, as on Xbox** (backend shipped, migration 073): following is one-way and
   needs no consent; following each other makes two people friends — friends are
-  not stored, they are two rows in `follows`. A person can remove a follower and
-  block someone (a block deletes the follows between the two and hides each from
+  not stored, they are two rows in `follows`. A person can unfollow and block someone; a follower is never removed by the
+  one followed (owner, 2026-10-02) — blocking is the way to end it (a block deletes the follows between the two and hides each from
   the other's search and lists; the blocked one cannot follow). Search is by
   nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
   People from a shared chat (subscribed or seen writing) are suggested. A new
@@ -748,7 +748,7 @@ elsewhere in this file still describe the bot.
   strip of people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. Search lives only on the People tab; Home's empty friends block links there («Искать», search focused) (people only — games are not searched; the Mini App's HowLongToBeat search screens were removed on 2026-10-02, `/hltb` in Telegram stays, and the game page still shows HLTB's data), and with no friends yet the strip says so. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their card (`PersonSheet`, `/api/mini/people/tg/{tg_id}`); its avatar or nickname opens the full profile. The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Browser sign-in** (shipped, Telegram only; migration 074): in a plain browser the
@@ -770,6 +770,13 @@ elsewhere in this file still describe the bot.
   composes these and never styles a row of its own; destructive actions are red rows in
   a last group of their own. The Mini App's admin sets the global rarity threshold under
   «Общие правила» (`/api/mini/admin/defaults`), not on a chat's card.
+- **Actions look one way each** (owner, 2026-10-02; `components/shared/styles/base.css`):
+  `.btn` is a pill without an outline — the action ("Подписаться", "Подключить");
+  `.btn.is-quiet` is the paler pill of a state that opens choices ("Друзья ⌄");
+  `.see-all` is blue text with → for going somewhere ("Все →", "Искать →");
+  `DropdownArrow` ⌄ marks anything picked from a list (dropdowns, the month), and the
+  row `Chevron` → a row that opens a screen. The follow control is one component,
+  `FollowButton`: follow at once, and behind "Друзья ⌄" unfollow and block.
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 

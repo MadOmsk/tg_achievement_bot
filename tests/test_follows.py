@@ -50,15 +50,6 @@ async def test_following_needs_no_consent_and_two_follows_make_friends(repo: Rep
     assert await repo.follow_counts(alice) == (1, 0)
 
 
-async def test_removing_a_follower_is_not_a_block(repo: Repo) -> None:
-    alice, bobby, _ = await _people(repo)
-    await repo.follow(bobby, alice)
-    await repo.remove_follower(alice, bobby)
-    relation = await repo.relation(alice, bobby)
-    assert not relation.followed_by and not relation.blocked
-    assert await repo.follow(bobby, alice)  # may follow again
-
-
 async def test_a_block_ends_both_follows_and_hides_each_from_the_other(repo: Repo) -> None:
     alice, bobby, _ = await _people(repo)
     await repo.follow(alice, bobby)

@@ -1,8 +1,7 @@
 import type { MeResponse } from "../../../../api";
 import { t, type Locale } from "../../../../i18n";
 import { PlatformLogo } from "../platform/Platform";
-import { Sheet } from "../sheet/Sheet";
-import { TierMedals, type TierCounts } from "../tier-medals/TierMedals";
+import type { TierCounts } from "../tier-medals/TierMedals";
 import "./ScoreCup.css";
 
 export type ScoreCupLine = {
@@ -15,23 +14,19 @@ export type ScoreCupLine = {
   tiers?: TierCounts | null;
 };
 
+/** The marks of the platforms a person has, beside their nickname. Only marks:
+ * the drawer of totals they once opened is gone (owner, 2026-10-02). */
 export function ScoreCup({
   locale,
   lines,
   onEmpty,
   markSize = 18,
-  open,
-  onOpenChange,
 }: {
   locale: Locale;
   onEmpty?: () => void;
   lines: ScoreCupLine[];
-  /** The size of each platform mark — smaller where the cup sits inline,
-   * next to the nick, rather than as its own button. */
+  /** The size of each platform mark. */
   markSize?: number;
-  /** Controlled: the nick beside it opens the same sheet. */
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
 }) {
   if (lines.length === 0) {
     if (!onEmpty) return null;
@@ -45,46 +40,11 @@ export function ScoreCup({
   }
   return (
     <div className="score-cup">
-      <button
-        type="button"
-        className="score-cup-btn"
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenChange(true);
-        }}
-        aria-expanded={open}
-        aria-label={t(locale, "scoreSummary")}
-      >
-        <span className="score-plats">
-          {lines.map((line) => (
-            <PlatformLogo key={line.platform} platform={line.platform} size={markSize} />
-          ))}
-        </span>
-      </button>
-      {open && (
-        <Sheet onClose={() => onOpenChange(false)}>
-          <div className="sheet-content score-sheet">
-            <h2>{t(locale, "scoreSummary")}</h2>
-            {lines.map((line) => (
-              <div key={line.platform} className="score-row">
-                <PlatformLogo platform={line.platform} size={22} />
-                <strong>
-                  {line.count.toLocaleString("ru-RU")}
-                  {line.unit && <small>{line.unit}</small>}
-                </strong>
-                {line.tiers && <TierMedals counts={line.tiers} />}
-                {(line.month != null && line.day != null) && (
-                  <span className="score-meta">
-                    {line.month.toLocaleString("ru-RU")} {t(locale, "homeMonthShort")}
-                    <i aria-hidden> · </i>
-                    {line.day.toLocaleString("ru-RU")} {t(locale, "homeDayShort")}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </Sheet>
-      )}
+      <span className="score-plats">
+        {lines.map((line) => (
+          <PlatformLogo key={line.platform} platform={line.platform} size={markSize} />
+        ))}
+      </span>
     </div>
   );
 }

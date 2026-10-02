@@ -1,4 +1,6 @@
 """Mini API for people (#157): search, follows, followers, blocks, a profile card.
+Nobody removes a follower: following is the follower's own choice; one may only
+unfollow or block.
 
 Every route here speaks in person ids (`users.id`); `tg_id` is sent along only so
 the app can ask for an avatar. A nickname is public, so search and lists show it
@@ -6,7 +8,6 @@ to anybody; what a person *did* is behind `can_view_activity`."""
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -85,9 +86,21 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         rows = await repo.blocked_by(me)
         return web.json_response({"people": [person_json(row) for row in rows]})
 
-    async def profile(request: web.Request) -> web.Response:
+    async def profile_by_tg(request: web.Request) -> web.Response:
+        """The same card, asked for by the Telegram id a feed item carries."""
+        repo, _me = await me_id(request)
+        try:
+            tg_id = int(request.match_info["tg_id"])
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text="bad tg_id") from exc
+        person = await repo.person_id(tg_id)
+        if person is None:
+            raise web.HTTPNotFound(text="no such person")
+        return await profile(request, person)
+
+    async def profile(request: web.Request, person: int | None = None) -> web.Response:
         repo, me = await me_id(request)
-        other = target_id(request)
+        other = person if person is not None else target_id(request)
         row = await repo.person_with_relation(me, other)
         if row is None:
             raise web.HTTPNotFound(text="no such person")
@@ -118,12 +131,6 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         repo, me = await me_id(request)
         other = target_id(request)
         await repo.unfollow(me, other)
-        return web.json_response({"relation": _relation_json(await repo.relation(me, other))})
-
-    async def remove_follower(request: web.Request) -> web.Response:
-        repo, me = await me_id(request)
-        other = target_id(request)
-        await repo.remove_follower(me, other)
         return web.json_response({"relation": _relation_json(await repo.relation(me, other))})
 
     async def block(request: web.Request) -> web.Response:
@@ -157,10 +164,10 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     router = app.router
     router.add_get("/api/mini/people/search", search)
     router.add_get("/api/mini/people/suggestions", suggestions)
+    router.add_get("/api/mini/people/tg/{tg_id}", profile_by_tg)
     router.add_get("/api/mini/people/{person_id}", profile)
     router.add_post("/api/mini/people/{person_id}/follow", follow)
     router.add_delete("/api/mini/people/{person_id}/follow", unfollow)
-    router.add_delete("/api/mini/people/{person_id}/follower", remove_follower)
     router.add_post("/api/mini/people/{person_id}/block", block)
     router.add_delete("/api/mini/people/{person_id}/block", unblock)
     router.add_get("/api/mini/me/following", following)
@@ -224,15 +231,18 @@ async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: i
     bot = request.app.get("mini_bot")
     if bot is None:
         return
-    with contextlib.suppress(Exception):
-        target = await repo.person_row(other)
-        follower = await repo.person_row(me)
-        if target is None or follower is None or target.tg_id is None:
-            return
-        relation = await repo.relation(other, me)
-        settings = await repo.get_user_settings(target.tg_id)
-        locale = settings.locale if settings else "ru"
-        key = "people-new-friend" if relation.friends else "people-new-follower"
+    target = await repo.person_row(other)
+    follower = await repo.person_row(me)
+    if target is None or follower is None or target.tg_id is None:
+        return
+    relation = await repo.relation(other, me)
+    settings = await repo.get_user_settings(target.tg_id)
+    locale = settings.locale if settings else "ru"
+    key = "people-new-friend" if relation.friends else "people-new-follower"
+    try:
         await bot.send_message(
             target.tg_id, gettext("people", key, locale=locale, name=follower.handle)
         )
+    except Exception as exc:
+        # They may have blocked the bot or never started it; the follow stands.
+        log.info("new-follower notice to tg_id=%s not sent: %r", target.tg_id, exc)

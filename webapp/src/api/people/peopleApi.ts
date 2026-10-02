@@ -81,6 +81,10 @@ export class PeopleApi extends BaseApi {
     return this.get<PersonProfile>(initData, `/people/${id}`);
   }
 
+  profileByTg(initData: string, tgId: number): Promise<PersonProfile> {
+    return this.get<PersonProfile>(initData, `/people/tg/${tgId}`);
+  }
+
   follow(initData: string, id: number): Promise<Rel> {
     return this.post<Rel>(initData, `/people/${id}/follow`);
   }
@@ -89,9 +93,6 @@ export class PeopleApi extends BaseApi {
     return this.delete<Rel>(initData, `/people/${id}/follow`);
   }
 
-  removeFollower(initData: string, id: number): Promise<Rel> {
-    return this.delete<Rel>(initData, `/people/${id}/follower`);
-  }
 
   block(initData: string, id: number): Promise<Rel> {
     return this.post<Rel>(initData, `/people/${id}/block`);

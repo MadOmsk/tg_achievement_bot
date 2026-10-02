@@ -86,11 +86,12 @@ export function Icon({
       <svg {...props}>
         {filled ? (
           <>
-            <circle cx="11" cy="11" r="7" />
+            <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2.6" />
             <path
               d="m16.2 16.2 5 5"
               stroke="currentColor"
-              strokeWidth="2.2"
+              strokeWidth="2.6"
+              strokeLinecap="round"
               fill="none"
             />
           </>

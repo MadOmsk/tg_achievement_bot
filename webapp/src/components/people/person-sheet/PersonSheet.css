@@ -9,14 +9,14 @@
   gap: 22px;
   width: 100%;
   box-sizing: border-box;
-  padding: 22px 18px 4px;
+  padding: 46px 18px 4px;
   text-align: left;
 }
 
 .ps-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .ps-head-copy {
@@ -255,4 +255,54 @@
   width: 28px;
   height: 10px;
   margin-top: 4px;
+}
+
+.ps-avatar,
+.ps-name {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ps-avatar:disabled {
+  cursor: default;
+}
+
+.ps-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-sheet {
+  position: relative;
+}
+
+.ps-more {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 1.1rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.ps-state {
+  flex: none;
+}
+
+.ps-state .dd-arrow {
+  color: inherit;
 }
