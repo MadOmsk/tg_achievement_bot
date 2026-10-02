@@ -255,6 +255,18 @@ loading: "Собираю тусовку…",
   tzP660: "Магадан · UTC+11",
   tzP720: "Камчатка · UTC+12",
   otherGroup: "Другое",
+  nickname: "Никнейм",
+  nicknameTitle: "Твой ник",
+  nicknameIntro:
+    "Так тебя видят другие: в ленте, рейтинге и сообщениях бота. Настоящие имена нигде не показываются.",
+  nicknameHint:
+    "Латинские буквы и цифры, от 3 до 20 знаков. Если ник уже занят, к нему добавятся четыре цифры.",
+  nicknameKeep: "Оставить",
+  nicknameSave: "Сохранить",
+  nicknameInvalid: "Нужно от 3 до 20 латинских букв или цифр.",
+  nicknameTooSoon: "Ник можно менять раз в 30 дней.",
+  nicknameNext: "Сменить можно с",
+  nicknameDigits: "Цифры добавлены, потому что ник занят. Они появятся и у других.",
 } as const;
 
 export type TranslationKey = keyof typeof ru;

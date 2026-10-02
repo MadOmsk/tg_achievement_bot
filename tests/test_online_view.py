@@ -123,11 +123,12 @@ def test_row_name_treats_no_presence_data_as_offline() -> None:
     assert _row_name(row) == "Igor"
 
 
-def test_row_name_falls_back_to_telegram_full_name_when_nothing_tracked() -> None:
+def test_row_name_is_the_nickname_when_nothing_tracked() -> None:
     """`platform == "none"` (Follow-up 2026-09-08): no Xbox/Steam presence
-    was ever tracked — a PSN-only person, or an account never polled yet."""
-    row = presence(None, platform="none", first_name="Igor", last_name="Petrov")
-    assert _row_name(row) == "Igor Petrov"
+    was ever tracked — a PSN-only person, or an account never polled yet.
+    The Telegram name is never shown (#157)."""
+    row = presence(None, platform="none", first_name="Igor", last_name="Petrov", handle="IgorP")
+    assert _row_name(row) == "IgorP"
 
 
 def test_row_name_falls_back_to_plain_username_without_at_sign() -> None:

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } fro
 import {
   connectPsn,
   connectSteam,
+  confirmHandle,
   connectXbox,
   deleteAccount,
   disconnectPsn,
@@ -10,6 +11,7 @@ import {
   fetchMe,
   patchChat,
   patchSettings,
+  putHandle,
   syncXbox,
   type GameRef,
   type MeResponse,
@@ -25,7 +27,7 @@ import {
 } from "./components/game/game-open-provider/GameOpenProvider";
 import "./components/game/game.css";
 import { t, type Locale } from "./i18n";
-import { ConnectForm, Settings, type PlatNotes } from "./screens/me";
+import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/me";
 import { AppSkel, GameSkel, Icon, PageSkel, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
@@ -240,6 +242,26 @@ export function App() {
     }
   };
 
+  // The first visit after nicknames arrived (#157): keep the one the bot made
+  // from the username, or pick another. Shown before anything else, once.
+  if (me.handle && !me.handle.confirmed) {
+    return (
+      <NicknameForm
+        first
+        locale={locale}
+        handle={me.handle}
+        onSubmit={async (value) => {
+          await putHandle(data, value);
+          await reload();
+        }}
+        onKeep={async () => {
+          await confirmHandle(data);
+          await reload();
+        }}
+      />
+    );
+  }
+
   // Every screen.name comparison the render below needs, computed once —
   // never a bare string literal re-typed at each call site.
   const isHome = screen.name === SCREEN_NAMES.HOME;
@@ -355,6 +377,10 @@ export function App() {
               await patchChat(data, chatId, body);
             })
           }
+          onNickname={async (value) => {
+            await putHandle(data, value);
+            await reload();
+          }}
           onConnectSteam={() => setScreen(SCREENS["connect-steam"])}
           onConnectPsn={() => setScreen(SCREENS["connect-psn"])}
           notes={platNotes}

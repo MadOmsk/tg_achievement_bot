@@ -26,8 +26,20 @@ export type PsnAccount = {
 
 export type AccountPlatform = "xbox" | "psn" | "steam";
 
+/** A person's nickname (#157): `display` is what everybody sees, `number` the
+ * four digits added when the name was taken. */
+export type Handle = {
+  name: string;
+  number: number | null;
+  display: string;
+  confirmed: boolean;
+  /** When the next change is allowed, or null if it is now. */
+  next_change_at: string | null;
+};
+
 export type MeResponse = {
   tg_id: number;
+  handle: Handle | null;
   username: string | null;
   first_name: string | null;
   last_name: string | null;

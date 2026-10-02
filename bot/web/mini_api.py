@@ -16,7 +16,7 @@ from aiohttp import web
 
 from bot.config import Settings
 from bot.constants import MAX_PSN_ACCOUNTS, AccountPlatform, Platform, RarityMode
-from bot.db.repo import Repo
+from bot.db.repo import HandleInvalid, HandleTooSoon, Repo
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
@@ -113,6 +113,8 @@ def setup_mini_api(
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
     app.router.add_patch("/api/mini/settings", handle_patch_settings)
+    app.router.add_put("/api/mini/me/handle", handle_put_handle)
+    app.router.add_post("/api/mini/me/handle/confirm", handle_confirm_handle)
     app.router.add_post("/api/mini/connect/xbox", handle_connect_xbox)
     app.router.add_post("/api/mini/disconnect/xbox", handle_disconnect_xbox)
     app.router.add_post("/api/mini/connect/steam", handle_connect_steam)
@@ -173,6 +175,33 @@ async def handle_delete_me(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     await repo.delete_user(user.tg_id)
     return web.json_response({"ok": True})
+
+
+async def handle_put_handle(request: web.Request) -> web.Response:
+    """Choose or change the nickname (#157). A refusal is a JSON `error` the
+    Mini App words itself: `invalid`, or `too_soon` with `available_at`."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    body = await _json_body(request)
+    await repo.ensure_user(user.tg_id, user.username)
+    try:
+        await repo.change_handle(user.tg_id, str(body.get("handle", "")))
+    except HandleInvalid:
+        return web.json_response({"error": "invalid"}, status=400)
+    except HandleTooSoon as exc:
+        return web.json_response(
+            {"error": "too_soon", "available_at": exc.available_at}, status=409
+        )
+    return await handle_me(request)
+
+
+async def handle_confirm_handle(request: web.Request) -> web.Response:
+    """ "Keep it" on the first-visit nickname screen."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    await repo.ensure_user(user.tg_id, user.username)
+    await repo.confirm_handle(user.tg_id)
+    return await handle_me(request)
 
 
 async def handle_patch_settings(request: web.Request) -> web.Response:

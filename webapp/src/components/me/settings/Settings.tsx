@@ -11,6 +11,7 @@ import {
   type SettingsPane,
 } from "../../shared/constants";
 import { AdminSection } from "../../admin";
+import { NicknameForm } from "../nickname/NicknameForm";
 import { ChatSettingsCard } from "../chat-settings-card/ChatSettingsCard";
 import { PlatformCard, type AccountRow, type PlatNotes } from "../platform-card/PlatformCard";
 import "./Settings.css";
@@ -22,6 +23,7 @@ export function Settings({
   notes,
   onPatch,
   onChatPatch,
+  onNickname,
   onAdmin,
   onFlash,
   onConnectSteam,
@@ -44,6 +46,7 @@ export function Settings({
     rarity_mode?: string;
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
+  onNickname: (handle: string) => Promise<void>;
   onAdmin?: (screen: AdminScreen) => void;
   onFlash: (message: string) => void;
   onConnectXbox: () => void;
@@ -106,6 +109,20 @@ export function Settings({
         },
       ]
     : [];
+
+  if (pane === SETTINGS_PANES.NICKNAME && me.handle) {
+    return (
+      <NicknameForm
+        locale={locale}
+        handle={me.handle}
+        onBack={() => setPane(SETTINGS_PANES.ROOT)}
+        onSubmit={async (value) => {
+          await onNickname(value);
+          setPane(SETTINGS_PANES.ROOT);
+        }}
+      />
+    );
+  }
 
   if (pane === SETTINGS_PANES.ACHIEVEMENTS) {
     return (
@@ -179,6 +196,19 @@ export function Settings({
 
       <p className="kicker">{t(locale, "general")}</p>
       <div className="glass-card">
+        {me.handle && (
+          <button
+            type="button"
+            className="ios-row"
+            onClick={() => setPane(SETTINGS_PANES.NICKNAME)}
+          >
+            <span>{t(locale, "nickname")}</span>
+            <span className="ios-value">
+              {me.handle.display}
+              <Chevron />
+            </span>
+          </button>
+        )}
         <div className="ios-row">
           <span>{t(locale, "language")}</span>
           <div

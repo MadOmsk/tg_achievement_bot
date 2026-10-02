@@ -38,6 +38,7 @@ class User:
     # /stats' header identity (Follow-up 2026-09-06) — see users.first_name
     # in schema.sql for how these get refreshed.
     first_name: str | None = None
+    handle: str | None = None
     last_name: str | None = None
     # Xbox's ModernGamertag, the first step of the Xbox chain (#51) —
     # `gamertag` above stays the classic one. Defaulted so the many call
@@ -344,6 +345,7 @@ class AdminUserRow:
     # `gamertag`/`username`, so the roster sorted people under whichever
     # platform happened to answer first.
     first_name: str | None = None
+    handle: str | None = None
     last_name: str | None = None
     gamertag_modern: str | None = None
     steam_achievements_visible: bool | None = None
@@ -420,6 +422,7 @@ class ChatPresenceRow:
     psn_display_name: str | None = None
     username: str | None = None
     first_name: str | None = None
+    handle: str | None = None
     last_name: str | None = None
     device: str | None = None
 
@@ -471,6 +474,7 @@ class ChatMemberStat:
     gamertag_modern: str | None = None
     username: str | None = None
     first_name: str | None = None
+    handle: str | None = None
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
@@ -487,6 +491,7 @@ class ChatSubscriber:
     gamertag_modern: str | None = None
     username: str | None = None
     first_name: str | None = None
+    handle: str | None = None
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
@@ -508,6 +513,7 @@ class RecentAchievement:
     gamertag_modern: str | None = None
     username: str | None = None
     first_name: str | None = None
+    handle: str | None = None
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
@@ -708,6 +714,7 @@ def _as_user(row: aiosqlite.Row) -> User:
         is_excluded=bool(row["is_excluded"]),
         last_online_at=row["last_online_at"],
         first_name=row["first_name"],
+        handle=row["handle"],
         last_name=row["last_name"],
         gamertag_modern=row["gamertag_modern"],
         photo_file_id=row["photo_file_id"],

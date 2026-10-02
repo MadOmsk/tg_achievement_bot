@@ -262,8 +262,7 @@ async def render_user_list(
         # this screen is diagnostic rather than a bad label.
         name = person_name(
             tg_id=user.tg_id,
-            first_name=user.first_name,
-            last_name=user.last_name,
+            handle=user.handle,
             username=user.username,
             xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
             steam=user.steam_name,
@@ -316,9 +315,9 @@ def _admin_tg_header(user: User, *, locale: str) -> str:
     did this)."""
     _ = translator("admin", locale)
     bits = []
-    full_name = " ".join(part for part in (user.first_name, user.last_name) if part)
-    if full_name:
-        bits.append(full_name)
+    # The nickname, not the Telegram name: no real names are shown anywhere (#157).
+    if user.handle:
+        bits.append(user.handle)
     if user.username:
         bits.append(f"@{user.username}")
     # As a string, not an int: Fluent formats a number for the locale, and

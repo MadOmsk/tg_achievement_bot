@@ -101,6 +101,12 @@ XBOX_ACCOUNT = (
     "   AND xb.external_id = xb_link.external_id "
 )
 
+# A person's nickname as shown, digits included (#157): `RideTheSun#4821`.
+HANDLE_SHOWN = (
+    "CASE WHEN u.handle IS NULL THEN NULL WHEN u.handle_number = 0 THEN u.handle"
+    " ELSE u.handle || '#' || printf('%04d', u.handle_number) END AS handle"
+)
+
 # The same columns, aliased back to the names every row-mapper already reads.
 XBOX_COLUMNS = (
     "xb.external_id AS xuid, xb.display_name AS gamertag_modern,"

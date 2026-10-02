@@ -122,6 +122,7 @@ name, or when the tree goes stale.
 │   │   ├── stats.py              aggregates for panels, /stats, summaries
 │   │   ├── models.py, rows.py    ParsedAchievement and its AchievementRow, shared by all platforms
 │   │   ├── naming.py             the naming chains (#51) — the only answer to "what is X called"
+│   │   ├── handles.py            nickname rules: valid, normalized, shown, first one, digits (#157)
 │   │   ├── profile_links.py      one profile-URL builder per platform
 │   │   ├── presence_view.py      "where is this person right now" — /online's rule, for one person
 │   │   ├── descriptions_view.py  an achievement's name/description in the reader's language (#48, #61)
@@ -691,18 +692,30 @@ isn't muted there; it wasn't already published there.
 User-facing text is Russian by default and English where a chat or person picked it
 (Localization). History: #109.
 
-### People, nicknames and follows (planned, #157)
+### People, nicknames and follows (#157)
 
-Agreed with the owner on 2026-10-02, built in stages on top of #156's person id;
-until a stage ships, the rules elsewhere in this file still describe the bot.
+Agreed with the owner on 2026-10-02, built in stages on top of #156's person id.
+**Shipped: nicknames.** The rest is planned; until a stage ships, the rules
+elsewhere in this file still describe the bot.
 
-- **A person is named by a nickname only** — never by their Telegram first and last
-  name, anywhere (the Mini App, group messages, DMs). A nickname is 3–20 Latin
-  letters and digits, unique ignoring case; a taken one gets four random digits,
-  `RideTheSun#4821`, always shown after it. Nobody picks or edits the digits; a
-  change to a free nickname drops them. One change per 30 days. Existing people get
-  one generated (Telegram username, else a platform nickname, else `Player`) and
-  confirm or change it on their next visit.
+- **A person is named by a nickname only** (shipped) — never by their Telegram first
+  and last name, anywhere (the Mini App, group messages, DMs; the admin's user card
+  shows the nickname too). A nickname is 3–20 Latin letters and digits, unique
+  ignoring case; a taken one gets four random digits, `RideTheSun#4821`, always
+  shown after it. Nobody picks or edits the digits; a change to a free nickname
+  drops them, to a taken one gives new digits. The first choice is free, then one
+  change per 30 days (only the letters' case may change at any time). The rules are
+  `services/handles.py`, the storage `db/repo/_handles.py` (`users.handle`,
+  `handle_norm`, `handle_number` — 0 means no digits —, `handle_confirmed_at`,
+  `handle_changed_at`; migration 072).
+  - **Where a first nickname comes from**: a new person gets one from their Telegram
+    username at `ensure_user`; everybody else at start-up and on their first Mini App
+    visit (`give_handle`: username, then an Xbox/PSN nickname, else `Player`). Until
+    then the naming chain falls through to those same names. The Mini App shows
+    "Твой ник" once (`handle.confirmed` false) to keep or change it; later it is
+    Settings → Никнейм.
+  - Endpoints: `PUT /api/mini/me/handle` (`error` is `invalid` or `too_soon`),
+    `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.
 - **Follows, as on Xbox**: following is one-way and needs no consent; following
   each other makes two people friends. The feed shows the people one follows. A
   person can remove a follower and block someone. Search is by nickname only;
@@ -723,8 +736,10 @@ hand-rolled versions of "who is this" once coexisted and disagreed. A screen tha
 seems to need a third chain is a question for the owner, not a decision at the
 keyboard.
 
-1. **Who is this person?** `Имя Фамилия` → `username` → a connected platform's
-   nickname (Xbox → PlayStation → Steam) → `id<tg_id>`.
+1. **Who is this person?** Their nickname (#157) → `username` → a connected
+   platform's nickname (Xbox → PlayStation → Steam) → `id<tg_id>`. Telegram's first
+   and last names are not in the chain. Everybody has a nickname, so the steps after
+   it are a net for a row read before one was given.
 2. **Which account is this?** That platform's own chain — used *only* where a line is
    genuinely about one platform: per-platform rows in `/stats`, `/panel` and the
    admin's user card, connect/disconnect notices, the achievement announcement, and

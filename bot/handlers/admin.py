@@ -1283,8 +1283,7 @@ async def admin_delete_user_step1(callback: CallbackQuery, repo: Repo, i18n: I18
         return
     name = person_name(
         tg_id=user.tg_id,
-        first_name=user.first_name,
-        last_name=user.last_name,
+        handle=user.handle,
         username=user.username,
         xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
     )
@@ -1303,8 +1302,7 @@ async def admin_delete_user_step2(callback: CallbackQuery, repo: Repo, i18n: I18
         return
     name = person_name(
         tg_id=user.tg_id,
-        first_name=user.first_name,
-        last_name=user.last_name,
+        handle=user.handle,
         username=user.username,
         xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
     )

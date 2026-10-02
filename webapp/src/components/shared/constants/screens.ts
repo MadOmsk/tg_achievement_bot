@@ -49,5 +49,6 @@ export const SETTINGS_PANES = {
   ROOT: "root",
   ACHIEVEMENTS: "achievements",
   CHATS: "chats",
+  NICKNAME: "nickname",
 } as const;
 export type SettingsPane = (typeof SETTINGS_PANES)[keyof typeof SETTINGS_PANES];

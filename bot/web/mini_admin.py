@@ -136,8 +136,7 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
                 "tg_id": user.tg_id,
                 "name": person_name(
                     tg_id=user.tg_id,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
+                    handle=user.handle,
                     username=user.username,
                     xbox=xbox_nickname(
                         gamertag_modern=user.gamertag_modern, gamertag=user.gamertag
@@ -217,8 +216,7 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
         "tg_id": tg_id,
         "name": person_name(
             tg_id=tg_id,
-            first_name=user.first_name,
-            last_name=user.last_name,
+            handle=user.handle,
             username=user.username,
             xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
             steam=steam.display_name if steam else None,

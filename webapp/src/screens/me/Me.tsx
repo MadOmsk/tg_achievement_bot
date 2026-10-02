@@ -4,6 +4,7 @@ export {
   PlatformCard,
   Settings,
   ConnectForm,
+  NicknameForm,
   type PlatNote,
   type PlatNotes,
 } from "../../components/me";

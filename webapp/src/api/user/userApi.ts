@@ -34,6 +34,14 @@ export class UserApi extends BaseApi {
     return this.patch<MeResponse>(initData, USER_ROUTES.SETTINGS, body);
   }
 
+  putHandle(initData: string, handle: string): Promise<MeResponse> {
+    return this.put<MeResponse>(initData, USER_ROUTES.HANDLE, { handle });
+  }
+
+  confirmHandle(initData: string): Promise<MeResponse> {
+    return this.post<MeResponse>(initData, USER_ROUTES.CONFIRM_HANDLE);
+  }
+
   connectXbox(initData: string): Promise<{ authorize_url: string }> {
     return this.post<{ authorize_url: string }>(initData, USER_ROUTES.CONNECT_XBOX);
   }

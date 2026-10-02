@@ -21,6 +21,7 @@ from bot.db.repo._models import (
     _iso,
 )
 from bot.db.repo._sql import (
+    HANDLE_SHOWN,
     LOCALIZED_NAME_COLUMNS,
     LOCALIZED_TITLE_COLUMNS,
     NAME_CACHE_JOIN,
@@ -93,7 +94,7 @@ class _MessagesRepo:
         renders and sorts.
         """
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name "
@@ -113,6 +114,7 @@ class _MessagesRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
@@ -142,7 +144,7 @@ class _MessagesRepo:
             # Every field the person chain needs (#51) — this used to select
             # `u.gamertag` alone, so a member with no Xbox account was
             # rendered as the literal word "кто-то".
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -191,6 +193,7 @@ class _MessagesRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
@@ -241,7 +244,7 @@ class _MessagesRepo:
             params.append(_iso(until))
         params.append(limit)
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -276,6 +279,7 @@ class _MessagesRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
@@ -354,7 +358,7 @@ class _MessagesRepo:
             params.append(_iso(until))
         params.append(limit)
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -388,6 +392,7 @@ class _MessagesRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],

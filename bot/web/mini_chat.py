@@ -61,8 +61,7 @@ async def chat_of_user(repo: Repo, tg_id: int, chat_id: int) -> UserChatRow | No
 def person_label(
     *,
     tg_id: int,
-    first_name: str | None = None,
-    last_name: str | None = None,
+    handle: str | None = None,
     username: str | None = None,
     gamertag: str | None = None,
     gamertag_modern: str | None = None,
@@ -71,8 +70,7 @@ def person_label(
 ) -> str:
     return person_name(
         tg_id=tg_id,
-        first_name=first_name,
-        last_name=last_name,
+        handle=handle,
         username=username,
         xbox=xbox_nickname(gamertag_modern=gamertag_modern, gamertag=gamertag),
         steam=steam_name,
@@ -354,8 +352,7 @@ async def build_person_payload(
         "tg_id": target.tg_id,
         "name": person_label(
             tg_id=target.tg_id,
-            first_name=target.first_name,
-            last_name=target.last_name,
+            handle=target.handle,
             username=target.username,
             gamertag=target.gamertag,
             gamertag_modern=target.gamertag_modern,
@@ -407,8 +404,7 @@ def _feed_item_json(
         "tg_id": row.tg_id,
         "person": person_label(
             tg_id=row.tg_id,
-            first_name=row.first_name,
-            last_name=row.last_name,
+            handle=row.handle,
             username=row.username,
             gamertag=row.gamertag,
             gamertag_modern=row.gamertag_modern,
@@ -526,8 +522,7 @@ def _stat_json(row: ChatMemberStat) -> dict[str, Any]:
         "tg_id": row.tg_id,
         "name": person_label(
             tg_id=row.tg_id,
-            first_name=row.first_name,
-            last_name=row.last_name,
+            handle=row.handle,
             username=row.username,
             gamertag=row.gamertag,
             gamertag_modern=row.gamertag_modern,

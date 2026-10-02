@@ -126,6 +126,9 @@ def setup_logging(level: str) -> None:
 async def run(settings: Settings) -> None:
     database = await Database(settings.db_path).connect()
     repo = Repo(database)
+    given = await repo.give_everyone_a_handle()
+    if given:
+        log.info("gave %d people a first nickname (#157)", given)
 
     # The global timezone is a setting, not a constant: the admin can change it
     # later without touching .env. The value from the environment only seeds it.

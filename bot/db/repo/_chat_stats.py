@@ -15,6 +15,7 @@ from bot.db.repo._models import (
     _iso,
 )
 from bot.db.repo._sql import (
+    HANDLE_SHOWN,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
@@ -64,7 +65,7 @@ class _ChatStatsRepo:
             # (#51): a member with no Xbox account used to have no name here
             # at all and rendered as a bare "id319472587", which is exactly
             # what #38 fixed and a revert took back out.
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name, psn.display_name AS psn_name,"
             "       COUNT(s.achievement_id) AS cnt,"
@@ -110,6 +111,7 @@ class _ChatStatsRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
@@ -194,7 +196,7 @@ class _ChatStatsRepo:
             "  UNION "
             "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
             "), presence AS ("
-            "  SELECT u.tg_id, u.username, u.first_name,"
+            "  SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "         u.last_name, " + XBOX_COLUMNS + ","
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
             "         xp.device AS xbox_device,"
@@ -252,7 +254,8 @@ class _ChatStatsRepo:
             "    END AS winner"
             "  FROM picked"
             ") "
-            "SELECT tg_id, gamertag, gamertag_modern, username, first_name, last_name, xuid,"
+            "SELECT tg_id, gamertag, gamertag_modern, username, first_name, last_name,"
+            "       handle, xuid,"
             "       CASE winner"
             "         WHEN 'steam' THEN"
             "           CASE WHEN steam_persona_state != 0 THEN 'Online' ELSE 'Offline' END"
@@ -298,6 +301,7 @@ class _ChatStatsRepo:
                 psn_display_name=row["psn_display_name"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 device=row["device"],
             )

@@ -257,4 +257,16 @@ loading: "Gathering the crew…",
   tzP660: "Magadan · UTC+11",
   tzP720: "Kamchatka · UTC+12",
   otherGroup: "Other",
+  nickname: "Nickname",
+  nicknameTitle: "Your nickname",
+  nicknameIntro:
+    "This is how others see you: in the feed, rankings and bot messages. Real names are never shown anywhere.",
+  nicknameHint:
+    "Latin letters and digits, 3 to 20 characters. If the name is taken, four digits are added.",
+  nicknameKeep: "Keep it",
+  nicknameSave: "Save",
+  nicknameInvalid: "Use 3 to 20 Latin letters or digits.",
+  nicknameTooSoon: "A nickname can change once every 30 days.",
+  nicknameNext: "You can change it from",
+  nicknameDigits: "Digits were added because the name is taken. Others see them too.",
 };

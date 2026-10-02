@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 from bot.constants import (
@@ -13,6 +14,7 @@ from bot.constants import (
 )
 from bot.db.repo import PlatformLink, Repo, User
 from bot.services.admin_settings import SHOW_LINKS_DEFAULT, SHOW_LINKS_KEY
+from bot.services.handles import CHANGE_COOLDOWN_DAYS
 from bot.services.naming import link_nickname
 from bot.services.profile_links import (
     psn_profile_url,
@@ -20,7 +22,28 @@ from bot.services.profile_links import (
     xbox_profile_url,
 )
 from bot.services.stats import counters_for, week_cutoff_utc
+from bot.util import utcnow
 from bot.views.parts import visibility_status_text
+
+
+async def handle_block(repo: Repo, tg_id: int) -> dict[str, Any] | None:
+    """The person's nickname for the Mini App (#157): the parts, the displayed
+    form, whether they have been asked to keep it yet, and when it may change."""
+    state = await repo.handle_state(tg_id)
+    if state is None or state.handle is None:
+        return None
+    next_change = None
+    if state.confirmed and state.changed_at:
+        due = datetime.fromisoformat(state.changed_at) + timedelta(days=CHANGE_COOLDOWN_DAYS)
+        if due > utcnow():
+            next_change = due.isoformat(timespec="seconds")
+    return {
+        "name": state.handle.name,
+        "number": state.handle.number or None,
+        "display": state.handle.display,
+        "confirmed": state.confirmed,
+        "next_change_at": next_change,
+    }
 
 
 async def build_me_payload(
@@ -33,6 +56,7 @@ async def build_me_payload(
     is_admin: bool,
 ) -> dict[str, Any]:
     await repo.ensure_user(tg_id, username, first_name=first_name, last_name=last_name)
+    await repo.give_handle(tg_id)
     user = await repo.get_user(tg_id)
     settings_row = await repo.get_user_settings(tg_id)
     steam = await repo.get_platform_link(tg_id, Platform.STEAM)
@@ -61,6 +85,7 @@ async def build_me_payload(
 
     return {
         "tg_id": tg_id,
+        "handle": await handle_block(repo, tg_id),
         "username": username,
         "first_name": first_name,
         "last_name": last_name,

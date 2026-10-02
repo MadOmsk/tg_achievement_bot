@@ -37,8 +37,19 @@ CREATE TABLE IF NOT EXISTS users (
     -- on every render, and a face outlives whatever Telegram does with its
     -- own file ids.
     photo_path      TEXT,
+    -- The person's nickname, the only name shown for them (#157, migration 072):
+    -- `handle` as typed ([A-Za-z0-9]{3,20}), `handle_norm` lower-case for
+    -- uniqueness, `handle_number` the four digits added when it is taken (0 =
+    -- none). The unique constraint is here for new databases; the migration
+    -- creates the same index for existing ones.
+    handle          TEXT,
+    handle_norm     TEXT,
+    handle_number   INTEGER NOT NULL DEFAULT 0,
+    handle_confirmed_at TEXT,
+    handle_changed_at   TEXT,
     created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    updated_at      TEXT NOT NULL,
+    UNIQUE (handle_norm, handle_number)
 );
 
 -- One user, one token. Refresh only; everything else lives in memory.

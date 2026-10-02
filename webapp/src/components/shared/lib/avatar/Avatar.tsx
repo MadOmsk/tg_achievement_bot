@@ -44,9 +44,9 @@ export function telegramPhoto(): string | null {
 
 export function accountLabel(me: MeResponse): string {
   return (
+    me.handle?.display ||
     me.xbox.gamertag_modern ||
     me.xbox.gamertag ||
-    [me.first_name, me.last_name].filter(Boolean).join(" ") ||
     me.username ||
     `id${me.tg_id}`
   );
