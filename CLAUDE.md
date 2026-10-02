@@ -123,6 +123,7 @@ name, or when the tree goes stale.
 │   │   ├── models.py, rows.py    ParsedAchievement and its AchievementRow, shared by all platforms
 │   │   ├── naming.py             the naming chains (#51) — the only answer to "what is X called"
 │   │   ├── handles.py            nickname rules: valid, normalized, shown, first one, digits (#157)
+│   │   ├── people.py             who may see whom: the relation between two people, `can_view` (#157)
 │   │   ├── profile_links.py      one profile-URL builder per platform
 │   │   ├── presence_view.py      "where is this person right now" — /online's rule, for one person
 │   │   ├── descriptions_view.py  an achievement's name/description in the reader's language (#48, #61)
@@ -695,7 +696,7 @@ User-facing text is Russian by default and English where a chat or person picked
 ### People, nicknames and follows (#157)
 
 Agreed with the owner on 2026-10-02, built in stages on top of #156's person id.
-**Shipped: nicknames.** The rest is planned; until a stage ships, the rules
+**Shipped: nicknames and the follows backend** (the Mini App screens for follows are not built yet). The rest is planned; until a stage ships, the rules
 elsewhere in this file still describe the bot.
 
 - **A person is named by a nickname only** (shipped) — never by their Telegram first
@@ -716,12 +717,24 @@ elsewhere in this file still describe the bot.
     Settings → Никнейм.
   - Endpoints: `PUT /api/mini/me/handle` (`error` is `invalid` or `too_soon`),
     `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.
-- **Follows, as on Xbox**: following is one-way and needs no consent; following
-  each other makes two people friends. The feed shows the people one follows. A
-  person can remove a follower and block someone. Search is by nickname only;
-  people from a shared chat are suggested.
-- **Privacy is one setting**: who sees my activity in the app — everyone (default),
-  friends, nobody. Publishing to chats is unrelated and works as before.
+- **Follows, as on Xbox** (backend shipped, migration 073): following is one-way and
+  needs no consent; following each other makes two people friends — friends are
+  not stored, they are two rows in `follows`. A person can remove a follower and
+  block someone (a block deletes the follows between the two and hides each from
+  the other's search and lists; the blocked one cannot follow). Search is by
+  nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
+  People from a shared chat (subscribed or seen writing) are suggested. A new
+  follower is told in one DM (`people-new-follower` / `people-new-friend`); friends'
+  achievements are never sent as DMs. These tables and routes speak in **person
+  ids** (`users.id`), `tg_id` is sent along only for the avatar.
+  Code: `db/repo/_follows.py`, `services/people.py`, `web/mini_people.py`.
+- **Privacy is one setting** (`users.activity_visible`): who sees my activity in the
+  app — everyone (default), friends, nobody. The one rule is
+  `services/people.can_view` (a block either way first, then the setting; oneself
+  always); nickname and avatar are not activity and stay visible. Routes:
+  `GET/PUT /api/mini/me/privacy`. Nothing reads it yet — the screens that show
+  another person's activity must call `repo.can_view_activity`. Publishing to
+  chats is unrelated and works as before.
 - **Publishing**: one screen with the rarity mode, a switch per chat and a switch
   per game account (#20).
 - **The Mini App's dock**: Home · Feed · People · Settings; the statistics move

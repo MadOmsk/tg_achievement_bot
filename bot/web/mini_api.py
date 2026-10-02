@@ -45,6 +45,7 @@ from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
+from bot.web import mini_people
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import load_avatar_bytes
@@ -109,6 +110,7 @@ def setup_mini_api(
     app["mini_title_catalog"] = title_catalog
 
     app.router.add_get("/api/mini/health", handle_health)
+    mini_people.register(app, _require_user)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)

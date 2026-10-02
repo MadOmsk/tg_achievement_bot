@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS users (
     handle_number   INTEGER NOT NULL DEFAULT 0,
     handle_confirmed_at TEXT,
     handle_changed_at   TEXT,
+    -- Who sees this person's activity in the app (#157, migration 073).
+    activity_visible TEXT NOT NULL DEFAULT 'all'
+        CHECK (activity_visible IN ('all', 'friends', 'nobody')),
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
     UNIQUE (handle_norm, handle_number)
@@ -807,3 +810,23 @@ CREATE TABLE IF NOT EXISTS platform_cooldown_accounts (
     last_reset_at  TEXT NOT NULL,
     PRIMARY KEY (platform, external_id)
 );
+
+-- Follows and blocks (#157, migration 073) point at the person id. Friends are two
+-- follows facing each other, not a row.
+CREATE TABLE IF NOT EXISTS follows (
+    follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    followee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (follower_id, followee_id),
+    CHECK (follower_id != followee_id)
+);
+CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows (followee_id);
+
+CREATE TABLE IF NOT EXISTS blocks (
+    person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, blocked_id),
+    CHECK (person_id != blocked_id)
+);
+CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks (blocked_id);

@@ -67,6 +67,7 @@ from bot.db.repo._database import (
 )
 from bot.db.repo._descriptions import _DescriptionsRepo
 from bot.db.repo._flood import _FloodRepo
+from bot.db.repo._follows import PersonRow, _FollowsRepo
 from bot.db.repo._handles import HandleInvalid, HandleState, HandleTooSoon, _HandlesRepo
 from bot.db.repo._messages import _MessagesRepo
 from bot.db.repo._models import (
@@ -137,6 +138,7 @@ __all__ = [
     "HandleTooSoon",
     "HltbCacheRow",
     "OnlineAutoRefreshRow",
+    "PersonRow",
     "PlatformLink",
     "PollTarget",
     "PresenceRow",
@@ -178,6 +180,7 @@ class Repo(
     _CatalogRepo,
     _SteamRepo,
     _HandlesRepo,
+    _FollowsRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 
