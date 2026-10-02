@@ -23,6 +23,8 @@ one platform simply matches twice.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 # Joins `seen_achievements s` to the person who currently owns each row.
 # `account_platform` is GENERATED on the table, so both Xbox generations
 # resolve to the single `xbox` account without the caller knowing.
@@ -100,6 +102,22 @@ XBOX_ACCOUNT = (
     "LEFT JOIN accounts xb ON xb.platform = xb_link.platform"
     "   AND xb.external_id = xb_link.external_id "
 )
+
+# The chat id a hand-picked set of people stands in for (#157): the Mini App's
+# "following" scope asks the chat queries about people who share no chat. 0 is no
+# real chat (Telegram's are non-zero), so `WHERE sub.chat_id = ?` keeps working.
+MEMBERS_CHAT = 0
+
+
+def member_source(members: Sequence[int] | None) -> str:
+    """What `FROM ... sub` reads in the chat queries: the real `subscriptions`
+    table, or — for a given list of people — a one-column stand-in with the same
+    shape. Integers only, formatted here, so nothing is injected."""
+    if members is None:
+        return "subscriptions"
+    ids = ",".join(str(int(m)) for m in members) or "NULL"
+    return f"(SELECT {MEMBERS_CHAT} AS chat_id, tg_id FROM users WHERE tg_id IN ({ids}))"
+
 
 # A person's nickname as shown, digits included (#157): `RideTheSun#4821`.
 HANDLE_SHOWN = (

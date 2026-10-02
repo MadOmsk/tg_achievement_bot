@@ -226,6 +226,30 @@ class _FollowsRepo:
         )
         return [_person(row) for row in await cursor.fetchall()]
 
+    async def following_members(self, me: int) -> list[int]:
+        """The Telegram ids behind the "following" scope: oneself, and every person
+        followed whose activity the viewer may see (their privacy setting).
+        People with no Telegram id are not here yet — achievements are still
+        reached through `tg_id`."""
+        cursor = await self._conn.execute(
+            "SELECT p.id, p.tg_id, p.activity_visible, " + _RELATION + " FROM users p "
+            "WHERE p.tg_id IS NOT NULL AND p.is_excluded = 0"
+            "  AND (p.id = :me OR p.id IN (SELECT followee_id FROM follows"
+            "                              WHERE follower_id = :me))",
+            {"me": me},
+        )
+        members = []
+        for row in await cursor.fetchall():
+            relation = Relation(
+                following=bool(row["following"]),
+                followed_by=bool(row["followed_by"]),
+                blocked=bool(row["blocked"]),
+                blocked_by=bool(row["blocked_by"]),
+            )
+            if can_view(row["activity_visible"], relation, self_view=row["id"] == me):
+                members.append(row["tg_id"])
+        return members
+
     async def activity_visible(self, person: int) -> str:
         cursor = await self._conn.execute(
             "SELECT activity_visible FROM users WHERE id = ?", (person,)

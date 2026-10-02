@@ -25,6 +25,7 @@ import {
   statusOf,
 } from "../../components/club";
 import { Icon } from "../../components/shared/lib/icon/Icon";
+import { ScopeChips, type FeedScope } from "../../components/club/scope-chips/ScopeChips";
 import { SCREEN_NAMES, type ClubPane } from "../../components/shared/constants";
 import "./Club.css";
 
@@ -92,6 +93,29 @@ export function Club({
   feedRef.current = feed;
   onlineRef.current = online;
 
+  // What the Feed and the Ranking are about: the people you follow, or a chat.
+  // Remembered per device; "following" only stands while it can be asked for.
+  const [scope, setScope] = useState<FeedScope>(() => {
+    try {
+      const saved = window.localStorage.getItem("club-scope");
+      if (saved === "following") return "following";
+      const chat = Number(saved);
+      if (saved && me.chats.some((c) => c.chat_id === chat)) return chat;
+    } catch {
+      /* storage may be blocked */
+    }
+    return chatId ?? me.chats[0]?.chat_id ?? "following";
+  });
+  const changeScope = (next: FeedScope) => {
+    setScope(next);
+    try {
+      window.localStorage.setItem("club-scope", String(next));
+    } catch {
+      /* storage may be blocked */
+    }
+  };
+  const scopeRef = scope === "following" || me.chats.some((c) => c.chat_id === scope) ? scope : null;
+
   const showSecrets = me.settings.show_secrets;
   // The friends are everybody but you.
   const others = online.filter((m) => m.tg_id !== me.tg_id);
@@ -101,16 +125,16 @@ export function Club({
   useEffect(() => {
     // Blank only when the chat/account changes — pull-to-refresh keeps the UI.
     setClubReady(false);
-  }, [activeId, data, me.tg_id]);
+  }, [activeId, data, me.tg_id, scopeRef]);
 
   useEffect(() => {
     if (!activeId || !data) return;
     let cancelled = false;
     const load = async () => {
       const [f, o, s, mine] = await Promise.allSettled([
-        fetchFeed(data, activeId),
+        fetchFeed(data, scopeRef ?? activeId),
         fetchOnline(data, activeId),
-        fetchSummary(data, activeId),
+        fetchSummary(data, scopeRef ?? activeId),
         // Own unlocks from every linked platform — not the chat feed slice,
         // which is dominated by whoever unlocked most recently in-group.
         fetchPerson(data, activeId, me.tg_id),
@@ -155,7 +179,7 @@ export function Club({
     return () => {
       cancelled = true;
     };
-  }, [activeId, data, me.tg_id, refreshKey]);
+  }, [activeId, data, me.tg_id, refreshKey, scopeRef]);
 
   useEffect(() => {
     if (!openPersonId || !activeId) {
@@ -227,8 +251,8 @@ export function Club({
     if (!activeId || !data || ym === selectedMonth) return;
     setMonthBusy(true);
     void Promise.allSettled([
-      fetchFeed(data, activeId, { month: ym }),
-      fetchSummary(data, activeId, { month: ym }),
+      fetchFeed(data, scopeRef ?? activeId, { month: ym }),
+      fetchSummary(data, scopeRef ?? activeId, { month: ym }),
       fetchPerson(data, activeId, me.tg_id, { month: ym }),
     ])
       .then(([f, s, mine]) => {
@@ -480,6 +504,12 @@ export function Club({
               <span className="skel month-chip-skel" aria-hidden />
             )}
           </header>
+          <ScopeChips
+            locale={locale}
+            chats={me.chats}
+            value={scopeRef ?? "following"}
+            onChange={changeScope}
+          />
           {!clubReady || monthBusy ? (
             <FeedSkel head={false} />
           ) : feed.length === 0 ? (
@@ -519,6 +549,12 @@ export function Club({
               <span className="skel month-chip-skel" aria-hidden />
             )}
           </header>
+          <ScopeChips
+            locale={locale}
+            chats={me.chats}
+            value={scopeRef ?? "following"}
+            onChange={changeScope}
+          />
           {!clubReady ? (
             <StatsSkel head={false} />
           ) : (

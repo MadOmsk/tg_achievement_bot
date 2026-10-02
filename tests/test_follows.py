@@ -163,3 +163,59 @@ async def test_mini_api_people_flow(repo: Repo, settings) -> None:
         assert gone["people"] == []
     finally:
         await client.close()
+
+
+async def test_the_following_scope_feeds_and_ranks_only_followed_people(
+    repo: Repo, settings
+) -> None:
+    from datetime import UTC, datetime
+
+    from bot.db.repo import AchievementRow
+
+    def row(achievement_id: str) -> AchievementRow:
+        return AchievementRow(
+            title_id="1",
+            achievement_id=achievement_id,
+            name=achievement_id,
+            description=None,
+            icon_url=None,
+            unlocked_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            gamerscore=10,
+            rarity_percent=50.0,
+            platform="xbox_modern",
+        )
+
+    for tg_id, xuid in ((42, "x42"), (7, "x7"), (8, "x8")):
+        await repo.ensure_user(tg_id, f"user{tg_id}")
+        await repo.link_xbox_account(tg_id, xuid, f"Tag{tg_id}", 0)
+        await repo.insert_new_achievements(xuid, [row(f"a{tg_id}")], is_backfill=False)
+    me = await repo.person_id(42)
+    followed = await repo.person_id(7)
+    stranger = await repo.person_id(8)
+    await repo.follow(me, followed)
+
+    app = web.Application(middlewares=[cors_middleware()])
+    setup_mini_api(app, settings, repo)
+    headers = {"X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), 42)}
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        feed = await (
+            await client.get("/api/mini/club/feed?scope=following", headers=headers)
+        ).json()
+        assert sorted(item["name"] for item in feed["items"]) == ["a42", "a7"]
+
+        summary = await (
+            await client.get("/api/mini/club/summary?scope=following", headers=headers)
+        ).json()
+        assert len(summary["month"]) == 2
+        assert stranger  # followed by nobody, so absent from both
+
+        # A followed person who hides their activity drops out.
+        await repo.set_activity_visible(followed, "nobody")
+        feed = await (
+            await client.get("/api/mini/club/feed?scope=following", headers=headers)
+        ).json()
+        assert [item["name"] for item in feed["items"]] == ["a42"]
+    finally:
+        await client.close()

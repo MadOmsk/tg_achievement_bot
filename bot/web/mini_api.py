@@ -17,6 +17,7 @@ from aiohttp import web
 from bot.config import Settings
 from bot.constants import MAX_PSN_ACCOUNTS, AccountPlatform, Platform, RarityMode
 from bot.db.repo import HandleInvalid, HandleTooSoon, Repo
+from bot.db.repo._sql import MEMBERS_CHAT
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
@@ -562,7 +563,41 @@ async def handle_patch_chat(request: web.Request) -> web.Response:
     )
 
 
+async def _following_scope(request: web.Request) -> tuple[Any, Repo, list[int], int | None] | None:
+    """`?scope=following` (#157): the feed and ranking of the people the viewer
+    follows (and themself), instead of one chat. Returns the viewer, the repo, the
+    Telegram ids to read and the viewer's timezone; None for an ordinary chat."""
+    if request.query.get("scope") != "following":
+        return None
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    await repo.ensure_user(user.tg_id, user.username)
+    person = await repo.person_id(user.tg_id)
+    if person is None:
+        raise web.HTTPNotFound(text="no person")
+    settings_row = await repo.get_user_settings(user.tg_id)
+    tz = settings_row.tz_offset_min if settings_row else None
+    return user, repo, await repo.following_members(person), tz
+
+
 async def handle_chat_feed(request: web.Request) -> web.Response:
+    scoped = await _following_scope(request)
+    if scoped is not None:
+        user, repo, members, tz = scoped
+        month = request.query.get("month") or None
+        try:
+            payload = await build_feed_payload(
+                repo,
+                MEMBERS_CHAT,
+                locale=await _user_locale(repo, user.tg_id),
+                limit=int(request.query.get("limit") or 500),
+                month=month,
+                members=members,
+                tz_of=tz,
+            )
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text="bad month or limit") from exc
+        return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
     locale = await _user_locale(repo, user.tg_id)
     try:
@@ -585,6 +620,21 @@ async def handle_chat_online(request: web.Request) -> web.Response:
 
 
 async def handle_chat_summary(request: web.Request) -> web.Response:
+    scoped = await _following_scope(request)
+    if scoped is not None:
+        user, repo, members, tz = scoped
+        try:
+            payload = await build_summary_payload(
+                repo,
+                MEMBERS_CHAT,
+                locale=await _user_locale(repo, user.tg_id),
+                month=request.query.get("month") or None,
+                members=members,
+                tz_of=tz,
+            )
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text="bad month") from exc
+        return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
     locale = await _user_locale(repo, user.tg_id)
     month = request.query.get("month") or None

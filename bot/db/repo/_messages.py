@@ -32,6 +32,7 @@ from bot.db.repo._sql import (
     earned_at,
     earned_date_is_real,
     earned_since,
+    member_source,
     pick_name,
     publishes,
     rarity,
@@ -130,6 +131,7 @@ class _MessagesRepo:
         locale: str = "ru",
         since: datetime | None = None,
         until: datetime | None = None,
+        members: Sequence[int] | None = None,
     ) -> list[RecentAchievement]:
         where = f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
         params: list[object] = [chat_id]
@@ -163,7 +165,7 @@ class _MessagesRepo:
             "       t.icon_url AS game_icon_url, s.description,"
             "       s.xuid AS achievement_xuid, s.trophy_group_id,"
             "       s.device, t.platforms AS game_platforms "
-            "FROM subscriptions sub "
+            "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
@@ -227,6 +229,7 @@ class _MessagesRepo:
         max_percent: float = 0.5,
         limit: int = 80,
         locale: str = "ru",
+        members: Sequence[int] | None = None,
     ) -> list[RecentAchievement]:
         """Month finds under `max_percent` rarity — Mini App stats «Находки».
 
@@ -257,7 +260,7 @@ class _MessagesRepo:
             "       s.title_id, s.achievement_id, s.icon_url,"
             "       t.icon_url AS game_icon_url, s.description,"
             "       s.xuid AS achievement_xuid, s.trophy_group_id "
-            "FROM subscriptions sub "
+            "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
@@ -302,7 +305,9 @@ class _MessagesRepo:
             for row in await cursor.fetchall()
         ]
 
-    async def chat_unlock_months(self, chat_id: int, limit: int = 24) -> list[str]:
+    async def chat_unlock_months(
+        self, chat_id: int, limit: int = 24, *, members: Sequence[int] | None = None
+    ) -> list[str]:
         """Distinct `YYYY-MM` prefixes of unlock timestamps in this chat.
 
         The Mini App month picker lists these; ISO strings are UTC, so a
@@ -311,7 +316,7 @@ class _MessagesRepo:
         timezone window, not this list."""
         cursor = await self._conn.execute(
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
-            "FROM subscriptions sub "
+            "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"

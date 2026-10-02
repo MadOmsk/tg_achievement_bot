@@ -6,6 +6,7 @@ Behavior is unchanged from before the split.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from bot.db.repo._models import (
@@ -21,6 +22,7 @@ from bot.db.repo._sql import (
     active_account,
     earned_at,
     earned_since,
+    member_source,
     rarity,
     rarity_cache_join,
 )
@@ -36,6 +38,7 @@ class _ChatStatsRepo:
         since: datetime,
         rare_threshold: float,
         until: datetime | None = None,
+        members: Sequence[int] | None = None,
     ) -> list[ChatMemberStat]:
         """Per-person totals for a chat over a period.
 
@@ -80,7 +83,7 @@ class _ChatStatsRepo:
             "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
             "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze "
-            "FROM subscriptions sub "
+            "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
             # tg_id, not xuid (SPEC 9, M-Steam-2e) — sums every platform's

@@ -96,10 +96,10 @@ def _month_label(month_num: int, locale: str) -> str:
 
 
 async def _club_month(
-    repo: Repo, chat_id: int, month: str | None
+    repo: Repo, chat_id: int, month: str | None, *, tz_of: int | None = None, scoped: bool = False
 ) -> tuple[str, datetime, datetime, str, int]:
-    settings = await repo.get_chat_daily_settings(chat_id)
-    tz = settings.tz_offset_min
+    # A hand-picked scope has no chat settings: it reads in the viewer's timezone.
+    tz = tz_of if scoped else (await repo.get_chat_daily_settings(chat_id)).tz_offset_min
     current = _calendar_month_key(tz)
     parsed = parse_month_key(month or current)
     if parsed is None:
@@ -109,8 +109,10 @@ async def _club_month(
     return key, since, until, current, parsed[1]
 
 
-async def _month_choices(repo: Repo, chat_id: int, *extra: str) -> list[str]:
-    months = await repo.chat_unlock_months(chat_id)
+async def _month_choices(
+    repo: Repo, chat_id: int, *extra: str, members: list[int] | None = None
+) -> list[str]:
+    months = await repo.chat_unlock_months(chat_id, members=members)
     ordered: list[str] = []
     for ym in [*extra, *months]:
         if ym and ym not in ordered:
@@ -151,17 +153,23 @@ async def build_feed_payload(
     locale: str,
     limit: int = FEED_DEFAULT,
     month: str | None = None,
+    members: list[int] | None = None,
+    tz_of: int | None = None,
 ) -> dict[str, Any]:
     limit = max(1, min(limit, FEED_MAX))
-    key, since, until, current, _month_num = await _club_month(repo, chat_id, month)
-    rows = await repo.chat_recent(chat_id, limit, locale=locale, since=since, until=until)
+    key, since, until, current, _month_num = await _club_month(
+        repo, chat_id, month, tz_of=tz_of, scoped=members is not None
+    )
+    rows = await repo.chat_recent(
+        chat_id, limit, locale=locale, since=since, until=until, members=members
+    )
     descriptions = await _localized_feed_descriptions(repo, rows, locale)
     progress = await _feed_progress(repo, rows)
     return {
         "items": [_feed_item_json(row, descriptions, progress, locale) for row in rows],
         "month": key,
         "current_month": current,
-        "months": await _month_choices(repo, chat_id, current, key),
+        "months": await _month_choices(repo, chat_id, current, key, members=members),
     }
 
 
@@ -171,18 +179,39 @@ async def build_online_payload(repo: Repo, chat_id: int, *, locale: str) -> dict
 
 
 async def build_summary_payload(
-    repo: Repo, chat_id: int, *, locale: str, month: str | None = None
+    repo: Repo,
+    chat_id: int,
+    *,
+    locale: str,
+    month: str | None = None,
+    members: list[int] | None = None,
+    tz_of: int | None = None,
 ) -> dict[str, Any]:
-    settings = await repo.get_chat_daily_settings(chat_id)
-    threshold = settings.rare_threshold_percent
-    key, since, until, current, month_num = await _club_month(repo, chat_id, month)
-    day_rows = await repo.chat_member_stats(
-        chat_id, utcnow() - timedelta(hours=DAY_WINDOW_HOURS), threshold
+    scoped = members is not None
+    if scoped:
+        # The threshold is global (Publication rules); only the timezone is the viewer's.
+        threshold = (await repo.get_chat_daily_settings(chat_id)).rare_threshold_percent
+        tz = tz_of
+    else:
+        settings = await repo.get_chat_daily_settings(chat_id)
+        threshold = settings.rare_threshold_percent
+        tz = settings.tz_offset_min
+    key, since, until, current, month_num = await _club_month(
+        repo, chat_id, month, tz_of=tz_of, scoped=scoped
     )
-    month_rows = await repo.chat_member_stats(chat_id, since, threshold, until=until)
-    subscribers = await repo.chat_subscribers(chat_id)
+    day_rows = await repo.chat_member_stats(
+        chat_id, utcnow() - timedelta(hours=DAY_WINDOW_HOURS), threshold, members=members
+    )
+    month_rows = await repo.chat_member_stats(
+        chat_id, since, threshold, until=until, members=members
+    )
+    if members is None:
+        subscribers = await repo.chat_subscribers(chat_id)
+        people = [s.tg_id for s in subscribers]
+    else:
+        people = members
     games = await repo.users_games_achievements(
-        [s.tg_id for s in subscribers],
+        people,
         since,
         rare_threshold=threshold,
         limit=0,
@@ -194,18 +223,14 @@ async def build_summary_payload(
     # "hunting together" on the Mini App stats tab read this list, not a
     # separate feed fetch that can drift to another month.
     recent_rows = await repo.chat_recent(
-        chat_id, FEED_DEFAULT, locale=locale, since=since, until=until
+        chat_id, FEED_DEFAULT, locale=locale, since=since, until=until, members=members
     )
     rare_rows = await repo.chat_ultra_rares(
-        chat_id, since=since, until=until, max_percent=0.5, locale=locale
+        chat_id, since=since, until=until, max_percent=0.5, locale=locale, members=members
     )
     descriptions = await _localized_feed_descriptions(repo, [*recent_rows, *rare_rows], locale)
     progress = await _feed_progress(repo, [*recent_rows, *rare_rows])
-    label = (
-        _month_label(month_num, locale)
-        if key != current
-        else month_window_label(settings.tz_offset_min, locale)
-    )
+    label = _month_label(month_num, locale) if key != current else month_window_label(tz, locale)
     return {
         "month_key": key,
         "current_month": current,
