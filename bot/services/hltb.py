@@ -230,6 +230,23 @@ async def search_candidates(query: str) -> list[HltbResult]:
     return [_as_result(e) for e in entries or []]
 
 
+async def steam_appid_of(hltb_id: int) -> int | None:
+    """The Steam appid HLTB's page lists for a matched game — exact, where
+    Steam's own name search only ever shows its ten most popular hits (a small
+    game called "Haven" is lost among Sun Haven and Space Haven)."""
+    game = await _fetch_page_game(f"https://howlongtobeat.com/game/{hltb_id}")
+    if game is None:
+        return None
+    for key in ("profile_steam", "profile_steam_alt"):
+        try:
+            value = int(game.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return None
+
+
 async def steam_appids(result: HltbResult) -> set[int] | None:
     """The Steam appids HLTB's page lists for this entry (`profile_steam`,
     `profile_steam_alt`): an empty set when it lists none, None when the

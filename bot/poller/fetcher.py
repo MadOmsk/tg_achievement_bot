@@ -15,6 +15,7 @@ from bot.services.hltb import ensure_title_match
 from bot.services.models import Progress
 from bot.services.platform_format import game_platforms_json
 from bot.services.rows import to_achievement_row
+from bot.services.steam_extras import SteamExtras
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.auth import TokenRefreshError
@@ -47,8 +48,10 @@ class Fetcher:
         concurrency: int = 2,
         *,
         anthropic_auth: AnthropicAuth,
+        steam_extras: SteamExtras | None = None,
     ) -> None:
         self._repo = repo
+        self._steam_extras = steam_extras
         self._client = client
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
@@ -186,6 +189,10 @@ class Fetcher:
             await ensure_title_match(self._repo, title_id)
         except Exception:
             log.exception("HLTB match failed for title %s", title_id)
+        # The game's Steam side (its app, tips, patches), filled in the
+        # background: its Steam app is read from the HLTB entry just matched.
+        if self._steam_extras is not None:
+            self._steam_extras.ensure_title(title_id)
 
     async def ensure_title_icon(self, tg_id: int, title_id: str) -> str | None:
         """Box art as a stand-in for an Xbox 360 achievement icon (SPEC 7.1)

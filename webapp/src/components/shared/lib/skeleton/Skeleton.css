@@ -45,7 +45,8 @@
 .skel-rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* The gap of the list it stands in for, where that list sets one. */
+  gap: var(--day-gap, 8px);
 }
 
 .skel-feed-row {
@@ -103,7 +104,7 @@
 
 .app-skel-search {
   height: 44px;
-  margin: 0 0 22px;
+  margin: 0;
   border-radius: 999px;
 }
 
@@ -115,25 +116,6 @@
 
 .app-skel .skel-title {
   margin: 0 0 18px;
-}
-
-.app-skel-friends {
-  display: flex;
-  gap: 16px;
-}
-
-.app-skel-friend {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.app-skel-game {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--hair);
 }
 
 .skel-pic.is-big {
@@ -261,4 +243,34 @@
   to {
     transform: translateX(100%);
   }
+}
+
+.game-skel-tabs {
+  display: flex;
+  gap: 22px;
+  margin: 0 0 16px;
+}
+
+.skel-avatar.is-friend {
+  width: 80px;
+  height: 80px;
+}
+
+.skel-played-game {
+  cursor: default;
+}
+
+.skel-game-cover {
+  flex: 0 0 60px;
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+}
+
+.app-skel-game {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hair);
 }

@@ -39,6 +39,8 @@ Layout:
                     until #119) — shared across every platform, unlike
                     _platform_links.py's Steam-specific schema/rarity
                     caches. Also added after the split.
+    _steam.py       a game's Steam app, its guides' tips and its patch
+                    notes (migration 069).
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -106,6 +108,7 @@ from bot.db.repo._models import (
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
 from bot.db.repo._stats import _StatsRepo
+from bot.db.repo._steam import StoredPatch, TitleSteam, _SteamRepo
 
 __all__ = [
     # Re-exported for scripts/backfill_*.py and the odd test that reaches
@@ -141,12 +144,14 @@ __all__ = [
     "SteamPollTarget",
     "SteamPresenceRow",
     "SteamSchemaAchievement",
+    "StoredPatch",
     "TitleAchievementRow",
     "TitleAchievementWithUnlock",
     "TitleCoverRow",
     "TitleHistoryRow",
     "TitleHltbRow",
     "TitleProgress",
+    "TitleSteam",
     "TokenRecord",
     "User",
     "UserChatRow",
@@ -167,6 +172,7 @@ class Repo(
     _FloodRepo,
     _DescriptionsRepo,
     _CatalogRepo,
+    _SteamRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

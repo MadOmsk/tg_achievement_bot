@@ -34,6 +34,10 @@ export const GAMES_ROUTES = {
     `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}`,
   HLTB: (platform: string, titleId: string) =>
     `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}/hltb`,
+  GUIDES: (platform: string, titleId: string) =>
+    `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}/guides`,
+  PATCHES: (platform: string, titleId: string) =>
+    `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}/patches`,
 } as const;
 
 export const ADMIN_ROUTES = {

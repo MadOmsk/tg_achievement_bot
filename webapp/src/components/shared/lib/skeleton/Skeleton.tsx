@@ -39,43 +39,85 @@ export function HomeSkel() {
   );
 }
 
-/**
- * The app while it first loads, drawn as the home page it becomes: the header
- * (avatar, greeting, nick), the search field, the big picture, the friends
- * strip and the list of games.
- */
-export function AppSkel() {
+/** The app opened straight on a game: its page, not the home page. */
+export function GameSkel() {
   return (
     <div className="app-skel" aria-busy="true" aria-live="polite">
       <div className="app-skel-head">
-        <span className="skel skel-avatar" />
-        <span className="app-skel-who">
-          <span className="skel line" style={{ width: 70 }} />
-          <span className="skel line" style={{ width: 128, height: 17 }} />
-        </span>
+        <span className="skel line" style={{ width: "58%", height: 20 }} />
       </div>
-      <span className="skel app-skel-search" />
       <span className="skel app-skel-hero" />
-      <span className="skel line skel-title" />
-      <div className="app-skel-friends">
+      <div className="game-skel-tabs">
+        <span className="skel line" style={{ width: 118, height: 15 }} />
+        <span className="skel line" style={{ width: 84, height: 15 }} />
+      </div>
+      <RowsSkel count={6} />
+    </div>
+  );
+}
+
+/**
+ * The home page under its header while its first data loads, drawn with the
+ * page's own blocks — the gallery, the friends, the games — so the real ones
+ * land where their placeholders stood and nothing moves.
+ */
+export function HomeBodySkel() {
+  return (
+    <div aria-busy="true" aria-live="polite">
+      <HomeSkel />
+      <div className="section-head">
+        <span className="skel line" style={{ width: 92, height: 18 }} />
+      </div>
+      <div className="friends">
         {[0, 1, 2, 3].map((i) => (
-          <span key={i} className="app-skel-friend">
-            <span className="skel skel-avatar is-big" />
-            <span className="skel line" style={{ width: 64 }} />
+          <span key={i} className="friend">
+            <span className="skel skel-avatar is-friend" />
+            <span className="skel line" style={{ width: 58, marginTop: 8 }} />
+            <span className="skel line is-thin" style={{ width: 44, marginTop: 6 }} />
           </span>
         ))}
       </div>
-      <span className="skel line skel-title" style={{ marginTop: 28 }} />
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="app-skel-game">
-          <span className="skel skel-pic is-big" />
-          <span className="skel-copy">
-            <span className="skel line" style={{ width: `${60 - i * 8}%` }} />
-            <span className="skel line" />
-            <span className="skel line is-thin" style={{ width: 84 }} />
-          </span>
+      <div className="section-head achievements-head">
+        <span className="skel line" style={{ width: 70, height: 18 }} />
+      </div>
+      <div className="played-games">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="played-game skel-played-game">
+            <span className="skel skel-game-cover" />
+            <span className="played-game-body skel-copy">
+              <span className="skel line" style={{ width: `${62 - i * 9}%` }} />
+              <span className="skel line" style={{ height: 6 }} />
+              <span className="skel line is-thin" style={{ width: 70 }} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The app while it first loads: the home page's own header, in its own
+ * classes, over the same body the page shows until its data arrives — one
+ * skeleton from the first frame to the content.
+ */
+export function AppSkel() {
+  return (
+    <div className="is-home" aria-busy="true" aria-live="polite">
+      <div className="home-chrome">
+        <div className="home-top">
+          <div className="home-top-main">
+            <span className="skel skel-avatar" />
+            <span className="home-hello-row app-skel-who">
+              <span className="skel line" style={{ width: 70 }} />
+              <span className="skel line" style={{ width: 128, height: 17 }} />
+            </span>
+            <span className="skel month-chip-skel" />
+          </div>
+          <span className="skel app-skel-search" />
         </div>
-      ))}
+      </div>
+      <HomeBodySkel />
     </div>
   );
 }

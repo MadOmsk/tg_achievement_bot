@@ -20,6 +20,8 @@ from bot.poller.online_refresh import DEFAULT_REFRESH_INTERVAL_MIN as DEFAULT_ON
 from bot.poller.online_refresh import DEFAULT_TTL_HOURS as DEFAULT_ONLINE_REFRESH_TTL_HOURS
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
 from bot.poller.online_refresh import TTL_HOURS_KEY as ONLINE_REFRESH_TTL_KEY
+from bot.poller.patch_refresh import DEFAULT_REFRESH_HOURS as DEFAULT_PATCH_REFRESH_HOURS
+from bot.poller.patch_refresh import REFRESH_HOURS_KEY as PATCH_REFRESH_HOURS_KEY
 from bot.poller.service_health import (
     DEFAULT_KEY_CHECK_INTERVAL_MIN,
     KEY_CHECK_INTERVAL_KEY,
@@ -207,6 +209,10 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
         min=0,
         max=168,
         zero_label="admin-disabled",
+    ),
+    # How often a played game's patch notes are re-read (poller/patch_refresh.py).
+    PATCH_REFRESH_HOURS_KEY: NumericSetting(
+        "admin-setting-patch-refresh", DEFAULT_PATCH_REFRESH_HOURS, min=1, max=168
     ),
 }
 

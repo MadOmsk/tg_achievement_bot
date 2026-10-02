@@ -23,7 +23,8 @@ export function Icon({
     | "link"
     | "sync"
     | "off"
-    | "sort";
+    | "sort"
+    | "guide";
   size?: number;
   filled?: boolean;
 }) {
@@ -48,7 +49,13 @@ export function Icon({
   if (name === "people") {
     if (filled) {
       return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden
+        >
           <circle cx="9" cy="8" r="3.15" />
           <path d="M3.1 20.2c0-3.4 2.6-5.8 5.9-5.8s5.9 2.4 5.9 5.8V21H3.1z" />
           <circle cx="16.7" cy="9.1" r="2.45" />
@@ -80,7 +87,12 @@ export function Icon({
         {filled ? (
           <>
             <circle cx="11" cy="11" r="7" />
-            <path d="m16.2 16.2 5 5" stroke="currentColor" strokeWidth="2.2" fill="none" />
+            <path
+              d="m16.2 16.2 5 5"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              fill="none"
+            />
           </>
         ) : (
           <>
@@ -194,6 +206,15 @@ export function Icon({
       <svg {...props}>
         <path d="M7 5v13.5M7 18.5 3.8 15.3M7 18.5l3.2-3.2" />
         <path d="M17 19V5.5M17 5.5l3.2 3.2M17 5.5l-3.2 3.2" />
+      </svg>
+    );
+  }
+  if (name === "guide") {
+    return (
+      <svg {...props}>
+        <path d="M12 6.6C10.3 5.3 8 4.8 4.5 4.9v12.5c3.5-.1 5.8.4 7.5 1.7" />
+        <path d="M12 6.6c1.7-1.3 4-1.8 7.5-1.7v12.5c-3.5-.1-5.8.4-7.5 1.7" />
+        <path d="M12 6.6v12.5" />
       </svg>
     );
   }

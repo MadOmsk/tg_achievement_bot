@@ -91,3 +91,28 @@ export type GameHltbResponse = {
   ok: boolean;
   hltb: GameHltb | null;
 };
+
+/** One patch from Steam's announcements: the whole post, as plain text. */
+export type GamePatch = {
+  title: string;
+  date: string;
+  text: string;
+};
+
+export type GamePatchesResponse = {
+  ok: boolean;
+  patches: GamePatch[];
+};
+
+/** What the Steam community's guides say about one achievement. */
+export type AchievementTip = {
+  text: string;
+};
+
+/** The tip for every achievement of the game that has one, by achievement id. */
+export type GameGuidesResponse = {
+  ok: boolean;
+  tips: Record<string, AchievementTip>;
+  /** False while Steam still holds some guides back; asking again later finds more. */
+  complete: boolean;
+};
