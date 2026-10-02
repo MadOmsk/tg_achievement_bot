@@ -748,7 +748,7 @@ elsewhere in this file still describe the bot.
   strip of people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. Home has no search field: a «Искать» button opens the People tab with its search focused (people only — games are not searched), and with no friends yet the strip says so. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  `subscriptions`, chat id 0). Chats only help to find people to follow. Home has no search field: a «Искать» button opens the People tab with its search focused (people only — games are not searched; the Mini App's HowLongToBeat search screens were removed on 2026-10-02, `/hltb` in Telegram stays, and the game page still shows HLTB's data), and with no friends yet the strip says so. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Browser sign-in** (shipped, Telegram only; migration 074): in a plain browser the
