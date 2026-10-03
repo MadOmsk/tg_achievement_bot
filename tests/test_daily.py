@@ -62,6 +62,7 @@ async def _chat_with_two_players(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     for tg_id, xuid, tag in ((1, XUID_A, "Igor"), (2, XUID_B, "Alex")):
         await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
+        await repo.change_handle(tg_id, tag)
         await repo.link_xbox_account(tg_id, xuid, tag, 1000)
         await repo.subscribe(CHAT_ID, tg_id)
 
@@ -127,10 +128,12 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     leaderboard sort is untouched either way)."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "both", first_name="Both")
+    await repo.change_handle(1, "Both")
     await repo.link_xbox_account(1, XUID_A, "Both", 0)
     await repo.link_platform_account(1, "steam", "76561197960287930", "BothSteam")
     await repo.subscribe(CHAT_ID, 1)
     await repo.ensure_user(2, "xboxonly", first_name="XboxOnly")
+    await repo.change_handle(2, "XboxOnly")
     await repo.link_xbox_account(2, XUID_B, "XboxOnly", 0)
     await repo.subscribe(CHAT_ID, 2)
 
@@ -318,6 +321,7 @@ async def test_summary_offers_show_all_button_only_past_the_configured_limit(
     for i in range(3):
         tg_id, xuid, tag = i + 1, f"xuid-{i}", f"Player{i}"
         await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
+        await repo.change_handle(tg_id, tag)
         await repo.link_xbox_account(tg_id, xuid, tag, 0)
         await repo.subscribe(CHAT_ID, tg_id)
         await repo.insert_new_achievements(
@@ -348,6 +352,7 @@ async def test_summary_top_limit_zero_means_no_cap(repo: Repo) -> None:
     for i in range(3):
         tg_id, xuid, tag = i + 1, f"xuid-{i}", f"Player{i}"
         await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
+        await repo.change_handle(tg_id, tag)
         await repo.link_xbox_account(tg_id, xuid, tag, 0)
         await repo.subscribe(CHAT_ID, tg_id)
         await repo.insert_new_achievements(

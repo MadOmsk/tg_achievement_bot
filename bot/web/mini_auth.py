@@ -9,6 +9,8 @@ Telegram-Android/12.10). aiogram's ``check_web_app_signature`` only drops
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import time
@@ -103,4 +105,46 @@ def validate_init_data(
         last_name=user.get("last_name"),
         language_code=user.get("language_code"),
         is_premium=bool(user.get("is_premium")),
+    )
+
+
+# ---------------------------------------------------------------- browser login
+
+LOGIN_MAX_AGE_SECONDS = 600
+_LOGIN_FIELDS = {"id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"}
+
+
+def validate_login_widget(
+    payload: dict[str, object],
+    bot_token: str,
+    *,
+    max_age_seconds: int = LOGIN_MAX_AGE_SECONDS,
+    now: int | None = None,
+) -> MiniAppUser:
+    """Check what Telegram's Login Widget hands the page (#157). Unlike Init Data
+    the secret is the SHA-256 of the bot token, and every field but `hash` is
+    signed. Only a few minutes old is accepted: the page signs in right away."""
+    fields = {k: str(v) for k, v in payload.items() if k in _LOGIN_FIELDS and v is not None}
+    given = fields.pop("hash", "")
+    if not given:
+        raise InitDataError("missing hash")
+    check = "\n".join(f"{k}={fields[k]}" for k in sorted(fields))
+    secret = hashlib.sha256(bot_token.encode()).digest()
+    expected = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, given):
+        raise InitDataError("bad hash")
+    try:
+        age = (int(time.time()) if now is None else now) - int(fields["auth_date"])
+        tg_id = int(fields["id"])
+    except (KeyError, ValueError) as exc:
+        raise InitDataError("missing auth_date or id") from exc
+    if age > max_age_seconds:
+        raise InitDataError("login expired")
+    return MiniAppUser(
+        tg_id=tg_id,
+        username=fields.get("username"),
+        first_name=fields.get("first_name"),
+        last_name=fields.get("last_name"),
+        language_code=None,
+        is_premium=False,
     )

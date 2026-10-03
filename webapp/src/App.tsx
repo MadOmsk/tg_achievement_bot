@@ -2,14 +2,19 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } fro
 import {
   connectPsn,
   connectSteam,
+  confirmHandle,
   connectXbox,
   deleteAccount,
   disconnectPsn,
   disconnectSteam,
   disconnectXbox,
   fetchMe,
+  logout,
+  WEB_SESSION,
   patchChat,
   patchSettings,
+  putHandle,
+  setAccountPublishes,
   syncXbox,
   type GameRef,
   type MeResponse,
@@ -25,8 +30,10 @@ import {
 } from "./components/game/game-open-provider/GameOpenProvider";
 import "./components/game/game.css";
 import { t, type Locale } from "./i18n";
-import { ConnectForm, Settings, type PlatNotes } from "./screens/me";
-import { AppSkel, GameSkel, Icon, PageSkel, usePullToRefresh } from "./components/shared/lib";
+import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/me";
+import { People } from "./screens/people";
+import { Login } from "./screens/login";
+import { AppSkel, GameSkel, Icon, SettingsSkel, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 // Settings and the connect forms are a few kilobytes and sit behind the dock like
@@ -50,11 +57,16 @@ import {
 type LoadState =
   | { status: "loading" }
   | { status: "need-telegram" }
+  | { status: "login" }
   | { status: "error"; message: string }
   | { status: "ok"; me: MeResponse };
 
+// Open in a plain browser, signed in through Telegram Login (#157): the session
+// cookie signs requests, and this stands in for Init Data.
+let webSession = false;
+
 function initData(): string {
-  return window.Telegram?.WebApp?.initData ?? "";
+  return window.Telegram?.WebApp?.initData || (webSession ? WEB_SESSION : "");
 }
 
 function localeOf(me: MeResponse): Locale {
@@ -132,6 +144,8 @@ export function App() {
   const [flash, setFlash] = useState<string | null>(null);
   const [platNotes, setPlatNotes] = useState<PlatNotes>({});
   const [personOpen, setPersonOpen] = useState(false);
+  // The Find button on Home lands on People with the search focused.
+  const [focusSearch, setFocusSearch] = useState(false);
   // Which admin screen Settings' admin list opened.
   const [adminScreen, setAdminScreen] = useState<AdminScreen>({ name: ADMIN_SCREENS.USERS });
   // Opened straight on a game (a notification's button), the home page is not
@@ -145,10 +159,17 @@ export function App() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const reload = useCallback(async () => {
-    const data = initData();
+    let data = initData();
     if (!data) {
-      setState({ status: "need-telegram" });
-      return;
+      // Not inside Telegram: a browser, signed in or not.
+      try {
+        await fetchMe(WEB_SESSION);
+        webSession = true;
+        data = WEB_SESSION;
+      } catch {
+        setState({ status: "login" });
+        return;
+      }
     }
     const me = await fetchMe(data);
     setState({ status: "ok", me });
@@ -201,6 +222,18 @@ export function App() {
   if (state.status === "need-telegram") {
     return <p className="error">{t("ru", "needTelegram")}</p>;
   }
+  if (state.status === "login") {
+    return (
+      <Login
+        locale={navigator.language.startsWith("ru") ? "ru" : "en"}
+        onSignedIn={() => {
+          webSession = true;
+          setState({ status: "loading" });
+          void reload().catch((err: unknown) => setState({ status: "error", message: String(err) }));
+        }}
+      />
+    );
+  }
   if (state.status === "error") {
     return <p className="error">{state.message}</p>;
   }
@@ -240,11 +273,32 @@ export function App() {
     }
   };
 
+  // The first visit after nicknames arrived (#157): keep the one the bot made
+  // from the username, or pick another. Shown before anything else, once.
+  if (me.handle && !me.handle.confirmed) {
+    return (
+      <NicknameForm
+        first
+        locale={locale}
+        handle={me.handle}
+        onSubmit={async (value) => {
+          await putHandle(data, value);
+          await reload();
+        }}
+        onKeep={async () => {
+          await confirmHandle(data);
+          await reload();
+        }}
+      />
+    );
+  }
+
   // Every screen.name comparison the render below needs, computed once —
   // never a bare string literal re-typed at each call site.
   const isHome = screen.name === SCREEN_NAMES.HOME;
   const isFeed = screen.name === SCREEN_NAMES.FEED;
   const isSummary = screen.name === SCREEN_NAMES.SUMMARY;
+  const isPeople = screen.name === SCREEN_NAMES.PEOPLE;
   const isSettings = screen.name === SCREEN_NAMES.SETTINGS;
   const isAdmin = screen.name === SCREEN_NAMES.ADMIN;
   const isConnectSteam = screen.name === SCREEN_NAMES.CONNECT_STEAM;
@@ -270,12 +324,17 @@ export function App() {
 
   const goTab = (tab: DockTab) => {
     const already =
-      tab === SCREEN_NAMES.SETTINGS ? isSettingsOrAdmin : screen.name === tab && !personOpen;
+      tab === SCREEN_NAMES.SETTINGS
+        ? isSettingsOrAdmin
+        : tab === SCREEN_NAMES.FEED
+          ? (isFeed || isSummary) && !personOpen
+          : screen.name === tab && !personOpen;
     if (already) {
       window.scrollTo(0, 0);
       return;
     }
     setPersonId(null);
+    setFocusSearch(false);
     setScreen(SCREENS[tab]);
   };
 
@@ -325,11 +384,31 @@ export function App() {
             setPersonId(id);
           }}
           onClosePerson={() => setPersonId(null)}
+          onPane={(next) => setScreen(SCREENS[next])}
           onPersonVisible={setPersonOpen}
           onSettings={() => setScreen(SCREENS.settings)}
+          onFind={() => {
+            setFocusSearch(true);
+            setPersonId(null);
+            setScreen(SCREENS.people);
+          }}
         />
         )}
       </div>
+
+      {isPeople && (
+        <People
+          locale={locale}
+          data={data}
+          refreshKey={refreshKey}
+          focusSearch={focusSearch}
+          onFlash={setFlash}
+          onOpenProfile={(id) => {
+            setPersonId(id);
+            setScreen(SCREENS.home);
+          }}
+        />
+      )}
 
       {isSettings && (
         <Settings
@@ -355,13 +434,33 @@ export function App() {
               await patchChat(data, chatId, body);
             })
           }
+          onAccountPublishes={(platform, publishes, accountId) =>
+            void run(async () => {
+              await setAccountPublishes(data, platform, publishes, accountId);
+            })
+          }
+          onLogout={
+            webSession
+              ? () => {
+                  void logout().finally(() => {
+                    webSession = false;
+                    setState({ status: "login" });
+                  });
+                }
+              : undefined
+          }
+          onNickname={async (value) => {
+            await putHandle(data, value);
+            await reload();
+          }}
           onConnectSteam={() => setScreen(SCREENS["connect-steam"])}
           onConnectPsn={() => setScreen(SCREENS["connect-psn"])}
           notes={platNotes}
           onConnectXbox={() =>
             void runPlat("xbox", async () => {
               const { authorize_url } = await connectXbox(data);
-              window.Telegram?.WebApp?.openLink(authorize_url);
+              if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(authorize_url);
+              else window.open(authorize_url, "_blank");
               return t(locale, "openMicrosoft");
             })
           }
@@ -395,7 +494,7 @@ export function App() {
       )}
 
       {isAdmin && (
-        <Suspense fallback={<PageSkel />}>
+        <Suspense fallback={<SettingsSkel />}>
         <Admin
           locale={locale}
           data={data}
@@ -448,7 +547,7 @@ export function App() {
             className="dock-pill"
             style={{
               transform: `translateX(${
-                (isSettingsOrAdmin ? 3 : isSummary ? 2 : isFeed ? 1 : 0) * 100
+                (isSettingsOrAdmin ? 3 : isPeople ? 2 : isFeed || isSummary ? 1 : 0) * 100
               }%)`,
             }}
             aria-hidden
@@ -463,19 +562,19 @@ export function App() {
           </button>
           <button
             type="button"
-            className={isFeed && !personOpen ? "is-on" : undefined}
+            className={(isFeed || isSummary) && !personOpen ? "is-on" : undefined}
             onClick={() => goTab(SCREEN_NAMES.FEED)}
             aria-label={t(locale, "feed")}
           >
-            <Icon name="feed" filled={isFeed && !personOpen} />
+            <Icon name="feed" filled={(isFeed || isSummary) && !personOpen} />
           </button>
           <button
             type="button"
-            className={isSummary && !personOpen ? "is-on" : undefined}
-            onClick={() => goTab(SCREEN_NAMES.SUMMARY)}
-            aria-label={t(locale, "stats")}
+            className={isPeople ? "is-on" : undefined}
+            onClick={() => goTab(SCREEN_NAMES.PEOPLE)}
+            aria-label={t(locale, "searchTitle")}
           >
-            <Icon name="stats" filled={isSummary && !personOpen} />
+            <Icon name="search" filled={isPeople} />
           </button>
           <button
             type="button"

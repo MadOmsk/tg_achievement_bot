@@ -17,6 +17,7 @@ export function PersonProfile({
   showSecrets,
   monthChip,
   onBack,
+  onOpenCard,
   onReveal,
 }: {
   person: PersonPayload;
@@ -27,9 +28,10 @@ export function PersonProfile({
   showSecrets?: boolean;
   monthChip?: ReactNode;
   onBack: () => void;
+  /** The nickname in the bar opens the person's card. */
+  onOpenCard?: () => void;
   onReveal: (key: string) => void;
 }) {
-  const [scoreOpen, setScoreOpen] = useState(false);
   const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const feed = person.feed ?? [];
   const gameCount = new Set(
@@ -96,8 +98,7 @@ export function PersonProfile({
           <button
             type="button"
             className="account-who"
-            onClick={() => setScoreOpen(true)}
-            aria-label={t(locale, "scoreSummary")}
+            onClick={onOpenCard}
           >
             <Avatar
               name={person.name}
@@ -111,13 +112,7 @@ export function PersonProfile({
             <span className="person-bar-title">
               <span className="account-name-row">
                 <strong>{person.name}</strong>
-                <ScoreCup
-                  locale={locale}
-                  lines={scoreLines}
-                  open={scoreOpen}
-                  onOpenChange={setScoreOpen}
-                  markSize={12}
-                />
+                <ScoreCup locale={locale} lines={scoreLines} markSize={12} />
               </span>
               {status && <small>{status}</small>}
             </span>

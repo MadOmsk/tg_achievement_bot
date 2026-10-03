@@ -167,6 +167,7 @@ async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(re
 
 async def test_header_lists_every_connected_platform(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, None, "Igor", "Petrov")
+    await repo.change_handle(TG_ID, "IgorP")
     await repo.link_xbox_account(TG_ID, "xuid-1", "MadXbox", 1000)
     await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "SteamNick")
     await repo.link_platform_account(TG_ID, "psn", "acc-1", "PsnNick")
@@ -174,7 +175,7 @@ async def test_header_lists_every_connected_platform(repo: Repo) -> None:
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
-    assert text.splitlines()[0] == "👤 Igor Petrov"
+    assert text.splitlines()[0] == "👤 IgorP"
     assert "🟢 XBOX: MadXbox" in text
     assert "⚫ Steam: SteamNick" in text
     # "PlayStation:", not "PSN:" — same label /stats' own shared header uses

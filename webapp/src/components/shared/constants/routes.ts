@@ -11,6 +11,8 @@ export const USER_ROUTES = {
   DELETE_ME: "/me",
   AVATAR: (tgId: number) => `/avatar/${tgId}`,
   SETTINGS: "/settings",
+  HANDLE: "/me/handle",
+  CONFIRM_HANDLE: "/me/handle/confirm",
   CONNECT_XBOX: "/connect/xbox",
   DISCONNECT_XBOX: "/disconnect/xbox",
   CONNECT_STEAM: "/connect/steam",

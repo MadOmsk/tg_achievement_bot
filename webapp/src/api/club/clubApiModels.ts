@@ -65,6 +65,8 @@ export type SummaryGame = {
 export type PersonPayload = {
   tg_id: number;
   name: string;
+  /** The owner keeps their activity private: only the name is real (#157). */
+  hidden?: boolean;
   presence?: {
     state: string | null;
     playing: boolean;

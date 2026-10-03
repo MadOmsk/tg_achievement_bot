@@ -1,0 +1,308 @@
+.sheet-body.is-mid:has(.person-sheet) {
+  height: auto;
+  max-height: 88dvh;
+}
+
+.person-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 46px 18px 4px;
+  text-align: left;
+}
+
+.ps-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ps-head-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ps-head h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-head .follow-btn {
+  flex: none;
+}
+
+.ps-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ps-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ps-stats strong {
+  font-size: 1.2rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-stats span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.ps-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.ps-label {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ps-count {
+  margin-left: 6px;
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.ps-hidden {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.ps-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 0;
+}
+
+.ps-row + .ps-row {
+  border-top: 1px solid var(--hair);
+}
+
+.ps-row-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-row-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.ps-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+}
+
+.ps-games {
+  display: flex;
+  gap: 12px;
+  margin: 0 -18px;
+  padding: 2px 18px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ps-games::-webkit-scrollbar {
+  display: none;
+}
+
+.ps-game {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 104px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ps-game-cover,
+.ps-game-cover img {
+  width: 104px;
+  height: 104px;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.ps-game strong {
+  margin-top: 5px;
+  font-size: 0.82rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-game small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.ps-quiet {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.ps-quiet button {
+  border: 0;
+  background: none;
+  padding: 10px 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.ps-quiet button.is-danger {
+  color: #ff8a96;
+}
+
+.ps-skel-line {
+  width: 90px;
+  height: 13px;
+  margin-top: 4px;
+}
+
+.ps-skel-tile {
+  height: 66px;
+  border-radius: 14px;
+}
+
+.ps-skel-label {
+  width: 110px;
+  height: 11px;
+  margin: 3px 0 9px;
+}
+
+.ps-skel-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
+.ps-skel-text {
+  flex: 1;
+  height: 14px;
+  max-width: 60%;
+}
+
+.ps-skel-cover {
+  width: 104px;
+  height: 104px;
+  border-radius: 14px;
+}
+
+.ps-skel-name {
+  width: 84px;
+  height: 12px;
+  margin-top: 8px;
+}
+
+.ps-skel-count {
+  width: 28px;
+  height: 10px;
+  margin-top: 4px;
+}
+
+.ps-avatar,
+.ps-name {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ps-avatar:disabled {
+  cursor: default;
+}
+
+.ps-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-sheet {
+  position: relative;
+}
+
+.ps-more {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 1.1rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.ps-state {
+  flex: none;
+}
+
+.ps-state .dd-arrow {
+  color: inherit;
+}

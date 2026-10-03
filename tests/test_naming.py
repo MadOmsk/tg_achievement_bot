@@ -52,14 +52,10 @@ def _link(platform: str, **over) -> PlatformLink:
 
 
 def test_person_chain_order() -> None:
-    """Имя Фамилия → username → platform → id. Digits last, most human
-    form first."""
-    everything = dict(
-        tg_id=TG_ID, first_name="Igor", last_name="Petrov", username="mad", xbox="MadXbox"
-    )
-    assert person_name(**everything) == "Igor Petrov"
-    assert person_name(**{**everything, "last_name": None}) == "Igor"
-    assert person_name(**{**everything, "first_name": None, "last_name": None}) == "mad"
+    """Nickname → username → platform → id (#157). Digits last."""
+    everything = dict(tg_id=TG_ID, handle="IgorP", username="mad", xbox="MadXbox")
+    assert person_name(**everything) == "IgorP"
+    assert person_name(**{**everything, "handle": None}) == "mad"
     assert person_name(tg_id=TG_ID, username=None, xbox="MadXbox") == "MadXbox"
 
 
@@ -96,9 +92,11 @@ def test_person_name_of_reads_a_user_and_their_links() -> None:
     """The real shape behind the screenshot that started #51: no Xbox at
     all, a Telegram first name, a username and a PSN nickname — and the
     summary rendered a bare id."""
-    user = _user(username="keimaks", first_name="k_maks")
+    user = _user(username="keimaks", first_name="k_maks", handle="Maks")
     links = [_link("psn", display_name="kmaks90")]
-    assert person_name_of(user, links) == "k_maks"
+    assert person_name_of(user, links) == "Maks"
+    # Telegram's own name is not a step of the chain.
+    assert person_name_of(_user(first_name="k_maks"), links) == "kmaks90"
 
     nameless = _user()
     assert person_name_of(nameless, links) == "kmaks90"

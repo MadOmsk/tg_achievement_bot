@@ -264,7 +264,20 @@ function Start-Bot {
         $env:MINI_APP_URL = $miniUrl
         # Xbox OAuth needs a public HTTPS callback. Vite proxies /auth → :8081,
         # so the same Cloudflare origin works; Azure must list this URI too.
-        $env:OAUTH_REDIRECT_URL = ($miniUrl.TrimEnd('/') + '/auth/callback')
+        # A fixed callback written in the env file (a personal URL on a real host,
+        # not a trycloudflare one) is kept: Azure already knows it, and the tunnel
+        # address changes on every run.
+        $fixedOauth = $null
+        if (Test-Path $EnvFile) {
+            $line = Select-String -Path $EnvFile -Pattern '^\s*OAUTH_REDIRECT_URL\s*=\s*(\S+)' |
+                Select-Object -First 1
+            if ($line) { $fixedOauth = $line.Matches[0].Groups[1].Value.Trim('"', "'") }
+        }
+        if ($fixedOauth -and $fixedOauth -notmatch 'trycloudflare\.com') {
+            Write-Host ("  OAuth:    {0} (from {1})" -f $fixedOauth, $EnvFileName) -ForegroundColor Cyan
+        } else {
+            $env:OAUTH_REDIRECT_URL = ($miniUrl.TrimEnd('/') + '/auth/callback')
+        }
     }
     try {
         $process = Start-Process -FilePath $Python -ArgumentList '-u', '-m', 'bot.main' `
@@ -301,7 +314,8 @@ function Start-Bot {
         Write-Host ("Started ($InstanceLabel), PID {0}. Logs: {1}" -f $process.Id, $logRel) -ForegroundColor Green
         if ($miniUrl) {
             Write-Host ("  Mini App: {0}" -f $miniUrl) -ForegroundColor Cyan
-            Write-Host ("  OAuth:    {0}/auth/callback" -f $miniUrl.TrimEnd('/')) -ForegroundColor Cyan
+            $shownOauth = if ($fixedOauth -and $fixedOauth -notmatch 'trycloudflare') { $fixedOauth } else { $miniUrl.TrimEnd('/') + '/auth/callback' }
+            Write-Host ("  OAuth:    {0}" -f $shownOauth) -ForegroundColor Cyan
             if (-not (Test-ViteListening)) {
                 Write-Host '  Vite :5173: not listening — tunnel is stale. Start with -Test -Web.' -ForegroundColor Yellow
             }

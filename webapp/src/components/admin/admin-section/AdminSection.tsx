@@ -1,14 +1,10 @@
-import { Chevron } from "../../shared/lib";
 import { useEffect, useState } from "react";
 import { fetchAdminHome, type AdminHome as AdminHomeType } from "../../../api";
 import { t, type Locale } from "../../../i18n";
+import { Group, InfoRow, NavRow } from "../../shared/lib";
 import { ADMIN_SCREENS, type AdminScreen } from "../../shared/constants";
 
-/**
- * The super-admin's part of the settings screen: a list of the admin
- * sections (each opens its own screen) and the API usage lines. It sits
- * straight in Settings rather than behind a separate "Admin" entry.
- */
+/** The super-admin's part of Settings: the admin sections, then the API load. */
 export function AdminSection({
   data,
   locale,
@@ -29,45 +25,23 @@ export function AdminSection({
   const sections = [
     { screen: { name: ADMIN_SCREENS.USERS }, label: "adminUsers" },
     { screen: { name: ADMIN_SCREENS.CHATS }, label: "adminChats" },
-    { screen: { name: ADMIN_SCREENS.KEYS }, label: "adminKeys" },
-    { screen: { name: ADMIN_SCREENS.LIMITS }, label: "adminLimits" },
     { screen: { name: ADMIN_SCREENS.DEFAULTS }, label: "adminDefaults" },
+    { screen: { name: ADMIN_SCREENS.LIMITS }, label: "adminLimits" },
+    { screen: { name: ADMIN_SCREENS.KEYS }, label: "adminKeys" },
   ] as const;
 
   return (
     <>
-      <p className="kicker">{t(locale, "admin")}</p>
-      <div className="glass-card">
+      <Group title={t(locale, "admin")}>
         {sections.map(({ screen, label }) => (
-          <button
-            key={screen.name}
-            type="button"
-            className="ios-row"
-            onClick={() => onNavigate(screen)}
-          >
-            <span>{t(locale, label)}</span>
-            <span className="ios-value">
-              <Chevron />
-            </span>
-          </button>
+          <NavRow key={screen.name} label={t(locale, label)} onClick={() => onNavigate(screen)} />
         ))}
-      </div>
-      {home && (
-        <div className="glass-card">
-          <div className="ios-row">
-            <span>{t(locale, "xboxUsage")}</span>
-            <span className="ios-value">{home.xbox_usage}</span>
-          </div>
-          <div className="ios-row">
-            <span>{t(locale, "steamUsage")}</span>
-            <span className="ios-value">{home.steam_usage}</span>
-          </div>
-          <div className="ios-row">
-            <span>{t(locale, "psnToday")}</span>
-            <span className="ios-value">{home.psn_requests}</span>
-          </div>
-        </div>
-      )}
+      </Group>
+      <Group title={t(locale, "groupApi")}>
+        <InfoRow label={t(locale, "xboxUsage")} value={home?.xbox_usage ?? "…"} />
+        <InfoRow label={t(locale, "steamUsage")} value={home?.steam_usage ?? "…"} />
+        <InfoRow label={t(locale, "psnToday")} value={home?.psn_requests ?? "…"} />
+      </Group>
     </>
   );
 }

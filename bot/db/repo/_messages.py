@@ -21,6 +21,7 @@ from bot.db.repo._models import (
     _iso,
 )
 from bot.db.repo._sql import (
+    HANDLE_SHOWN,
     LOCALIZED_NAME_COLUMNS,
     LOCALIZED_TITLE_COLUMNS,
     NAME_CACHE_JOIN,
@@ -31,6 +32,7 @@ from bot.db.repo._sql import (
     earned_at,
     earned_date_is_real,
     earned_since,
+    member_source,
     pick_name,
     publishes,
     rarity,
@@ -93,7 +95,7 @@ class _MessagesRepo:
         renders and sorts.
         """
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name "
@@ -113,6 +115,7 @@ class _MessagesRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
@@ -128,6 +131,7 @@ class _MessagesRepo:
         locale: str = "ru",
         since: datetime | None = None,
         until: datetime | None = None,
+        members: Sequence[int] | None = None,
     ) -> list[RecentAchievement]:
         where = f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
         params: list[object] = [chat_id]
@@ -142,7 +146,7 @@ class _MessagesRepo:
             # Every field the person chain needs (#51) — this used to select
             # `u.gamertag` alone, so a member with no Xbox account was
             # rendered as the literal word "кто-то".
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -161,7 +165,7 @@ class _MessagesRepo:
             "       t.icon_url AS game_icon_url, s.description,"
             "       s.xuid AS achievement_xuid, s.trophy_group_id,"
             "       s.device, t.platforms AS game_platforms "
-            "FROM subscriptions sub "
+            "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
@@ -191,6 +195,7 @@ class _MessagesRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
@@ -224,6 +229,7 @@ class _MessagesRepo:
         max_percent: float = 0.5,
         limit: int = 80,
         locale: str = "ru",
+        members: Sequence[int] | None = None,
     ) -> list[RecentAchievement]:
         """Month finds under `max_percent` rarity — Mini App stats «Находки».
 
@@ -241,7 +247,7 @@ class _MessagesRepo:
             params.append(_iso(until))
         params.append(limit)
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -254,7 +260,7 @@ class _MessagesRepo:
             "       s.title_id, s.achievement_id, s.icon_url,"
             "       t.icon_url AS game_icon_url, s.description,"
             "       s.xuid AS achievement_xuid, s.trophy_group_id "
-            "FROM subscriptions sub "
+            "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
@@ -276,6 +282,7 @@ class _MessagesRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
@@ -298,7 +305,9 @@ class _MessagesRepo:
             for row in await cursor.fetchall()
         ]
 
-    async def chat_unlock_months(self, chat_id: int, limit: int = 24) -> list[str]:
+    async def chat_unlock_months(
+        self, chat_id: int, limit: int = 24, *, members: Sequence[int] | None = None
+    ) -> list[str]:
         """Distinct `YYYY-MM` prefixes of unlock timestamps in this chat.
 
         The Mini App month picker lists these; ISO strings are UTC, so a
@@ -307,7 +316,7 @@ class _MessagesRepo:
         timezone window, not this list."""
         cursor = await self._conn.execute(
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
-            "FROM subscriptions sub "
+            "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
@@ -354,7 +363,7 @@ class _MessagesRepo:
             params.append(_iso(until))
         params.append(limit)
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -388,6 +397,7 @@ class _MessagesRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],

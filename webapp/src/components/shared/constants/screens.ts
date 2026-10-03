@@ -5,6 +5,7 @@ export const SCREEN_NAMES = {
   HOME: "home",
   FEED: "feed",
   SUMMARY: "summary",
+  PEOPLE: "people",
   SETTINGS: "settings",
   ADMIN: "admin",
   CONNECT_STEAM: "connect-steam",
@@ -15,6 +16,7 @@ export const SCREENS = {
   home: { name: SCREEN_NAMES.HOME },
   feed: { name: SCREEN_NAMES.FEED },
   summary: { name: SCREEN_NAMES.SUMMARY },
+  people: { name: SCREEN_NAMES.PEOPLE },
   settings: { name: SCREEN_NAMES.SETTINGS },
   admin: { name: SCREEN_NAMES.ADMIN },
   "connect-steam": { name: SCREEN_NAMES.CONNECT_STEAM },
@@ -24,7 +26,7 @@ export const SCREENS = {
 export type Screen = (typeof SCREENS)[keyof typeof SCREENS];
 export type DockTab =
   | typeof SCREEN_NAMES.FEED
-  | typeof SCREEN_NAMES.SUMMARY
+  | typeof SCREEN_NAMES.PEOPLE
   | typeof SCREEN_NAMES.SETTINGS;
 
 // The three tabs a deep link (?t=... or the Mini App start_param) may open
@@ -47,7 +49,9 @@ export function asLaunchTab(value: string | null): LaunchTab {
 /** The sub-panes of the settings screen. */
 export const SETTINGS_PANES = {
   ROOT: "root",
-  ACHIEVEMENTS: "achievements",
-  CHATS: "chats",
+  PUBLISHING: "publishing",
+  PRIVACY: "privacy",
+  NOTIFICATIONS: "notifications",
+  NICKNAME: "nickname",
 } as const;
 export type SettingsPane = (typeof SETTINGS_PANES)[keyof typeof SETTINGS_PANES];

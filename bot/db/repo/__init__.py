@@ -67,6 +67,8 @@ from bot.db.repo._database import (
 )
 from bot.db.repo._descriptions import _DescriptionsRepo
 from bot.db.repo._flood import _FloodRepo
+from bot.db.repo._follows import PersonRow, _FollowsRepo
+from bot.db.repo._handles import HandleInvalid, HandleState, HandleTooSoon, _HandlesRepo
 from bot.db.repo._messages import _MessagesRepo
 from bot.db.repo._models import (
     AchievementRow,
@@ -107,6 +109,7 @@ from bot.db.repo._models import (
 )
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
+from bot.db.repo._sessions import _SessionsRepo
 from bot.db.repo._stats import _StatsRepo
 from bot.db.repo._steam import StoredPatch, TitleSteam, _SteamRepo
 
@@ -131,8 +134,12 @@ __all__ = [
     "DeletableMessage",
     "FloodState",
     "GameAchievements",
+    "HandleInvalid",
+    "HandleState",
+    "HandleTooSoon",
     "HltbCacheRow",
     "OnlineAutoRefreshRow",
+    "PersonRow",
     "PlatformLink",
     "PollTarget",
     "PresenceRow",
@@ -173,6 +180,9 @@ class Repo(
     _DescriptionsRepo,
     _CatalogRepo,
     _SteamRepo,
+    _HandlesRepo,
+    _FollowsRepo,
+    _SessionsRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

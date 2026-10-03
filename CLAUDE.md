@@ -35,10 +35,17 @@ admin controls, and predictable behavior, not public SaaS scale.
 
 ### Non-goals
 
-- No public web UI outside Telegram. The only browser surfaces are the Microsoft
-  OAuth callback and the Telegram Mini App (`webapp/`, served separately; this
-  process only answers `/api/mini/*` next to `/auth/callback`). Slash commands and
-  chat notifications stay — the Mini App is an extra door, not a replacement.
+- No web UI of its own beyond the Mini App. Today the only browser surfaces are the
+  Microsoft OAuth callback and the Telegram Mini App (`webapp/`, served separately;
+  this process only answers `/api/mini/*` next to `/auth/callback`). Slash commands
+  and chat notifications stay — the Mini App is an extra door, not a replacement.
+  **The same Mini App is to open in a plain browser too** (owner, 2026-10-02; #157):
+  outside Telegram it shows a sign-in screen, and a person signs in **through a
+  messenger** — Telegram now (Telegram Login), WhatsApp later — one person with
+  several messenger logins. The other methods listed in #156 (email, Discord, phone,
+  Google, a platform account) are not planned for now. **Telegram Login is built**
+  (see "Browser sign-in" under People, nicknames and follows); WhatsApp is not. New
+  code must not assume that every person has a Telegram id.
 - No `/compare` or `/top` (see the appendix).
 - One `rarity_mode` per person, for every platform and every chat — not one per
   platform (see the appendix). What a person *can* switch off is a whole account's
@@ -116,6 +123,8 @@ name, or when the tree goes stale.
 │   │   ├── stats.py              aggregates for panels, /stats, summaries
 │   │   ├── models.py, rows.py    ParsedAchievement and its AchievementRow, shared by all platforms
 │   │   ├── naming.py             the naming chains (#51) — the only answer to "what is X called"
+│   │   ├── handles.py            nickname rules: valid, normalized, shown, first one, digits (#157)
+│   │   ├── people.py             who may see whom: the relation between two people, `can_view` (#157)
 │   │   ├── profile_links.py      one profile-URL builder per platform
 │   │   ├── presence_view.py      "where is this person right now" — /online's rule, for one person
 │   │   ├── descriptions_view.py  an achievement's name/description in the reader's language (#48, #61)
@@ -269,7 +278,21 @@ every column. History: #106.
 
 ### People and accounts (#52)
 
-- `users` is keyed by Telegram `tg_id` and holds only the Telegram identity.
+- `users` has an id of its own (`users.id`, migration 071; #156 step 1) and keeps
+  the Telegram identity as `tg_id` — unique, and empty for a person who will sign in
+  another way. **Every other table still points at `users(tg_id)`** until it moves to
+  the person id (step 2), so code still treats `tg_id` as the person for now.
+  071 rebuilds `users` with foreign keys switched off inside the script itself (the
+  pragma does nothing inside a transaction), so a migration that rebuilds a parent
+  table follows the same shape. **The rest is changing** (#156): each way to sign in
+  (Telegram, later email and the rest) becomes a field on the person. A person may
+  then have no Telegram and no platform account at all — someone who signed in by
+  email only to follow friends. Merging two people is the person's own request:
+  the same platform accounts (or one side empty) merge at once; a conflict (two
+  different Steam ids) is put to the person, and settings come from the fresher side.
+  **A super-admin stays an ordinary person named by `ADMIN_TG_IDS`** (owner,
+  2026-10-02): no role field. So a super-admin must always keep a Telegram id —
+  nothing (unlinking a login, a merge) may leave them without one.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
@@ -671,6 +694,93 @@ isn't muted there; it wasn't already published there.
 User-facing text is Russian by default and English where a chat or person picked it
 (Localization). History: #109.
 
+### People, nicknames and follows (#157)
+
+Agreed with the owner on 2026-10-02, built in stages on top of #156's person id.
+**Shipped: nicknames, the follows backend, the People tab, and the Publishing and Privacy screens.** The rest is planned; until a stage ships, the rules
+elsewhere in this file still describe the bot.
+
+- **A person is named by a nickname only** (shipped) — never by their Telegram first
+  and last name, anywhere (the Mini App, group messages, DMs; the admin's user card
+  shows the nickname too). A nickname is 3–20 Latin letters and digits, unique
+  ignoring case; a taken one gets four random digits, `RideTheSun#4821`, always
+  shown after it. Nobody picks or edits the digits; a change to a free nickname
+  drops them, to a taken one gives new digits. The first choice is free, then one
+  change per 30 days (only the letters' case may change at any time). The rules are
+  `services/handles.py`, the storage `db/repo/_handles.py` (`users.handle`,
+  `handle_norm`, `handle_number` — 0 means no digits —, `handle_confirmed_at`,
+  `handle_changed_at`; migration 072).
+  - **Where a first nickname comes from**: a new person gets one from their Telegram
+    username at `ensure_user`; everybody else at start-up and on their first Mini App
+    visit (`give_handle`: username, then an Xbox/PSN nickname, else `Player`). Until
+    then the naming chain falls through to those same names. The Mini App shows
+    "Твой ник" once (`handle.confirmed` false) to keep or change it; later it is
+    Settings → Никнейм.
+  - Endpoints: `PUT /api/mini/me/handle` (`error` is `invalid` or `too_soon`),
+    `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.
+- **Follows, as on Xbox** (backend shipped, migration 073): following is one-way and
+  needs no consent; following each other makes two people friends — friends are
+  not stored, they are two rows in `follows`. A person can unfollow and block someone; a follower is never removed by the
+  one followed (owner, 2026-10-02) — blocking is the way to end it (a block deletes the follows between the two and hides each from
+  the other's search and lists; the blocked one cannot follow). Search is by
+  nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
+  People from a shared chat (subscribed or seen writing) are suggested. A new
+  follower is told in one DM, unless they turned it off in Settings → Уведомления
+  (`user_settings.notify_followers`, migration 075) (`people-new-follower` / `people-new-friend`); friends'
+  achievements are never sent as DMs. These tables and routes speak in **person
+  ids** (`users.id`), `tg_id` is sent along only for the avatar.
+  Code: `db/repo/_follows.py`, `services/people.py`, `web/mini_people.py`.
+- **Privacy is one setting** (`users.activity_visible`): who sees my activity in the
+  app — everyone (default), friends, nobody. The one rule is
+  `services/people.can_view` (a block either way first, then the setting; oneself
+  always); nickname and avatar are not activity and stay visible. Routes:
+  `GET/PUT /api/mini/me/privacy`. Enforced on a person's page (`/club/people` answers `hidden: true` with
+  the name only) and in the «Подписки» scope. **Not** on a chat's own feed, ranking or
+  `/online`: those show what the chat was already told. Every new screen that shows
+  another person's activity must call `repo.can_view_activity`. Publishing to
+  chats is unrelated and works as before.
+- **Publishing** (shipped): Settings → Публикация has the rarity mode, secrets, a
+  switch per chat and a switch per game account (#20). Settings → Приватность has
+  the one privacy setting and the list of blocked people.
+- **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
+  became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
+  dock tab; the `summary` screen name and `?t=summary` links still work).
+  **Scope** (owner, 2026-10-02): there is no chat picker — the Feed, the Ranking, Home's
+  strip of people and `/club/online` are always about oneself plus the followed people
+  whose privacy lets the viewer see them (`?scope=following`, answered by the same
+  queries through `_sql.member_source`, a list of people standing in for
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their card (`PersonSheet`, `/api/mini/people/tg/{tg_id}`); its avatar or nickname opens the full profile. The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  nickname, following, followers and shared-chat suggestions, a follow button on each
+  row and a person sheet (remove follower, block).
+- **Browser sign-in** (shipped, Telegram only; migration 074): in a plain browser the
+  Mini App shows a sign-in screen with Telegram's Login Widget. `POST
+  /api/mini/auth/telegram` checks the widget's signature (`mini_auth.
+  validate_login_widget`: HMAC with SHA-256 of the bot token, at most 10 minutes old)
+  and sets an HttpOnly, SameSite=Lax cookie `ab_session`; `web_sessions` keeps only a
+  hash of its token (30 days). A request with no Init Data header falls back to that
+  cookie (`_require_user`); a *bad* Init Data header is never rescued by it. CORS
+  never allows credentials, so only the same origin carries the cookie. `POST
+  /api/mini/auth/logout` ends it. **Setup per bot**: BotFather `/setdomain` must name
+  the Mini App's host (`xbox.sultanpharm.com`, `test.xbox.sultanpharm.com`, and the
+  dev tunnel) or the widget refuses to render. A session serves only a person with a
+  Telegram id until the tables move to the person id (#156 step 2).
+- **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
+  `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
+  `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
+  `NumberRow`, `CheckRow`, `RowLink`, and `SettingsSkel` while loading. A screen
+  composes these and never styles a row of its own; destructive actions are red rows in
+  a last group of their own. The Mini App's admin sets the global rarity threshold under
+  «Общие правила» (`/api/mini/admin/defaults`), not on a chat's card.
+- **Actions look one way each** (owner, 2026-10-02; `components/shared/styles/base.css`):
+  `.btn` is a pill without an outline — the action ("Подписаться", "Подключить");
+  `.btn.is-quiet` is the paler pill of a state that opens choices ("Друзья ⌄");
+  `.see-all` is blue text with → for going somewhere ("Все →", "Искать →");
+  `DropdownArrow` ⌄ marks anything picked from a list (dropdowns, the month), and the
+  row `Chevron` → a row that opens a screen. The follow control is one component,
+  `FollowButton`: follow at once, and behind "Друзья ⌄" unfollow and block.
+- **Design**: every new screen follows the Mini App as it is — its tokens, glass
+  surfaces and spacing, no extra outlines.
+
 ### Naming people and accounts (#51)
 
 **One chain per question, reused — never a new one at the call site.** Four
@@ -678,8 +788,10 @@ hand-rolled versions of "who is this" once coexisted and disagreed. A screen tha
 seems to need a third chain is a question for the owner, not a decision at the
 keyboard.
 
-1. **Who is this person?** `Имя Фамилия` → `username` → a connected platform's
-   nickname (Xbox → PlayStation → Steam) → `id<tg_id>`.
+1. **Who is this person?** Their nickname (#157) → `username` → a connected
+   platform's nickname (Xbox → PlayStation → Steam) → `id<tg_id>`. Telegram's first
+   and last names are not in the chain. Everybody has a nickname, so the steps after
+   it are a net for a row read before one was given.
 2. **Which account is this?** That platform's own chain — used *only* where a line is
    genuinely about one platform: per-platform rows in `/stats`, `/panel` and the
    admin's user card, connect/disconnect notices, the achievement announcement, and

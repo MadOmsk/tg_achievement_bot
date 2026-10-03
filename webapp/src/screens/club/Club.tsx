@@ -5,7 +5,6 @@ import {
   fetchPerson,
   fetchSummary,
   type FeedItem,
-  type HltbHit,
   type MeResponse,
   type OnlineMember,
   type PersonPayload,
@@ -13,19 +12,19 @@ import {
   type SummaryMember,
 } from "../../api";
 import { t, type Locale } from "../../i18n";
-import { GameHits, GameSheet, useHltbSearch } from "../hltb";
-import { FeedPosts, PeopleHits, PersonProfile, PlayedGames, RecentPosts, matchQuery } from "../person";
-import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, SearchBar, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { FeedPosts, HiddenProfile, PersonProfile, PlayedGames, RecentPosts } from "../person";
+import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
   MonthSheet,
-  RosterSheet,
   formatMonth,
   statusOf,
 } from "../../components/club";
 import { Icon } from "../../components/shared/lib/icon/Icon";
 import { SCREEN_NAMES, type ClubPane } from "../../components/shared/constants";
+import { FollowsSheet } from "../../components/club/follows-sheet/FollowsSheet";
+import { PersonSheet, type SheetPerson } from "../../components/people/person-sheet/PersonSheet";
 import "./Club.css";
 
 const FRIENDS_PREVIEW = 6;
@@ -37,6 +36,7 @@ export function Club({
   openPersonId,
   data,
   pane,
+  onPane,
   refreshKey = 0,
   onChat: _onChat,
   onFlash,
@@ -44,6 +44,7 @@ export function Club({
   onClosePerson,
   onPersonVisible,
   onSettings,
+  onFind,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -51,6 +52,8 @@ export function Club({
   openPersonId?: number | null;
   data: string;
   pane: ClubPane;
+  /** Switch between the Feed and the Ranking, which share one dock tab. */
+  onPane: (pane: ClubPane) => void;
   /** Increment to refetch club data without leaving the current pane. */
   refreshKey?: number;
   onChat: (chatId: number) => void;
@@ -59,6 +62,8 @@ export function Club({
   onClosePerson?: () => void;
   onPersonVisible?: (open: boolean) => void;
   onSettings?: () => void;
+  /** Open the People tab with its search focused. */
+  onFind: () => void;
 }) {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [homeFeed, setHomeFeed] = useState<FeedItem[]>([]);
@@ -79,17 +84,21 @@ export function Club({
   const [myPerson, setMyPerson] = useState<PersonPayload | null>(null);
   const [clubReady, setClubReady] = useState(false);
   const [personBusy, setPersonBusy] = useState(false);
-  const [query, setQuery] = useState("");
   const [rosterOpen, setRosterOpen] = useState(false);
-  const [hltbGame, setHltbGame] = useState<HltbHit | null>(null);
   const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [author, setAuthor] = useState<SheetPerson | null>(null);
   const feedRef = useRef(feed);
   const onlineRef = useRef(online);
   feedRef.current = feed;
   onlineRef.current = online;
 
+  // The Feed, the Ranking and the people strip are always about the people you
+  // follow and yourself (#157); chats are only a way to find people to follow.
+  const scopeRef = "following" as const;
+
   const showSecrets = me.settings.show_secrets;
+  const hasAccounts = me.xbox.linked || me.steam.linked || me.psn.linked;
   // The friends are everybody but you.
   const others = online.filter((m) => m.tg_id !== me.tg_id);
   const activeId =
@@ -98,19 +107,21 @@ export function Club({
   useEffect(() => {
     // Blank only when the chat/account changes — pull-to-refresh keeps the UI.
     setClubReady(false);
-  }, [activeId, data, me.tg_id]);
+  }, [activeId, data, me.tg_id, scopeRef]);
 
   useEffect(() => {
-    if (!activeId || !data) return;
+    if (!data) return;
     let cancelled = false;
     const load = async () => {
       const [f, o, s, mine] = await Promise.allSettled([
-        fetchFeed(data, activeId),
-        fetchOnline(data, activeId),
-        fetchSummary(data, activeId),
+        fetchFeed(data, scopeRef ?? activeId),
+        fetchOnline(data, scopeRef ?? activeId),
+        fetchSummary(data, scopeRef ?? activeId),
         // Own unlocks from every linked platform — not the chat feed slice,
         // which is dominated by whoever unlocked most recently in-group.
-        fetchPerson(data, activeId, me.tg_id),
+        // A profile page is read inside a chat; with none, the home page falls
+        // back to the feed below.
+        activeId ? fetchPerson(data, activeId, me.tg_id) : Promise.reject(new Error("no chat")),
       ]);
       if (cancelled) return;
       if (f.status === "fulfilled") {
@@ -152,7 +163,7 @@ export function Club({
     return () => {
       cancelled = true;
     };
-  }, [activeId, data, me.tg_id, refreshKey]);
+  }, [activeId, data, me.tg_id, refreshKey, scopeRef]);
 
   useEffect(() => {
     if (!openPersonId || !activeId) {
@@ -209,24 +220,34 @@ export function Club({
   const openPerson = (tgId: number) => {
     onOpenPerson?.(tgId);
   };
-
-  const needle = query.trim();
-  const gameSearch = useHltbSearch(data, needle, locale, onFlash);
-  const peopleHits = needle
-    ? online.filter((m) => matchQuery(m.name, needle))
-    : [];
+  // Someone's card: from a feed author, or from the nickname on a profile.
+  const authorSheet = author && (
+    <PersonSheet
+      locale={locale}
+      data={data}
+      person={author}
+      onClose={() => setAuthor(null)}
+      onFlash={onFlash}
+      onOpenProfile={(id) => {
+        setAuthor(null);
+        if (id !== openPersonId) openPerson(id);
+      }}
+    />
+  );
 
   // One picker for every pane: moving the month refetches the feed, the
   // summary and "my" games together, so wherever it was opened from, every
   // other pane already has the right month's data when the person switches to it.
   const pickMonth = (ym: string) => {
     setMonthPicker(false);
-    if (!activeId || !data || ym === selectedMonth) return;
+    if (!data || ym === selectedMonth) return;
     setMonthBusy(true);
     void Promise.allSettled([
-      fetchFeed(data, activeId, { month: ym }),
-      fetchSummary(data, activeId, { month: ym }),
-      fetchPerson(data, activeId, me.tg_id, { month: ym }),
+      fetchFeed(data, scopeRef ?? activeId, { month: ym }),
+      fetchSummary(data, scopeRef ?? activeId, { month: ym }),
+      activeId
+        ? fetchPerson(data, activeId, me.tg_id, { month: ym })
+        : Promise.reject(new Error("no chat")),
     ])
       .then(([f, s, mine]) => {
         if (f.status === "fulfilled") {
@@ -261,11 +282,31 @@ export function Club({
     selectedMonth && earlier
       ? { label: t(locale, "emptyPrevMonth"), onClick: () => pickMonth(earlier) }
       : undefined;
+  // The Feed and the Ranking share one dock tab; the page title picks between
+  // them, and more views can join the list later.
+  const paneSwitch = (
+    <Dropdown
+      className="dd-trigger pane-switch"
+      align="start"
+      value={pane === SCREEN_NAMES.SUMMARY ? SCREEN_NAMES.SUMMARY : SCREEN_NAMES.FEED}
+      options={[
+        { value: SCREEN_NAMES.FEED, label: t(locale, "feed") },
+        { value: SCREEN_NAMES.SUMMARY, label: t(locale, "ranking") },
+      ]}
+      onChange={(next) => onPane(next)}
+      trigger={
+        <>
+          <h1>{t(locale, pane === SCREEN_NAMES.SUMMARY ? "ranking" : "feed")}</h1>
+          <DropdownArrow />
+        </>
+      }
+    />
+  );
   const monthChip = (ym: string) =>
     ym && (
       <button type="button" className="month-chip" onClick={() => setMonthPicker(true)}>
         <span>{formatMonth(ym, locale, "chip")}</span>
-        <Icon name="forward" size={17} />
+        <DropdownArrow />
       </button>
     );
   // No provisional, half-loaded view: the page stays on the skeleton until
@@ -273,14 +314,9 @@ export function Club({
   // is ready, so it appears once, whole, instead of in visible stages.
   const openProfile =
     openPersonId && person && person.tg_id === openPersonId ? person : null;
-  const [scoreOpen, setScoreOpen] = useState(false);
   // A past month never changes once fetched — pull-to-refresh would just
   // reset the view back to the live month instead of refreshing anything.
   const isPastMonth = Boolean(selectedMonth) && Boolean(liveMonth) && selectedMonth !== liveMonth;
-
-  if (me.chats.length === 0) {
-    return <p className="empty">{t(locale, "noChats")}</p>;
-  }
 
   if (openPersonId && personBusy) {
     return (
@@ -290,12 +326,27 @@ export function Club({
     );
   }
 
+  if (openProfile?.hidden) {
+    return (
+      <HiddenProfile
+        tgId={openProfile.tg_id}
+        name={openProfile.name}
+        locale={locale}
+        onBack={() => {
+          setPerson(null);
+          onClosePerson?.();
+        }}
+      />
+    );
+  }
+
   if (openProfile) {
     return (
       <>
         <div className="pane-fade" data-no-pull={isPastMonth || undefined}>
         <PersonProfile
           person={openProfile}
+          onOpenCard={() => setAuthor({ tg_id: openProfile.tg_id, handle: openProfile.name })}
           status={
             statusOf(online.find((m) => m.tg_id === openProfile.tg_id)) ??
             t(locale, "notOnline")
@@ -311,6 +362,7 @@ export function Club({
           onReveal={(key) => setRevealed(new Set(revealed).add(key))}
         />
         </div>
+        {authorSheet}
       {monthPicker && (
         <MonthSheet
           months={months}
@@ -353,7 +405,7 @@ export function Club({
                   <AccountBar
                     me={me}
                     locale={locale}
-                    onProfile={() => setScoreOpen(true)}
+                    onProfile={() => undefined}
                     status={
                       statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
                       t(locale, "notOnline")
@@ -362,41 +414,21 @@ export function Club({
                       <ScoreCup
                         locale={locale}
                         lines={meScoreLines(me, locale)}
-                        onEmpty={onSettings}
                         markSize={12}
-                        open={scoreOpen}
-                        onOpenChange={setScoreOpen}
                       />
                     }
                   />
                 </div>
-                {clubReady ? (
+                {!hasAccounts ? null : clubReady ? (
                   monthChip(selectedMonth)
                 ) : (
                   <span className="skel month-chip-skel" aria-hidden />
                 )}
               </div>
-              <div className="home-top-search">
-                <SearchBar locale={locale} value={query} onChange={setQuery} />
-              </div>
             </div>
           </div>
-          {!clubReady && !needle && <HomeBodySkel />}
-          {(clubReady || needle) &&
-            (needle ? (
-              <div className="search-pane">
-                {peopleHits.length > 0 && (
-                  <PeopleHits members={peopleHits} locale={locale} onOpen={openPerson} />
-                )}
-                <GameHits
-                  hits={gameSearch.hits}
-                  busy={gameSearch.busy}
-                  searched={gameSearch.searched}
-                  locale={locale}
-                  onOpen={setHltbGame}
-                />
-              </div>
-            ) : (
+          {!clubReady && <HomeBodySkel />}
+          {clubReady && (
               <>
                 {monthBusy && <HomeSkel />}
                 {!monthBusy && mine.length > 0 && (
@@ -409,8 +441,17 @@ export function Club({
                   />
                 )}
                 {!monthBusy &&
+                  !hasAccounts && (
+                    <EmptyState
+                      title={t(locale, "welcomeTitle")}
+                      hint={t(locale, "welcomeText")}
+                      action={onSettings ? { label: t(locale, "connect"), onClick: onSettings } : undefined}
+                      slide
+                    />
+                  )}
+                {!monthBusy &&
                   mine.length === 0 &&
-                  (me.xbox.linked || me.steam.linked || me.psn.linked) && (
+                  hasAccounts && (
                     <EmptyState
                       title={t(locale, isPastMonth ? "emptyTitlePast" : "emptyTitleNow")}
                       hint={t(locale, "emptyHomeHint")}
@@ -424,6 +465,7 @@ export function Club({
                   limit={FRIENDS_PREVIEW}
                   onOpen={openPerson}
                   onSeeAll={() => setRosterOpen(true)}
+                  onFind={onFind}
                 />
                 {(monthBusy || mine.length > 0) && (
                   <>
@@ -456,14 +498,14 @@ export function Club({
                   </>
                 )}
               </>
-            ))}
+          )}
         </>
       )}
 
       {pane === SCREEN_NAMES.FEED && (
         <>
           <header className="page-head is-split">
-            <h1>{t(locale, "feed")}</h1>
+            {paneSwitch}
             {clubReady ? (
               monthChip(selectedMonth)
             ) : (
@@ -486,7 +528,15 @@ export function Club({
               revealed={revealed}
               showSecrets={showSecrets}
               onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-              onOpenPerson={openPerson}
+              onOpenPerson={(id) => {
+                // The author's card first; the full profile is a tap away in it.
+                if (id === me.tg_id) {
+                  openPerson(id);
+                  return;
+                }
+                const post = feed.find((row) => row.tg_id === id);
+                setAuthor({ tg_id: id, handle: post?.person ?? "" });
+              }}
             />
           )}
         </>
@@ -495,7 +545,7 @@ export function Club({
       {pane === SCREEN_NAMES.SUMMARY && (
         <>
           <header className="page-head is-split">
-            <h1>{t(locale, "stats")}</h1>
+            {paneSwitch}
             {clubReady ? (
               monthChip(selectedMonth)
             ) : (
@@ -528,14 +578,19 @@ export function Club({
       </div>
 
       {rosterOpen && (
-        <RosterSheet
-          members={others}
+        <FollowsSheet
           locale={locale}
+          data={data}
           onClose={() => setRosterOpen(false)}
           onOpen={(id) => {
             setRosterOpen(false);
             openPerson(id);
           }}
+          onFind={() => {
+            setRosterOpen(false);
+            onFind();
+          }}
+          onFlash={onFlash}
         />
       )}
       {monthPicker && (
@@ -548,15 +603,7 @@ export function Club({
           onPick={pickMonth}
         />
       )}
-      {hltbGame && (
-        <GameSheet
-          preview={hltbGame}
-          data={data}
-          locale={locale}
-          onClose={() => setHltbGame(null)}
-          onFlash={onFlash}
-        />
-      )}
+      {authorSheet}
     </>
   );
 }

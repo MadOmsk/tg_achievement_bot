@@ -80,8 +80,7 @@ def _row_name(row: ChatPresenceRow) -> str:
             return row.psn_display_name
     return person_name(
         tg_id=row.tg_id,
-        first_name=row.first_name,
-        last_name=row.last_name,
+        handle=row.handle,
         username=row.username,
         xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
         steam=row.steam_display_name,

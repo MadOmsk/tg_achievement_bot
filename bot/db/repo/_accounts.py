@@ -21,6 +21,7 @@ from bot.db.repo._models import (
 )
 from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS
 from bot.i18n import DEFAULT_LOCALE
+from bot.services.handles import FALLBACK_HANDLE, from_text
 from bot.util import utcnow, utcnow_iso
 
 log = logging.getLogger(__name__)
@@ -67,6 +68,13 @@ class _AccountsRepo:
             (tg_id, default_rarity_mode or "all"),
         )
         await self._conn.commit()
+        # A new person starts with a nickname made from their username; the
+        # Mini App asks them to keep or change it (#157). With no usable
+        # username they have none yet, so the screens name them by a platform
+        # nickname until `give_handle` finds one (start-up, or their first visit
+        # to the Mini App). Telegram's real name is never used.
+        if from_text(username) != FALLBACK_HANDLE:
+            await self.assign_first_handle(tg_id, username)
 
     async def update_username(self, tg_id: int, username: str) -> None:
         await self._conn.execute(
@@ -667,7 +675,14 @@ class _AccountsRepo:
         return row["locale"] if row else DEFAULT_LOCALE
 
     async def update_user_settings(self, tg_id: int, **fields: Any) -> None:
-        allowed = {"tz_offset_min", "show_profile_links", "show_secrets", "locale", "rarity_mode"}
+        allowed = {
+            "tz_offset_min",
+            "show_profile_links",
+            "show_secrets",
+            "locale",
+            "rarity_mode",
+            "notify_followers",
+        }
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"unknown user_settings fields: {sorted(unknown)}")

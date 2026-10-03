@@ -13,3 +13,4 @@ export { PostLead } from "./post-lead/PostLead";
 export { FeedPosts } from "./feed-posts/FeedPosts";
 export { PeopleHits } from "./people-hits/PeopleHits";
 export { PersonProfile } from "./person-profile/PersonProfile";
+export { HiddenProfile } from "./hidden-profile/HiddenProfile";

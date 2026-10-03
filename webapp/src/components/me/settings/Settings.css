@@ -323,3 +323,58 @@
   padding-top: 10px;
   border-top: 1px solid var(--hair);
 }
+
+.nick-intro,
+.nick-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.nick-hint b {
+  color: inherit;
+  font-weight: 700;
+}
+
+.connect-form .nick-hint {
+  margin-top: -6px;
+}
+
+.hidden-profile {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 20px;
+}
+
+.glass-card + .settings-hint {
+  margin-top: 10px;
+}
+
+.nick-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.nick-form .input {
+  width: 100%;
+  margin: 0;
+  min-height: 48px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+}
+
+.nick-form .nick-hint,
+.nick-form .nick-intro {
+  margin: 0;
+}
+
+.page-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}

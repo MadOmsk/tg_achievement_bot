@@ -9,6 +9,7 @@ export function SearchBar({
   onChange,
   focusKey,
   onClose,
+  placeholder,
 }: {
   locale: Locale;
   value: string;
@@ -21,6 +22,7 @@ export function SearchBar({
    * only way back, so it shows even with nothing typed, and closes instead
    * of just clearing. Omit it where the field sits beside other content. */
   onClose?: () => void;
+  placeholder?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -35,7 +37,7 @@ export function SearchBar({
         ref={inputRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={t(locale, "searchHint")}
+        placeholder={placeholder ?? t(locale, "searchHint")}
         enterKeyHint="search"
         autoComplete="off"
       />

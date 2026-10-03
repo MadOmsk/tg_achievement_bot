@@ -43,16 +43,18 @@ def _achievement(title_id: str, platform: str, **overrides: object) -> Achieveme
     return AchievementRow(**base)  # type: ignore[arg-type]
 
 
-async def test_header_shows_full_telegram_identity_not_just_one_name(repo: Repo) -> None:
+async def test_header_shows_nickname_username_and_tg_id_not_the_real_name(repo: Repo) -> None:
     """Unlike /stats' header (one best name), the admin card shows
-    everything at once: name, username, and tg_id together."""
+    everything at once: nickname, username, and tg_id together. The real
+    Telegram name is not shown (#157)."""
     await repo.ensure_user(7, "igorp", "Igor", "Petrov")
     await repo.link_xbox_account(7, XUID, "GamerTag", 0)
 
     text, _markup = await render_user_card(repo, 7, locale="ru")
 
     header = text.split("\n")[0]
-    assert "Igor Petrov" in header
+    assert "igorp" in header.replace("@igorp", "")  # the nickname made from the username
+    assert "Petrov" not in header
     assert "@igorp" in header
     assert "tg_id 7" in header
 
