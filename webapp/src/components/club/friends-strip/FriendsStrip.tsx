@@ -24,7 +24,7 @@ export function FriendsStrip({
       <>
         <div className="section-head">
           <h1 className="kicker" style={{ margin: 0 }}>
-            {t(locale, "friends")}
+            {t(locale, "peopleFollowing")}
           </h1>
           <button type="button" className="see-all" onClick={onFind}>
             <span>{t(locale, "find")}</span>
@@ -41,7 +41,7 @@ export function FriendsStrip({
       <div className="section-head">
         <span className="section-title-group">
           <h1 className="kicker" style={{ margin: 0 }}>
-            {t(locale, "friends")}
+            {t(locale, "peopleFollowing")}
           </h1>
           <span className="section-count">{pool.length}</span>
         </span>

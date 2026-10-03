@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { peopleApi, type PersonProfile, type Relation } from "../../../api/people/peopleApi";
 import { t, type Locale } from "../../../i18n";
-import { Avatar, CoverImg, PlatformLogo, Sheet, useOpenGame } from "../../shared/lib";
+import { Avatar, CoverImg, EmptyState, PlatformLogo, Sheet, useOpenGame } from "../../shared/lib";
 import { FollowButton } from "../follow-button/FollowButton";
 import "./PersonSheet.css";
 
@@ -172,7 +172,14 @@ export function PersonSheet({
               </div>
             </div>
 
-            {!profile.can_view && <p className="ps-hidden">{t(locale, "activityHidden")}</p>}
+            {!profile.can_view && (
+              <EmptyState
+                title={t(locale, "activityHidden")}
+                hint={t(locale, "activityHiddenHint")}
+                icon="lock"
+                slide
+              />
+            )}
 
             {activity && activity.platforms.length > 0 && (
               <div className="ps-section">

@@ -66,10 +66,15 @@
   gap: 8px;
 }
 
+.follows-switch {
+  align-items: center;
+}
+
 .follows-count {
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 650;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
