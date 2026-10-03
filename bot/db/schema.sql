@@ -833,6 +833,16 @@ CREATE TABLE IF NOT EXISTS blocks (
 );
 CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks (blocked_id);
 
+-- Per pair: the last follow DM (one a day) and the last unfollow (a re-follow waits
+-- ten minutes) — #157, migration 076.
+CREATE TABLE IF NOT EXISTS follow_log (
+    follower_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    followee_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    notified_at   TEXT,
+    unfollowed_at TEXT,
+    PRIMARY KEY (follower_id, followee_id)
+);
+
 -- Browser sessions (#157, migration 074): only a hash of the cookie's token.
 CREATE TABLE IF NOT EXISTS web_sessions (
     token_hash   TEXT PRIMARY KEY,

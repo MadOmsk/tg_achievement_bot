@@ -1,5 +1,5 @@
 """Nicknames (#157): what is allowed, how a taken one gets its digits, the
-once-per-30-days change, and the first one made for people who never chose."""
+once-a-day change, and the first one made for people who never chose."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ async def test_invalid_nickname_is_refused(repo: Repo) -> None:
         await repo.change_handle(1, "Иван")
 
 
-async def test_a_change_waits_thirty_days_after_the_first_real_one(repo: Repo) -> None:
+async def test_a_change_waits_a_day_after_the_first_real_one(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.change_handle(1, "FirstPick")  # first choice: free
     await repo.change_handle(1, "SecondPick")  # first real change: allowed

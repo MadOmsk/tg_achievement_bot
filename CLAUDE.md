@@ -706,7 +706,7 @@ elsewhere in this file still describe the bot.
   ignoring case; a taken one gets four random digits, `RideTheSun#4821`, always
   shown after it. Nobody picks or edits the digits; a change to a free nickname
   drops them, to a taken one gives new digits. The first choice is free, then one
-  change per 30 days (only the letters' case may change at any time). The rules are
+  change a day (owner, 2026-10-03) (only the letters' case may change at any time). The rules are
   `services/handles.py`, the storage `db/repo/_handles.py` (`users.handle`,
   `handle_norm`, `handle_number` — 0 means no digits —, `handle_confirmed_at`,
   `handle_changed_at`; migration 072).
@@ -727,13 +727,21 @@ elsewhere in this file still describe the bot.
   People from a shared chat (subscribed or seen writing) are suggested. A new
   follower is told in one DM, unless they turned it off in Settings → Уведомления
   (`user_settings.notify_followers`, migration 075) (`people-new-follower` / `people-new-friend`); friends'
-  achievements are never sent as DMs. These tables and routes speak in **person
-  ids** (`users.id`), `tg_id` is sent along only for the avatar.
+  achievements are never sent as DMs. **Following is not a way to ping somebody**
+  (owner, 2026-10-03; `follow_log`, migration 076): one such DM per pair a day, and
+  following a person again within ten minutes of unfollowing them is refused
+  (`FollowTooSoon` → 429 `too_soon`). These tables and routes speak in **person
+  ids** (`users.id`), `tg_id` is sent along only for the avatar — and only to a
+  viewer who may see that person's activity: search is open to anyone with the
+  app, and a Telegram id is not public.
   Code: `db/repo/_follows.py`, `services/people.py`, `web/mini_people.py`.
 - **Privacy is one setting** (`users.activity_visible`): who sees my activity in the
   app — everyone (default), friends, nobody. The one rule is
   `services/people.can_view` (a block either way first, then the setting; oneself
-  always); nickname and avatar are not activity and stay visible. Routes:
+  always), and `repo.can_view_activity` adds that **"everyone" means everyone who
+  knows you**: the viewer shares an active chat with the person or follows them
+  (owner, 2026-10-03) — not anybody who found the nickname. Nickname and avatar
+  are not activity and stay visible. Routes:
   `GET/PUT /api/mini/me/privacy`. Enforced on a person's page (`/club/people` answers `hidden: true` with
   the name only) and in the «Подписки» scope. **Not** on a chat's own feed, ranking or
   `/online`: those show what the chat was already told. Every new screen that shows

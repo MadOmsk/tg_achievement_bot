@@ -340,6 +340,7 @@ loading: "Gathering the crew…",
   nicknameKeep: "Keep it",
   nicknameSave: "Save",
   nicknameInvalid: "Latin letters and digits only, 3–20 characters.",
-  nicknameTooSoon: "A nickname can change once every 30 days.",
+  nicknameTooSoon: "A nickname can change once a day.",
+  followTooSoon: "You can follow them again ten minutes after unfollowing.",
   nicknameNext: "You can change it from",
 };

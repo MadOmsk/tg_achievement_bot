@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from bot.db.repo import Repo
+from bot.db.repo import FollowTooSoon, Repo
 from bot.services.people import ACTIVITY_ALL, ACTIVITY_FRIENDS, ACTIVITY_NOBODY, Relation, can_view
 from bot.web.mini_api import cors_middleware, setup_mini_api
 from tests.test_mini_delete import _signed_init_data
@@ -99,6 +100,9 @@ async def test_suggestions_are_people_from_shared_chats_not_yet_followed(repo: R
 
 async def test_the_activity_setting_decides_who_sees(repo: Repo) -> None:
     alice, bobby, _ = await _people(repo)
+    await repo.upsert_chat(-100, "Chat", 1)
+    await repo.subscribe(-100, 1)
+    await repo.subscribe(-100, 2)
     assert await repo.can_view_activity(bobby, alice)
     await repo.set_activity_visible(alice, ACTIVITY_FRIENDS)
     assert not await repo.can_view_activity(bobby, alice)
@@ -108,6 +112,42 @@ async def test_the_activity_setting_decides_who_sees(repo: Repo) -> None:
     await repo.set_activity_visible(alice, ACTIVITY_NOBODY)
     assert not await repo.can_view_activity(bobby, alice)
     assert await repo.can_view_activity(alice, alice)
+
+
+async def test_everyone_means_people_who_know_you_not_any_stranger(repo: Repo) -> None:
+    """ "Everyone" still needs a shared active chat or a follow: a nickname found
+    by search is not enough to see somebody's play (owner, 2026-10-03)."""
+    alice, bobby, carol = await _people(repo)
+    assert not await repo.can_view_activity(carol, alice)
+    await repo.follow(carol, alice)
+    assert await repo.can_view_activity(carol, alice)
+    await repo.upsert_chat(-100, "Chat", 1)
+    await repo.subscribe(-100, 1)
+    await repo.subscribe(-100, 2)
+    assert await repo.can_view_activity(bobby, alice)
+    await repo.deactivate_chat(-100)
+    assert not await repo.can_view_activity(bobby, alice)
+
+
+async def test_a_follow_notice_goes_out_at_most_once_a_day_per_pair(repo: Repo) -> None:
+    alice, bobby, carol = await _people(repo)
+    assert await repo.claim_follow_notice(alice, bobby)
+    assert not await repo.claim_follow_notice(alice, bobby)
+    assert await repo.claim_follow_notice(carol, bobby)
+    await repo._conn.execute("UPDATE follow_log SET notified_at = '2000-01-01T00:00:00+00:00'")
+    assert await repo.claim_follow_notice(alice, bobby)
+
+
+async def test_following_again_right_after_an_unfollow_waits(repo: Repo) -> None:
+    alice, bobby, carol = await _people(repo)
+    await repo.unfollow(alice, bobby)  # changed nothing: no cooldown
+    assert await repo.follow(alice, bobby)
+    await repo.unfollow(alice, bobby)
+    with pytest.raises(FollowTooSoon):
+        await repo.follow(alice, bobby)
+    assert await repo.follow(alice, carol)  # other people are not affected
+    await repo._conn.execute("UPDATE follow_log SET unfollowed_at = '2000-01-01T00:00:00+00:00'")
+    assert await repo.follow(alice, bobby)
 
 
 async def test_mini_api_people_flow(repo: Repo, settings) -> None:
@@ -129,10 +169,23 @@ async def test_mini_api_people_flow(repo: Repo, settings) -> None:
     try:
         found = await (await client.get("/api/mini/people/search?q=friend", headers=mine)).json()
         assert [p["id"] for p in found["people"]] == [other]
+        # A stranger's Telegram id is not handed out by search.
+        assert found["people"][0]["tg_id"] is None
 
         followed = await client.post(f"/api/mini/people/{other}/follow", headers=mine)
         assert (await followed.json())["relation"]["following"] is True
         assert len(sent) == 1 and sent[0][0] == 7 and "test" in sent[0][1]
+        # Unfollow and follow again: refused for ten minutes, and after that no
+        # second DM the same day.
+        await client.delete(f"/api/mini/people/{other}/follow", headers=mine)
+        again = await client.post(f"/api/mini/people/{other}/follow", headers=mine)
+        assert (again.status, (await again.json())["error"]) == (429, "too_soon")
+        await repo._conn.execute(
+            "UPDATE follow_log SET unfollowed_at = '2000-01-01T00:00:00+00:00'"
+        )
+        again = await client.post(f"/api/mini/people/{other}/follow", headers=mine)
+        assert (await again.json())["relation"]["following"] is True
+        assert len(sent) == 1
 
         profile = await (await client.get(f"/api/mini/people/{other}", headers=mine)).json()
         assert profile["followers"] == 1 and profile["can_view"] is True
@@ -265,6 +318,9 @@ async def test_the_person_card_carries_their_play_when_visible(repo: Repo, setti
     await repo.ensure_user(7, "player7")
     await repo.link_xbox_account(7, "x7", "Tag7", 1500)
     other = await repo.person_id(7)
+    await repo.upsert_chat(-100, "Chat", 42)
+    await repo.subscribe(-100, 42)
+    await repo.subscribe(-100, 7)
     app = web.Application(middlewares=[cors_middleware()])
     setup_mini_api(app, settings, repo)
     headers = {"X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), 42)}
@@ -272,6 +328,7 @@ async def test_the_person_card_carries_their_play_when_visible(repo: Repo, setti
     await client.start_server()
     try:
         body = await (await client.get(f"/api/mini/people/{other}", headers=headers)).json()
+        assert body["tg_id"] == 7
         assert body["activity"]["platforms"][0]["gamerscore"] == 1500
         assert body["activity"]["games"] == []
 
