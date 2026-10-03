@@ -241,6 +241,8 @@ admin-reset-confirm-prompt =
     platform is deleted and read back from nothing (nothing is published to
     any chat — same as a first-time link).
 admin-reset-confirm-yes = Yes, wipe and resync
+admin-reset-avatar = 🖼 Reset avatar
+admin-avatar-reset = Avatar reset to the Telegram photo
 admin-delete-user = 🗑 Delete user
 admin-delete-confirm-1 =
     Delete user { $name } (ID: { $tg_id })?

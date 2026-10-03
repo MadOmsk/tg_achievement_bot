@@ -36,6 +36,7 @@ from bot.poller.service_health import (
     KEY_CHECK_INTERVAL_KEY,
 )
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services import custom_avatars
 from bot.services.admin_settings import (
     CHAT_SCOPED_KEYS,
     DEFAULT_RARITY_MODE_DEFAULT,
@@ -798,6 +799,17 @@ async def user_exclude(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     tg_id, excluded = int(raw_id), raw_flag == "1"
     await repo.set_excluded(tg_id, excluded, callback.from_user.id)
     await callback.answer(_("admin-user-excluded") if excluded else _("admin-user-restored"))
+    await _redraw(callback, *await render_user_card(repo, tg_id, locale=i18n.locale))
+
+
+@router.callback_query(F.data.startswith("a:avclr:"))
+async def user_avatar_reset(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """Take down a picture somebody chose in the Mini App (#157)."""
+    _ = translator("admin", i18n.locale)
+    assert callback.data is not None
+    tg_id = int(callback.data.rsplit(":", 1)[1])
+    await custom_avatars.clear(repo, tg_id)
+    await callback.answer(_("admin-avatar-reset"))
     await _redraw(callback, *await render_user_card(repo, tg_id, locale=i18n.locale))
 
 

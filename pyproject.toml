@@ -35,6 +35,11 @@ dependencies = [
     # based) — every call goes through asyncio.to_thread, see
     # services/psn/client.py.
     "psnawp>=3.0",
+    # A picture a person uploads in the Mini App (#157) is decoded and saved
+    # again as a plain JPEG: what is stored is then an image and nothing else,
+    # with no EXIF (a phone photo's GPS position) and a bounded size, whatever
+    # client sent it.
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]

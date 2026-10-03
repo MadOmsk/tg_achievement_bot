@@ -56,7 +56,7 @@ admin controls, and predictable behavior, not public SaaS scale.
 ## Stack
 
 Python 3.12+, aiogram 3, aiohttp (OAuth callback + Mini App API), httpx (platform
-HTTP clients), aiosqlite, APScheduler (`AsyncIOScheduler`), pydantic v2 +
+HTTP clients), Pillow (re-encoding uploaded avatars), aiosqlite, APScheduler (`AsyncIOScheduler`), pydantic v2 +
 pydantic-settings, cryptography Fernet, xbox-webapi-python, the official Steam Web
 API, psnawp (PSN), howlongtobeatpy, pytest + pytest-asyncio + ruff. The Mini App is
 Vite + React (`webapp/`).
@@ -133,6 +133,7 @@ name, or when the tree goes stale.
 │   │   ├── title_catalog.py      the game-level achievement catalog, 24h debounce (#99, #80)
 │   │   ├── achievement_icons.py  achievement icons on disk under data/achievements/ (#99)
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
+│   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -719,8 +720,12 @@ elsewhere in this file still describe the bot.
   - **An avatar of one's own** (owner, 2026-10-03; migration 077,
     `users.custom_avatar_path`): Settings → «Как тебя видят другие» (nickname and
     picture on one screen). The Mini App crops the picture to a 512 px square JPEG;
-    `PUT /api/mini/me/avatar` takes the bytes (JPEG/PNG/WebP, 2 MB at most),
-    `DELETE` goes back to the Telegram photo. `/api/mini/avatar/{tg_id}` serves the
+    `PUT /api/mini/me/avatar` takes the bytes (JPEG/PNG/WebP, 2 MB at most) and
+    **decodes and saves them again** as a JPEG of at most 512 px with no EXIF
+    (`services/custom_avatars.py`, Pillow): the server does not trust the client's
+    crop. `DELETE` goes back to the Telegram photo; a super-admin takes a picture
+    down from the user card in `/admin` («🖼 Сбросить аватар», `a:avclr:`), and
+    deleting the account removes the file. `/api/mini/avatar/{tg_id}` serves the
     chosen picture first, with an ETag and `no-cache` so a change shows at once.
   - Endpoints: `PUT /api/mini/me/handle` (`error` is `invalid` or `too_soon`),
     `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.

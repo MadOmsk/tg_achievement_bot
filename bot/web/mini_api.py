@@ -24,7 +24,7 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons, avatars
+from bot.services import achievement_icons, avatars, custom_avatars
 from bot.services.connect import ConnectService
 from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
@@ -51,7 +51,7 @@ from bot.util import parse_iso
 from bot.web import mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
-from bot.web.mini_avatars import _mime, forget_avatar, load_avatar_bytes
+from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
 from bot.web.mini_chat import (
     _https_url,
     build_feed_payload,
@@ -658,35 +658,31 @@ async def handle_chat_summary(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
-# A chosen picture: the Mini App sends it already cropped and shrunk; the server
-# only checks that it is one of three image formats and not oversized.
-AVATAR_MAX_BYTES = 2 * 1024 * 1024
-_IMAGE_KINDS = (("jpg", b"\xff\xd8\xff"), ("png", b"\x89PNG"), ("webp", b"RIFF"))
-
-
-def _image_kind(body: bytes) -> str | None:
-    for ext, magic in _IMAGE_KINDS:
-        if body.startswith(magic) and (ext != "webp" or b"WEBP" in body[:16]):
-            return ext
-    return None
+async def _read_capped(request: web.Request, limit: int) -> bytes | None:
+    """The request body, or None past `limit` bytes. Read from the stream: the
+    app's own `client_max_size` (1 MB) would answer a bigger body with an HTML
+    413 before the endpoint could say `invalid`."""
+    chunks: list[bytes] = []
+    size = 0
+    while chunk := await request.content.read(64 * 1024):
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 async def handle_put_avatar(request: web.Request) -> web.Response:
-    """Set the person's own picture (#157). The body is the image bytes."""
+    """Set the person's own picture (#157). The body is the image bytes; the
+    server decodes and re-saves it (`services/custom_avatars.py`)."""
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    body = await request.read()
-    kind = _image_kind(body)
-    if not body or len(body) > AVATAR_MAX_BYTES or kind is None:
+    body = await _read_capped(request, custom_avatars.MAX_UPLOAD_BYTES)
+    if not body:
         return web.json_response({"error": "invalid"}, status=400)
     await repo.ensure_user(user.tg_id, user.username)
-    # A new name every time, so no cache anywhere keeps the old face.
-    name = f"custom-{user.tg_id}-{hashlib.sha256(body).hexdigest()[:12]}.{kind}"
-    path, _digest = avatars.write(body, name)
-    previous = await repo.custom_avatar_path(user.tg_id)
-    await repo.set_custom_avatar_path(user.tg_id, path)
-    if previous and previous != path:
-        (avatars.avatar_dir() / previous).unlink(missing_ok=True)
+    if not await custom_avatars.store(repo, user.tg_id, body):
+        return web.json_response({"error": "invalid"}, status=400)
     forget_avatar(user.tg_id)
     return await handle_me(request)
 
@@ -695,10 +691,7 @@ async def handle_delete_avatar(request: web.Request) -> web.Response:
     """Back to the Telegram photo."""
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    previous = await repo.custom_avatar_path(user.tg_id)
-    if previous:
-        await repo.set_custom_avatar_path(user.tg_id, None)
-        (avatars.avatar_dir() / previous).unlink(missing_ok=True)
+    await custom_avatars.clear(repo, user.tg_id)
     forget_avatar(user.tg_id)
     return await handle_me(request)
 
@@ -720,7 +713,7 @@ async def handle_avatar(request: web.Request) -> web.Response:
         file = avatars.avatar_dir() / custom
         if file.is_file():
             body = file.read_bytes()
-            return _picture(request, body, _mime(body))
+            return _picture(request, body, image_mime(body))
     bot = request.app.get("mini_bot")
     if bot is None:
         raise web.HTTPNotFound(text="no photo")

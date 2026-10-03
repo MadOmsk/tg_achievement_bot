@@ -585,6 +585,12 @@ async def render_user_card(
                 text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
             ),
         )
+    if await repo.custom_avatar_path(tg_id):
+        # A picture chosen in the Mini App is seen by everybody (#157): the
+        # super-admin can take it down, back to the Telegram photo.
+        builder.row(
+            InlineKeyboardButton(text=_("admin-reset-avatar"), callback_data=f"a:avclr:{tg_id}")
+        )
     builder.row(InlineKeyboardButton(text=_("admin-delete-user"), callback_data=f"a:udel:{tg_id}"))
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
