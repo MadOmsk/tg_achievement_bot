@@ -187,12 +187,17 @@ export function People({
             <EmptyState
               title={t(locale, "peopleEmptyTitle")}
               hint={t(locale, "peopleEmptyHint")}
+              slide
             />
           ) : (
             <>
               {section("peopleSuggested", lists.suggested)}
               {lists.suggested.length === 0 && (
-                <EmptyState title={t(locale, "suggestedDoneTitle")} hint={t(locale, "suggestedDone")} />
+                <EmptyState
+                  title={t(locale, "suggestedDoneTitle")}
+                  hint={t(locale, "suggestedDone")}
+                  slide
+                />
               )}
             </>
           )}
