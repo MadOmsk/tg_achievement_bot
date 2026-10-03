@@ -1,4 +1,5 @@
 • Everyone has a nickname — real names are no longer shown
+• An avatar of your own in the app
 • Follows and friends, as on Xbox
 • A feed and ranking of the people you follow
 • A Search tab: people and games
