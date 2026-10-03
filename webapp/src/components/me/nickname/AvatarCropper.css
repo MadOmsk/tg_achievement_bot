@@ -1,0 +1,80 @@
+.crop-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: calc(20px + var(--safe-top, 0px)) 18px calc(20px + var(--safe-bottom, 0px));
+  background: rgba(6, 8, 14, 0.82);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  animation: crop-in 0.18s ease-out both;
+  touch-action: none;
+}
+
+@keyframes crop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.crop-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.crop-view {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  background: #000;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.crop-view:active {
+  cursor: grabbing;
+}
+
+.crop-view img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  pointer-events: none;
+}
+
+/* Everything outside the circle is dimmed: what stays bright is the avatar. */
+.crop-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 999px rgba(6, 8, 14, 0.6),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+}
+
+.crop-zoom {
+  width: 240px;
+  accent-color: var(--mint-2);
+  background: none;
+}
+
+.crop-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.crop-actions .btn {
+  flex: 1;
+  min-height: 48px;
+}

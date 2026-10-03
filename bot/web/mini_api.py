@@ -8,6 +8,7 @@ tma …``).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 from typing import Any
@@ -23,7 +24,7 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons
+from bot.services import achievement_icons, avatars
 from bot.services.connect import ConnectService
 from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
@@ -50,7 +51,7 @@ from bot.util import parse_iso
 from bot.web import mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
-from bot.web.mini_avatars import load_avatar_bytes
+from bot.web.mini_avatars import _mime, forget_avatar, load_avatar_bytes
 from bot.web.mini_chat import (
     _https_url,
     build_feed_payload,
@@ -120,6 +121,8 @@ def setup_mini_api(
     app.router.add_patch("/api/mini/settings", handle_patch_settings)
     app.router.add_put("/api/mini/me/handle", handle_put_handle)
     app.router.add_post("/api/mini/me/handle/confirm", handle_confirm_handle)
+    app.router.add_put("/api/mini/me/avatar", handle_put_avatar)
+    app.router.add_delete("/api/mini/me/avatar", handle_delete_avatar)
     app.router.add_post("/api/mini/connect/xbox", handle_connect_xbox)
     app.router.add_post("/api/mini/disconnect/xbox", handle_disconnect_xbox)
     app.router.add_post("/api/mini/connect/steam", handle_connect_steam)
@@ -655,6 +658,51 @@ async def handle_chat_summary(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
+# A chosen picture: the Mini App sends it already cropped and shrunk; the server
+# only checks that it is one of three image formats and not oversized.
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+_IMAGE_KINDS = (("jpg", b"\xff\xd8\xff"), ("png", b"\x89PNG"), ("webp", b"RIFF"))
+
+
+def _image_kind(body: bytes) -> str | None:
+    for ext, magic in _IMAGE_KINDS:
+        if body.startswith(magic) and (ext != "webp" or b"WEBP" in body[:16]):
+            return ext
+    return None
+
+
+async def handle_put_avatar(request: web.Request) -> web.Response:
+    """Set the person's own picture (#157). The body is the image bytes."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    body = await request.read()
+    kind = _image_kind(body)
+    if not body or len(body) > AVATAR_MAX_BYTES or kind is None:
+        return web.json_response({"error": "invalid"}, status=400)
+    await repo.ensure_user(user.tg_id, user.username)
+    # A new name every time, so no cache anywhere keeps the old face.
+    name = f"custom-{user.tg_id}-{hashlib.sha256(body).hexdigest()[:12]}.{kind}"
+    path, _digest = avatars.write(body, name)
+    previous = await repo.custom_avatar_path(user.tg_id)
+    await repo.set_custom_avatar_path(user.tg_id, path)
+    if previous and previous != path:
+        (avatars.avatar_dir() / previous).unlink(missing_ok=True)
+    forget_avatar(user.tg_id)
+    return await handle_me(request)
+
+
+async def handle_delete_avatar(request: web.Request) -> web.Response:
+    """Back to the Telegram photo."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    previous = await repo.custom_avatar_path(user.tg_id)
+    if previous:
+        await repo.set_custom_avatar_path(user.tg_id, None)
+        (avatars.avatar_dir() / previous).unlink(missing_ok=True)
+    forget_avatar(user.tg_id)
+    return await handle_me(request)
+
+
 async def handle_avatar(request: web.Request) -> web.Response:
     # Other people's photos are not in initData — only Bot API can fetch
     # them. Bytes go through here so the SPA never sees the bot token.
@@ -667,6 +715,12 @@ async def handle_avatar(request: web.Request) -> web.Response:
     target = await repo.get_user(tg_id)
     if tg_id != user.tg_id and target is None:
         raise web.HTTPNotFound(text="no photo")
+    custom = await repo.custom_avatar_path(tg_id)
+    if custom:
+        file = avatars.avatar_dir() / custom
+        if file.is_file():
+            body = file.read_bytes()
+            return _picture(request, body, _mime(body))
     bot = request.app.get("mini_bot")
     if bot is None:
         raise web.HTTPNotFound(text="no photo")
@@ -674,11 +728,18 @@ async def handle_avatar(request: web.Request) -> web.Response:
     if result is None:
         raise web.HTTPNotFound(text="no photo")
     body, mime = result
-    return web.Response(
-        body=body,
-        content_type=mime,
-        headers={"Cache-Control": "private, max-age=3600"},
-    )
+    return _picture(request, body, mime)
+
+
+def _picture(request: web.Request, body: bytes, mime: str) -> web.Response:
+    """A face, revalidated on every show: a person can change theirs at any
+    moment, and an hour of a browser's cache kept showing the old one. An
+    unchanged picture costs a 304 and no bytes."""
+    etag = '"' + hashlib.sha256(body).hexdigest()[:20] + '"'
+    headers = {"Cache-Control": "private, no-cache", "ETag": etag}
+    if request.headers.get("If-None-Match") == etag:
+        return web.Response(status=304, headers=headers)
+    return web.Response(body=body, content_type=mime, headers=headers)
 
 
 _X360_ICON_CACHE: dict[str, bytes] = {}

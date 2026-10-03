@@ -72,3 +72,19 @@
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
+
+.follows-line {
+  max-height: 80px;
+  transition:
+    max-height 0.32s ease,
+    opacity 0.24s ease,
+    transform 0.32s ease;
+}
+
+.follows-line.is-leaving {
+  max-height: 0;
+  opacity: 0;
+  transform: translateX(24px);
+  overflow: hidden;
+  border-bottom-color: transparent;
+}

@@ -45,3 +45,20 @@
 .people-list + .kicker {
   margin-top: 20px;
 }
+
+/* A suggestion just followed folds away. */
+.people-line {
+  max-height: 80px;
+  transition:
+    max-height 0.32s ease,
+    opacity 0.24s ease,
+    transform 0.32s ease;
+}
+
+.people-line.is-leaving {
+  max-height: 0;
+  opacity: 0;
+  transform: translateX(24px);
+  overflow: hidden;
+  border-bottom-color: transparent;
+}

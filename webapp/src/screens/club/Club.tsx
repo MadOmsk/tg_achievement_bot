@@ -17,7 +17,6 @@ import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, Perso
 import {
   ClubStats,
   FriendsStrip,
-  MonthSheet,
   formatMonth,
   statusOf,
 } from "../../components/club";
@@ -73,7 +72,6 @@ export function Club({
   const [selectedMonth, setSelectedMonth] = useState("");
   const [months, setMonths] = useState<string[]>([]);
   const [liveMonth, setLiveMonth] = useState("");
-  const [monthPicker, setMonthPicker] = useState(false);
   const [monthBusy, setMonthBusy] = useState(false);
   const [online, setOnline] = useState<OnlineMember[]>([]);
   const [day, setDay] = useState<SummaryMember[]>([]);
@@ -84,6 +82,8 @@ export function Club({
   const [myPerson, setMyPerson] = useState<PersonPayload | null>(null);
   const [clubReady, setClubReady] = useState(false);
   const [personBusy, setPersonBusy] = useState(false);
+  // The profile that could not be loaded: no skeleton is held for it.
+  const [personFailed, setPersonFailed] = useState<number | null>(null);
   const [rosterOpen, setRosterOpen] = useState(false);
   const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -201,6 +201,7 @@ export function Club({
           });
         } else {
           setPerson(null);
+          setPersonFailed(openPersonId);
           onFlash(`${t(locale, "error")}: ${String(err)}`);
         }
       })
@@ -230,7 +231,9 @@ export function Club({
       onFlash={onFlash}
       onOpenProfile={(id) => {
         setAuthor(null);
-        if (id !== openPersonId) openPerson(id);
+        // After the drawer has let the page go: it gives the old scroll back as
+        // it closes, which would fight the profile's own scroll to the top.
+        if (id !== openPersonId) requestAnimationFrame(() => openPerson(id));
       }}
     />
   );
@@ -239,7 +242,6 @@ export function Club({
   // summary and "my" games together, so wherever it was opened from, every
   // other pane already has the right month's data when the person switches to it.
   const pickMonth = (ym: string) => {
-    setMonthPicker(false);
     if (!data || ym === selectedMonth) return;
     setMonthBusy(true);
     void Promise.allSettled([
@@ -304,10 +306,22 @@ export function Club({
   );
   const monthChip = (ym: string) =>
     ym && (
-      <button type="button" className="month-chip" onClick={() => setMonthPicker(true)}>
-        <span>{formatMonth(ym, locale, "chip")}</span>
-        <DropdownArrow />
-      </button>
+      <Dropdown
+        className="month-chip"
+        value={ym}
+        options={(months.length ? months : [ym]).map((m) => ({
+          value: m,
+          label: formatMonth(m, locale, "sheet"),
+          hint: m === liveMonth ? t(locale, "nowMonth") : undefined,
+        }))}
+        onChange={pickMonth}
+        trigger={
+          <>
+            <span>{formatMonth(ym, locale, "chip")}</span>
+            <DropdownArrow />
+          </>
+        }
+      />
     );
   // No provisional, half-loaded view: the page stays on the skeleton until
   // the real payload (with its gallery picture and covers already preloaded)
@@ -318,7 +332,9 @@ export function Club({
   // reset the view back to the live month instead of refreshing anything.
   const isPastMonth = Boolean(selectedMonth) && Boolean(liveMonth) && selectedMonth !== liveMonth;
 
-  if (openPersonId && personBusy) {
+  // The skeleton from the very first frame: personBusy is only set by an effect,
+  // after a frame of the page underneath.
+  if (openPersonId && (personBusy || (!openProfile && personFailed !== openPersonId))) {
     return (
       <div className="pane-fade person-wait">
         <PersonSkel />
@@ -346,7 +362,11 @@ export function Club({
         <div className="pane-fade" data-no-pull={isPastMonth || undefined}>
         <PersonProfile
           person={openProfile}
-          onOpenCard={() => setAuthor({ tg_id: openProfile.tg_id, handle: openProfile.name })}
+          onOpenCard={
+            openProfile.tg_id === me.tg_id
+              ? undefined
+              : () => setAuthor({ tg_id: openProfile.tg_id, handle: openProfile.name })
+          }
           status={
             statusOf(online.find((m) => m.tg_id === openProfile.tg_id)) ??
             t(locale, "notOnline")
@@ -363,16 +383,6 @@ export function Club({
         />
         </div>
         {authorSheet}
-      {monthPicker && (
-        <MonthSheet
-          months={months}
-          selected={selectedMonth}
-          liveMonth={liveMonth}
-          locale={locale}
-          onClose={() => setMonthPicker(false)}
-          onPick={pickMonth}
-        />
-      )}
       </>
     );
   }
@@ -584,23 +594,13 @@ export function Club({
           onClose={() => setRosterOpen(false)}
           onOpen={(id) => {
             setRosterOpen(false);
-            openPerson(id);
+            requestAnimationFrame(() => openPerson(id));
           }}
           onFind={() => {
             setRosterOpen(false);
             onFind();
           }}
           onFlash={onFlash}
-        />
-      )}
-      {monthPicker && (
-        <MonthSheet
-          months={months}
-          selected={selectedMonth}
-          liveMonth={liveMonth}
-          locale={locale}
-          onClose={() => setMonthPicker(false)}
-          onPick={pickMonth}
         />
       )}
       {authorSheet}

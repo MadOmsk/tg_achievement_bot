@@ -129,17 +129,6 @@ a:focus-visible {
   margin: 12px 0;
 }
 
-.flash {
-  background: var(--glass-2);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
-  border: 1px solid var(--stroke);
-  border-radius: 18px;
-  padding: 12px 14px;
-  margin: 0 0 14px;
-  font-size: 0.875rem;
-}
-
 .busy {
   opacity: 0.72;
   pointer-events: none;
@@ -334,4 +323,73 @@ html.has-game-page #root {
 
 .dd-trigger.follow-state .dd-arrow {
   color: inherit;
+}
+
+/* The follow control's pop when its state flips; two names so it replays. */
+.follow-btn.is-pop,
+.follow-btn.is-pop2 {
+  animation: follow-pop 0.32s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.follow-btn.is-pop2 {
+  animation-name: follow-pop2;
+}
+
+@keyframes follow-pop {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.6;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes follow-pop2 {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.6;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .follow-btn.is-pop,
+  .follow-btn.is-pop2 {
+    animation: none;
+  }
+}
+
+/* Text fields (owner, 2026-10-03): no browser focus ring anywhere; a field shows
+ * focus by brightening its own surface and edge, softly. */
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
+  outline: none;
+}
+
+.search-bar,
+.nick-field,
+.input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.search-bar:focus-within,
+.nick-field:focus-within,
+.input:focus {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 4px rgba(155, 182, 255, 0.08);
 }

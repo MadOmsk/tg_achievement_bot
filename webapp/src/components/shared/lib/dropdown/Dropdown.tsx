@@ -39,7 +39,8 @@ export function Dropdown<T extends string | number>({
   const open = () => {
     const rect = button.current?.getBoundingClientRect();
     if (!rect) return;
-    const want = options.length * ROW + PAD * 2;
+    // A long list shows seven and a half rows: the cut-off half says it scrolls.
+    const want = Math.min(options.length, 7.5) * ROW + PAD * 2;
     // Keep clear of the dock floating at the bottom of the screen.
     const below = window.innerHeight - rect.bottom - GAP - 104;
     const above = rect.top - GAP - 16;
@@ -63,16 +64,34 @@ export function Dropdown<T extends string | number>({
     chosen?.scrollIntoView({ block: "center" });
   }, [place]);
 
+  const isOpen = place != null;
   useEffect(() => {
-    if (!place) return;
+    if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    // While open the page stays put: nothing scrolls but a long menu itself.
+    const html = document.documentElement;
+    const y = window.scrollY;
+    html.classList.add("is-dd-open");
+    const freeze = () => {
+      if (window.scrollY !== y) window.scrollTo(0, y);
+    };
+    const block = (event: TouchEvent) => {
+      const node = event.target;
+      if (node instanceof Element && node.closest(".dd-menu")) return;
+      event.preventDefault();
+    };
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", close);
+    window.addEventListener("scroll", freeze, { passive: true });
+    document.addEventListener("touchmove", block, { passive: false });
     return () => {
+      html.classList.remove("is-dd-open");
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", freeze);
+      document.removeEventListener("touchmove", block);
     };
-  }, [place]);
+  }, [isOpen]);
 
   return (
     <>

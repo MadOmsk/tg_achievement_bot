@@ -14,9 +14,13 @@ export function usePullToRefresh(onRefresh: () => void | Promise<void>) {
   refresh.current = onRefresh;
 
   useEffect(() => {
+    const isLayerOpen = () => {
+      const html = document.documentElement.classList;
+      return html.contains("is-sheet-open") || html.contains("is-dd-open");
+    };
     const { THRESHOLD, MAX } = UI_CONFIG.PULL_TO_REFRESH;
     const onStart = (event: TouchEvent) => {
-      if (document.documentElement.classList.contains("is-sheet-open")) return;
+      if (isLayerOpen()) return;
       if (refreshing) return;
       // A layer with a scroll of its own (the game page) is not the page: a
       // drag down inside it scrolls it, it must never start a refresh.
@@ -28,7 +32,7 @@ export function usePullToRefresh(onRefresh: () => void | Promise<void>) {
     };
     const onMove = (event: TouchEvent) => {
       if (!pulling.current || refreshing) return;
-      if (document.documentElement.classList.contains("is-sheet-open")) {
+      if (isLayerOpen()) {
         pulling.current = false;
         setPull(0);
         return;

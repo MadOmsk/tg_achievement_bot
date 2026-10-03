@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { peopleApi, type PersonRow, type Relation } from "../../../api/people/peopleApi";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, Dropdown, DropdownArrow, Icon, Sheet } from "../../shared/lib";
@@ -42,7 +42,46 @@ export function FollowsSheet({
     };
   }, [data, locale, onFlash]);
 
-  const apply = (id: number, relation: Relation) =>
+  // The last person folded out of the open list: nothing left to show, so the
+  // drawer closes by itself.
+  const hadRows = useRef(false);
+  // Switching lists starts over; declared first so it runs before the check.
+  useEffect(() => {
+    hadRows.current = false;
+  }, [kind]);
+  useEffect(() => {
+    if (!rows) return;
+    if (rows.length > 0) hadRows.current = true;
+    else if (hadRows.current) onClose();
+  }, [rows, onClose]);
+
+  // Somebody no longer in the open list (unfollowed, blocked) folds away from it.
+  const [leaving, setLeaving] = useState<Set<number>>(new Set());
+  const apply = (id: number, relation: Relation) => {
+    const gone = kind === "following" ? !relation.following : relation.blocked;
+    if (gone) {
+      window.setTimeout(() => setLeaving((all) => new Set(all).add(id)), 600);
+      window.setTimeout(() => {
+        // Only if it still holds: a refused change puts the person back.
+        setLists((all) =>
+          all
+            ? {
+                ...all,
+                [kind]: all[kind].filter(
+                  (row) =>
+                    row.id !== id ||
+                    (kind === "following" ? row.relation.following : !row.relation.blocked),
+                ),
+              }
+            : all,
+        );
+        setLeaving((all) => {
+          const next = new Set(all);
+          next.delete(id);
+          return next;
+        });
+      }, 950);
+    }
     setLists((all) =>
       all
         ? {
@@ -51,6 +90,7 @@ export function FollowsSheet({
           }
         : all,
     );
+  };
 
   return (
     <Sheet onClose={onClose} mid>
@@ -102,7 +142,10 @@ export function FollowsSheet({
         ) : (
           <div className="picker-list">
             {rows.map((row) => (
-              <div key={row.id} className="follows-line">
+              <div
+                key={row.id}
+                className={leaving.has(row.id) ? "follows-line is-leaving" : "follows-line"}
+              >
                 <button
                   type="button"
                   className="picker-row is-person"

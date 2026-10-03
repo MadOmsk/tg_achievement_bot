@@ -33,6 +33,8 @@ export function Settings({
   onPatch,
   onChatPatch,
   onNickname,
+  onAvatar,
+  onAvatarReset,
   onLogout,
   onAccountPublishes,
   onAdmin,
@@ -59,6 +61,8 @@ export function Settings({
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onNickname: (handle: string) => Promise<void>;
+  onAvatar: (image: Blob) => Promise<void>;
+  onAvatarReset: () => Promise<void>;
   /** Set only in a plain browser, where a session can be ended. */
   onLogout?: () => void;
   onAccountPublishes: (platform: AccountPlatform, publishes: boolean, accountId?: string) => void;
@@ -143,6 +147,10 @@ export function Settings({
       <NicknameForm
         locale={locale}
         handle={me.handle}
+        tgId={me.tg_id}
+        avatarCustom={me.avatar_custom}
+        onAvatar={onAvatar}
+        onAvatarReset={onAvatarReset}
         onBack={back}
         onSubmit={async (value) => {
           await onNickname(value);
@@ -289,26 +297,6 @@ export function Settings({
         <h1>{t(locale, "settings")}</h1>
       </header>
 
-      <Group title={t(locale, "groupProfile")}>
-        {me.handle && (
-          <NavRow
-            label={t(locale, "nickname")}
-            value={me.handle.display}
-            onClick={() => setPane(SETTINGS_PANES.NICKNAME)}
-          />
-        )}
-        <NavRow label={t(locale, "privacy")} onClick={() => setPane(SETTINGS_PANES.PRIVACY)} />
-        <NavRow
-          label={t(locale, "notifications")}
-          onClick={() => setPane(SETTINGS_PANES.NOTIFICATIONS)}
-        />
-        <NavRow
-          label={t(locale, "publishing")}
-          value={me.chats.filter((c) => c.is_subscribed).length || undefined}
-          onClick={() => setPane(SETTINGS_PANES.PUBLISHING)}
-        />
-      </Group>
-
       <Group title={t(locale, "groupGeneral")}>
         <ChoiceRow
           label={t(locale, "language")}
@@ -324,6 +312,25 @@ export function Settings({
           value={tz ?? TZ_UNSET}
           options={tzOptions}
           onChange={(v) => onPatch({ tz_offset_min: v === TZ_UNSET ? null : v })}
+        />
+      </Group>
+
+      <Group title={t(locale, "groupProfile")}>
+        {me.handle && (
+          <NavRow
+            label={t(locale, "profileLook")}
+            onClick={() => setPane(SETTINGS_PANES.NICKNAME)}
+          />
+        )}
+        <NavRow label={t(locale, "privacy")} onClick={() => setPane(SETTINGS_PANES.PRIVACY)} />
+        <NavRow
+          label={t(locale, "notifications")}
+          onClick={() => setPane(SETTINGS_PANES.NOTIFICATIONS)}
+        />
+        <NavRow
+          label={t(locale, "publishing")}
+          value={me.chats.filter((c) => c.is_subscribed).length || undefined}
+          onClick={() => setPane(SETTINGS_PANES.PUBLISHING)}
         />
       </Group>
 
