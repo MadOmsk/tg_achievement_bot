@@ -157,3 +157,18 @@ class _HandlesRepo:
         for tg_id in ids:
             await self.give_handle(tg_id)
         return len(ids)
+
+    # A picture the person chose (#157, migration 077) lives beside the nickname:
+    # both are how the person is shown.
+    async def custom_avatar_path(self, tg_id: int) -> str | None:
+        cursor = await self._conn.execute(
+            "SELECT custom_avatar_path FROM users WHERE tg_id = ?", (tg_id,)
+        )
+        row = await cursor.fetchone()
+        return row["custom_avatar_path"] if row else None
+
+    async def set_custom_avatar_path(self, tg_id: int, path: str | None) -> None:
+        await self._conn.execute(
+            "UPDATE users SET custom_avatar_path = ? WHERE tg_id = ?", (path, tg_id)
+        )
+        await self._conn.commit()

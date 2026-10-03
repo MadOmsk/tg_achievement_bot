@@ -47,6 +47,23 @@ export class UserApi extends BaseApi {
     return this.patch<MeResponse>(initData, USER_ROUTES.SETTINGS, body);
   }
 
+  /** Set one's own picture: the bytes of an image already cropped and shrunk. */
+  async putAvatar(initData: string, image: Blob): Promise<MeResponse> {
+    const headers: Record<string, string> = { "Content-Type": image.type || "image/jpeg" };
+    if (initData !== WEB_SESSION) headers["X-Telegram-Init-Data"] = initData;
+    const response = await fetch(this.buildUrl(USER_ROUTES.AVATAR_ME), {
+      method: "PUT",
+      headers,
+      body: image,
+    });
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+    return (await response.json()) as MeResponse;
+  }
+
+  deleteAvatar(initData: string): Promise<MeResponse> {
+    return this.delete<MeResponse>(initData, USER_ROUTES.AVATAR_ME);
+  }
+
   putHandle(initData: string, handle: string): Promise<MeResponse> {
     return this.put<MeResponse>(initData, USER_ROUTES.HANDLE, { handle });
   }

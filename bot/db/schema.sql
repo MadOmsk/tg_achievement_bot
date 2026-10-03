@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS users (
     -- on every render, and a face outlives whatever Telegram does with its
     -- own file ids.
     photo_path      TEXT,
+    -- A picture chosen in the Mini App (#157, migration 077), shown instead.
+    custom_avatar_path TEXT,
     -- The person's nickname, the only name shown for them (#157, migration 072):
     -- `handle` as typed ([A-Za-z0-9]{3,20}), `handle_norm` lower-case for
     -- uniqueness, `handle_number` the four digits added when it is taken (0 =

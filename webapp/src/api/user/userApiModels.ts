@@ -40,6 +40,8 @@ export type Handle = {
 export type MeResponse = {
   tg_id: number;
   handle: Handle | null;
+  /** The person chose a picture in the app instead of the Telegram photo. */
+  avatar_custom?: boolean;
   username: string | null;
   first_name: string | null;
   last_name: string | null;

@@ -32,6 +32,8 @@ export const fetchMe = (initData: string) => userApi.fetchMe(initData);
 export const fetchAvatarBlob = (initData: string, tgId: number) => userApi.fetchAvatarBlob(initData, tgId);
 export const patchSettings = (...args: Parameters<typeof userApi.patchSettings>) => userApi.patchSettings(...args);
 export const logout = () => userApi.logout();
+export const putAvatar = (initData: string, image: Blob) => userApi.putAvatar(initData, image);
+export const deleteAvatar = (initData: string) => userApi.deleteAvatar(initData);
 export const putHandle = (initData: string, handle: string) => userApi.putHandle(initData, handle);
 export const confirmHandle = (initData: string) => userApi.confirmHandle(initData);
 export const connectXbox = (initData: string) => userApi.connectXbox(initData);

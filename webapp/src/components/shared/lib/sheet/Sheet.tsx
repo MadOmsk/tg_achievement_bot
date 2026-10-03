@@ -47,7 +47,7 @@ export function Sheet({
       if (!(node instanceof Element)) return;
       // The game page is a scroll layer of its own; when it is opened over a
       // sheet (a game tapped inside a drawer) it must still scroll.
-      if (node.closest(".sheet-body, .game-page")) return;
+      if (node.closest(".sheet-body, .game-page, .dd-menu")) return;
       event.preventDefault();
     };
     window.addEventListener("scroll", freeze, { passive: true });

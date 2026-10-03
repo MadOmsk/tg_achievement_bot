@@ -7,17 +7,18 @@ export function EmptyState({
   hint,
   action,
   slide = false,
+  icon = "cup",
 }: {
   title: string;
   hint?: string;
   action?: { label: string; onClick: () => void };
-  /** The size of the home page's gallery slide: a full-width square. */
   slide?: boolean;
+  icon?: "cup" | "lock";
 }) {
   return (
     <div className={slide ? "empty-state is-slide" : "empty-state"}>
       <span className="empty-state-mark" aria-hidden>
-        <Icon name="cup" size={slide ? 52 : 28} />
+        <Icon name={icon} size={slide ? 52 : 28} />
       </span>
       <p className="empty-state-title">{title}</p>
       {hint && <p className="empty-state-hint">{hint}</p>}

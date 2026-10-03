@@ -14,6 +14,8 @@ import {
   patchChat,
   patchSettings,
   putHandle,
+  putAvatar,
+  deleteAvatar,
   setAccountPublishes,
   syncXbox,
   type GameRef,
@@ -32,8 +34,9 @@ import "./components/game/game.css";
 import { t, type Locale } from "./i18n";
 import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/me";
 import { People } from "./screens/people";
+import { FOLLOWS_CHANGED } from "./components/people/follow-button/FollowButton";
 import { Login } from "./screens/login";
-import { AppSkel, GameSkel, Icon, SettingsSkel, usePullToRefresh } from "./components/shared/lib";
+import { AppSkel, GameSkel, Icon, SettingsSkel, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 // Settings and the connect forms are a few kilobytes and sit behind the dock like
@@ -141,7 +144,12 @@ export function App() {
   const [chatId, setChatId] = useState<number | null>(launch.chatId);
   const [personId, setPersonId] = useState<number | null>(launch.personId);
   const [busy, setBusy] = useState(false);
-  const [flash, setFlash] = useState<string | null>(null);
+  // Notices go to the global toaster, which floats over the page (#157).
+  const setFlash = useCallback((message: string | null) => {
+    if (!message) return;
+    const failed = message.startsWith(t("ru", "error")) || message.startsWith(t("en", "error"));
+    showToast(message, failed ? "error" : "info");
+  }, []);
   const [platNotes, setPlatNotes] = useState<PlatNotes>({});
   const [personOpen, setPersonOpen] = useState(false);
   // The Find button on Home lands on People with the search focused.
@@ -157,6 +165,20 @@ export function App() {
   }, []);
   // Bumped by pull-to-refresh so Club refetches without remounting the tab.
   const [refreshKey, setRefreshKey] = useState(0);
+  // After a follow, unfollow or block, the screens built on who is followed
+  // reload in the background — one reload for a burst of changes.
+  useEffect(() => {
+    let timer: number | undefined;
+    const changed = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setRefreshKey((n) => n + 1), 700);
+    };
+    window.addEventListener(FOLLOWS_CHANGED, changed);
+    return () => {
+      window.removeEventListener(FOLLOWS_CHANGED, changed);
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   const reload = useCallback(async () => {
     let data = initData();
@@ -172,18 +194,13 @@ export function App() {
       }
     }
     const me = await fetchMe(data);
+    setOwnAvatarCustom(Boolean(me.avatar_custom));
     setState({ status: "ok", me });
     setChatId((current) => {
       if (current && me.chats.some((c) => c.chat_id === current)) return current;
       return me.chats[0]?.chat_id ?? null;
     });
   }, []);
-
-  useEffect(() => {
-    if (!flash) return;
-    const id = window.setTimeout(() => setFlash(null), 4200);
-    return () => window.clearTimeout(id);
-  }, [flash]);
 
   useEffect(() => {
     window.Telegram?.WebApp?.setHeaderColor?.("#0a0c12");
@@ -281,6 +298,20 @@ export function App() {
         first
         locale={locale}
         handle={me.handle}
+        tgId={me.tg_id}
+        avatarCustom={me.avatar_custom}
+        onAvatar={async (image) => {
+          await putAvatar(data, image);
+          setOwnAvatarCustom(true);
+          forgetAvatar(me.tg_id);
+          await reload();
+        }}
+        onAvatarReset={async () => {
+          await deleteAvatar(data);
+          setOwnAvatarCustom(false);
+          forgetAvatar(me.tg_id);
+          await reload();
+        }}
         onSubmit={async (value) => {
           await putHandle(data, value);
           await reload();
@@ -358,7 +389,7 @@ export function App() {
     >
       {pullIndicator}
       {busy && <div className="busy-bar" />}
-      {flash && <p className="flash">{flash}</p>}
+      <Toaster />
 
       {/* Kept mounted (just hidden) off the club pane, not unmounted:
           leaving it and coming back — e.g. through Settings — used to reset
@@ -449,6 +480,18 @@ export function App() {
                 }
               : undefined
           }
+          onAvatar={async (image) => {
+            await putAvatar(data, image);
+            setOwnAvatarCustom(true);
+            forgetAvatar(me.tg_id);
+            await reload();
+          }}
+          onAvatarReset={async () => {
+            await deleteAvatar(data);
+            setOwnAvatarCustom(false);
+            forgetAvatar(me.tg_id);
+            await reload();
+          }}
           onNickname={async (value) => {
             await putHandle(data, value);
             await reload();

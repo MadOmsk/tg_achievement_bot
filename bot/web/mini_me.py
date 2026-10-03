@@ -91,6 +91,8 @@ async def build_me_payload(
     return {
         "tg_id": tg_id,
         "handle": await handle_block(repo, tg_id),
+        # A picture chosen in the app replaces the Telegram photo (#157).
+        "avatar_custom": bool(await repo.custom_avatar_path(tg_id)),
         "username": username,
         "first_name": first_name,
         "last_name": last_name,

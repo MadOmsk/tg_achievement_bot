@@ -39,6 +39,7 @@ export function People({
   const [lists, setLists] = useState<Lists | null>(null);
   const [hits, setHits] = useState<PersonRow[] | null>(null);
   const [open, setOpen] = useState<PersonRow | null>(null);
+  const [leaving, setLeaving] = useState<Set<number>>(new Set());
   const searchSeq = useRef(0);
   const [game, setGame] = useState<HltbHit | null>(null);
   const games = useHltbSearch(data, query, locale, onFlash);
@@ -89,12 +90,37 @@ export function People({
       rows.map((row) => (row.id === id ? { ...row, relation } : row));
     setHits((rows) => (rows ? patch(rows) : rows));
     setOpen((row) => (row && row.id === id ? { ...row, relation } : row));
-    setLists((current) => (current ? { ...current, suggested: patch(current.suggested) } : current));
-    void load();
+    // A suggestion just followed shows its new state for a moment and then
+    // folds away: the list is for people not followed yet.
+    const suggested = lists?.suggested.find((row) => row.id === id);
+    if (suggested && relation.following && !suggested.relation.following) {
+      window.setTimeout(() => setLeaving((all) => new Set(all).add(id)), 900);
+      window.setTimeout(() => {
+        setLists((current) =>
+          current
+            ? { ...current, suggested: current.suggested.filter((row) => row.id !== id) }
+            : current,
+        );
+        setLeaving((all) => {
+          const next = new Set(all);
+          next.delete(id);
+          return next;
+        });
+      }, 1250);
+    }
+    setLists((current) =>
+      current
+        ? {
+            following: patch(current.following),
+            followers: patch(current.followers),
+            suggested: patch(current.suggested),
+          }
+        : current,
+    );
   };
 
   const line = (row: PersonRow) => (
-    <div key={row.id} className="people-line">
+    <div key={row.id} className={leaving.has(row.id) ? "people-line is-leaving" : "people-line"}>
       <button type="button" className="picker-row is-person" onClick={() => setOpen(row)}>
         <Avatar name={row.handle} tgId={row.tg_id ?? undefined} size={40} />
         <span className="picker-row-copy">
@@ -125,9 +151,7 @@ export function People({
 
   // Games are found from two letters, people from three (their nicknames).
   const searching = query.trim().length >= 2;
-  const empty =
-    lists !== null &&
-    lists.suggested.length === 0;
+  const empty = lists !== null && lists.suggested.length === 0 && lists.following.length === 0;
 
   return (
     <>
@@ -163,10 +187,18 @@ export function People({
             <EmptyState
               title={t(locale, "peopleEmptyTitle")}
               hint={t(locale, "peopleEmptyHint")}
+              slide
             />
           ) : (
             <>
               {section("peopleSuggested", lists.suggested)}
+              {lists.suggested.length === 0 && (
+                <EmptyState
+                  title={t(locale, "suggestedDoneTitle")}
+                  hint={t(locale, "suggestedDone")}
+                  slide
+                />
+              )}
             </>
           )}
         </>

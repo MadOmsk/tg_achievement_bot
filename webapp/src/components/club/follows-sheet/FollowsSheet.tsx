@@ -1,14 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { peopleApi, type PersonRow, type Relation } from "../../../api/people/peopleApi";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, Dropdown, DropdownArrow, Icon, Sheet } from "../../shared/lib";
 import { FollowButton } from "../../people/follow-button/FollowButton";
 import "./FollowsSheet.css";
 
-type Kind = "following" | "followers";
+type Kind = "friends" | "following" | "followers";
 
-/** "All" from Home's friends block (#157): the people you follow and the people
- * who follow you, one list at a time, picked in the title. */
+const TITLE: Record<Kind, "friends" | "peopleFollowing" | "peopleFollowers"> = {
+  friends: "friends",
+  following: "peopleFollowing",
+  followers: "peopleFollowers",
+};
+const EMPTY: Record<Kind, "friendsListEmpty" | "followingEmpty" | "followersEmpty"> = {
+  friends: "friendsListEmpty",
+  following: "followingEmpty",
+  followers: "followersEmpty",
+};
+
+/** Whether a person still belongs in a list after a change. */
+function stays(kind: Kind, relation: Relation): boolean {
+  if (kind === "friends") return relation.friends && !relation.blocked;
+  if (kind === "following") return relation.following;
+  return !relation.blocked;
+}
+
+/** "All" from Home's friends block (#157): friends (following each other), the
+ * people you follow and the people who follow you, one list at a time, picked in
+ * the title. Opens on the people you follow. */
 export function FollowsSheet({
   locale,
   data,
@@ -26,7 +45,7 @@ export function FollowsSheet({
   onFlash: (message: string) => void;
 }) {
   const [kind, setKind] = useState<Kind>("following");
-  // Both lists at once, so each count is known before switching to it.
+  // Every list at once, so each count is known before switching to it.
   const [lists, setLists] = useState<Record<Kind, PersonRow[]> | null>(null);
   const rows = lists ? lists[kind] : null;
 
@@ -34,7 +53,9 @@ export function FollowsSheet({
     let cancelled = false;
     Promise.all([peopleApi.following(data), peopleApi.followers(data)])
       .then(([following, followers]) => {
-        if (!cancelled) setLists({ following: following.people, followers: followers.people });
+        if (cancelled) return;
+        const friends = following.people.filter((row) => row.relation.friends);
+        setLists({ friends, following: following.people, followers: followers.people });
       })
       .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`));
     return () => {
@@ -42,15 +63,56 @@ export function FollowsSheet({
     };
   }, [data, locale, onFlash]);
 
-  const apply = (id: number, relation: Relation) =>
+  // The last person folded out of the open list: nothing left to show, so the
+  // drawer closes by itself.
+  const hadRows = useRef(false);
+  // Switching lists starts over; declared first so it runs before the check.
+  useEffect(() => {
+    hadRows.current = false;
+  }, [kind]);
+  useEffect(() => {
+    if (!rows) return;
+    if (rows.length > 0) hadRows.current = true;
+    else if (hadRows.current) onClose();
+  }, [rows, onClose]);
+
+  // Somebody no longer in the open list (unfollowed, blocked) folds away from it.
+  const [leaving, setLeaving] = useState<Set<number>>(new Set());
+  const apply = (id: number, relation: Relation) => {
+    const gone = !stays(kind, relation);
+    if (gone) {
+      window.setTimeout(() => setLeaving((all) => new Set(all).add(id)), 600);
+      window.setTimeout(() => {
+        // Only if it still holds: a refused change puts the person back.
+        setLists((all) =>
+          all
+            ? {
+                ...all,
+                [kind]: all[kind].filter(
+                  (row) =>
+                    row.id !== id ||
+                    stays(kind, row.relation),
+                ),
+              }
+            : all,
+        );
+        setLeaving((all) => {
+          const next = new Set(all);
+          next.delete(id);
+          return next;
+        });
+      }, 950);
+    }
     setLists((all) =>
       all
         ? {
+            friends: all.friends.map((row) => (row.id === id ? { ...row, relation } : row)),
             following: all.following.map((row) => (row.id === id ? { ...row, relation } : row)),
             followers: all.followers.map((row) => (row.id === id ? { ...row, relation } : row)),
           }
         : all,
     );
+  };
 
   return (
     <Sheet onClose={onClose} mid>
@@ -67,6 +129,11 @@ export function FollowsSheet({
                 hint: lists ? String(lists.following.length) : undefined,
               },
               {
+                value: "friends" as Kind,
+                label: t(locale, "friends"),
+                hint: lists ? String(lists.friends.length) : undefined,
+              },
+              {
                 value: "followers" as Kind,
                 label: t(locale, "peopleFollowers"),
                 hint: lists ? String(lists.followers.length) : undefined,
@@ -75,12 +142,12 @@ export function FollowsSheet({
             onChange={setKind}
             trigger={
               <>
-                {t(locale, kind === "following" ? "peopleFollowing" : "peopleFollowers")}
+                {t(locale, TITLE[kind])}
+                {rows && <span className="follows-count">{rows.length}</span>}
                 <DropdownArrow />
               </>
             }
           />
-          {rows && <span className="follows-count">{rows.length}</span>}
         </h2>
         {rows === null ? (
           <div className="picker-list" aria-busy="true">
@@ -93,7 +160,7 @@ export function FollowsSheet({
           </div>
         ) : rows.length === 0 ? (
           <div className="follows-empty">
-            <p>{t(locale, kind === "following" ? "followingEmpty" : "followersEmpty")}</p>
+            <p>{t(locale, EMPTY[kind])}</p>
             <button type="button" className="see-all" onClick={onFind}>
               <span>{t(locale, "find")}</span>
               <Icon name="forward" size={16} />
@@ -102,7 +169,10 @@ export function FollowsSheet({
         ) : (
           <div className="picker-list">
             {rows.map((row) => (
-              <div key={row.id} className="follows-line">
+              <div
+                key={row.id}
+                className={leaving.has(row.id) ? "follows-line is-leaving" : "follows-line"}
+              >
                 <button
                   type="button"
                   className="picker-row is-person"

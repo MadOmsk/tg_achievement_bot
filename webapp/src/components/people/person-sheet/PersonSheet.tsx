@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { peopleApi, type PersonProfile, type Relation } from "../../../api/people/peopleApi";
 import { t, type Locale } from "../../../i18n";
-import { Avatar, CoverImg, Dropdown, PlatformLogo, Sheet, useOpenGame } from "../../shared/lib";
+import { Avatar, CoverImg, EmptyState, PlatformLogo, Sheet, useOpenGame } from "../../shared/lib";
 import { FollowButton } from "../follow-button/FollowButton";
 import "./PersonSheet.css";
 
@@ -37,7 +37,6 @@ export function PersonSheet({
   onOpenProfile?: (tgId: number) => void;
 }) {
   const [profile, setProfile] = useState<PersonProfile | null>(null);
-  const [busy, setBusy] = useState(false);
   const [own, setOwn] = useState<Relation | null>(person.relation ?? null);
   const openGame = useOpenGame();
   const relation = own ?? profile?.relation ?? EMPTY;
@@ -66,22 +65,6 @@ export function PersonSheet({
   const changed = (next: Relation) => {
     setOwn(next);
     onChange?.(next);
-  };
-
-  const act = (call: Promise<{ relation: Relation }>) => {
-    if (busy) return;
-    setBusy(true);
-    void call
-      .then((res) => changed(res.relation))
-      .catch((err: unknown) =>
-        onFlash(
-          // A re-follow right after an unfollow waits ten minutes (the server decides).
-          String(err).includes("too_soon")
-            ? t(locale, "followTooSoon")
-            : `${t(locale, "error")}: ${String(err)}`,
-        ),
-      )
-      .finally(() => setBusy(false));
   };
 
   const activity = profile?.activity ?? null;
@@ -143,20 +126,6 @@ export function PersonSheet({
                 onChange={changed}
                 onFlash={onFlash}
               />
-              {!relation.following && !relation.blocked && (
-                // Not following yet: blocking waits behind "⋯".
-                <Dropdown
-                  className="dd-trigger ps-more"
-                  label={t(locale, "more")}
-                  value=""
-                  options={[{ value: "block", label: t(locale, "block"), danger: true }]}
-                  onChange={() => {
-                    if (busy || !window.confirm(t(locale, "confirmBlock"))) return;
-                    act(peopleApi.block(data, personId));
-                  }}
-                  trigger={<span aria-hidden>⋯</span>}
-                />
-              )}
             </>
           )}
         </div>
@@ -203,7 +172,14 @@ export function PersonSheet({
               </div>
             </div>
 
-            {!profile.can_view && <p className="ps-hidden">{t(locale, "activityHidden")}</p>}
+            {!profile.can_view && (
+              <EmptyState
+                title={t(locale, "activityHidden")}
+                hint={t(locale, "activityHiddenHint")}
+                icon="lock"
+                slide
+              />
+            )}
 
             {activity && activity.platforms.length > 0 && (
               <div className="ps-section">

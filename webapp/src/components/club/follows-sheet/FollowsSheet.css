@@ -66,9 +66,30 @@
   gap: 8px;
 }
 
+.follows-switch {
+  align-items: center;
+}
+
 .follows-count {
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 650;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+
+.follows-line {
+  max-height: 80px;
+  transition:
+    max-height 0.32s ease,
+    opacity 0.24s ease,
+    transform 0.32s ease;
+}
+
+.follows-line.is-leaving {
+  max-height: 0;
+  opacity: 0;
+  transform: translateX(24px);
+  overflow: hidden;
+  border-bottom-color: transparent;
 }

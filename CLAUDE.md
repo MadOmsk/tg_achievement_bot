@@ -716,6 +716,12 @@ elsewhere in this file still describe the bot.
     then the naming chain falls through to those same names. The Mini App shows
     "Твой ник" once (`handle.confirmed` false) to keep or change it; later it is
     Settings → Никнейм.
+  - **An avatar of one's own** (owner, 2026-10-03; migration 077,
+    `users.custom_avatar_path`): Settings → «Как тебя видят другие» (nickname and
+    picture on one screen). The Mini App crops the picture to a 512 px square JPEG;
+    `PUT /api/mini/me/avatar` takes the bytes (JPEG/PNG/WebP, 2 MB at most),
+    `DELETE` goes back to the Telegram photo. `/api/mini/avatar/{tg_id}` serves the
+    chosen picture first, with an ETag and `no-cache` so a change shows at once.
   - Endpoints: `PUT /api/mini/me/handle` (`error` is `invalid` or `too_soon`),
     `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.
 - **Follows, as on Xbox** (backend shipped, migration 073): following is one-way and

@@ -26,6 +26,11 @@ MISS_TTL_SECONDS = 15 * 60
 _cache: dict[int, tuple[float, bytes | None, str]] = {}
 
 
+def forget_avatar(tg_id: int) -> None:
+    """Drop one person's cached face after they chose another."""
+    _cache.pop(tg_id, None)
+
+
 def clear_avatar_cache() -> None:
     _cache.clear()
 
