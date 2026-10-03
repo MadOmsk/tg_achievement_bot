@@ -241,6 +241,8 @@ admin-reset-confirm-prompt =
     удалена и перечитана с нуля (в чат ничего не публикуется — как при
     первой привязке).
 admin-reset-confirm-yes = Да, стереть и пересинхронизировать
+admin-reset-avatar = 🖼 Сбросить аватар
+admin-avatar-reset = Аватар сброшен на фото из Telegram
 admin-delete-user = 🗑 Удалить пользователя
 admin-delete-confirm-1 =
     Удалить пользователя { $name } (ID: { $tg_id })?

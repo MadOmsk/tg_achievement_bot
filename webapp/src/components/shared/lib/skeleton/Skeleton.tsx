@@ -114,7 +114,6 @@ export function AppSkel() {
             </span>
             <span className="skel month-chip-skel" />
           </div>
-          <span className="skel app-skel-search" />
         </div>
       </div>
       <HomeBodySkel />

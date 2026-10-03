@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import {
-  fetchAdminUser,
-  patchAdminUser,
-  type AdminUserCard as AdminUserCardType,
-} from "../../../api";
+import { fetchAdminUser, patchAdminUser, type AdminUserCard as AdminUserCardType } from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import { BackHead, GlassWait, Chevron } from "../../shared/lib";
-import { ADMIN_USER_PLATFORMS } from "../../shared/constants";
+import { BackHead, Group, InfoRow, NavRow, PlatformLogo, SettingsSkel } from "../../shared/lib";
+import { ADMIN_USER_PLATFORMS, PLATFORMS } from "../../shared/constants";
+
+const LABEL = { xbox: "platformXbox", psn: "platformPsn", steam: "platformSteam" } as const;
+const MARK = { xbox: PLATFORMS.XBOX, psn: PLATFORMS.PSN, steam: PLATFORMS.STEAM } as const;
 
 export function AdminUserDetail({
   data,
@@ -27,6 +26,10 @@ export function AdminUserDetail({
     void fetchAdminUser(data, tgId).then(setUser).catch(onFail);
   }, [data, onFail, tgId]);
 
+  const linked = user ? ADMIN_USER_PLATFORMS.filter((p) => user[p]) : [];
+  const patch = (body: Parameters<typeof patchAdminUser>[2]) =>
+    user && void patchAdminUser(data, user.tg_id, body).then(setUser).catch(onFail);
+
   return (
     <>
       <BackHead
@@ -35,115 +38,62 @@ export function AdminUserDetail({
         onBack={onBack}
       />
       {user == null ? (
-        <GlassWait />
+        <SettingsSkel groups={[4, 2, 2]} />
       ) : (
         <>
-          <div className="glass-card">
-            <div className="ios-row">
-              <span>Telegram</span>
-              <span className="ios-value">
-                {user.username ? `${user.username} · ` : ""}id{user.tg_id}
-              </span>
-            </div>
-            {user.xbox && (
-              <div className="ios-row">
-                <span>Xbox</span>
-                <span className="ios-value">{String(user.xbox.name ?? "—")}</span>
-              </div>
-            )}
-            {user.psn && (
-              <div className="ios-row">
-                <span>PSN</span>
-                <span className="ios-value">{String(user.psn.name ?? "—")}</span>
-              </div>
-            )}
-            {user.steam && (
-              <div className="ios-row">
-                <span>Steam</span>
-                <span className="ios-value">{String(user.steam.name ?? "—")}</span>
-              </div>
-            )}
-            <div className="ios-row">
-              <span>{t(locale, "myChats")}</span>
-              <span className="ios-value">
-                {user.chats.join(", ") || t(locale, "notSubscribed")}
-              </span>
-            </div>
-          </div>
+          <Group title={t(locale, "groupInfo")}>
+            <InfoRow
+              label="Telegram"
+              value={`${user.username ? `${user.username} · ` : ""}id${user.tg_id}`}
+            />
+            {linked.map((p) => (
+              <InfoRow
+                key={p}
+                lead={<PlatformLogo platform={MARK[p]} size={18} />}
+                label={t(locale, LABEL[p])}
+                value={String(user[p]?.name ?? "—")}
+              />
+            ))}
+            <InfoRow
+              label={t(locale, "myChats")}
+              value={user.chats.join(", ") || t(locale, "notSubscribed")}
+            />
+          </Group>
 
-          <div className="glass-card">
-            {ADMIN_USER_PLATFORMS.map((platform) =>
-              user[platform] && (
-                <button
-                  key={`sync-${platform}`}
-                  type="button"
-                  className="ios-row"
-                  onClick={() =>
-                    void patchAdminUser(data, user.tg_id, {
-                      action: "sync",
-                      platform,
-                    })
-                      .then(setUser)
-                      .catch(onFail)
-                  }
-                >
-                  <span>
-                    {t(locale, "refresh")} {platform}
-                  </span>
-                  <span className="ios-value">
-                    <Chevron />
-                  </span>
-                </button>
-              ),
-            )}
-          </div>
+          {linked.length > 0 && (
+            <Group title={t(locale, "groupRefreshData")}>
+              {linked.map((p) => (
+                <NavRow
+                  key={p}
+                  lead={<PlatformLogo platform={MARK[p]} size={18} />}
+                  label={t(locale, LABEL[p])}
+                  onClick={() => patch({ action: "sync", platform: p })}
+                />
+              ))}
+            </Group>
+          )}
 
-          <div className="glass-card">
-            {ADMIN_USER_PLATFORMS.map((platform) =>
-              user[platform] && (
-                <button
-                  key={`reset-${platform}`}
-                  type="button"
-                  className="ios-row danger"
-                  onClick={() => {
-                    if (!window.confirm(t(locale, "confirmReset"))) return;
-                    void patchAdminUser(data, user.tg_id, {
-                      action: "reset",
-                      platform,
-                    })
-                      .then(setUser)
-                      .catch(onFail);
-                  }}
-                >
-                  <span>
-                    {t(locale, "reset")} {platform}
-                  </span>
-                </button>
-              ),
-            )}
-            <button
-              type="button"
-              className="ios-row danger"
+          <Group>
+            {linked.map((p) => (
+              <NavRow
+                key={p}
+                danger
+                label={`${t(locale, "reset")} ${t(locale, LABEL[p])}`}
+                onClick={() => {
+                  if (!window.confirm(t(locale, "confirmReset"))) return;
+                  patch({ action: "reset", platform: p });
+                }}
+              />
+            ))}
+            <NavRow
+              danger={!user.is_excluded}
+              label={user.is_excluded ? t(locale, "restore") : t(locale, "exclude")}
               onClick={() => {
-                if (
-                  !user.is_excluded &&
-                  !window.confirm(t(locale, "confirmExclude"))
-                )
-                  return;
-                void patchAdminUser(data, user.tg_id, {
-                  excluded: !user.is_excluded,
-                })
-                  .then(setUser)
-                  .catch(onFail);
+                if (!user.is_excluded && !window.confirm(t(locale, "confirmExclude"))) return;
+                patch({ excluded: !user.is_excluded });
               }}
-            >
-              <span>
-                {user.is_excluded
-                  ? t(locale, "restore")
-                  : t(locale, "exclude")}
-              </span>
-            </button>
-          </div>
+            />
+          </Group>
         </>
       )}
     </>

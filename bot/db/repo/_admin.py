@@ -18,7 +18,13 @@ from bot.db.repo._models import (
     TitleCoverRow,
     TitleHltbRow,
 )
-from bot.db.repo._sql import GLOBAL_RARE_THRESHOLD, XBOX_ACCOUNT, XBOX_COLUMNS, active_account
+from bot.db.repo._sql import (
+    GLOBAL_RARE_THRESHOLD,
+    HANDLE_SHOWN,
+    XBOX_ACCOUNT,
+    XBOX_COLUMNS,
+    active_account,
+)
 from bot.util import utcnow_iso
 
 
@@ -92,7 +98,7 @@ class _AdminRepo:
         `WHERE u.xuid IS NOT NULL`, which hid every Steam-only person from
         the admin panel entirely."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
@@ -124,6 +130,7 @@ class _AdminRepo:
                 psn_account_id=row["psn_account_id"],
                 psn_online_id=row["psn_online_id"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 gamertag_modern=row["gamertag_modern"],
                 steam_achievements_visible=(

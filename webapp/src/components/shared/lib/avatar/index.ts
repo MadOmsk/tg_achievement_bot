@@ -4,4 +4,6 @@ export {
   isOnline,
   telegramPhoto,
   accountLabel,
+  forgetAvatar,
+  setOwnAvatarCustom,
 } from "./Avatar";

@@ -323,3 +323,187 @@
   padding-top: 10px;
   border-top: 1px solid var(--hair);
 }
+
+
+
+.page-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.nick-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.nick-stage.is-first {
+  min-height: calc(100dvh - 120px);
+  justify-content: center;
+  padding-top: 24px;
+}
+
+.nick-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.nick-hero h1 {
+  margin: 10px 0 0;
+}
+
+.nick-intro {
+  max-width: 30ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.nick-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 0 18px;
+  border-radius: 18px;
+}
+
+.nick-field input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.nick-field.is-locked {
+  opacity: 0.55;
+}
+
+.nick-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.nick-hint {
+  margin: 0 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.nick-hint.is-error {
+  color: #ff8a96;
+}
+
+.nick-save {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 14px;
+}
+
+.nick-avatar {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nick-avatar:focus {
+  outline: none;
+}
+
+.nick-avatar.is-busy {
+  pointer-events: none;
+}
+
+.nick-avatar-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.nick-avatar.is-busy .nick-avatar-preview {
+  filter: brightness(0.7);
+}
+
+/* A ring turning round the face while it uploads. */
+.nick-avatar-spin {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 60%, var(--mint-2) 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: nick-spin 0.9s linear infinite;
+}
+
+@keyframes nick-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nick-avatar-spin {
+    animation-duration: 2.4s;
+  }
+}
+
+.nick-avatar-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  right: 6px;
+  bottom: 6px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 3px solid #0a0c12;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0a0c12;
+}
+
+.nick-avatar-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.nick-avatar-badge.is-left {
+  right: auto;
+  left: 6px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nick-avatar-badge.is-left:focus {
+  outline: none;
+}

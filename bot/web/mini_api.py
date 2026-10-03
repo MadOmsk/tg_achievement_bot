@@ -8,6 +8,7 @@ tma …``).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 from typing import Any
@@ -16,16 +17,18 @@ from aiohttp import web
 
 from bot.config import Settings
 from bot.constants import MAX_PSN_ACCOUNTS, AccountPlatform, Platform, RarityMode
-from bot.db.repo import Repo
+from bot.db.repo import HandleInvalid, HandleTooSoon, Repo, User
+from bot.db.repo._sql import MEMBERS_CHAT
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons
+from bot.services import achievement_icons, avatars, custom_avatars
 from bot.services.connect import ConnectService
 from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
+from bot.services.naming import person_name_of
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -45,9 +48,10 @@ from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
+from bot.web import mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
-from bot.web.mini_avatars import load_avatar_bytes
+from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
 from bot.web.mini_chat import (
     _https_url,
     build_feed_payload,
@@ -109,10 +113,16 @@ def setup_mini_api(
     app["mini_title_catalog"] = title_catalog
 
     app.router.add_get("/api/mini/health", handle_health)
+    mini_people.register(app, _require_user)
+    mini_session.register(app)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
     app.router.add_patch("/api/mini/settings", handle_patch_settings)
+    app.router.add_put("/api/mini/me/handle", handle_put_handle)
+    app.router.add_post("/api/mini/me/handle/confirm", handle_confirm_handle)
+    app.router.add_put("/api/mini/me/avatar", handle_put_avatar)
+    app.router.add_delete("/api/mini/me/avatar", handle_delete_avatar)
     app.router.add_post("/api/mini/connect/xbox", handle_connect_xbox)
     app.router.add_post("/api/mini/disconnect/xbox", handle_disconnect_xbox)
     app.router.add_post("/api/mini/connect/steam", handle_connect_steam)
@@ -175,6 +185,33 @@ async def handle_delete_me(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def handle_put_handle(request: web.Request) -> web.Response:
+    """Choose or change the nickname (#157). A refusal is a JSON `error` the
+    Mini App words itself: `invalid`, or `too_soon` with `available_at`."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    body = await _json_body(request)
+    await repo.ensure_user(user.tg_id, user.username)
+    try:
+        await repo.change_handle(user.tg_id, str(body.get("handle", "")))
+    except HandleInvalid:
+        return web.json_response({"error": "invalid"}, status=400)
+    except HandleTooSoon as exc:
+        return web.json_response(
+            {"error": "too_soon", "available_at": exc.available_at}, status=409
+        )
+    return await handle_me(request)
+
+
+async def handle_confirm_handle(request: web.Request) -> web.Response:
+    """ "Keep it" on the first-visit nickname screen."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    await repo.ensure_user(user.tg_id, user.username)
+    await repo.confirm_handle(user.tg_id)
+    return await handle_me(request)
+
+
 async def handle_patch_settings(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
@@ -197,6 +234,8 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
+    if "notify_followers" in body:
+        fields["notify_followers"] = 1 if body["notify_followers"] else 0
     if "rarity_mode" in body:
         mode = str(body["rarity_mode"])
         if mode not in {RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN}:
@@ -531,7 +570,41 @@ async def handle_patch_chat(request: web.Request) -> web.Response:
     )
 
 
+async def _following_scope(request: web.Request) -> tuple[Any, Repo, list[int], int | None] | None:
+    """`?scope=following` (#157): the feed and ranking of the people the viewer
+    follows (and themself), instead of one chat. Returns the viewer, the repo, the
+    Telegram ids to read and the viewer's timezone; None for an ordinary chat."""
+    if request.query.get("scope") != "following":
+        return None
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    await repo.ensure_user(user.tg_id, user.username)
+    person = await repo.person_id(user.tg_id)
+    if person is None:
+        raise web.HTTPNotFound(text="no person")
+    settings_row = await repo.get_user_settings(user.tg_id)
+    tz = settings_row.tz_offset_min if settings_row else None
+    return user, repo, await repo.following_members(person), tz
+
+
 async def handle_chat_feed(request: web.Request) -> web.Response:
+    scoped = await _following_scope(request)
+    if scoped is not None:
+        user, repo, members, tz = scoped
+        month = request.query.get("month") or None
+        try:
+            payload = await build_feed_payload(
+                repo,
+                MEMBERS_CHAT,
+                locale=await _user_locale(repo, user.tg_id),
+                limit=int(request.query.get("limit") or 500),
+                month=month,
+                members=members,
+                tz_of=tz,
+            )
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text="bad month or limit") from exc
+        return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
     locale = await _user_locale(repo, user.tg_id)
     try:
@@ -547,6 +620,12 @@ async def handle_chat_feed(request: web.Request) -> web.Response:
 
 
 async def handle_chat_online(request: web.Request) -> web.Response:
+    scoped = await _following_scope(request)
+    if scoped is not None:
+        user, repo, members, _tz = scoped
+        locale = await _user_locale(repo, user.tg_id)
+        payload = await build_online_payload(repo, MEMBERS_CHAT, locale=locale, members=members)
+        return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
     locale = await _user_locale(repo, user.tg_id)
     payload = await build_online_payload(repo, chat_id, locale=locale)
@@ -554,6 +633,21 @@ async def handle_chat_online(request: web.Request) -> web.Response:
 
 
 async def handle_chat_summary(request: web.Request) -> web.Response:
+    scoped = await _following_scope(request)
+    if scoped is not None:
+        user, repo, members, tz = scoped
+        try:
+            payload = await build_summary_payload(
+                repo,
+                MEMBERS_CHAT,
+                locale=await _user_locale(repo, user.tg_id),
+                month=request.query.get("month") or None,
+                members=members,
+                tz_of=tz,
+            )
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text="bad month") from exc
+        return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
     locale = await _user_locale(repo, user.tg_id)
     month = request.query.get("month") or None
@@ -562,6 +656,44 @@ async def handle_chat_summary(request: web.Request) -> web.Response:
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad month") from exc
     return web.json_response(payload)
+
+
+async def _read_capped(request: web.Request, limit: int) -> bytes | None:
+    """The request body, or None past `limit` bytes. Read from the stream: the
+    app's own `client_max_size` (1 MB) would answer a bigger body with an HTML
+    413 before the endpoint could say `invalid`."""
+    chunks: list[bytes] = []
+    size = 0
+    while chunk := await request.content.read(64 * 1024):
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def handle_put_avatar(request: web.Request) -> web.Response:
+    """Set the person's own picture (#157). The body is the image bytes; the
+    server decodes and re-saves it (`services/custom_avatars.py`)."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    body = await _read_capped(request, custom_avatars.MAX_UPLOAD_BYTES)
+    if not body:
+        return web.json_response({"error": "invalid"}, status=400)
+    await repo.ensure_user(user.tg_id, user.username)
+    if not await custom_avatars.store(repo, user.tg_id, body):
+        return web.json_response({"error": "invalid"}, status=400)
+    forget_avatar(user.tg_id)
+    return await handle_me(request)
+
+
+async def handle_delete_avatar(request: web.Request) -> web.Response:
+    """Back to the Telegram photo."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    await custom_avatars.clear(repo, user.tg_id)
+    forget_avatar(user.tg_id)
+    return await handle_me(request)
 
 
 async def handle_avatar(request: web.Request) -> web.Response:
@@ -576,6 +708,12 @@ async def handle_avatar(request: web.Request) -> web.Response:
     target = await repo.get_user(tg_id)
     if tg_id != user.tg_id and target is None:
         raise web.HTTPNotFound(text="no photo")
+    custom = await repo.custom_avatar_path(tg_id)
+    if custom:
+        file = avatars.avatar_dir() / custom
+        if file.is_file():
+            body = file.read_bytes()
+            return _picture(request, body, image_mime(body))
     bot = request.app.get("mini_bot")
     if bot is None:
         raise web.HTTPNotFound(text="no photo")
@@ -583,11 +721,18 @@ async def handle_avatar(request: web.Request) -> web.Response:
     if result is None:
         raise web.HTTPNotFound(text="no photo")
     body, mime = result
-    return web.Response(
-        body=body,
-        content_type=mime,
-        headers={"Cache-Control": "private, max-age=3600"},
-    )
+    return _picture(request, body, mime)
+
+
+def _picture(request: web.Request, body: bytes, mime: str) -> web.Response:
+    """A face, revalidated on every show: a person can change theirs at any
+    moment, and an hour of a browser's cache kept showing the old one. An
+    unchanged picture costs a 304 and no bytes."""
+    etag = '"' + hashlib.sha256(body).hexdigest()[:20] + '"'
+    headers = {"Cache-Control": "private, no-cache", "ETag": etag}
+    if request.headers.get("If-None-Match") == etag:
+        return web.Response(status=304, headers=headers)
+    return web.Response(body=body, content_type=mime, headers=headers)
 
 
 _X360_ICON_CACHE: dict[str, bytes] = {}
@@ -655,6 +800,21 @@ async def handle_chat_person(request: web.Request) -> web.Response:
     if target is None:
         raise web.HTTPNotFound(text="person not found")
     locale = await _user_locale(repo, user.tg_id)
+    if not await _may_see_activity(repo, user.tg_id, target_id):
+        # The nickname and avatar are public; what they did is not (#157).
+        return web.json_response(
+            {
+                "tg_id": target.tg_id,
+                "name": await _public_name(repo, target),
+                "hidden": True,
+                "platforms": [],
+                "today": {"count": 0, "score": 0, "xbox": 0, "steam": 0, "psn": 0},
+                "week": {"count": 0, "xbox": 0, "steam": 0, "psn": 0},
+                "month": {"count": 0, "score": 0, "xbox": 0, "steam": 0, "psn": 0},
+                "games": [],
+                "feed": [],
+            }
+        )
     month = request.query.get("month") or None
     try:
         payload = await build_person_payload(
@@ -663,6 +823,19 @@ async def handle_chat_person(request: web.Request) -> web.Response:
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad month") from exc
     return web.json_response(payload)
+
+
+async def _may_see_activity(repo: Repo, viewer_tg: int, target_tg: int) -> bool:
+    """The one privacy check for a person's page (#157), by Telegram id."""
+    viewer = await repo.person_id(viewer_tg)
+    target = await repo.person_id(target_tg)
+    if viewer is None or target is None:
+        return True
+    return await repo.can_view_activity(viewer, target)
+
+
+async def _public_name(repo: Repo, target: User) -> str:
+    return person_name_of(target, await repo.platform_links_of(target.tg_id))
 
 
 async def _require_chat_member(request: web.Request) -> tuple[MiniAppUser, int, Repo]:
@@ -708,7 +881,9 @@ async def handle_game_details(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     catalog_service: TitleCatalogService = request.app["mini_title_catalog"]
 
-    # Whose progress: the caller's own unless another club member is named.
+    # Whose progress: the caller's own unless somebody else is named — anybody
+    # whose privacy setting lets the caller see their activity (#157), not only
+    # people from a shared chat.
     viewed_id = user.tg_id
     raw_viewed = request.query.get("tg_id")
     if raw_viewed:
@@ -719,10 +894,8 @@ async def handle_game_details(request: web.Request) -> web.Response:
     if viewed_id != user.tg_id:
         if await repo.get_user(viewed_id) is None:
             raise web.HTTPNotFound(text="person not found")
-        mine = {c.chat_id for c in await repo.user_chats(user.tg_id)}
-        theirs = {c.chat_id for c in await repo.user_chats(viewed_id)}
-        if not mine & theirs:
-            raise web.HTTPForbidden(text="not a member")
+        if not await _may_see_activity(repo, user.tg_id, viewed_id):
+            raise web.HTTPForbidden(text="activity hidden")
 
     checklist = await catalog_service.get_title_checklist_for_user(
         platform, title_id, tg_id=viewed_id, force=force
@@ -896,7 +1069,14 @@ async def handle_game_patches(request: web.Request) -> web.Response:
 
 
 async def _require_user(request: web.Request) -> MiniAppUser:
-    init_data = _extract_init_data(request)
+    try:
+        init_data = _extract_init_data(request)
+    except web.HTTPUnauthorized:
+        # Neither header: a browser signed in through Telegram Login (#157).
+        signed_in = await mini_session.session_user(request)
+        if signed_in is not None:
+            return signed_in
+        raise
     settings: Settings = request.app["mini_settings"]
     try:
         return validate_init_data(init_data, settings.bot_token.get_secret_value())

@@ -9,22 +9,39 @@ export function FriendsStrip({
   limit,
   onOpen,
   onSeeAll,
+  onFind,
 }: {
   members: OnlineMember[];
   locale: Locale;
   limit: number;
   onOpen: (tgId: number) => void;
   onSeeAll: () => void;
+  onFind: () => void;
 }) {
   const pool = rankPeople(members);
-  if (pool.length === 0) return null;
+  if (pool.length === 0) {
+    return (
+      <>
+        <div className="section-head">
+          <h1 className="kicker" style={{ margin: 0 }}>
+            {t(locale, "peopleFollowing")}
+          </h1>
+          <button type="button" className="see-all" onClick={onFind}>
+            <span>{t(locale, "find")}</span>
+            <Icon name="forward" size={16} />
+          </button>
+        </div>
+        <p className="friends-empty">{t(locale, "friendsEmpty")}</p>
+      </>
+    );
+  }
   const shown = pool.slice(0, limit);
   return (
     <>
       <div className="section-head">
         <span className="section-title-group">
           <h1 className="kicker" style={{ margin: 0 }}>
-            {t(locale, "friends")}
+            {t(locale, "peopleFollowing")}
           </h1>
           <span className="section-count">{pool.length}</span>
         </span>

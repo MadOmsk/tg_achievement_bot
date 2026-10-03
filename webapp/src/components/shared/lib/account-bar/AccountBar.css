@@ -242,3 +242,7 @@ button.person-back:focus-visible {
 .home-chrome .account-who strong {
   line-height: 1.15;
 }
+
+.dock button {
+  -webkit-tap-highlight-color: transparent;
+}

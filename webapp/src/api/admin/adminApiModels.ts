@@ -32,6 +32,7 @@ export type AdminLimit = {
 export type AdminDefaults = {
   rarity_mode: string;
   show_profile_links: boolean;
+  rare_threshold_percent: number;
 };
 
 export type AdminUserRow = {

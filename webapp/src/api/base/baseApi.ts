@@ -1,11 +1,14 @@
+/** Stands in for Init Data when the app is open in a plain browser: the
+ * session cookie signs the request, so no header is sent (#157). */
+export const WEB_SESSION = "web-session";
+
 export class BaseApi {
   constructor(protected readonly baseUrl: string = "") {}
 
   protected initHeaders(initData: string): HeadersInit {
-    return {
-      "X-Telegram-Init-Data": initData,
-      "Content-Type": "application/json",
-    };
+    return initData === WEB_SESSION
+      ? { "Content-Type": "application/json" }
+      : { "X-Telegram-Init-Data": initData, "Content-Type": "application/json" };
   }
 
   protected buildUrl(

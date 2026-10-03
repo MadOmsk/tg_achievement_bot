@@ -23,6 +23,7 @@ from bot.services.admin_settings import (
     RARE_THRESHOLD_MIN,
     SHOW_LINKS_DEFAULT,
     SHOW_LINKS_KEY,
+    rare_threshold,
 )
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
@@ -120,7 +121,12 @@ async def build_admin_limits(repo: Repo, *, locale: str) -> dict[str, Any]:
 async def build_admin_defaults(repo: Repo) -> dict[str, Any]:
     rarity = await repo.get_app_setting(DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT)
     links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
-    return {"rarity_mode": rarity or RarityMode.ALL, "show_profile_links": bool(links)}
+    return {
+        "rarity_mode": rarity or RarityMode.ALL,
+        "show_profile_links": bool(links),
+        # One for every chat (owner, 2026-10-01) — set here, not on a chat's card.
+        "rare_threshold_percent": await rare_threshold(repo),
+    }
 
 
 async def build_admin_users(repo: Repo) -> dict[str, Any]:
@@ -136,8 +142,7 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
                 "tg_id": user.tg_id,
                 "name": person_name(
                     tg_id=user.tg_id,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
+                    handle=user.handle,
                     username=user.username,
                     xbox=xbox_nickname(
                         gamertag_modern=user.gamertag_modern, gamertag=user.gamertag
@@ -217,8 +222,7 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
         "tg_id": tg_id,
         "name": person_name(
             tg_id=tg_id,
-            first_name=user.first_name,
-            last_name=user.last_name,
+            handle=user.handle,
             username=user.username,
             xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
             steam=steam.display_name if steam else None,
@@ -398,6 +402,14 @@ async def handle_admin_defaults_patch(request: web.Request) -> web.Response:
             )
             mode = next_rarity_mode(current or RarityMode.ALL)
         await repo.set_app_setting(DEFAULT_RARITY_MODE_KEY, mode, admin.tg_id)
+    if "rare_threshold_percent" in body:
+        try:
+            value = float(body["rare_threshold_percent"])
+        except (TypeError, ValueError) as exc:
+            raise web.HTTPBadRequest(text="bad threshold") from exc
+        if not (RARE_THRESHOLD_MIN <= value <= RARE_THRESHOLD_MAX):
+            raise web.HTTPBadRequest(text="bad threshold")
+        await repo.set_app_setting(RARE_THRESHOLD_KEY, f"{value:g}", admin.tg_id)
     if "show_profile_links" in body:
         await repo.set_app_setting(
             SHOW_LINKS_KEY,

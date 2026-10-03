@@ -35,33 +35,30 @@ NO_NICKNAME = "—"
 def person_name(
     *,
     tg_id: int,
-    first_name: str | None = None,
-    last_name: str | None = None,
+    handle: str | None = None,
     username: str | None = None,
     xbox: str | None = None,
     steam: str | None = None,
     psn: str | None = None,
 ) -> str:
-    """Who this person is: `Имя Фамилия` → `username` → any connected
-    platform's nickname (Xbox → PlayStation → Steam) → `id<tg_id>`. Digits
-    last, the most human form first.
+    """Who this person is: their nickname (#157) → `username` → any connected
+    platform's nickname (Xbox → PlayStation → Steam) → `id<tg_id>`.
+
+    Telegram's first and last names are not in the chain: a person is shown by
+    the nickname they chose and by nothing else. Everybody has one (it is given
+    at start-up and on first contact), so the steps after it are a net for a row
+    read before that happened, not a second way to be named.
 
     The platform part follows the one display order every screen uses for a
     platform list (`constants.platform_display_rank`, owner decision
-    2026-09-13). It was Xbox → Steam → PSN when this chain was first agreed;
-    two orders to remember is one too many.
+    2026-09-13).
 
     The username is returned bare, without an `@` — deliberately, everywhere
     (user request, 2026-09-12). A live mention pings its target, which is
     wrong in `/online` (it redraws every few minutes, and this was already
-    reverted once for exactly that) and inconsistent anywhere else. One rule
-    beats remembering which screen is safe.
-
-    `id<tg_id>` is the guaranteed last resort and, on real data, unreachable
-    for anyone who has ever written a message or connected anything.
+    reverted once for exactly that).
     """
-    full_name = " ".join(part for part in (first_name, last_name) if part)
-    return full_name or username or _first_real(xbox, psn, steam) or f"id{tg_id}"
+    return handle or username or _first_real(xbox, psn, steam) or f"id{tg_id}"
 
 
 def _first_real(*names: str | None) -> str | None:
@@ -147,8 +144,7 @@ def person_name_of(user: User, links: Iterable[PlatformLink] = ()) -> str:
         by_platform.setdefault(link.platform, link)
     return person_name(
         tg_id=user.tg_id,
-        first_name=user.first_name,
-        last_name=user.last_name,
+        handle=user.handle,
         username=user.username,
         xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
         steam=_link_name(by_platform.get(Platform.STEAM)),
@@ -173,8 +169,7 @@ def subscriber_names(rows: Iterable[ChatSubscriber]) -> list[str]:
     names = [
         person_name(
             tg_id=row.tg_id,
-            first_name=row.first_name,
-            last_name=row.last_name,
+            handle=row.handle,
             username=row.username,
             xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
             steam=row.steam_name,

@@ -1,13 +1,15 @@
 -- Full schema, SPEC section 3. Applied once to an empty database; later changes
 -- go to db/migrations/ so an existing bot.db is never recreated from scratch.
 
--- Telegram users. Only the Telegram identity lives here (#52): an Xbox
--- account is an `accounts` row like any other, reached through the active
--- link in `account_links`, and used to be cached in xuid/gamertag/gamerscore
--- columns beside these. A second copy of a fact is a second version of it
--- waiting to happen.
+-- People. A person has an id of their own (#156, migration 071); a Telegram
+-- account is one way to sign in, kept as `tg_id` — unique, and empty for a
+-- person who signs in some other way. Other tables still point at
+-- users(tg_id) until they move to the person id. Only the identity lives here
+-- (#52): an Xbox account is an `accounts` row like any other, reached through
+-- the active link in `account_links`.
 CREATE TABLE IF NOT EXISTS users (
-    tg_id           INTEGER PRIMARY KEY CHECK (tg_id > 0),
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    tg_id           INTEGER UNIQUE CHECK (tg_id IS NULL OR tg_id > 0),
     username        TEXT,                 -- for /stats @user, refreshed on every message
     -- /stats' header identity (Follow-up 2026-09-06) — refreshed the same
     -- way username is, on every message (handlers/chat.py's message
@@ -35,8 +37,24 @@ CREATE TABLE IF NOT EXISTS users (
     -- on every render, and a face outlives whatever Telegram does with its
     -- own file ids.
     photo_path      TEXT,
+    -- A picture chosen in the Mini App (#157, migration 077), shown instead.
+    custom_avatar_path TEXT,
+    -- The person's nickname, the only name shown for them (#157, migration 072):
+    -- `handle` as typed ([A-Za-z0-9]{3,20}), `handle_norm` lower-case for
+    -- uniqueness, `handle_number` the four digits added when it is taken (0 =
+    -- none). The unique constraint is here for new databases; the migration
+    -- creates the same index for existing ones.
+    handle          TEXT,
+    handle_norm     TEXT,
+    handle_number   INTEGER NOT NULL DEFAULT 0,
+    handle_confirmed_at TEXT,
+    handle_changed_at   TEXT,
+    -- Who sees this person's activity in the app (#157, migration 073).
+    activity_visible TEXT NOT NULL DEFAULT 'all'
+        CHECK (activity_visible IN ('all', 'friends', 'nobody')),
     created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    updated_at      TEXT NOT NULL,
+    UNIQUE (handle_norm, handle_number)
 );
 
 -- One user, one token. Refresh only; everything else lives in memory.
@@ -115,7 +133,9 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- language_code: plenty of this Russian-speaking community run Telegram
     -- itself in English, and auto-switching them would be a silent
     -- regression rather than a feature. Explicit opt-in, default 'ru'.
-    locale           TEXT    NOT NULL DEFAULT 'ru'
+    locale           TEXT    NOT NULL DEFAULT 'ru',
+    -- A DM when someone follows this person (#157, migration 075).
+    notify_followers INTEGER NOT NULL DEFAULT 1
 );
 
 -- Rare-achievement threshold, daily-summary time and its timezone are always
@@ -794,3 +814,44 @@ CREATE TABLE IF NOT EXISTS platform_cooldown_accounts (
     last_reset_at  TEXT NOT NULL,
     PRIMARY KEY (platform, external_id)
 );
+
+-- Follows and blocks (#157, migration 073) point at the person id. Friends are two
+-- follows facing each other, not a row.
+CREATE TABLE IF NOT EXISTS follows (
+    follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    followee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (follower_id, followee_id),
+    CHECK (follower_id != followee_id)
+);
+CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows (followee_id);
+
+CREATE TABLE IF NOT EXISTS blocks (
+    person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, blocked_id),
+    CHECK (person_id != blocked_id)
+);
+CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks (blocked_id);
+
+-- Per pair: the last follow DM (one a day) and the last unfollow (a re-follow waits
+-- ten minutes) — #157, migration 076.
+CREATE TABLE IF NOT EXISTS follow_log (
+    follower_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    followee_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    notified_at   TEXT,
+    unfollowed_at TEXT,
+    PRIMARY KEY (follower_id, followee_id)
+);
+
+-- Browser sessions (#157, migration 074): only a hash of the cookie's token.
+CREATE TABLE IF NOT EXISTS web_sessions (
+    token_hash   TEXT PRIMARY KEY,
+    person_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    expires_at   TEXT NOT NULL,
+    user_agent   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_web_sessions_person ON web_sessions (person_id);

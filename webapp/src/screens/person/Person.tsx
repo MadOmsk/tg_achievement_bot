@@ -4,6 +4,7 @@ export {
   GameCard,
   HeroGame,
   HeroMarks,
+  HiddenProfile,
   PeopleHits,
   PersonProfile,
   PlayedGames,

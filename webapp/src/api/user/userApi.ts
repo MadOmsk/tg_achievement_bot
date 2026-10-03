@@ -1,4 +1,4 @@
-import { BaseApi } from "../base/baseApi";
+import { BaseApi, WEB_SESSION } from "../base/baseApi";
 import { API_BASE_ROUTES, USER_ROUTES } from "../../components/shared/constants/routes";
 import type {
   AccountPlatform,
@@ -20,10 +20,23 @@ export class UserApi extends BaseApi {
   async fetchAvatarBlob(initData: string, tgId: number): Promise<Blob | null> {
     const url = this.buildUrl(USER_ROUTES.AVATAR(tgId));
     const response = await fetch(url, {
-      headers: { "X-Telegram-Init-Data": initData },
+      headers: this.initHeaders(initData),
     });
     if (!response.ok) return null;
     return response.blob();
+  }
+
+  /** The bot a browser's Telegram Login Widget belongs to (#157). */
+  authConfig(): Promise<{ bot_username: string | null }> {
+    return this.get(WEB_SESSION, "/auth/config");
+  }
+
+  loginTelegram(user: Record<string, string | number>): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/telegram", user);
+  }
+
+  logout(): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/logout");
   }
 
   deleteAccount(initData: string): Promise<{ ok: boolean }> {
@@ -32,6 +45,31 @@ export class UserApi extends BaseApi {
 
   patchSettings(initData: string, body: UserSettingsPatch): Promise<MeResponse> {
     return this.patch<MeResponse>(initData, USER_ROUTES.SETTINGS, body);
+  }
+
+  /** Set one's own picture: the bytes of an image already cropped and shrunk. */
+  async putAvatar(initData: string, image: Blob): Promise<MeResponse> {
+    const headers: Record<string, string> = { "Content-Type": image.type || "image/jpeg" };
+    if (initData !== WEB_SESSION) headers["X-Telegram-Init-Data"] = initData;
+    const response = await fetch(this.buildUrl(USER_ROUTES.AVATAR_ME), {
+      method: "PUT",
+      headers,
+      body: image,
+    });
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+    return (await response.json()) as MeResponse;
+  }
+
+  deleteAvatar(initData: string): Promise<MeResponse> {
+    return this.delete<MeResponse>(initData, USER_ROUTES.AVATAR_ME);
+  }
+
+  putHandle(initData: string, handle: string): Promise<MeResponse> {
+    return this.put<MeResponse>(initData, USER_ROUTES.HANDLE, { handle });
+  }
+
+  confirmHandle(initData: string): Promise<MeResponse> {
+    return this.post<MeResponse>(initData, USER_ROUTES.CONFIRM_HANDLE);
   }
 
   connectXbox(initData: string): Promise<{ authorize_url: string }> {

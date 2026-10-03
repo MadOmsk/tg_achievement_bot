@@ -119,8 +119,9 @@ async def test_header_shows_the_telegram_username_not_the_gamertag(repo: Repo) -
     assert "GamerTag" not in header
 
 
-async def test_header_falls_back_to_full_name_with_no_username(repo: Repo) -> None:
+async def test_header_shows_the_nickname_never_the_telegram_name(repo: Repo) -> None:
     await repo.ensure_user(1, None, "Igor", "Petrov")
+    await repo.change_handle(1, "IgorP")
     await repo.link_xbox_account(1, XUID, "GamerTag", 0)
 
     user = await repo.get_user(1)
@@ -129,10 +130,11 @@ async def test_header_falls_back_to_full_name_with_no_username(repo: Repo) -> No
 
     assert text is not None
     header = text.split("\n")[0]
-    assert "Igor Petrov" in header
+    assert "IgorP" in header
+    assert "Petrov" not in header
 
 
-async def test_header_falls_back_to_first_name_alone_with_no_last_name(repo: Repo) -> None:
+async def test_header_ignores_a_first_name_with_no_nickname_yet(repo: Repo) -> None:
     await repo.ensure_user(1, None, "Igor", None)
     await repo.link_xbox_account(1, XUID, "GamerTag", 0)
 
@@ -142,8 +144,8 @@ async def test_header_falls_back_to_first_name_alone_with_no_last_name(repo: Rep
 
     assert text is not None
     header = text.split("\n")[0]
-    assert "Igor" in header
-    assert "GamerTag" not in header
+    assert "Igor" not in header
+    assert "GamerTag" in header
 
 
 async def test_header_falls_back_to_gamertag_with_nothing_from_telegram_yet(repo: Repo) -> None:
@@ -1060,14 +1062,15 @@ def _presence_row(**over) -> ChatPresenceRow:
 
 
 def test_who_label_prefers_the_name_then_username_then_gamertag() -> None:
-    """The one person chain (#51): name first, then a bare username, then a
-    platform nickname. A Telegram name now outranks a username — it is the
-    more human form — and the username carries no "@"."""
+    """The one person chain (#51, #157): the nickname first, then a bare
+    username, then a platform nickname. Telegram's own name is never used."""
     assert (
-        who_label(_presence_row(first_name="Igor", last_name="Petrov", username="mad"))
-        == "Igor Petrov"
+        who_label(
+            _presence_row(first_name="Igor", last_name="Petrov", username="mad", handle="IgorP")
+        )
+        == "IgorP"
     )
-    assert who_label(_presence_row(first_name="Igor")) == "Igor"
+    assert who_label(_presence_row(first_name="Igor")) != "Igor"
     assert who_label(_presence_row(username="mad", gamertag="MadXbox")) == "mad"
     assert who_label(_presence_row(gamertag="MadXbox")) == "MadXbox"
 

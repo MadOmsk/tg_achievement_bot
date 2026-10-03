@@ -1,5 +1,5 @@
-"""The game page can show another club member's progress (`?tg_id=`), but only
-someone who shares a chat with the caller."""
+"""The game page can show another person's progress (`?tg_id=`): anybody whose
+privacy setting lets the caller see their activity (#157), chat or no chat."""
 
 from __future__ import annotations
 
@@ -53,7 +53,14 @@ async def test_game_details_for_another_member(repo: Repo, settings: Settings) -
         assert resp.status == 200
         assert (await resp.json())["ok"] is True
 
-        # A member of no shared chat: refused.
+        # Somebody from no shared chat is not, until the caller follows them
+        # (owner, 2026-10-03) — and then only unless they hide their activity.
+        resp = await client.get(url, params={"tg_id": stranger}, headers=headers)
+        assert resp.status == 403
+        await repo.follow(await repo.person_id(me), await repo.person_id(stranger))
+        resp = await client.get(url, params={"tg_id": stranger}, headers=headers)
+        assert resp.status == 200
+        await repo.set_activity_visible(await repo.person_id(stranger), "nobody")
         resp = await client.get(url, params={"tg_id": stranger}, headers=headers)
         assert resp.status == 403
 

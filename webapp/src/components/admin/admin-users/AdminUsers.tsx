@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchAdminUsers, type AdminUserRow } from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import { BackHead, GlassWait, PlatformLogo, Chevron } from "../../shared/lib";
+import { BackHead, Group, NavRow, PlatformLogo, SelectRow, SettingsSkel } from "../../shared/lib";
 import { PLATFORMS } from "../../shared/constants";
 
 export function AdminUsers({
@@ -18,94 +18,67 @@ export function AdminUsers({
   onFail: (err: unknown) => void;
 }) {
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
-  const [userChats, setUserChats] = useState<
-    Array<{ chat_id: number; title: string | null }>
-  >([]);
-  const [peopleChat, setPeopleChat] = useState("");
+  const [chats, setChats] = useState<Array<{ chat_id: number; title: string | null }>>([]);
+  const [chat, setChat] = useState<number>(0);
 
   useEffect(() => {
     void fetchAdminUsers(data)
       .then((r) => {
         setUsers(r.users);
-        setUserChats(r.chats ?? []);
+        setChats(r.chats ?? []);
       })
       .catch(onFail);
   }, [data, onFail]);
 
-  const filteredUsers =
-    users?.filter((row) =>
-      peopleChat === ""
-        ? true
-        : (row.chat_ids ?? []).includes(Number(peopleChat)),
-    ) ?? [];
+  const shown =
+    users?.filter((row) => chat === 0 || (row.chat_ids ?? []).includes(chat)) ?? [];
 
   return (
     <>
-      <BackHead
-        title={t(locale, "adminUsers")}
-        backLabel={t(locale, "back")}
-        onBack={onBack}
-      />
+      <BackHead title={t(locale, "adminUsers")} backLabel={t(locale, "back")} onBack={onBack} />
       {users == null ? (
-        <GlassWait />
+        <SettingsSkel groups={[1, 6]} />
       ) : (
         <>
-          {(userChats.length > 0) && (
-            <div className="glass-card">
-              <label className="ios-row">
-                <span>{t(locale, "adminChats")}</span>
-                <select
-                  className="tz-select"
-                  value={peopleChat}
-                  onChange={(e) => setPeopleChat(e.target.value)}
-                  aria-label={t(locale, "adminChats")}
-                >
-                  <option value="">{t(locale, "allChats")}</option>
-                  {userChats.map((c) => (
-                    <option key={c.chat_id} value={c.chat_id}>
-                      {c.title || `chat ${c.chat_id}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+          {chats.length > 0 && (
+            <Group>
+              <SelectRow
+                label={t(locale, "adminChats")}
+                value={chat}
+                options={[
+                  { value: 0, label: t(locale, "allChats") },
+                  ...chats.map((c) => ({ value: c.chat_id, label: c.title || `chat ${c.chat_id}` })),
+                ]}
+                onChange={setChat}
+              />
+            </Group>
           )}
-
-          {filteredUsers.length === 0 ? (
+          {shown.length === 0 ? (
             <p className="empty">{t(locale, "noUsers")}</p>
           ) : (
-            <div className="glass-card">
-              {filteredUsers.map((row) => (
-                <button
+            <Group>
+              {shown.map((row) => (
+                <NavRow
                   key={row.tg_id}
-                  type="button"
-                  className="ios-row admin-user-row"
-                  onClick={() => onSelectUser(row.tg_id)}
-                >
-                  <span className="admin-limit-copy">
-                    <strong>{row.name}</strong>
-                    <small>
-                      {row.today} / {row.month}
-                      {row.is_excluded ? ` · ${t(locale, "excluded")}` : ""}
-                    </small>
-                  </span>
-                  <span className="admin-plats">
-                    {row.xbox && (
-                      <PlatformLogo platform={PLATFORMS.XBOX} size={18} />
-                    )}
-                    {row.psn && (
-                      <PlatformLogo platform={PLATFORMS.PSN} size={18} />
-                    )}
-                    {row.steam && (
-                      <PlatformLogo platform={PLATFORMS.STEAM} size={18} />
-                    )}
-                    <span className="ios-value">
-                      <Chevron />
+                  label={row.name}
+                  sub={[
+                    `${t(locale, "usersToday")} ${row.today}`,
+                    `${t(locale, "usersMonth")} ${row.month}`,
+                    row.is_excluded ? t(locale, "excluded") : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  value={
+                    <span className="fr-marks">
+                      {row.xbox && <PlatformLogo platform={PLATFORMS.XBOX} size={16} />}
+                      {row.psn && <PlatformLogo platform={PLATFORMS.PSN} size={16} />}
+                      {row.steam && <PlatformLogo platform={PLATFORMS.STEAM} size={16} />}
                     </span>
-                  </span>
-                </button>
+                  }
+                  onClick={() => onSelectUser(row.tg_id)}
+                />
               ))}
-            </div>
+            </Group>
           )}
         </>
       )}

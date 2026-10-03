@@ -6,6 +6,7 @@ Behavior is unchanged from before the split.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from bot.db.repo._models import (
@@ -15,11 +16,13 @@ from bot.db.repo._models import (
     _iso,
 )
 from bot.db.repo._sql import (
+    HANDLE_SHOWN,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
     earned_at,
     earned_since,
+    member_source,
     rarity,
     rarity_cache_join,
 )
@@ -35,6 +38,7 @@ class _ChatStatsRepo:
         since: datetime,
         rare_threshold: float,
         until: datetime | None = None,
+        members: Sequence[int] | None = None,
     ) -> list[ChatMemberStat]:
         """Per-person totals for a chat over a period.
 
@@ -64,7 +68,7 @@ class _ChatStatsRepo:
             # (#51): a member with no Xbox account used to have no name here
             # at all and rendered as a bare "id319472587", which is exactly
             # what #38 fixed and a revert took back out.
-            "SELECT u.tg_id, u.username, u.first_name,"
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name, psn.display_name AS psn_name,"
             "       COUNT(s.achievement_id) AS cnt,"
@@ -79,7 +83,7 @@ class _ChatStatsRepo:
             "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
             "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze "
-            "FROM subscriptions sub "
+            "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
             + XBOX_ACCOUNT
             # tg_id, not xuid (SPEC 9, M-Steam-2e) — sums every platform's
@@ -110,6 +114,7 @@ class _ChatStatsRepo:
                 gamertag_modern=row["gamertag_modern"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 steam_name=row["steam_name"],
                 psn_name=row["psn_name"],
@@ -129,7 +134,9 @@ class _ChatStatsRepo:
             for row in await cursor.fetchall()
         ]
 
-    async def chat_member_presence(self, chat_id: int) -> list[ChatPresenceRow]:
+    async def chat_member_presence(
+        self, chat_id: int, *, members: Sequence[int] | None = None
+    ) -> list[ChatPresenceRow]:
         """Every connected, non-excluded member *known to be in this chat*,
         with his last known presence — for /online (SPEC 6.3). "Known to be
         in this chat" is the union of who publishes here (`subscriptions`)
@@ -188,13 +195,22 @@ class _ChatStatsRepo:
         back to the Telegram name there, plain (no "@"), so nobody gets
         pinged by the auto-refreshing table.
         """
+        # A hand-picked list of people (the Mini App's "following" scope, #157)
+        # stands in for the chat's membership; ids are integers formatted here.
+        if members is None:
+            member_sql = (
+                "  SELECT tg_id FROM subscriptions WHERE chat_id = ? "
+                "  UNION "
+                "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
+            )
+            member_params: tuple[int, ...] = (chat_id, chat_id)
+        else:
+            ids = ",".join(str(int(m)) for m in members) or "NULL"
+            member_sql = f"  SELECT tg_id FROM users WHERE tg_id IN ({ids})"
+            member_params = ()
         cursor = await self._conn.execute(
-            "WITH member AS ("
-            "  SELECT tg_id FROM subscriptions WHERE chat_id = ? "
-            "  UNION "
-            "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
-            "), presence AS ("
-            "  SELECT u.tg_id, u.username, u.first_name,"
+            "WITH member AS (" + member_sql + "), presence AS ("
+            "  SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "         u.last_name, " + XBOX_COLUMNS + ","
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
             "         xp.device AS xbox_device,"
@@ -252,7 +268,8 @@ class _ChatStatsRepo:
             "    END AS winner"
             "  FROM picked"
             ") "
-            "SELECT tg_id, gamertag, gamertag_modern, username, first_name, last_name, xuid,"
+            "SELECT tg_id, gamertag, gamertag_modern, username, first_name, last_name,"
+            "       handle, xuid,"
             "       CASE winner"
             "         WHEN 'steam' THEN"
             "           CASE WHEN steam_persona_state != 0 THEN 'Online' ELSE 'Offline' END"
@@ -282,7 +299,7 @@ class _ChatStatsRepo:
             "  CASE winner WHEN 'steam' THEN steam_display_name"
             "              WHEN 'psn' THEN psn_display_name"
             "              ELSE COALESCE(gamertag_modern, gamertag) END COLLATE NOCASE",
-            (chat_id, chat_id),
+            member_params,
         )
         return [
             ChatPresenceRow(
@@ -298,6 +315,7 @@ class _ChatStatsRepo:
                 psn_display_name=row["psn_display_name"],
                 username=row["username"],
                 first_name=row["first_name"],
+                handle=row["handle"],
                 last_name=row["last_name"],
                 device=row["device"],
             )

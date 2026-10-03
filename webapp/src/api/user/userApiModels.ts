@@ -26,8 +26,22 @@ export type PsnAccount = {
 
 export type AccountPlatform = "xbox" | "psn" | "steam";
 
+/** A person's nickname (#157): `display` is what everybody sees, `number` the
+ * four digits added when the name was taken. */
+export type Handle = {
+  name: string;
+  number: number | null;
+  display: string;
+  confirmed: boolean;
+  /** When the next change is allowed, or null if it is now. */
+  next_change_at: string | null;
+};
+
 export type MeResponse = {
   tg_id: number;
+  handle: Handle | null;
+  /** The person chose a picture in the app instead of the Telegram photo. */
+  avatar_custom?: boolean;
   username: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -40,6 +54,10 @@ export type MeResponse = {
     show_secrets: boolean;
     /** Which achievements go out, in every chat (#126). */
     rarity_mode: string;
+    /** Who sees this person's activity in the app (#157). */
+    activity_visible?: "all" | "friends" | "nobody";
+    /** A DM from the bot when someone follows this person (#157). */
+    notify_followers?: boolean;
   };
   xbox: {
     linked: boolean;
@@ -112,6 +130,7 @@ export type UserSettingsPatch = Partial<{
   show_profile_links: boolean;
   show_secrets: boolean;
   rarity_mode: string;
+  notify_followers: boolean;
 }>;
 
 // A chat only says whether a person publishes there (#126): the rarity
