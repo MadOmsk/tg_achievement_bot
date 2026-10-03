@@ -138,11 +138,15 @@ class _AccountsRepo:
 
         Returns True if a user was deleted, False if no such user existed.
         """
-        cursor = await self._conn.execute("SELECT photo_path FROM users WHERE tg_id = ?", (tg_id,))
+        cursor = await self._conn.execute(
+            "SELECT photo_path, custom_avatar_path FROM users WHERE tg_id = ?", (tg_id,)
+        )
         row = await cursor.fetchone()
         if not row:
             return False
-        photo_path = row["photo_path"]
+        # The Telegram photo and the picture chosen in the Mini App (#157): a
+        # deleted person's face must not stay behind on disk.
+        pictures = [p for p in (row["photo_path"], row["custom_avatar_path"]) if p]
 
         # Step 1: Find all linked platform accounts for this user
         cursor = await self._conn.execute(
@@ -268,13 +272,13 @@ class _AccountsRepo:
 
         await self._conn.commit()
 
-        if photo_path:
+        for picture in pictures:
             try:
-                path = avatar_dir() / photo_path
+                path = avatar_dir() / picture
                 if path.is_file():
                     path.unlink()
             except OSError:
-                log.warning("failed to remove avatar for tg_id=%s path=%s", tg_id, photo_path)
+                log.warning("failed to remove avatar for tg_id=%s path=%s", tg_id, picture)
 
         return True
 

@@ -35,7 +35,7 @@ def clear_avatar_cache() -> None:
     _cache.clear()
 
 
-def _mime(data: bytes) -> str:
+def image_mime(data: bytes) -> str:
     if data.startswith(b"\x89PNG"):
         return "image/png"
     if data.startswith(b"RIFF") and b"WEBP" in data[:16]:
@@ -89,6 +89,6 @@ async def load_avatar_bytes(
     if not body:
         _cache[tg_id] = (time.time() + MISS_TTL_SECONDS, None, "")
         return None
-    mime = _mime(body)
+    mime = image_mime(body)
     _cache[tg_id] = (time.time() + HIT_TTL_SECONDS, body, mime)
     return body, mime
