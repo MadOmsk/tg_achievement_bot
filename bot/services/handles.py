@@ -14,8 +14,8 @@ from dataclasses import dataclass
 
 HANDLE_MIN = 3
 HANDLE_MAX = 20
-# Once per this many days, after the first choice (which is free).
-CHANGE_COOLDOWN_DAYS = 30
+# Once per this many days, after the first choice (owner, 2026-10-03: a day, not 30).
+CHANGE_COOLDOWN_DAYS = 1
 FALLBACK_HANDLE = "Player"
 
 _VALID = re.compile(rf"[A-Za-z0-9]{{{HANDLE_MIN},{HANDLE_MAX}}}")

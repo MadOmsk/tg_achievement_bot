@@ -18,7 +18,7 @@ class HandleInvalid(ValueError):
 
 
 class HandleTooSoon(Exception):
-    """Changed less than 30 days ago. `available_at` is when it may change again."""
+    """Changed too recently (`CHANGE_COOLDOWN_DAYS`). `available_at` is when it may change again."""
 
     def __init__(self, available_at: str) -> None:
         super().__init__(available_at)
@@ -100,7 +100,7 @@ class _HandlesRepo:
 
     async def change_handle(self, tg_id: int, wanted: str) -> handles.Handle:
         """The person's own choice. The first one (nickname still unconfirmed) is
-        free; later ones once per 30 days. Only the letters' case changing is
+        free; later ones once per `CHANGE_COOLDOWN_DAYS`. Only the letters' case changing is
         always allowed and keeps the digits."""
         wanted = wanted.strip()
         if not handles.is_valid(wanted):

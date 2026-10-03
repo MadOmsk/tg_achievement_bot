@@ -27,7 +27,7 @@ export function NicknameForm({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
-  // A change is locked for 30 days after the last real one; the first choice
+  // A change is locked for a day after the last real one; the first choice
   // is free (the server decides, this only explains it).
   const waitUntil = !first && handle.next_change_at ? new Date(handle.next_change_at) : null;
   const locked = waitUntil !== null && waitUntil.getTime() > Date.now();

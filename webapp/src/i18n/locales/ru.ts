@@ -338,7 +338,8 @@ loading: "Собираю тусовку…",
   nicknameKeep: "Оставить",
   nicknameSave: "Сохранить",
   nicknameInvalid: "Только латиница и цифры, 3–20 знаков.",
-  nicknameTooSoon: "Ник можно менять раз в 30 дней.",
+  nicknameTooSoon: "Ник можно менять раз в сутки.",
+  followTooSoon: "Снова подписаться можно через 10 минут после отписки.",
   nicknameNext: "Сменить можно с",
 } as const;
 

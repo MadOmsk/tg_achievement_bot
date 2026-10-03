@@ -7,6 +7,7 @@ follows between the two and stops either finding the other."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from bot.services import handles
 from bot.services.people import (
@@ -16,7 +17,22 @@ from bot.services.people import (
     Relation,
     can_view,
 )
-from bot.util import utcnow_iso
+from bot.util import utcnow, utcnow_iso
+
+# One follow DM per pair at most this often (#157).
+FOLLOW_NOTICE_INTERVAL = timedelta(days=1)
+# After unfollowing somebody, following them again waits this long (owner,
+# 2026-10-03): a follow-unfollow loop is not a way to keep pinging a person.
+REFOLLOW_COOLDOWN = timedelta(minutes=10)
+
+
+class FollowTooSoon(Exception):
+    """Unfollowed this person a moment ago. `available_at` is when a follow is
+    allowed again."""
+
+    def __init__(self, available_at: str) -> None:
+        super().__init__(available_at)
+        self.available_at = available_at
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,12 +105,22 @@ class _FollowsRepo:
 
     async def follow(self, me: int, other: int) -> bool:
         """Follow somebody. False when it changed nothing: oneself, a person who
-        does not exist, a block either way, or already following."""
+        does not exist, a block either way, or already following. Raises
+        `FollowTooSoon` inside `REFOLLOW_COOLDOWN` of unfollowing them."""
         if me == other:
             return False
         relation = await self.relation(me, other)
         if relation.blocked or relation.blocked_by or relation.following:
             return False
+        cursor = await self._conn.execute(
+            "SELECT unfollowed_at FROM follow_log WHERE follower_id = ? AND followee_id = ?",
+            (me, other),
+        )
+        row = await cursor.fetchone()
+        if row is not None and row["unfollowed_at"]:
+            available = datetime.fromisoformat(row["unfollowed_at"]) + REFOLLOW_COOLDOWN
+            if available > utcnow():
+                raise FollowTooSoon(available.isoformat(timespec="seconds"))
         cursor = await self._conn.execute(
             "INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) "
             "SELECT ?, id, ? FROM users WHERE id = ?",
@@ -103,10 +129,38 @@ class _FollowsRepo:
         await self._conn.commit()
         return cursor.rowcount > 0
 
+    async def claim_follow_notice(self, follower: int, followee: int) -> bool:
+        """May the bot tell `followee` about this follow now? True at most once a
+        day per pair, and then the day starts over: a follow-unfollow loop must
+        not become a stream of DMs."""
+        now = utcnow()
+        cursor = await self._conn.execute(
+            "INSERT INTO follow_log (follower_id, followee_id, notified_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (follower_id, followee_id) "
+            "DO UPDATE SET notified_at = excluded.notified_at "
+            "WHERE follow_log.notified_at IS NULL OR follow_log.notified_at <= ?",
+            (
+                follower,
+                followee,
+                now.isoformat(timespec="seconds"),
+                (now - FOLLOW_NOTICE_INTERVAL).isoformat(timespec="seconds"),
+            ),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
     async def unfollow(self, me: int, other: int) -> None:
-        await self._conn.execute(
+        cursor = await self._conn.execute(
             "DELETE FROM follows WHERE follower_id = ? AND followee_id = ?", (me, other)
         )
+        if cursor.rowcount > 0:
+            # Starts `REFOLLOW_COOLDOWN`; an unfollow that changed nothing does not.
+            await self._conn.execute(
+                "INSERT INTO follow_log (follower_id, followee_id, unfollowed_at) VALUES (?, ?, ?) "
+                "ON CONFLICT (follower_id, followee_id) "
+                "DO UPDATE SET unfollowed_at = excluded.unfollowed_at",
+                (me, other, utcnow_iso()),
+            )
         await self._conn.commit()
 
     async def block(self, me: int, other: int) -> bool:
@@ -262,7 +316,31 @@ class _FollowsRepo:
         await self._conn.commit()
 
     async def can_view_activity(self, viewer: int, target: int) -> bool:
-        """The one answer to "may this person see that one's activity?"."""
+        """The one answer to "may this person see that one's activity?". Besides
+        the target's own setting, the viewer must know them: share an active chat
+        with them or follow them (owner, 2026-10-03) — "everyone" never meant
+        anybody who found the nickname."""
         if viewer == target:
             return True
-        return can_view(await self.activity_visible(target), await self.relation(viewer, target))
+        relation = await self.relation(viewer, target)
+        if not can_view(await self.activity_visible(target), relation):
+            return False
+        return relation.following or await self._share_chat(viewer, target)
+
+    async def _share_chat(self, a: int, b: int) -> bool:
+        """An active chat both people are subscribed to or were seen writing in —
+        the membership `/online` and "Мои чаты" use."""
+        cursor = await self._conn.execute(
+            "WITH member AS ("
+            "  SELECT chat_id, tg_id FROM subscriptions"
+            "  UNION SELECT chat_id, tg_id FROM chat_seen"
+            ") "
+            "SELECT 1 FROM member ma "
+            "JOIN member mb ON mb.chat_id = ma.chat_id "
+            "JOIN chats c ON c.chat_id = ma.chat_id AND c.is_active = 1 "
+            "WHERE ma.tg_id = (SELECT tg_id FROM users WHERE id = :a)"
+            "  AND mb.tg_id = (SELECT tg_id FROM users WHERE id = :b) "
+            "LIMIT 1",
+            {"a": a, "b": b},
+        )
+        return await cursor.fetchone() is not None

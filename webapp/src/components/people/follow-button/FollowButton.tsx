@@ -29,7 +29,14 @@ export function FollowButton({
     setBusy(true);
     void call
       .then((res) => onChange(res.relation))
-      .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`))
+      .catch((err: unknown) =>
+        onFlash(
+          // A re-follow right after an unfollow waits ten minutes (the server decides).
+          String(err).includes("too_soon")
+            ? t(locale, "followTooSoon")
+            : `${t(locale, "error")}: ${String(err)}`,
+        ),
+      )
       .finally(() => setBusy(false));
   };
 

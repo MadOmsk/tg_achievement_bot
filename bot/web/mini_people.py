@@ -15,7 +15,7 @@ from typing import Any
 from aiohttp import web
 
 from bot.db.repo import Repo
-from bot.db.repo._follows import PersonRow
+from bot.db.repo._follows import FollowTooSoon, PersonRow
 from bot.i18n import gettext
 from bot.services.people import ACTIVITY_CHOICES, Relation
 
@@ -33,10 +33,12 @@ def _relation_json(relation: Relation) -> dict[str, bool]:
     }
 
 
-def person_json(row: PersonRow) -> dict[str, Any]:
+def person_json(row: PersonRow, *, can_view: bool = True) -> dict[str, Any]:
+    """`tg_id` only goes to somebody who may see the person's activity: search
+    is open to anyone with the app, and a Telegram id is not a public fact."""
     return {
         "id": row.id,
-        "tg_id": row.tg_id,
+        "tg_id": row.tg_id if can_view else None,
         "handle": row.handle,
         "relation": _relation_json(row.relation),
     }
@@ -55,6 +57,16 @@ def register(app: web.Application, require_user: RequireUser) -> None:
             raise web.HTTPNotFound(text="no person")
         return repo, person
 
+    async def people_json(repo: Repo, me: int, rows: list[PersonRow]) -> web.Response:
+        return web.json_response(
+            {
+                "people": [
+                    person_json(row, can_view=await repo.can_view_activity(me, row.id))
+                    for row in rows
+                ]
+            }
+        )
+
     def target_id(request: web.Request) -> int:
         try:
             return int(request.match_info["person_id"])
@@ -64,27 +76,27 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     async def search(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
         rows = await repo.search_people(me, request.query.get("q", ""))
-        return web.json_response({"people": [person_json(row) for row in rows]})
+        return await people_json(repo, me, rows)
 
     async def suggestions(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
         rows = await repo.suggested_people(me)
-        return web.json_response({"people": [person_json(row) for row in rows]})
+        return await people_json(repo, me, rows)
 
     async def following(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
         rows = await repo.following_of(me)
-        return web.json_response({"people": [person_json(row) for row in rows]})
+        return await people_json(repo, me, rows)
 
     async def followers(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
         rows = await repo.followers_of(me)
-        return web.json_response({"people": [person_json(row) for row in rows]})
+        return await people_json(repo, me, rows)
 
     async def blocked(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
         rows = await repo.blocked_by(me)
-        return web.json_response({"people": [person_json(row) for row in rows]})
+        return await people_json(repo, me, rows)
 
     async def profile_by_tg(request: web.Request) -> web.Response:
         """The same card, asked for by the Telegram id a feed item carries."""
@@ -112,7 +124,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         can_view = await repo.can_view_activity(me, other)
         return web.json_response(
             {
-                **person_json(row),
+                **person_json(row, can_view=can_view),
                 "followers": followers_count,
                 "following": following_count,
                 "can_view": can_view,
@@ -123,7 +135,14 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     async def follow(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
         other = target_id(request)
-        if await repo.follow(me, other):
+        try:
+            followed = await repo.follow(me, other)
+        except FollowTooSoon as exc:
+            # Unfollowed a moment ago: the app words it from `available_at`.
+            return web.json_response(
+                {"error": "too_soon", "available_at": exc.available_at}, status=429
+            )
+        if followed:
             await _tell_new_follower(request, repo, me, other)
         return web.json_response({"relation": _relation_json(await repo.relation(me, other))})
 
@@ -238,6 +257,8 @@ async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: i
     relation = await repo.relation(other, me)
     settings = await repo.get_user_settings(target.tg_id)
     if settings is not None and not settings.notify_followers:
+        return
+    if not await repo.claim_follow_notice(me, other):
         return
     locale = settings.locale if settings else "ru"
     key = "people-new-friend" if relation.friends else "people-new-follower"
