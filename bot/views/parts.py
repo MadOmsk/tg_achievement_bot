@@ -301,7 +301,7 @@ async def xbox_value_parts(
     # repo.py::xbox_achievement_count's own docstring for why this is
     # trustworthy for modern Xbox and CLAUDE.md's Statistics rules for
     # the one remaining x360-specific gap this doesn't close.
-    xbox_count = await repo.xbox_achievement_count(tg_id)
+    xbox_count = await repo.xbox_achievement_count(await repo.person_id(tg_id))
     xbox_completed = await repo.xbox_completed_games_count(xuid)
     parts = [plural_achievements(xbox_count, locale)]
     if xbox_completed:
@@ -318,7 +318,7 @@ async def link_value_parts(repo: Repo, *, tg_id: int, link: PlatformLink, locale
     count = (
         await repo.account_achievement_count(link.platform, link.external_id)
         if is_psn
-        else await repo.platform_achievement_count(tg_id, link.platform)
+        else await repo.platform_achievement_count(await repo.person_id(tg_id), link.platform)
     )
     # PSN calls its own achievements "trophies" everywhere (CLAUDE.md).
     parts = [plural_trophies(count, locale) if is_psn else plural_achievements(count, locale)]
@@ -335,7 +335,7 @@ async def link_value_parts(repo: Repo, *, tg_id: int, link: PlatformLink, locale
                 gettext("chat", "chat-stats-psn-level", locale=locale, level=link.psn_trophy_level)
             )
     elif link.platform == Platform.STEAM:
-        completed = await repo.steam_completed_games_count(tg_id)
+        completed = await repo.steam_completed_games_count(await repo.person_id(tg_id))
         if completed:
             parts.append(f"{completed} {COMPLETED_BADGE_STEAM}")
     return parts

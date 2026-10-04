@@ -77,7 +77,7 @@ class _AccountsRepo:
         # nickname until `give_handle` finds one (start-up, or their first visit
         # to the Mini App). Telegram's real name is never used.
         if from_text(username) != FALLBACK_HANDLE:
-            await self.assign_first_handle(tg_id, username)
+            await self.assign_first_handle(await self.person_id(tg_id), username)
         return await self.person_id(tg_id)  # type: ignore[attr-defined]
 
     async def update_username(self, tg_id: int, username: str) -> None:
@@ -547,8 +547,8 @@ class _AccountsRepo:
     # `User` keeps reading `user.xuid` / `user.gamertag` unchanged.
     _USER_COLUMNS = "SELECT u.*, " + XBOX_COLUMNS + "FROM users u " + XBOX_ACCOUNT
 
-    async def get_user(self, tg_id: int) -> User | None:
-        cursor = await self._conn.execute(self._USER_COLUMNS + "WHERE u.tg_id = ?", (tg_id,))
+    async def get_user(self, person_id: int) -> User | None:
+        cursor = await self._conn.execute(self._USER_COLUMNS + "WHERE u.id = ?", (person_id,))
         row = await cursor.fetchone()
         return _as_user(row) if row else None
 
@@ -561,7 +561,7 @@ class _AccountsRepo:
         return _as_user(row) if row else None
 
     async def link_xbox_account(
-        self, tg_id: int, xuid: str, gamertag: str | None, gamerscore: int | None
+        self, person_id: int, xuid: str, gamertag: str | None, gamerscore: int | None
     ) -> int | None:
         """Link an Xbox account, through the same `accounts`/`account_links`
         pair every other platform uses since #52 — Xbox is one account and
@@ -575,7 +575,9 @@ class _AccountsRepo:
         Returns the tg_id the account was taken from, when somebody else was
         holding it — same contract as `link_platform_account`.
         """
-        taken_from = await self.link_platform_account(tg_id, AccountPlatform.XBOX, xuid, gamertag)
+        taken_from = await self.link_platform_account(
+            person_id, AccountPlatform.XBOX, xuid, gamertag
+        )
         await self._conn.execute(
             "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
             "       gamerscore = COALESCE(?, gamerscore), updated_at = ? "
@@ -585,15 +587,15 @@ class _AccountsRepo:
         await self._conn.commit()
         return taken_from
 
-    async def unlink_xbox_account(self, tg_id: int) -> None:
+    async def unlink_xbox_account(self, person_id: int) -> None:
         """/disconnect_xbox: the link is deactivated, the account and
         everything it earned stay (SPEC 6.1, and #52's own rule — relinking
         later finds its history waiting instead of paying for a backfill)."""
-        await self.unlink_platform_account(tg_id, AccountPlatform.XBOX)
+        await self.unlink_platform_account(person_id, AccountPlatform.XBOX)
 
     # --------------------------------------------------------------- tokens
 
-    async def save_refresh_token(self, tg_id: int, token_enc: bytes) -> None:
+    async def save_refresh_token(self, person_id: int, token_enc: bytes) -> None:
         """Store a fresh token and clear the failure state.
 
         Called both on first connect and on every refresh — SPEC 5.1 requires
@@ -603,7 +605,7 @@ class _AccountsRepo:
         await self._conn.execute(
             "INSERT INTO tokens"
             " (person_id, refresh_token_enc, status, created_at, last_refresh_at) "
-            "VALUES (" + PERSON_BY_TG + ", ?, 'active', ?, ?) "
+            "VALUES (?, ?, 'active', ?, ?) "
             "ON CONFLICT(person_id) DO UPDATE SET "
             "  refresh_token_enc = excluded.refresh_token_enc,"
             "  status = 'active',"
@@ -612,37 +614,36 @@ class _AccountsRepo:
             "  notify_count = 0,"
             "  last_notified_at = NULL,"
             "  last_refresh_at = excluded.last_refresh_at",
-            (tg_id, token_enc, now, now),
+            (person_id, token_enc, now, now),
         )
         await self._conn.commit()
 
-    async def get_token(self, tg_id: int) -> TokenRecord | None:
+    async def get_token(self, person_id: int) -> TokenRecord | None:
         cursor = await self._conn.execute(
-            "SELECT t.*, u.tg_id FROM tokens t JOIN users u ON u.id = t.person_id"
-            " WHERE u.tg_id = ?",
-            (tg_id,),
+            "SELECT t.*, u.tg_id FROM tokens t JOIN users u ON u.id = t.person_id WHERE u.id = ?",
+            (person_id,),
         )
         row = await cursor.fetchone()
         return _as_token(row) if row else None
 
-    async def set_token_status(self, tg_id: int, status: str) -> None:
+    async def set_token_status(self, person_id: int, status: str) -> None:
         invalid_at = utcnow_iso() if status == TokenStatus.INVALID else None
         await self._conn.execute(
-            "UPDATE tokens SET status = ?, invalid_at = ? WHERE person_id = " + PERSON_BY_TG,
-            (status, invalid_at, tg_id),
+            "UPDATE tokens SET status = ?, invalid_at = ? WHERE person_id = ?",
+            (status, invalid_at, person_id),
         )
         await self._conn.commit()
 
-    async def bump_token_failure(self, tg_id: int) -> int:
+    async def bump_token_failure(self, person_id: int) -> int:
         """A network error is not a dead token (SPEC 5.1) — count and report."""
         await self._conn.execute(
-            "UPDATE tokens SET fail_count = fail_count + 1 WHERE person_id = " + PERSON_BY_TG,
-            (tg_id,),
+            "UPDATE tokens SET fail_count = fail_count + 1 WHERE person_id = ?",
+            (person_id,),
         )
         await self._conn.commit()
         cursor = await self._conn.execute(
-            "SELECT fail_count FROM tokens WHERE person_id = " + PERSON_BY_TG,
-            (tg_id,),
+            "SELECT fail_count FROM tokens WHERE person_id = ?",
+            (person_id,),
         )
         row = await cursor.fetchone()
         return int(row["fail_count"]) if row else 0
@@ -664,41 +665,41 @@ class _AccountsRepo:
         )
         return [row["tg_id"] for row in await cursor.fetchall()]
 
-    async def mark_token_notified(self, tg_id: int) -> None:
+    async def mark_token_notified(self, person_id: int) -> None:
         await self._conn.execute(
             "UPDATE tokens SET notify_count = notify_count + 1, last_notified_at = ? "
-            "WHERE person_id = " + PERSON_BY_TG,
-            (utcnow_iso(), tg_id),
+            "WHERE person_id = ?",
+            (utcnow_iso(), person_id),
         )
         await self._conn.commit()
 
-    async def delete_token(self, tg_id: int) -> None:
-        await self._conn.execute("DELETE FROM tokens WHERE person_id = " + PERSON_BY_TG, (tg_id,))
+    async def delete_token(self, person_id: int) -> None:
+        await self._conn.execute("DELETE FROM tokens WHERE person_id = ?", (person_id,))
         await self._conn.commit()
 
     # ------------------------------------------------------- user settings
 
-    async def get_user_settings(self, tg_id: int) -> UserSettings | None:
+    async def get_user_settings(self, person_id: int) -> UserSettings | None:
         cursor = await self._conn.execute(
             "SELECT s.*, u.tg_id FROM user_settings s JOIN users u ON u.id = s.person_id"
-            " WHERE u.tg_id = ?",
-            (tg_id,),
+            " WHERE u.id = ?",
+            (person_id,),
         )
         row = await cursor.fetchone()
         return _as_user_settings(row) if row else None
 
-    async def user_locale(self, tg_id: int) -> str:
+    async def user_locale(self, person_id: int) -> str:
         """This person's own language, used for DMs only (#48) — a group
         follows chat_settings.locale instead. Someone with no settings row
         yet reads as the default, same as every other per-user setting."""
         cursor = await self._conn.execute(
-            "SELECT locale FROM user_settings WHERE person_id = " + PERSON_BY_TG,
-            (tg_id,),
+            "SELECT locale FROM user_settings WHERE person_id = ?",
+            (person_id,),
         )
         row = await cursor.fetchone()
         return row["locale"] if row else DEFAULT_LOCALE
 
-    async def update_user_settings(self, tg_id: int, **fields: Any) -> None:
+    async def update_user_settings(self, person_id: int, **fields: Any) -> None:
         allowed = {
             "tz_offset_min",
             "show_profile_links",
@@ -714,8 +715,8 @@ class _AccountsRepo:
             return
         assignments = ", ".join(f"{name} = ?" for name in fields)
         await self._conn.execute(
-            f"UPDATE user_settings SET {assignments} WHERE person_id = {PERSON_BY_TG}",
-            (*fields.values(), tg_id),
+            f"UPDATE user_settings SET {assignments} WHERE person_id = ?",
+            (*fields.values(), person_id),
         )
         await self._conn.commit()
 

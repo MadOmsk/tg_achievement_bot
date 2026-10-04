@@ -89,7 +89,7 @@ async def panel_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContex
 
 @router.callback_query(F.data == "panel:refresh")
 async def panel_refresh(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    await repo.touch_last_online(callback.from_user.id)
+    await repo.touch_last_online(await repo.person_id(callback.from_user.id))
     screen = await render_panel(repo, callback.from_user.id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
     await callback.answer(i18n.get("panel-refreshed"))
@@ -108,17 +108,17 @@ async def panel_sync(
 ) -> None:
     """Wake up user, refresh UI, and catch up across all connected platforms (Xbox, Steam, PSN)."""
     tg_id = callback.from_user.id
-    await repo.touch_last_online(tg_id)
+    await repo.touch_last_online(await repo.person_id(tg_id))
 
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 
-    user = await repo.get_user(tg_id)
-    token = await repo.get_token(tg_id) if user and user.xuid else None
+    user = await repo.get_user(await repo.person_id(tg_id))
+    token = await repo.get_token(await repo.person_id(tg_id)) if user and user.xuid else None
     xbox_linked = bool(user and user.xuid)
     xbox_active = bool(xbox_linked and token and token.status == TokenStatus.ACTIVE)
-    steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    steam_link = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
+    psn_links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
     psn_link = psn_links[0] if psn_links else None
 
     if not (xbox_linked or steam_link or psn_link):
@@ -217,7 +217,7 @@ async def panel_disconnect_prompt(callback: CallbackQuery, repo: Repo, i18n: I18
     triggered them, so they work unchanged from the panel too."""
     from bot.handlers.connect import REVOKE_URL
 
-    user = await repo.get_user(callback.from_user.id)
+    user = await repo.get_user(await repo.person_id(callback.from_user.id))
     if user is None or not user.xuid:
         await callback.answer(i18n.get("panel-xbox-already-disconnected"), show_alert=True)
         return
@@ -270,8 +270,8 @@ async def _redraw_account_menu(
 
 async def _links_of(repo: Repo, tg_id: int, platform: str) -> list[PlatformLink]:
     if platform == AccountPlatform.PSN:
-        return await repo.platform_links_for(tg_id, platform)
-    link = await repo.get_platform_link(tg_id, platform)
+        return await repo.platform_links_for(await repo.person_id(tg_id), platform)
+    link = await repo.get_platform_link(await repo.person_id(tg_id), platform)
     return [link] if link is not None else []
 
 
@@ -319,7 +319,9 @@ async def panel_toggle_publishing(callback: CallbackQuery, repo: Repo, i18n: I18
         await callback.answer()
         return
     publishes = not all(link.publishes for link in links)
-    await repo.set_platform_publishes(callback.from_user.id, platform, publishes)
+    await repo.set_platform_publishes(
+        await repo.person_id(callback.from_user.id), platform, publishes
+    )
     await callback.answer(
         i18n.get("panel-publishes-on-toast" if publishes else "panel-publishes-off-toast")
     )
@@ -334,7 +336,7 @@ async def panel_toggle_account_publishing(
     """The same switch on XBOX's or Steam's own screen, which stays open."""
     assert callback.data is not None
     platform = callback.data.rsplit(":", 1)[1]
-    link = await repo.get_platform_link(callback.from_user.id, platform)
+    link = await repo.get_platform_link(await repo.person_id(callback.from_user.id), platform)
     if link is None:
         await callback.answer()
         return
@@ -347,7 +349,9 @@ async def panel_toggle_psn_account(callback: CallbackQuery, repo: Repo, i18n: I1
     """One PSN account's switch, on the PSN screen (#10)."""
     assert callback.data is not None
     account_id = callback.data.rsplit(":", 1)[1]
-    links = await repo.platform_links_for(callback.from_user.id, AccountPlatform.PSN)
+    links = await repo.platform_links_for(
+        await repo.person_id(callback.from_user.id), AccountPlatform.PSN
+    )
     link = next((item for item in links if item.external_id == account_id), None)
     if link is not None:
         await _toggle_one(callback, repo, link, i18n)
@@ -358,7 +362,10 @@ async def _toggle_one(
     callback: CallbackQuery, repo: Repo, link: PlatformLink, i18n: I18nContext
 ) -> None:
     await repo.set_account_publishes(
-        callback.from_user.id, link.platform, link.external_id, not link.publishes
+        await repo.person_id(callback.from_user.id),
+        link.platform,
+        link.external_id,
+        not link.publishes,
     )
     await callback.answer(
         i18n.get("panel-publishes-off-toast" if link.publishes else "panel-publishes-on-toast")
@@ -371,9 +378,9 @@ async def panel_rarity(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     all → rare → none → all (owner, 2026-09-30)."""
     tg_id = callback.from_user.id
     await repo.ensure_user(tg_id, callback.from_user.username)
-    settings_row = await repo.get_user_settings(tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
     mode = next_rarity_mode(settings_row.rarity_mode if settings_row else RarityMode.ALL)
-    await repo.update_user_settings(tg_id, rarity_mode=mode)
+    await repo.update_user_settings(await repo.person_id(tg_id), rarity_mode=mode)
     threshold = f"{await rare_threshold(repo):g}"
     await callback.answer(i18n.get(f"panel-rarity-toast-{mode}", threshold=threshold))
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
@@ -391,8 +398,8 @@ async def panel_toggle_locale(callback: CallbackQuery, repo: Repo, i18n: I18nCon
     the middleware resolved from the old value before this handler ran.
     """
     tg_id = callback.from_user.id
-    chosen = next_locale(await repo.user_locale(tg_id))
-    await repo.update_user_settings(tg_id, locale=chosen)
+    chosen = next_locale(await repo.user_locale(await repo.person_id(tg_id)))
+    await repo.update_user_settings(await repo.person_id(tg_id), locale=chosen)
 
     await callback.answer(locale_name(chosen))
     screen = await render_panel(repo, tg_id, locale=chosen)
@@ -455,12 +462,14 @@ async def panel_chat_subscribe(callback: CallbackQuery, repo: Repo, i18n: I18nCo
     specifically."""
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    user = await repo.get_user(callback.from_user.id)
-    platform_links = await repo.platform_links_of(callback.from_user.id) if user else []
+    user = await repo.get_user(await repo.person_id(callback.from_user.id))
+    platform_links = (
+        await repo.platform_links_of(await repo.person_id(callback.from_user.id)) if user else []
+    )
     if user is None or (not user.xuid and not platform_links):
         await callback.answer(i18n.get("panel-connect-any-platform-first"), show_alert=True)
         return
-    await repo.subscribe(chat_id, callback.from_user.id)
+    await repo.subscribe(chat_id, await repo.person_id(callback.from_user.id))
     await callback.answer(i18n.get("panel-subscribed-toast"))
     await _redraw_chat_card(callback, repo, chat_id, i18n)
 
@@ -483,7 +492,7 @@ async def panel_chat_unsub_prompt(callback: CallbackQuery, repo: Repo, i18n: I18
 async def panel_chat_unsub_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    await repo.unsubscribe(chat_id, callback.from_user.id)
+    await repo.unsubscribe(chat_id, await repo.person_id(callback.from_user.id))
     await callback.answer(i18n.get("panel-unsubscribed-toast"))
     await _redraw_chat_card(callback, repo, chat_id, i18n)
 

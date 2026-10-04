@@ -47,7 +47,7 @@ def _row(
 
 async def _person(repo: Repo, tg_id: int = 1, xuid: str = XUID) -> None:
     await repo.ensure_user(tg_id, f"person{tg_id}")
-    await repo.link_xbox_account(tg_id, xuid, f"Gamer{tg_id}", 0)
+    await repo.link_xbox_account(await repo.person_id(tg_id), xuid, f"Gamer{tg_id}", 0)
 
 
 async def _listing(repo: Repo, tg_ids: list[int], *, days: int = 30, threshold: float = 10.0):
@@ -180,13 +180,15 @@ async def test_one_game_on_two_platforms_is_two_rows(repo: Repo) -> None:
     """Grouped by (title_id, platform): a Steam appid and an Xbox title id
     are both bare numbers and can collide by accident."""
     await _person(repo)
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamPerson"
+    )
     now = utcnow().isoformat(timespec="seconds")
     await repo.insert_new_achievements(
         XUID, [_row("x", title_id="1234", unlocked_at=now)], is_backfill=False
     )
     await repo.insert_new_achievements_steam(
-        1,
+        await repo.person_id(1),
         "76561197960287930",
         [_row("s", title_id="1234", unlocked_at=now, platform="steam")],
         is_backfill=False,

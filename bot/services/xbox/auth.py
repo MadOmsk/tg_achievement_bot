@@ -144,9 +144,14 @@ class XboxAuthService:
         )
 
     async def store_identity(self, tg_id: int, identity: XboxIdentity) -> None:
-        await self._repo.save_refresh_token(tg_id, self._cipher.encrypt(identity.refresh_token))
+        await self._repo.save_refresh_token(
+            await self._repo.person_id(tg_id), self._cipher.encrypt(identity.refresh_token)
+        )
         await self._repo.link_xbox_account(
-            tg_id, xuid=identity.xuid, gamertag=identity.gamertag, gamerscore=None
+            await self._repo.person_id(tg_id),
+            xuid=identity.xuid,
+            gamertag=identity.gamertag,
+            gamerscore=None,
         )
         self._managers.pop(tg_id, None)
 
@@ -185,7 +190,7 @@ class XboxAuthService:
             return manager
 
     async def _restore_manager(self, tg_id: int) -> AuthenticationManager:
-        record = await self._repo.get_token(tg_id)
+        record = await self._repo.get_token(await self._repo.person_id(tg_id))
         if record is None:
             raise NotConnectedError(f"user {tg_id} has no token")
         if record.status != TokenStatus.ACTIVE:
@@ -207,7 +212,9 @@ class XboxAuthService:
     async def _persist_refresh_token(self, tg_id: int, oauth: OAuth2TokenResponse) -> None:
         if not oauth.refresh_token:
             raise TokenDeadError("refresh response carried no new refresh token")
-        await self._repo.save_refresh_token(tg_id, self._cipher.encrypt(oauth.refresh_token))
+        await self._repo.save_refresh_token(
+            await self._repo.person_id(tg_id), self._cipher.encrypt(oauth.refresh_token)
+        )
 
     async def _on_http_error(
         self, tg_id: int, exc: httpx.HTTPStatusError, secret: str | None = None
@@ -226,7 +233,7 @@ class XboxAuthService:
         return await self._count_failure(tg_id, f"{type(exc).__name__}: {exc}")
 
     async def _count_failure(self, tg_id: int, detail: str) -> Exception:
-        failures = await self._repo.bump_token_failure(tg_id)
+        failures = await self._repo.bump_token_failure(await self._repo.person_id(tg_id))
         if failures >= MAX_CONSECUTIVE_FAILURES:
             log.warning("token of tg_id=%s failed %s times in a row: %s", tg_id, failures, detail)
             await self._kill(tg_id)
@@ -234,7 +241,7 @@ class XboxAuthService:
         return TokenRefreshError(detail)
 
     async def _kill(self, tg_id: int) -> None:
-        await self._repo.set_token_status(tg_id, TokenStatus.INVALID)
+        await self._repo.set_token_status(await self._repo.person_id(tg_id), TokenStatus.INVALID)
         self._managers.pop(tg_id, None)
         if self.on_token_dead is not None:
             try:

@@ -33,10 +33,15 @@ def _achievement(achievement_id: str) -> AchievementRow:
 
 async def _linked_with(repo: Repo, tg_id: int, account: str, count: int) -> None:
     await repo.ensure_user(tg_id, f"user{tg_id}")
-    await repo.link_platform_account(tg_id, Platform.STEAM, account, f"Nick{account[-1]}")
+    await repo.link_platform_account(
+        await repo.person_id(tg_id), Platform.STEAM, account, f"Nick{account[-1]}"
+    )
     if count:
         await repo.insert_new_achievements_steam(
-            tg_id, account, [_achievement(f"a{i}") for i in range(count)], is_backfill=False
+            await repo.person_id(tg_id),
+            account,
+            [_achievement(f"a{i}") for i in range(count)],
+            is_backfill=False,
         )
 
 
@@ -73,7 +78,9 @@ async def test_a_known_incoming_account_reports_what_comes_back(repo: Repo) -> N
     """The difference between "this will take a while" and "this is
     instant" — the whole reason relinking is cheap now."""
     await _linked_with(repo, ALICE, ACCOUNT_B, 2)
-    await repo.link_platform_account(ALICE, Platform.STEAM, ACCOUNT_A, "NickA")
+    await repo.link_platform_account(
+        await repo.person_id(ALICE), Platform.STEAM, ACCOUNT_A, "NickA"
+    )
 
     preview = await relink.preview(repo, ALICE, Platform.STEAM, ACCOUNT_B)
 
@@ -130,14 +137,14 @@ async def test_taking_over_xbox_drops_the_previous_owners_token(repo: Repo) -> N
     does not hold the account."""
     await repo.ensure_user(ALICE, "alice")
     await repo.ensure_user(BOB, "bob")
-    await repo.link_xbox_account(ALICE, "xuid-1", "Someone", 0)
-    await repo.save_refresh_token(ALICE, b"encrypted-token")
-    assert await repo.get_token(ALICE) is not None
+    await repo.link_xbox_account(await repo.person_id(ALICE), "xuid-1", "Someone", 0)
+    await repo.save_refresh_token(await repo.person_id(ALICE), b"encrypted-token")
+    assert await repo.get_token(await repo.person_id(ALICE)) is not None
 
     taken_from = await relink.perform(repo, BOB, "xbox", "xuid-1", "Someone")
 
     assert taken_from == ALICE
-    assert await repo.get_token(ALICE) is None
+    assert await repo.get_token(await repo.person_id(ALICE)) is None
 
 
 async def test_switch_prompt_mentions_the_known_history_only_when_there_is_some(i18n) -> None:
@@ -200,10 +207,12 @@ async def test_greeting_shows_the_panel_for_a_psn_only_person(repo: Repo) -> Non
     only PSN linked was greeted as a stranger and pushed back into the
     Microsoft sign-in."""
     await repo.ensure_user(ALICE, "alice")
-    await repo.link_platform_account(ALICE, Platform.PSN, "psn-account", "AlicePSN")
+    await repo.link_platform_account(
+        await repo.person_id(ALICE), Platform.PSN, "psn-account", "AlicePSN"
+    )
 
-    user = await repo.get_user(ALICE)
-    links = await repo.platform_links_of(ALICE)
+    user = await repo.get_user(await repo.person_id(ALICE))
+    links = await repo.platform_links_of(await repo.person_id(ALICE))
 
     assert user is not None and user.xuid is None
     assert links, "a PSN-only person must still count as connected"
@@ -216,7 +225,7 @@ async def test_relink_delta_starts_from_the_newest_stored_unlock(repo: Repo) -> 
     assert await repo.account_latest_unlock(Platform.STEAM, ACCOUNT_A) is None
 
     await repo.insert_new_achievements_steam(
-        ALICE, ACCOUNT_A, [_achievement("a1")], is_backfill=False
+        await repo.person_id(ALICE), ACCOUNT_A, [_achievement("a1")], is_backfill=False
     )
     assert await repo.account_latest_unlock(Platform.STEAM, ACCOUNT_A) is not None
 

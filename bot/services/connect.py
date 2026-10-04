@@ -97,7 +97,7 @@ class ConnectService:
     async def user_locale(self, tg_id: int) -> str:
         """Passed through for web/oauth.py, which renders the post-login page
         for one known person but holds no Repo of its own (#48)."""
-        return await self._repo.user_locale(tg_id)
+        return await self._repo.user_locale(await self._repo.person_id(tg_id))
 
     def _forget_expired(self) -> None:
         now = utcnow().timestamp()

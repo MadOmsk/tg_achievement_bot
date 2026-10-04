@@ -109,7 +109,7 @@ async def start_with_payload(
         # group and does not need the whole greeting again. If the button
         # carried which group it was pressed in, we auto-subscribe him there
         # once the login actually succeeds (see on_linked in bot/main.py).
-        user = await repo.get_user(person_id)
+        user = await repo.get_user(await repo.person_id(person_id))
         if user is not None and user.xuid:
             await message.answer(
                 i18n.get("connect-xbox-already-connected", name=_xbox_name(user)),
@@ -168,7 +168,7 @@ async def connect_command(
     if person_id is None:
         return
     await repo.ensure_user(person_id, _username(message))
-    user = await repo.get_user(person_id)
+    user = await repo.get_user(await repo.person_id(person_id))
     if user is not None and user.xuid:
         await message.answer(
             i18n.get("connect-xbox-already-connected-relogin", name=_xbox_name(user)),
@@ -189,7 +189,7 @@ async def disconnect_command(message: Message, repo: Repo, i18n: I18nContext) ->
     person_id = _person_id(message)
     if person_id is None:
         return
-    user = await repo.get_user(person_id)
+    user = await repo.get_user(await repo.person_id(person_id))
     if user is None or not user.xuid:
         await message.answer(i18n.get("connect-xbox-not-connected"))
         return
@@ -230,13 +230,13 @@ async def disconnect_confirm(
     callback: CallbackQuery, repo: Repo, notifier: AdminNotifier, i18n: I18nContext
 ) -> None:
     tg_id = callback.from_user.id
-    user = await repo.get_user(tg_id)
+    user = await repo.get_user(await repo.person_id(tg_id))
     gamertag = (user.gamertag if user else None) or f"id{tg_id}"
     if user is not None and user.xuid:
         await repo.delete_presence_state(user.xuid)
-    await repo.delete_token(tg_id)
-    await repo.delete_subscriptions_of_user(tg_id)
-    await repo.unlink_xbox_account(tg_id)
+    await repo.delete_token(await repo.person_id(tg_id))
+    await repo.delete_subscriptions_of_user(await repo.person_id(tg_id))
+    await repo.unlink_xbox_account(await repo.person_id(tg_id))
     await notifier.user_disconnected(tg_id, gamertag, "disconnect-command")
 
     # Found while refactoring (2026-09-05): none of the edits in this file
@@ -271,9 +271,9 @@ async def optout(
 ) -> None:
     """Left on purpose: subscriptions go, history stays, reminders stop."""
     tg_id = callback.from_user.id
-    user = await repo.get_user(tg_id)
-    await repo.set_token_status(tg_id, TokenStatus.REVOKED)
-    await repo.delete_subscriptions_of_user(tg_id)
+    user = await repo.get_user(await repo.person_id(tg_id))
+    await repo.set_token_status(await repo.person_id(tg_id), TokenStatus.REVOKED)
+    await repo.delete_subscriptions_of_user(await repo.person_id(tg_id))
     await notifier.user_disconnected(
         tg_id, (user.gamertag if user else None) or f"id{tg_id}", "disconnect-button"
     )
@@ -329,7 +329,9 @@ async def timezone_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     assert callback.data is not None
     minutes = int(callback.data.rsplit(":", 1)[1])
     await repo.ensure_user(callback.from_user.id, callback.from_user.username)
-    await repo.update_user_settings(callback.from_user.id, tz_offset_min=minutes)
+    await repo.update_user_settings(
+        await repo.person_id(callback.from_user.id), tz_offset_min=minutes
+    )
     _awaiting_manual_tz.pop(callback.from_user.id, None)
     offset = format_offset(minutes, i18n)
 
@@ -386,7 +388,9 @@ async def timezone_manual_input(message: Message, repo: Repo, bot: Bot, i18n: I1
         return
 
     await repo.ensure_user(message.from_user.id, message.from_user.username)
-    await repo.update_user_settings(message.from_user.id, tz_offset_min=minutes)
+    await repo.update_user_settings(
+        await repo.person_id(message.from_user.id), tz_offset_min=minutes
+    )
     offset = format_offset(minutes, i18n)
     # The answer lands in the prompt it was asked in (owner, 2026-09-30): the
     # panel again, or the "set" line with its way on.
@@ -422,8 +426,8 @@ async def _greet(
     """
     pid = person_id if person_id is not None else _person_id(message)
     if pid:
-        user = await repo.get_user(pid)
-        links = await repo.platform_links_of(pid)
+        user = await repo.get_user(await repo.person_id(pid))
+        links = await repo.platform_links_of(await repo.person_id(pid))
         if (user is not None and user.xuid) or links:
             await send_panel(bot, repo, pid, i18n)
             return

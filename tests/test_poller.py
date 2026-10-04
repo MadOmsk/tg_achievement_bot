@@ -121,8 +121,8 @@ class FakePublisher:
 
 async def _connected_user(repo: Repo, cipher) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.save_refresh_token(TG_ID, cipher.encrypt("refresh"))
-    await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(await repo.person_id(TG_ID), cipher.encrypt("refresh"))
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Mad Omsk", None)
 
 
 async def test_dedup_publishes_each_achievement_once(repo: Repo, cipher) -> None:
@@ -199,7 +199,7 @@ async def test_excluded_user_is_not_polled(repo: Repo, cipher) -> None:
 
 async def test_dead_token_user_is_not_polled(repo: Repo, cipher) -> None:
     await _connected_user(repo, cipher)
-    await repo.set_token_status(TG_ID, "invalid")
+    await repo.set_token_status(await repo.person_id(TG_ID), "invalid")
     assert await repo.pollable_users() == []
 
 
@@ -214,7 +214,7 @@ class FakeBot:
 async def test_reminders_stop_after_three(repo: Repo, cipher) -> None:
     """A person may have left on purpose; a bot that nags forever gets blocked."""
     await _connected_user(repo, cipher)
-    await repo.set_token_status(TG_ID, "invalid")
+    await repo.set_token_status(await repo.person_id(TG_ID), "invalid")
     bot = FakeBot()
     job = ReminderJob(bot, repo)  # type: ignore[arg-type]
 
@@ -233,7 +233,7 @@ async def test_reminders_stop_after_three(repo: Repo, cipher) -> None:
 
 async def test_reminder_respects_the_interval(repo: Repo, cipher) -> None:
     await _connected_user(repo, cipher)
-    await repo.set_token_status(TG_ID, "invalid")
+    await repo.set_token_status(await repo.person_id(TG_ID), "invalid")
     bot = FakeBot()
     job = ReminderJob(bot, repo)  # type: ignore[arg-type]
 

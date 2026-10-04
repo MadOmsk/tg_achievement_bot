@@ -92,8 +92,10 @@ class _DeadClient:
 
 async def _seed(repo: Repo, *achievement_ids: str) -> None:
     await repo.ensure_user(TG_ID)
-    await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
-    await repo.save_refresh_token(TG_ID, b"enc")  # a live login: the job asks through it
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(
+        await repo.person_id(TG_ID), b"enc"
+    )  # a live login: the job asks through it
     await repo.insert_new_achievements(XUID, [_row(a) for a in achievement_ids], is_backfill=True)
 
 
@@ -142,8 +144,8 @@ async def test_a_tick_takes_only_its_own_bite(repo: Repo) -> None:
     """Pacing is the point — it must never try to drain the whole gap at
     once against someone else's API."""
     await repo.ensure_user(TG_ID)
-    await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
-    await repo.save_refresh_token(TG_ID, b"enc")
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(await repo.person_id(TG_ID), b"enc")
     rows = []
     for index in range(5):
         row = _row("a1")
@@ -247,13 +249,13 @@ async def test_an_owner_with_a_dead_login_is_never_asked(repo: Repo) -> None:
     """A dead Xbox login is an expected state: the job skips that owner rather
     than failing through them (and logging a traceback every tick)."""
     await _seed(repo, "a1")
-    await repo.set_token_status(TG_ID, "invalid")
+    await repo.set_token_status(await repo.person_id(TG_ID), "invalid")
     assert await repo.uncached_description_titles(XBOX_PLATFORMS, 5) == []
 
     # Somebody else holding the same game with a live login answers for it.
     await repo.ensure_user(2)
-    await repo.link_xbox_account(2, "xuid-2", "Other", None)
-    await repo.save_refresh_token(2, b"enc")
+    await repo.link_xbox_account(await repo.person_id(2), "xuid-2", "Other", None)
+    await repo.save_refresh_token(await repo.person_id(2), b"enc")
     await repo.insert_new_achievements("xuid-2", [_row("a1")], is_backfill=True)
     assert await repo.uncached_description_titles(XBOX_PLATFORMS, 5) == [
         (Platform.XBOX_MODERN, TITLE_ID, 2)

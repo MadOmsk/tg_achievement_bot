@@ -297,11 +297,13 @@ class FloodState:
     ever read the `throttled = 1` rows (poller/flood_flush.py's own sweep),
     but cost nothing to carry along either."""
 
-    tg_id: int
+    person_id: int
     chat_id: int
     window_started_at: datetime
     count_in_window: int
     throttled: bool
+    # Who to name in the digest's header — only the sweep reads it.
+    tg_id: int | None = None
 
 
 @dataclass(slots=True)

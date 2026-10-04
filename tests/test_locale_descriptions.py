@@ -120,7 +120,7 @@ async def test_cached_descriptions_returns_nothing_for_no_keys(repo: Repo) -> No
 async def test_uncached_descriptions_lists_only_what_is_missing(repo: Repo) -> None:
     """scripts/backfill_descriptions.py's whole input (#48)."""
     await repo.ensure_user(1)
-    await repo.link_xbox_account(1, "xuid-1", "Mad Omsk", None)
+    await repo.link_xbox_account(await repo.person_id(1), "xuid-1", "Mad Omsk", None)
     await repo.insert_new_achievements(
         "xuid-1",
         [_row("a1", "есть описание"), _row("a2", "тоже есть")],
@@ -137,7 +137,7 @@ async def test_uncached_descriptions_ignores_rows_with_no_description(repo: Repo
     # Nothing to translate, so not a gap — this is what keeps the backfill's
     # own count honest against `seen_achievements`' raw row count.
     await repo.ensure_user(1)
-    await repo.link_xbox_account(1, "xuid-1", "Mad Omsk", None)
+    await repo.link_xbox_account(await repo.person_id(1), "xuid-1", "Mad Omsk", None)
     await repo.insert_new_achievements(
         "xuid-1", [_row("a1", None), _row("a2", "")], is_backfill=True
     )
@@ -149,7 +149,7 @@ async def test_uncached_descriptions_carries_the_owner(repo: Repo) -> None:
     """Xbox needs a token-bearing owner to ask on behalf of; the row has to
     say who that can be."""
     await repo.ensure_user(42)
-    await repo.link_xbox_account(42, "xuid-42", "Mad Omsk", None)
+    await repo.link_xbox_account(await repo.person_id(42), "xuid-42", "Mad Omsk", None)
     await repo.insert_new_achievements("xuid-42", [_row("a1", "описание")], is_backfill=True)
 
     [(_platform, _title, _achievement, tg_id, external_id)] = await repo.uncached_descriptions()
@@ -225,9 +225,9 @@ async def test_recent_and_the_game_lists_follow_the_chats_language(repo: Repo) -
     /recent, /stats' games and the month's top games all render straight from
     SQL, so they showed whatever language the platform had answered in."""
     await repo.ensure_user(1, "igor")
-    await repo.link_xbox_account(1, "xuid-1", "Someone", 0)
+    await repo.link_xbox_account(await repo.person_id(1), "xuid-1", "Someone", 0)
     await repo.upsert_chat(-100500, "Chat", 1)
-    await repo.subscribe(-100500, 1)
+    await repo.subscribe(-100500, await repo.person_id(1))
     await repo.upsert_title("t-halo", "Halo: The Master Chief Collection", "xbox_modern")
     await repo.set_title_names(
         "t-halo", "Halo: Коллекция Мастер Чифа", "Halo: The Master Chief Collection"

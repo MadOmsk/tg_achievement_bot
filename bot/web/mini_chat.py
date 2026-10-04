@@ -125,7 +125,7 @@ async def _person_month(
     repo: Repo, tg_id: int, month: str | None
 ) -> tuple[str, datetime, datetime, str, int]:
     """Calendar month in this person's timezone (not a chat's)."""
-    settings_row = await repo.get_user_settings(tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
     tz = settings_row.tz_offset_min if settings_row else None
     current = _calendar_month_key(tz)
     parsed = parse_month_key(month or current)
@@ -137,7 +137,7 @@ async def _person_month(
 
 
 async def _person_month_choices(repo: Repo, tg_id: int, *extra: str) -> list[str]:
-    months = await repo.person_unlock_months(tg_id)
+    months = await repo.person_unlock_months(await repo.person_id(tg_id))
     ordered: list[str] = []
     for ym in [*extra, *months]:
         if ym and ym not in ordered:
@@ -267,22 +267,22 @@ async def build_person_payload(
     chat_id: int | None = None,
     month: str | None = None,
 ) -> dict[str, Any]:
-    links = await repo.platform_links_of(target.tg_id)
+    links = await repo.platform_links_of(await repo.person_id(target.tg_id))
     counters = await counters_for(repo, target.tg_id)
     week_xbox, week_steam, week_psn = await repo.achievement_platform_breakdown(
-        target.tg_id, week_cutoff_utc()
+        await repo.person_id(target.tg_id), week_cutoff_utc()
     )
     key, month_since, month_until, current, _n = await _person_month(repo, target.tg_id, month)
     months = await _person_month_choices(repo, target.tg_id, current, key)
     month_count, month_score = await repo.achievement_counts_for_person(
-        target.tg_id, month_since, month_until
+        await repo.person_id(target.tg_id), month_since, month_until
     )
     month_xbox, month_steam, month_psn = await repo.achievement_platform_breakdown(
-        target.tg_id, month_since, until=month_until
+        await repo.person_id(target.tg_id), month_since, until=month_until
     )
     platforms: list[dict[str, Any]] = []
     if target.xuid:
-        xbox_count = await repo.xbox_achievement_count(target.tg_id)
+        xbox_count = await repo.xbox_achievement_count(await repo.person_id(target.tg_id))
         xbox_completed = await repo.xbox_completed_games_count(target.xuid)
         platforms.append(
             {
@@ -294,20 +294,24 @@ async def build_person_payload(
                 "completed_games": xbox_completed,
                 "gamerscore": target.gamerscore or 0,
                 "month_count": month_xbox,
-                **await repo.account_facts(target.tg_id, "xbox"),
+                **await repo.account_facts(await repo.person_id(target.tg_id), "xbox"),
             }
         )
     steam = next((link for link in links if link.platform == Platform.STEAM), None)
     psn_links = [link for link in links if link.platform == Platform.PSN]
     psn = psn_links[0] if psn_links else None
     if psn_links:
-        bronze, silver, gold, platinum = await repo.psn_trophy_tier_counts(target.tg_id)
+        bronze, silver, gold, platinum = await repo.psn_trophy_tier_counts(
+            await repo.person_id(target.tg_id)
+        )
         platforms.append(
             {
                 "platform": Platform.PSN,
                 # Several accounts (#10): one summed row, every nickname on it.
                 "name": ", ".join(link.display_name or link.external_id for link in psn_links),
-                "trophy_count": await repo.platform_achievement_count(target.tg_id, Platform.PSN),
+                "trophy_count": await repo.platform_achievement_count(
+                    await repo.person_id(target.tg_id), Platform.PSN
+                ),
                 "bronze": bronze,
                 "silver": silver,
                 "gold": gold,
@@ -322,7 +326,7 @@ async def build_person_payload(
                 "linked_at": min(
                     (link.linked_at for link in psn_links if link.linked_at), default=None
                 ),
-                **await repo.account_facts(target.tg_id, Platform.PSN),
+                **await repo.account_facts(await repo.person_id(target.tg_id), Platform.PSN),
             }
         )
     if steam is not None:
@@ -331,12 +335,14 @@ async def build_person_payload(
                 "platform": Platform.STEAM,
                 "name": steam.display_name,
                 "achievement_count": await repo.platform_achievement_count(
-                    target.tg_id, Platform.STEAM
+                    await repo.person_id(target.tg_id), Platform.STEAM
                 ),
-                "completed_games": await repo.steam_completed_games_count(target.tg_id),
+                "completed_games": await repo.steam_completed_games_count(
+                    await repo.person_id(target.tg_id)
+                ),
                 "month_count": month_steam,
                 "linked_at": steam.linked_at,
-                **await repo.account_facts(target.tg_id, Platform.STEAM),
+                **await repo.account_facts(await repo.person_id(target.tg_id), Platform.STEAM),
             }
         )
 
@@ -368,7 +374,11 @@ async def build_person_payload(
     ]
 
     feed_rows = await repo.person_recent(
-        target.tg_id, FEED_DEFAULT, locale=locale, since=month_since, until=month_until
+        await repo.person_id(target.tg_id),
+        FEED_DEFAULT,
+        locale=locale,
+        since=month_since,
+        until=month_until,
     )
     descriptions = await _localized_feed_descriptions(repo, feed_rows, locale)
     progress = await _feed_progress(repo, feed_rows)

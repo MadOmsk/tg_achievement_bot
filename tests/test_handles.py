@@ -30,7 +30,7 @@ def test_digits_are_shown_only_when_there_are_some() -> None:
 
 async def test_a_new_person_gets_a_nickname_from_their_username(repo: Repo) -> None:
     await repo.ensure_user(1, "mad_omsk")
-    state = await repo.handle_state(1)
+    state = await repo.handle_state(await repo.person_id(1))
     assert state.handle == handles.Handle("madomsk")
     assert not state.confirmed
 
@@ -38,8 +38,8 @@ async def test_a_new_person_gets_a_nickname_from_their_username(repo: Repo) -> N
 async def test_a_taken_nickname_gets_four_digits_ignoring_case(repo: Repo) -> None:
     await repo.ensure_user(1, "Bobby")
     await repo.ensure_user(2, "bobby")
-    first = (await repo.handle_state(1)).handle
-    second = (await repo.handle_state(2)).handle
+    first = (await repo.handle_state(await repo.person_id(1))).handle
+    second = (await repo.handle_state(await repo.person_id(2))).handle
     assert first.number == 0
     assert 1000 <= second.number <= 9999
     assert second.display.startswith("bobby#")
@@ -48,26 +48,26 @@ async def test_a_taken_nickname_gets_four_digits_ignoring_case(repo: Repo) -> No
 async def test_digits_drop_when_the_new_nickname_is_free(repo: Repo) -> None:
     await repo.ensure_user(1, "Bobby")
     await repo.ensure_user(2, "bobby")
-    assert (await repo.handle_state(2)).handle.number != 0
+    assert (await repo.handle_state(await repo.person_id(2))).handle.number != 0
     # The first choice is free and unconfirmed people may pick anything.
-    chosen = await repo.change_handle(2, "Unique2")
+    chosen = await repo.change_handle(await repo.person_id(2), "Unique2")
     assert chosen == handles.Handle("Unique2", 0)
 
 
 async def test_invalid_nickname_is_refused(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     with pytest.raises(HandleInvalid):
-        await repo.change_handle(1, "Иван")
+        await repo.change_handle(await repo.person_id(1), "Иван")
 
 
 async def test_a_change_waits_a_day_after_the_first_real_one(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.change_handle(1, "FirstPick")  # first choice: free
-    await repo.change_handle(1, "SecondPick")  # first real change: allowed
+    await repo.change_handle(await repo.person_id(1), "FirstPick")  # first choice: free
+    await repo.change_handle(await repo.person_id(1), "SecondPick")  # first real change: allowed
     with pytest.raises(HandleTooSoon):
-        await repo.change_handle(1, "ThirdPick")
+        await repo.change_handle(await repo.person_id(1), "ThirdPick")
     # Only the letters' case may change at any time, keeping the digits.
-    again = await repo.change_handle(1, "secondpick")
+    again = await repo.change_handle(await repo.person_id(1), "secondpick")
     assert again.name == "secondpick"
 
 
@@ -79,8 +79,8 @@ async def test_everybody_without_a_nickname_gets_one_at_startup(repo: Repo) -> N
     )
     await repo._conn.commit()
     assert await repo.give_everyone_a_handle() == 2
-    assert (await repo.handle_state(1)).handle.name == "alpha"
-    assert (await repo.handle_state(2)).handle.name == handles.FALLBACK_HANDLE
+    assert (await repo.handle_state(await repo.person_id(1))).handle.name == "alpha"
+    assert (await repo.handle_state(await repo.person_id(2))).handle.name == handles.FALLBACK_HANDLE
     assert await repo.give_everyone_a_handle() == 0
 
 

@@ -45,7 +45,7 @@ def _achievement(
 
 async def test_xbox_progress_comes_from_title_history(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Someone", 0)
     await repo.save_title_history(
         XUID,
         [
@@ -71,14 +71,14 @@ async def test_steam_progress_counts_rows_against_the_cached_schema(repo: Repo) 
     """Steam publishes no per-user total, but the schema is the game's whole
     achievement list — its length is the total."""
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "steam", STEAM_ID, "Someone")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "steam", STEAM_ID, "Someone")
     await repo.steam_schema_cache_result(
         "550",
         "Left 4 Dead 2",
         [SteamSchemaAchievement(apiname=f"a{i}", icon="", hidden=False) for i in range(4)],
     )
     await repo.insert_new_achievements_steam(
-        TG_ID,
+        await repo.person_id(TG_ID),
         STEAM_ID,
         [_achievement("a1", "steam"), _achievement("a2", "steam")],
         is_backfill=False,
@@ -101,10 +101,10 @@ async def test_psn_counts_against_the_titles_whole_trophy_set(repo: Repo) -> Non
     and disagree with all of them.
     """
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Someone")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "Someone")
     await repo.upsert_title("NPWR00001_00", "Spider-Man", "psn", achievements_total=74)
     await repo.insert_new_achievements_psn(
-        TG_ID,
+        await repo.person_id(TG_ID),
         "acc-1",
         [
             _achievement("t1", "psn", title_id="NPWR00001_00"),
@@ -137,7 +137,7 @@ async def test_upsert_title_never_blanks_a_known_total(repo: Repo) -> None:
 
 async def test_steam_progress_is_none_until_the_schema_is_cached(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "steam", STEAM_ID, "Someone")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "steam", STEAM_ID, "Someone")
     assert await repo.title_progress(AccountPlatform.STEAM, STEAM_ID, "550") is None
 
 
@@ -180,7 +180,7 @@ def test_account_platform_of_matches_the_generated_column() -> None:
 
 async def test_the_generated_column_agrees_with_the_python_twin(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Someone", 0)
     await repo.insert_new_achievements(
         XUID, [_achievement("m1", "xbox_modern"), _achievement("o1", "xbox_360")], is_backfill=False
     )
@@ -196,7 +196,7 @@ async def _spider_man(repo: Repo) -> None:
     """Marvel's Spider-Man as production actually reports it: 74 trophies in
     the title, 51 of them in the base group, the rest across four DLC."""
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Someone")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "Someone")
     await repo.upsert_title("NPWR00001_00", "Marvel's Spider-Man", "psn", achievements_total=74)
     await repo.save_title_groups(
         "NPWR00001_00",
@@ -211,7 +211,7 @@ async def _spider_man(repo: Repo) -> None:
 async def test_group_progress_counts_only_that_groups_trophies(repo: Repo) -> None:
     await _spider_man(repo)
     await repo.insert_new_achievements_psn(
-        TG_ID,
+        await repo.person_id(TG_ID),
         "acc-1",
         [
             _achievement("t1", "psn", title_id="NPWR00001_00", trophy_group_id="default"),
@@ -233,7 +233,7 @@ async def test_a_single_group_title_reports_no_group_at_all(repo: Repo) -> None:
     the question — a game that is only that one group would render a second
     line repeating the first."""
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Someone")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "Someone")
     await repo.upsert_title("NPWR00002_00", "Stray", "psn", achievements_total=25)
     await repo.save_title_groups("NPWR00002_00", [("default", "Stray", 25, None, "Stray")])
 
@@ -351,8 +351,8 @@ async def test_the_counter_survives_the_real_publish_path(repo: Repo) -> None:
 
     await repo.upsert_chat(-100500, "Test chat", TG_ID)
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
-    await repo.subscribe(-100500, TG_ID)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Someone", 0)
+    await repo.subscribe(-100500, await repo.person_id(TG_ID))
     await repo.save_title_history(
         XUID,
         [
@@ -390,7 +390,7 @@ async def test_a_modern_xbox_total_comes_from_the_achievements_response(repo: Re
     nothing to say.
     """
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Someone", 0)
     await repo.save_title_history(
         XUID,
         [
@@ -418,7 +418,7 @@ async def test_a_known_titlehub_total_still_wins(repo: Repo) -> None:
     """Microsoft's own number is the better one where it exists: it counts
     achievements earned long before this bot did."""
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Someone", 0)
     await repo.save_title_history(
         XUID,
         [
@@ -444,7 +444,7 @@ async def test_xbox_progress_live_unlocks_advance_beyond_stale_titlehub_history(
     time (only on game exit / daily refresh). Live unlocks in seen_achievements
     must advance the counter immediately beyond the stale title_history count."""
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_xbox_account(TG_ID, XUID, "Someone", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Someone", 0)
     # Stale title_history says 1 unlocked
     await repo.save_title_history(
         XUID,

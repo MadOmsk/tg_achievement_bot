@@ -106,7 +106,7 @@ async def counters_for(
 
     The month window is calendar-bound in the person's own timezone (#14),
     read from `user_settings` here so callers don't all have to thread it."""
-    settings_row = await repo.get_user_settings(tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
     today_cutoff = today_cutoff_utc(now)
     if target_year is not None and target_month is not None:
@@ -115,21 +115,23 @@ async def counters_for(
         month_cutoff = month_cutoff_utc(tz_offset_min, now)
         month_until = None
 
-    today, today_score = await repo.achievement_counts_for_person(tg_id, today_cutoff)
+    today, today_score = await repo.achievement_counts_for_person(
+        await repo.person_id(tg_id), today_cutoff
+    )
     month, month_score = await repo.achievement_counts_for_person(
-        tg_id, month_cutoff, until=month_until
+        await repo.person_id(tg_id), month_cutoff, until=month_until
     )
     today_xbox, today_steam, today_psn = await repo.achievement_platform_breakdown(
-        tg_id, today_cutoff
+        await repo.person_id(tg_id), today_cutoff
     )
     month_xbox, month_steam, month_psn = await repo.achievement_platform_breakdown(
-        tg_id, month_cutoff, until=month_until
+        await repo.person_id(tg_id), month_cutoff, until=month_until
     )
     today_rare, today_tiers = await repo.achievement_value_breakdown(
-        tg_id, today_cutoff, rare_threshold
+        await repo.person_id(tg_id), today_cutoff, rare_threshold
     )
     month_rare, month_tiers = await repo.achievement_value_breakdown(
-        tg_id, month_cutoff, rare_threshold, until=month_until
+        await repo.person_id(tg_id), month_cutoff, rare_threshold, until=month_until
     )
     return Counters(
         today,

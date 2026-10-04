@@ -33,11 +33,11 @@ class HandleState:
 
 
 class _HandlesRepo:
-    async def handle_state(self, tg_id: int) -> HandleState | None:
+    async def handle_state(self, person_id: int) -> HandleState | None:
         cursor = await self._conn.execute(
             "SELECT handle, handle_number, handle_confirmed_at, handle_changed_at "
-            "FROM users WHERE tg_id = ?",
-            (tg_id,),
+            "FROM users WHERE id = ?",
+            (person_id,),
         )
         row = await cursor.fetchone()
         if row is None:
@@ -52,7 +52,7 @@ class _HandlesRepo:
         return {row[0] for row in await cursor.fetchall()}
 
     async def _store_handle(
-        self, tg_id: int, name: str, number: int, *, confirmed: bool, changed: bool
+        self, person_id: int, name: str, number: int, *, confirmed: bool, changed: bool
     ) -> bool:
         """Write a nickname; False if the unique index says somebody just took it."""
         now = utcnow_iso()
@@ -62,8 +62,8 @@ class _HandlesRepo:
                 "  handle_confirmed_at = CASE WHEN ? THEN COALESCE(handle_confirmed_at, ?) "
                 "                             ELSE handle_confirmed_at END, "
                 "  handle_changed_at = CASE WHEN ? THEN ? ELSE handle_changed_at END "
-                "WHERE tg_id = ?",
-                (name, handles.normalize(name), number, confirmed, now, changed, now, tg_id),
+                "WHERE id = ?",
+                (name, handles.normalize(name), number, confirmed, now, changed, now, person_id),
             )
             await self._conn.commit()
         except sqlite3.IntegrityError:
@@ -72,7 +72,7 @@ class _HandlesRepo:
         return True
 
     async def _claim(
-        self, tg_id: int, name: str, *, confirmed: bool, changed: bool
+        self, person_id: int, name: str, *, confirmed: bool, changed: bool
     ) -> handles.Handle:
         """Take `name`: bare when free, otherwise with four digits nobody else has."""
         norm = handles.normalize(name)
@@ -81,36 +81,38 @@ class _HandlesRepo:
             candidates = [0] if 0 not in taken else handles.random_numbers(taken)
             for number in candidates:
                 if await self._store_handle(
-                    tg_id, name, number, confirmed=confirmed, changed=changed
+                    person_id, name, number, confirmed=confirmed, changed=changed
                 ):
                     return handles.Handle(name, number)
         raise RuntimeError("could not find a free nickname number")
 
     async def assign_first_handle(
-        self, tg_id: int, *candidates: str | None
+        self, person_id: int, *candidates: str | None
     ) -> handles.Handle | None:
         """Give somebody who has no nickname one made from their names. Not
         confirmed: the Mini App still asks them to keep or change it."""
-        state = await self.handle_state(tg_id)
+        state = await self.handle_state(person_id)
         if state is None or state.handle is not None:
             return state.handle if state else None
         return await self._claim(
-            tg_id, handles.from_text(*candidates), confirmed=False, changed=False
+            person_id, handles.from_text(*candidates), confirmed=False, changed=False
         )
 
-    async def change_handle(self, tg_id: int, wanted: str) -> handles.Handle:
+    async def change_handle(self, person_id: int, wanted: str) -> handles.Handle:
         """The person's own choice. The first one (nickname still unconfirmed) is
         free; later ones once per `CHANGE_COOLDOWN_DAYS`. Only the letters' case changing is
         always allowed and keeps the digits."""
         wanted = wanted.strip()
         if not handles.is_valid(wanted):
             raise HandleInvalid(wanted)
-        state = await self.handle_state(tg_id)
+        state = await self.handle_state(person_id)
         if state is None:
             raise HandleInvalid(wanted)
         current = state.handle
         if current and handles.normalize(current.name) == handles.normalize(wanted):
-            await self._store_handle(tg_id, wanted, current.number, confirmed=True, changed=False)
+            await self._store_handle(
+                person_id, wanted, current.number, confirmed=True, changed=False
+            )
             return handles.Handle(wanted, current.number)
         if state.confirmed and state.changed_at:
             available = datetime.fromisoformat(state.changed_at) + timedelta(
@@ -118,29 +120,29 @@ class _HandlesRepo:
             )
             if available > datetime.fromisoformat(utcnow_iso()):
                 raise HandleTooSoon(available.isoformat(timespec="seconds"))
-        return await self._claim(tg_id, wanted, confirmed=True, changed=state.confirmed)
+        return await self._claim(person_id, wanted, confirmed=True, changed=state.confirmed)
 
-    async def confirm_handle(self, tg_id: int) -> None:
+    async def confirm_handle(self, person_id: int) -> None:
         """'Keep it' on the first-visit screen."""
         await self._conn.execute(
             "UPDATE users SET handle_confirmed_at = COALESCE(handle_confirmed_at, ?) "
-            "WHERE tg_id = ? AND handle IS NOT NULL",
-            (utcnow_iso(), tg_id),
+            "WHERE id = ? AND handle IS NOT NULL",
+            (utcnow_iso(), person_id),
         )
         await self._conn.commit()
 
-    async def give_handle(self, tg_id: int) -> handles.Handle | None:
+    async def give_handle(self, person_id: int) -> handles.Handle | None:
         """A first nickname from whatever names this person has: their Telegram
         username, then a platform nickname, at last `Player`. Nothing if they
         already have one."""
-        user = await self.get_user(tg_id)
+        user = await self.get_user(person_id)
         links = [
             link
             for platform in (Platform.PSN, Platform.STEAM)
-            for link in await self.platform_links_for(tg_id, platform)
+            for link in await self.platform_links_for(person_id, platform)
         ]
         return await self.assign_first_handle(
-            tg_id,
+            person_id,
             user.username if user else None,
             user.gamertag_modern if user else None,
             user.gamertag if user else None,
@@ -155,20 +157,20 @@ class _HandlesRepo:
         )
         ids = [row[0] for row in await cursor.fetchall()]
         for tg_id in ids:
-            await self.give_handle(tg_id)
+            await self.give_handle(await self.person_id(tg_id))
         return len(ids)
 
     # A picture the person chose (#157, migration 077) lives beside the nickname:
     # both are how the person is shown.
-    async def custom_avatar_path(self, tg_id: int) -> str | None:
+    async def custom_avatar_path(self, person_id: int) -> str | None:
         cursor = await self._conn.execute(
-            "SELECT custom_avatar_path FROM users WHERE tg_id = ?", (tg_id,)
+            "SELECT custom_avatar_path FROM users WHERE id = ?", (person_id,)
         )
         row = await cursor.fetchone()
         return row["custom_avatar_path"] if row else None
 
-    async def set_custom_avatar_path(self, tg_id: int, path: str | None) -> None:
+    async def set_custom_avatar_path(self, person_id: int, path: str | None) -> None:
         await self._conn.execute(
-            "UPDATE users SET custom_avatar_path = ? WHERE tg_id = ?", (path, tg_id)
+            "UPDATE users SET custom_avatar_path = ? WHERE id = ?", (path, person_id)
         )
         await self._conn.commit()

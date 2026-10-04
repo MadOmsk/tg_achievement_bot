@@ -129,10 +129,10 @@ class _PollingRepo:
         )
         await self._conn.commit()
 
-    async def touch_last_online(self, tg_id: int) -> None:
+    async def touch_last_online(self, person_id: int) -> None:
         await self._conn.execute(
-            "UPDATE users SET last_online_at = ?, updated_at = ? WHERE tg_id = ?",
-            (utcnow_iso(), utcnow_iso(), tg_id),
+            "UPDATE users SET last_online_at = ?, updated_at = ? WHERE id = ?",
+            (utcnow_iso(), utcnow_iso(), person_id),
         )
         await self._conn.commit()
 

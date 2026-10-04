@@ -54,7 +54,7 @@ class CatchUpPoller:
         if target is None:
             return
         self._last[target.xuid] = time.monotonic()
-        user = await self._repo.get_user(target.tg_id)
+        user = await self._repo.get_user(await self._repo.person_id(target.tg_id))
         gamertag = (user.gamertag if user else None) or gettext(
             "main", "main-default-player-name", locale=DEFAULT_LOCALE
         )

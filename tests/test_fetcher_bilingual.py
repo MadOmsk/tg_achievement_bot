@@ -60,8 +60,8 @@ class FakePublisher:
 
 async def _connected_user(repo: Repo, cipher: TokenCipher) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.save_refresh_token(TG_ID, cipher.encrypt("refresh"))
-    await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(await repo.person_id(TG_ID), cipher.encrypt("refresh"))
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Mad Omsk", None)
 
 
 async def _stored_description(repo: Repo, achievement_id: str) -> str | None:

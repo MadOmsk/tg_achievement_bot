@@ -82,7 +82,7 @@ def _fake_sync(monkeypatch, outcomes):
 
 async def _linked_user(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, "Gamer")
 
 
 async def _configured_auth(repo: Repo, cipher: TokenCipher, monkeypatch) -> PsnAuth:
@@ -137,7 +137,7 @@ async def test_poll_account_publishes_what_sync_account_returns(
 
     assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 2
     # Found new trophies — level gets refreshed (Follow-up 2026-09-06).
-    link = await repo.get_platform_link(TG_ID, "psn")
+    link = await repo.get_platform_link(await repo.person_id(TG_ID), "psn")
     assert link is not None and link.psn_trophy_level == 7
 
     assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 0
@@ -175,7 +175,7 @@ async def test_backfill_marks_done_and_returns_the_private_titles(
     # After: the gate is open — the regular poller may now poll it (#21).
     [target] = await repo.psn_pollable_users()
     assert target.backfill_done is True
-    link = await repo.get_platform_link(TG_ID, "psn")
+    link = await repo.get_platform_link(await repo.person_id(TG_ID), "psn")
     assert link is not None and link.psn_trophy_level == 3
 
 
@@ -313,10 +313,10 @@ async def test_insert_new_achievements_psn_dedups_and_keeps_the_tier(repo: Repo)
     )
 
     first = await repo.insert_new_achievements_psn(
-        TG_ID, ACCOUNT_ID, [trophy_row], is_backfill=False
+        await repo.person_id(TG_ID), ACCOUNT_ID, [trophy_row], is_backfill=False
     )
     second = await repo.insert_new_achievements_psn(
-        TG_ID, ACCOUNT_ID, [trophy_row], is_backfill=False
+        await repo.person_id(TG_ID), ACCOUNT_ID, [trophy_row], is_backfill=False
     )
 
     assert len(first) == 1
@@ -329,7 +329,7 @@ async def test_psn_pollable_users_falls_back_to_account_id_with_no_online_id(
     repo: Repo,
 ) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, None)
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, None)
 
     [target] = await repo.psn_pollable_users()
 

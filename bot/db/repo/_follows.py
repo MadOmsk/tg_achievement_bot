@@ -83,10 +83,22 @@ def _person(row) -> PersonRow:
 
 
 class _FollowsRepo:
-    async def person_id(self, tg_id: int) -> int | None:
+    async def person_id(self, tg_id: int | None) -> int | None:
+        """The person a Telegram id belongs to (#156), None if nobody yet."""
+        if tg_id is None:
+            return None
         cursor = await self._conn.execute("SELECT id FROM users WHERE tg_id = ?", (tg_id,))
         row = await cursor.fetchone()
         return row["id"] if row else None
+
+    async def tg_id_of(self, person_id: int | None) -> int | None:
+        """The other way round: the Telegram id a person signed in with, if any —
+        for what is Telegram's by nature (a DM, a group, the reset cooldowns)."""
+        if person_id is None:
+            return None
+        cursor = await self._conn.execute("SELECT tg_id FROM users WHERE id = ?", (person_id,))
+        row = await cursor.fetchone()
+        return row["tg_id"] if row else None
 
     async def relation(self, me: int, other: int) -> Relation:
         cursor = await self._conn.execute(

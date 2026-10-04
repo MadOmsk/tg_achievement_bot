@@ -31,7 +31,7 @@ class FakeFetcher:
 
 async def _linked_user(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "steam", STEAM_ID, "Mad Omsk")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "steam", STEAM_ID, "Mad Omsk")
 
 
 def _steam_settings(settings: Settings) -> Settings:
@@ -111,7 +111,7 @@ async def test_tick_touches_last_online_while_online(
 
     await poller.tick()
 
-    user = await repo.get_user(TG_ID)
+    user = await repo.get_user(await repo.person_id(TG_ID))
     assert user is not None and user.last_online_at is not None
 
 
@@ -137,7 +137,7 @@ async def test_tick_does_not_touch_last_online_while_offline(
 
     await poller.tick()
 
-    user = await repo.get_user(TG_ID)
+    user = await repo.get_user(await repo.person_id(TG_ID))
     assert user is not None and user.last_online_at is None
 
 

@@ -137,7 +137,7 @@ async def _replace_admin_home(
     does the latter, so it never needs this)."""
     # This one knows whose panel it is rebuilding, so it reads the locale
     # itself rather than making every caller carry it (#48).
-    locale = await repo.user_locale(admin_id)
+    locale = await repo.user_locale(await repo.person_id(admin_id))
     text, markup = await render_admin_home(
         repo, fetcher, steam_fetcher, psn_auth, steam_auth, locale=locale
     )
@@ -827,8 +827,8 @@ async def _account_link(
     (a PSN account among several, #10), else the person's only one."""
     platform_value = Platform.STEAM if platform == "steam" else Platform.PSN
     if account_id is None:
-        return await repo.get_platform_link(tg_id, platform_value)
-    links = await repo.platform_links_for(tg_id, platform_value)
+        return await repo.get_platform_link(await repo.person_id(tg_id), platform_value)
+    links = await repo.platform_links_for(await repo.person_id(tg_id), platform_value)
     return next((link for link in links if link.external_id == account_id), None)
 
 
@@ -847,7 +847,7 @@ async def _sync_target(
     per-platform lookup in this file already has."""
     _ = translator("admin", locale)
     if platform == "xbox":
-        user = await repo.get_user(tg_id)
+        user = await repo.get_user(await repo.person_id(tg_id))
         if user is None or not user.xuid:
             return None
         return user.xuid, user.gamertag or _("admin-default-player")
@@ -1258,9 +1258,9 @@ async def reset_platform_confirmed(
 
     try:
         if platform == "xbox":
-            user = await repo.get_user(tg_id)
+            user = await repo.get_user(await repo.person_id(tg_id))
             assert user is not None and user.xuid is not None
-            await repo.reset_xbox_data(tg_id, user.xuid)
+            await repo.reset_xbox_data(await repo.person_id(tg_id), user.xuid)
             await fetcher.backfill(tg_id, user.xuid)
         elif platform == "steam":
             link = await _account_link(repo, platform, tg_id, account_id)
@@ -1274,7 +1274,7 @@ async def reset_platform_confirmed(
         else:
             link = await _account_link(repo, platform, tg_id, account_id)
             assert link is not None
-            await repo.reset_psn_data(tg_id, link.external_id)
+            await repo.reset_psn_data(await repo.person_id(tg_id), link.external_id)
             await psn_fetcher.backfill(tg_id, link.external_id)
     except Exception:
         log.exception("admin reset+resync of tg_id=%s platform=%s failed", tg_id, platform)
@@ -1288,7 +1288,7 @@ async def reset_platform_confirmed(
 async def admin_delete_user_step1(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     _prefix, _action, tg_id_s = callback.data.split(":")
     tg_id = int(tg_id_s)
-    user = await repo.get_user(tg_id)
+    user = await repo.get_user(await repo.person_id(tg_id))
     if user is None:
         _ = translator("admin", i18n.locale)
         await callback.answer(_("admin-user-not-found"), show_alert=True)
@@ -1307,7 +1307,7 @@ async def admin_delete_user_step1(callback: CallbackQuery, repo: Repo, i18n: I18
 async def admin_delete_user_step2(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     _prefix, _action, tg_id_s = callback.data.split(":")
     tg_id = int(tg_id_s)
-    user = await repo.get_user(tg_id)
+    user = await repo.get_user(await repo.person_id(tg_id))
     if user is None:
         _ = translator("admin", i18n.locale)
         await callback.answer(_("admin-user-not-found"), show_alert=True)

@@ -31,7 +31,7 @@ async def session_user(request: web.Request) -> MiniAppUser | None:
     tg_id = await repo.session_tg_id(token)
     if tg_id is None:
         return None
-    user = await repo.get_user(tg_id)
+    user = await repo.get_user(await repo.person_id(tg_id))
     if user is None:
         return None
     return MiniAppUser(

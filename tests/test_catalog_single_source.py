@@ -222,9 +222,9 @@ async def test_the_walker_translates_steam_from_stored_text(
     from bot.services.translate.auth import AnthropicAuth
 
     await repo.ensure_user(7, "igor")
-    await repo.link_platform_account(7, "steam", "7656", "Igor")
+    await repo.link_platform_account(await repo.person_id(7), "steam", "7656", "Igor")
     await repo.insert_new_achievements_steam(
-        7,
+        await repo.person_id(7),
         "7656",
         [
             AchievementRow(

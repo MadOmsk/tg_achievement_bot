@@ -633,14 +633,18 @@ class Fetcher:
             log.info("profile for tg_id=%s not refreshed: %s", tg_id, exc)
             return
         if snapshot.gamerscore is not None:
-            await self._repo.update_gamerscore(tg_id, snapshot.gamerscore)
+            await self._repo.update_gamerscore(
+                await self._repo.person_id(tg_id), snapshot.gamerscore
+            )
         # The gamertags came in the same response (#51). Xbox used to store
         # them once at connect and never again, so a rename left the bot
         # calling someone by an old name and pointing at a dead profile
         # link — both Xbox links are built from the nickname, not the XUID.
         if snapshot.gamertag or snapshot.gamertag_modern:
             await self._repo.update_xbox_names(
-                tg_id, gamertag=snapshot.gamertag, gamertag_modern=snapshot.gamertag_modern
+                await self._repo.person_id(tg_id),
+                gamertag=snapshot.gamertag,
+                gamertag_modern=snapshot.gamertag_modern,
             )
         # And the picture (#55), from the same response. Only the URL is
         # written here: downloading it belongs to poller/avatars.py, which

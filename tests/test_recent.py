@@ -131,10 +131,12 @@ async def test_chat_recent_includes_a_steam_only_person(repo: Repo) -> None:
     carries regardless of platform (SPEC 9, M-Steam-2a)."""
     await repo.upsert_chat(CHAT_ID, "Чат", 1)
     await repo.ensure_user(1, "steamonly")
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamOnly")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamOnly"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
     await repo.insert_new_achievements_steam(
-        1,
+        await repo.person_id(1),
         "76561197960287930",
         [
             AchievementRow(

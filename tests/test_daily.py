@@ -62,9 +62,9 @@ async def _chat_with_two_players(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     for tg_id, xuid, tag in ((1, XUID_A, "Igor"), (2, XUID_B, "Alex")):
         await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
-        await repo.change_handle(tg_id, tag)
-        await repo.link_xbox_account(tg_id, xuid, tag, 1000)
-        await repo.subscribe(CHAT_ID, tg_id)
+        await repo.change_handle(await repo.person_id(tg_id), tag)
+        await repo.link_xbox_account(await repo.person_id(tg_id), xuid, tag, 1000)
+        await repo.subscribe(CHAT_ID, await repo.person_id(tg_id))
 
 
 async def test_summary_lists_everyone_and_marks_rare(repo: Repo) -> None:
@@ -128,19 +128,21 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     leaderboard sort is untouched either way)."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "both", first_name="Both")
-    await repo.change_handle(1, "Both")
-    await repo.link_xbox_account(1, XUID_A, "Both", 0)
-    await repo.link_platform_account(1, "steam", "76561197960287930", "BothSteam")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.change_handle(await repo.person_id(1), "Both")
+    await repo.link_xbox_account(await repo.person_id(1), XUID_A, "Both", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "BothSteam"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
     await repo.ensure_user(2, "xboxonly", first_name="XboxOnly")
-    await repo.change_handle(2, "XboxOnly")
-    await repo.link_xbox_account(2, XUID_B, "XboxOnly", 0)
-    await repo.subscribe(CHAT_ID, 2)
+    await repo.change_handle(await repo.person_id(2), "XboxOnly")
+    await repo.link_xbox_account(await repo.person_id(2), XUID_B, "XboxOnly", 0)
+    await repo.subscribe(CHAT_ID, await repo.person_id(2))
 
     now = utcnow()
     await repo.insert_new_achievements(XUID_A, [achievement("a1", now)], is_backfill=False)
     await repo.insert_new_achievements_steam(
-        1,
+        await repo.person_id(1),
         "76561197960287930",
         [
             AchievementRow(
@@ -162,10 +164,12 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     # Nothing from Telegram at all — no username, no first name — so the
     # person chain has to reach the PSN nickname to name this row (#51).
     await repo.ensure_user(3)
-    await repo.link_platform_account(3, "psn", "internal-account-id", "PsnOnly")
-    await repo.subscribe(CHAT_ID, 3)
+    await repo.link_platform_account(
+        await repo.person_id(3), "psn", "internal-account-id", "PsnOnly"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(3))
     await repo.insert_new_achievements_psn(
-        3,
+        await repo.person_id(3),
         "internal-account-id",
         [
             AchievementRow(
@@ -222,8 +226,8 @@ async def test_gamertag_is_escaped_inside_the_html_table(repo: Repo) -> None:
     and the fallback that puts a gamertag on this line at all."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1)
-    await repo.link_xbox_account(1, XUID_A, "A&B<C>", 1000)
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), XUID_A, "A&B<C>", 1000)
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
     await repo.insert_new_achievements(XUID_A, [achievement("a1", utcnow())], is_backfill=False)
 
     text = await summary_text(repo, CHAT_ID, 10.0, utcnow().date())
@@ -321,9 +325,9 @@ async def test_summary_offers_show_all_button_only_past_the_configured_limit(
     for i in range(3):
         tg_id, xuid, tag = i + 1, f"xuid-{i}", f"Player{i}"
         await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
-        await repo.change_handle(tg_id, tag)
-        await repo.link_xbox_account(tg_id, xuid, tag, 0)
-        await repo.subscribe(CHAT_ID, tg_id)
+        await repo.change_handle(await repo.person_id(tg_id), tag)
+        await repo.link_xbox_account(await repo.person_id(tg_id), xuid, tag, 0)
+        await repo.subscribe(CHAT_ID, await repo.person_id(tg_id))
         await repo.insert_new_achievements(
             xuid, [achievement(f"a{i}", utcnow())], is_backfill=False
         )
@@ -352,9 +356,9 @@ async def test_summary_top_limit_zero_means_no_cap(repo: Repo) -> None:
     for i in range(3):
         tg_id, xuid, tag = i + 1, f"xuid-{i}", f"Player{i}"
         await repo.ensure_user(tg_id, tag.lower(), first_name=tag)
-        await repo.change_handle(tg_id, tag)
-        await repo.link_xbox_account(tg_id, xuid, tag, 0)
-        await repo.subscribe(CHAT_ID, tg_id)
+        await repo.change_handle(await repo.person_id(tg_id), tag)
+        await repo.link_xbox_account(await repo.person_id(tg_id), xuid, tag, 0)
+        await repo.subscribe(CHAT_ID, await repo.person_id(tg_id))
         await repo.insert_new_achievements(
             xuid, [achievement(f"a{i}", utcnow())], is_backfill=False
         )
@@ -548,10 +552,10 @@ async def test_games_block_shows_psn_tier_breakdown_not_gamerscore(repo: Repo) -
     everywhere else on a PSN row."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
     await repo.insert_new_achievements_psn(
-        1,
+        await repo.person_id(1),
         "acc-1",
         [
             AchievementRow(

@@ -31,8 +31,8 @@ def _row(title_id: str, achievement_id: str = "a1") -> AchievementRow:
 
 async def _owner(repo: Repo, cipher) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.save_refresh_token(TG_ID, cipher.encrypt("refresh"))
-    await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(await repo.person_id(TG_ID), cipher.encrypt("refresh"))
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Mad Omsk", None)
 
 
 async def test_a_game_with_no_catalogue_row_is_found(repo: Repo, cipher) -> None:
@@ -50,7 +50,7 @@ async def test_a_dead_login_is_not_offered_as_the_owner(repo: Repo, cipher) -> N
     refresh — the same rule the cover walker had to learn on 2026-09-18."""
     await _owner(repo, cipher)
     await repo.insert_new_achievements(XUID, [_row("111")], is_backfill=True)
-    await repo.set_token_status(TG_ID, "invalid")
+    await repo.set_token_status(await repo.person_id(TG_ID), "invalid")
 
     assert await repo.titles_missing_from_catalogue(10) == []
 

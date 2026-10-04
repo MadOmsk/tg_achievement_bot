@@ -44,7 +44,7 @@ PERSON_BY_TG = "(SELECT id FROM users WHERE tg_id = ?)"
 # added to it.
 OWNED_BY_PERSON_EXISTS = (
     "EXISTS (SELECT 1 FROM account_links al"
-    "        WHERE al.person_id = (SELECT id FROM users WHERE tg_id = ?) AND al.is_active = 1"
+    "        WHERE al.person_id = ? AND al.is_active = 1"
     "          AND al.platform = seen_achievements.account_platform"
     "          AND al.external_id = seen_achievements.xuid) "
 )

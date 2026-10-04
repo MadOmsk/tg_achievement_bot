@@ -112,7 +112,7 @@ async def prompt_for_link(
     if await psn_auth.status() == STATUS_NOT_CONFIGURED:
         await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
         return
-    links = await repo.platform_links_for(tg_id, Platform.PSN)
+    links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
     if len(links) >= MAX_PSN_ACCOUNTS:
         await bot.send_message(
             tg_id,
@@ -170,7 +170,7 @@ def _full_keyboard(i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarku
 async def psn_add(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """ "Link another PSN account" (#10): the Online ID prompt, in place of
     the screen it was tapped on."""
-    links = await repo.platform_links_for(callback.from_user.id, Platform.PSN)
+    links = await repo.platform_links_for(await repo.person_id(callback.from_user.id), Platform.PSN)
     if len(links) >= MAX_PSN_ACCOUNTS:
         await callback.answer(i18n.get("psn-accounts-full", max=MAX_PSN_ACCOUNTS), show_alert=True)
         return
@@ -303,7 +303,7 @@ async def _connect(
 
     await repo.ensure_user(tg_id, username)
 
-    held = await repo.platform_links_for(tg_id, Platform.PSN)
+    held = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
     if (
         all(link.external_id != profile.account_id for link in held)
         and len(held) >= MAX_PSN_ACCOUNTS
@@ -351,9 +351,11 @@ async def _connect(
     # Already verified True right above (#5) — recorded so /panel's login
     # row has a real answer from the moment someone links, not just after
     # the first backfill/resync gets around to setting it.
-    await repo.set_achievements_visible(tg_id, Platform.PSN, True, external_id=profile.account_id)
+    await repo.set_achievements_visible(
+        await repo.person_id(tg_id), Platform.PSN, True, external_id=profile.account_id
+    )
     log.info("connect_psn: tg_id=%s linked account_id=%s", tg_id, profile.account_id)
-    count = len(await repo.platform_links_for(tg_id, Platform.PSN))
+    count = len(await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN))
     await bot.send_message(
         tg_id,
         i18n.get(
@@ -372,7 +374,7 @@ async def _connect(
             taken_from,
             Platform.PSN,
             profile.online_id,
-            locale=await repo.user_locale(taken_from),
+            locale=await repo.user_locale(await repo.person_id(taken_from)),
         )
 
     # Backgrounded (SPEC 9, M-Steam-2d's own reasoning applies here too) —
@@ -453,7 +455,7 @@ def _disconnect_prompt_keyboard(i18n: I18nContext, *, from_panel: bool) -> Inlin
 
 @router.message(Command("disconnect_psn"), F.chat.type == ChatType.PRIVATE)
 async def disconnect_psn_command(message: Message, repo: Repo, i18n: I18nContext) -> None:
-    links = await repo.platform_links_for(message.chat.id, Platform.PSN)
+    links = await repo.platform_links_for(await repo.person_id(message.chat.id), Platform.PSN)
     if not links:
         await message.answer(i18n.get("psn-already-disconnected"))
         return
@@ -474,7 +476,7 @@ async def disconnect_psn_command(message: Message, repo: Repo, i18n: I18nContext
 
 @router.callback_query(F.data == "psn:disconnectprompt")
 async def psn_disconnect_button(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    link = await repo.get_platform_link(callback.from_user.id, Platform.PSN)
+    link = await repo.get_platform_link(await repo.person_id(callback.from_user.id), Platform.PSN)
     if link is None:
         await callback.answer(i18n.get("psn-already-disconnected"), show_alert=True)
         return
@@ -496,7 +498,7 @@ async def disconnect_psn_cancel(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "psn:disconnect:yes")
 async def disconnect_psn_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    await repo.unlink_platform_account(callback.from_user.id, Platform.PSN)
+    await repo.unlink_platform_account(await repo.person_id(callback.from_user.id), Platform.PSN)
     # The `psn_poll_state` row stays. It used to be deleted here, by symmetry
     # with Steam's own presence-cache cleanup — but this row is not a cache,
     # it is #21's gate, and deleting it broke every reconnect: a relink skips
@@ -517,7 +519,7 @@ async def psn_unlink_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nConte
     tap-to-confirm as /disconnect_psn, for that account only."""
     assert callback.data is not None
     account_id = callback.data.rsplit(":", 1)[1]
-    links = await repo.platform_links_for(callback.from_user.id, Platform.PSN)
+    links = await repo.platform_links_for(await repo.person_id(callback.from_user.id), Platform.PSN)
     link = next((item for item in links if item.external_id == account_id), None)
     if link is None:
         await callback.answer(i18n.get("psn-already-disconnected"), show_alert=True)
@@ -550,7 +552,7 @@ async def psn_unlink_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nCont
     account_id = callback.data.rsplit(":", 1)[1]
     # Only this account; the person's others stay linked. Its trophies and
     # `psn_poll_state` stay too, for the reasons disconnect_psn_confirm gives.
-    await repo.unlink_account(callback.from_user.id, Platform.PSN, account_id)
+    await repo.unlink_account(await repo.person_id(callback.from_user.id), Platform.PSN, account_id)
     await callback.answer(i18n.get("psn-disconnected"))
     screen = await render_account_menu(
         repo, callback.from_user.id, Platform.PSN, locale=i18n.locale

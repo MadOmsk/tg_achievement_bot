@@ -149,7 +149,7 @@ async def prompt_for_link(
     # switch confirmation could never be reached from /connect_steam at all.
     # Relinking is supported and cheap now, and swapping accounts is guarded
     # by its own prompt further along, so say what is linked and ask anyway.
-    link = await repo.get_platform_link(tg_id, Platform.STEAM)
+    link = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
     awaiting.expect(tg_id, "steam")
     text, markup = _prompt_screen(link, i18n, from_button=callback is not None)
     if callback is not None:
@@ -417,7 +417,7 @@ async def _connect(
             taken_from,
             Platform.STEAM,
             profile.persona_name,
-            locale=await repo.user_locale(taken_from),
+            locale=await repo.user_locale(await repo.person_id(taken_from)),
         )
 
     # An account the bot already knows needs a delta, not a backfill (#52):
@@ -501,7 +501,7 @@ def _disconnect_prompt_keyboard(i18n: I18nContext, *, from_panel: bool) -> Inlin
 
 @router.message(Command("disconnect_steam"), F.chat.type == ChatType.PRIVATE)
 async def disconnect_steam_command(message: Message, repo: Repo, i18n: I18nContext) -> None:
-    link = await repo.get_platform_link(message.chat.id, Platform.STEAM)
+    link = await repo.get_platform_link(await repo.person_id(message.chat.id), Platform.STEAM)
     if link is None:
         await message.answer(i18n.get("steam-already-disconnected"))
         return
@@ -515,7 +515,7 @@ async def disconnect_steam_command(message: Message, repo: Repo, i18n: I18nConte
 async def steam_disconnect_button(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     """The panel's own "🔕 Отключить Steam" button (2026-09-05 follow-up,
     same treatment XBOX's disconnect button already gets)."""
-    link = await repo.get_platform_link(callback.from_user.id, Platform.STEAM)
+    link = await repo.get_platform_link(await repo.person_id(callback.from_user.id), Platform.STEAM)
     if link is None:
         await callback.answer(i18n.get("steam-already-disconnected"), show_alert=True)
         return
@@ -537,8 +537,8 @@ async def disconnect_steam_cancel(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "steam:disconnect:yes")
 async def disconnect_steam_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    link = await repo.get_platform_link(callback.from_user.id, Platform.STEAM)
-    await repo.unlink_platform_account(callback.from_user.id, Platform.STEAM)
+    link = await repo.get_platform_link(await repo.person_id(callback.from_user.id), Platform.STEAM)
+    await repo.unlink_platform_account(await repo.person_id(callback.from_user.id), Platform.STEAM)
     if link is not None:
         # Symmetric with Xbox's disconnect (connect.py, delete_presence_state)
         # — a stale presence row would otherwise keep answering /online for

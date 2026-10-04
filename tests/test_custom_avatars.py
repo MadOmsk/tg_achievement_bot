@@ -62,19 +62,19 @@ async def test_a_new_picture_replaces_the_file_and_clear_removes_it(
     monkeypatch.chdir(tmp_path)
     await repo.ensure_user(1, "someone")
     assert await custom_avatars.store(repo, 1, _photo())
-    first = await repo.custom_avatar_path(1)
+    first = await repo.custom_avatar_path(await repo.person_id(1))
     assert first and (avatars.avatar_dir() / first).is_file()
 
     assert await custom_avatars.store(repo, 1, _photo((300, 300)))
-    second = await repo.custom_avatar_path(1)
+    second = await repo.custom_avatar_path(await repo.person_id(1))
     assert second != first
     assert not (avatars.avatar_dir() / first).exists()
 
     assert not await custom_avatars.store(repo, 1, b"nonsense")
-    assert await repo.custom_avatar_path(1) == second
+    assert await repo.custom_avatar_path(await repo.person_id(1)) == second
 
     assert await custom_avatars.clear(repo, 1)
-    assert await repo.custom_avatar_path(1) is None
+    assert await repo.custom_avatar_path(await repo.person_id(1)) is None
     assert not (avatars.avatar_dir() / second).exists()
     assert not await custom_avatars.clear(repo, 1)
 
@@ -85,7 +85,7 @@ async def test_deleting_the_account_removes_the_chosen_picture(
     monkeypatch.chdir(tmp_path)
     await repo.ensure_user(1, "someone")
     await custom_avatars.store(repo, 1, _photo())
-    path = avatars.avatar_dir() / (await repo.custom_avatar_path(1))
+    path = avatars.avatar_dir() / (await repo.custom_avatar_path(await repo.person_id(1)))
     assert path.is_file()
     await repo.delete_user(1)
     assert not path.exists()
@@ -128,7 +128,7 @@ async def test_the_super_admin_can_take_a_picture_down(
 
     monkeypatch.chdir(tmp_path)
     await repo.ensure_user(7, "player7")
-    await repo.link_xbox_account(7, "x7", "Tag7", 100)
+    await repo.link_xbox_account(await repo.person_id(7), "x7", "Tag7", 100)
     _text, markup = await render_user_card(repo, 7, locale="ru")
     data = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert "a:avclr:7" not in data
@@ -150,5 +150,5 @@ async def test_the_super_admin_can_take_a_picture_down(
     monkeypatch.setattr(admin_handlers, "_redraw", fake_redraw)
     callback = SimpleNamespace(data="a:avclr:7", answer=answer)
     await admin_handlers.user_avatar_reset(callback, repo, SimpleNamespace(locale="ru"))
-    assert await repo.custom_avatar_path(7) is None
+    assert await repo.custom_avatar_path(await repo.person_id(7)) is None
     assert answered and redrawn

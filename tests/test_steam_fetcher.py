@@ -44,7 +44,7 @@ class FakePublisher:
 
 async def _linked_user(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "steam", STEAM_ID, "Mad Omsk")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "steam", STEAM_ID, "Mad Omsk")
 
 
 async def test_poll_title_publishes_only_new_achievements(
@@ -253,7 +253,7 @@ async def test_library_gaps_are_filled_once_and_silently(
     about, nothing is published, and it runs once per database."""
     await _linked_user(repo)
     await repo.insert_new_achievements_steam(
-        TG_ID, STEAM_ID, [_row_for("550", "a1")], is_backfill=True
+        await repo.person_id(TG_ID), STEAM_ID, [_row_for("550", "a1")], is_backfill=True
     )
     asked: list[str] = []
 

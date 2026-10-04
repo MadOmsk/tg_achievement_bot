@@ -65,8 +65,8 @@ async def store(repo: Repo, tg_id: int, body: bytes) -> bool:
         return False
     name = f"custom-{tg_id}-{hashlib.sha256(picture).hexdigest()[:12]}.jpg"
     path, _digest = avatars.write(picture, name)
-    previous = await repo.custom_avatar_path(tg_id)
-    await repo.set_custom_avatar_path(tg_id, path)
+    previous = await repo.custom_avatar_path(await repo.person_id(tg_id))
+    await repo.set_custom_avatar_path(await repo.person_id(tg_id), path)
     if previous and previous != path:
         _remove(previous)
     return True
@@ -74,10 +74,10 @@ async def store(repo: Repo, tg_id: int, body: bytes) -> bool:
 
 async def clear(repo: Repo, tg_id: int) -> bool:
     """Back to the Telegram photo. False when there was no chosen picture."""
-    previous = await repo.custom_avatar_path(tg_id)
+    previous = await repo.custom_avatar_path(await repo.person_id(tg_id))
     if not previous:
         return False
-    await repo.set_custom_avatar_path(tg_id, None)
+    await repo.set_custom_avatar_path(await repo.person_id(tg_id), None)
     _remove(previous)
     return True
 

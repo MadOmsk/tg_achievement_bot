@@ -252,7 +252,7 @@ async def run(settings: Settings) -> None:
         # No achievements yet means this account is new to the bot, not someone
         # signing in again after his token expired.
         is_new = not await repo.has_any_achievements(identity.xuid)
-        locale = await repo.user_locale(tg_id)
+        locale = await repo.user_locale(await repo.person_id(tg_id))
         _ = translator("main", locale)
         await bot.send_message(tg_id, _("main-linked", gamertag=identity.gamertag))
         await notifier.user_connected(tg_id, identity.gamertag, is_new=is_new)
@@ -261,11 +261,11 @@ async def run(settings: Settings) -> None:
         # job and subscribe him there too, instead of making him find
         # /subscribe on his own right after he just did the hard part (6.3).
         if origin_chat_id is not None and await repo.chat_exists(origin_chat_id):
-            await repo.subscribe(origin_chat_id, tg_id)
+            await repo.subscribe(origin_chat_id, await repo.person_id(tg_id))
             with contextlib.suppress(Exception):
                 await bot.send_message(tg_id, _("main-linked-subscribed-origin-chat"))
 
-        settings_row = await repo.get_user_settings(tg_id)
+        settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
         if settings_row is None or settings_row.tz_offset_min is None:
             link_i18n = await build_i18n_context(locale)
             await bot.send_message(
@@ -342,7 +342,7 @@ async def run(settings: Settings) -> None:
         of title_history()'s own asyncio.wait_for, not instead of it.
         """
         for target in await repo.pollable_users():
-            user = await repo.get_user(target.tg_id)
+            user = await repo.get_user(await repo.person_id(target.tg_id))
             try:
                 await asyncio.wait_for(
                     fetcher.catch_up(

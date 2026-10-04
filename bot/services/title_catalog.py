@@ -124,7 +124,9 @@ class TitleCatalogService:
         if tg_id:
             is_xbox = plat in (Platform.XBOX_MODERN.value, Platform.XBOX_360.value)
             account_plat = "xbox" if is_xbox else plat
-            link = await self._repo.get_platform_link(tg_id, account_plat)
+            link = await self._repo.get_platform_link(
+                await self._repo.person_id(tg_id), account_plat
+            )
             if link:
                 xuid = link.external_id
 
@@ -234,7 +236,7 @@ class TitleCatalogService:
         # Determine account_id to query
         account_id: str | None = None
         if tg_id:
-            link = await self._repo.get_platform_link(tg_id, "psn")
+            link = await self._repo.get_platform_link(await self._repo.person_id(tg_id), "psn")
             if link:
                 account_id = link.external_id
 

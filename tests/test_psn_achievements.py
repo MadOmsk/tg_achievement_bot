@@ -80,7 +80,7 @@ def _install_fakes(monkeypatch, titles, trophies_by_title, groups_by_title=None)
 
 async def _linked(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, "Gamer")
 
 
 async def _run(repo: Repo, *, is_backfill: bool = False):

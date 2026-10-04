@@ -194,7 +194,7 @@ async def handle_put_handle(request: web.Request) -> web.Response:
     body = await _json_body(request)
     await repo.ensure_user(user.tg_id, user.username)
     try:
-        await repo.change_handle(user.tg_id, str(body.get("handle", "")))
+        await repo.change_handle(await repo.person_id(user.tg_id), str(body.get("handle", "")))
     except HandleInvalid:
         return web.json_response({"error": "invalid"}, status=400)
     except HandleTooSoon as exc:
@@ -209,7 +209,7 @@ async def handle_confirm_handle(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
     await repo.ensure_user(user.tg_id, user.username)
-    await repo.confirm_handle(user.tg_id)
+    await repo.confirm_handle(await repo.person_id(user.tg_id))
     return await handle_me(request)
 
 
@@ -247,7 +247,7 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text="no settings")
 
     await repo.ensure_user(user.tg_id, user.username)
-    await repo.update_user_settings(user.tg_id, **fields)
+    await repo.update_user_settings(await repo.person_id(user.tg_id), **fields)
     return await handle_me(request)
 
 
@@ -264,14 +264,14 @@ async def handle_disconnect_xbox(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
     notifier: AdminNotifier | None = request.app["mini_notifier"]
-    db_user = await repo.get_user(user.tg_id)
+    db_user = await repo.get_user(await repo.person_id(user.tg_id))
     if db_user is None or not db_user.xuid:
         return web.json_response({"ok": True, "already": True, "revoke_url": REVOKE_URL})
     gamertag = db_user.gamertag or f"id{user.tg_id}"
     await repo.delete_presence_state(db_user.xuid)
-    await repo.delete_token(user.tg_id)
-    await repo.delete_subscriptions_of_user(user.tg_id)
-    await repo.unlink_xbox_account(user.tg_id)
+    await repo.delete_token(await repo.person_id(user.tg_id))
+    await repo.delete_subscriptions_of_user(await repo.person_id(user.tg_id))
+    await repo.unlink_xbox_account(await repo.person_id(user.tg_id))
     if notifier is not None:
         await notifier.user_disconnected(user.tg_id, gamertag, "mini-app")
     return web.json_response({"ok": True, "revoke_url": REVOKE_URL})
@@ -292,7 +292,7 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
     if not raw:
         return web.json_response({"ok": False, "error": "missing_identity"}, status=400)
 
-    existing = await repo.get_platform_link(user.tg_id, Platform.STEAM)
+    existing = await repo.get_platform_link(await repo.person_id(user.tg_id), Platform.STEAM)
     if existing is not None:
         return web.json_response(
             {"ok": False, "error": "already_linked", "display_name": existing.display_name},
@@ -323,7 +323,7 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
         )
 
     await repo.link_platform_account(
-        user.tg_id, Platform.STEAM, profile.steam_id, profile.persona_name
+        await repo.person_id(user.tg_id), Platform.STEAM, profile.steam_id, profile.persona_name
     )
     log.info("mini connect_steam: tg_id=%s steam_id=%s", user.tg_id, profile.steam_id)
     asyncio.create_task(  # noqa: RUF006
@@ -342,8 +342,8 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
 async def handle_disconnect_steam(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    link = await repo.get_platform_link(user.tg_id, Platform.STEAM)
-    await repo.unlink_platform_account(user.tg_id, Platform.STEAM)
+    link = await repo.get_platform_link(await repo.person_id(user.tg_id), Platform.STEAM)
+    await repo.unlink_platform_account(await repo.person_id(user.tg_id), Platform.STEAM)
     if link is not None:
         await repo.delete_steam_presence_state(link.external_id)
     return web.json_response({"ok": True, "already": link is None})
@@ -367,7 +367,7 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
     # Up to MAX_PSN_ACCOUNTS accounts (#10); the limit is checked again
     # below once the Online ID is resolved, since relinking one already held
     # is not an addition.
-    held = await repo.platform_links_for(user.tg_id, Platform.PSN)
+    held = await repo.platform_links_for(await repo.person_id(user.tg_id), Platform.PSN)
 
     try:
         client = await psn_auth.get_client()
@@ -403,10 +403,10 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
         )
 
     await repo.link_platform_account(
-        user.tg_id, Platform.PSN, profile.account_id, profile.online_id
+        await repo.person_id(user.tg_id), Platform.PSN, profile.account_id, profile.online_id
     )
     await repo.set_achievements_visible(
-        user.tg_id, Platform.PSN, True, external_id=profile.account_id
+        await repo.person_id(user.tg_id), Platform.PSN, True, external_id=profile.account_id
     )
     log.info("mini connect_psn: tg_id=%s account_id=%s", user.tg_id, profile.account_id)
     asyncio.create_task(  # noqa: RUF006
@@ -428,13 +428,13 @@ async def handle_disconnect_psn(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     body = await _json_body(request) if request.can_read_body else {}
     account_id = str(body.get("account_id") or "").strip() or None
-    links = await repo.platform_links_for(user.tg_id, Platform.PSN)
+    links = await repo.platform_links_for(await repo.person_id(user.tg_id), Platform.PSN)
     if account_id is not None:
         links = [link for link in links if link.external_id == account_id]
     for link in links:
         # `psn_poll_state` stays: it is #21's gate, and a relink through the
         # bot skips backfill (see handlers/psn.py::disconnect_psn_confirm).
-        await repo.unlink_account(user.tg_id, Platform.PSN, link.external_id)
+        await repo.unlink_account(await repo.person_id(user.tg_id), Platform.PSN, link.external_id)
     return web.json_response({"ok": True, "already": not links})
 
 
@@ -446,7 +446,7 @@ async def handle_sync(request: web.Request) -> web.Response:
     if fetcher is None:
         raise web.HTTPServiceUnavailable(text="sync unavailable")
 
-    db_user = await repo.get_user(user.tg_id)
+    db_user = await repo.get_user(await repo.person_id(user.tg_id))
     if db_user is None or not db_user.xuid:
         return web.json_response({"ok": False, "error": "xbox_not_linked"}, status=400)
 
@@ -492,14 +492,16 @@ async def handle_patch_account(request: web.Request) -> web.Response:
     account_id = str(body.get("account_id") or "").strip() or None
     if account_id is None:
         # The whole platform — every PSN account at once (#10).
-        if await repo.get_platform_link(user.tg_id, platform) is None:
+        if await repo.get_platform_link(await repo.person_id(user.tg_id), platform) is None:
             raise web.HTTPNotFound(text="not linked")
-        await repo.set_platform_publishes(user.tg_id, platform, publishes)
+        await repo.set_platform_publishes(await repo.person_id(user.tg_id), platform, publishes)
         return await handle_me(request)
-    links = await repo.platform_links_for(user.tg_id, platform)
+    links = await repo.platform_links_for(await repo.person_id(user.tg_id), platform)
     if all(link.external_id != account_id for link in links):
         raise web.HTTPNotFound(text="not linked")
-    await repo.set_account_publishes(user.tg_id, platform, account_id, publishes)
+    await repo.set_account_publishes(
+        await repo.person_id(user.tg_id), platform, account_id, publishes
+    )
     return await handle_me(request)
 
 
@@ -541,15 +543,15 @@ async def handle_patch_chat(request: web.Request) -> web.Response:
     # #126 — settings (`PATCH /settings`) and the admin's chat card own them.
     if action == "subscribe":
         # Needs at least one linked platform — same rule as /subscribe.
-        db_user = await repo.get_user(user.tg_id)
-        steam = await repo.get_platform_link(user.tg_id, Platform.STEAM)
-        psn = await repo.get_platform_link(user.tg_id, Platform.PSN)
+        db_user = await repo.get_user(await repo.person_id(user.tg_id))
+        steam = await repo.get_platform_link(await repo.person_id(user.tg_id), Platform.STEAM)
+        psn = await repo.get_platform_link(await repo.person_id(user.tg_id), Platform.PSN)
         has_platform = bool((db_user and db_user.xuid) or steam or psn)
         if not has_platform:
             return web.json_response({"ok": False, "error": "no_platform"}, status=400)
-        await repo.subscribe(chat_id, user.tg_id)
+        await repo.subscribe(chat_id, await repo.person_id(user.tg_id))
     elif action == "unsubscribe":
-        await repo.unsubscribe(chat_id, user.tg_id)
+        await repo.unsubscribe(chat_id, await repo.person_id(user.tg_id))
     elif action == "forget":
         await repo.forget_chat_membership(chat_id, user.tg_id)
         return web.json_response({"ok": True, "forgotten": True})
@@ -583,7 +585,7 @@ async def _following_scope(request: web.Request) -> tuple[Any, Repo, list[int], 
     person = await repo.person_id(user.tg_id)
     if person is None:
         raise web.HTTPNotFound(text="no person")
-    settings_row = await repo.get_user_settings(user.tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(user.tg_id))
     tz = settings_row.tz_offset_min if settings_row else None
     return user, repo, await repo.following_members(person), tz
 
@@ -706,10 +708,10 @@ async def handle_avatar(request: web.Request) -> web.Response:
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad tg_id") from exc
     repo: Repo = request.app["mini_repo"]
-    target = await repo.get_user(tg_id)
+    target = await repo.get_user(await repo.person_id(tg_id))
     if tg_id != user.tg_id and target is None:
         raise web.HTTPNotFound(text="no photo")
-    custom = await repo.custom_avatar_path(tg_id)
+    custom = await repo.custom_avatar_path(await repo.person_id(tg_id))
     if custom:
         file = avatars.avatar_dir() / custom
         if file.is_file():
@@ -797,7 +799,7 @@ async def handle_chat_person(request: web.Request) -> web.Response:
         target_id = int(raw_target)
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad tg_id") from exc
-    target = await repo.get_user(target_id)
+    target = await repo.get_user(await repo.person_id(target_id))
     if target is None:
         raise web.HTTPNotFound(text="person not found")
     locale = await _user_locale(repo, user.tg_id)
@@ -836,7 +838,7 @@ async def _may_see_activity(repo: Repo, viewer_tg: int, target_tg: int) -> bool:
 
 
 async def _public_name(repo: Repo, target: User) -> str:
-    return person_name_of(target, await repo.platform_links_of(target.tg_id))
+    return person_name_of(target, await repo.platform_links_of(await repo.person_id(target.tg_id)))
 
 
 async def _require_chat_member(request: web.Request) -> tuple[MiniAppUser, int, Repo]:
@@ -853,7 +855,7 @@ async def _require_chat_member(request: web.Request) -> tuple[MiniAppUser, int, 
 
 
 async def _user_locale(repo: Repo, tg_id: int) -> str:
-    settings_row = await repo.get_user_settings(tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
     return (settings_row.locale if settings_row else None) or "ru"
 
 
@@ -893,7 +895,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
         except ValueError as exc:
             raise web.HTTPBadRequest(text="bad tg_id") from exc
     if viewed_id != user.tg_id:
-        if await repo.get_user(viewed_id) is None:
+        if await repo.get_user(await repo.person_id(viewed_id)) is None:
             raise web.HTTPNotFound(text="person not found")
         if not await _may_see_activity(repo, user.tg_id, viewed_id):
             raise web.HTTPForbidden(text="activity hidden")

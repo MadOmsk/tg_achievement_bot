@@ -94,13 +94,16 @@ class SteamPresencePoller:
         # batch call — keep the panel/connect card from drifting stale, at
         # zero extra cost. Writes only when something actually changed.
         await self._repo.update_platform_names(
-            target.tg_id, Platform.STEAM, snapshot.persona_name, snapshot.vanity
+            await self._repo.person_id(target.tg_id),
+            Platform.STEAM,
+            snapshot.persona_name,
+            snapshot.vanity,
         )
         # Found while adding Steam to the admin panel (2026-09-05): only
         # presence.py ever touched this, so a Steam-only person's "last
         # online" in the admin list stayed permanently blank.
         if snapshot.persona_state != 0:
-            await self._repo.touch_last_online(target.tg_id)
+            await self._repo.touch_last_online(await self._repo.person_id(target.tg_id))
 
         in_game = snapshot.persona_state != 0 and snapshot.gameid is not None
 

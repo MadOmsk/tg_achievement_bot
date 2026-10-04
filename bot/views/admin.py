@@ -333,7 +333,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
     each its own line instead of the old single achievements-and-all header
     line, so a long line no longer buries the id next to the nickname."""
     _ = translator("admin", locale)
-    count = await repo.xbox_achievement_count(user.tg_id)
+    count = await repo.xbox_achievement_count(await repo.person_id(user.tg_id))
     completed = await repo.xbox_completed_games_count(user.xuid)
     parts = [plural_achievements(count, locale)]
     if completed:
@@ -341,7 +341,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
     parts.append(_("admin-today-tag", count=today_count))
     parts.append(_("admin-gamerscore-tag", score=user.gamerscore or 0))
 
-    token = await repo.get_token(user.tg_id)
+    token = await repo.get_token(await repo.person_id(user.tg_id))
     presence = await repo.presence_of(user.xuid)
     login = _("admin-login-not-connected")
     if token is not None:
@@ -381,7 +381,9 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
         _("admin-login-row", login=login),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
-        *_muted_line(await repo.get_platform_link(user.tg_id, AccountPlatform.XBOX), _),
+        *_muted_line(
+            await repo.get_platform_link(await repo.person_id(user.tg_id), AccountPlatform.XBOX), _
+        ),
     ]
 
 
@@ -399,8 +401,8 @@ async def _steam_admin_block(
     to be active or dead), worded exactly like /panel's own status
     (`visibility_status_text`, shared so the two never drift)."""
     _ = translator("admin", locale)
-    count = await repo.platform_achievement_count(link.tg_id, Platform.STEAM)
-    completed = await repo.steam_completed_games_count(link.tg_id)
+    count = await repo.platform_achievement_count(await repo.person_id(link.tg_id), Platform.STEAM)
+    completed = await repo.steam_completed_games_count(await repo.person_id(link.tg_id))
     parts = [plural_achievements(count, locale)]
     if completed:
         parts.append(f"{completed} {COMPLETED_BADGE_STEAM}")
@@ -502,9 +504,9 @@ async def render_user_card(
     repo: Repo, tg_id: int, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
-    user = await repo.get_user(tg_id)
-    steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    user = await repo.get_user(await repo.person_id(tg_id))
+    steam_link = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
+    psn_links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
     # Used to bail out on `not user.xuid` alone (2026-09-05 follow-up) — a
     # A Steam-only person got a "user not found" result in the admin panel,
     # same class of gap /stats had before it learned to work without Xbox.
@@ -512,8 +514,10 @@ async def render_user_card(
         return _("admin-user-not-found"), _back_home(locale=locale)
 
     today = today_cutoff_utc()
-    today_xbox, today_steam, _today_psn = await repo.achievement_platform_breakdown(tg_id, today)
-    chats = await repo.chats_of_user(tg_id)
+    today_xbox, today_steam, _today_psn = await repo.achievement_platform_breakdown(
+        await repo.person_id(tg_id), today
+    )
+    chats = await repo.chats_of_user(await repo.person_id(tg_id))
 
     # Telegram identity first (2026-09-08 user request), then one block per
     # connected platform in the one display order — Xbox, PlayStation, Steam
@@ -585,7 +589,7 @@ async def render_user_card(
                 text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
             ),
         )
-    if await repo.custom_avatar_path(tg_id):
+    if await repo.custom_avatar_path(await repo.person_id(tg_id)):
         # A picture chosen in the Mini App is seen by everybody (#157): the
         # super-admin can take it down, back to the Telegram photo.
         builder.row(

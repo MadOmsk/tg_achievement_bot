@@ -41,7 +41,7 @@ async def _linked_steam_user(
     repo: Repo, tg_id: int = TG_ID, steam_id: str = STEAM_ID, name: str = "Gabe"
 ) -> None:
     await repo.ensure_user(tg_id, name.lower())
-    await repo.link_platform_account(tg_id, "steam", steam_id, name)
+    await repo.link_platform_account(await repo.person_id(tg_id), "steam", steam_id, name)
 
 
 def _settings(**kwargs) -> Settings:
@@ -70,7 +70,7 @@ async def test_steam_catch_up_since_with_no_unlocks_returns_floor(repo: Repo) ->
 async def test_steam_catch_up_since_uses_latest_unlock_when_newer_than_floor(repo: Repo) -> None:
     recent = utcnow() - timedelta(hours=2)
     await repo.insert_new_achievements_steam(
-        TG_ID,
+        await repo.person_id(TG_ID),
         STEAM_ID,
         [
             AchievementRow(
@@ -95,7 +95,7 @@ async def test_steam_catch_up_since_uses_latest_unlock_when_newer_than_floor(rep
 async def test_steam_catch_up_since_floors_at_window_when_unlock_is_older(repo: Repo) -> None:
     ancient = utcnow() - timedelta(days=30)
     await repo.insert_new_achievements_steam(
-        TG_ID,
+        await repo.person_id(TG_ID),
         STEAM_ID,
         [
             AchievementRow(

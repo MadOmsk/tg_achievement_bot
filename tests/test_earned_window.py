@@ -39,9 +39,9 @@ def _row(achievement_id: str, *, unlocked_at: str | None, title_id: str = "t1") 
 
 async def _subscribed_person(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Gamer", 0)
     await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
 
 
 async def _store(repo: Repo, rows: list[AchievementRow], *, is_backfill: bool) -> None:
@@ -89,8 +89,8 @@ async def test_the_per_platform_breakdown_agrees_with_the_total(repo: Repo) -> N
     await _store(repo, [_row("undated", unlocked_at=None)], is_backfill=True)
 
     since = month_cutoff_utc(180)
-    total, _score = await repo.achievement_counts_for_person(TG_ID, since)
-    xbox, steam, psn = await repo.achievement_platform_breakdown(TG_ID, since)
+    total, _score = await repo.achievement_counts_for_person(await repo.person_id(TG_ID), since)
+    xbox, steam, psn = await repo.achievement_platform_breakdown(await repo.person_id(TG_ID), since)
     assert total == 1
     assert (xbox, steam, psn) == (1, 0, 0)
 
@@ -143,9 +143,9 @@ async def test_recent_shows_what_the_achievement_was_worth(repo: Repo) -> None:
     bot) instead of the 15 G the achievement actually gave. Found by
     rendering the screen, not by any test that existed."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 249_504)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Gamer", 249_504)
     await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
     now = utcnow().isoformat(timespec="seconds")
     await repo.insert_new_achievements(XUID, [_row("a1", unlocked_at=now)], is_backfill=False)
 

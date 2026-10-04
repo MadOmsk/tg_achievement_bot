@@ -122,11 +122,11 @@ async def build_stats_text(
 ) -> str | None:
     """Shared by /stats and /who's buttons (SPEC 6.3) — one implementation,
     so a player's card looks the same no matter how it was opened."""
-    platform_links = await repo.platform_links_of(target.tg_id)
+    platform_links = await repo.platform_links_of(await repo.person_id(target.tg_id))
     if not target.xuid and not platform_links:
         return None
 
-    settings_row = await repo.get_user_settings(target.tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
     # The admin's switch, for everybody at once (owner, 2026-09-29).
     show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
 

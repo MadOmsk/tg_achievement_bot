@@ -130,7 +130,7 @@ async def test_repo_title_achievements_with_user_unlocks(repo: Repo) -> None:
 
     # Link user and unlock only a1
     await repo.ensure_user(101, "player_one")
-    await repo.link_xbox_account(101, "xuid_101", "PlayerOne", 0)
+    await repo.link_xbox_account(await repo.person_id(101), "xuid_101", "PlayerOne", 0)
 
     unlocked_row = AchievementRow(
         title_id="game_1",
@@ -279,7 +279,7 @@ async def test_get_game_details_with_checklist_and_groups(repo: Repo, settings: 
 
     # Seed data
     await repo.ensure_user(42, "ada")
-    await repo.link_platform_account(42, Platform.PSN, "psn_42", "AdaPSN")
+    await repo.link_platform_account(await repo.person_id(42), Platform.PSN, "psn_42", "AdaPSN")
     await repo.upsert_title("NPWR999", "Spider-Man", Platform.PSN)
     await repo.save_title_groups(
         "NPWR999",
@@ -363,13 +363,15 @@ async def test_repo_catalog_helper_methods(repo: Repo) -> None:
     # 1. any_active_external_id
     assert await repo.any_active_external_id("psn") is None
     await repo.ensure_user(100, "user100")
-    await repo.link_platform_account(100, Platform.PSN, "psn_ext_1", "PSNUser")
+    await repo.link_platform_account(
+        await repo.person_id(100), Platform.PSN, "psn_ext_1", "PSNUser"
+    )
     assert await repo.any_active_external_id("psn") == "psn_ext_1"
 
     # 2. any_active_xbox_tg_id
     assert await repo.any_active_xbox_tg_id() is None
-    await repo.link_xbox_account(100, "xuid_100", "XboxUser", 100)
-    await repo.save_refresh_token(100, b"fake_enc")
+    await repo.link_xbox_account(await repo.person_id(100), "xuid_100", "XboxUser", 100)
+    await repo.save_refresh_token(await repo.person_id(100), b"fake_enc")
     assert await repo.any_active_xbox_tg_id() == 100
 
     # 3. title_seen_platform
@@ -397,8 +399,8 @@ async def test_repo_catalog_helper_methods(repo: Repo) -> None:
 async def test_refresh_xbox_updates_platform_to_360(repo: Repo) -> None:
     # Game was initially seeded as xbox_modern in titles and seen_achievements
     await repo.ensure_user(200, "user200")
-    await repo.link_xbox_account(200, "xuid_200", "XboxUser200", 200)
-    await repo.save_refresh_token(200, b"fake_enc")
+    await repo.link_xbox_account(await repo.person_id(200), "xuid_200", "XboxUser200", 200)
+    await repo.save_refresh_token(await repo.person_id(200), b"fake_enc")
     await repo.upsert_title("t_x360_fallback", "Gears 3", Platform.XBOX_MODERN)
     await repo.insert_new_achievements(
         "xuid_200",

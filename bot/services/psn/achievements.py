@@ -275,7 +275,7 @@ async def sync_account(
             for item in earned
         ]
         inserted = await repo.insert_new_achievements_psn(
-            tg_id, account_id, rows, is_backfill=is_backfill
+            await repo.person_id(tg_id), account_id, rows, is_backfill=is_backfill
         )
         # Only now — after this game's trophies are committed — is its
         # progress advanced. An interruption before this line leaves the
@@ -309,7 +309,9 @@ async def regroup_title(
     """
     earned = await trophies_for_title(client, account_id, title)
     rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
-    added = await repo.insert_new_achievements_psn(tg_id, account_id, rows, is_backfill=True)
+    added = await repo.insert_new_achievements_psn(
+        await repo.person_id(tg_id), account_id, rows, is_backfill=True
+    )
     regrouped = await repo.set_psn_trophy_groups(
         account_id,
         title.np_communication_id,

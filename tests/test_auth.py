@@ -73,7 +73,7 @@ def http_error(status: int, body: dict[str, Any]) -> httpx.HTTPStatusError:
 
 async def _connected_user(repo: Repo, cipher: TokenCipher) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.save_refresh_token(TG_ID, cipher.encrypt(OLD_TOKEN))
+    await repo.save_refresh_token(await repo.person_id(TG_ID), cipher.encrypt(OLD_TOKEN))
 
 
 def _service(
@@ -123,7 +123,7 @@ async def test_new_token_is_stored_before_any_further_request(
     original = manager.request_user_token
 
     async def spy() -> FakeXToken:
-        record = await repo.get_token(TG_ID)
+        record = await repo.get_token(await repo.person_id(TG_ID))
         assert record is not None
         seen_at_user_token.append(cipher.decrypt(record.refresh_token_enc))
         return await original()
@@ -166,7 +166,7 @@ async def test_invalid_grant_kills_the_token(
     with pytest.raises(TokenDeadError):
         await service.authenticated_manager(TG_ID)
 
-    record = await repo.get_token(TG_ID)
+    record = await repo.get_token(await repo.person_id(TG_ID))
     assert record is not None
     assert record.status == "invalid"
     assert record.invalid_at is not None
@@ -185,7 +185,7 @@ async def test_network_error_is_not_a_dead_token(
             await service.authenticated_manager(TG_ID)
         assert not isinstance(info.value, TokenDeadError)
 
-    record = await repo.get_token(TG_ID)
+    record = await repo.get_token(await repo.person_id(TG_ID))
     assert record is not None
     assert record.status == "active"
     assert record.fail_count == 2
@@ -193,7 +193,7 @@ async def test_network_error_is_not_a_dead_token(
     # Third failure in a row: now we give up (SPEC 5.1).
     with pytest.raises(TokenDeadError):
         await service.authenticated_manager(TG_ID)
-    record = await repo.get_token(TG_ID)
+    record = await repo.get_token(await repo.person_id(TG_ID))
     assert record is not None
     assert record.status == "invalid"
 

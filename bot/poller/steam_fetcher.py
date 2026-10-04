@@ -95,7 +95,7 @@ class SteamFetcher:
         )
         rows = [to_achievement_row(item) for item in parsed]
         new_rows = await self._repo.insert_new_achievements_steam(
-            tg_id, steam_id, rows, is_backfill=False
+            await self._repo.person_id(tg_id), steam_id, rows, is_backfill=False
         )
         await self._repo.mark_steam_achievements_polled(steam_id)
         if not new_rows:
@@ -134,11 +134,15 @@ class SteamFetcher:
         try:
             await get_owned_games(api_key, steam_id)
         except SteamGameDetailsPrivateError:
-            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+            await self._repo.set_achievements_visible(
+                await self._repo.person_id(tg_id), Platform.STEAM, False
+            )
         except SteamApiError:
             pass  # transient failure — don't overwrite the last known-good status on a blip
         else:
-            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
+            await self._repo.set_achievements_visible(
+                await self._repo.person_id(tg_id), Platform.STEAM, True
+            )
 
         try:
             snapshots = await get_presence_batch(api_key, [steam_id])
@@ -190,9 +194,13 @@ class SteamFetcher:
             try:
                 games = await get_owned_games(api_key, steam_id)
             except SteamGameDetailsPrivateError:
-                await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+                await self._repo.set_achievements_visible(
+                    await self._repo.person_id(tg_id), Platform.STEAM, False
+                )
                 raise
-            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
+            await self._repo.set_achievements_visible(
+                await self._repo.person_id(tg_id), Platform.STEAM, True
+            )
             candidates = [game for game in games if game.last_played > cutoff]
             log.info(
                 "steam catch-up for tg_id=%s: %s of %s games played since %s",
@@ -244,7 +252,9 @@ class SteamFetcher:
                         log.info("steam top-up of appid=%s skipped: %s", game.appid, exc)
                         continue
                 rows.extend(to_achievement_row(item) for item in parsed)
-            await self._repo.insert_new_achievements_steam(tg_id, steam_id, rows, is_backfill=True)
+            await self._repo.insert_new_achievements_steam(
+                await self._repo.person_id(tg_id), steam_id, rows, is_backfill=True
+            )
             log.info("steam top-up for tg_id=%s stored %s achievements", tg_id, len(rows))
             return len(rows)
 
@@ -286,9 +296,13 @@ class SteamFetcher:
                 # so /panel's login row reflects the same finding instead of
                 # only ever logging it. Re-raised unchanged — #39's message
                 # still needs to see this exact exception.
-                await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+                await self._repo.set_achievements_visible(
+                    await self._repo.person_id(tg_id), Platform.STEAM, False
+                )
                 raise
-            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
+            await self._repo.set_achievements_visible(
+                await self._repo.person_id(tg_id), Platform.STEAM, True
+            )
             rows: list[AchievementRow] = []
             done = 0
             if progress is not None:
@@ -315,6 +329,8 @@ class SteamFetcher:
                         await progress(done, len(games), len(rows))
 
             await asyncio.gather(*(one(game) for game in games))
-            await self._repo.insert_new_achievements_steam(tg_id, steam_id, rows, is_backfill=True)
+            await self._repo.insert_new_achievements_steam(
+                await self._repo.person_id(tg_id), steam_id, rows, is_backfill=True
+            )
             log.info("steam backfill for tg_id=%s stored %s achievements", tg_id, len(rows))
             return len(rows)

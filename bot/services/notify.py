@@ -55,7 +55,7 @@ class AdminNotifier:
     async def token_dead(self, tg_id: int) -> None:
         async def build(locale: str) -> str:
             _ = translator("notify", locale)
-            user = await self._repo.get_user(tg_id)
+            user = await self._repo.get_user(await self._repo.person_id(tg_id))
             name = (user.gamertag if user else None) or _("notify-id", tg_id=str(tg_id))
             who = await self._who(tg_id, locale)
             return (
@@ -134,14 +134,16 @@ class AdminNotifier:
 
     async def _who(self, tg_id: int, locale: str) -> str:
         _ = translator("notify", locale)
-        user = await self._repo.get_user(tg_id)
+        user = await self._repo.get_user(await self._repo.person_id(tg_id))
         username = f"@{user.username}" if user and user.username else _("notify-who-no-username")
         return _("notify-who", tg_id=str(tg_id), username=username)
 
     async def _send(self, build: Callable[[str], Awaitable[str]]) -> None:
         for admin_id in self._admin_ids:
             try:
-                text = await build(await self._repo.user_locale(admin_id))
+                text = await build(
+                    await self._repo.user_locale(await self._repo.person_id(admin_id))
+                )
                 await self._bot.send_message(admin_id, text)
             except Exception:
                 # An admin who blocked the bot must not break the flow that

@@ -56,9 +56,9 @@ CHAT_ID = -100500
 @pytest.fixture
 async def context(repo: Repo):
     await repo.ensure_user(TG_ID, "someone", "Some", "One")
-    await repo.link_xbox_account(TG_ID, "xuid-render", "SomeGamertag", 1000)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-render", "SomeGamertag", 1000)
     await repo.upsert_chat(CHAT_ID, "A Chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
     return render_screen.Context(
         repo=repo,
         settings=None,  # type: ignore[arg-type]

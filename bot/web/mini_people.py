@@ -249,10 +249,12 @@ async def _activity(request: web.Request, repo: Repo, me: int, other: int) -> di
     target_row = await repo.person_row(other)
     if target_row is None or target_row.tg_id is None:
         return None
-    target = await repo.get_user(target_row.tg_id)
+    target = await repo.get_user(await repo.person_id(target_row.tg_id))
     viewer_row = await repo.person_row(me)
     settings = (
-        await repo.get_user_settings(viewer_row.tg_id) if viewer_row and viewer_row.tg_id else None
+        await repo.get_user_settings(await repo.person_id(viewer_row.tg_id))
+        if viewer_row and viewer_row.tg_id
+        else None
     )
     if target is None:
         return None
@@ -299,7 +301,7 @@ async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: i
     if target is None or follower is None or target.tg_id is None:
         return
     relation = await repo.relation(other, me)
-    settings = await repo.get_user_settings(target.tg_id)
+    settings = await repo.get_user_settings(await repo.person_id(target.tg_id))
     if settings is not None and not settings.notify_followers:
         return
     if not await repo.claim_follow_notice(me, other):

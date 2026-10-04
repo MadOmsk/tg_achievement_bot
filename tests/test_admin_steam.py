@@ -19,7 +19,7 @@ STEAM_ID = "76561197960287930"
 
 async def test_admin_users_includes_a_steam_only_person(repo: Repo) -> None:
     await repo.ensure_user(1, "steamonly")
-    await repo.link_platform_account(1, "steam", STEAM_ID, "SteamOnly")
+    await repo.link_platform_account(await repo.person_id(1), "steam", STEAM_ID, "SteamOnly")
 
     users = await repo.admin_users()
 
@@ -31,8 +31,8 @@ async def test_admin_users_includes_a_steam_only_person(repo: Repo) -> None:
 
 async def test_admin_users_includes_someone_with_both_platforms(repo: Repo) -> None:
     await repo.ensure_user(1, "both")
-    await repo.link_xbox_account(1, XUID, "Both", 0)
-    await repo.link_platform_account(1, "steam", STEAM_ID, "BothSteam")
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "Both", 0)
+    await repo.link_platform_account(await repo.person_id(1), "steam", STEAM_ID, "BothSteam")
 
     users = await repo.admin_users()
 
@@ -43,10 +43,10 @@ async def test_admin_users_includes_someone_with_both_platforms(repo: Repo) -> N
 
 async def test_admin_users_includes_visibility_status_for_steam_and_psn(repo: Repo) -> None:
     await repo.ensure_user(1, "gamer")
-    await repo.link_platform_account(1, "steam", STEAM_ID, "GamerSteam")
-    await repo.link_platform_account(1, "psn", "psn-account-123", "GamerPsn")
-    await repo.set_achievements_visible(1, "steam", False)
-    await repo.set_achievements_visible(1, "psn", True)
+    await repo.link_platform_account(await repo.person_id(1), "steam", STEAM_ID, "GamerSteam")
+    await repo.link_platform_account(await repo.person_id(1), "psn", "psn-account-123", "GamerPsn")
+    await repo.set_achievements_visible(await repo.person_id(1), "steam", False)
+    await repo.set_achievements_visible(await repo.person_id(1), "psn", True)
 
     users = await repo.admin_users()
 
@@ -60,8 +60,8 @@ async def test_achievement_counts_by_tg_id_sums_every_platform(repo: Repo) -> No
     achievement_counts_by_xuid, which showed 0 for a Steam-only person and
     only the Xbox half for someone with both."""
     await repo.ensure_user(1, "both")
-    await repo.link_xbox_account(1, XUID, "Both", 0)
-    await repo.link_platform_account(1, "steam", STEAM_ID, "BothSteam")
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "Both", 0)
+    await repo.link_platform_account(await repo.person_id(1), "steam", STEAM_ID, "BothSteam")
     now = utcnow()
     await repo.insert_new_achievements(
         XUID,
@@ -81,7 +81,7 @@ async def test_achievement_counts_by_tg_id_sums_every_platform(repo: Repo) -> No
         is_backfill=False,
     )
     await repo.insert_new_achievements_steam(
-        1,
+        await repo.person_id(1),
         STEAM_ID,
         [
             AchievementRow(
@@ -106,7 +106,7 @@ async def test_achievement_counts_by_tg_id_sums_every_platform(repo: Repo) -> No
 
 async def test_steam_presence_of_round_trips(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "steam", STEAM_ID, "Someone")
+    await repo.link_platform_account(await repo.person_id(1), "steam", STEAM_ID, "Someone")
 
     assert await repo.steam_presence_of(STEAM_ID) is None
 
@@ -230,7 +230,7 @@ async def test_home_does_not_count_a_steam_only_person_as_a_broken_xbox_login(
     and `!= "active"` alone counted that as "без входа" — a broken Xbox
     login, not "no Xbox at all". The two are shown separately now."""
     await repo.ensure_user(1, "steamonly")
-    await repo.link_platform_account(1, "steam", STEAM_ID, "SteamOnly")
+    await repo.link_platform_account(await repo.person_id(1), "steam", STEAM_ID, "SteamOnly")
 
     text, _markup = await render_admin_home(
         repo,

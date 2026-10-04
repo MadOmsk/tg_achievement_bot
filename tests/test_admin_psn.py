@@ -15,7 +15,7 @@ def _callback_datas(markup) -> list[str]:
 
 async def test_card_shows_a_psn_resync_button_when_psn_is_linked(repo: Repo) -> None:
     await repo.ensure_user(1, "igor")
-    await repo.link_platform_account(1, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(1), "psn", ACCOUNT_ID, "Gamer")
 
     _text, markup = await render_user_card(repo, 1, locale="ru")
 
@@ -26,8 +26,8 @@ async def test_card_has_a_block_and_buttons_per_psn_account(repo: Repo) -> None:
     """#10: several PSN accounts, each its own block and its own pair of
     buttons, named "PSN: nick" rather than a bare nickname."""
     await repo.ensure_user(1, "igor")
-    await repo.link_platform_account(1, "psn", ACCOUNT_ID, "Gamer")
-    await repo.link_platform_account(1, "psn", "psn-acc-2", "Second")
+    await repo.link_platform_account(await repo.person_id(1), "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(1), "psn", "psn-acc-2", "Second")
 
     text, markup = await render_user_card(repo, 1, locale="ru")
 
@@ -40,7 +40,9 @@ async def test_card_has_a_block_and_buttons_per_psn_account(repo: Repo) -> None:
 
 async def test_card_has_no_psn_resync_button_without_a_psn_link(repo: Repo) -> None:
     await repo.ensure_user(1, "igor")
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamOnly")
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamOnly"
+    )
 
     _text, markup = await render_user_card(repo, 1, locale="ru")
 

@@ -69,7 +69,7 @@ class PresencePoller:
             changed=changed,
         )
         if snapshot.state == PresenceState.ONLINE:
-            await self._repo.touch_last_online(target.tg_id)
+            await self._repo.touch_last_online(await self._repo.person_id(target.tg_id))
 
         gamertag = await self._gamertag(target.tg_id)
 
@@ -142,7 +142,7 @@ class PresencePoller:
         any particular chat is in view, and the same person can be published
         to chats in different languages from this one call.
         """
-        user = await self._repo.get_user(tg_id)
+        user = await self._repo.get_user(await self._repo.person_id(tg_id))
         return (user.gamertag if user and user.gamertag else None) or gettext(
             "presence", "presence-default-player", locale=DEFAULT_LOCALE
         )

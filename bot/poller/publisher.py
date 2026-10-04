@@ -186,7 +186,7 @@ class Publisher:
         # The person's own switch for this account (#20): muted, it stays
         # stored and counted, and posts nowhere.
         if not await self._repo.account_publishes(
-            tg_id, account_platform_of(achievements[0].platform), xuid
+            await self._repo.person_id(tg_id), account_platform_of(achievements[0].platform), xuid
         ):
             return
         if window_hours is not None:
@@ -199,7 +199,7 @@ class Publisher:
             if not achievements:
                 return
 
-        for chat in await self._repo.publication_targets(tg_id):
+        for chat in await self._repo.publication_targets(await self._repo.person_id(tg_id)):
             allowed = [
                 item
                 for item in achievements
@@ -311,7 +311,7 @@ class Publisher:
         into throttled mode, exactly as if it had arrived on its own.
         """
         now = utcnow()
-        state = await self._repo.get_flood_state(tg_id, chat.chat_id)
+        state = await self._repo.get_flood_state(await self._repo.person_id(tg_id), chat.chat_id)
         if state is not None and now >= state.window_started_at + timedelta(
             minutes=chat.flood_window_minutes
         ):
@@ -336,7 +336,7 @@ class Publisher:
                 window_started_at = now  # restart right here, not at expiry
 
         await self._repo.set_flood_state(
-            tg_id,
+            await self._repo.person_id(tg_id),
             chat.chat_id,
             window_started_at=window_started_at,
             count_in_window=count,
@@ -413,8 +413,8 @@ class Publisher:
         # subscription walk), and one lookup per flushed window is nothing.
         locale = await self._repo.chat_locale(chat_id)
         achievements = await localize_descriptions(self._repo, achievements, locale)
-        user = await self._repo.get_user(tg_id)
-        links = await self._repo.platform_links_of(tg_id)
+        user = await self._repo.get_user(await self._repo.person_id(tg_id))
+        links = await self._repo.platform_links_of(await self._repo.person_id(tg_id))
         platforms = {account_platform_of(item.platform) for item in achievements}
         accounts = {(account_platform_of(item.platform), item.xuid) for item in achievements}
         name: str | None = None

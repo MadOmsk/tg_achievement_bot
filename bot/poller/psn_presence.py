@@ -98,7 +98,7 @@ class PsnPresencePoller:
             changed=changed,
         )
         if snapshot.state == "Online":
-            await self._repo.touch_last_online(target.tg_id)
+            await self._repo.touch_last_online(await self._repo.person_id(target.tg_id))
         await self._refresh_nickname(target, snapshot.online_id)
 
         # Final trophy check of the session (#90):
@@ -131,11 +131,17 @@ class PsnPresencePoller:
             return
         previous = target.online_id
         await self._repo.update_platform_names(
-            target.tg_id, Platform.PSN, online_id, external_id=target.account_id
+            await self._repo.person_id(target.tg_id),
+            Platform.PSN,
+            online_id,
+            external_id=target.account_id,
         )
         if previous:
             await self._repo.set_platform_secondary_name(
-                target.tg_id, Platform.PSN, previous, external_id=target.account_id
+                await self._repo.person_id(target.tg_id),
+                Platform.PSN,
+                previous,
+                external_id=target.account_id,
             )
             log.info("psn account %s renamed: %s -> %s", target.account_id, previous, online_id)
 

@@ -351,7 +351,7 @@ async def run_sync(cfg: SyncConfig) -> None:
                 link.external_id,
             )
             try:
-                token = await repo.get_token(link.tg_id)
+                token = await repo.get_token(await repo.person_id(link.tg_id))
                 if not token or token.status != "active":
                     log.warning(
                         "Xbox token for %s is %s, skipping",

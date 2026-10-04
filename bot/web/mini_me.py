@@ -29,7 +29,7 @@ from bot.views.parts import visibility_status_text
 async def handle_block(repo: Repo, tg_id: int) -> dict[str, Any] | None:
     """The person's nickname for the Mini App (#157): the parts, the displayed
     form, whether they have been asked to keep it yet, and when it may change."""
-    state = await repo.handle_state(tg_id)
+    state = await repo.handle_state(await repo.person_id(tg_id))
     if state is None or state.handle is None:
         return None
     next_change = None
@@ -61,13 +61,13 @@ async def build_me_payload(
     is_admin: bool,
 ) -> dict[str, Any]:
     await repo.ensure_user(tg_id, username, first_name=first_name, last_name=last_name)
-    await repo.give_handle(tg_id)
-    user = await repo.get_user(tg_id)
-    settings_row = await repo.get_user_settings(tg_id)
-    steam = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    await repo.give_handle(await repo.person_id(tg_id))
+    user = await repo.get_user(await repo.person_id(tg_id))
+    settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
+    steam = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
+    psn_links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
     psn = psn_links[0] if psn_links else None
-    token = await repo.get_token(tg_id) if user and user.xuid else None
+    token = await repo.get_token(await repo.person_id(tg_id)) if user and user.xuid else None
     chats = await repo.user_chats(tg_id)
 
     locale = (settings_row.locale if settings_row else None) or "ru"
@@ -76,23 +76,37 @@ async def build_me_payload(
     show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
     show_secrets = bool(settings_row and settings_row.show_secrets)
 
-    xbox_count = await repo.xbox_achievement_count(tg_id) if user and user.xuid else 0
+    xbox_count = (
+        await repo.xbox_achievement_count(await repo.person_id(tg_id)) if user and user.xuid else 0
+    )
     xbox_completed = await repo.xbox_completed_games_count(user.xuid) if user and user.xuid else 0
-    steam_count = await repo.platform_achievement_count(tg_id, Platform.STEAM) if steam else 0
-    steam_completed = await repo.steam_completed_games_count(tg_id) if steam else 0
-    psn_count = await repo.platform_achievement_count(tg_id, Platform.PSN) if psn else 0
-    psn_tiers = await repo.psn_trophy_tier_counts(tg_id) if psn else (0, 0, 0, 0)
+    steam_count = (
+        await repo.platform_achievement_count(await repo.person_id(tg_id), Platform.STEAM)
+        if steam
+        else 0
+    )
+    steam_completed = (
+        await repo.steam_completed_games_count(await repo.person_id(tg_id)) if steam else 0
+    )
+    psn_count = (
+        await repo.platform_achievement_count(await repo.person_id(tg_id), Platform.PSN)
+        if psn
+        else 0
+    )
+    psn_tiers = (
+        await repo.psn_trophy_tier_counts(await repo.person_id(tg_id)) if psn else (0, 0, 0, 0)
+    )
     psn_platinum = psn_tiers[3]
     counters = await counters_for(repo, tg_id)
     week_xbox, week_steam, week_psn = await repo.achievement_platform_breakdown(
-        tg_id, week_cutoff_utc()
+        await repo.person_id(tg_id), week_cutoff_utc()
     )
 
     return {
         "tg_id": tg_id,
         "handle": await handle_block(repo, tg_id),
         # A picture chosen in the app replaces the Telegram photo (#157).
-        "avatar_custom": bool(await repo.custom_avatar_path(tg_id)),
+        "avatar_custom": bool(await repo.custom_avatar_path(await repo.person_id(tg_id))),
         "username": username,
         "first_name": first_name,
         "last_name": last_name,
@@ -170,7 +184,9 @@ async def _xbox_block(
     if linked and user and user.xuid:
         presence = await _xbox_presence(repo, user.xuid)
     xbox_link = (
-        await repo.get_platform_link(user.tg_id, AccountPlatform.XBOX) if linked and user else None
+        await repo.get_platform_link(await repo.person_id(user.tg_id), AccountPlatform.XBOX)
+        if linked and user
+        else None
     )
     return {
         "linked": linked,
@@ -327,5 +343,5 @@ async def _publication(repo: Repo, user: User | None) -> dict[str, Any]:
         return {"excluded": False, "chat_titles": []}
     if user.is_excluded:
         return {"excluded": True, "chat_titles": []}
-    titles = await repo.chats_of_user(user.tg_id)
+    titles = await repo.chats_of_user(await repo.person_id(user.tg_id))
     return {"excluded": False, "chat_titles": titles}

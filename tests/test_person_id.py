@@ -225,15 +225,18 @@ async def test_migration_078_moves_the_tables_about_a_person_onto_their_id(tmp_p
         conn = database.conn
         assert await (await conn.execute("PRAGMA foreign_key_check")).fetchall() == []
         # Read back through the repo, which still takes Telegram ids at its door.
-        link = await repo.get_platform_link(111, "xbox")
+        link = await repo.get_platform_link(await repo.person_id(111), "xbox")
         assert link is not None and link.external_id == "x1"
-        psn = [link.external_id for link in await repo.platform_links_for(222, "psn")]
+        psn = [
+            link.external_id
+            for link in await repo.platform_links_for(await repo.person_id(222), "psn")
+        ]
         assert psn == ["p1", "p2"]
-        assert await repo.get_token(111) is not None
-        settings = await repo.get_user_settings(111)
+        assert await repo.get_token(await repo.person_id(111)) is not None
+        settings = await repo.get_user_settings(await repo.person_id(111))
         assert settings is not None and settings.rarity_mode == "rare"
-        assert await repo.is_subscribed(-100, 222)
-        assert await repo.get_flood_state(222, -100) is not None
+        assert await repo.is_subscribed(-100, await repo.person_id(222))
+        assert await repo.get_flood_state(await repo.person_id(222), -100) is not None
         # The index came back under its own name: still one Xbox account a person.
         await conn.execute(
             "INSERT INTO accounts (platform, external_id, first_seen_at, updated_at)"

@@ -254,11 +254,13 @@ class PsnFetcher:
         # backfill-time check right above this file's Steam counterpart.
         if not await is_trophy_visible(client, account_id):
             await self._repo.set_achievements_visible(
-                tg_id, Platform.PSN, False, external_id=account_id
+                await self._repo.person_id(tg_id), Platform.PSN, False, external_id=account_id
             )
             log.info("psn backfill for tg_id=%s skipped: trophies not visible", tg_id)
             return PsnBackfillResult(visible=False)
-        await self._repo.set_achievements_visible(tg_id, Platform.PSN, True, external_id=account_id)
+        await self._repo.set_achievements_visible(
+            await self._repo.person_id(tg_id), Platform.PSN, True, external_id=account_id
+        )
 
         # No limit (unlike poll_account) — the whole account's history, not
         # just the recent window regular polling uses, or an older game's
@@ -320,7 +322,7 @@ class PsnFetcher:
                 pass
             else:
                 await self._repo.set_achievements_visible(
-                    tg_id, Platform.PSN, visible, external_id=account_id
+                    await self._repo.person_id(tg_id), Platform.PSN, visible, external_id=account_id
                 )
 
         if not await self._repo.psn_backfill_done(account_id):
@@ -349,6 +351,8 @@ class PsnFetcher:
         _as_float) — this is deliberately the more paranoid default."""
         try:
             level = await account_trophy_level(client, account_id)
-            await self._repo.set_psn_trophy_level(tg_id, level, account_id=account_id)
+            await self._repo.set_psn_trophy_level(
+                await self._repo.person_id(tg_id), level, account_id=account_id
+            )
         except Exception:
             log.warning("could not refresh psn trophy level for tg_id=%s", tg_id, exc_info=True)

@@ -327,7 +327,7 @@ class _MessagesRepo:
         )
         return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
 
-    async def person_unlock_months(self, tg_id: int, limit: int = 24) -> list[str]:
+    async def person_unlock_months(self, person_id: int, limit: int = 24) -> list[str]:
         """Distinct `YYYY-MM` of this person's unlocks (not scoped to a chat)."""
         cursor = await self._conn.execute(
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
@@ -335,15 +335,15 @@ class _MessagesRepo:
             "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
-            f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            f"WHERE u.id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
             "ORDER BY ym DESC LIMIT ?",
-            (tg_id, limit),
+            (person_id, limit),
         )
         return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
 
     async def person_recent(
         self,
-        tg_id: int,
+        person_id: int,
         limit: int,
         *,
         locale: str = "ru",
@@ -353,8 +353,8 @@ class _MessagesRepo:
         """One person's unlocks, newest first — the Mini App person card's
         feed. Same columns as `chat_recent`, scoped to the account they hold
         right now rather than to a chat's subscribers."""
-        where = f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
-        params: list[object] = [tg_id]
+        where = f"WHERE u.id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+        params: list[object] = [person_id]
         if since is not None:
             where += f"AND {earned_at()} >= ? "
             params.append(_iso(since))

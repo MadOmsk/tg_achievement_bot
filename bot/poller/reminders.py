@@ -42,15 +42,17 @@ class ReminderJob:
         )
         for tg_id in candidates:
             try:
-                locale = await self._repo.user_locale(tg_id)
+                locale = await self._repo.user_locale(await self._repo.person_id(tg_id))
                 text = translator("reminders", locale)("reminders-text")
                 await self._bot.send_message(tg_id, text, reply_markup=keyboard(locale))
             except TelegramForbiddenError:
                 # Blocked the bot: stop counting attempts against him forever.
                 log.info("tg_id=%s blocked the bot, no more reminders", tg_id)
-                await self._repo.set_token_status(tg_id, TokenStatus.REVOKED)
+                await self._repo.set_token_status(
+                    await self._repo.person_id(tg_id), TokenStatus.REVOKED
+                )
                 continue
             except Exception:
                 log.exception("could not remind tg_id=%s", tg_id)
                 continue
-            await self._repo.mark_token_notified(tg_id)
+            await self._repo.mark_token_notified(await self._repo.person_id(tg_id))
