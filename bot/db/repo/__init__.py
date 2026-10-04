@@ -43,6 +43,8 @@ Layout:
                     notes (migration 069).
     _logins.py      ways in besides a Telegram update: email addresses and
                     their one-time codes, Telegram added later (#162).
+    _notifications.py  the app's own notifications: the list per person and
+                    the browsers that allowed push (#164).
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -110,6 +112,7 @@ from bot.db.repo._models import (
     UserChatRow,
     UserSettings,
 )
+from bot.db.repo._notifications import NotificationRow, PushSubscription, _NotificationsRepo
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
 from bot.db.repo._sessions import _SessionsRepo
@@ -144,6 +147,7 @@ __all__ = [
     "HandleTooSoon",
     "HltbCacheRow",
     "LoginTaken",
+    "NotificationRow",
     "OnlineAutoRefreshRow",
     "PersonRow",
     "PlatformLink",
@@ -152,6 +156,7 @@ __all__ = [
     "PsnPollTarget",
     "PsnPresenceRow",
     "PsnPresenceTarget",
+    "PushSubscription",
     "RecentAchievement",
     "Repo",
     "SteamPollTarget",
@@ -190,6 +195,7 @@ class Repo(
     _FollowsRepo,
     _SessionsRepo,
     _LoginsRepo,
+    _NotificationsRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

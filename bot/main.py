@@ -70,6 +70,7 @@ from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
+from bot.services.notifier import Notifier
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.release_notify import announce_release_if_needed
@@ -297,6 +298,18 @@ async def run(settings: Settings) -> None:
         except Exception:
             log.exception("xbox backfill for person_id=%s failed", person)
 
+    async def send_dm(tg_id: int, text: str) -> None:
+        await bot.send_message(tg_id, text)
+
+    # The app's own notifications (#164): the list, push, and the DM above.
+    notifications = Notifier(
+        repo,
+        cipher,
+        send_dm=send_dm,
+        app_url=settings.mini_app_url,
+        contact=f"mailto:{settings.smtp_from}" if settings.smtp_from else None,
+    )
+
     web_server = OAuthServer(
         settings,
         connect_service,
@@ -311,6 +324,7 @@ async def run(settings: Settings) -> None:
         anthropic_auth=anthropic_auth,
         bot=bot,
         steam_extras=steam_extras,
+        notifications=notifications,
     )
     await web_server.start()
 

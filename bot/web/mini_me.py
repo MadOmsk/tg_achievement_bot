@@ -93,6 +93,7 @@ async def build_me_payload(
         "handle": await handle_block(repo, person_id),
         # A picture chosen in the app replaces the Telegram photo (#157).
         "avatar_custom": bool(await repo.custom_avatar_path(person_id)),
+        "notifications_unread": await repo.unread_notifications(person_id),
         "username": username,
         "first_name": first_name,
         "last_name": last_name,
@@ -106,6 +107,9 @@ async def build_me_payload(
             # Which achievements go out, in every chat (#126).
             "rarity_mode": settings_row.rarity_mode if settings_row else "all",
             "notify_followers": bool(settings_row.notify_followers) if settings_row else True,
+            # Where notifications go (#164); Telegram only matters with Telegram.
+            "notify_push": bool(settings_row.notify_push) if settings_row else True,
+            "notify_telegram": bool(settings_row.notify_telegram) if settings_row else True,
             # Who sees this person's activity in the app (#157).
             "activity_visible": await repo.activity_visible(person_id),
         },

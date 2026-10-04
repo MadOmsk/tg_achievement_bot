@@ -27,10 +27,12 @@ from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import achievement_icons, avatars, custom_avatars
 from bot.services.connect import ConnectService
+from bot.services.crypto import TokenCipher
 from bot.services.email_login import EmailLogin
 from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
 from bot.services.naming import person_name_of
+from bot.services.notifier import Notifier
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -50,7 +52,7 @@ from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
-from bot.web import mini_logins, mini_people, mini_session
+from bot.web import mini_logins, mini_notifications, mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
@@ -91,6 +93,7 @@ def setup_mini_api(
     title_catalog: TitleCatalogService | None = None,
     steam_extras: SteamExtras | None = None,
     email_login: EmailLogin | None = None,
+    notifications: Notifier | None = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -115,11 +118,14 @@ def setup_mini_api(
         )
     app["mini_title_catalog"] = title_catalog
     app["mini_email_login"] = email_login or mini_logins.build_email_login(settings, repo)
+    # The app's own notifications (#164); AdminNotifier above is the operator's.
+    app["mini_notifications"] = notifications or _default_notifier(settings, repo, bot)
 
     app.router.add_get("/api/mini/health", handle_health)
     mini_people.register(app, _require_user)
     mini_session.register(app)
     mini_logins.register(app, _require_user)
+    mini_notifications.register(app, _require_user)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
@@ -163,6 +169,22 @@ def setup_mini_api(
     app.router.add_get("/api/mini/games/{platform}/{title_id}/guides", handle_game_guides)
     setup_admin_routes(app)
     setup_hltb_routes(app)
+
+
+def _default_notifier(settings: Settings, repo: Repo, bot: Any) -> Notifier:
+    """The notifier main.py would build: the bot's own DM as the Telegram channel."""
+
+    async def send_dm(tg_id: int, text: str) -> None:
+        if bot is not None:
+            await bot.send_message(tg_id, text)
+
+    return Notifier(
+        repo,
+        TokenCipher(settings.fernet_key.get_secret_value()),
+        send_dm=send_dm,
+        app_url=settings.mini_app_url,
+        contact=f"mailto:{settings.smtp_from}" if settings.smtp_from else None,
+    )
 
 
 async def handle_health(_request: web.Request) -> web.Response:
@@ -239,8 +261,9 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
-    if "notify_followers" in body:
-        fields["notify_followers"] = 1 if body["notify_followers"] else 0
+    for switch in ("notify_followers", "notify_push", "notify_telegram"):
+        if switch in body:
+            fields[switch] = 1 if body[switch] else 0
     if "rarity_mode" in body:
         mode = str(body["rarity_mode"])
         if mode not in {RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN}:

@@ -141,6 +141,8 @@ name, or when the tree goes stale.
 │   │   ├── notify.py             notifications to the admin
 │   │   ├── email.py              sending mail: one `EmailSender`, SMTP or (dev) the log (#162)
 │   │   ├── email_login.py        sign-in codes by email: rules, rationing, checking (#162)
+│   │   ├── notifier.py           the app's own notifications: list, push, Telegram DM (#164)
+│   │   ├── webpush.py            Web Push: RFC 8291 encryption and VAPID, on `cryptography` (#164)
 │   │   ├── mini_app.py           Mini App open-button URLs
 │   │   ├── hltb.py               howlongtobeatpy wrapper, cached in hltb_cache; ensure_title_match
 │   │   │                         is the lazy trigger for hltb_match.py below
@@ -182,7 +184,8 @@ name, or when the tree goes stale.
 │   ├── web/                     oauth.py (OAuth callback + Mini API mount), mini_api.py (JSON,
 │   │                            Init Data auth), mini_auth.py, mini_me.py, mini_chat.py,
 │   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py,
-│   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept)
+│   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept),
+│   │                            mini_notifications.py (the list, push subscriptions)
 │   │
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
@@ -765,9 +768,9 @@ elsewhere in this file still describe the bot.
   the other's search and lists; the blocked one cannot follow). Search is by
   nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
   People from a shared chat (subscribed or seen writing) are suggested, and friends of friends above them — «Вы можете знать», people followed by those you follow, the most shared first (`repo.people_you_may_know`, `/api/mini/people/may-know`). A new
-  follower is told in one DM, unless they turned it off in Settings → Уведомления
-  (`user_settings.notify_followers`, migration 075) (`people-new-follower` / `people-new-friend`); friends'
-  achievements are never sent as DMs. **Following is not a way to ping somebody**
+  follower is told through the app's own notifications (below), unless they turned
+  it off in Settings → Уведомления (`user_settings.notify_followers`, migration 075);
+  friends' achievements never are. **Following is not a way to ping somebody**
   (owner, 2026-10-03; `follow_log`, migration 076): one such DM per pair a day, and
   following a person again within ten minutes of unfollowing them is refused
   (`FollowTooSoon` → 429 `too_soon`). These tables and routes speak in **person
@@ -850,6 +853,26 @@ elsewhere in this file still describe the bot.
   - Connecting Xbox from the browser works without Telegram: the pending login is
     keyed by the person (`ConnectService`), and with no Telegram id the history is
     read quietly instead of with a status DM.
+- **The app's own notifications** (#164; owner, 2026-10-04): what a person is
+  told goes through `services/notifier.py::Notifier.notify(recipient, kind, **data)`,
+  which keeps it in their list (`notifications`, the latest 200, worded on reading in
+  the reader's language from `notifications.ftl`), pushes it to every browser that
+  allowed it, and sends it as a Telegram DM. Push is the app's own channel and on by
+  default (`user_settings.notify_push`); the DM needs Telegram and the person's
+  switch (`notify_telegram`, on by default so nobody lost the DMs they had; migration
+  080). One channel failing never stops the others, nor what caused the notice.
+  Today's kinds: a new follower, a new friend. **Not** friends' achievements.
+  - **Web Push without a new dependency**: `services/webpush.py` seals a message
+    (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
+    with `httpx`; `tests/test_webpush.py` checks it against the RFC's own example.
+    The server's key pair is made once and kept encrypted in `app_settings`
+    (`vapid_private_key`) — a new one would orphan every subscribed browser. A
+    browser that unsubscribed (404/410) is forgotten at once, one that keeps
+    refusing after five tries. Push needs `MINI_APP_URL` (where a tap opens) and a
+    contact for the push services (`SMTP_FROM`, else the app's https address).
+  - Routes: `GET /api/mini/notifications`, `POST …/read`; `GET /api/mini/push/key`,
+    `POST|DELETE /api/mini/push/subscription`; the switches through
+    `PATCH /api/mini/settings`; `/me` carries `notifications_unread`.
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),

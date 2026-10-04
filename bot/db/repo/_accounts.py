@@ -739,6 +739,8 @@ class _AccountsRepo:
             "locale",
             "rarity_mode",
             "notify_followers",
+            "notify_push",
+            "notify_telegram",
         }
         unknown = set(fields) - allowed
         if unknown:

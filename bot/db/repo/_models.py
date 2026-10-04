@@ -81,8 +81,11 @@ class UserSettings:
     locale: str = "ru"
     # Which achievements this person publishes, in every chat (#126).
     rarity_mode: str = RarityMode.ALL
-    # A DM when someone follows this person (#157).
+    # Whether to be told when someone follows this person (#157).
     notify_followers: bool = True
+    # Where notifications go (#164): pushed to devices, and as a Telegram DM.
+    notify_push: bool = True
+    notify_telegram: bool = True
 
 
 @dataclass(slots=True)
@@ -775,6 +778,8 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         locale=row["locale"],
         rarity_mode=row["rarity_mode"] if "rarity_mode" in keys else RarityMode.ALL,
         notify_followers=bool(row["notify_followers"]) if "notify_followers" in keys else True,
+        notify_push=bool(row["notify_push"]) if "notify_push" in keys else True,
+        notify_telegram=bool(row["notify_telegram"]) if "notify_telegram" in keys else True,
     )
 
 

@@ -71,8 +71,10 @@ class OAuthServer:
         anthropic_auth: Any = None,
         bot: Any = None,
         steam_extras: Any = None,
+        notifications: Any = None,
     ) -> None:
         self._steam_extras = steam_extras
+        self._notifications = notifications
         self._settings = settings
         self._connect = connect
         self._on_linked = on_linked
@@ -110,6 +112,7 @@ class OAuthServer:
             anthropic_auth=self._anthropic_auth,
             bot=self._bot,
             steam_extras=self._steam_extras,
+            notifications=self._notifications,
         )
 
         self._runner = web.AppRunner(app)
