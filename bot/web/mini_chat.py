@@ -298,26 +298,30 @@ async def build_person_payload(
             }
         )
     steam = next((link for link in links if link.platform == Platform.STEAM), None)
-    psn = next((link for link in links if link.platform == Platform.PSN), None)
-    if psn is not None:
+    psn_links = [link for link in links if link.platform == Platform.PSN]
+    psn = psn_links[0] if psn_links else None
+    if psn_links:
         bronze, silver, gold, platinum = await repo.psn_trophy_tier_counts(target.tg_id)
         platforms.append(
             {
                 "platform": Platform.PSN,
                 # Several accounts (#10): one summed row, every nickname on it.
-                "name": ", ".join(
-                    link.display_name or link.external_id
-                    for link in links
-                    if link.platform == Platform.PSN
-                ),
+                "name": ", ".join(link.display_name or link.external_id for link in psn_links),
                 "trophy_count": await repo.platform_achievement_count(target.tg_id, Platform.PSN),
                 "bronze": bronze,
                 "silver": silver,
                 "gold": gold,
                 "platinum_count": platinum,
-                "trophy_level": psn.psn_trophy_level,
+                # Summed like the counts above, not the first account's: the
+                # highest level among them, and since when PSN has been linked.
+                "trophy_level": max(
+                    (link.psn_trophy_level for link in psn_links if link.psn_trophy_level),
+                    default=None,
+                ),
                 "month_count": month_psn,
-                "linked_at": psn.linked_at,
+                "linked_at": min(
+                    (link.linked_at for link in psn_links if link.linked_at), default=None
+                ),
                 **await repo.account_facts(target.tg_id, Platform.PSN),
             }
         )

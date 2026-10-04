@@ -381,3 +381,23 @@ async def test_the_person_card_carries_their_play_when_visible(repo: Repo, setti
         assert body["can_view"] is False and body["activity"] is None
     finally:
         await client.close()
+
+
+async def test_the_card_sums_several_psn_accounts_into_one_row(repo: Repo) -> None:
+    """The PSN row is a sum over the person's accounts (#10), so its level and
+    its date are too: the highest level, the earliest link — not the first
+    account's."""
+    from bot.constants import Platform
+    from bot.web.mini_chat import build_person_payload
+
+    await repo.ensure_user(7, "player7")
+    await repo.link_platform_account(7, Platform.PSN, "psn-a", "First")
+    await repo.link_platform_account(7, Platform.PSN, "psn-b", "Second")
+    await repo.set_psn_trophy_level(7, 120, account_id="psn-a")
+    await repo.set_psn_trophy_level(7, 450, account_id="psn-b")
+    target = await repo.get_user(7)
+    payload = await build_person_payload(repo, target, locale="ru")
+    (psn,) = [p for p in payload["platforms"] if p["platform"] == Platform.PSN]
+    assert psn["name"] == "First, Second"
+    assert psn["trophy_level"] == 450
+    assert psn["linked_at"] is not None
