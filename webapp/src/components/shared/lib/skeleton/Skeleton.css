@@ -77,6 +77,11 @@
   padding-top: 0;
 }
 
+/* Under a profile's gallery the strip starts 28px lower, as the real one does. */
+.app-skel.is-nested .app-skel-hero {
+  margin-bottom: 28px;
+}
+
 .app-skel-head {
   display: flex;
   align-items: center;
@@ -100,12 +105,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.app-skel-search {
-  height: 44px;
-  margin: 0;
-  border-radius: 999px;
 }
 
 .app-skel-hero {
@@ -154,7 +153,7 @@
 .feed-skel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .skel-post {
@@ -257,6 +256,8 @@
 }
 
 .skel-played-game {
+  box-sizing: border-box;
+  min-height: 88px;
   cursor: default;
 }
 

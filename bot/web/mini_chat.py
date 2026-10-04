@@ -293,6 +293,8 @@ async def build_person_payload(
                 "achievement_count": xbox_count,
                 "completed_games": xbox_completed,
                 "gamerscore": target.gamerscore or 0,
+                "month_count": month_xbox,
+                **await repo.account_facts(target.tg_id, "xbox"),
             }
         )
     steam = next((link for link in links if link.platform == Platform.STEAM), None)
@@ -314,6 +316,9 @@ async def build_person_payload(
                 "gold": gold,
                 "platinum_count": platinum,
                 "trophy_level": psn.psn_trophy_level,
+                "month_count": month_psn,
+                "linked_at": psn.linked_at,
+                **await repo.account_facts(target.tg_id, Platform.PSN),
             }
         )
     if steam is not None:
@@ -325,6 +330,9 @@ async def build_person_payload(
                     target.tg_id, Platform.STEAM
                 ),
                 "completed_games": await repo.steam_completed_games_count(target.tg_id),
+                "month_count": month_steam,
+                "linked_at": steam.linked_at,
+                **await repo.account_facts(target.tg_id, Platform.STEAM),
             }
         )
 

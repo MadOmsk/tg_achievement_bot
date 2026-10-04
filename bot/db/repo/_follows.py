@@ -216,6 +216,25 @@ class _FollowsRepo:
             {},
         )
 
+    async def following_of_person(self, me: int, owner: int) -> list[PersonRow]:
+        """Whom `owner` follows, as `me` sees them: each row's relation is to `me`,
+        and nobody blocked either way with `me` is listed."""
+        return await self._list(
+            me,
+            " AND p.id IN (SELECT followee_id FROM follows WHERE follower_id = :owner)"
+            + _NOT_BLOCKED,
+            {"owner": owner},
+        )
+
+    async def followers_of_person(self, me: int, owner: int) -> list[PersonRow]:
+        """Who follows `owner`, as `me` sees them (see `following_of_person`)."""
+        return await self._list(
+            me,
+            " AND p.id IN (SELECT follower_id FROM follows WHERE followee_id = :owner)"
+            + _NOT_BLOCKED,
+            {"owner": owner},
+        )
+
     async def blocked_by(self, me: int) -> list[PersonRow]:
         return await self._list(
             me, " AND p.id IN (SELECT blocked_id FROM blocks WHERE person_id = :me)", {}

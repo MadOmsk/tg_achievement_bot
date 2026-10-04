@@ -15,6 +15,8 @@ export type PersonRow = {
   /** The nickname as shown, with its digits. */
   handle: string;
   relation: Relation;
+  /** The viewer themself, met in somebody else's list. */
+  is_me?: boolean;
 };
 
 export type PersonProfile = PersonRow & {
@@ -35,6 +37,18 @@ export type PersonProfile = PersonRow & {
       name: string | null;
       achievement_count?: number;
       trophy_count?: number;
+      gamerscore?: number;
+      platinum_count?: number;
+      gold?: number;
+      silver?: number;
+      bronze?: number;
+      trophy_level?: number | null;
+      completed_games?: number;
+      month_count?: number;
+      linked_at?: string | null;
+      games?: number;
+      rare?: number;
+      last_at?: string | null;
     }>;
     month: { count: number };
     games: Array<{
@@ -71,6 +85,15 @@ export class PeopleApi extends BaseApi {
 
   followers(initData: string): Promise<People> {
     return this.get<People>(initData, "/me/followers");
+  }
+
+  /** Somebody else's follows, when their privacy lets the viewer see them. */
+  followingOf(initData: string, id: number): Promise<People> {
+    return this.get<People>(initData, `/people/${id}/following`);
+  }
+
+  followersOf(initData: string, id: number): Promise<People> {
+    return this.get<People>(initData, `/people/${id}/followers`);
   }
 
   blocked(initData: string): Promise<People> {

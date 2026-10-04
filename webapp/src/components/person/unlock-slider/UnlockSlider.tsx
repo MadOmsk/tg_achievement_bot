@@ -34,16 +34,21 @@ function SliderDots({
   slides,
   slideKey,
   stay,
+  overText = false,
 }: {
   swiper: SwiperInstance;
   slides: FeedItem[];
   slideKey: (item: FeedItem) => string;
   stay: boolean;
+  /** The gallery: the dots sit just over the open picture's text, whose height
+   * differs from one picture to the next — measured, not guessed. */
+  overText?: boolean;
 }) {
   const n = slides.length;
   const hideRef = useRef(0);
   const [active, setActive] = useState(swiper.realIndex);
   const [using, setUsing] = useState(!stay);
+  const [bottom, setBottom] = useState<number | null>(null);
 
   useEffect(() => {
     const markUse = () => {
@@ -51,10 +56,19 @@ function SliderDots({
       window.clearTimeout(hideRef.current);
       hideRef.current = window.setTimeout(() => setUsing(false), 1400);
     };
+    const place = () => {
+      if (!overText) return;
+      const copy = swiper.slides[swiper.activeIndex]?.querySelector<HTMLElement>(".unlock-card-copy");
+      // The copy's own top padding is the shade over the picture; the dots go
+      // in it, a little above the first line.
+      if (copy) setBottom(copy.offsetHeight - 34);
+    };
     const onChange = () => {
       setActive(swiper.realIndex);
+      place();
       markUse();
     };
+    place();
     swiper.on("slideChange", onChange);
     swiper.on("touchStart", markUse);
     if (!stay) markUse();
@@ -63,11 +77,12 @@ function SliderDots({
       swiper.off("touchStart", markUse);
       window.clearTimeout(hideRef.current);
     };
-  }, [swiper, stay]);
+  }, [swiper, stay, overText]);
 
   return (
     <div
       className={stay || using ? "unlock-dots is-live" : "unlock-dots"}
+      style={bottom != null ? { bottom } : undefined}
       role="tablist"
       aria-label={`${active + 1} / ${n}`}
     >
@@ -172,6 +187,7 @@ function UnlockSliderBase({
           slides={slides}
           slideKey={slideKey}
           stay={feedDots}
+          overText={minimal}
         />
       )}
     </div>

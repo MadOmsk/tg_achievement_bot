@@ -3,6 +3,7 @@ import { CoverImg, Icon } from "../../shared/lib";
 import { HeroMarks } from "../hero-marks/HeroMarks";
 import { ProgressBar } from "../progress-bar/ProgressBar";
 import { feedKey } from "../utils";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 /**
  * One achievement as a compact plate: icon, name, game with its progress
@@ -92,7 +93,9 @@ export function FeedRow({
           )}
           {detailed && row.person && (
             <p className="unlock-game unlock-person">
-              <span className="unlock-game-name">{row.person}</span>
+              <span className="unlock-game-name">
+                <HandleName text={row.person} />
+              </span>
             </p>
           )}
           {!detailed && row.progress && row.progress.total > 0 && (

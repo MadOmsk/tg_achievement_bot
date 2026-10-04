@@ -1,13 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { peopleApi, type PersonProfile, type Relation } from "../../../api/people/peopleApi";
-import { t, type Locale } from "../../../i18n";
-import { Avatar, CoverImg, EmptyState, PlatformLogo, Sheet, useOpenGame } from "../../shared/lib";
+import { formatWhen, t, type Locale } from "../../../i18n";
+import {
+  Avatar,
+  CoverImg,
+  DropdownArrow,
+  EmptyState,
+  PlatformLogo,
+  Sheet,
+  TierMedals,
+  useOpenGame,
+} from "../../shared/lib";
+import { PLATFORMS } from "../../shared/constants";
+import { FollowsSheet } from "../../club/follows-sheet/FollowsSheet";
 import { FollowButton } from "../follow-button/FollowButton";
+import { FriendMark } from "../friend-mark/FriendMark";
 import "./PersonSheet.css";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
-/** A person's card in the People tab (#157): who they are, the follow button beside
- * the name, how many follow them, their accounts and this month's games (when their
- * privacy lets you see them), and quiet remove-follower and block links below. */
+/** A person's card (#157): who they are, the follow button beside the name, how
+ * many follow them and whom they follow (each opens the list), their accounts and
+ * this month's games (when their privacy lets you see them). One's own card has
+ * no button and no counts: only the accounts and the games. */
 const EMPTY: Relation = { following: false, followed_by: false, friends: false, blocked: false };
 
 export type SheetPerson = {
@@ -25,6 +39,7 @@ export function PersonSheet({
   onChange,
   onFlash,
   onOpenProfile,
+  self = false,
 }: {
   locale: Locale;
   data: string;
@@ -35,7 +50,12 @@ export function PersonSheet({
   onFlash: (message: string) => void;
   /** Tapping the avatar or the nickname opens the full profile. */
   onOpenProfile?: (tgId: number) => void;
+  /** The viewer's own card. */
+  self?: boolean;
 }) {
+  const [follows, setFollows] = useState<"following" | "followers" | null>(null);
+  // One account's table open at a time, as with a game's updates.
+  const [openAccount, setOpenAccount] = useState<string | null>(null);
   const [profile, setProfile] = useState<PersonProfile | null>(null);
   const [own, setOwn] = useState<Relation | null>(person.relation ?? null);
   const openGame = useOpenGame();
@@ -84,28 +104,46 @@ export function PersonSheet({
 
   const toProfile = tgId != null && onOpenProfile ? () => onOpenProfile(tgId) : undefined;
 
+  // The lists take the card's place; closing them brings the card back as it was.
+  if (follows && personId != null) {
+    return (
+      <FollowsSheet
+        locale={locale}
+        data={data}
+        owner={personId}
+        initial={follows}
+        onClose={() => setFollows(null)}
+        onOpen={(id) => onOpenProfile?.(id)}
+        onFind={() => undefined}
+        onFlash={onFlash}
+      />
+    );
+  }
+
   return (
     <Sheet onClose={onClose} mid>
       <div className="person-sheet">
         <div className="ps-head">
           <button type="button" className="ps-avatar" onClick={toProfile} disabled={!toProfile}>
-          <Avatar
-            name={handle}
-            tgId={tgId ?? undefined}
-            online={online}
-            playing={Boolean(presence?.playing)}
-            platform={presence?.platform}
-            size={56}
-          />
+          <FriendMark friend={relation.friends && !self} label={t(locale, "friends")}>
+            <Avatar
+              name={handle}
+              tgId={tgId ?? undefined}
+              online={online}
+              playing={Boolean(presence?.playing)}
+              platform={presence?.platform}
+              size={56}
+            />
+          </FriendMark>
           </button>
           <div className="ps-head-copy">
             <h2>
               {toProfile ? (
                 <button type="button" className="ps-name" onClick={toProfile}>
-                  {handle}
+                  <HandleName text={handle} />
                 </button>
               ) : (
-                handle
+                <HandleName text={handle} />
               )}
             </h2>
             {loading ? (
@@ -116,7 +154,7 @@ export function PersonSheet({
               )
             )}
           </div>
-          {personId != null && (
+          {personId != null && !self && (
             <>
               <FollowButton
                 locale={locale}
@@ -133,10 +171,12 @@ export function PersonSheet({
         {loading ? (
           // The card opens at its loaded height and shape; nothing jumps when it fills.
           <>
-            <div className="ps-stats" aria-hidden>
-              <span className="skel ps-skel-tile" />
-              <span className="skel ps-skel-tile" />
-            </div>
+            {!self && (
+              <div className="ps-stats" aria-hidden>
+                <span className="skel ps-skel-tile" />
+                <span className="skel ps-skel-tile" />
+              </div>
+            )}
             <div className="ps-section" aria-hidden>
               <span className="skel ps-skel-label" />
               {[0].map((i) => (
@@ -161,16 +201,26 @@ export function PersonSheet({
           </>
         ) : (
           <>
-            <div className="ps-stats">
-              <div>
-                <strong>{profile.followers}</strong>
-                <span>{t(locale, "followersCount")}</span>
+            {!self && (
+              <div className="ps-stats">
+                <button
+                  type="button"
+                  disabled={!profile.can_view}
+                  onClick={() => setFollows("followers")}
+                >
+                  <strong>{profile.followers}</strong>
+                  <span>{t(locale, "followersCount")}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!profile.can_view}
+                  onClick={() => setFollows("following")}
+                >
+                  <strong>{profile.following}</strong>
+                  <span>{t(locale, "followingCount")}</span>
+                </button>
               </div>
-              <div>
-                <strong>{profile.following}</strong>
-                <span>{t(locale, "followingCount")}</span>
-              </div>
-            </div>
+            )}
 
             {!profile.can_view && (
               <EmptyState
@@ -185,15 +235,15 @@ export function PersonSheet({
               <div className="ps-section">
                 <p className="ps-label">{t(locale, "accounts")}</p>
                 {activity.platforms.map((p) => (
-                  <div key={p.platform} className="ps-row">
-                    <span className="ps-mark">
-                      <PlatformLogo platform={p.platform} size={22} />
-                    </span>
-                    <span className="ps-row-main">{p.name}</span>
-                    <span className="ps-row-value">
-                      {p.achievement_count ?? p.trophy_count ?? 0}
-                    </span>
-                  </div>
+                  <AccountRow
+                    key={p.platform}
+                    p={p}
+                    locale={locale}
+                    open={openAccount === p.platform}
+                    onToggle={() =>
+                      setOpenAccount((cur) => (cur === p.platform ? null : p.platform))
+                    }
+                  />
                 ))}
               </div>
             )}
@@ -234,5 +284,98 @@ export function PersonSheet({
 
       </div>
     </Sheet>
+  );
+}
+
+type PlatformRow = NonNullable<PersonProfile["activity"]>["platforms"][number];
+
+/** One account: its nickname and one number — Xbox its gamerscore, PlayStation
+ * its trophies, Steam its achievements. What else there is (the achievements
+ * behind the gamerscore, the medals, the level, finished games) opens under
+ * the row on a tap. */
+function AccountRow({
+  p,
+  locale,
+  open,
+  onToggle,
+}: {
+  p: PlatformRow;
+  locale: Locale;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const xbox = p.platform.startsWith(PLATFORMS.XBOX);
+  const psn = p.platform === PLATFORMS.PSN;
+  const count = p.achievement_count ?? p.trophy_count ?? 0;
+  const tiers =
+    psn && p.bronze != null
+      ? {
+          platinum: p.platinum_count ?? 0,
+          gold: p.gold ?? 0,
+          silver: p.silver ?? 0,
+          bronze: p.bronze,
+        }
+      : null;
+  const finished = !psn && p.completed_games ? p.completed_games : 0;
+
+  // A small table, like a game's "Об игре": one fact a line, only the known ones.
+  const facts: Array<[string, ReactNode]> = [];
+  const add = (label: string, value: ReactNode, when = true) => {
+    if (when) facts.push([label, value]);
+  };
+  add(t(locale, "factLevel"), p.trophy_level, psn && p.trophy_level != null);
+  add(t(locale, psn ? "factTrophies" : "factAchievements"), count, xbox || psn);
+  add(t(locale, "factMedals"), tiers && <TierMedals counts={tiers} discSize={14} />, Boolean(tiers));
+  add(t(locale, "factGames"), p.games, Boolean(p.games));
+  add(t(locale, "factCompleted"), finished, finished > 0);
+  add(t(locale, "factRare"), p.rare, !psn && Boolean(p.rare));
+  add(t(locale, "factMonth"), `+${p.month_count}`, Boolean(p.month_count));
+  add(
+    t(locale, psn ? "factLastTrophy" : "factLast"),
+    formatWhen(p.last_at, locale),
+    Boolean(p.last_at),
+  );
+  add(t(locale, "factLinked"), formatWhen(p.linked_at, locale), Boolean(p.linked_at));
+
+  const main =
+    xbox && p.gamerscore != null ? (
+      <>
+        {p.gamerscore.toLocaleString("ru-RU")}
+        <em>G</em>
+      </>
+    ) : (
+      <>{count} 🏆</>
+    );
+  const more = facts.length > 0;
+
+  return (
+    <div className={open ? "ps-account is-open" : "ps-account"}>
+      <button
+        type="button"
+        className="ps-row"
+        onClick={more ? onToggle : undefined}
+        disabled={!more}
+        aria-expanded={more ? open : undefined}
+      >
+        <span className="ps-mark">
+          <PlatformLogo platform={p.platform} size={24} />
+        </span>
+        <span className="ps-row-main">{p.name}</span>
+        <strong className="ps-row-value">{main}</strong>
+        {more && <DropdownArrow />}
+      </button>
+      {more && (
+        <div className="ps-details" aria-hidden={!open}>
+          <dl className="ps-facts">
+            {facts.map(([label, value]) => (
+              <div key={label} className="ps-fact">
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+    </div>
   );
 }

@@ -51,6 +51,21 @@ async def test_following_needs_no_consent_and_two_follows_make_friends(repo: Rep
     assert await repo.follow_counts(alice) == (1, 0)
 
 
+async def test_another_persons_follows_carry_the_viewers_relation(repo: Repo) -> None:
+    alice, bobby, carol = await _people(repo)
+    await repo.follow(bobby, carol)
+    await repo.follow(alice, carol)
+    await repo.follow(carol, bobby)
+
+    following = await repo.following_of_person(alice, bobby)
+    assert [row.id for row in following] == [carol]
+    assert following[0].relation.following  # alice follows carol
+    assert [row.id for row in await repo.followers_of_person(alice, bobby)] == [carol]
+
+    await repo.block(carol, alice)
+    assert await repo.following_of_person(alice, bobby) == []
+
+
 async def test_a_block_ends_both_follows_and_hides_each_from_the_other(repo: Repo) -> None:
     alice, bobby, _ = await _people(repo)
     await repo.follow(alice, bobby)
@@ -329,7 +344,9 @@ async def test_the_person_card_carries_their_play_when_visible(repo: Repo, setti
     try:
         body = await (await client.get(f"/api/mini/people/{other}", headers=headers)).json()
         assert body["tg_id"] == 7
-        assert body["activity"]["platforms"][0]["gamerscore"] == 1500
+        xbox = body["activity"]["platforms"][0]
+        assert xbox["gamerscore"] == 1500
+        assert (xbox["games"], xbox["rare"], xbox["last_at"]) == (0, 0, None)
         assert body["activity"]["games"] == []
 
         await repo.set_activity_visible(other, "nobody")
