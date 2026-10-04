@@ -87,7 +87,8 @@ class _PlatformLinksRepo:
     # Keeping that shape spared some forty call sites a rename that would
     # have told them nothing new.
     _LINK_COLUMNS = (
-        "SELECT alu.tg_id, al.platform, al.external_id, a.display_name, a.secondary_name,"
+        "SELECT alu.tg_id, al.person_id, al.platform, al.external_id, a.display_name,"
+        "       a.secondary_name,"
         "       al.linked_at, a.psn_trophy_level, a.achievements_visible,"
         "       a.achievements_visible_checked_at, al.publishes "
         "FROM account_links al "
@@ -430,7 +431,7 @@ class _PlatformLinksRepo:
     async def psn_titles_missing_groups(
         self, limit: int, skip: Collection[tuple[str, str]] = ()
     ) -> list[tuple[int, str, str, str | None]]:
-        """`(tg_id, account_id, title_id, platforms)` for PSN games whose
+        """`(person_id, account_id, title_id, platforms)` for PSN games whose
         stored trophies are known to be incomplete, for a linked account —
         nobody sees the others:
 
@@ -441,21 +442,19 @@ class _PlatformLinksRepo:
           no rows" cannot be a scan still in flight.
         """
         cursor = await self._conn.execute(
-            "SELECT alu.tg_id, s.xuid AS account_id, s.title_id, t.platforms,"
+            "SELECT al.person_id, s.xuid AS account_id, s.title_id, t.platforms,"
             "       MAX(COALESCE(s.unlocked_at, s.created_at)) AS latest "
             "FROM seen_achievements s "
             "JOIN account_links al ON al.platform = s.account_platform"
             " AND al.external_id = s.xuid AND al.is_active = 1 "
-            "JOIN users alu ON alu.id = al.person_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             "WHERE s.account_platform = ? AND s.trophy_group_id IS NULL "
             "GROUP BY s.xuid, s.title_id "
             "UNION ALL "
-            "SELECT alu.tg_id, p.account_id, p.np_communication_id, t.platforms, p.updated_at "
+            "SELECT al.person_id, p.account_id, p.np_communication_id, t.platforms, p.updated_at "
             "FROM psn_title_progress p "
             "JOIN account_links al ON al.platform = ? AND al.external_id = p.account_id"
             " AND al.is_active = 1 "
-            "JOIN users alu ON alu.id = al.person_id "
             "LEFT JOIN titles t ON t.title_id = p.np_communication_id "
             "WHERE p.progress > 0 AND NOT EXISTS ("
             "  SELECT 1 FROM seen_achievements s WHERE s.account_platform = ?"
@@ -467,7 +466,7 @@ class _PlatformLinksRepo:
         for row in await cursor.fetchall():
             if (row["account_id"], row["title_id"]) in skip:
                 continue
-            found.append((row["tg_id"], row["account_id"], row["title_id"], row["platforms"]))
+            found.append((row["person_id"], row["account_id"], row["title_id"], row["platforms"]))
             if len(found) >= limit:
                 break
         return found
@@ -719,6 +718,7 @@ class _PlatformLinksRepo:
 def _as_platform_link(row) -> PlatformLink:
     return PlatformLink(
         tg_id=row["tg_id"],
+        person_id=row["person_id"],
         platform=row["platform"],
         external_id=row["external_id"],
         display_name=row["display_name"],

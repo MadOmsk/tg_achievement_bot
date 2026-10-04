@@ -552,6 +552,13 @@ class _AccountsRepo:
         row = await cursor.fetchone()
         return _as_user(row) if row else None
 
+    async def get_user_by_tg(self, tg_id: int) -> User | None:
+        """The person behind a Telegram id — for what still arrives keyed by one:
+        an update, a callback, a Mini App URL (#156)."""
+        cursor = await self._conn.execute(self._USER_COLUMNS + "WHERE u.tg_id = ?", (tg_id,))
+        row = await cursor.fetchone()
+        return _as_user(row) if row else None
+
     async def get_user_by_xuid(self, xuid: str) -> User | None:
         """Whoever currently holds that Xbox account — nobody, once they
         unlink it (#52). The poller only ever asks about accounts it just
@@ -759,13 +766,13 @@ class _AccountsRepo:
         await self._conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
         await self._conn.commit()
 
-    async def any_active_xbox_tg_id(self) -> int | None:
-        """Find any user with an active Xbox link and active token (e.g. for catalog queries)."""
+    async def any_active_xbox_person(self) -> int | None:
+        """Any person with an active Xbox link and a live token — whose login a
+        catalog read may borrow."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id FROM account_links al "
+            "SELECT al.person_id FROM account_links al "
             "JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
-            "JOIN users u ON u.id = al.person_id "
-            "WHERE al.platform = 'xbox' AND al.is_active = 1 AND u.tg_id IS NOT NULL LIMIT 1"
+            "WHERE al.platform = 'xbox' AND al.is_active = 1 LIMIT 1"
         )
         row = await cursor.fetchone()
-        return int(row["tg_id"]) if row else None
+        return int(row["person_id"]) if row else None

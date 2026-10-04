@@ -57,7 +57,7 @@ class _Status:
         self._chat_id = chat_id
         self._message_id = message_id
         self._ = translator("backfill", locale)
-        self._locale = locale
+        self.locale = locale
         self.platform = platform
         self._count_found = count_found
         self._steps = steps
@@ -65,7 +65,7 @@ class _Status:
         self.total = 0
 
     def found(self, count: int) -> str:
-        return self._count_found(count, self._locale)
+        return self._count_found(count, self.locale)
 
     async def progress(self, done: int, total: int, found: int) -> None:
         self.total = total
@@ -160,7 +160,8 @@ async def _open(
     message: Message | None = None,
 ) -> _Status:
     """The status message: a fresh one, or — for a retry — the message the
-    button was on, so a retry never leaves the failure behind it."""
+    button was on, so a retry never leaves the failure behind it. It is a DM,
+    so it goes by the Telegram id; the backfill itself by the person (#156)."""
     locale = await repo.user_locale(await repo.person_id(tg_id))
     text = translator("backfill", locale)("backfill-starting", platform=platform)
     if message is not None:
@@ -186,7 +187,7 @@ async def run_xbox(
 ) -> None:
     status = await _open(bot, repo, tg_id, "XBOX", plural_achievements, steps=True, message=message)
     try:
-        count = await fetcher.backfill(tg_id, xuid, progress=status.progress)
+        count = await fetcher.backfill(await repo.person_id(tg_id), xuid, progress=status.progress)
     except Exception:
         log.exception("xbox backfill for tg_id=%s failed", tg_id)
         await status.failed("bf:xbox")
@@ -205,12 +206,14 @@ async def run_steam(
 ) -> None:
     status = await _open(bot, repo, tg_id, "Steam", plural_achievements, message=message)
     try:
-        count = await fetcher.backfill(tg_id, steam_id, progress=status.progress)
+        count = await fetcher.backfill(
+            await repo.person_id(tg_id), steam_id, progress=status.progress
+        )
     except SteamGameDetailsPrivateError:
         # "My Profile" can be public while "Game details" is not (#39): the
         # library comes back empty and nothing can be read.
         log.info("steam backfill: game details private for tg_id=%s", tg_id)
-        _ = translator("backfill", await repo.user_locale(await repo.person_id(tg_id)))
+        _ = translator("backfill", status.locale)
         await status.failed(
             "bf:steam",
             _("backfill-steam-private", privacy_url=STEAM_PRIVACY_URL),
@@ -237,12 +240,14 @@ async def run_psn(
     status = await _open(bot, repo, tg_id, f"PSN ({name})", plural_trophies, message=message)
     retry = f"bf:psn:{account_id}"
     try:
-        result = await fetcher.backfill(tg_id, account_id, progress=status.progress)
+        result = await fetcher.backfill(
+            await repo.person_id(tg_id), account_id, progress=status.progress
+        )
     except Exception:
         log.exception("psn backfill for tg_id=%s failed", tg_id)
         await status.failed(retry)
         return
-    _ = translator("backfill", await repo.user_locale(await repo.person_id(tg_id)))
+    _ = translator("backfill", status.locale)
     if not result.visible:
         await status.failed(retry, _("backfill-hidden-psn", platform=status.platform), recheck=True)
         return
@@ -263,12 +268,14 @@ def _later(coro: Awaitable[None]) -> None:
 
 
 @router.callback_query(F.data == "bf:xbox")
-async def retry_xbox(callback: CallbackQuery, repo: Repo, fetcher: Fetcher, bot: Bot) -> None:
+async def retry_xbox(
+    callback: CallbackQuery, repo: Repo, fetcher: Fetcher, bot: Bot, person_id: int | None
+) -> None:
     tg_id = callback.from_user.id
-    user = await repo.get_user(await repo.person_id(tg_id))
-    token = await repo.get_token(await repo.person_id(tg_id)) if user and user.xuid else None
+    user = await repo.get_user(person_id)
+    token = await repo.get_token(person_id) if user and user.xuid else None
     if user is None or not user.xuid or token is None or token.status != TokenStatus.ACTIVE:
-        _ = translator("backfill", await repo.user_locale(await repo.person_id(tg_id)))
+        _ = translator("backfill", await repo.user_locale(person_id))
         await callback.answer(_("backfill-gone"), show_alert=True)
         return
     await callback.answer()
@@ -278,12 +285,16 @@ async def retry_xbox(callback: CallbackQuery, repo: Repo, fetcher: Fetcher, bot:
 
 @router.callback_query(F.data == "bf:steam")
 async def retry_steam(
-    callback: CallbackQuery, repo: Repo, steam_fetcher: SteamFetcher, bot: Bot
+    callback: CallbackQuery,
+    repo: Repo,
+    steam_fetcher: SteamFetcher,
+    bot: Bot,
+    person_id: int | None,
 ) -> None:
     tg_id = callback.from_user.id
-    link = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
+    link = await repo.get_platform_link(person_id, Platform.STEAM)
     if link is None:
-        _ = translator("backfill", await repo.user_locale(await repo.person_id(tg_id)))
+        _ = translator("backfill", await repo.user_locale(person_id))
         await callback.answer(_("backfill-gone"), show_alert=True)
         return
     await callback.answer()
@@ -292,14 +303,20 @@ async def retry_steam(
 
 
 @router.callback_query(F.data.startswith("bf:psn:"))
-async def retry_psn(callback: CallbackQuery, repo: Repo, psn_fetcher: PsnFetcher, bot: Bot) -> None:
+async def retry_psn(
+    callback: CallbackQuery,
+    repo: Repo,
+    psn_fetcher: PsnFetcher,
+    bot: Bot,
+    person_id: int | None,
+) -> None:
     assert callback.data is not None
     tg_id = callback.from_user.id
     account_id = callback.data.split(":", 2)[2]
-    links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
+    links = await repo.platform_links_for(person_id, Platform.PSN)
     link = next((item for item in links if item.external_id == account_id), None)
     if link is None:
-        _ = translator("backfill", await repo.user_locale(await repo.person_id(tg_id)))
+        _ = translator("backfill", await repo.user_locale(person_id))
         await callback.answer(_("backfill-gone"), show_alert=True)
         return
     await callback.answer()

@@ -374,7 +374,7 @@ async def test_the_counter_survives_the_real_publish_path(repo: Repo) -> None:
     # response, with no xuid of their own.
     row = _achievement("a1")
     assert row.xuid is None
-    await publisher.publish(TG_ID, XUID, "Someone", [row], "Left 4 Dead 2")
+    await publisher.publish(await repo.person_id(TG_ID), XUID, "Someone", [row], "Left 4 Dead 2")
 
     job = publisher._queue.get_nowait()
     assert "47/50" in job.text

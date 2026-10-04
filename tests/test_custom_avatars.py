@@ -61,22 +61,22 @@ async def test_a_new_picture_replaces_the_file_and_clear_removes_it(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     await repo.ensure_user(1, "someone")
-    assert await custom_avatars.store(repo, 1, _photo())
+    assert await custom_avatars.store(repo, await repo.person_id(1), _photo())
     first = await repo.custom_avatar_path(await repo.person_id(1))
     assert first and (avatars.avatar_dir() / first).is_file()
 
-    assert await custom_avatars.store(repo, 1, _photo((300, 300)))
+    assert await custom_avatars.store(repo, await repo.person_id(1), _photo((300, 300)))
     second = await repo.custom_avatar_path(await repo.person_id(1))
     assert second != first
     assert not (avatars.avatar_dir() / first).exists()
 
-    assert not await custom_avatars.store(repo, 1, b"nonsense")
+    assert not await custom_avatars.store(repo, await repo.person_id(1), b"nonsense")
     assert await repo.custom_avatar_path(await repo.person_id(1)) == second
 
-    assert await custom_avatars.clear(repo, 1)
+    assert await custom_avatars.clear(repo, await repo.person_id(1))
     assert await repo.custom_avatar_path(await repo.person_id(1)) is None
     assert not (avatars.avatar_dir() / second).exists()
-    assert not await custom_avatars.clear(repo, 1)
+    assert not await custom_avatars.clear(repo, await repo.person_id(1))
 
 
 async def test_deleting_the_account_removes_the_chosen_picture(
@@ -84,7 +84,7 @@ async def test_deleting_the_account_removes_the_chosen_picture(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     await repo.ensure_user(1, "someone")
-    await custom_avatars.store(repo, 1, _photo())
+    await custom_avatars.store(repo, await repo.person_id(1), _photo())
     path = avatars.avatar_dir() / (await repo.custom_avatar_path(await repo.person_id(1)))
     assert path.is_file()
     await repo.delete_user(1)
@@ -133,7 +133,7 @@ async def test_the_super_admin_can_take_a_picture_down(
     data = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert "a:avclr:7" not in data
 
-    await custom_avatars.store(repo, 7, _photo())
+    await custom_avatars.store(repo, await repo.person_id(7), _photo())
     _text, markup = await render_user_card(repo, 7, locale="ru")
     data = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert "a:avclr:7" in data

@@ -300,6 +300,6 @@ class PollerScheduler:
         """Once a day for everyone, on top of the per-session refresh (SPEC 5.4)."""
         for target in await self._repo.pollable_users():
             try:
-                await self._fetcher.refresh_title_history(target.tg_id, target.xuid)
+                await self._fetcher.refresh_title_history(target.person_id, target.xuid)
             except Exception:
-                log.info("daily title history for tg_id=%s skipped", target.tg_id)
+                log.info("daily title history for person_id=%s skipped", target.person_id)

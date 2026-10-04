@@ -301,9 +301,9 @@ async def _connect(
         await bot.send_message(tg_id, i18n.get("psn-profile-private"))
         return
 
-    await repo.ensure_user(tg_id, username)
+    person = await repo.ensure_user(tg_id, username)
 
-    held = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
+    held = await repo.platform_links_for(person, Platform.PSN)
     if (
         all(link.external_id != profile.account_id for link in held)
         and len(held) >= MAX_PSN_ACCOUNTS
@@ -351,11 +351,9 @@ async def _connect(
     # Already verified True right above (#5) — recorded so /panel's login
     # row has a real answer from the moment someone links, not just after
     # the first backfill/resync gets around to setting it.
-    await repo.set_achievements_visible(
-        await repo.person_id(tg_id), Platform.PSN, True, external_id=profile.account_id
-    )
+    await repo.set_achievements_visible(person, Platform.PSN, True, external_id=profile.account_id)
     log.info("connect_psn: tg_id=%s linked account_id=%s", tg_id, profile.account_id)
-    count = len(await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN))
+    count = len(await repo.platform_links_for(person, Platform.PSN))
     await bot.send_message(
         tg_id,
         i18n.get(

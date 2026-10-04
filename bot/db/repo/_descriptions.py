@@ -88,7 +88,7 @@ class _DescriptionsRepo:
 
     async def titles_missing_rarity(self, platform: str, limit: int) -> list[tuple[str, int]]:
         """Games whose achievements have no cached rarity, rarest-known
-        first — `(title_id, tg_id)`, paired with somebody who can be asked.
+        first — `(title_id, person_id)`, paired with somebody who can be asked.
 
         Xbox needs a *person's* token to answer for a title (unlike Steam's
         one shared key), so a walker cannot just take a title id: it needs
@@ -97,13 +97,13 @@ class _DescriptionsRepo:
         person's request fills the cache for everybody.
         """
         cursor = await self._conn.execute(
-            "SELECT s.title_id, MIN(alu.tg_id) AS tg_id "
+            "SELECT s.title_id, MIN(al.person_id) AS person_id "
             "FROM seen_achievements s " + OWNED_BY_PERSON + "WHERE s.platform = ? "
             "  AND NOT EXISTS (" + _TITLE_HAS_RARITY + ") "
             "GROUP BY s.title_id LIMIT ?",
             (platform, limit),
         )
-        return [(row["title_id"], int(row["tg_id"])) for row in await cursor.fetchall()]
+        return [(row["title_id"], int(row["person_id"])) for row in await cursor.fetchall()]
 
     async def rarity_coverage(self, platform: str) -> tuple[int, int]:
         """(titles with cached rarity, titles seen at all) — what the walker
@@ -190,7 +190,7 @@ class _DescriptionsRepo:
         — the whole input of the one-time backfill
         (scripts/backfill_descriptions.py, #48).
 
-        Returns (platform, title_id, achievement_id, tg_id, external_id) so
+        Returns (platform, title_id, achievement_id, person_id, external_id) so
         the caller can group by title and still know whose credentials can be
         used to ask for it: Xbox needs a token-bearing owner, Steam a
         SteamID64, PSN an account_id — all of which live in `xuid` for their
@@ -202,7 +202,7 @@ class _DescriptionsRepo:
         there is nothing to translate, so they are not a gap.
         """
         cursor = await self._conn.execute(
-            "SELECT s.platform, s.title_id, s.achievement_id, alu.tg_id, s.xuid "
+            "SELECT s.platform, s.title_id, s.achievement_id, al.person_id, s.xuid "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + _CATALOG_ROW
@@ -210,7 +210,7 @@ class _DescriptionsRepo:
             "  AND s.description IS NOT NULL AND TRIM(s.description) <> ''"
         )
         return [
-            (row["platform"], row["title_id"], row["achievement_id"], row["tg_id"], row["xuid"])
+            (row["platform"], row["title_id"], row["achievement_id"], row["person_id"], row["xuid"])
             for row in await cursor.fetchall()
         ]
 
@@ -218,7 +218,7 @@ class _DescriptionsRepo:
         self, platforms: tuple[str, ...], limit: int
     ) -> list[tuple[str, str, int]]:
         """A few titles at a time that still have uncached descriptions, as
-        (platform, title_id, tg_id) — the poller's own small bite
+        (platform, title_id, person_id) — the poller's own small bite
         (poller/description_backfill.py, 2026-09-11 user request).
 
         Deliberately not `uncached_descriptions()` above: that returns the
@@ -226,7 +226,7 @@ class _DescriptionsRepo:
         script but absurd to run every minute. This asks only for as many
         titles as the next tick can actually fetch, and stops there.
 
-        `tg_id` is any one owner of the title — on Xbox one whose login is
+        `person_id` is any one owner of the title — on Xbox one whose login is
         alive. The description belongs to the game, not the person, so on Xbox
         whoever the group-by picks is as good as any other. An owner
         with a dead token is never picked: asking through them only fails, and
@@ -238,7 +238,7 @@ class _DescriptionsRepo:
         """
         placeholders = ", ".join("?" * len(platforms))
         cursor = await self._conn.execute(
-            "SELECT s.platform, s.title_id, MIN(alu.tg_id) AS tg_id "
+            "SELECT s.platform, s.title_id, MIN(al.person_id) AS person_id "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + "LEFT JOIN tokens tk ON tk.person_id = al.person_id "
@@ -257,7 +257,9 @@ class _DescriptionsRepo:
             "LIMIT ?",
             (*platforms, limit),
         )
-        return [(row["platform"], row["title_id"], row["tg_id"]) for row in await cursor.fetchall()]
+        return [
+            (row["platform"], row["title_id"], row["person_id"]) for row in await cursor.fetchall()
+        ]
 
     async def steam_titles_without_secret_descriptions(
         self, limit: int

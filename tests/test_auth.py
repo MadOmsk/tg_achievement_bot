@@ -131,7 +131,9 @@ async def test_new_token_is_stored_before_any_further_request(
     manager.request_user_token = spy  # type: ignore[method-assign]
 
     await _connected_user(repo, cipher)
-    await _service(settings, repo, cipher, manager).authenticated_manager(TG_ID)
+    await _service(settings, repo, cipher, manager).authenticated_manager(
+        await repo.person_id(TG_ID)
+    )
 
     assert calls == ["refresh", "user_token", "xsts"]
     assert seen_at_user_token == [NEW_TOKEN]
@@ -148,9 +150,9 @@ async def test_parallel_refreshes_are_serialised(
     service = _service(settings, repo, cipher, manager)
 
     await asyncio.gather(
-        service.authenticated_manager(TG_ID),
-        service.authenticated_manager(TG_ID),
-        service.authenticated_manager(TG_ID),
+        service.authenticated_manager(await repo.person_id(TG_ID)),
+        service.authenticated_manager(await repo.person_id(TG_ID)),
+        service.authenticated_manager(await repo.person_id(TG_ID)),
     )
 
     assert calls.count("refresh") == 1
@@ -164,7 +166,7 @@ async def test_invalid_grant_kills_the_token(
     service = _service(settings, repo, cipher, manager)
 
     with pytest.raises(TokenDeadError):
-        await service.authenticated_manager(TG_ID)
+        await service.authenticated_manager(await repo.person_id(TG_ID))
 
     record = await repo.get_token(await repo.person_id(TG_ID))
     assert record is not None
@@ -182,7 +184,7 @@ async def test_network_error_is_not_a_dead_token(
 
     for _ in range(2):
         with pytest.raises(TokenRefreshError) as info:
-            await service.authenticated_manager(TG_ID)
+            await service.authenticated_manager(await repo.person_id(TG_ID))
         assert not isinstance(info.value, TokenDeadError)
 
     record = await repo.get_token(await repo.person_id(TG_ID))
@@ -192,7 +194,7 @@ async def test_network_error_is_not_a_dead_token(
 
     # Third failure in a row: now we give up (SPEC 5.1).
     with pytest.raises(TokenDeadError):
-        await service.authenticated_manager(TG_ID)
+        await service.authenticated_manager(await repo.person_id(TG_ID))
     record = await repo.get_token(await repo.person_id(TG_ID))
     assert record is not None
     assert record.status == "invalid"
@@ -220,7 +222,7 @@ async def test_token_never_reaches_logs_or_exceptions(
 
     with caplog.at_level(logging.DEBUG):
         with pytest.raises(TokenDeadError) as info:
-            await service.authenticated_manager(TG_ID)
+            await service.authenticated_manager(await repo.person_id(TG_ID))
 
     assert OLD_TOKEN not in str(info.value)
     assert OLD_TOKEN not in repr(info.value)

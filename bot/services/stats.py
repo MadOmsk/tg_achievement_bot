@@ -94,7 +94,7 @@ def month_window_utc(year: int, month: int, tz_offset_min: int | None) -> tuple[
 
 async def counters_for(
     repo: Repo,
-    tg_id: int,
+    person_id: int,
     now: datetime | None = None,
     *,
     rare_threshold: float = 10.0,
@@ -102,11 +102,11 @@ async def counters_for(
     target_month: int | None = None,
 ) -> Counters:
     """Summed across every platform the person has connected (SPEC 9,
-    M-Steam-2e) — keyed by tg_id, not any one platform's own external id.
+    M-Steam-2e) — keyed by the person (#156), not any one platform's own external id.
 
     The month window is calendar-bound in the person's own timezone (#14),
     read from `user_settings` here so callers don't all have to thread it."""
-    settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
+    settings_row = await repo.get_user_settings(person_id)
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
     today_cutoff = today_cutoff_utc(now)
     if target_year is not None and target_month is not None:
@@ -115,23 +115,21 @@ async def counters_for(
         month_cutoff = month_cutoff_utc(tz_offset_min, now)
         month_until = None
 
-    today, today_score = await repo.achievement_counts_for_person(
-        await repo.person_id(tg_id), today_cutoff
-    )
+    today, today_score = await repo.achievement_counts_for_person(person_id, today_cutoff)
     month, month_score = await repo.achievement_counts_for_person(
-        await repo.person_id(tg_id), month_cutoff, until=month_until
+        person_id, month_cutoff, until=month_until
     )
     today_xbox, today_steam, today_psn = await repo.achievement_platform_breakdown(
-        await repo.person_id(tg_id), today_cutoff
+        person_id, today_cutoff
     )
     month_xbox, month_steam, month_psn = await repo.achievement_platform_breakdown(
-        await repo.person_id(tg_id), month_cutoff, until=month_until
+        person_id, month_cutoff, until=month_until
     )
     today_rare, today_tiers = await repo.achievement_value_breakdown(
-        await repo.person_id(tg_id), today_cutoff, rare_threshold
+        person_id, today_cutoff, rare_threshold
     )
     month_rare, month_tiers = await repo.achievement_value_breakdown(
-        await repo.person_id(tg_id), month_cutoff, rare_threshold, until=month_until
+        person_id, month_cutoff, rare_threshold, until=month_until
     )
     return Counters(
         today,

@@ -145,7 +145,7 @@ async def test_an_xbox_cover_is_looked_up_through_an_owner(
 
     await CoverRefresh(repo, client).tick()  # type: ignore[arg-type]
 
-    assert client.asked == [(7, XBOX_TITLE)]
+    assert client.asked == [(await repo.person_id(7), XBOX_TITLE)]
     assert await repo.title_icon_url(XBOX_TITLE) == "https://xbox.test/art.jpg"
 
 

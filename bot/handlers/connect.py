@@ -230,14 +230,15 @@ async def disconnect_confirm(
     callback: CallbackQuery, repo: Repo, notifier: AdminNotifier, i18n: I18nContext
 ) -> None:
     tg_id = callback.from_user.id
-    user = await repo.get_user(await repo.person_id(tg_id))
+    person = await repo.person_id(tg_id)
+    user = await repo.get_user(person)
     gamertag = (user.gamertag if user else None) or f"id{tg_id}"
     if user is not None and user.xuid:
         await repo.delete_presence_state(user.xuid)
-    await repo.delete_token(await repo.person_id(tg_id))
-    await repo.delete_subscriptions_of_user(await repo.person_id(tg_id))
-    await repo.unlink_xbox_account(await repo.person_id(tg_id))
-    await notifier.user_disconnected(tg_id, gamertag, "disconnect-command")
+    await repo.delete_token(person)
+    await repo.delete_subscriptions_of_user(person)
+    await repo.unlink_xbox_account(person)
+    await notifier.user_disconnected(person, gamertag, "disconnect-command")
 
     # Found while refactoring (2026-09-05): none of the edits in this file
     # tolerated a failed edit, unlike panel.py/steam.py's own — now they do.
@@ -271,11 +272,12 @@ async def optout(
 ) -> None:
     """Left on purpose: subscriptions go, history stays, reminders stop."""
     tg_id = callback.from_user.id
-    user = await repo.get_user(await repo.person_id(tg_id))
-    await repo.set_token_status(await repo.person_id(tg_id), TokenStatus.REVOKED)
-    await repo.delete_subscriptions_of_user(await repo.person_id(tg_id))
+    person = await repo.person_id(tg_id)
+    user = await repo.get_user(person)
+    await repo.set_token_status(person, TokenStatus.REVOKED)
+    await repo.delete_subscriptions_of_user(person)
     await notifier.user_disconnected(
-        tg_id, (user.gamertag if user else None) or f"id{tg_id}", "disconnect-button"
+        person, (user.gamertag if user else None) or f"id{tg_id}", "disconnect-button"
     )
     await safe_edit(
         callback,

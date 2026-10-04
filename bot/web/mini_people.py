@@ -51,8 +51,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     async def me_id(request: web.Request) -> tuple[Repo, int]:
         user = await require_user(request)
         repo: Repo = request.app["mini_repo"]
-        await repo.ensure_user(user.tg_id, user.username)
-        person = await repo.person_id(user.tg_id)
+        person = user.person_id
         if person is None:
             raise web.HTTPNotFound(text="no person")
         return repo, person
@@ -246,16 +245,8 @@ async def _activity(request: web.Request, repo: Repo, me: int, other: int) -> di
     check has passed."""
     from bot.web.mini_chat import build_person_payload
 
-    target_row = await repo.person_row(other)
-    if target_row is None or target_row.tg_id is None:
-        return None
-    target = await repo.get_user(await repo.person_id(target_row.tg_id))
-    viewer_row = await repo.person_row(me)
-    settings = (
-        await repo.get_user_settings(await repo.person_id(viewer_row.tg_id))
-        if viewer_row and viewer_row.tg_id
-        else None
-    )
+    target = await repo.get_user(other)
+    settings = await repo.get_user_settings(me)
     if target is None:
         return None
     payload = await build_person_payload(repo, target, locale=settings.locale if settings else "ru")
@@ -301,7 +292,7 @@ async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: i
     if target is None or follower is None or target.tg_id is None:
         return
     relation = await repo.relation(other, me)
-    settings = await repo.get_user_settings(await repo.person_id(target.tg_id))
+    settings = await repo.get_user_settings(other)
     if settings is not None and not settings.notify_followers:
         return
     if not await repo.claim_follow_notice(me, other):

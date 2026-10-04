@@ -108,17 +108,18 @@ async def panel_sync(
 ) -> None:
     """Wake up user, refresh UI, and catch up across all connected platforms (Xbox, Steam, PSN)."""
     tg_id = callback.from_user.id
-    await repo.touch_last_online(await repo.person_id(tg_id))
+    person = await repo.person_id(tg_id)
+    await repo.touch_last_online(person)
 
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
     await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
 
-    user = await repo.get_user(await repo.person_id(tg_id))
-    token = await repo.get_token(await repo.person_id(tg_id)) if user and user.xuid else None
+    user = await repo.get_user(person)
+    token = await repo.get_token(person) if user and user.xuid else None
     xbox_linked = bool(user and user.xuid)
     xbox_active = bool(xbox_linked and token and token.status == TokenStatus.ACTIVE)
-    steam_link = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
-    psn_links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
+    steam_link = await repo.get_platform_link(person, Platform.STEAM)
+    psn_links = await repo.platform_links_for(person, Platform.PSN)
     psn_link = psn_links[0] if psn_links else None
 
     if not (xbox_linked or steam_link or psn_link):
@@ -150,7 +151,7 @@ async def panel_sync(
         since_iso = await repo.account_latest_unlock(AccountPlatform.XBOX, user.xuid)
         try:
             x_titles, x_published = await fetcher.catch_up(
-                tg_id,
+                person,
                 user.xuid,
                 user.gamertag or i18n.get("panel-default-player-name"),
                 parse_iso(since_iso) if since_iso else None,
@@ -172,7 +173,7 @@ async def panel_sync(
                 repo,
                 steam_fetcher,
                 steam_auth,
-                tg_id,
+                person,
                 steam_link.external_id,
                 link_nickname(steam_link),
             )
@@ -187,7 +188,7 @@ async def panel_sync(
         attempted_platforms += 1
         try:
             p_published = await psn_fetcher.poll_account(
-                tg_id, link.external_id, link_nickname(link)
+                person, link.external_id, link_nickname(link)
             )
             total_published += p_published
         except Exception:
@@ -269,9 +270,10 @@ async def _redraw_account_menu(
 
 
 async def _links_of(repo: Repo, tg_id: int, platform: str) -> list[PlatformLink]:
+    person = await repo.person_id(tg_id)
     if platform == AccountPlatform.PSN:
-        return await repo.platform_links_for(await repo.person_id(tg_id), platform)
-    link = await repo.get_platform_link(await repo.person_id(tg_id), platform)
+        return await repo.platform_links_for(person, platform)
+    link = await repo.get_platform_link(person, platform)
     return [link] if link is not None else []
 
 
@@ -377,10 +379,10 @@ async def panel_rarity(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     """The person's rarity mode, for every chat at once (#126): a carousel —
     all → rare → none → all (owner, 2026-09-30)."""
     tg_id = callback.from_user.id
-    await repo.ensure_user(tg_id, callback.from_user.username)
-    settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
+    person = await repo.ensure_user(tg_id, callback.from_user.username)
+    settings_row = await repo.get_user_settings(person)
     mode = next_rarity_mode(settings_row.rarity_mode if settings_row else RarityMode.ALL)
-    await repo.update_user_settings(await repo.person_id(tg_id), rarity_mode=mode)
+    await repo.update_user_settings(person, rarity_mode=mode)
     threshold = f"{await rare_threshold(repo):g}"
     await callback.answer(i18n.get(f"panel-rarity-toast-{mode}", threshold=threshold))
     screen = await render_panel(repo, tg_id, locale=i18n.locale)
@@ -398,8 +400,9 @@ async def panel_toggle_locale(callback: CallbackQuery, repo: Repo, i18n: I18nCon
     the middleware resolved from the old value before this handler ran.
     """
     tg_id = callback.from_user.id
-    chosen = next_locale(await repo.user_locale(await repo.person_id(tg_id)))
-    await repo.update_user_settings(await repo.person_id(tg_id), locale=chosen)
+    person = await repo.person_id(tg_id)
+    chosen = next_locale(await repo.user_locale(person))
+    await repo.update_user_settings(person, locale=chosen)
 
     await callback.answer(locale_name(chosen))
     screen = await render_panel(repo, tg_id, locale=chosen)

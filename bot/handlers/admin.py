@@ -808,7 +808,7 @@ async def user_avatar_reset(callback: CallbackQuery, repo: Repo, i18n: I18nConte
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
     tg_id = int(callback.data.rsplit(":", 1)[1])
-    await custom_avatars.clear(repo, tg_id)
+    await custom_avatars.clear(repo, await repo.person_id(tg_id))
     await callback.answer(_("admin-avatar-reset"))
     await _redraw(callback, *await render_user_card(repo, tg_id, locale=i18n.locale))
 
@@ -825,10 +825,11 @@ async def _account_link(
 ) -> PlatformLink | None:
     """The Steam/PSN link a button is about: the one named by `account_id`
     (a PSN account among several, #10), else the person's only one."""
+    person = await repo.person_id(tg_id)
     platform_value = Platform.STEAM if platform == "steam" else Platform.PSN
     if account_id is None:
-        return await repo.get_platform_link(await repo.person_id(tg_id), platform_value)
-    links = await repo.platform_links_for(await repo.person_id(tg_id), platform_value)
+        return await repo.get_platform_link(person, platform_value)
+    links = await repo.platform_links_for(person, platform_value)
     return next((link for link in links if link.external_id == account_id), None)
 
 
@@ -892,9 +893,12 @@ async def user_refresh(
         "steam": steam_fetcher,
         "psn": psn_fetcher,
     }
+    person = await repo.person_id(tg_id)
     try:
+        if person is None:
+            raise LookupError(f"no person for tg_id={tg_id}")
         summary = await fetcher_by_platform[platform].refresh_user(
-            tg_id, external_id, name, i18n.locale
+            person, external_id, name, i18n.locale
         )
         delta = await _sync_delta(
             repo,
@@ -902,7 +906,7 @@ async def user_refresh(
             steam_fetcher,
             settings,
             platform=platform,
-            tg_id=tg_id,
+            person_id=person,
             external_id=external_id,
             name=name,
             locale=i18n.locale,
@@ -924,7 +928,7 @@ async def _sync_delta(
     settings: Settings,
     *,
     platform: str,
-    tg_id: int,
+    person_id: int,
     external_id: str,
     name: str,
     locale: str,
@@ -948,7 +952,7 @@ async def _sync_delta(
     window = settings.catchup_publish_window_hours
     if platform == "xbox":
         titles, published = await fetcher.catch_up(
-            tg_id,
+            person_id,
             external_id,
             name,
             parse_iso(since) if since else None,
@@ -957,7 +961,7 @@ async def _sync_delta(
         )
         return _("admin-sync-delta", titles=titles, published=published)
     if platform == "steam" and since is not None:
-        published = await steam_fetcher.catch_up(tg_id, external_id, name, since, window)
+        published = await steam_fetcher.catch_up(person_id, external_id, name, since, window)
         return _("admin-sync-delta-steam", published=published)
     return ""
 
@@ -1255,13 +1259,15 @@ async def reset_platform_confirmed(
     # this one unpacked four into three and raised ValueError instead.
     platform, tg_id, account_id = _parse_account(callback.data)
     await callback.answer(_("admin-refreshing"))
+    person = await repo.person_id(tg_id)
 
     try:
+        assert person is not None
         if platform == "xbox":
-            user = await repo.get_user(await repo.person_id(tg_id))
+            user = await repo.get_user(person)
             assert user is not None and user.xuid is not None
-            await repo.reset_xbox_data(await repo.person_id(tg_id), user.xuid)
-            await fetcher.backfill(tg_id, user.xuid)
+            await repo.reset_xbox_data(person, user.xuid)
+            await fetcher.backfill(person, user.xuid)
         elif platform == "steam":
             link = await _account_link(repo, platform, tg_id, account_id)
             assert link is not None
@@ -1270,12 +1276,12 @@ async def reset_platform_confirmed(
             # which matches no row — so it deleted nothing and "reset" re-ran
             # backfill over data that was still there.
             await repo.reset_steam_data(link.external_id)
-            await steam_fetcher.backfill(tg_id, link.external_id)
+            await steam_fetcher.backfill(person, link.external_id)
         else:
             link = await _account_link(repo, platform, tg_id, account_id)
             assert link is not None
-            await repo.reset_psn_data(await repo.person_id(tg_id), link.external_id)
-            await psn_fetcher.backfill(tg_id, link.external_id)
+            await repo.reset_psn_data(person, link.external_id)
+            await psn_fetcher.backfill(person, link.external_id)
     except Exception:
         log.exception("admin reset+resync of tg_id=%s platform=%s failed", tg_id, platform)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)

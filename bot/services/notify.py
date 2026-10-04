@@ -29,16 +29,16 @@ class AdminNotifier:
         self._repo = repo
         self._admin_ids = list(admin_ids)
 
-    async def user_connected(self, tg_id: int, gamertag: str, *, is_new: bool) -> None:
+    async def user_connected(self, person_id: int, gamertag: str, *, is_new: bool) -> None:
         async def build(locale: str) -> str:
             _ = translator("notify", locale)
             verb = _("notify-verb-new") if is_new else _("notify-verb-reconnect")
-            who = await self._who(tg_id, locale)
+            who = await self._who(person_id, locale)
             return f"{_('notify-user-connected', verb=verb, gamertag=gamertag)}\n{who}"
 
         await self._send(build)
 
-    async def user_disconnected(self, tg_id: int, gamertag: str, reason: str) -> None:
+    async def user_disconnected(self, person_id: int, gamertag: str, reason: str) -> None:
         async def build(locale: str) -> str:
             _ = translator("notify", locale)
             reason_text = _(
@@ -47,17 +47,19 @@ class AdminNotifier:
                     "disconnect-button": "notify-reason-button",
                 }.get(reason, reason)
             )
-            who = await self._who(tg_id, locale)
+            who = await self._who(person_id, locale)
             return f"{_('notify-user-disconnected', gamertag=gamertag, reason=reason_text)}\n{who}"
 
         await self._send(build)
 
-    async def token_dead(self, tg_id: int) -> None:
+    async def token_dead(self, person_id: int) -> None:
         async def build(locale: str) -> str:
             _ = translator("notify", locale)
-            user = await self._repo.get_user(await self._repo.person_id(tg_id))
-            name = (user.gamertag if user else None) or _("notify-id", tg_id=str(tg_id))
-            who = await self._who(tg_id, locale)
+            user = await self._repo.get_user(person_id)
+            name = (user.gamertag if user else None) or _(
+                "notify-id", tg_id=str(user.tg_id if user and user.tg_id else person_id)
+            )
+            who = await self._who(person_id, locale)
             return (
                 f"{_('notify-token-dead-line1', name=name)}\n{who}\n{_('notify-token-dead-line2')}"
             )
@@ -132,10 +134,11 @@ class AdminNotifier:
 
         await self._send(build)
 
-    async def _who(self, tg_id: int, locale: str) -> str:
+    async def _who(self, person_id: int, locale: str) -> str:
         _ = translator("notify", locale)
-        user = await self._repo.get_user(await self._repo.person_id(tg_id))
+        user = await self._repo.get_user(person_id)
         username = f"@{user.username}" if user and user.username else _("notify-who-no-username")
+        tg_id = user.tg_id if user and user.tg_id is not None else "—"
         return _("notify-who", tg_id=str(tg_id), username=username)
 
     async def _send(self, build: Callable[[str], Awaitable[str]]) -> None:

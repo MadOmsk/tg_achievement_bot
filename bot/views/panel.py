@@ -167,24 +167,21 @@ async def _panel_header_lines(
 
 
 async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> Screen:
+    person = await repo.person_id(tg_id)
     # No locale given (an internal caller with no aiogram update behind it,
     # e.g. main.py's post-login screen) — read the person's own rather than
     # falling back to Russian (#48). This screen is always about exactly one
     # person, whose tg_id we already have.
-    i18n = await i18n_for(locale or await repo.user_locale(await repo.person_id(tg_id)))
-    user = await repo.get_user(await repo.person_id(tg_id))
-    settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
+    i18n = await i18n_for(locale or await repo.user_locale(person))
+    user = await repo.get_user(person)
+    settings_row = await repo.get_user_settings(person)
     connected = user is not None and bool(user.xuid)
-    steam_link = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
-    psn_links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
+    steam_link = await repo.get_platform_link(person, Platform.STEAM)
+    psn_links = await repo.platform_links_for(person, Platform.PSN)
     psn_link = psn_links[0] if psn_links else None
-    xbox_link = (
-        await repo.get_platform_link(await repo.person_id(tg_id), AccountPlatform.XBOX)
-        if connected
-        else None
-    )
+    xbox_link = await repo.get_platform_link(person, AccountPlatform.XBOX) if connected else None
 
-    token = await repo.get_token(await repo.person_id(tg_id)) if connected else None
+    token = await repo.get_token(person) if connected else None
     needs_reconnect = token is not None and token.status == TokenStatus.INVALID
     tz_offset = settings_row.tz_offset_min if settings_row else None
     keyboard = panel_keyboard(
@@ -487,15 +484,16 @@ async def render_account_menu(
     account is, its profile, its publishing switch, unlinking — and for PSN
     every account the person holds, plus adding another. None when the
     platform is not linked any more (the caller falls back to the panel)."""
+    person = await repo.person_id(tg_id)
     i18n = await i18n_for(locale)
     if platform == AccountPlatform.PSN:
         return await _psn_menu(repo, tg_id, i18n)
     if platform == AccountPlatform.XBOX:
-        user = await repo.get_user(await repo.person_id(tg_id))
-        link = await repo.get_platform_link(await repo.person_id(tg_id), AccountPlatform.XBOX)
+        user = await repo.get_user(person)
+        link = await repo.get_platform_link(person, AccountPlatform.XBOX)
         if user is None or not user.xuid or link is None:
             return None
-        token = await repo.get_token(await repo.person_id(tg_id))
+        token = await repo.get_token(person)
         login = (
             i18n.get(LOGIN_STATUS_KEYS.get(token.status, "panel-login-revoked"))
             if token
@@ -512,7 +510,7 @@ async def render_account_menu(
         icon = PLATFORM_ICON[Platform.XBOX_MODERN]
         unlink_cb = "panel:disconnect"
     else:
-        link = await repo.get_platform_link(await repo.person_id(tg_id), AccountPlatform.STEAM)
+        link = await repo.get_platform_link(person, AccountPlatform.STEAM)
         if link is None:
             return None
         login = visibility_status_text(link, i18n.locale)
@@ -645,10 +643,11 @@ async def render_privacy_howto(
     """How to open hidden achievements on one account (#95): the steps, and
     "check again", which reads the account anew in this same message. None
     when the account is not linked any more."""
+    person = await repo.person_id(tg_id)
     i18n = await i18n_for(locale)
     builder = InlineKeyboardBuilder()
     if platform == AccountPlatform.STEAM:
-        link = await repo.get_platform_link(await repo.person_id(tg_id), AccountPlatform.STEAM)
+        link = await repo.get_platform_link(person, AccountPlatform.STEAM)
         if link is None:
             return None
         text = i18n.get("panel-howto-steam", privacy_url=STEAM_PRIVACY_URL)
@@ -656,7 +655,7 @@ async def render_privacy_howto(
         builder.row(InlineKeyboardButton(text=i18n.get("kb-recheck"), callback_data="bf:steam"))
         builder.row(_back_to(i18n, "panel:acc:steam"))
         return Screen(text, builder.as_markup())
-    links = await repo.platform_links_for(await repo.person_id(tg_id), AccountPlatform.PSN)
+    links = await repo.platform_links_for(person, AccountPlatform.PSN)
     link = next((item for item in links if item.external_id == account_id), None)
     if link is None:
         return None

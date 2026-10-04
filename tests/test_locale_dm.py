@@ -66,7 +66,7 @@ async def test_admin_notifications_follow_the_admins_own_language(repo: Repo) ->
 
     bot = _FakeBot()
     await AdminNotifier(bot, repo, [ADMIN_ID]).user_connected(  # type: ignore[arg-type]
-        USER_ID, "MadOmsk", is_new=True
+        await repo.person_id(USER_ID), "MadOmsk", is_new=True
     )
 
     assert bot.sent == [(ADMIN_ID, "➕ User added: MadOmsk\ntg_id 501 · @igor")]

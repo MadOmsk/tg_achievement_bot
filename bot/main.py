@@ -252,20 +252,23 @@ async def run(settings: Settings) -> None:
         # No achievements yet means this account is new to the bot, not someone
         # signing in again after his token expired.
         is_new = not await repo.has_any_achievements(identity.xuid)
-        locale = await repo.user_locale(await repo.person_id(tg_id))
+        person = await repo.person_id(tg_id)
+        if person is None:
+            return
+        locale = await repo.user_locale(person)
         _ = translator("main", locale)
         await bot.send_message(tg_id, _("main-linked", gamertag=identity.gamertag))
-        await notifier.user_connected(tg_id, identity.gamertag, is_new=is_new)
+        await notifier.user_connected(person, identity.gamertag, is_new=is_new)
 
         # Pressed «Подключить XBOX» from inside a specific group: finish the
         # job and subscribe him there too, instead of making him find
         # /subscribe on his own right after he just did the hard part (6.3).
         if origin_chat_id is not None and await repo.chat_exists(origin_chat_id):
-            await repo.subscribe(origin_chat_id, await repo.person_id(tg_id))
+            await repo.subscribe(origin_chat_id, person)
             with contextlib.suppress(Exception):
                 await bot.send_message(tg_id, _("main-linked-subscribed-origin-chat"))
 
-        settings_row = await repo.get_user_settings(await repo.person_id(tg_id))
+        settings_row = await repo.get_user_settings(person)
         if settings_row is None or settings_row.tz_offset_min is None:
             link_i18n = await build_i18n_context(locale)
             await bot.send_message(
@@ -342,11 +345,11 @@ async def run(settings: Settings) -> None:
         of title_history()'s own asyncio.wait_for, not instead of it.
         """
         for target in await repo.pollable_users():
-            user = await repo.get_user(await repo.person_id(target.tg_id))
+            user = await repo.get_user(target.person_id)
             try:
                 await asyncio.wait_for(
                     fetcher.catch_up(
-                        target.tg_id,
+                        target.person_id,
                         target.xuid,
                         (user.gamertag if user else None)
                         or gettext("main", "main-default-player-name", locale=DEFAULT_LOCALE),
@@ -360,15 +363,15 @@ async def run(settings: Settings) -> None:
                 )
             except TimeoutError:
                 log.error(
-                    "catch-up for tg_id=%s exceeded %.0fs overall, moving on",
-                    target.tg_id,
+                    "catch-up for person_id=%s exceeded %.0fs overall, moving on",
+                    target.person_id,
                     STARTUP_CATCH_UP_DEADLINE_SECONDS,
                 )
             except Exception:
-                log.exception("catch-up for tg_id=%s failed", target.tg_id)
+                log.exception("catch-up for person_id=%s failed", target.person_id)
         # Once per database: 360 games titlehub forgot, and their totals (#91, #92).
         await fetcher.fill_x360_gaps_once(
-            [(target.tg_id, target.xuid) for target in await repo.pollable_users()]
+            [(target.person_id, target.xuid) for target in await repo.pollable_users()]
         )
 
         if await steam_auth.get_key() is not None:
@@ -380,14 +383,14 @@ async def run(settings: Settings) -> None:
                     )
                 except TimeoutError:
                     log.error(
-                        "steam catch-up for tg_id=%s exceeded %.0fs overall, moving on",
-                        steam_target.tg_id,
+                        "steam catch-up for person_id=%s exceeded %.0fs overall, moving on",
+                        steam_target.person_id,
                         STARTUP_CATCH_UP_DEADLINE_SECONDS,
                     )
                 except Exception:
-                    log.exception("steam catch-up for tg_id=%s failed", steam_target.tg_id)
+                    log.exception("steam catch-up for person_id=%s failed", steam_target.person_id)
             await steam_fetcher.fill_library_gaps_once(
-                [(t.tg_id, t.steam_id) for t in await repo.steam_pollable_users()]
+                [(t.person_id, t.steam_id) for t in await repo.steam_pollable_users()]
             )
 
     await publisher.start()

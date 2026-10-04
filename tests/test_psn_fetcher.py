@@ -135,15 +135,15 @@ async def test_poll_account_publishes_what_sync_account_returns(
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 2
+    assert await fetcher.poll_account(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer") == 2
     # Found new trophies — level gets refreshed (Follow-up 2026-09-06).
     link = await repo.get_platform_link(await repo.person_id(TG_ID), "psn")
     assert link is not None and link.psn_trophy_level == 7
 
-    assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 0
+    assert await fetcher.poll_account(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer") == 0
     assert len(publisher.published) == 1
 
-    assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 1
+    assert await fetcher.poll_account(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer") == 1
     assert [a.achievement_id for a in publisher.published[1]] == ["3"]
 
 
@@ -165,7 +165,7 @@ async def test_backfill_marks_done_and_returns_the_private_titles(
     [target] = await repo.psn_pollable_users()
     assert target.backfill_done is False
 
-    result = await fetcher.backfill(TG_ID, ACCOUNT_ID)
+    result = await fetcher.backfill(await repo.person_id(TG_ID), ACCOUNT_ID)
 
     assert result.stored == 2
     assert result.private_title_ids == ["NPWR00009_00"]
@@ -193,7 +193,7 @@ async def test_refresh_user_polls_a_backfilled_account(
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer", "ru")
+    summary = await fetcher.refresh_user(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer", "ru")
 
     assert calls[0]["is_backfill"] is False
     assert len(publisher.published) == 1
@@ -216,7 +216,7 @@ async def test_refresh_user_resyncs_a_stuck_account(
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer", "ru")
+    summary = await fetcher.refresh_user(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer", "ru")
 
     assert await repo.get_psn_title_progress(ACCOUNT_ID, "NPWR00001_00") is None  # wiped
     assert calls[0]["is_backfill"] is True

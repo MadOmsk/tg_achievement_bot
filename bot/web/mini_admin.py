@@ -170,23 +170,26 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
 
 
 async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
-    user = await repo.get_user(await repo.person_id(tg_id))
-    steam = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
-    psn_links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
+    user = await repo.get_user_by_tg(tg_id)
+    if user is None or user.id is None:
+        return None
+    person = user.id
+    steam = await repo.get_platform_link(person, Platform.STEAM)
+    psn_links = await repo.platform_links_for(person, Platform.PSN)
     psn = psn_links[0] if psn_links else None
     if user is None or (not user.xuid and steam is None and psn is None):
         return None
-    chats = await repo.chats_of_user(await repo.person_id(tg_id))
+    chats = await repo.chats_of_user(person)
     xbox_block = None
     if user.xuid:
         xbox_block = {
             "name": xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
             "xuid": user.xuid,
             "gamerscore": user.gamerscore,
-            "achievement_count": await repo.xbox_achievement_count(await repo.person_id(tg_id)),
+            "achievement_count": await repo.xbox_achievement_count(person),
             "token_status": None,
         }
-        token = await repo.get_token(await repo.person_id(tg_id))
+        token = await repo.get_token(person)
         if token is not None:
             xbox_block["token_status"] = token.status
     steam_block = None
@@ -194,9 +197,7 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
         steam_block = {
             "name": steam.display_name,
             "external_id": steam.external_id,
-            "achievement_count": await repo.platform_achievement_count(
-                await repo.person_id(tg_id), Platform.STEAM
-            ),
+            "achievement_count": await repo.platform_achievement_count(person, Platform.STEAM),
         }
     psn_block = None
     if psn is not None:
@@ -205,9 +206,7 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
         psn_block = {
             "name": psn.display_name,
             "external_id": psn.external_id,
-            "trophy_count": await repo.platform_achievement_count(
-                await repo.person_id(tg_id), Platform.PSN
-            ),
+            "trophy_count": await repo.platform_achievement_count(person, Platform.PSN),
             "trophy_level": psn.psn_trophy_level,
             "accounts": [
                 {
@@ -365,7 +364,7 @@ async def handle_admin_key_delete(request: web.Request) -> web.Response:
 async def handle_admin_limits(request: web.Request) -> web.Response:
     admin = await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
-    locale = await repo.user_locale(await repo.person_id(admin.tg_id))
+    locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_limits(repo, locale=locale))
 
 
@@ -384,7 +383,7 @@ async def handle_admin_limits_patch(request: web.Request) -> web.Response:
     if not (spec.min <= value <= spec.max):
         raise web.HTTPBadRequest(text="out of range")
     await repo.set_app_setting(key, str(value), admin.tg_id)
-    locale = await repo.user_locale(await repo.person_id(admin.tg_id))
+    locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_limits(repo, locale=locale))
 
 
@@ -563,41 +562,44 @@ async def _admin_platform_action(
     xbox = request.app.get("mini_xbox_fetcher")
     steam_fetcher = request.app.get("mini_steam_fetcher")
     psn_fetcher = request.app.get("mini_psn_fetcher")
-    locale = await repo.user_locale(await repo.person_id(tg_id))
+    person = await repo.person_id(tg_id)
+    if person is None:
+        raise web.HTTPNotFound(text="no such person")
+    locale = await repo.user_locale(person)
     if platform == "xbox":
-        user = await repo.get_user(await repo.person_id(tg_id))
+        user = await repo.get_user(person)
         if user is None or not user.xuid or xbox is None:
             raise web.HTTPBadRequest(text="xbox not linked")
         if action == "reset":
-            await repo.reset_xbox_data(await repo.person_id(tg_id), user.xuid)
-            await xbox.backfill(tg_id, user.xuid)
+            await repo.reset_xbox_data(person, user.xuid)
+            await xbox.backfill(person, user.xuid)
         else:
-            await xbox.refresh_user(tg_id, user.xuid, user.gamertag or f"id{tg_id}", locale)
+            await xbox.refresh_user(person, user.xuid, user.gamertag or f"id{tg_id}", locale)
         return
     if platform == "steam":
-        link = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
+        link = await repo.get_platform_link(person, Platform.STEAM)
         if link is None or steam_fetcher is None:
             raise web.HTTPBadRequest(text="steam not linked")
         if action == "reset":
             await repo.reset_steam_data(link.external_id)
-            await steam_fetcher.backfill(tg_id, link.external_id)
+            await steam_fetcher.backfill(person, link.external_id)
         else:
             await steam_fetcher.refresh_user(
-                tg_id, link.external_id, link.display_name or link.external_id, locale
+                person, link.external_id, link.display_name or link.external_id, locale
             )
         return
-    links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
+    links = await repo.platform_links_for(person, Platform.PSN)
     if account_id is not None:
         links = [item for item in links if item.external_id == account_id]
     link = links[0] if links else None
     if link is None or psn_fetcher is None:
         raise web.HTTPBadRequest(text="psn not linked")
     if action == "reset":
-        await repo.reset_psn_data(await repo.person_id(tg_id), link.external_id)
-        await psn_fetcher.backfill(tg_id, link.external_id)
+        await repo.reset_psn_data(person, link.external_id)
+        await psn_fetcher.backfill(person, link.external_id)
     else:
         await psn_fetcher.refresh_user(
-            tg_id, link.external_id, link.display_name or link.external_id, locale
+            person, link.external_id, link.display_name or link.external_id, locale
         )
 
 

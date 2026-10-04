@@ -429,7 +429,7 @@ async def _connect(
         await bot.send_message(tg_id, i18n.get("steam-catch-up-started"))
         asyncio.create_task(  # noqa: RUF006
             steam_fetcher.catch_up(
-                tg_id,
+                await repo.person_id(tg_id),
                 profile.steam_id,
                 profile.persona_name,
                 since,

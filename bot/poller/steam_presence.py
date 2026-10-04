@@ -55,7 +55,7 @@ class SteamPresencePoller:
         self._repo = repo
         self._fetcher = fetcher
         self._steam_auth = steam_auth
-        # (steam_id, appid) -> (tg_id, game_name, poll_at_monotonic, persona_name)
+        # (steam_id, appid) -> (person_id, game_name, poll_at_monotonic, persona_name)
         self._exit_queue: dict[tuple[str, str], tuple[int, str | None, float, str]] = {}
 
     async def tick(self) -> None:
@@ -94,7 +94,7 @@ class SteamPresencePoller:
         # batch call — keep the panel/connect card from drifting stale, at
         # zero extra cost. Writes only when something actually changed.
         await self._repo.update_platform_names(
-            await self._repo.person_id(target.tg_id),
+            target.person_id,
             Platform.STEAM,
             snapshot.persona_name,
             snapshot.vanity,
@@ -103,7 +103,7 @@ class SteamPresencePoller:
         # presence.py ever touched this, so a Steam-only person's "last
         # online" in the admin list stayed permanently blank.
         if snapshot.persona_state != 0:
-            await self._repo.touch_last_online(await self._repo.person_id(target.tg_id))
+            await self._repo.touch_last_online(target.person_id)
 
         in_game = snapshot.persona_state != 0 and snapshot.gameid is not None
 
@@ -116,7 +116,7 @@ class SteamPresencePoller:
             # Schedule a delayed exit poll (issue #89) to overcome the 2-5m Steam
             # CDN cache and cloud sync latency.
             self._exit_queue[(target.steam_id, target.gameid)] = (
-                target.tg_id,
+                target.person_id,
                 target.game_name,
                 time.monotonic() + STEAM_DELAYED_EXIT_POLL_SECONDS,
                 snapshot.persona_name or target.persona_name or target.steam_id,
@@ -174,7 +174,7 @@ class SteamPresencePoller:
         if not force and not self._debounce_passed(target):
             return
         await self._fetcher.poll_title(
-            target.tg_id, target.steam_id, persona_name, gameid, game_name
+            target.person_id, target.steam_id, persona_name, gameid, game_name
         )
 
     def _debounce_passed(self, target: SteamPollTarget) -> bool:
@@ -206,10 +206,10 @@ class SteamPresencePoller:
         due = [key for key, item in self._exit_queue.items() if item[2] <= now]
         for key in due:
             steam_id, appid = key
-            tg_id, game_name, _, p_name = self._exit_queue.pop(key)
+            person_id, game_name, _, p_name = self._exit_queue.pop(key)
             try:
                 await self._fetcher.poll_title(
-                    tg_id,
+                    person_id,
                     steam_id,
                     p_name,
                     appid,

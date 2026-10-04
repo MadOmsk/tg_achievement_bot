@@ -159,7 +159,7 @@ class Publisher:
 
     async def publish(
         self,
-        tg_id: int,
+        person_id: int,
         xuid: str,
         gamertag: str,
         achievements: list[AchievementRow],
@@ -183,10 +183,12 @@ class Publisher:
         """
         if not achievements:
             return
+        # The Mini App button still opens a person by their Telegram id.
+        tg_id = await self._repo.tg_id_of(person_id)
         # The person's own switch for this account (#20): muted, it stays
         # stored and counted, and posts nowhere.
         if not await self._repo.account_publishes(
-            await self._repo.person_id(tg_id), account_platform_of(achievements[0].platform), xuid
+            person_id, account_platform_of(achievements[0].platform), xuid
         ):
             return
         if window_hours is not None:
@@ -199,7 +201,7 @@ class Publisher:
             if not achievements:
                 return
 
-        for chat in await self._repo.publication_targets(await self._repo.person_id(tg_id)):
+        for chat in await self._repo.publication_targets(person_id):
             allowed = [
                 item
                 for item in achievements
@@ -217,7 +219,7 @@ class Publisher:
                 continue
 
             if chat.flood_limit > 0:
-                allowed = await self._apply_flood_filter(tg_id, chat, allowed)
+                allowed = await self._apply_flood_filter(person_id, chat, allowed)
                 if not allowed:
                     continue  # every item this call was buffered, not sent
 
@@ -290,7 +292,7 @@ class Publisher:
                 )
 
     async def _apply_flood_filter(
-        self, tg_id: int, chat: ChatTarget, allowed: list[AchievementRow]
+        self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]
     ) -> list[AchievementRow]:
         """Anti-flood filter (2026-09-09 user request): up to
         `chat.flood_limit` individually-notified achievements per rolling
@@ -311,7 +313,7 @@ class Publisher:
         into throttled mode, exactly as if it had arrived on its own.
         """
         now = utcnow()
-        state = await self._repo.get_flood_state(await self._repo.person_id(tg_id), chat.chat_id)
+        state = await self._repo.get_flood_state(person_id, chat.chat_id)
         if state is not None and now >= state.window_started_at + timedelta(
             minutes=chat.flood_window_minutes
         ):
@@ -336,7 +338,7 @@ class Publisher:
                 window_started_at = now  # restart right here, not at expiry
 
         await self._repo.set_flood_state(
-            await self._repo.person_id(tg_id),
+            person_id,
             chat.chat_id,
             window_started_at=window_started_at,
             count_in_window=count,
@@ -394,7 +396,7 @@ class Publisher:
         return result
 
     async def publish_flood_digest(
-        self, tg_id: int, chat_id: int, achievements: list[AchievementRow]
+        self, person_id: int, chat_id: int, achievements: list[AchievementRow]
     ) -> None:
         """The flush side of `_apply_flood_filter` above — called by
         poller/flood_flush.py once a throttled window closes. Unlike every
@@ -413,8 +415,9 @@ class Publisher:
         # subscription walk), and one lookup per flushed window is nothing.
         locale = await self._repo.chat_locale(chat_id)
         achievements = await localize_descriptions(self._repo, achievements, locale)
-        user = await self._repo.get_user(await self._repo.person_id(tg_id))
-        links = await self._repo.platform_links_of(await self._repo.person_id(tg_id))
+        user = await self._repo.get_user(person_id)
+        links = await self._repo.platform_links_of(person_id)
+        tg_id = user.tg_id if user else None
         platforms = {account_platform_of(item.platform) for item in achievements}
         accounts = {(account_platform_of(item.platform), item.xuid) for item in achievements}
         name: str | None = None
@@ -458,7 +461,7 @@ class Publisher:
                         external_id=link.external_id,
                     )
         if not name or name == NO_NICKNAME:
-            name = person_name_of(user, links) if user else f"id{tg_id}"
+            name = person_name_of(user, links) if user else f"id{person_id}"
 
         missing = [a.title_id for a in achievements if not getattr(a, "game_platforms", None)]
         if missing:

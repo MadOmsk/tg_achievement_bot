@@ -131,13 +131,28 @@ async def test_dedup_publishes_each_achievement_once(repo: Repo, cipher) -> None
     publisher = FakePublisher()
     fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 2
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Gears"
+        )
+        == 2
+    )
     # Same answer from Xbox Live a minute later: nothing new, nothing published.
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 0
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Gears"
+        )
+        == 0
+    )
     assert len(publisher.published) == 1
 
     client.by_title["1"].append(parsed("a3"))
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 1
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Gears"
+        )
+        == 1
+    )
     assert [a.achievement_id for a in publisher.published[1]] == ["a3"]
 
 
@@ -151,7 +166,7 @@ async def test_backfill_publishes_nothing(repo: Repo, cipher) -> None:
     publisher = FakePublisher()
     fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    stored = await fetcher.backfill(TG_ID, XUID)
+    stored = await fetcher.backfill(await repo.person_id(TG_ID), XUID)
 
     assert stored == 50
     assert publisher.published == []
@@ -178,14 +193,19 @@ async def test_backfill_covers_x360_titles_separately(repo: Repo, cipher) -> Non
     )
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    await fetcher.backfill(TG_ID, XUID)
+    await fetcher.backfill(await repo.person_id(TG_ID), XUID)
 
     assert client.title_calls == []  # no game-by-game requests any more
     assert await repo.title_name("forgotten") == "Old Game"
     # Its total is known, so a finished forgotten game counts as completed.
     assert await repo.xbox_completed_games_count(XUID) == 1
     # Now the same x360 achievement arrives from a real session: already seen.
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", "Gears 3") == 0
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "360", "xbox_360", "Gears 3"
+        )
+        == 0
+    )
 
 
 async def test_excluded_user_is_not_polled(repo: Repo, cipher) -> None:
@@ -263,7 +283,7 @@ async def test_an_x360_title_name_is_resolved_because_contract_1_has_none(
     publisher = FakePublisher()
     fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", None)
+    await fetcher.poll_title(await repo.person_id(TG_ID), XUID, "Mad Omsk", "360", "xbox_360", None)
 
     assert client.resolved, "contract 1 gives no name, so titlehub had to be asked"
     assert await repo.title_name("360") == "Gears of War 3"
@@ -280,7 +300,9 @@ async def test_a_modern_title_needs_no_separate_name_lookup(repo: Repo, cipher) 
     )
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "85494077", "xbox_modern", None)
+    await fetcher.poll_title(
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", "85494077", "xbox_modern", None
+    )
 
     assert client.resolved == []
     assert await repo.title_name("85494077") == "Gears of War"  # what the response said
@@ -298,14 +320,18 @@ async def test_x360_achievements_get_the_games_box_art_as_their_icon(repo: Repo,
     publisher = FakePublisher()
     fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", "Gears of War 3")
+    await fetcher.poll_title(
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", "360", "xbox_360", "Gears of War 3"
+    )
 
     assert publisher.published[0][0].icon_url == "https://example/boxart.jpg"
     assert await repo.title_icon_url("360") == "https://example/boxart.jpg"
 
     # Second title, same game: the icon comes from the cache, not another request.
     client.by_title["360"].append(parsed("a2", title_id="360", platform="xbox_360"))
-    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", "Gears of War 3")
+    await fetcher.poll_title(
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", "360", "xbox_360", "Gears of War 3"
+    )
     assert client.resolved == ["360"]
 
 
@@ -343,7 +369,7 @@ async def test_catch_up_publishes_only_what_is_fresh(repo: Repo, cipher) -> None
     fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     titles, published = await fetcher.catch_up(
-        TG_ID, XUID, "Mad Omsk", now - timedelta(days=14), 24, 20
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", now - timedelta(days=14), 24, 20
     )
 
     assert titles == 1
@@ -355,7 +381,12 @@ async def test_catch_up_publishes_only_what_is_fresh(repo: Repo, cipher) -> None
     assert published == 2
     assert [a.achievement_id for a in publisher.published[0]] == ["recent", "undated"]
     # The old ones are still recorded, so they never surface again as "new".
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 0
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Gears"
+        )
+        == 0
+    )
 
 
 async def test_catch_up_keeps_an_undated_row_quiet_when_the_game_is_old(repo: Repo, cipher) -> None:
@@ -379,7 +410,7 @@ async def test_catch_up_keeps_an_undated_row_quiet_when_the_game_is_old(repo: Re
     fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
     titles, published = await fetcher.catch_up(
-        TG_ID, XUID, "Mad Omsk", now - timedelta(days=14), 24, 20
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", now - timedelta(days=14), 24, 20
     )
 
     assert titles == 1
@@ -408,7 +439,9 @@ async def test_catch_up_also_fills_x360_box_art(repo: Repo, cipher) -> None:
     publisher = FakePublisher()
     fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    await fetcher.catch_up(TG_ID, XUID, "Mad Omsk", now - timedelta(days=1), 24, 20)
+    await fetcher.catch_up(
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", now - timedelta(days=1), 24, 20
+    )
 
     assert publisher.published[0][0].icon_url == "https://example/boxart.jpg"
 
@@ -430,7 +463,7 @@ async def test_catch_up_skips_games_untouched_since_last_poll(repo: Repo, cipher
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
     titles, published = await fetcher.catch_up(
-        TG_ID, XUID, "Mad Omsk", now - timedelta(hours=1), 24, 20
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", now - timedelta(hours=1), 24, 20
     )
 
     assert (titles, published) == (0, 0)
@@ -449,7 +482,7 @@ async def test_backfill_asks_game_by_game_when_the_360_lists_are_refused(
     )
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    assert await fetcher.backfill(TG_ID, XUID) == 2
+    assert await fetcher.backfill(await repo.person_id(TG_ID), XUID) == 2
     assert client.title_calls == [("360", "xbox_360")]
 
 

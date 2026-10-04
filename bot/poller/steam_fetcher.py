@@ -80,7 +80,7 @@ class SteamFetcher:
 
     async def poll_title(
         self,
-        tg_id: int,
+        person_id: int,
         steam_id: str,
         persona_name: str,
         appid: str,
@@ -95,15 +95,17 @@ class SteamFetcher:
         )
         rows = [to_achievement_row(item) for item in parsed]
         new_rows = await self._repo.insert_new_achievements_steam(
-            await self._repo.person_id(tg_id), steam_id, rows, is_backfill=False
+            person_id, steam_id, rows, is_backfill=False
         )
         await self._repo.mark_steam_achievements_polled(steam_id)
         if not new_rows:
             return 0
 
-        log.info("tg_id=%s unlocked %s new steam achievements in %s", tg_id, len(new_rows), appid)
+        log.info(
+            "person_id=%s unlocked %s new steam achievements in %s", person_id, len(new_rows), appid
+        )
         await self._publisher.publish(
-            tg_id, steam_id, persona_name, new_rows, game_name, window_hours=window_hours
+            person_id, steam_id, persona_name, new_rows, game_name, window_hours=window_hours
         )
         await self._ensure_hltb_match(appid)
         return len(new_rows)
@@ -118,7 +120,9 @@ class SteamFetcher:
         if self._steam_extras is not None:
             self._steam_extras.ensure_title(title_id)
 
-    async def refresh_user(self, tg_id: int, steam_id: str, persona_name: str, locale: str) -> str:
+    async def refresh_user(
+        self, person_id: int, steam_id: str, persona_name: str, locale: str
+    ) -> str:
         """An out-of-turn look at one person, for the admin card (SPEC 6.4)
         — Steam's counterpart of Fetcher.refresh_user() (2026-09-05
         follow-up: the admin panel never had a Steam equivalent at all)."""
@@ -134,15 +138,11 @@ class SteamFetcher:
         try:
             await get_owned_games(api_key, steam_id)
         except SteamGameDetailsPrivateError:
-            await self._repo.set_achievements_visible(
-                await self._repo.person_id(tg_id), Platform.STEAM, False
-            )
+            await self._repo.set_achievements_visible(person_id, Platform.STEAM, False)
         except SteamApiError:
             pass  # transient failure — don't overwrite the last known-good status on a blip
         else:
-            await self._repo.set_achievements_visible(
-                await self._repo.person_id(tg_id), Platform.STEAM, True
-            )
+            await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
 
         try:
             snapshots = await get_presence_batch(api_key, [steam_id])
@@ -158,7 +158,7 @@ class SteamFetcher:
         published = 0
         if snapshot.persona_state != 0 and snapshot.gameid is not None:
             published = await self.poll_title(
-                tg_id,
+                person_id,
                 steam_id,
                 snapshot.persona_name or persona_name,
                 snapshot.gameid,
@@ -174,7 +174,7 @@ class SteamFetcher:
         return _("steamfetcher-refreshed", state=state, published=published)
 
     async def catch_up(
-        self, tg_id: int, steam_id: str, persona_name: str, since: str, window_hours: int
+        self, person_id: int, steam_id: str, persona_name: str, since: str, window_hours: int
     ) -> int:
         """Relinking an account the bot already knows (#52).
 
@@ -194,17 +194,13 @@ class SteamFetcher:
             try:
                 games = await get_owned_games(api_key, steam_id)
             except SteamGameDetailsPrivateError:
-                await self._repo.set_achievements_visible(
-                    await self._repo.person_id(tg_id), Platform.STEAM, False
-                )
+                await self._repo.set_achievements_visible(person_id, Platform.STEAM, False)
                 raise
-            await self._repo.set_achievements_visible(
-                await self._repo.person_id(tg_id), Platform.STEAM, True
-            )
+            await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
             candidates = [game for game in games if game.last_played > cutoff]
             log.info(
-                "steam catch-up for tg_id=%s: %s of %s games played since %s",
-                tg_id,
+                "steam catch-up for person_id=%s: %s of %s games played since %s",
+                person_id,
                 len(candidates),
                 len(games),
                 since,
@@ -214,7 +210,7 @@ class SteamFetcher:
                 async with self._game_slots:
                     try:
                         found += await self.poll_title(
-                            tg_id,
+                            person_id,
                             steam_id,
                             persona_name,
                             game.appid,
@@ -225,7 +221,7 @@ class SteamFetcher:
                         log.info("steam catch-up of appid=%s skipped: %s", game.appid, exc)
             return found
 
-    async def fill_library_gaps(self, tg_id: int, steam_id: str) -> int:
+    async def fill_library_gaps(self, person_id: int, steam_id: str) -> int:
         """Store, as history, the achievements of every played game this
         account has nothing stored for (#120) — one request per such game,
         not per game in the library. Publishes nothing: whatever is there was
@@ -253,9 +249,9 @@ class SteamFetcher:
                         continue
                 rows.extend(to_achievement_row(item) for item in parsed)
             await self._repo.insert_new_achievements_steam(
-                await self._repo.person_id(tg_id), steam_id, rows, is_backfill=True
+                person_id, steam_id, rows, is_backfill=True
             )
-            log.info("steam top-up for tg_id=%s stored %s achievements", tg_id, len(rows))
+            log.info("steam top-up for person_id=%s stored %s achievements", person_id, len(rows))
             return len(rows)
 
     async def fill_library_gaps_once(self, targets: list[tuple[int, str]]) -> None:
@@ -268,18 +264,20 @@ class SteamFetcher:
         if await self._repo.get_app_setting(LIBRARY_TOPUP_KEY):
             return
         complete = True
-        for tg_id, steam_id in targets:
+        for person_id, steam_id in targets:
             try:
-                await self.fill_library_gaps(tg_id, steam_id)
+                await self.fill_library_gaps(person_id, steam_id)
             except SteamGameDetailsPrivateError:
                 continue
             except Exception:
-                log.exception("steam top-up for tg_id=%s failed", tg_id)
+                log.exception("steam top-up for person_id=%s failed", person_id)
                 complete = False
         if complete:
             await self._repo.set_app_setting(LIBRARY_TOPUP_KEY, utcnow_iso())
 
-    async def backfill(self, tg_id: int, steam_id: str, *, progress: Progress | None = None) -> int:
+    async def backfill(
+        self, person_id: int, steam_id: str, *, progress: Progress | None = None
+    ) -> int:
         """Mark everything already unlocked as seen, publishing nothing —
         same principle as Xbox's backfill (SPEC 5.6), just spread over one
         request per played game instead of one call for the whole library
@@ -296,13 +294,9 @@ class SteamFetcher:
                 # so /panel's login row reflects the same finding instead of
                 # only ever logging it. Re-raised unchanged — #39's message
                 # still needs to see this exact exception.
-                await self._repo.set_achievements_visible(
-                    await self._repo.person_id(tg_id), Platform.STEAM, False
-                )
+                await self._repo.set_achievements_visible(person_id, Platform.STEAM, False)
                 raise
-            await self._repo.set_achievements_visible(
-                await self._repo.person_id(tg_id), Platform.STEAM, True
-            )
+            await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
             rows: list[AchievementRow] = []
             done = 0
             if progress is not None:
@@ -330,7 +324,7 @@ class SteamFetcher:
 
             await asyncio.gather(*(one(game) for game in games))
             await self._repo.insert_new_achievements_steam(
-                await self._repo.person_id(tg_id), steam_id, rows, is_backfill=True
+                person_id, steam_id, rows, is_backfill=True
             )
-            log.info("steam backfill for tg_id=%s stored %s achievements", tg_id, len(rows))
+            log.info("steam backfill for person_id=%s stored %s achievements", person_id, len(rows))
             return len(rows)

@@ -49,7 +49,7 @@ async def handle_hltb_search(request: web.Request) -> web.Response:
     query = (request.query.get("q") or "").strip()
     if len(query) < 2:
         raise web.HTTPBadRequest(text="query too short")
-    locale = await repo.user_locale(await repo.person_id(user.tg_id))
+    locale = await repo.user_locale(user.person_id)
     try:
         results = await overlay_cache(repo, await search(query))
     except HltbError as exc:
@@ -62,7 +62,7 @@ async def handle_hltb_resolve(request: web.Request) -> web.Response:
 
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    locale = await repo.user_locale(await repo.person_id(user.tg_id))
+    locale = await repo.user_locale(user.person_id)
     anthropic: AnthropicAuth | None = request.app.get("mini_anthropic_auth")
     try:
         result = await resolve(repo, int(request.match_info["hltb_id"]), anthropic_auth=anthropic)

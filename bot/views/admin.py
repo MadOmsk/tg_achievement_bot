@@ -503,10 +503,11 @@ async def _psn_admin_block(
 async def render_user_card(
     repo: Repo, tg_id: int, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
+    person = await repo.person_id(tg_id)
     _ = translator("admin", locale)
-    user = await repo.get_user(await repo.person_id(tg_id))
-    steam_link = await repo.get_platform_link(await repo.person_id(tg_id), Platform.STEAM)
-    psn_links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
+    user = await repo.get_user(person)
+    steam_link = await repo.get_platform_link(person, Platform.STEAM)
+    psn_links = await repo.platform_links_for(person, Platform.PSN)
     # Used to bail out on `not user.xuid` alone (2026-09-05 follow-up) — a
     # A Steam-only person got a "user not found" result in the admin panel,
     # same class of gap /stats had before it learned to work without Xbox.
@@ -514,10 +515,8 @@ async def render_user_card(
         return _("admin-user-not-found"), _back_home(locale=locale)
 
     today = today_cutoff_utc()
-    today_xbox, today_steam, _today_psn = await repo.achievement_platform_breakdown(
-        await repo.person_id(tg_id), today
-    )
-    chats = await repo.chats_of_user(await repo.person_id(tg_id))
+    today_xbox, today_steam, _today_psn = await repo.achievement_platform_breakdown(person, today)
+    chats = await repo.chats_of_user(person)
 
     # Telegram identity first (2026-09-08 user request), then one block per
     # connected platform in the one display order — Xbox, PlayStation, Steam
@@ -589,7 +588,7 @@ async def render_user_card(
                 text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
             ),
         )
-    if await repo.custom_avatar_path(await repo.person_id(tg_id)):
+    if await repo.custom_avatar_path(person):
         # A picture chosen in the Mini App is seen by everybody (#157): the
         # super-admin can take it down, back to the Telegram photo.
         builder.row(

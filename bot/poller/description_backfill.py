@@ -143,7 +143,7 @@ class DescriptionBackfill:
             XBOX_PLATFORMS, self._titles_per_tick + len(self._unanswerable)
         )
         remaining = self._titles_per_tick
-        for platform, title_id, tg_id in titles:
+        for platform, title_id, person_id in titles:
             if remaining <= 0:
                 break
             if (platform, title_id) in self._unanswerable:
@@ -154,7 +154,7 @@ class DescriptionBackfill:
                     self._repo,
                     self._anthropic_auth,
                     self._client,
-                    owners=[tg_id],
+                    owners=[person_id],
                     title_id=title_id,
                     platform=platform,
                 )

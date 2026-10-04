@@ -302,8 +302,6 @@ class FloodState:
     window_started_at: datetime
     count_in_window: int
     throttled: bool
-    # Who to name in the digest's header — only the sweep reads it.
-    tg_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -619,7 +617,7 @@ class TitleCoverRow:
     #: Somebody who has earned something here, for the platforms that answer
     #: only through a person's own token. None when nobody holds this game
     #: any more.
-    owner_tg_id: int | None = None
+    owner: int | None = None
 
 
 @dataclass(slots=True)
@@ -677,6 +675,8 @@ class PlatformLink:
     achievements_visible_checked_at: str | None = None
     # Whether this account's achievements are announced (#20).
     publishes: bool = True
+    # Who holds it (#156); `tg_id` above is how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)

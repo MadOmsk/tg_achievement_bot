@@ -28,14 +28,13 @@ async def session_user(request: web.Request) -> MiniAppUser | None:
     if not token:
         return None
     repo: Repo = request.app["mini_repo"]
-    tg_id = await repo.session_tg_id(token)
-    if tg_id is None:
-        return None
-    user = await repo.get_user(await repo.person_id(tg_id))
-    if user is None:
+    person = await repo.session_person(token)
+    user = await repo.get_user(person) if person is not None else None
+    # A person with no Telegram id cannot be served by this build yet (#162).
+    if user is None or user.tg_id is None:
         return None
     return MiniAppUser(
-        tg_id=tg_id,
+        tg_id=user.tg_id,
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name,
@@ -69,8 +68,7 @@ def register(app: web.Application) -> None:
             raise web.HTTPUnauthorized(text="invalid login") from exc
         except Exception as exc:
             raise web.HTTPBadRequest(text="invalid json") from exc
-        await repo.ensure_user(user.tg_id, user.username, user.first_name, user.last_name)
-        person = await repo.person_id(user.tg_id)
+        person = await repo.ensure_user(user.tg_id, user.username, user.first_name, user.last_name)
         if person is None:
             raise web.HTTPNotFound(text="no person")
         token = await repo.create_session(person, request.headers.get("User-Agent"))

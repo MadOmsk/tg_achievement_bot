@@ -39,7 +39,7 @@ async def test_a_game_with_no_catalogue_row_is_found(repo: Repo, cipher) -> None
     await _owner(repo, cipher)
     await repo.insert_new_achievements(XUID, [_row("111")], is_backfill=True)
 
-    assert await repo.titles_missing_from_catalogue(10) == [("111", TG_ID)]
+    assert await repo.titles_missing_from_catalogue(10) == [("111", await repo.person_id(TG_ID))]
 
     await repo.upsert_title("111", "A Named Game", Platform.XBOX_MODERN)
     assert await repo.titles_missing_from_catalogue(10) == []

@@ -107,6 +107,7 @@ async def test_run_sync_flow(tmp_path: Path) -> None:
     await repo.link_xbox_account(await repo.person_id(222), "2533000000000002", "PlayerTag", 500)
     await repo.save_refresh_token(await repo.person_id(222), b"fake_encrypted_token")
     await repo.upsert_title("100", "Game One", Platform.XBOX_MODERN)
+    person = await repo.person_id(222)
     await db.close()
 
     fernet_val = Fernet.generate_key().decode()
@@ -148,7 +149,7 @@ async def test_run_sync_flow(tmp_path: Path) -> None:
         await run_sync(cfg)
 
         mock_auth.start.assert_awaited_once()
-        mock_fetcher.backfill.assert_awaited_once_with(222, "2533000000000002")
+        mock_fetcher.backfill.assert_awaited_once_with(person, "2533000000000002")
         mock_cat.ensure_title_achievements_fresh.assert_awaited_once_with(
             "xbox_modern", "100", force=True
         )

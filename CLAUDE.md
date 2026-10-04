@@ -285,10 +285,16 @@ every column. History: #106.
   #156 step 2): `account_links`, `tokens`, `user_settings`, `subscriptions`,
   `notification_throttle`. What is Telegram by nature keeps a Telegram id:
   `chat_seen`, the admins' ids, and the reset cooldowns (`platform_cooldowns*`), which
-  must outlive a deleted person to stop a delete-and-rejoin. **The repo still takes a
-  `tg_id` at its door** and resolves the person inside (`_sql.PERSON_BY_TG`; a chat's
-  members read back as `tg_id` through `member_source`) until callers move to the
-  person id (#156 step 3). 071 and 078 rebuild their tables with foreign keys
+  must outlive a deleted person to stop a delete-and-rejoin. **Code speaks in person
+  ids** (#156 step 3): the repo's methods about a person, the services, the pollers
+  (`target.person_id`), the publisher and the Xbox login all take `users.id`; the
+  Mini App's request user carries `person_id`, and `PersonMiddleware` hands
+  handlers theirs. **A Telegram id is resolved once, at a Telegram door** — an
+  update, a callback, a URL the Mini App still keys by Telegram id (people,
+  avatars) — with `repo.person_id(tg_id)` / `get_user_by_tg`, and
+  `repo.tg_id_of(person)` goes back for what is Telegram's (a DM, the Mini App
+  button on a post, the cooldowns). A chat's members still read back as `tg_id`
+  through `member_source`. 071 and 078 rebuild their tables with foreign keys
   switched off inside the script itself (the pragma does nothing inside a
   transaction); a migration that rebuilds a parent table follows the same shape. **The rest is changing** (#156): each way to sign in
   (Telegram, later email and the rest) becomes a field on the person. A person may
@@ -786,8 +792,9 @@ elsewhere in this file still describe the bot.
   never allows credentials, so only the same origin carries the cookie. `POST
   /api/mini/auth/logout` ends it. **Setup per bot**: BotFather `/setdomain` must name
   the Mini App's host (`xbox.sultanpharm.com`, `test.xbox.sultanpharm.com`, and the
-  dev tunnel) or the widget refuses to render. A session serves only a person with a
-  Telegram id until the repo's callers move to the person id (#156 step 3).
+  dev tunnel) or the widget refuses to render. A session resolves to the person
+  (`repo.session_person`), but still serves only one with a Telegram id until email
+  sign-in (#162) lets the request user go without one.
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),

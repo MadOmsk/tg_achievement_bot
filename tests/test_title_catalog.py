@@ -194,7 +194,7 @@ async def test_catalog_service_24h_debounce(repo: Repo) -> None:
     # Call with force=True -> must call API
     mock_xbox_client.title_achievements_with_total.return_value = ([], 0)
     await service.ensure_title_achievements_fresh(
-        Platform.XBOX_MODERN, "debounced_game", tg_id=42, force=True
+        Platform.XBOX_MODERN, "debounced_game", person_id=42, force=True
     )
     assert mock_xbox_client.title_achievements_with_total.called
 
@@ -260,7 +260,7 @@ async def test_catalog_service_count_match_skips_translation(repo: Repo) -> None
     )
 
     result = await service.ensure_title_achievements_fresh(
-        Platform.XBOX_MODERN, "xbox_game", tg_id=42
+        Platform.XBOX_MODERN, "xbox_game", person_id=42
     )
     assert len(result) == 2
     # Count matched -> Claude translation was NOT called (0 tokens)
@@ -368,11 +368,11 @@ async def test_repo_catalog_helper_methods(repo: Repo) -> None:
     )
     assert await repo.any_active_external_id("psn") == "psn_ext_1"
 
-    # 2. any_active_xbox_tg_id
-    assert await repo.any_active_xbox_tg_id() is None
+    # 2. any_active_xbox_person
+    assert await repo.any_active_xbox_person() is None
     await repo.link_xbox_account(await repo.person_id(100), "xuid_100", "XboxUser", 100)
     await repo.save_refresh_token(await repo.person_id(100), b"fake_enc")
-    assert await repo.any_active_xbox_tg_id() == 100
+    assert await repo.any_active_xbox_person() == await repo.person_id(100)
 
     # 3. title_seen_platform
     assert await repo.title_seen_platform("game_1") is None
@@ -448,7 +448,7 @@ async def test_refresh_xbox_updates_platform_to_360(repo: Repo) -> None:
     service = TitleCatalogService(repo=repo, xbox_client=mock_xbox_client)
     # Query with xbox_modern (as stored in titles)
     rows = await service.ensure_title_achievements_fresh(
-        Platform.XBOX_MODERN, "t_x360_fallback", tg_id=200, force=True
+        Platform.XBOX_MODERN, "t_x360_fallback", person_id=200, force=True
     )
     assert len(rows) == 1
     assert rows[0].platform == "xbox_360"

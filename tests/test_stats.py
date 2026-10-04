@@ -69,7 +69,7 @@ async def test_counters_include_backfilled_rows(repo: Repo) -> None:
         is_backfill=False,
     )
 
-    counters = await counters_for(repo, 1, now)
+    counters = await counters_for(repo, await repo.person_id(1), now)
 
     assert (counters.today, counters.today_score) == (1, 15)
     assert (counters.month, counters.month_score) == (3, 40)
@@ -92,7 +92,7 @@ async def test_an_undated_row_counts_from_when_it_was_stored(repo: Repo) -> None
     await repo.insert_new_achievements(XUID, [row("undated", None, 50)], is_backfill=False)
 
     # `created_at` is "now", so the row lands in any window that includes now.
-    counters = await counters_for(repo, 1, utcnow())
+    counters = await counters_for(repo, await repo.person_id(1), utcnow())
 
     assert (counters.today, counters.today_score) == (1, 50)
     assert (counters.month, counters.month_score) == (1, 50)
@@ -112,7 +112,7 @@ async def test_counters_today_crosses_midnight_correctly(repo: Repo) -> None:
         is_backfill=False,
     )
 
-    counters = await counters_for(repo, 1, now)
+    counters = await counters_for(repo, await repo.person_id(1), now)
 
     assert counters.today == 2
     assert counters.today_score == 30

@@ -154,7 +154,7 @@ async def test_uncached_descriptions_carries_the_owner(repo: Repo) -> None:
 
     [(_platform, _title, _achievement, tg_id, external_id)] = await repo.uncached_descriptions()
 
-    assert (tg_id, external_id) == (42, "xuid-42")
+    assert (tg_id, external_id) == (await repo.person_id(42), "xuid-42")
 
 
 # ------------------------------------------- the achievement's own name (#61)

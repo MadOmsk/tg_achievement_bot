@@ -133,13 +133,13 @@ class XboxClient:
 
     # ----------------------------------------------------------- presence
 
-    async def presence(self, tg_id: int) -> PresenceSnapshot:
+    async def presence(self, person_id: int) -> PresenceSnapshot:
         """Ask a user about himself with his own token (SPEC 5.2).
 
         No batching and no friendship with a bot account: everyone can always
         see himself, whatever his privacy settings are.
         """
-        manager = await self._auth.authenticated_manager(tg_id)
+        manager = await self._auth.authenticated_manager(person_id)
         client = XboxLiveClient(manager)
         await self._limiter.acquire()
         try:
@@ -166,7 +166,7 @@ class XboxClient:
 
     async def title_achievements(
         self,
-        tg_id: int,
+        person_id: int,
         title_id: str,
         platform: Platform,
         *,
@@ -191,13 +191,13 @@ class XboxClient:
         own default strings when no match exists for the requested locale.
         """
         unlocked, _total = await self.title_achievements_with_total(
-            tg_id, title_id, platform, language=language, earned_only=earned_only
+            person_id, title_id, platform, language=language, earned_only=earned_only
         )
         return unlocked
 
     async def title_achievements_with_total(
         self,
-        tg_id: int,
+        person_id: int,
         title_id: str,
         platform: Platform,
         *,
@@ -221,10 +221,10 @@ class XboxClient:
         params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         if platform == Platform.XBOX_360:
             return await self._x360_achievements(
-                tg_id, title_id, params, language=language, earned_only=earned_only
+                person_id, title_id, params, language=language, earned_only=earned_only
             )
 
-        payload = await self._get_achievements(tg_id, "4", params, language=language)
+        payload = await self._get_achievements(person_id, "4", params, language=language)
         if payload.get("achievements"):
             return (
                 parse_achievements(
@@ -235,12 +235,12 @@ class XboxClient:
 
         log.info("title %s looks like Xbox 360, asking the Xbox 360 contracts", title_id)
         return await self._x360_achievements(
-            tg_id, title_id, params, language=language, earned_only=earned_only
+            person_id, title_id, params, language=language, earned_only=earned_only
         )
 
     async def _x360_achievements(
         self,
-        tg_id: int,
+        person_id: int,
         title_id: str,
         params: dict[str, str],
         *,
@@ -261,14 +261,14 @@ class XboxClient:
         catalog) from contract 3 alone.
         """
         listing = await self._get_achievements(
-            tg_id, "3", params, language=language, endpoint="titleachievements"
+            person_id, "3", params, language=language, endpoint="titleachievements"
         )
         total = _total_in(listing)
         if not earned_only and listing.get("achievements"):
             return parse_achievements(
                 listing, Platform.XBOX_360, title_id, earned_only=False
             ), total
-        mine = await self._get_achievements(tg_id, "1", params, language=language)
+        mine = await self._get_achievements(person_id, "1", params, language=language)
         earned = parse_achievements(mine, Platform.XBOX_360, title_id, earned_only=earned_only)
         rarity, _ = parse_rarity_with_title(listing)
         for item in earned:
@@ -276,13 +276,13 @@ class XboxClient:
                 item.rarity_percent = rarity.get(item.achievement_id)
         return earned, total or _total_in(mine)
 
-    async def title_rarity(self, tg_id: int, title_id: str) -> dict[str, float]:
+    async def title_rarity(self, person_id: int, title_id: str) -> dict[str, float]:
         """Every achievement's rarity for one modern or back-compat title, earned or not."""
-        rarity, _ = await self.title_rarity_with_name(tg_id, title_id)
+        rarity, _ = await self.title_rarity_with_name(person_id, title_id)
         return rarity
 
     async def title_rarity_with_name(
-        self, tg_id: int, title_id: str
+        self, person_id: int, title_id: str
     ) -> tuple[dict[str, float], str | None]:
         """Contract 4 returns both rarity map and human-readable title name (#77).
 
@@ -290,12 +290,12 @@ class XboxClient:
         supplies their rarity.
         """
         payload = await self._get_achievements(
-            tg_id, "4", {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
+            person_id, "4", {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         )
         rarity, title_name = parse_rarity_with_title(payload)
         if not rarity:
             payload_360 = await self._get_achievements(
-                tg_id,
+                person_id,
                 "3",
                 {"titleId": title_id, "maxItems": str(PAGE_SIZE)},
                 endpoint="titleachievements",
@@ -305,7 +305,7 @@ class XboxClient:
                 return rarity_360, name_360 or title_name
         return rarity, title_name
 
-    async def all_achievements(self, tg_id: int) -> list[ParsedAchievement]:
+    async def all_achievements(self, person_id: int) -> list[ParsedAchievement]:
         """Every achievement of the player, for backfill only (SPEC 5.6).
 
         Contract 2, no titleId: rarity is missing here, and that is fine —
@@ -314,7 +314,7 @@ class XboxClient:
         collected: list[ParsedAchievement] = []
         params = {"maxItems": str(PAGE_SIZE)}
         for _ in range(100):  # a hard stop; nobody has 100k achievements
-            payload = await self._get_achievements(tg_id, "2", params)
+            payload = await self._get_achievements(person_id, "2", params)
             collected.extend(parse_achievements(payload, Platform.XBOX_MODERN))
             token = continuation_token(payload)
             if not token:
@@ -322,7 +322,7 @@ class XboxClient:
             params = {"maxItems": str(PAGE_SIZE), "continuationToken": token}
         return collected
 
-    async def all_x360_achievements(self, tg_id: int) -> list[ParsedAchievement]:
+    async def all_x360_achievements(self, person_id: int) -> list[ParsedAchievement]:
         """Every Xbox 360 achievement the player earned, for backfill (#91).
 
         Contract 1 with no titleId: what contract 2 above is for modern
@@ -334,7 +334,7 @@ class XboxClient:
         collected: list[ParsedAchievement] = []
         params = {"maxItems": str(PAGE_SIZE)}
         for _ in range(100):
-            payload = await self._get_achievements(tg_id, "1", params)
+            payload = await self._get_achievements(person_id, "1", params)
             collected.extend(parse_achievements(payload, Platform.XBOX_360))
             token = continuation_token(payload)
             if not token:
@@ -342,7 +342,7 @@ class XboxClient:
             params = {"maxItems": str(PAGE_SIZE), "continuationToken": token}
         return collected
 
-    async def x360_title_summaries(self, tg_id: int) -> list[X360TitleSummary]:
+    async def x360_title_summaries(self, person_id: int) -> list[X360TitleSummary]:
         """Every Xbox 360 game the player has achievements in, with its
         name and its whole size (#91, #92) — `history/titles`, contract 1.
         Titlehub dropped games this lists (330 here against titlehub's 342
@@ -351,7 +351,9 @@ class XboxClient:
         summaries: list[X360TitleSummary] = []
         params = {"maxItems": str(PAGE_SIZE)}
         for _ in range(100):
-            payload = await self._get_achievements(tg_id, "1", params, endpoint="history/titles")
+            payload = await self._get_achievements(
+                person_id, "1", params, endpoint="history/titles"
+            )
             for item in payload.get("titles") or []:
                 if not item.get("titleId"):
                     continue
@@ -372,14 +374,14 @@ class XboxClient:
 
     async def _get_achievements(
         self,
-        tg_id: int,
+        person_id: int,
         contract: str,
         params: dict[str, str],
         *,
         language: str = "en-US",
         endpoint: str = "achievements",
     ) -> dict:
-        manager = await self._auth.authenticated_manager(tg_id)
+        manager = await self._auth.authenticated_manager(person_id)
         assert manager.xsts_token is not None
         url = f"{ACHIEVEMENTS_BASE_URL.format(xuid=manager.xsts_token.xuid)}/{endpoint}"
         headers = {
@@ -424,7 +426,7 @@ class XboxClient:
 
         raise XboxApiError("achievements request gave up")
 
-    async def profile(self, tg_id: int) -> XboxProfileSnapshot:
+    async def profile(self, person_id: int) -> XboxProfileSnapshot:
         """Gamerscore and both gamertags, from one profile request.
 
         The gamerscore is the real total from the profile: summing title
@@ -439,7 +441,7 @@ class XboxClient:
         profile link built from it went dead on a rename. The `#1234`
         suffix is deliberately not kept: it is never shown.
         """
-        manager = await self._auth.authenticated_manager(tg_id)
+        manager = await self._auth.authenticated_manager(person_id)
         assert manager.xsts_token is not None
         client = XboxLiveClient(manager)
         await self._limiter.acquire()
@@ -473,14 +475,14 @@ class XboxClient:
             avatar_url=wanted[XboxApiValue.GAME_DISPLAY_PIC],
         )
 
-    async def resolve_title(self, tg_id: int, title_id: str) -> TitleHistoryEntry | None:
+    async def resolve_title(self, person_id: int, title_id: str) -> TitleHistoryEntry | None:
         """Look one game up by id.
 
         Presence returns an empty name for PC titles (seen live on
         WindowsOneCore), and a message saying "неизвестная игра" is worse than
         one extra request per new game — the answer is cached in `titles`.
         """
-        manager = await self._auth.authenticated_manager(tg_id)
+        manager = await self._auth.authenticated_manager(person_id)
         client = XboxLiveClient(manager)
         await self._limiter.acquire()
         try:
@@ -513,7 +515,7 @@ class XboxClient:
 
     # -------------------------------------------------------- title history
 
-    async def title_history(self, tg_id: int, max_items: int = 200) -> list[TitleHistoryEntry]:
+    async def title_history(self, person_id: int, max_items: int = 200) -> list[TitleHistoryEntry]:
         """Source of /stats and /online, of the x360 pass in backfill(), and of
         the "recent games" table.
 
@@ -537,7 +539,7 @@ class XboxClient:
         is the actual hard deadline; the session's own read timeout only
         matters for a connection that goes fully silent mid-response.
         """
-        manager = await self._auth.authenticated_manager(tg_id)
+        manager = await self._auth.authenticated_manager(person_id)
         assert manager.xsts_token is not None
         client = XboxLiveClient(manager)
         await self._limiter.acquire()

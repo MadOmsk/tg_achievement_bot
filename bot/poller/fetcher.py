@@ -70,7 +70,7 @@ class Fetcher:
 
     async def poll_title(
         self,
-        tg_id: int,
+        person_id: int,
         xuid: str,
         gamertag: str,
         title_id: str,
@@ -82,7 +82,9 @@ class Fetcher:
         # Presence sometimes reports a title id of 0 — no game at all (#122).
         if not title_id or title_id == "0" or title_id in self._no_achievements:
             return 0
-        parsed, total = await self._client.title_achievements_with_total(tg_id, title_id, platform)
+        parsed, total = await self._client.title_achievements_with_total(
+            person_id, title_id, platform
+        )
         if not parsed and not total:
             # Not "nothing new": nothing listed by any contract, so the title
             # has no achievements to earn (a game always lists its whole set).
@@ -103,8 +105,8 @@ class Fetcher:
                 # Presence gives no name for a PC title; the name is resolved
                 # further down, and the total must not wait for it.
                 await self._repo.set_title_total(title_id, total)
-        await self._fill_x360_icon(tg_id, title_id, platform, parsed)
-        await self._bilingual_descriptions(tg_id, title_id, platform, parsed)
+        await self._fill_x360_icon(person_id, title_id, platform, parsed)
+        await self._bilingual_descriptions(person_id, title_id, platform, parsed)
         # Free: this response carried the percentages, and the shared cache is
         # what an older row without one reads instead (poller/rarity_backfill.py).
         await self._repo.cache_rarity(
@@ -119,15 +121,17 @@ class Fetcher:
         if not new_rows:
             return 0
 
-        log.info("tg_id=%s unlocked %s new achievements in %s", tg_id, len(new_rows), title_id)
-        resolved = await self.ensure_title_name(tg_id, title_id, title_name)
-        await self.ensure_title_platforms(tg_id, title_id)
-        await self._publisher.publish(tg_id, xuid, gamertag, new_rows, resolved)
+        log.info(
+            "person_id=%s unlocked %s new achievements in %s", person_id, len(new_rows), title_id
+        )
+        resolved = await self.ensure_title_name(person_id, title_id, title_name)
+        await self.ensure_title_platforms(person_id, title_id)
+        await self._publisher.publish(person_id, xuid, gamertag, new_rows, resolved)
         await self._ensure_hltb_match(title_id)
         return len(new_rows)
 
     async def ensure_title_name(
-        self, tg_id: int, title_id: str, from_presence: str | None
+        self, person_id: int, title_id: str, from_presence: str | None
     ) -> str | None:
         """Presence leaves the name empty for PC titles, so ask titlehub once.
 
@@ -140,7 +144,7 @@ class Fetcher:
         if cached:
             return cached
         try:
-            entry = await self._client.resolve_title(tg_id, title_id)
+            entry = await self._client.resolve_title(person_id, title_id)
         except XboxApiError as exc:
             log.info("could not resolve title %s: %s", title_id, exc)
             return None
@@ -154,7 +158,7 @@ class Fetcher:
         )
         return entry.name
 
-    async def ensure_title_platforms(self, tg_id: int, title_id: str) -> None:
+    async def ensure_title_platforms(self, person_id: int, title_id: str) -> None:
         """A game's platforms before its achievements are announced (#114):
         they decide which version of the game the card names, and without
         them a Smart Delivery or Play Anywhere game can only say "XBOX".
@@ -168,7 +172,7 @@ class Fetcher:
         if not await self._repo.platforms_lookup_due(title_id):
             return
         try:
-            entry = await self._client.resolve_title(tg_id, title_id)
+            entry = await self._client.resolve_title(person_id, title_id)
         except (XboxApiError, TokenRefreshError) as exc:
             log.info("could not look up platforms of title %s: %s", title_id, exc)
             entry = None
@@ -194,7 +198,7 @@ class Fetcher:
         if self._steam_extras is not None:
             self._steam_extras.ensure_title(title_id)
 
-    async def ensure_title_icon(self, tg_id: int, title_id: str) -> str | None:
+    async def ensure_title_icon(self, person_id: int, title_id: str) -> str | None:
         """Box art as a stand-in for an Xbox 360 achievement icon (SPEC 7.1)
         — contract 1's achievement payload only ever carries a bare imageId
         int, no documented way to turn it into a URL at all (verified live
@@ -206,7 +210,7 @@ class Fetcher:
         if cached:
             return cached
         try:
-            entry = await self._client.resolve_title(tg_id, title_id)
+            entry = await self._client.resolve_title(person_id, title_id)
         except XboxApiError as exc:
             log.info("could not resolve icon for title %s: %s", title_id, exc)
             return None
@@ -216,7 +220,7 @@ class Fetcher:
         return entry.icon_url
 
     async def _fill_x360_icon(
-        self, tg_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
+        self, person_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
     ) -> None:
         """Shared by poll_title() and catch_up() — both publish live x360
         unlocks and must agree on the icon. If an achievement has no genuine icon,
@@ -226,7 +230,7 @@ class Fetcher:
         missing = [item for item in parsed if not item.icon_url]
         if not missing:
             return
-        icon_url = await self.ensure_title_icon(tg_id, title_id)
+        icon_url = await self.ensure_title_icon(person_id, title_id)
         if icon_url:
             for item in missing:
                 item.icon_url = icon_url
@@ -246,7 +250,7 @@ class Fetcher:
                 task.add_done_callback(self._background_tasks.discard)
 
     async def _bilingual_descriptions(
-        self, tg_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
+        self, person_id: int, title_id: str, platform: Platform, parsed: list[ParsedAchievement]
     ) -> None:
         """Mutates each item's `.description` in place — same shape
         `_fill_x360_icon` above already uses. Only called from poll_title/
@@ -305,7 +309,7 @@ class Fetcher:
         if uncached or nameless:
             try:
                 russian_parsed = await self._client.title_achievements(
-                    tg_id, title_id, platform, language="ru-RU"
+                    person_id, title_id, platform, language="ru-RU"
                 )
             except XboxApiError as exc:
                 log.info("bilingual fetch for title %s skipped: %s", title_id, exc)
@@ -370,7 +374,7 @@ class Fetcher:
             if resolved_pair is not None and resolved_pair[0] is not None:
                 item.description = resolved_pair[0]
 
-    async def backfill(self, tg_id: int, xuid: str, *, progress: Progress | None = None) -> int:
+    async def backfill(self, person_id: int, xuid: str, *, progress: Progress | None = None) -> int:
         """Mark everything already unlocked as seen, publishing nothing.
 
         Without this the first poll after connecting would dump thousands of
@@ -381,7 +385,7 @@ class Fetcher:
             # the whole library, so there is no per-game count to show.
             if progress is not None:
                 await progress(0, 3, 0)
-            raw_items = await self._client.all_achievements(tg_id)
+            raw_items = await self._client.all_achievements(person_id)
             rows = [to_achievement_row(item) for item in raw_items]
             if progress is not None:
                 await progress(1, 3, len(rows))
@@ -401,20 +405,20 @@ class Fetcher:
             #
             # The whole history, not the 200 most recent the pollers read: the
             # per-title fallback below finds a 360 game only through it (#121).
-            history = await self._client.title_history(tg_id, max_items=BACKFILL_HISTORY_ITEMS)
+            history = await self._client.title_history(person_id, max_items=BACKFILL_HISTORY_ITEMS)
             if progress is not None:
                 await progress(2, 3, len(rows))
-            rows.extend(await self._x360_rows(tg_id, history))
+            rows.extend(await self._x360_rows(person_id, history))
             if progress is not None:
                 await progress(3, 3, len(rows))
 
             await self._repo.insert_new_achievements(xuid, rows, is_backfill=True)
-            await self._save_history(tg_id, xuid, history)
-            log.info("backfill for tg_id=%s stored %s achievements", tg_id, len(rows))
+            await self._save_history(person_id, xuid, history)
+            log.info("backfill for person_id=%s stored %s achievements", person_id, len(rows))
             return len(rows)
 
     async def _x360_rows(
-        self, tg_id: int, history: list[TitleHistoryEntry]
+        self, person_id: int, history: list[TitleHistoryEntry]
     ) -> list[AchievementRow]:
         """Every Xbox 360 achievement the player earned (#91): the whole
         list in a few pages, and each game's name and size from the
@@ -422,11 +426,13 @@ class Fetcher:
         does not forget a game. Falls back to asking game by game through
         titlehub's history if that answer is refused."""
         try:
-            summaries = await self._client.x360_title_summaries(tg_id)
-            parsed = await self._client.all_x360_achievements(tg_id)
+            summaries = await self._client.x360_title_summaries(person_id)
+            parsed = await self._client.all_x360_achievements(person_id)
         except XboxApiError as exc:
-            log.info("x360 history for tg_id=%s unavailable, per title instead: %s", tg_id, exc)
-            return await self._x360_rows_per_title(tg_id, history)
+            log.info(
+                "x360 history for person_id=%s unavailable, per title instead: %s", person_id, exc
+            )
+            return await self._x360_rows_per_title(person_id, history)
         await self._store_x360_titles(summaries)
         return [to_achievement_row(item) for item in parsed]
 
@@ -443,7 +449,7 @@ class Fetcher:
             )
 
     async def _x360_rows_per_title(
-        self, tg_id: int, history: list[TitleHistoryEntry]
+        self, person_id: int, history: list[TitleHistoryEntry]
     ) -> list[AchievementRow]:
         rows: list[AchievementRow] = []
         for entry in history:
@@ -451,7 +457,7 @@ class Fetcher:
                 continue
             try:
                 parsed = await self._client.title_achievements(
-                    tg_id, entry.title_id, Platform.XBOX_360
+                    person_id, entry.title_id, Platform.XBOX_360
                 )
             except XboxApiError as exc:
                 log.info("x360 backfill of %s skipped: %s", entry.title_id, exc)
@@ -478,25 +484,25 @@ class Fetcher:
         if await self._repo.get_app_setting(X360_TOPUP_KEY):
             return
         complete = True
-        for tg_id, xuid in targets:
+        for person_id, xuid in targets:
             try:
-                summaries = await self._client.x360_title_summaries(tg_id)
-                parsed = await self._client.all_x360_achievements(tg_id)
+                summaries = await self._client.x360_title_summaries(person_id)
+                parsed = await self._client.all_x360_achievements(person_id)
             except (XboxApiError, TokenRefreshError) as exc:
-                log.info("x360 top-up for tg_id=%s skipped: %s", tg_id, exc)
+                log.info("x360 top-up for person_id=%s skipped: %s", person_id, exc)
                 complete = False
                 continue
             await self._store_x360_titles(summaries)
             added = await self._repo.insert_new_achievements(
                 xuid, [to_achievement_row(item) for item in parsed], is_backfill=True
             )
-            log.info("x360 top-up for tg_id=%s stored %s achievements", tg_id, len(added))
+            log.info("x360 top-up for person_id=%s stored %s achievements", person_id, len(added))
         if complete:
             await self._repo.set_app_setting(X360_TOPUP_KEY, utcnow_iso())
 
     async def catch_up(
         self,
-        tg_id: int,
+        person_id: int,
         xuid: str,
         gamertag: str,
         since: datetime | None,
@@ -511,8 +517,8 @@ class Fetcher:
         should be lost.
         """
         async with self._backfill_slots:
-            history = await self._client.title_history(tg_id)
-            await self._save_history(tg_id, xuid, history)
+            history = await self._client.title_history(person_id)
+            await self._save_history(person_id, xuid, history)
 
             candidates = _played_since(history, since)[:max_titles]
             if not candidates:
@@ -523,13 +529,15 @@ class Fetcher:
             for entry in candidates:
                 try:
                     parsed = await self._client.title_achievements(
-                        tg_id, entry.title_id, entry.platform
+                        person_id, entry.title_id, entry.platform
                     )
                 except XboxApiError as exc:
                     log.info("catch-up skipped title %s: %s", entry.title_id, exc)
                     continue
-                await self._fill_x360_icon(tg_id, entry.title_id, entry.platform, parsed)
-                await self._bilingual_descriptions(tg_id, entry.title_id, entry.platform, parsed)
+                await self._fill_x360_icon(person_id, entry.title_id, entry.platform, parsed)
+                await self._bilingual_descriptions(
+                    person_id, entry.title_id, entry.platform, parsed
+                )
                 await self._repo.cache_rarity(
                     entry.platform,
                     entry.title_id,
@@ -550,27 +558,27 @@ class Fetcher:
                     if _publishable(row, publish_after, entry.last_played_at)
                 ]
                 if fresh:
-                    await self.ensure_title_platforms(tg_id, entry.title_id)
-                    await self._publisher.publish(tg_id, xuid, gamertag, fresh, entry.name)
+                    await self.ensure_title_platforms(person_id, entry.title_id)
+                    await self._publisher.publish(person_id, xuid, gamertag, fresh, entry.name)
                     await self._ensure_hltb_match(entry.title_id)
                     published += len(fresh)
 
             log.info(
-                "catch-up for tg_id=%s: %s titles, %s published",
-                tg_id,
+                "catch-up for person_id=%s: %s titles, %s published",
+                person_id,
                 len(candidates),
                 published,
             )
             return len(candidates), published
 
-    async def refresh_user(self, tg_id: int, xuid: str, gamertag: str, locale: str) -> str:
+    async def refresh_user(self, person_id: int, xuid: str, gamertag: str, locale: str) -> str:
         """An out-of-turn look at one person, for the admin card (SPEC 6.4).
 
         The only on-demand API call in the interface, so it does the whole
         round: presence, the current game's achievements, title history.
         """
         _ = translator("fetcher", locale)
-        snapshot = await self._client.presence(tg_id)
+        snapshot = await self._client.presence(person_id)
         await self._repo.save_presence_state(
             xuid,
             snapshot.state,
@@ -583,7 +591,7 @@ class Fetcher:
         published = 0
         if snapshot.in_game and snapshot.title_id:
             published = await self.poll_title(
-                tg_id,
+                person_id,
                 xuid,
                 gamertag,
                 snapshot.title_id,
@@ -591,7 +599,7 @@ class Fetcher:
                 snapshot.title_name,
                 device=snapshot.device,
             )
-        await self.refresh_title_history(tg_id, xuid)
+        await self.refresh_title_history(person_id, xuid)
 
         where = snapshot.title_name or snapshot.title_id or _("fetcher-no-game")
         state = (
@@ -601,11 +609,11 @@ class Fetcher:
         )
         return _("fetcher-refreshed", state=state, published=published)
 
-    async def refresh_title_history(self, tg_id: int, xuid: str) -> None:
+    async def refresh_title_history(self, person_id: int, xuid: str) -> None:
         """Source of /stats, /top and of the gamerscore in the panel (SPEC 5.4)."""
-        await self._save_history(tg_id, xuid, await self._client.title_history(tg_id))
+        await self._save_history(person_id, xuid, await self._client.title_history(person_id))
 
-    async def _save_history(self, tg_id: int, xuid: str, history: list) -> None:
+    async def _save_history(self, person_id: int, xuid: str, history: list) -> None:
         rows = [
             TitleHistoryRow(
                 title_id=entry.title_id,
@@ -628,21 +636,19 @@ class Fetcher:
         # capped, so an account with more games than the cap would show too low
         # a score.
         try:
-            snapshot = await self._client.profile(tg_id)
+            snapshot = await self._client.profile(person_id)
         except XboxApiError as exc:
-            log.info("profile for tg_id=%s not refreshed: %s", tg_id, exc)
+            log.info("profile for person_id=%s not refreshed: %s", person_id, exc)
             return
         if snapshot.gamerscore is not None:
-            await self._repo.update_gamerscore(
-                await self._repo.person_id(tg_id), snapshot.gamerscore
-            )
+            await self._repo.update_gamerscore(person_id, snapshot.gamerscore)
         # The gamertags came in the same response (#51). Xbox used to store
         # them once at connect and never again, so a rename left the bot
         # calling someone by an old name and pointing at a dead profile
         # link — both Xbox links are built from the nickname, not the XUID.
         if snapshot.gamertag or snapshot.gamertag_modern:
             await self._repo.update_xbox_names(
-                await self._repo.person_id(tg_id),
+                person_id,
                 gamertag=snapshot.gamertag,
                 gamertag_modern=snapshot.gamertag_modern,
             )

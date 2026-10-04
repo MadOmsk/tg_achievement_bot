@@ -65,7 +65,9 @@ class FloodFlush:
                     if passes_filters(item, chat, chat.rare_threshold_percent)
                 ]
                 if allowed:
-                    await self._publisher.publish_flood_digest(state.tg_id, state.chat_id, allowed)
+                    await self._publisher.publish_flood_digest(
+                        state.person_id, state.chat_id, allowed
+                    )
             # No subscription any more (unsubscribed mid-window) — nothing to
             # flush into, just clear the stale throttle row below.
         except Exception:

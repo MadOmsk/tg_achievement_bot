@@ -591,4 +591,4 @@ async def test_games_nobody_can_be_asked_about_do_not_stall_the_queue(repo: Repo
         "xuid-7", [_row("t-held", "1", Platform.XBOX_MODERN)], is_backfill=True
     )
 
-    assert await repo.titles_needing_platforms(1) == [("t-held", 7)]
+    assert await repo.titles_needing_platforms(1) == [("t-held", await repo.person_id(7))]

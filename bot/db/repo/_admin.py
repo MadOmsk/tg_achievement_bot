@@ -337,27 +337,27 @@ class _AdminRepo:
         return await cursor.fetchone() is not None
 
     async def titles_needing_platforms(self, limit: int) -> list[tuple[str, int]]:
-        """`(title_id, owner_tg_id)` for Xbox games whose platforms are still
+        """`(title_id, owner)` — a person id — for Xbox games whose platforms are still
         unknown — the same "somebody here with a live token" owner the cover
         walker asks through, since titlehub answers only through a person's."""
         cursor = await self._conn.execute(
             "SELECT t.title_id,"
-            "       (SELECT MIN(u.tg_id) FROM seen_achievements s "
+            "       (SELECT MIN(al.person_id) FROM seen_achievements s "
             "        JOIN account_links al ON al.platform = s.account_platform"
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
             "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
-            "        WHERE s.title_id = t.title_id) AS owner_tg_id "
+            "        WHERE s.title_id = t.title_id) AS owner "
             f"FROM titles t WHERE {self._PLATFORMS_DUE} "
             # Filtered before the LIMIT: a game nobody here can be asked about
             # must not take a place in the batch, or a head of such games
             # would stall the queue for good.
-            "AND owner_tg_id IS NOT NULL "
+            "AND owner IS NOT NULL "
             "ORDER BY t.platforms_checked_at IS NOT NULL, t.platforms_checked_at "
             "LIMIT ?",
             (limit,),
         )
-        return [(row["title_id"], row["owner_tg_id"]) for row in await cursor.fetchall()]
+        return [(row["title_id"], row["owner"]) for row in await cursor.fetchall()]
 
     async def record_platforms_lookup(self, title_id: str, platforms_json: str | None) -> None:
         """What one titlehub lookup found. None counts as a failed attempt; the
@@ -536,7 +536,7 @@ class _AdminRepo:
         the same condition `pollable_users` applies.
         """
         cursor = await self._conn.execute(
-            "SELECT s.title_id, MIN(u.tg_id) AS tg_id "
+            "SELECT s.title_id, MIN(al.person_id) AS person_id "
             "FROM seen_achievements s "
             "JOIN account_links al ON al.platform = s.account_platform"
             "   AND al.external_id = s.xuid AND al.is_active = 1 "
@@ -547,7 +547,7 @@ class _AdminRepo:
             "GROUP BY s.title_id LIMIT ?",
             (limit,),
         )
-        return [(row["title_id"], int(row["tg_id"])) for row in await cursor.fetchall()]
+        return [(row["title_id"], int(row["person_id"])) for row in await cursor.fetchall()]
 
     async def titles_without_platform(self) -> list[tuple[str, str]]:
         """`(title_id, platform)` for rows whose own platform is NULL while
@@ -591,7 +591,7 @@ class _AdminRepo:
         of the queue forever; it is stamped on every visit, found or not.
         """
         cursor = await self._conn.execute(
-            # `owner_tg_id` is somebody who has earned something in this game,
+            # `owner` is a person who has earned something in this game,
             # because Xbox answers about a title only through a *person's*
             # token (unlike Steam's one shared key, or PSN's). Any owner will
             # do — the art is a fact about the game, not about them.
@@ -602,12 +602,12 @@ class _AdminRepo:
             # NULL when nobody here can be asked, which is exactly the title
             # the walker should stamp and leave alone.
             "SELECT t.title_id, t.name, t.platform, t.icon_url, t.cover_path, t.cover_hash,"
-            "       (SELECT MIN(u.tg_id) FROM seen_achievements s "
+            "       (SELECT MIN(al.person_id) FROM seen_achievements s "
             "        JOIN account_links al ON al.platform = s.account_platform"
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
             "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
-            "        WHERE s.title_id = t.title_id) AS owner_tg_id "
+            "        WHERE s.title_id = t.title_id) AS owner "
             "FROM titles t "
             "WHERE t.cover_path IS NULL "
             "ORDER BY t.cover_checked_at IS NOT NULL, t.cover_checked_at, t.updated_at DESC "
@@ -622,7 +622,7 @@ class _AdminRepo:
                 icon_url=row["icon_url"],
                 cover_path=row["cover_path"],
                 cover_hash=row["cover_hash"],
-                owner_tg_id=row["owner_tg_id"],
+                owner=row["owner"],
             )
             for row in await cursor.fetchall()
         ]

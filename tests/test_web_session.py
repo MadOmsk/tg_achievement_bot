@@ -82,7 +82,7 @@ async def test_an_ended_or_unknown_session_signs_nobody_in(repo: Repo, settings)
     await repo.ensure_user(5, "five")
     person = await repo.person_id(5)
     token = await repo.create_session(person, "test")
-    assert await repo.session_tg_id(token) == 5
+    assert await repo.session_person(token) == person
     await repo.end_session(token)
-    assert await repo.session_tg_id(token) is None
-    assert await repo.session_tg_id("not-a-token") is None
+    assert await repo.session_person(token) is None
+    assert await repo.session_person("not-a-token") is None

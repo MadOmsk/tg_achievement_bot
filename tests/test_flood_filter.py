@@ -99,7 +99,7 @@ async def test_flood_filter_disabled_when_limit_is_zero(repo: Repo) -> None:
     for i in range(10):
         item = achievement(f"c{i}")
         await repo.insert_new_achievements(XUID, [item], is_backfill=False)
-        await publisher.publish(TG_ID, XUID, "Gamer", [item])
+        await publisher.publish(await repo.person_id(TG_ID), XUID, "Gamer", [item])
 
     assert publisher._queue.qsize() == 10
     assert await repo.get_flood_state(await repo.person_id(TG_ID), CHAT_ID) is None
@@ -117,7 +117,7 @@ async def test_flood_filter_never_starts_a_timer_for_a_filtered_out_achievement(
     item = achievement("z1")
     await repo.insert_new_achievements(XUID, [item], is_backfill=False)
 
-    await publisher.publish(TG_ID, XUID, "Gamer", [item])
+    await publisher.publish(await repo.person_id(TG_ID), XUID, "Gamer", [item])
 
     assert publisher._queue.qsize() == 0
     assert await repo.get_flood_state(await repo.person_id(TG_ID), CHAT_ID) is None
@@ -328,12 +328,12 @@ async def test_a_muted_account_posts_nothing_and_holds_nothing_back(repo: Repo) 
     item = achievement("m1")
     await repo.insert_new_achievements(XUID, [item], is_backfill=False)
 
-    await publisher.publish(TG_ID, XUID, "Gamer", [item])
+    await publisher.publish(await repo.person_id(TG_ID), XUID, "Gamer", [item])
 
     assert publisher._queue.qsize() == 0
     assert await repo.unpublished_achievements(await repo.person_id(TG_ID), CHAT_ID) == []
     assert await repo.has_any_achievements(XUID)
 
     await repo.set_account_publishes(await repo.person_id(TG_ID), "xbox", XUID, True)
-    await publisher.publish(TG_ID, XUID, "Gamer", [item])
+    await publisher.publish(await repo.person_id(TG_ID), XUID, "Gamer", [item])
     assert publisher._queue.qsize() == 1

@@ -361,15 +361,15 @@ async def run_sync(cfg: SyncConfig) -> None:
                     continue
 
                 if cfg.skip_achievements:
-                    history = await xbox_client.title_history(link.tg_id, max_items=2000)
-                    await fetcher._save_history(link.tg_id, link.external_id, history)
+                    history = await xbox_client.title_history(link.person_id, max_items=2000)
+                    await fetcher._save_history(link.person_id, link.external_id, history)
                     log.info("Xbox: saved %d titles for %s", len(history), name)
                 else:
-                    total_achs = await fetcher.backfill(link.tg_id, link.external_id)
+                    total_achs = await fetcher.backfill(link.person_id, link.external_id)
                     log.info("Xbox: backfilled %d achievements for %s", total_achs, name)
                     try:
-                        history = await xbox_client.title_history(link.tg_id, max_items=2000)
-                        await fetcher._save_history(link.tg_id, link.external_id, history)
+                        history = await xbox_client.title_history(link.person_id, max_items=2000)
+                        await fetcher._save_history(link.person_id, link.external_id, history)
                         log.info(
                             "Xbox: deep title_history refreshed %d titles for %s",
                             len(history),
@@ -404,7 +404,7 @@ async def run_sync(cfg: SyncConfig) -> None:
                         await repo.upsert_title(str(g.appid), g.name, Platform.STEAM)
                     log.info("Steam: saved %d owned games for %s", len(games), name)
                 else:
-                    total_achs = await steam_fetcher.backfill(link.tg_id, link.external_id)
+                    total_achs = await steam_fetcher.backfill(link.person_id, link.external_id)
                     log.info("Steam: backfilled %d achievements for %s", total_achs, name)
             except SteamNotConfiguredError:
                 log.warning("Steam is not configured (missing API key), skipping Steam sync")
@@ -443,7 +443,7 @@ async def run_sync(cfg: SyncConfig) -> None:
                         )
                     log.info("PSN: saved %d trophy titles for %s", len(titles), name)
                 else:
-                    res = await psn_fetcher.backfill(link.tg_id, link.external_id)
+                    res = await psn_fetcher.backfill(link.person_id, link.external_id)
                     log.info("PSN: backfilled %d trophies for %s", res.stored, name)
             except PsnNotConfiguredError:
                 log.warning("PSN is not configured (missing NPSSO), skipping PSN sync")

@@ -54,14 +54,14 @@ class CatchUpPoller:
         if target is None:
             return
         self._last[target.xuid] = time.monotonic()
-        user = await self._repo.get_user(await self._repo.person_id(target.tg_id))
+        user = await self._repo.get_user(target.person_id)
         gamertag = (user.gamertag if user else None) or gettext(
             "main", "main-default-player-name", locale=DEFAULT_LOCALE
         )
         try:
             titles, published = await asyncio.wait_for(
                 self._fetcher.catch_up(
-                    target.tg_id,
+                    target.person_id,
                     target.xuid,
                     gamertag,
                     await catch_up_since(
@@ -73,17 +73,21 @@ class CatchUpPoller:
                 timeout=DEADLINE_SECONDS,
             )
         except TimeoutError:
-            log.error("hourly catch-up for tg_id=%s exceeded %.0fs", target.tg_id, DEADLINE_SECONDS)
+            log.error(
+                "hourly catch-up for person_id=%s exceeded %.0fs",
+                target.person_id,
+                DEADLINE_SECONDS,
+            )
             return
         except Exception:
             # One account's bad hour is not the tick's problem — the same
             # isolation every other poller here keeps.
-            log.exception("hourly catch-up for tg_id=%s failed", target.tg_id)
+            log.exception("hourly catch-up for person_id=%s failed", target.person_id)
             return
         if titles or published:
             log.info(
-                "hourly catch-up for tg_id=%s: %s titles, %s published",
-                target.tg_id,
+                "hourly catch-up for person_id=%s: %s titles, %s published",
+                target.person_id,
                 titles,
                 published,
             )

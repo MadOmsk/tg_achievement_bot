@@ -85,7 +85,7 @@ async def _reconcile(repo: Repo, fetcher: Fetcher, user) -> None:
     name = user.gamertag or f"id{user.tg_id}"
     try:
         _, before_score = await repo.achievement_counts(user.xuid, None)
-        total = await fetcher.backfill(user.tg_id, user.xuid)
+        total = await fetcher.backfill(user.id, user.xuid)
         _, after_score = await repo.achievement_counts(user.xuid, None)
     except (XboxApiError, TokenRefreshError) as exc:
         # TokenRefreshError is not an XboxApiError: a network blip during a

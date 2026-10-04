@@ -75,9 +75,9 @@ class _FloodRepo:
         gets silently replaced next time an achievement arrives
         (publisher.py's own job, not this one)."""
         cursor = await self._conn.execute(
-            "SELECT n.person_id, u.tg_id, n.chat_id, n.window_started_at, n.count_in_window"
-            " FROM notification_throttle n JOIN users u ON u.id = n.person_id "
-            "WHERE n.throttled = 1"
+            "SELECT person_id, chat_id, window_started_at, count_in_window"
+            " FROM notification_throttle "
+            "WHERE throttled = 1"
         )
         rows = await cursor.fetchall()
         result = []
@@ -87,7 +87,6 @@ class _FloodRepo:
             result.append(
                 FloodState(
                     person_id=row["person_id"],
-                    tg_id=row["tg_id"],
                     chat_id=row["chat_id"],
                     window_started_at=started,
                     count_in_window=row["count_in_window"],

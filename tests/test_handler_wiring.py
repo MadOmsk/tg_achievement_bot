@@ -35,6 +35,8 @@ INJECTABLE = {
     "psn_fetcher",
     "steam_auth",
     "anthropic_auth",
+    # PersonMiddleware (handlers/chat.py, #156)
+    "person_id",
     # aiogram's own
     "bot",
     "bots",

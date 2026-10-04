@@ -34,9 +34,9 @@ OWNED_BY_PERSON = (
     "JOIN users alu ON alu.id = al.person_id "
 )
 
-# The person of a Telegram id, as a subquery bound to one `?` (#156): the tables
-# about a person point at `users.id`, while most callers still come in with the
-# Telegram id the update or the Init Data carried.
+# The person of a Telegram id, as a subquery bound to one `?` (#156) — for the
+# few statements that still start from a Telegram id: creating a person,
+# deleting one, and a chat's memberships, which mix in `chat_seen`.
 PERSON_BY_TG = "(SELECT id FROM users WHERE tg_id = ?)"
 
 # The same thing as a subquery, for statements that cannot take a join —

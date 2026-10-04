@@ -90,7 +90,7 @@ class ConnectService:
                 )
             )
 
-        await self._auth.store_identity(pending.tg_id, identity)
+        await self._auth.store_identity(await self._repo.person_id(pending.tg_id), identity)
         log.info("tg_id=%s linked xuid=%s", pending.tg_id, identity.xuid)
         return pending.tg_id, identity, pending.origin_chat_id
 
