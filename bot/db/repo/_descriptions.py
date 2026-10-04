@@ -226,10 +226,12 @@ class _DescriptionsRepo:
         script but absurd to run every minute. This asks only for as many
         titles as the next tick can actually fetch, and stops there.
 
-        `tg_id` is any one owner of the title — the description belongs to
-        the game, not the person, so on Xbox (the one caller) whoever the
-        group-by picks is as good as any other; the caller falls back to
-        another owner itself if that one's token turns out to be dead. Not
+        `tg_id` is any one owner of the title — on Xbox one whose login is
+        alive. The description belongs to the game, not the person, so on Xbox
+        whoever the group-by picks is as good as any other. An owner
+        with a dead token is never picked: asking through them only fails, and
+        the title would be given up for the rest of the process while somebody
+        else could have answered. A title only dead logins hold waits. Not
         so on PSN, where one account's answer lists only its own trophies
         unless asked for the whole list (scripts/backfill_descriptions.py
         does, #50).
@@ -239,6 +241,7 @@ class _DescriptionsRepo:
             "SELECT s.platform, s.title_id, MIN(al.tg_id) AS tg_id "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
+            + "LEFT JOIN tokens tk ON tk.tg_id = al.tg_id "
             + _CATALOG_ROW
             # A `fallback` row counts as unfinished: the text is stored and
             # on screen, but nothing has translated it yet, so the next pass
@@ -247,6 +250,8 @@ class _DescriptionsRepo:
             # the title for the rest of the process.
             + "WHERE (d.description_source IS NULL OR d.description_source = 'fallback') "
             f"  AND s.platform IN ({placeholders}) "
+            # Xbox asks through the owner's own login: only a live one.
+            "  AND (s.account_platform != 'xbox' OR tk.status = 'active') "
             "  AND s.description IS NOT NULL AND TRIM(s.description) <> '' "
             "GROUP BY s.platform, s.title_id "
             "LIMIT ?",

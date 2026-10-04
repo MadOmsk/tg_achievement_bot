@@ -24,6 +24,7 @@ from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
+from bot.services.xbox.auth import TokenRefreshError
 from bot.services.xbox.client import XboxApiError, XboxClient
 
 log = logging.getLogger(__name__)
@@ -113,6 +114,8 @@ async def fill_xbox_title_any_owner(
             return await fill_xbox_title(
                 repo, anthropic_auth, client, tg_id=tg_id, title_id=title_id, platform=platform
             )
-        except XboxApiError as exc:
-            log.info("title %s: owner %s could not answer (%s)", title_id, tg_id, exc)
+        except (XboxApiError, TokenRefreshError) as exc:
+            # A dead or failing login is an expected state (Polling model:
+            # isolate failures), not a crash: one line, then the next owner.
+            log.info("title %s: owner %s could not answer (%r)", title_id, tg_id, exc)
     return None

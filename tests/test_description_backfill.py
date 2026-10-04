@@ -11,8 +11,10 @@ from __future__ import annotations
 
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
-from bot.poller.description_backfill import DescriptionBackfill
+from bot.poller.description_backfill import XBOX_PLATFORMS, DescriptionBackfill
+from bot.services.description_backfill import fill_xbox_title_any_owner
 from bot.services.models import ParsedAchievement
+from bot.services.xbox.auth import TokenDeadError
 from bot.services.xbox.client import XboxApiError
 
 TG_ID = 1
@@ -91,6 +93,7 @@ class _DeadClient:
 async def _seed(repo: Repo, *achievement_ids: str) -> None:
     await repo.ensure_user(TG_ID)
     await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(TG_ID, b"enc")  # a live login: the job asks through it
     await repo.insert_new_achievements(XUID, [_row(a) for a in achievement_ids], is_backfill=True)
 
 
@@ -140,6 +143,7 @@ async def test_a_tick_takes_only_its_own_bite(repo: Repo) -> None:
     once against someone else's API."""
     await repo.ensure_user(TG_ID)
     await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(TG_ID, b"enc")
     rows = []
     for index in range(5):
         row = _row("a1")
@@ -237,3 +241,42 @@ async def test_a_title_that_cannot_be_cached_is_not_refetched_every_tick(repo: R
     await job.tick()
     await job.tick()
     assert len(client.calls) == after_second, "the title was asked for again"
+
+
+async def test_an_owner_with_a_dead_login_is_never_asked(repo: Repo) -> None:
+    """A dead Xbox login is an expected state: the job skips that owner rather
+    than failing through them (and logging a traceback every tick)."""
+    await _seed(repo, "a1")
+    await repo.set_token_status(TG_ID, "invalid")
+    assert await repo.uncached_description_titles(XBOX_PLATFORMS, 5) == []
+
+    # Somebody else holding the same game with a live login answers for it.
+    await repo.ensure_user(2)
+    await repo.link_xbox_account(2, "xuid-2", "Other", None)
+    await repo.save_refresh_token(2, b"enc")
+    await repo.insert_new_achievements("xuid-2", [_row("a1")], is_backfill=True)
+    assert await repo.uncached_description_titles(XBOX_PLATFORMS, 5) == [
+        (Platform.XBOX_MODERN, TITLE_ID, 2)
+    ]
+
+
+async def test_a_dead_token_is_one_owner_that_could_not_answer(repo: Repo) -> None:
+    class _Expired:
+        async def title_achievements(self, *_args, **_kwargs):
+            raise TokenDeadError("token of user 1 is invalid")
+
+        async def title_achievements_with_total(self, *_args, **_kwargs):
+            raise TokenDeadError("token of user 1 is invalid")
+
+    await _seed(repo, "a1")
+    client = _FakeClient()
+    cached = await fill_xbox_title_any_owner(
+        repo,
+        object(),  # type: ignore[arg-type]
+        _Expired(),  # type: ignore[arg-type]
+        owners=[TG_ID],
+        title_id=TITLE_ID,
+        platform=Platform.XBOX_MODERN,
+    )
+    assert cached is None
+    assert client.calls == []
