@@ -64,6 +64,20 @@ async def test_friends_of_friends_are_suggested_by_how_many_lead_to_them(repo: R
     assert await repo.people_you_may_know(alice) == []
 
 
+async def test_friends_of_friends_never_reveal_a_hidden_persons_follows(repo: Repo) -> None:
+    """Whom somebody follows is their activity: a person whose activity the
+    viewer may not see leads to no suggestion."""
+    alice, bobby, carol = await _people(repo)
+    await repo.follow(alice, bobby)
+    await repo.follow(bobby, carol)
+    await repo.set_activity_visible(bobby, ACTIVITY_NOBODY)
+    assert await repo.people_you_may_know(alice) == []
+    await repo.set_activity_visible(bobby, ACTIVITY_FRIENDS)
+    assert await repo.people_you_may_know(alice) == []
+    await repo.follow(bobby, alice)  # now friends: alice may see bobby's follows
+    assert [row.id for row, _ in await repo.people_you_may_know(alice)] == [carol]
+
+
 async def test_another_persons_follows_carry_the_viewers_relation(repo: Repo) -> None:
     alice, bobby, carol = await _people(repo)
     await repo.follow(bobby, carol)

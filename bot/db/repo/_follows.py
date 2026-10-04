@@ -298,10 +298,17 @@ class _FollowsRepo:
     async def people_you_may_know(self, me: int) -> list[tuple[PersonRow, int]]:
         """Friends of friends: people followed by those `me` follows, whom `me`
         does not follow yet, with how many of `me`'s follows lead to each — the
-        most first."""
+        most first. Whom somebody follows is part of their activity, so only
+        the follows of people whose activity `me` may see lead anywhere — the
+        same rule as `can_view_activity` (`me` follows them, so "everyone" lets
+        `me` in; "friends" only when they follow `me` back)."""
         cursor = await self._conn.execute(
             "WITH via AS ("
             "  SELECT f2.followee_id AS id, COUNT(*) AS n FROM follows f1"
+            "  JOIN users b ON b.id = f1.followee_id AND b.is_excluded = 0"
+            "   AND (b.activity_visible = 'all'"
+            "        OR (b.activity_visible = 'friends' AND EXISTS (SELECT 1 FROM follows back"
+            "            WHERE back.follower_id = b.id AND back.followee_id = :me)))"
             "  JOIN follows f2 ON f2.follower_id = f1.followee_id"
             "  WHERE f1.follower_id = :me"
             "  GROUP BY f2.followee_id"
