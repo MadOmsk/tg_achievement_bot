@@ -107,8 +107,8 @@ export function FeedPost({
             const blur = secret ? "secret-blur" : undefined;
             const tier = item.tier_badge ? asTier(item.trophy_type) : null;
             const marks = [
-              item.gamerscore && !tier ? `${item.gamerscore} G` : null,
               item.rarity_percent != null ? `${item.rarity_percent}%` : null,
+              item.gamerscore && !tier ? `${item.gamerscore} G` : null,
             ].filter(Boolean);
             return (
               <SwiperSlide key={key} className="post-slide">
