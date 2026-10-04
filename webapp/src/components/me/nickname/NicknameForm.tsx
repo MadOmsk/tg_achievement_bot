@@ -64,6 +64,12 @@ export function NicknameForm({
   };
 
   const shown = value || handle.name;
+  // The digits stay while only the letters' case changes; any other name is
+  // checked anew, and gets digits of its own only if it is taken.
+  const tag =
+    handle.number && value.toLowerCase() === handle.name.toLowerCase()
+      ? `#${String(handle.number).padStart(4, "0")}`
+      : null;
   const file = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -118,23 +124,12 @@ export function NicknameForm({
               <img className="nick-avatar-preview" src={preview} alt="" />
             )}
             {uploading && <span className="nick-avatar-spin" aria-hidden />}
-            <span className="nick-avatar-badge" aria-hidden>
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path
-                  d="M4 8h3l2-3h6l2 3h3v11H4z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
           </button>
           {avatarCustom && (
-            // Back to the Telegram photo: the left badge, after a question.
+            // Back to the Telegram photo: the badge at the lower right, after a question.
             <button
               type="button"
-              className="nick-avatar-badge is-left"
+              className="nick-avatar-badge is-reset"
               aria-label={t(locale, "avatarReset")}
               title={t(locale, "avatarReset")}
               onClick={() => {
@@ -184,7 +179,13 @@ export function NicknameForm({
             disabled={locked}
             aria-label={t(locale, "nickname")}
           />
-          <span className="nick-count">{value.length}/20</span>
+          {/* The digits a taken name carries, on the right; while typing a new
+              name, how long it is instead. */}
+          {tag ? (
+            <span className="nick-tag">{tag}</span>
+          ) : (
+            <span className="nick-count">{value.length}/20</span>
+          )}
         </label>
         {(note || (locked && waitUntil)) && (
           <p className={note ? "nick-hint is-error" : "nick-hint"}>

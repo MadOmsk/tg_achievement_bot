@@ -2,6 +2,7 @@ import type { FeedItem } from "../../../api";
 import { timeAgo, type Locale } from "../../../i18n";
 import { Avatar } from "../../shared/lib";
 import { HeroGame } from "../hero-game/HeroGame";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function PostLead({
   item,
@@ -26,7 +27,9 @@ export function PostLead({
       >
         <Avatar name={item.person} tgId={item.tg_id} size={36} />
         <span>
-          <strong>{item.person}</strong>
+          <strong>
+            <HandleName text={item.person} />
+          </strong>
           <p>{timeAgo(item.unlocked_at, locale)}</p>
         </span>
       </button>

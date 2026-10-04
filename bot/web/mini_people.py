@@ -61,7 +61,11 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         return web.json_response(
             {
                 "people": [
-                    person_json(row, can_view=await repo.can_view_activity(me, row.id))
+                    {
+                        **person_json(row, can_view=await repo.can_view_activity(me, row.id)),
+                        # Somebody else's lists may hold the viewer: no button there.
+                        "is_me": row.id == me,
+                    }
                     for row in rows
                 ]
             }
@@ -83,6 +87,23 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         rows = await repo.suggested_people(me)
         return await people_json(repo, me, rows)
 
+    async def may_know(request: web.Request) -> web.Response:
+        """Friends of friends, each with how many of the viewer's follows lead
+        to them."""
+        repo, me = await me_id(request)
+        rows = await repo.people_you_may_know(me)
+        return web.json_response(
+            {
+                "people": [
+                    {
+                        **person_json(row, can_view=await repo.can_view_activity(me, row.id)),
+                        "mutual": mutual,
+                    }
+                    for row, mutual in rows
+                ]
+            }
+        )
+
     async def following(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
         rows = await repo.following_of(me)
@@ -92,6 +113,26 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         repo, me = await me_id(request)
         rows = await repo.followers_of(me)
         return await people_json(repo, me, rows)
+
+    async def their_list(request: web.Request, which: str) -> web.Response:
+        """Somebody else's follows (#157): part of their activity, so only for a
+        viewer who may see it; oneself goes through `/me/...`."""
+        repo, me = await me_id(request)
+        other = target_id(request)
+        relation = await repo.relation(me, other)
+        if relation.blocked_by or not await repo.can_view_activity(me, other):
+            raise web.HTTPForbidden(text="hidden")
+        if which == "following":
+            rows = await repo.following_of_person(me, other)
+        else:
+            rows = await repo.followers_of_person(me, other)
+        return await people_json(repo, me, rows)
+
+    async def their_following(request: web.Request) -> web.Response:
+        return await their_list(request, "following")
+
+    async def their_followers(request: web.Request) -> web.Response:
+        return await their_list(request, "followers")
 
     async def blocked(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
@@ -183,8 +224,11 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     router = app.router
     router.add_get("/api/mini/people/search", search)
     router.add_get("/api/mini/people/suggestions", suggestions)
+    router.add_get("/api/mini/people/may-know", may_know)
     router.add_get("/api/mini/people/tg/{tg_id}", profile_by_tg)
     router.add_get("/api/mini/people/{person_id}", profile)
+    router.add_get("/api/mini/people/{person_id}/following", their_following)
+    router.add_get("/api/mini/people/{person_id}/followers", their_followers)
     router.add_post("/api/mini/people/{person_id}/follow", follow)
     router.add_delete("/api/mini/people/{person_id}/follow", unfollow)
     router.add_post("/api/mini/people/{person_id}/block", block)

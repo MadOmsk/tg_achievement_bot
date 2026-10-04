@@ -630,6 +630,9 @@
 
 .achievements-head {
   margin: 28px 0 12px;
+  /* The sort button is taller than the line: centred on the title, not hung
+   * from its baseline. */
+  align-items: center;
 }
 
 .friend strong {
@@ -650,7 +653,6 @@
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.25;
-  min-height: 2.5em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

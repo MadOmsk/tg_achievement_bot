@@ -4,15 +4,19 @@ import { t, type Locale } from "../../i18n";
 import { Avatar, EmptyState, SearchBar } from "../../components/shared/lib";
 import { PersonSheet } from "../../components/people/person-sheet/PersonSheet";
 import { FollowButton } from "../../components/people/follow-button/FollowButton";
+import { FriendMark } from "../../components/people/friend-mark/FriendMark";
 import { GameHits, GameSheet, useHltbSearch } from "../../components/hltb";
 import type { HltbHit } from "../../api";
 import "./People.css";
+import { HandleName } from "../../components/shared/lib/handle-name/HandleName";
 
 const SEARCH_MIN = 3;
 
 type Lists = {
   following: PersonRow[];
   followers: PersonRow[];
+  /** Friends of friends, with how many of yours lead to them. */
+  mayKnow: Array<PersonRow & { mutual: number }>;
   suggested: PersonRow[];
 };
 
@@ -46,15 +50,19 @@ export function People({
 
   const load = useCallback(async () => {
     try {
-      const [following, followers, suggested] = await Promise.all([
+      const [following, followers, mayKnow, suggested] = await Promise.all([
         peopleApi.following(data),
         peopleApi.followers(data),
+        peopleApi.mayKnow(data),
         peopleApi.suggestions(data),
       ]);
+      // Somebody both a friend's friend and from a chat shows once, as the former.
+      const known = new Set(mayKnow.people.map((row) => row.id));
       setLists({
         following: following.people,
         followers: followers.people,
-        suggested: suggested.people,
+        mayKnow: mayKnow.people,
+        suggested: suggested.people.filter((row) => !known.has(row.id)),
       });
     } catch (err) {
       onFlash(`${t(locale, "error")}: ${String(err)}`);
@@ -91,14 +99,19 @@ export function People({
     setHits((rows) => (rows ? patch(rows) : rows));
     setOpen((row) => (row && row.id === id ? { ...row, relation } : row));
     // A suggestion just followed shows its new state for a moment and then
-    // folds away: the list is for people not followed yet.
-    const suggested = lists?.suggested.find((row) => row.id === id);
+    // folds away: the lists are for people not followed yet.
+    const suggested =
+      lists?.suggested.find((row) => row.id === id) ?? lists?.mayKnow.find((row) => row.id === id);
     if (suggested && relation.following && !suggested.relation.following) {
       window.setTimeout(() => setLeaving((all) => new Set(all).add(id)), 900);
       window.setTimeout(() => {
         setLists((current) =>
           current
-            ? { ...current, suggested: current.suggested.filter((row) => row.id !== id) }
+            ? {
+                ...current,
+                suggested: current.suggested.filter((row) => row.id !== id),
+                mayKnow: current.mayKnow.filter((row) => row.id !== id),
+              }
             : current,
         );
         setLeaving((all) => {
@@ -113,20 +126,31 @@ export function People({
         ? {
             following: patch(current.following),
             followers: patch(current.followers),
+            mayKnow: current.mayKnow.map((row) => (row.id === id ? { ...row, relation } : row)),
             suggested: patch(current.suggested),
           }
         : current,
     );
   };
 
-  const line = (row: PersonRow) => (
+  const line = (row: PersonRow & { mutual?: number }) => (
     <div key={row.id} className={leaving.has(row.id) ? "people-line is-leaving" : "people-line"}>
       <button type="button" className="picker-row is-person" onClick={() => setOpen(row)}>
-        <Avatar name={row.handle} tgId={row.tg_id ?? undefined} size={40} />
+        <FriendMark friend={row.relation.friends} label={t(locale, "friends")}>
+          <Avatar name={row.handle} tgId={row.tg_id ?? undefined} size={40} />
+        </FriendMark>
         <span className="picker-row-copy">
-          <strong>{row.handle}</strong>
-          {row.relation.followed_by && !row.relation.friends && (
+          <strong>
+            <HandleName text={row.handle} />
+          </strong>
+          {row.relation.followed_by && !row.relation.friends ? (
             <p>{t(locale, "followsYou")}</p>
+          ) : (
+            row.mutual != null && (
+              <p>
+                {t(locale, "mutualCount")} {row.mutual}
+              </p>
+            )
           )}
         </span>
       </button>
@@ -141,7 +165,7 @@ export function People({
     </div>
   );
 
-  const section = (key: string, rows: PersonRow[]) =>
+  const section = (key: string, rows: Array<PersonRow & { mutual?: number }>) =>
     rows.length > 0 && (
       <>
         <p className="kicker">{t(locale, key as never)}</p>
@@ -151,7 +175,11 @@ export function People({
 
   // Games are found from two letters, people from three (their nicknames).
   const searching = query.trim().length >= 2;
-  const empty = lists !== null && lists.suggested.length === 0 && lists.following.length === 0;
+  const empty =
+    lists !== null &&
+    lists.suggested.length === 0 &&
+    lists.mayKnow.length === 0 &&
+    lists.following.length === 0;
 
   return (
     <>
@@ -191,8 +219,9 @@ export function People({
             />
           ) : (
             <>
+              {section("peopleMayKnow", lists.mayKnow)}
               {section("peopleSuggested", lists.suggested)}
-              {lists.suggested.length === 0 && (
+              {lists.suggested.length === 0 && lists.mayKnow.length === 0 && (
                 <EmptyState
                   title={t(locale, "suggestedDoneTitle")}
                   hint={t(locale, "suggestedDone")}

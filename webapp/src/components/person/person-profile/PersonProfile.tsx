@@ -7,7 +7,9 @@ import {
   PLATFORMS,
 } from "../../shared/constants";
 import { PlayedGames } from "../played-games/PlayedGames";
+import { FriendMark } from "../../people/friend-mark/FriendMark";
 import { RecentPosts } from "../recent-posts/RecentPosts";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function PersonProfile({
   person,
@@ -19,6 +21,8 @@ export function PersonProfile({
   onBack,
   onOpenCard,
   onReveal,
+  people,
+  friend = false,
 }: {
   person: PersonPayload;
   /** What they are doing now ("В сети", "3 ч назад", the game), shown after the nick. */
@@ -31,6 +35,10 @@ export function PersonProfile({
   /** The nickname in the bar opens the person's card. */
   onOpenCard?: () => void;
   onReveal: (key: string) => void;
+  /** Whom they follow, as on Home: a strip under the gallery. */
+  people?: ReactNode;
+  /** The viewer's friend: marked on the face in the bar. */
+  friend?: boolean;
 }) {
   const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const feed = person.feed ?? [];
@@ -100,18 +108,22 @@ export function PersonProfile({
             className="account-who"
             onClick={onOpenCard}
           >
-            <Avatar
-              name={person.name}
-              tgId={person.tg_id}
-              size={48}
-              zoomLabel={t(locale, "close")}
-              online={live}
-              playing={playing}
-              platform={person.presence?.platform}
-            />
+            <FriendMark friend={friend} label={t(locale, "friends")}>
+              <Avatar
+                name={person.name}
+                tgId={person.tg_id}
+                size={48}
+                zoomLabel={t(locale, "close")}
+                online={live}
+                playing={playing}
+                platform={person.presence?.platform}
+              />
+            </FriendMark>
             <span className="person-bar-title">
               <span className="account-name-row">
-                <strong>{person.name}</strong>
+                <strong>
+                  <HandleName text={person.name} />
+                </strong>
                 <ScoreCup locale={locale} lines={scoreLines} markSize={12} />
               </span>
               {status && <small>{status}</small>}
@@ -135,6 +147,7 @@ export function PersonProfile({
           slide
         />
       )}
+      {people}
       {feed.length > 0 && (
         <>
       <div className="section-head achievements-head">

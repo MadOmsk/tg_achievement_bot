@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { FeedItem } from "../../../api";
-import { timeAgo, type Locale } from "../../../i18n";
+import { t, timeAgo, type Locale } from "../../../i18n";
 import { CoverImg, gameRefOf, useOpenGame } from "../../shared/lib";
 import "./PlayedGames.css";
 
@@ -13,11 +13,11 @@ interface Played {
 /**
  * A person's games for the month, the one with the newest achievement first
  * (the feed arrives newest first, so the order of first appearance is it).
- * Each row: the cover, the name with their overall count, and the progress
- * bar — its last stretch, the part earned this month, stays bright while the
- * older part is toned down — and
- * when the last achievement came. A tap opens
- * the game's page with their progress.
+ * Each row: the cover, the name with how far along they are, and the progress
+ * bar — its last stretch, the part earned this month, bright, the
+ * older part toned down — then this month's gain and when the last
+ * achievement came. A finished game is platinum. A tap opens the game's page
+ * with their progress.
  */
 export function PlayedGames({
   items,
@@ -88,8 +88,12 @@ export function PlayedGames({
                   />
                 </span>
               )}
+              {/* When the last one came at the left, this month's gain at the right. */}
               <span className="played-game-when">
                 {timeAgo(last.unlocked_at, locale)}
+                <span className="played-game-gain">
+                  +{count} {t(locale, "gainThisMonth")}
+                </span>
               </span>
             </span>
           </button>

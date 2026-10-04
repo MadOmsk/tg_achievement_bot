@@ -13,7 +13,7 @@ import {
 } from "../../api";
 import { t, type Locale } from "../../i18n";
 import { FeedPosts, HiddenProfile, PersonProfile, PlayedGames, RecentPosts } from "../person";
-import { AccountBar, Avatar, EmptyState, FeedSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, EmptyState, FeedSkel, FriendsSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -24,6 +24,7 @@ import { Icon } from "../../components/shared/lib/icon/Icon";
 import { SCREEN_NAMES, type ClubPane } from "../../components/shared/constants";
 import { FollowsSheet } from "../../components/club/follows-sheet/FollowsSheet";
 import { PersonSheet, type SheetPerson } from "../../components/people/person-sheet/PersonSheet";
+import { peopleApi, type PersonRow } from "../../api/people/peopleApi";
 import "./Club.css";
 
 const FRIENDS_PREVIEW = 6;
@@ -88,6 +89,24 @@ export function Club({
   const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [author, setAuthor] = useState<SheetPerson | null>(null);
+  // Whom the open profile follows, for its own "Подписки" strip, and whose that is.
+  // undefined while it loads (a skeleton strip), null when it is not to be shown.
+  const [theirFollows, setTheirFollows] = useState<
+    | {
+        tgId: number;
+        personId: number;
+        rows: PersonRow[];
+        /** Their friends (the people both following them and followed). */
+        friends: Set<number>;
+      }
+    | null
+    | undefined
+  >(undefined);
+  const [theirSheet, setTheirSheet] = useState<number | null>(null);
+  // Who among the people followed follows back: the friend mark on Home's strip.
+  const [myFriends, setMyFriends] = useState<Set<number>>(new Set());
+  // Whether the profile open is the viewer's friend, for the mark in its bar.
+  const [openFriend, setOpenFriend] = useState(false);
   const feedRef = useRef(feed);
   const onlineRef = useRef(online);
   feedRef.current = feed;
@@ -214,6 +233,79 @@ export function Club({
   }, [openPersonId, activeId, data, locale, onFlash, me.tg_id, selectedMonth, refreshKey]);
 
   useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
+    peopleApi
+      .following(data)
+      .then((res) => {
+        if (cancelled) return;
+        setMyFriends(
+          new Set(
+            res.people.flatMap((row) => (row.relation.friends && row.tg_id != null ? [row.tg_id] : [])),
+          ),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [data, refreshKey]);
+
+  // The open profile's follows: its person id comes with the card, and the list
+  // only when their privacy lets the viewer see it.
+  useEffect(() => {
+    if (!openPersonId || !data) {
+      setTheirFollows(null);
+      return;
+    }
+    let cancelled = false;
+    if (refreshKey === 0) {
+      setTheirFollows(undefined);
+      setOpenFriend(false);
+    }
+    peopleApi
+      .profileByTg(data, openPersonId)
+      .then(async (card) => {
+        if (!cancelled) setOpenFriend(card.relation.friends);
+        if (!card.can_view) return null;
+        if (openPersonId === me.tg_id) {
+          const res = await peopleApi.following(data);
+          const friends = res.people.filter((row) => row.relation.friends);
+          return {
+            tgId: openPersonId,
+            personId: card.id,
+            rows: res.people,
+            friends: new Set(friends.flatMap((row) => (row.tg_id != null ? [row.tg_id] : []))),
+          };
+        }
+        const [following, followers] = await Promise.all([
+          peopleApi.followingOf(data, card.id),
+          peopleApi.followersOf(data, card.id),
+        ]);
+        const back = new Set(followers.people.map((row) => row.id));
+        return {
+          tgId: openPersonId,
+          personId: card.id,
+          rows: following.people,
+          friends: new Set(
+            following.people.flatMap((row) =>
+              back.has(row.id) && row.tg_id != null ? [row.tg_id] : [],
+            ),
+          ),
+        };
+      })
+      .then((value) => {
+        if (!cancelled) setTheirFollows(value);
+      })
+      .catch(() => {
+        if (!cancelled) setTheirFollows(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [openPersonId, data, me.tg_id, refreshKey]);
+
+  useEffect(() => {
     onPersonVisible?.(person != null);
     return () => onPersonVisible?.(false);
   }, [person, onPersonVisible]);
@@ -229,6 +321,7 @@ export function Club({
       person={author}
       onClose={() => setAuthor(null)}
       onFlash={onFlash}
+      self={author.tg_id === me.tg_id}
       onOpenProfile={(id) => {
         setAuthor(null);
         // After the drawer has let the page go: it gives the old scroll back as
@@ -362,10 +455,47 @@ export function Club({
         <div className="pane-fade" data-no-pull={isPastMonth || undefined}>
         <PersonProfile
           person={openProfile}
-          onOpenCard={
-            openProfile.tg_id === me.tg_id
-              ? undefined
-              : () => setAuthor({ tg_id: openProfile.tg_id, handle: openProfile.name })
+          onOpenCard={() => setAuthor({ tg_id: openProfile.tg_id, handle: openProfile.name })}
+          friend={openFriend && openProfile.tg_id !== me.tg_id}
+          people={
+            theirFollows === undefined ? (
+              <FriendsSkel />
+            ) : theirFollows && theirFollows.tgId === openProfile.tg_id ? (
+              <FriendsStrip
+                members={theirFollows.rows.flatMap((row) => {
+                  if (row.tg_id == null) return [];
+                  // Where they are now, as on Home, for whoever the viewer's own
+                  // online list knows; nobody else gets a made-up status.
+                  const known = online.find((m) => m.tg_id === row.tg_id);
+                  return [
+                    known
+                      ? { ...known, name: row.handle }
+                      : {
+                          tg_id: row.tg_id,
+                          name: row.handle,
+                          state: null,
+                          platform: "",
+                          title_name: null,
+                          playing: false,
+                          status: "",
+                          icon: "",
+                        },
+                  ];
+                })}
+                locale={locale}
+                limit={FRIENDS_PREVIEW}
+                onOpen={(id) => {
+                  if (id !== openPersonId) openPerson(id);
+                }}
+                onSeeAll={() => setTheirSheet(theirFollows.personId)}
+                // Friends of either: theirs, and the viewer's own.
+                friendIds={new Set([...theirFollows.friends, ...myFriends])}
+                emptyText={t(
+                  locale,
+                  openProfile.tg_id === me.tg_id ? "friendsEmpty" : "theirFollowingEmpty",
+                )}
+              />
+            ) : null
           }
           status={
             statusOf(online.find((m) => m.tg_id === openProfile.tg_id)) ??
@@ -383,6 +513,23 @@ export function Club({
         />
         </div>
         {authorSheet}
+        {theirSheet != null && (
+          <FollowsSheet
+            locale={locale}
+            data={data}
+            owner={openProfile.tg_id === me.tg_id ? undefined : theirSheet}
+            onClose={() => setTheirSheet(null)}
+            onOpen={(id) => {
+              setTheirSheet(null);
+              if (id !== openPersonId) requestAnimationFrame(() => openPerson(id));
+            }}
+            onFind={() => {
+              setTheirSheet(null);
+              onFind();
+            }}
+            onFlash={onFlash}
+          />
+        )}
       </>
     );
   }
@@ -398,7 +545,7 @@ export function Club({
                 <button
                   type="button"
                   className="home-me"
-                  onClick={() => openPerson(me.tg_id)}
+                  onClick={() => setAuthor({ tg_id: me.tg_id, handle: accountLabel(me) })}
                   aria-label={accountLabel(me)}
                 >
                   <Avatar
@@ -415,7 +562,7 @@ export function Club({
                   <AccountBar
                     me={me}
                     locale={locale}
-                    onProfile={() => undefined}
+                    onProfile={() => setAuthor({ tg_id: me.tg_id, handle: accountLabel(me) })}
                     status={
                       statusOf(online.find((m) => m.tg_id === me.tg_id)) ??
                       t(locale, "notOnline")
@@ -473,6 +620,7 @@ export function Club({
                   members={others}
                   locale={locale}
                   limit={FRIENDS_PREVIEW}
+                  friendIds={myFriends}
                   onOpen={openPerson}
                   onSeeAll={() => setRosterOpen(true)}
                   onFind={onFind}
@@ -538,15 +686,7 @@ export function Club({
               revealed={revealed}
               showSecrets={showSecrets}
               onReveal={(key) => setRevealed(new Set(revealed).add(key))}
-              onOpenPerson={(id) => {
-                // The author's card first; the full profile is a tap away in it.
-                if (id === me.tg_id) {
-                  openPerson(id);
-                  return;
-                }
-                const post = feed.find((row) => row.tg_id === id);
-                setAuthor({ tg_id: id, handle: post?.person ?? "" });
-              }}
+              onOpenPerson={openPerson}
             />
           )}
         </>

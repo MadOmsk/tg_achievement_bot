@@ -1,0 +1,26 @@
+.friend-mark-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* The mirror of the presence mark on the right: a bare heart, the same size,
+ * with the same shadow. */
+.friend-mark {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  color: #e0677a;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.75));
+  pointer-events: none;
+}
+
+.friend .friend-mark-wrap {
+  margin-bottom: 8px;
+}
+
+.friend .friend-mark-wrap .avatar-wrap {
+  margin-bottom: 0;
+}
