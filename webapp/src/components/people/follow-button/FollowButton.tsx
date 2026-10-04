@@ -91,17 +91,31 @@ export function FollowButton({
     following: followingLabel,
     blocked: t(locale, "stateBlocked"),
   };
+  // The button says where you stand; the menu says what you can do from there,
+  // so the state already chosen is not offered again.
+  const actions = (
+    [
+      {
+        value: "following" as State,
+        label: t(locale, relation.followed_by && !relation.blocked ? "actionBefriend" : "actionFollow"),
+      },
+      {
+        value: "none" as State,
+        label: t(
+          locale,
+          state === "blocked" ? "actionUnblock" : relation.friends ? "actionUnfriend" : "actionUnfollow",
+        ),
+      },
+      { value: "blocked" as State, label: t(locale, "actionBlock"), danger: true },
+    ]
+  ).filter((option) => option.value !== state);
   const popClass = pop ? (pop % 2 ? " is-pop" : " is-pop2") : "";
 
   return (
     <Dropdown
       className={`dd-trigger follow-btn follow-state${popClass}`}
       value={state}
-      options={[
-        { value: "none" as State, label: labels.none },
-        { value: "following" as State, label: followingLabel },
-        { value: "blocked" as State, label: labels.blocked, danger: true },
-      ]}
+      options={actions}
       onChange={pick}
       trigger={
         <>

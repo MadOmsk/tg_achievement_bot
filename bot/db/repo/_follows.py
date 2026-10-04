@@ -216,6 +216,25 @@ class _FollowsRepo:
             {},
         )
 
+    async def following_of_person(self, me: int, owner: int) -> list[PersonRow]:
+        """Whom `owner` follows, as `me` sees them: each row's relation is to `me`,
+        and nobody blocked either way with `me` is listed."""
+        return await self._list(
+            me,
+            " AND p.id IN (SELECT followee_id FROM follows WHERE follower_id = :owner)"
+            + _NOT_BLOCKED,
+            {"owner": owner},
+        )
+
+    async def followers_of_person(self, me: int, owner: int) -> list[PersonRow]:
+        """Who follows `owner`, as `me` sees them (see `following_of_person`)."""
+        return await self._list(
+            me,
+            " AND p.id IN (SELECT follower_id FROM follows WHERE followee_id = :owner)"
+            + _NOT_BLOCKED,
+            {"owner": owner},
+        )
+
     async def blocked_by(self, me: int) -> list[PersonRow]:
         return await self._list(
             me, " AND p.id IN (SELECT blocked_id FROM blocks WHERE person_id = :me)", {}
@@ -275,6 +294,34 @@ class _FollowsRepo:
             {"me": me, "limit": SEARCH_LIMIT},
         )
         return [_person(row) for row in await cursor.fetchall()]
+
+    async def people_you_may_know(self, me: int) -> list[tuple[PersonRow, int]]:
+        """Friends of friends: people followed by those `me` follows, whom `me`
+        does not follow yet, with how many of `me`'s follows lead to each — the
+        most first. Whom somebody follows is part of their activity, so only
+        the follows of people whose activity `me` may see lead anywhere — the
+        same rule as `can_view_activity` (`me` follows them, so "everyone" lets
+        `me` in; "friends" only when they follow `me` back)."""
+        cursor = await self._conn.execute(
+            "WITH via AS ("
+            "  SELECT f2.followee_id AS id, COUNT(*) AS n FROM follows f1"
+            "  JOIN users b ON b.id = f1.followee_id AND b.is_excluded = 0"
+            "   AND (b.activity_visible = 'all'"
+            "        OR (b.activity_visible = 'friends' AND EXISTS (SELECT 1 FROM follows back"
+            "            WHERE back.follower_id = b.id AND back.followee_id = :me)))"
+            "  JOIN follows f2 ON f2.follower_id = f1.followee_id"
+            "  WHERE f1.follower_id = :me"
+            "  GROUP BY f2.followee_id"
+            ") "
+            "SELECT p.id, p.tg_id, " + _SHOWN + " AS shown, " + _RELATION + ", v.n AS mutual "
+            "FROM via v JOIN users p ON p.id = v.id "
+            "WHERE p.id != :me AND p.handle IS NOT NULL AND p.is_excluded = 0"
+            "  AND NOT EXISTS (SELECT 1 FROM follows f"
+            "    WHERE f.follower_id = :me AND f.followee_id = p.id)" + _NOT_BLOCKED + " "
+            "ORDER BY v.n DESC, p.handle_norm LIMIT :limit",
+            {"me": me, "limit": SEARCH_LIMIT},
+        )
+        return [(_person(row), int(row["mutual"])) for row in await cursor.fetchall()]
 
     async def following_members(self, me: int) -> list[int]:
         """The Telegram ids behind the "following" scope: oneself, and every person

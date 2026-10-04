@@ -376,6 +376,15 @@
   border-radius: 18px;
 }
 
+.nick-tag {
+  flex: none;
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 500;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
 .nick-field input {
   flex: 1;
   min-width: 0;
@@ -495,15 +504,13 @@
   display: inline-block;
 }
 
-.nick-avatar-badge.is-left {
-  right: auto;
-  left: 6px;
+.nick-avatar-badge.is-reset {
   margin: 0;
   padding: 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.nick-avatar-badge.is-left:focus {
+.nick-avatar-badge.is-reset:focus {
   outline: none;
 }

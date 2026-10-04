@@ -376,6 +376,13 @@ select:focus-visible {
 }
 
 .search-bar,
+/* The digits of a taken nickname, #4821: part of it, but quieter. */
+.handle-tag {
+  color: var(--muted);
+  font-weight: 500;
+  opacity: 0.75;
+}
+
 .nick-field,
 .input {
   background: rgba(255, 255, 255, 0.06);

@@ -2,6 +2,7 @@ import type { OnlineMember } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, Sheet, isOnline } from "../../shared/lib";
 import { rankPeople } from "../utils";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function RosterSheet({
   members,
@@ -38,7 +39,9 @@ export function RosterSheet({
                   size={40}
                 />
                 <span className="picker-row-copy">
-                  <strong>{m.name}</strong>
+                  <strong>
+                    <HandleName text={m.name} />
+                  </strong>
                   <p>{m.playing ? m.title_name : m.status}</p>
                 </span>
               </button>

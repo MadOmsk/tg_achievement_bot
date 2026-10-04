@@ -1,5 +1,6 @@
 import { t, type Locale } from "../../../i18n";
 import { Avatar, isOnline } from "../../shared/lib";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function PeopleHits({
   members,
@@ -37,7 +38,9 @@ export function PeopleHits({
               platform={m.platform}
               size={72}
             />
-            <strong>{m.name}</strong>
+            <strong>
+              <HandleName text={m.name} />
+            </strong>
             <p>{m.playing ? m.title_name : m.status}</p>
           </button>
         ))}

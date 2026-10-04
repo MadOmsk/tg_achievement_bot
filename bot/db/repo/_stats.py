@@ -12,9 +12,11 @@ from datetime import datetime
 
 from bot.db.repo._models import TitleHistoryRow, _iso
 from bot.db.repo._sql import (
+    GLOBAL_RARE_THRESHOLD,
     OWNED_BY_PERSON,
     OWNED_BY_PERSON_EXISTS,
     earned_at,
+    earned_date_is_real,
     earned_since,
     rarity,
     rarity_cache_join,
@@ -304,6 +306,29 @@ class _StatsRepo:
         if row is None:
             return 0, 0, 0, 0
         return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0), int(row[3] or 0)
+
+    async def account_facts(self, tg_id: int, account_platform: str) -> dict[str, object]:
+        """What the person card's account table shows besides the counts it
+        already has (#157): how many games, how many rare by the one rarity
+        threshold, and when the newest dated unlock came — for the account of
+        `account_platform` (`xbox` covers both generations) this person holds."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(DISTINCT s.platform || ':' || s.title_id) AS games,"
+            f" SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= {GLOBAL_RARE_THRESHOLD}"
+            "     THEN 1 ELSE 0 END) AS rare,"
+            f" MAX(CASE WHEN {earned_date_is_real()} THEN {earned_at()} END) AS last_at "
+            "FROM seen_achievements s "
+            + OWNED_BY_PERSON
+            + rarity_cache_join()
+            + "WHERE al.tg_id = ? AND s.account_platform = ?",
+            (tg_id, account_platform),
+        )
+        row = await cursor.fetchone()
+        return {
+            "games": int(row["games"] or 0) if row else 0,
+            "rare": int(row["rare"] or 0) if row else 0,
+            "last_at": row["last_at"] if row else None,
+        }
 
     async def platform_achievement_count(self, tg_id: int, platform: str) -> int:
         """Lifetime count for one platform (SPEC 9, M-Steam-2e's /stats line
