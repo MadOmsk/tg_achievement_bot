@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 from bot.db.repo import AchievementRow, Repo
+from bot.db.repo._sql import PERSON_BY_TG
 from bot.poller.fetcher import Fetcher
 from bot.poller.reminders import MAX_REMINDERS, REMINDER_INTERVAL_HOURS, ReminderJob
 from bot.services.xbox.client import X360TitleSummary, XboxApiError, XboxProfileSnapshot
@@ -221,7 +222,7 @@ async def test_reminders_stop_after_three(repo: Repo, cipher) -> None:
         # Pretend the interval has passed, otherwise nothing would be due.
         await repo._conn.execute(
             "UPDATE tokens SET last_notified_at = '2000-01-01T00:00:00+00:00' "
-            "WHERE tg_id = ? AND notify_count > 0",
+            "WHERE person_id = " + PERSON_BY_TG + " AND notify_count > 0",
             (TG_ID,),
         )
         await repo._conn.commit()

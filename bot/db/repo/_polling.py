@@ -36,7 +36,7 @@ class _PollingRepo:
             "SELECT u.tg_id, xb.external_id AS xuid, p.state, p.title_id, p.title_name,"
             "       p.changed_at, p.last_ach_poll_at, p.updated_at, u.last_online_at,"
             "       xb_link.linked_at, p.device "
-            "FROM users u " + XBOX_ACCOUNT + "JOIN tokens t ON t.tg_id = u.tg_id "
+            "FROM users u " + XBOX_ACCOUNT + "JOIN tokens t ON t.person_id = u.id "
             "LEFT JOIN presence_state p ON p.xuid = xb.external_id "
             "WHERE xb.external_id IS NOT NULL AND u.is_excluded = 0 AND t.status = 'active'"
         )
@@ -148,7 +148,7 @@ class _PollingRepo:
             # Active links only (#52) — an account somebody used to hold is
             # not polled, and its stored presence is nobody's.
             "FROM account_links pl "
-            "JOIN users u ON u.tg_id = pl.tg_id "
+            "JOIN users u ON u.id = pl.person_id "
             "LEFT JOIN accounts a ON a.platform = 'steam' AND a.external_id = pl.external_id "
             "LEFT JOIN steam_presence_state p ON p.steam_id = pl.external_id "
             "WHERE pl.platform = 'steam' AND pl.is_active = 1 AND u.is_excluded = 0"
@@ -246,7 +246,7 @@ class _PollingRepo:
             "       ps.last_polled_at, COALESCE(ps.backfill_done, 0) AS backfill_done,"
             "       pp.state AS presence_state, u.last_online_at, pl.linked_at "
             "FROM account_links pl "
-            "JOIN users u ON u.tg_id = pl.tg_id "
+            "JOIN users u ON u.id = pl.person_id "
             "JOIN accounts a ON a.platform = pl.platform AND a.external_id = pl.external_id "
             "LEFT JOIN psn_poll_state ps ON ps.account_id = pl.external_id "
             "LEFT JOIN psn_presence_state pp ON pp.account_id = pl.external_id "
@@ -323,7 +323,7 @@ class _PollingRepo:
             "       pp.state, pp.title_id,"
             "       pp.title_name, pp.changed_at, pp.updated_at "
             "FROM account_links pl "
-            "JOIN users u ON u.tg_id = pl.tg_id "
+            "JOIN users u ON u.id = pl.person_id "
             "JOIN accounts a ON a.platform = pl.platform AND a.external_id = pl.external_id "
             "LEFT JOIN psn_presence_state pp ON pp.account_id = pl.external_id "
             "WHERE pl.platform = 'psn' AND pl.is_active = 1 AND u.is_excluded = 0"

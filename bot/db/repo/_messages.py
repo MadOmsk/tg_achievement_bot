@@ -100,7 +100,7 @@ class _MessagesRepo:
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name "
             "FROM subscriptions s "
-            "JOIN users u ON u.tg_id = s.tg_id "
+            "JOIN users u ON u.id = s.person_id "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
@@ -174,7 +174,7 @@ class _MessagesRepo:
             # The old join was `s.tg_id = u.tg_id`, which is the column that
             # made an account's history follow the person rather than the
             # account.
-            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            + "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
@@ -265,7 +265,7 @@ class _MessagesRepo:
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            + "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
@@ -318,7 +318,7 @@ class _MessagesRepo:
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
             "FROM " + member_source(members) + " sub "
             "JOIN users u ON u.tg_id = sub.tg_id "
-            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
@@ -332,7 +332,7 @@ class _MessagesRepo:
         cursor = await self._conn.execute(
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
             "FROM users u "
-            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
@@ -380,7 +380,7 @@ class _MessagesRepo:
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            + "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
@@ -502,7 +502,7 @@ class _MessagesRepo:
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
             + rarity_cache_join()
-            + f"WHERE al.tg_id IN ({owners}) {date_bound} "
+            + f"WHERE alu.tg_id IN ({owners}) {date_bound} "
             "GROUP BY s.title_id, s.platform "
             f"{order_sql} LIMIT ?",
             (rare_threshold, *tg_ids, *date_params, limit or -1),
@@ -543,7 +543,8 @@ class _MessagesRepo:
             "  SELECT xb.external_id FROM users u "
             + XBOX_ACCOUNT
             + "  WHERE xb.external_id IS NOT NULL AND u.tg_id IN ("
-            "    SELECT tg_id FROM subscriptions WHERE chat_id = ? "
+            "    SELECT sbu.tg_id FROM subscriptions sb"
+            "    JOIN users sbu ON sbu.id = sb.person_id WHERE sb.chat_id = ? "
             "    UNION "
             "    SELECT tg_id FROM chat_seen WHERE chat_id = ?"
             "  )"

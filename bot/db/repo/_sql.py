@@ -31,21 +31,27 @@ from collections.abc import Sequence
 OWNED_BY_PERSON = (
     "JOIN account_links al ON al.platform = s.account_platform"
     "   AND al.external_id = s.xuid AND al.is_active = 1 "
+    "JOIN users alu ON alu.id = al.person_id "
 )
+
+# The person of a Telegram id, as a subquery bound to one `?` (#156): the tables
+# about a person point at `users.id`, while most callers still come in with the
+# Telegram id the update or the Init Data carried.
+PERSON_BY_TG = "(SELECT id FROM users WHERE tg_id = ?)"
 
 # The same thing as a subquery, for statements that cannot take a join —
 # UPDATE/DELETE, and any SELECT whose shape would change if a join were
 # added to it.
 OWNED_BY_PERSON_EXISTS = (
     "EXISTS (SELECT 1 FROM account_links al"
-    "        WHERE al.tg_id = ? AND al.is_active = 1"
+    "        WHERE al.person_id = (SELECT id FROM users WHERE tg_id = ?) AND al.is_active = 1"
     "          AND al.platform = seen_achievements.account_platform"
     "          AND al.external_id = seen_achievements.xuid) "
 )
 
 
 def active_account(
-    alias: str, platform: str, *, on: str = "u.tg_id", by_presence: bool = False
+    alias: str, platform: str, *, on: str = "u.id", by_presence: bool = False
 ) -> str:
     """The two LEFT JOINs that reach one platform's *currently linked*
     account for a person, exposed under `alias` so a query can keep reading
@@ -78,10 +84,10 @@ def active_account(
         order = "ORDER BY x.linked_at, x.rowid "
         source = "FROM account_links x "
     return (
-        f"LEFT JOIN account_links {link} ON {link}.tg_id = {on}"
+        f"LEFT JOIN account_links {link} ON {link}.person_id = {on}"
         f"   AND {link}.platform = '{platform}' AND {link}.is_active = 1"
         f"   AND {link}.rowid = (SELECT x.rowid {source}"
-        f"      WHERE x.tg_id = {on} AND x.platform = '{platform}' AND x.is_active = 1"
+        f"      WHERE x.person_id = {on} AND x.platform = '{platform}' AND x.is_active = 1"
         f"      {order}LIMIT 1) "
         f"LEFT JOIN accounts {alias} ON {alias}.platform = {link}.platform"
         f"   AND {alias}.external_id = {link}.external_id "
@@ -97,7 +103,7 @@ def active_account(
 #   xb.display_name   -> the modern gamertag (what to show)
 #   xb.secondary_name -> the classic one (what profile links are built from)
 XBOX_ACCOUNT = (
-    "LEFT JOIN account_links xb_link ON xb_link.tg_id = u.tg_id"
+    "LEFT JOIN account_links xb_link ON xb_link.person_id = u.id"
     "   AND xb_link.platform = 'xbox' AND xb_link.is_active = 1 "
     "LEFT JOIN accounts xb ON xb.platform = xb_link.platform"
     "   AND xb.external_id = xb_link.external_id "
@@ -110,11 +116,15 @@ MEMBERS_CHAT = 0
 
 
 def member_source(members: Sequence[int] | None) -> str:
-    """What `FROM ... sub` reads in the chat queries: the real `subscriptions`
-    table, or — for a given list of people — a one-column stand-in with the same
-    shape. Integers only, formatted here, so nothing is injected."""
+    """What `FROM ... sub` reads in the chat queries: a chat's subscribers, or —
+    for a given list of people — a stand-in with the same shape. Both read as
+    `(chat_id, tg_id)`: a chat is Telegram's, and so is everyone in it (#156).
+    Integers only, formatted here, so nothing is injected."""
     if members is None:
-        return "subscriptions"
+        return (
+            "(SELECT sb.chat_id, sbu.tg_id FROM subscriptions sb"
+            " JOIN users sbu ON sbu.id = sb.person_id WHERE sbu.tg_id IS NOT NULL)"
+        )
     ids = ",".join(str(int(m)) for m in members) or "NULL"
     return f"(SELECT {MEMBERS_CHAT} AS chat_id, tg_id FROM users WHERE tg_id IN ({ids}))"
 
@@ -183,7 +193,7 @@ def earned_since(prefix: str = "s.") -> str:
 def publishes(user_alias: str = "u") -> str:
     return (
         "NOT EXISTS (SELECT 1 FROM user_settings us_mode"
-        f" WHERE us_mode.tg_id = {user_alias}.tg_id AND us_mode.rarity_mode = 'hidden')"
+        f" WHERE us_mode.person_id = {user_alias}.id AND us_mode.rarity_mode = 'hidden')"
     )
 
 

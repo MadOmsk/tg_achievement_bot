@@ -3,8 +3,9 @@
 
 -- People. A person has an id of their own (#156, migration 071); a Telegram
 -- account is one way to sign in, kept as `tg_id` — unique, and empty for a
--- person who signs in some other way. Other tables still point at
--- users(tg_id) until they move to the person id. Only the identity lives here
+-- person who signs in some other way. The tables about a person point at `id`
+-- (078); what is Telegram by nature (`chat_seen`, the admins, the reset
+-- cooldowns) keeps a Telegram id. Only the identity lives here
 -- (#52): an Xbox account is an `accounts` row like any other, reached through
 -- the active link in `account_links`.
 CREATE TABLE IF NOT EXISTS users (
@@ -59,7 +60,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- One user, one token. Refresh only; everything else lives in memory.
 CREATE TABLE IF NOT EXISTS tokens (
-    tg_id             INTEGER PRIMARY KEY REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id         INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     refresh_token_enc BLOB NOT NULL,      -- Fernet, NEVER logged
     status            TEXT NOT NULL DEFAULT 'active'
                       CHECK (status IN ('active', 'invalid', 'revoked')),
@@ -85,14 +86,14 @@ CREATE TABLE IF NOT EXISTS chats (
 
 CREATE TABLE IF NOT EXISTS subscriptions (
     chat_id     INTEGER NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
-    tg_id       INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at  TEXT NOT NULL,
     -- Which achievements go out is the person's (user_settings.rarity_mode),
     -- and how many at once make a digest is the chat's
     -- (chat_settings.digest_threshold) — both used to live here, per
     -- subscription, until #126: a person in many chats set the same thing
     -- in each.
-    PRIMARY KEY (chat_id, tg_id)
+    PRIMARY KEY (chat_id, person_id)
 );
 
 -- Who's been seen writing in a chat, separately from `subscriptions` (who
@@ -105,7 +106,7 @@ CREATE TABLE IF NOT EXISTS chat_seen (
 );
 
 CREATE TABLE IF NOT EXISTS user_settings (
-    tg_id            INTEGER PRIMARY KEY REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     -- Which achievements this person publishes, in every chat they are
     -- subscribed to (#126): 'all', 'rare' (at or below each chat's own
     -- threshold), or 'hidden' — nothing published, and left out of chats'
@@ -281,12 +282,12 @@ CREATE TABLE IF NOT EXISTS publications (
 -- chat already means "not sent there yet", so there is nothing new to store
 -- beyond the window's own start time.
 CREATE TABLE IF NOT EXISTS notification_throttle (
-    tg_id             INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     chat_id           INTEGER NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
     window_started_at TEXT    NOT NULL,
     count_in_window   INTEGER NOT NULL DEFAULT 0,
     throttled         INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (tg_id, chat_id)
+    PRIMARY KEY (person_id, chat_id)
 );
 
 -- Presence state — the polling engine
@@ -570,7 +571,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 -- "which account was linked before this one" is just a row, and relinking a
 -- previously-known account finds its history waiting.
 CREATE TABLE IF NOT EXISTS account_links (
-    tg_id       INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     platform    TEXT NOT NULL,
     external_id TEXT NOT NULL,
     is_active   INTEGER NOT NULL DEFAULT 1,
@@ -581,13 +582,13 @@ CREATE TABLE IF NOT EXISTS account_links (
     -- (#10) each has its own. A muted account still counts in stats,
     -- summaries and /online; it only stops posting.
     publishes   INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (tg_id, platform, external_id),
+    PRIMARY KEY (person_id, platform, external_id),
     FOREIGN KEY (platform, external_id) REFERENCES accounts(platform, external_id)
 );
 -- One account per platform per person — except PSN, where a person may
 -- hold up to three (#10; the limit of three is enforced in code, not here).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_links_one_active_per_platform
-    ON account_links(tg_id, platform) WHERE is_active = 1 AND platform <> 'psn';
+    ON account_links(person_id, platform) WHERE is_active = 1 AND platform <> 'psn';
 -- An account has at most one current owner, which is what makes a takeover
 -- well-defined: linking an account somebody else holds deactivates their
 -- link (and tells them), rather than quietly producing two owners.

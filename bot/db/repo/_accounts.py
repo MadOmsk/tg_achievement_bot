@@ -19,7 +19,7 @@ from bot.db.repo._models import (
     _as_user,
     _as_user_settings,
 )
-from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS
+from bot.db.repo._sql import PERSON_BY_TG, XBOX_ACCOUNT, XBOX_COLUMNS
 from bot.i18n import DEFAULT_LOCALE
 from bot.services.handles import FALLBACK_HANDLE, from_text
 from bot.util import utcnow, utcnow_iso
@@ -64,7 +64,9 @@ class _AccountsRepo:
         # `user_settings.show_profile_links` is left unread.
         default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
         await self._conn.execute(
-            "INSERT OR IGNORE INTO user_settings (tg_id, rarity_mode) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO user_settings (person_id, rarity_mode) VALUES ("
+            + PERSON_BY_TG
+            + ", ?)",
             (tg_id, default_rarity_mode or "all"),
         )
         await self._conn.commit()
@@ -150,7 +152,8 @@ class _AccountsRepo:
 
         # Step 1: Find all linked platform accounts for this user
         cursor = await self._conn.execute(
-            "SELECT platform, external_id, is_active FROM account_links WHERE tg_id = ?",
+            "SELECT platform, external_id, is_active FROM account_links WHERE person_id = "
+            + PERSON_BY_TG,
             (tg_id,),
         )
         link_rows = await cursor.fetchall()
@@ -166,8 +169,9 @@ class _AccountsRepo:
         for platform, external_id in linked_accounts:
             # Check if any OTHER active user has linked this account
             cursor = await self._conn.execute(
-                "SELECT tg_id FROM account_links "
-                "WHERE platform = ? AND external_id = ? AND is_active = 1 AND tg_id != ?",
+                "SELECT 1 FROM account_links "
+                "WHERE platform = ? AND external_id = ? AND is_active = 1"
+                " AND person_id != " + PERSON_BY_TG,
                 (platform, external_id, tg_id),
             )
             other_owner = await cursor.fetchone()
@@ -259,7 +263,7 @@ class _AccountsRepo:
             await self.clear_platform_cooldown(tg_id)
 
         # Step 3: Remove user, tokens, and related records
-        await self._conn.execute("DELETE FROM tokens WHERE tg_id = ?", (tg_id,))
+        await self._conn.execute("DELETE FROM tokens WHERE person_id = " + PERSON_BY_TG, (tg_id,))
         await self._conn.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
         await self._conn.execute(
             "DELETE FROM tracked_messages WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
@@ -595,9 +599,10 @@ class _AccountsRepo:
         """
         now = utcnow_iso()
         await self._conn.execute(
-            "INSERT INTO tokens (tg_id, refresh_token_enc, status, created_at, last_refresh_at) "
-            "VALUES (?, ?, 'active', ?, ?) "
-            "ON CONFLICT(tg_id) DO UPDATE SET "
+            "INSERT INTO tokens"
+            " (person_id, refresh_token_enc, status, created_at, last_refresh_at) "
+            "VALUES (" + PERSON_BY_TG + ", ?, 'active', ?, ?) "
+            "ON CONFLICT(person_id) DO UPDATE SET "
             "  refresh_token_enc = excluded.refresh_token_enc,"
             "  status = 'active',"
             "  fail_count = 0,"
@@ -610,14 +615,18 @@ class _AccountsRepo:
         await self._conn.commit()
 
     async def get_token(self, tg_id: int) -> TokenRecord | None:
-        cursor = await self._conn.execute("SELECT * FROM tokens WHERE tg_id = ?", (tg_id,))
+        cursor = await self._conn.execute(
+            "SELECT t.*, u.tg_id FROM tokens t JOIN users u ON u.id = t.person_id"
+            " WHERE u.tg_id = ?",
+            (tg_id,),
+        )
         row = await cursor.fetchone()
         return _as_token(row) if row else None
 
     async def set_token_status(self, tg_id: int, status: str) -> None:
         invalid_at = utcnow_iso() if status == TokenStatus.INVALID else None
         await self._conn.execute(
-            "UPDATE tokens SET status = ?, invalid_at = ? WHERE tg_id = ?",
+            "UPDATE tokens SET status = ?, invalid_at = ? WHERE person_id = " + PERSON_BY_TG,
             (status, invalid_at, tg_id),
         )
         await self._conn.commit()
@@ -625,10 +634,14 @@ class _AccountsRepo:
     async def bump_token_failure(self, tg_id: int) -> int:
         """A network error is not a dead token (SPEC 5.1) — count and report."""
         await self._conn.execute(
-            "UPDATE tokens SET fail_count = fail_count + 1 WHERE tg_id = ?", (tg_id,)
+            "UPDATE tokens SET fail_count = fail_count + 1 WHERE person_id = " + PERSON_BY_TG,
+            (tg_id,),
         )
         await self._conn.commit()
-        cursor = await self._conn.execute("SELECT fail_count FROM tokens WHERE tg_id = ?", (tg_id,))
+        cursor = await self._conn.execute(
+            "SELECT fail_count FROM tokens WHERE person_id = " + PERSON_BY_TG,
+            (tg_id,),
+        )
         row = await cursor.fetchone()
         return int(row["fail_count"]) if row else 0
 
@@ -642,9 +655,9 @@ class _AccountsRepo:
         """
         cutoff = (utcnow() - timedelta(hours=min_interval_hours)).isoformat(timespec="seconds")
         cursor = await self._conn.execute(
-            "SELECT tg_id FROM tokens "
-            "WHERE status = 'invalid' AND notify_count < ? "
-            "  AND (last_notified_at IS NULL OR last_notified_at < ?)",
+            "SELECT u.tg_id FROM tokens t JOIN users u ON u.id = t.person_id "
+            "WHERE t.status = 'invalid' AND t.notify_count < ? AND u.tg_id IS NOT NULL"
+            "  AND (t.last_notified_at IS NULL OR t.last_notified_at < ?)",
             (max_reminders, cutoff),
         )
         return [row["tg_id"] for row in await cursor.fetchall()]
@@ -652,19 +665,23 @@ class _AccountsRepo:
     async def mark_token_notified(self, tg_id: int) -> None:
         await self._conn.execute(
             "UPDATE tokens SET notify_count = notify_count + 1, last_notified_at = ? "
-            "WHERE tg_id = ?",
+            "WHERE person_id = " + PERSON_BY_TG,
             (utcnow_iso(), tg_id),
         )
         await self._conn.commit()
 
     async def delete_token(self, tg_id: int) -> None:
-        await self._conn.execute("DELETE FROM tokens WHERE tg_id = ?", (tg_id,))
+        await self._conn.execute("DELETE FROM tokens WHERE person_id = " + PERSON_BY_TG, (tg_id,))
         await self._conn.commit()
 
     # ------------------------------------------------------- user settings
 
     async def get_user_settings(self, tg_id: int) -> UserSettings | None:
-        cursor = await self._conn.execute("SELECT * FROM user_settings WHERE tg_id = ?", (tg_id,))
+        cursor = await self._conn.execute(
+            "SELECT s.*, u.tg_id FROM user_settings s JOIN users u ON u.id = s.person_id"
+            " WHERE u.tg_id = ?",
+            (tg_id,),
+        )
         row = await cursor.fetchone()
         return _as_user_settings(row) if row else None
 
@@ -673,7 +690,8 @@ class _AccountsRepo:
         follows chat_settings.locale instead. Someone with no settings row
         yet reads as the default, same as every other per-user setting."""
         cursor = await self._conn.execute(
-            "SELECT locale FROM user_settings WHERE tg_id = ?", (tg_id,)
+            "SELECT locale FROM user_settings WHERE person_id = " + PERSON_BY_TG,
+            (tg_id,),
         )
         row = await cursor.fetchone()
         return row["locale"] if row else DEFAULT_LOCALE
@@ -694,7 +712,7 @@ class _AccountsRepo:
             return
         assignments = ", ".join(f"{name} = ?" for name in fields)
         await self._conn.execute(
-            f"UPDATE user_settings SET {assignments} WHERE tg_id = ?",
+            f"UPDATE user_settings SET {assignments} WHERE person_id = {PERSON_BY_TG}",
             (*fields.values(), tg_id),
         )
         await self._conn.commit()
@@ -741,9 +759,10 @@ class _AccountsRepo:
     async def any_active_xbox_tg_id(self) -> int | None:
         """Find any user with an active Xbox link and active token (e.g. for catalog queries)."""
         cursor = await self._conn.execute(
-            "SELECT al.tg_id FROM account_links al "
-            "JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
-            "WHERE al.platform = 'xbox' AND al.is_active = 1 LIMIT 1"
+            "SELECT u.tg_id FROM account_links al "
+            "JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
+            "JOIN users u ON u.id = al.person_id "
+            "WHERE al.platform = 'xbox' AND al.is_active = 1 AND u.tg_id IS NOT NULL LIMIT 1"
         )
         row = await cursor.fetchone()
         return int(row["tg_id"]) if row else None

@@ -33,7 +33,7 @@ def main() -> int:
         try:
             linked = scalar(
                 conn,
-                "SELECT COUNT(DISTINCT tg_id) FROM account_links WHERE is_active = 1",
+                "SELECT COUNT(DISTINCT person_id) FROM account_links WHERE is_active = 1",
             )
         except sqlite3.OperationalError:
             print(

@@ -17,6 +17,7 @@ from datetime import timedelta
 
 from bot.config import Settings
 from bot.db.repo import AchievementRow, Repo
+from bot.db.repo._sql import PERSON_BY_TG
 from bot.poller.catch_up import CatchUpPoller
 from bot.poller.fetcher import catch_up_since
 from bot.util import utcnow
@@ -187,7 +188,8 @@ async def test_dormant_xbox_account_uses_idle_interval(repo: Repo, cipher) -> No
         "UPDATE users SET last_online_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
     )
     await repo._conn.execute(
-        "UPDATE account_links SET linked_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+        "UPDATE account_links SET linked_at = ? WHERE person_id = " + PERSON_BY_TG,
+        (twenty_days_ago, TG_ID),
     )
     await repo._conn.commit()
 

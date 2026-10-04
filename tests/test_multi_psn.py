@@ -9,6 +9,7 @@ import sqlite3
 import pytest
 
 from bot.db.repo import Repo
+from bot.db.repo._sql import PERSON_BY_TG
 
 TG = 7
 
@@ -44,8 +45,8 @@ async def test_the_index_still_holds_one_account_for_steam(repo: Repo) -> None:
 
     with pytest.raises(sqlite3.IntegrityError):
         await repo._conn.execute(
-            "INSERT INTO account_links (tg_id, platform, external_id, is_active, linked_at)"
-            " VALUES (?, 'steam', '2', 1, '2026-09-25')",
+            "INSERT INTO account_links (person_id, platform, external_id, is_active, linked_at)"
+            " VALUES (" + PERSON_BY_TG + ", 'steam', '2', 1, '2026-09-25')",
             (TG,),
         )
 

@@ -408,7 +408,7 @@ class _AchievementsRepo:
             "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "
             # A muted account (#20) holds nothing back to flush: it never
             # posts at all, so the flood filter's backlog excludes it too.
-            "WHERE al.tg_id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL AND al.publishes = 1 "
+            "WHERE alu.tg_id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL AND al.publishes = 1 "
             "ORDER BY COALESCE(s.unlocked_at, s.created_at) ASC",
             (chat_id, tg_id),
         )

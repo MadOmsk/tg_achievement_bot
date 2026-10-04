@@ -107,7 +107,7 @@ class _AdminRepo:
             "       pp.achievements_visible AS psn_achievements_visible "
             "FROM users u "
             + XBOX_ACCOUNT
-            + "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
+            + "LEFT JOIN tokens t ON t.person_id = u.id "
             + active_account("ps", "steam")
             + active_account("pp", "psn")
             + "WHERE xb.external_id IS NOT NULL OR ps.external_id IS NOT NULL"
@@ -152,10 +152,11 @@ class _AdminRepo:
         people list filters by chat, so the list endpoint needs this in
         one round-trip rather than N chats_of_user calls."""
         cursor = await self._conn.execute(
-            "SELECT s.tg_id, s.chat_id FROM subscriptions s "
+            "SELECT u.tg_id, s.chat_id FROM subscriptions s "
+            "JOIN users u ON u.id = s.person_id "
             "JOIN chats c ON c.chat_id = s.chat_id "
-            "WHERE c.is_active = 1 "
-            "ORDER BY s.tg_id, c.title"
+            "WHERE c.is_active = 1 AND u.tg_id IS NOT NULL "
+            "ORDER BY u.tg_id, c.title"
         )
         by_user: dict[int, list[int]] = {}
         for row in await cursor.fetchall():
@@ -341,11 +342,11 @@ class _AdminRepo:
         walker asks through, since titlehub answers only through a person's."""
         cursor = await self._conn.execute(
             "SELECT t.title_id,"
-            "       (SELECT MIN(al.tg_id) FROM seen_achievements s "
+            "       (SELECT MIN(u.tg_id) FROM seen_achievements s "
             "        JOIN account_links al ON al.platform = s.account_platform"
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
-            "        JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
-            "        JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
+            "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
+            "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
             "        WHERE s.title_id = t.title_id) AS owner_tg_id "
             f"FROM titles t WHERE {self._PLATFORMS_DUE} "
             # Filtered before the LIMIT: a game nobody here can be asked about
@@ -535,12 +536,12 @@ class _AdminRepo:
         the same condition `pollable_users` applies.
         """
         cursor = await self._conn.execute(
-            "SELECT s.title_id, MIN(al.tg_id) AS tg_id "
+            "SELECT s.title_id, MIN(u.tg_id) AS tg_id "
             "FROM seen_achievements s "
             "JOIN account_links al ON al.platform = s.account_platform"
             "   AND al.external_id = s.xuid AND al.is_active = 1 "
-            "JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
-            "JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
+            "JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
+            "JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             "WHERE t.title_id IS NULL "
             "GROUP BY s.title_id LIMIT ?",
@@ -601,11 +602,11 @@ class _AdminRepo:
             # NULL when nobody here can be asked, which is exactly the title
             # the walker should stamp and leave alone.
             "SELECT t.title_id, t.name, t.platform, t.icon_url, t.cover_path, t.cover_hash,"
-            "       (SELECT MIN(al.tg_id) FROM seen_achievements s "
+            "       (SELECT MIN(u.tg_id) FROM seen_achievements s "
             "        JOIN account_links al ON al.platform = s.account_platform"
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
-            "        JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
-            "        JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
+            "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
+            "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
             "        WHERE s.title_id = t.title_id) AS owner_tg_id "
             "FROM titles t "
             "WHERE t.cover_path IS NULL "

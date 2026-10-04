@@ -94,7 +94,7 @@ class _ChatStatsRepo:
             # Through the accounts this person holds now (#52), not through
             # a tg_id on the row: an account they no longer hold contributes
             # nothing, and one they just linked contributes everything.
-            + "LEFT JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            + "LEFT JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "LEFT JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             + date_bound
@@ -199,7 +199,8 @@ class _ChatStatsRepo:
         # stands in for the chat's membership; ids are integers formatted here.
         if members is None:
             member_sql = (
-                "  SELECT tg_id FROM subscriptions WHERE chat_id = ? "
+                "  SELECT su.tg_id FROM subscriptions sb"
+                "  JOIN users su ON su.id = sb.person_id WHERE sb.chat_id = ? "
                 "  UNION "
                 "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
             )

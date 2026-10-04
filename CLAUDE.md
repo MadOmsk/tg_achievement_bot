@@ -281,11 +281,16 @@ every column. History: #106.
 
 - `users` has an id of its own (`users.id`, migration 071; #156 step 1) and keeps
   the Telegram identity as `tg_id` — unique, and empty for a person who will sign in
-  another way. **Every other table still points at `users(tg_id)`** until it moves to
-  the person id (step 2), so code still treats `tg_id` as the person for now.
-  071 rebuilds `users` with foreign keys switched off inside the script itself (the
-  pragma does nothing inside a transaction), so a migration that rebuilds a parent
-  table follows the same shape. **The rest is changing** (#156): each way to sign in
+  another way. **The tables about a person point at `users(id)`** (migration 078,
+  #156 step 2): `account_links`, `tokens`, `user_settings`, `subscriptions`,
+  `notification_throttle`. What is Telegram by nature keeps a Telegram id:
+  `chat_seen`, the admins' ids, and the reset cooldowns (`platform_cooldowns*`), which
+  must outlive a deleted person to stop a delete-and-rejoin. **The repo still takes a
+  `tg_id` at its door** and resolves the person inside (`_sql.PERSON_BY_TG`; a chat's
+  members read back as `tg_id` through `member_source`) until callers move to the
+  person id (#156 step 3). 071 and 078 rebuild their tables with foreign keys
+  switched off inside the script itself (the pragma does nothing inside a
+  transaction); a migration that rebuilds a parent table follows the same shape. **The rest is changing** (#156): each way to sign in
   (Telegram, later email and the rest) becomes a field on the person. A person may
   then have no Telegram and no platform account at all — someone who signed in by
   email only to follow friends. Merging two people is the person's own request:
@@ -297,7 +302,7 @@ every column. History: #106.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
-  generations). `account_links (tg_id, platform, external_id, is_active, linked_at,
+  generations). `account_links (person_id, platform, external_id, is_active, linked_at,
   unlinked_at, publishes)` says who holds it now and who held it before, and whether
   the holder announces its achievements (#20: the person's own switch per account; a
   muted account still counts in stats, summaries and `/online`).
@@ -375,7 +380,7 @@ every column. History: #106.
   `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
   profile links are one admin switch, `app_settings['show_profile_links']`, on by
   default — owner, 2026-09-29.) Somebody in many chats used to set the mode in each (#126).
-- **Anti-flood state**: `notification_throttle (tg_id, chat_id, window_started_at,
+- **Anti-flood state**: `notification_throttle (person_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
   finds.
@@ -782,7 +787,7 @@ elsewhere in this file still describe the bot.
   /api/mini/auth/logout` ends it. **Setup per bot**: BotFather `/setdomain` must name
   the Mini App's host (`xbox.sultanpharm.com`, `test.xbox.sultanpharm.com`, and the
   dev tunnel) or the widget refuses to render. A session serves only a person with a
-  Telegram id until the tables move to the person id (#156 step 2).
+  Telegram id until the repo's callers move to the person id (#156 step 3).
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),

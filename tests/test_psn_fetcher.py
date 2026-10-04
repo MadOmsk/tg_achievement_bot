@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 from bot.config import Settings
 from bot.db.repo import AchievementRow, Repo
+from bot.db.repo._sql import PERSON_BY_TG
 from bot.poller import psn_fetcher as psn_fetcher_module
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.services.crypto import TokenCipher
@@ -372,7 +373,8 @@ async def test_tick_throttles_offline_users(
         "UPDATE users SET last_online_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
     )
     await repo._conn.execute(
-        "UPDATE account_links SET linked_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+        "UPDATE account_links SET linked_at = ? WHERE person_id = " + PERSON_BY_TG,
+        (twenty_days_ago, TG_ID),
     )
     one_hour_ago = (datetime.now(UTC) - timedelta(seconds=3600)).isoformat()
     await repo._conn.execute(

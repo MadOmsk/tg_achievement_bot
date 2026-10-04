@@ -97,7 +97,7 @@ class _DescriptionsRepo:
         person's request fills the cache for everybody.
         """
         cursor = await self._conn.execute(
-            "SELECT s.title_id, MIN(al.tg_id) AS tg_id "
+            "SELECT s.title_id, MIN(alu.tg_id) AS tg_id "
             "FROM seen_achievements s " + OWNED_BY_PERSON + "WHERE s.platform = ? "
             "  AND NOT EXISTS (" + _TITLE_HAS_RARITY + ") "
             "GROUP BY s.title_id LIMIT ?",
@@ -202,7 +202,7 @@ class _DescriptionsRepo:
         there is nothing to translate, so they are not a gap.
         """
         cursor = await self._conn.execute(
-            "SELECT s.platform, s.title_id, s.achievement_id, al.tg_id, s.xuid "
+            "SELECT s.platform, s.title_id, s.achievement_id, alu.tg_id, s.xuid "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + _CATALOG_ROW
@@ -238,10 +238,10 @@ class _DescriptionsRepo:
         """
         placeholders = ", ".join("?" * len(platforms))
         cursor = await self._conn.execute(
-            "SELECT s.platform, s.title_id, MIN(al.tg_id) AS tg_id "
+            "SELECT s.platform, s.title_id, MIN(alu.tg_id) AS tg_id "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
-            + "LEFT JOIN tokens tk ON tk.tg_id = al.tg_id "
+            + "LEFT JOIN tokens tk ON tk.person_id = al.person_id "
             + _CATALOG_ROW
             # A `fallback` row counts as unfinished: the text is stored and
             # on screen, but nothing has translated it yet, so the next pass

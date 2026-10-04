@@ -9,6 +9,7 @@ from pydantic import SecretStr
 from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
+from bot.db.repo._sql import PERSON_BY_TG
 from bot.poller.steam_catch_up import SteamCatchUpPoller, steam_catch_up_since
 from bot.services.steam import client as steam_client
 from bot.services.steam.auth import SteamAuth
@@ -277,7 +278,8 @@ async def test_dormant_steam_account_uses_idle_interval(repo: Repo, steam_auth) 
         "UPDATE users SET last_online_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
     )
     await repo._conn.execute(
-        "UPDATE account_links SET linked_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+        "UPDATE account_links SET linked_at = ? WHERE person_id = " + PERSON_BY_TG,
+        (twenty_days_ago, TG_ID),
     )
     await repo._conn.commit()
 

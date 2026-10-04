@@ -15,6 +15,7 @@ from bot.db.repo._sql import (
     GLOBAL_RARE_THRESHOLD,
     OWNED_BY_PERSON,
     OWNED_BY_PERSON_EXISTS,
+    PERSON_BY_TG,
     earned_at,
     earned_date_is_real,
     earned_since,
@@ -104,7 +105,7 @@ class _StatsRepo:
             "UPDATE accounts SET gamerscore = ?, updated_at = ? "
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
-            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)",
+            "  WHERE person_id = " + PERSON_BY_TG + " AND platform = 'xbox' AND is_active = 1)",
             (gamerscore, utcnow_iso(), tg_id),
         )
         await self._conn.commit()
@@ -127,7 +128,7 @@ class _StatsRepo:
             "                    updated_at = ? "
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
-            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)"
+            "  WHERE person_id = " + PERSON_BY_TG + " AND platform = 'xbox' AND is_active = 1)"
             "  AND ((? IS NOT NULL AND secondary_name IS NOT ?)"
             "    OR (? IS NOT NULL AND display_name IS NOT ?))",
             (
@@ -320,7 +321,7 @@ class _StatsRepo:
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + rarity_cache_join()
-            + "WHERE al.tg_id = ? AND s.account_platform = ?",
+            + "WHERE alu.tg_id = ? AND s.account_platform = ?",
             (tg_id, account_platform),
         )
         row = await cursor.fetchone()
@@ -499,12 +500,12 @@ class _StatsRepo:
         used to show `achievement_counts_by_xuid`'s Xbox-only numbers even
         for someone with Steam achievements too."""
         query = (
-            "SELECT al.tg_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
+            "SELECT alu.tg_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
             "FROM seen_achievements s " + OWNED_BY_PERSON
         )
         params: list[object] = []
         if since is not None:
             query += f"WHERE {earned_since()}"
             params.append(_iso(since))
-        cursor = await self._conn.execute(query + " GROUP BY al.tg_id", params)
+        cursor = await self._conn.execute(query + " GROUP BY alu.tg_id", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}

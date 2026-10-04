@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from bot.db.repo._models import FloodState
+from bot.db.repo._sql import PERSON_BY_TG
 from bot.util import parse_iso
 
 
@@ -16,7 +17,7 @@ class _FloodRepo:
     async def get_flood_state(self, tg_id: int, chat_id: int) -> FloodState | None:
         cursor = await self._conn.execute(
             "SELECT window_started_at, count_in_window, throttled FROM notification_throttle "
-            "WHERE tg_id = ? AND chat_id = ?",
+            "WHERE person_id = " + PERSON_BY_TG + " AND chat_id = ?",
             (tg_id, chat_id),
         )
         row = await cursor.fetchone()
@@ -43,9 +44,9 @@ class _FloodRepo:
     ) -> None:
         await self._conn.execute(
             "INSERT INTO notification_throttle"
-            " (tg_id, chat_id, window_started_at, count_in_window, throttled) "
-            "VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(tg_id, chat_id) DO UPDATE SET"
+            " (person_id, chat_id, window_started_at, count_in_window, throttled) "
+            "VALUES (" + PERSON_BY_TG + ", ?, ?, ?, ?) "
+            "ON CONFLICT(person_id, chat_id) DO UPDATE SET"
             " window_started_at = excluded.window_started_at,"
             " count_in_window = excluded.count_in_window,"
             " throttled = excluded.throttled",
@@ -61,7 +62,10 @@ class _FloodRepo:
 
     async def clear_flood_state(self, tg_id: int, chat_id: int) -> None:
         await self._conn.execute(
-            "DELETE FROM notification_throttle WHERE tg_id = ? AND chat_id = ?", (tg_id, chat_id)
+            "DELETE FROM notification_throttle WHERE person_id = "
+            + PERSON_BY_TG
+            + " AND chat_id = ?",
+            (tg_id, chat_id),
         )
         await self._conn.commit()
 
@@ -74,8 +78,9 @@ class _FloodRepo:
         gets silently replaced next time an achievement arrives
         (publisher.py's own job, not this one)."""
         cursor = await self._conn.execute(
-            "SELECT tg_id, chat_id, window_started_at, count_in_window FROM notification_throttle "
-            "WHERE throttled = 1"
+            "SELECT u.tg_id, n.chat_id, n.window_started_at, n.count_in_window"
+            " FROM notification_throttle n JOIN users u ON u.id = n.person_id "
+            "WHERE n.throttled = 1"
         )
         rows = await cursor.fetchall()
         result = []
