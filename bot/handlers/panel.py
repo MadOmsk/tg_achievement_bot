@@ -80,11 +80,11 @@ async def send_panel(bot: Bot, repo: Repo, tg_id: int, i18n: I18nContext) -> Non
 
 @router.message(Command("panel"), F.chat.type == ChatType.PRIVATE)
 async def panel_command(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
-    person_id = _person_id(message)
-    if person_id is None:
+    tg_id = _sender_tg_id(message)
+    if tg_id is None:
         return
-    await repo.ensure_user(person_id, _username(message))
-    await send_panel(bot, repo, person_id, i18n)
+    await repo.ensure_user(tg_id, _username(message))
+    await send_panel(bot, repo, tg_id, i18n)
 
 
 @router.callback_query(F.data == "panel:refresh")
@@ -550,8 +550,8 @@ async def panel_delete_account_confirmed(
         await callback.answer(i18n.get("panel-delete-not-found"), show_alert=True)
 
 
-def _person_id(message: Message) -> int | None:
-    """Whose row this is — the person's id, never the chat's (#66).
+def _sender_tg_id(message: Message) -> int | None:
+    """Whose row this is — the sender's Telegram id, never the chat's (#66).
 
     These handlers used to pass `message.chat.id`, which is the same number
     in a DM and a completely different one in a group: `/start` is

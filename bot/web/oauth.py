@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 # those anonymous branches.
 _ = translator("oauth", DEFAULT_LOCALE)
 
-OnLinked = Callable[[int, XboxIdentity, "int | None"], Awaitable[None]]
+OnLinked = Callable[[int, "int | None", XboxIdentity, "int | None"], Awaitable[None]]
 
 _PAGE = """<!doctype html>
 <meta charset="utf-8">
@@ -148,7 +148,9 @@ class OAuthServer:
             return _page(_("oauth-missing-title"), _("oauth-missing-text"), status=400)
 
         try:
-            tg_id, identity, origin_chat_id = await self._connect.complete_login(state, code)
+            person, tg_id, identity, origin_chat_id = await self._connect.complete_login(
+                state, code
+            )
         except ConnectError as exc:
             return _page(_("oauth-failed-title"), str(exc), status=400)
         except TokenRefreshError:
@@ -160,13 +162,13 @@ class OAuthServer:
             )
 
         try:
-            await self._on_linked(tg_id, identity, origin_chat_id)
+            await self._on_linked(person, tg_id, identity, origin_chat_id)
         except Exception:
             # The account is already linked; only the Telegram message failed.
-            log.exception("could not notify tg_id=%s about a successful login", tg_id)
+            log.exception("could not notify person_id=%s about a successful login", person)
 
         # The one branch with a known person behind it.
-        own = translator("oauth", await self._connect.user_locale(tg_id))
+        own = translator("oauth", await self._connect.user_locale(person))
         return _page(
             own("oauth-success-title", gamertag=identity.gamertag), own("oauth-success-text")
         )

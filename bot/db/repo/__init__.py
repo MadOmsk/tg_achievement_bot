@@ -41,6 +41,8 @@ Layout:
                     caches. Also added after the split.
     _steam.py       a game's Steam app, its guides' tips and its patch
                     notes (migration 069).
+    _logins.py      ways in besides a Telegram update: email addresses and
+                    their one-time codes, Telegram added later (#162).
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -69,6 +71,7 @@ from bot.db.repo._descriptions import _DescriptionsRepo
 from bot.db.repo._flood import _FloodRepo
 from bot.db.repo._follows import FollowTooSoon, PersonRow, _FollowsRepo
 from bot.db.repo._handles import HandleInvalid, HandleState, HandleTooSoon, _HandlesRepo
+from bot.db.repo._logins import EmailCode, LoginTaken, _LoginsRepo
 from bot.db.repo._messages import _MessagesRepo
 from bot.db.repo._models import (
     AchievementRow,
@@ -132,6 +135,7 @@ __all__ = [
     "CooldownCheckResult",
     "Database",
     "DeletableMessage",
+    "EmailCode",
     "FloodState",
     "FollowTooSoon",
     "GameAchievements",
@@ -139,6 +143,7 @@ __all__ = [
     "HandleState",
     "HandleTooSoon",
     "HltbCacheRow",
+    "LoginTaken",
     "OnlineAutoRefreshRow",
     "PersonRow",
     "PlatformLink",
@@ -184,6 +189,7 @@ class Repo(
     _HandlesRepo,
     _FollowsRepo,
     _SessionsRepo,
+    _LoginsRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

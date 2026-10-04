@@ -39,13 +39,13 @@ admin controls, and predictable behavior, not public SaaS scale.
   Microsoft OAuth callback and the Telegram Mini App (`webapp/`, served separately;
   this process only answers `/api/mini/*` next to `/auth/callback`). Slash commands
   and chat notifications stay — the Mini App is an extra door, not a replacement.
-  **The same Mini App is to open in a plain browser too** (owner, 2026-10-02; #157):
-  outside Telegram it shows a sign-in screen, and a person signs in **through a
-  messenger** — Telegram now (Telegram Login), WhatsApp later — one person with
-  several messenger logins. The other methods listed in #156 (email, Discord, phone,
-  Google, a platform account) are not planned for now. **Telegram Login is built**
-  (see "Browser sign-in" under People, nicknames and follows); WhatsApp is not. New
-  code must not assume that every person has a Telegram id.
+  **The same Mini App opens in a plain browser too** (owner, 2026-10-02; #157):
+  outside Telegram it shows a sign-in screen. **A person signs in by email or by
+  Telegram** (owner, 2026-10-04, #162) and may keep both; Settings → «Вход» adds and
+  removes them. SMS and WhatsApp were considered and dropped; Discord, phone, Google
+  and a platform account (#156) are not planned. Telegram is still what publishing
+  to group chats and the bot's DMs need. New code must not assume that every person
+  has a Telegram id.
 - No `/compare` or `/top` (see the appendix).
 - One `rarity_mode` per person, for every platform and every chat — not one per
   platform (see the appendix). What a person *can* switch off is a whole account's
@@ -139,6 +139,8 @@ name, or when the tree goes stale.
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
 │   │   ├── release_notify.py     the release announcement on startup
 │   │   ├── notify.py             notifications to the admin
+│   │   ├── email.py              sending mail: one `EmailSender`, SMTP or (dev) the log (#162)
+│   │   ├── email_login.py        sign-in codes by email: rules, rationing, checking (#162)
 │   │   ├── mini_app.py           Mini App open-button URLs
 │   │   ├── hltb.py               howlongtobeatpy wrapper, cached in hltb_cache; ensure_title_match
 │   │   │                         is the lazy trigger for hltb_match.py below
@@ -179,7 +181,8 @@ name, or when the tree goes stale.
 │   │
 │   ├── web/                     oauth.py (OAuth callback + Mini API mount), mini_api.py (JSON,
 │   │                            Init Data auth), mini_auth.py, mini_me.py, mini_chat.py,
-│   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py
+│   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py,
+│   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept)
 │   │
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
@@ -238,7 +241,14 @@ super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `OAUTH_LISTEN_HOST` /
 `OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
-App entry points), and the poller interval settings.
+App entry points), the poller interval settings, and the mail server for email sign-in
+(`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_FROM`; #162).
+
+- **No mail server, no email sign-in** — not an error: the sign-in screen offers
+  Telegram only. `EMAIL_LOG_CODES=true` writes the codes to the log instead of
+  sending them, for the dev server only. Another way to send mail is one more class
+  behind `services/email.py::EmailSender`.
 
 - **`STEAM_API_KEY` and `ANTHROPIC_API_KEY` are first-run seeds** (#17): the auth
   wrapper (`SteamAuth` / `AnthropicAuth`) imports the env value once into
@@ -296,10 +306,17 @@ every column. History: #106.
   button on a post, the cooldowns). A chat's members still read back as `tg_id`
   through `member_source`. 071 and 078 rebuild their tables with foreign keys
   switched off inside the script itself (the pragma does nothing inside a
-  transaction); a migration that rebuilds a parent table follows the same shape. **The rest is changing** (#156): each way to sign in
-  (Telegram, later email and the rest) becomes a field on the person. A person may
-  then have no Telegram and no platform account at all — someone who signed in by
-  email only to follow friends. Merging two people is the person's own request:
+  transaction); a migration that rebuilds a parent table follows the same shape.
+  **Each way to sign in is a field on the person** (#156, #162): `tg_id`, and
+  `email` (migration 079 — lower-cased, unique, set only once a code proved it). A
+  person may have no Telegram and no platform account at all — someone who signed
+  in by email only to follow friends. Such a person has no person-side reset
+  cooldown (it is keyed by Telegram id); the per-account count still holds. A
+  column added to `users` that needs an index gets it in its migration, with the
+  rule written into the `CREATE TABLE` for new databases: `schema.sql` runs before
+  the migrations, so a standalone index on a new column fails on an old file.
+  Merging two people is the person's own request (not built; linking a login that
+  is somebody else's is refused as `taken`):
   the same platform accounts (or one side empty) merge at once; a conflict (two
   different Steam ids) is put to the person, and settings come from the fresher side.
   **A super-admin stays an ordinary person named by `ADMIN_TG_IDS`** (owner,
@@ -782,8 +799,9 @@ elsewhere in this file still describe the bot.
   `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/tg/{tg_id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
-- **Browser sign-in** (shipped, Telegram only; migration 074): in a plain browser the
-  Mini App shows a sign-in screen with Telegram's Login Widget. `POST
+- **Browser sign-in** (shipped; Telegram by migration 074, email by 079): in a plain
+  browser the Mini App shows a sign-in screen with Telegram's Login Widget and, when
+  a mail server is set up (`/api/mini/auth/config` says `email`), an address field. `POST
   /api/mini/auth/telegram` checks the widget's signature (`mini_auth.
   validate_login_widget`: HMAC with SHA-256 of the bot token, at most 10 minutes old)
   and sets an HttpOnly, SameSite=Lax cookie `ab_session`; `web_sessions` keeps only a
@@ -793,8 +811,25 @@ elsewhere in this file still describe the bot.
   /api/mini/auth/logout` ends it. **Setup per bot**: BotFather `/setdomain` must name
   the Mini App's host (`xbox.sultanpharm.com`, `test.xbox.sultanpharm.com`, and the
   dev tunnel) or the widget refuses to render. A session resolves to the person
-  (`repo.session_person`), but still serves only one with a Telegram id until email
-  sign-in (#162) lets the request user go without one.
+  (`repo.session_person`), who may have no Telegram id (`MiniAppUser.tg_id` is then
+  None and the Telegram corners — chats, publishing — are empty).
+  - **Email** (#162, `services/email_login.py`, `web/mini_logins.py`): `POST
+    /api/mini/auth/email/start` sends a six-digit code, `/verify` checks it and opens
+    a session — for the person with that address, or a new person without Telegram,
+    who gets a nickname at once. A code lives 10 minutes and takes 5 guesses; only an
+    HMAC of it is stored (keyed from `FERNET_KEY`); a new one replaces the last; one
+    address gets one a minute and five an hour. The answer never says whether an
+    address is known. Errors are codes the Mini App words: `invalid`, `too_soon`,
+    `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
+    `last_login`.
+  - **Settings → «Вход»**: `GET /api/mini/me/logins`; an address is added or changed
+    by the same code (`/api/mini/me/email/start|verify`) and removed
+    (`DELETE /api/mini/me/email`) only while Telegram is left to sign in with; Telegram
+    is added through the Login Widget (`POST /api/mini/me/telegram`). A login that
+    belongs to another person is refused (`taken`).
+  - Connecting Xbox from the browser works without Telegram: the pending login is
+    keyed by the person (`ConnectService`), and with no Telegram id the history is
+    read quietly instead of with a status DM.
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),

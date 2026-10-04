@@ -53,9 +53,17 @@ CREATE TABLE IF NOT EXISTS users (
     -- Who sees this person's activity in the app (#157, migration 073).
     activity_visible TEXT NOT NULL DEFAULT 'all'
         CHECK (activity_visible IN ('all', 'friends', 'nobody')),
+    -- An address the person proved with a code, lower-cased (#162, migration
+    -- 079): a way to sign in besides Telegram. NULL = none.
+    email           TEXT,
+    email_linked_at TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
-    UNIQUE (handle_norm, handle_number)
+    UNIQUE (handle_norm, handle_number),
+    -- One person per address; here for new databases, migration 079 makes the
+    -- same rule an index for existing ones (schema.sql runs before migrations,
+    -- so a standalone index on a new column would fail on an old file).
+    UNIQUE (email)
 );
 
 -- One user, one token. Refresh only; everything else lives in memory.
@@ -856,3 +864,20 @@ CREATE TABLE IF NOT EXISTS web_sessions (
     user_agent   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_web_sessions_person ON web_sessions (person_id);
+
+
+-- One-time sign-in codes sent by email (#162, migration 079). Only an HMAC of
+-- the code is kept; `person_id` is set when a signed-in person adds the address
+-- (purpose 'link'), NULL for a sign-in.
+CREATE TABLE IF NOT EXISTS email_codes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    email       TEXT NOT NULL,
+    purpose     TEXT NOT NULL CHECK (purpose IN ('sign_in', 'link')),
+    person_id   INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    code_hash   TEXT NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    used_at     TEXT,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_codes (email, created_at);

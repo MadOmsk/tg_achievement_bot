@@ -27,6 +27,7 @@ from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import achievement_icons, avatars, custom_avatars
 from bot.services.connect import ConnectService
+from bot.services.email_login import EmailLogin
 from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
 from bot.services.naming import person_name_of
@@ -49,7 +50,7 @@ from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
-from bot.web import mini_people, mini_session
+from bot.web import mini_logins, mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
@@ -89,6 +90,7 @@ def setup_mini_api(
     bot: Any = None,
     title_catalog: TitleCatalogService | None = None,
     steam_extras: SteamExtras | None = None,
+    email_login: EmailLogin | None = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -112,10 +114,12 @@ def setup_mini_api(
             anthropic_auth=anthropic_auth,
         )
     app["mini_title_catalog"] = title_catalog
+    app["mini_email_login"] = email_login or mini_logins.build_email_login(settings, repo)
 
     app.router.add_get("/api/mini/health", handle_health)
     mini_people.register(app, _require_user)
     mini_session.register(app)
+    mini_logins.register(app, _require_user)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
@@ -183,7 +187,7 @@ async def handle_me(request: web.Request) -> web.Response:
 async def handle_delete_me(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    await repo.delete_user(user.tg_id)
+    await repo.delete_person(user.person_id)
     return web.json_response({"ok": True})
 
 
@@ -254,7 +258,7 @@ async def handle_connect_xbox(request: web.Request) -> web.Response:
     connect: ConnectService | None = request.app["mini_connect"]
     if connect is None:
         raise web.HTTPServiceUnavailable(text="connect unavailable")
-    url = connect.start_login(user.tg_id)
+    url = connect.start_login(user.person_id, tg_id=user.tg_id)
     return web.json_response({"authorize_url": url})
 
 
@@ -1087,6 +1091,7 @@ async def _with_person(request: web.Request, user: MiniAppUser) -> MiniAppUser:
     """The request's person (#156): everything about a person is keyed by their
     own id. A first visit creates them, once; later visits only look them up."""
     repo: Repo = request.app["mini_repo"]
+    assert user.tg_id is not None  # validated Init Data always names one
     person = await repo.person_id(user.tg_id)
     if person is None:
         person = await repo.ensure_user(user.tg_id, user.username)

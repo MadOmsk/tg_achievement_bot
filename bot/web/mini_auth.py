@@ -32,7 +32,9 @@ class InitDataError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class MiniAppUser:
-    tg_id: int
+    # None for a person who signed in another way (#162): their Telegram-only
+    # corners (chats, publishing, the Xbox login's DM) are simply empty.
+    tg_id: int | None
     username: str | None
     first_name: str | None
     last_name: str | None

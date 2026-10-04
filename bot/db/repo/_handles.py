@@ -152,12 +152,10 @@ class _HandlesRepo:
     async def give_everyone_a_handle(self) -> int:
         """Start-up: a first nickname for each person who has none. Returns how
         many were given."""
-        cursor = await self._conn.execute(
-            "SELECT tg_id FROM users WHERE handle IS NULL AND tg_id IS NOT NULL ORDER BY id"
-        )
+        cursor = await self._conn.execute("SELECT id FROM users WHERE handle IS NULL ORDER BY id")
         ids = [row[0] for row in await cursor.fetchall()]
-        for tg_id in ids:
-            await self.give_handle(await self.person_id(tg_id))
+        for person in ids:
+            await self.give_handle(person)
         return len(ids)
 
     # A picture the person chose (#157, migration 077) lives beside the nickname:

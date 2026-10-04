@@ -133,6 +133,14 @@ class _AccountsRepo:
         return (row["photo_unique_id"], row["photo_path"]) if row else (None, None)
 
     async def delete_user(self, tg_id: int, *, is_admin: bool = False) -> bool:
+        """`delete_person` for the person behind a Telegram id (the admin's card
+        and the bot's own commands name people that way)."""
+        person = await self.person_id(tg_id)  # type: ignore[attr-defined]
+        if person is None:
+            return False
+        return await self.delete_person(person, is_admin=is_admin)
+
+    async def delete_person(self, person_id: int, *, is_admin: bool = False) -> bool:
         """Completely remove a user, their linked platform accounts, and all related
         rows (tokens, subscriptions, settings, seen achievements, publications,
         presence/poll state, cached history, avatars).
@@ -143,20 +151,22 @@ class _AccountsRepo:
         Returns True if a user was deleted, False if no such user existed.
         """
         cursor = await self._conn.execute(
-            "SELECT photo_path, custom_avatar_path FROM users WHERE tg_id = ?", (tg_id,)
+            "SELECT tg_id, photo_path, custom_avatar_path FROM users WHERE id = ?", (person_id,)
         )
         row = await cursor.fetchone()
         if not row:
             return False
+        # The cooldowns and the Telegram-side screens are keyed by Telegram id;
+        # a person who never had one leaves only the per-account counts (#162).
+        tg_id = row["tg_id"]
         # The Telegram photo and the picture chosen in the Mini App (#157): a
         # deleted person's face must not stay behind on disk.
         pictures = [p for p in (row["photo_path"], row["custom_avatar_path"]) if p]
 
         # Step 1: Find all linked platform accounts for this user
         cursor = await self._conn.execute(
-            "SELECT platform, external_id, is_active FROM account_links WHERE person_id = "
-            + PERSON_BY_TG,
-            (tg_id,),
+            "SELECT platform, external_id, is_active FROM account_links WHERE person_id = ?",
+            (person_id,),
         )
         link_rows = await cursor.fetchall()
         linked_accounts = [(r["platform"], r["external_id"]) for r in link_rows]
@@ -173,8 +183,8 @@ class _AccountsRepo:
             cursor = await self._conn.execute(
                 "SELECT 1 FROM account_links "
                 "WHERE platform = ? AND external_id = ? AND is_active = 1"
-                " AND person_id != " + PERSON_BY_TG,
-                (platform, external_id, tg_id),
+                " AND person_id != ?",
+                (platform, external_id, person_id),
             )
             other_owner = await cursor.fetchone()
 
@@ -261,20 +271,22 @@ class _AccountsRepo:
                     tg_id, platform, *external_ids, held=held.get(platform, 1)
                 )
 
-        if is_admin:
+        if is_admin and tg_id is not None:
             await self.clear_platform_cooldown(tg_id)
 
         # Step 3: Remove user, tokens, and related records
-        await self._conn.execute("DELETE FROM tokens WHERE person_id = " + PERSON_BY_TG, (tg_id,))
-        await self._conn.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
-        await self._conn.execute(
-            "DELETE FROM tracked_messages WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
-            (tg_id, tg_id),
-        )
-        await self._conn.execute(
-            "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
-            (tg_id,),
-        )
+        await self._conn.execute("DELETE FROM tokens WHERE person_id = ?", (person_id,))
+        await self._conn.execute("DELETE FROM users WHERE id = ?", (person_id,))
+        if tg_id is not None:
+            await self._conn.execute(
+                "DELETE FROM tracked_messages"
+                " WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
+                (tg_id, tg_id),
+            )
+            await self._conn.execute(
+                "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
+                (tg_id,),
+            )
 
         await self._conn.commit()
 
@@ -284,7 +296,7 @@ class _AccountsRepo:
                 if path.is_file():
                     path.unlink()
             except OSError:
-                log.warning("failed to remove avatar for tg_id=%s path=%s", tg_id, picture)
+                log.warning("failed to remove avatar for person_id=%s path=%s", person_id, picture)
 
         return True
 
@@ -318,7 +330,7 @@ class _AccountsRepo:
         return 1
 
     async def record_platform_reset(
-        self, tg_id: int, platform: str, *external_ids: str, held: int = 1
+        self, tg_id: int | None, platform: str, *external_ids: str, held: int = 1
     ) -> None:
         """Record one deletion/reset: once for the person on this platform
         (`platform_cooldowns`) and once for each account it covered
@@ -334,7 +346,39 @@ class _AccountsRepo:
         if cooldown_hours <= 0:
             return
         now_iso = utcnow_iso()
+        if tg_id is not None:
+            await self._record_person_reset(
+                tg_id, platform, external_ids, held, cooldown_hours, now_iso
+            )
+        for external_id in {str(item) for item in external_ids if item}:
+            cursor = await self._conn.execute(
+                "SELECT reset_count, last_reset_at FROM platform_cooldown_accounts "
+                "WHERE platform = ? AND external_id = ?",
+                (platform, external_id),
+            )
+            count = self._next_count(await cursor.fetchone(), cooldown_hours)
+            await self._conn.execute(
+                "INSERT INTO platform_cooldown_accounts "
+                "(platform, external_id, tg_id, reset_count, last_reset_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(platform, external_id) DO UPDATE SET "
+                "  tg_id = excluded.tg_id, "
+                "  reset_count = excluded.reset_count, "
+                "  last_reset_at = excluded.last_reset_at",
+                # 0 for a person with no Telegram id: the column only says who.
+                (platform, external_id, tg_id or 0, count, now_iso),
+            )
+        await self._conn.commit()
 
+    async def _record_person_reset(
+        self,
+        tg_id: int,
+        platform: str,
+        external_ids: tuple[str, ...],
+        held: int,
+        cooldown_hours: int,
+        now_iso: str,
+    ) -> None:
         cursor = await self._conn.execute(
             "SELECT reset_count, last_reset_at, free_relinks, relinks FROM platform_cooldowns "
             "WHERE tg_id = ? AND platform = ?",
@@ -360,27 +404,8 @@ class _AccountsRepo:
             (tg_id, platform, first, count, now_iso, free_relinks, relinks),
         )
 
-        for external_id in {str(item) for item in external_ids if item}:
-            cursor = await self._conn.execute(
-                "SELECT reset_count, last_reset_at FROM platform_cooldown_accounts "
-                "WHERE platform = ? AND external_id = ?",
-                (platform, external_id),
-            )
-            count = self._next_count(await cursor.fetchone(), cooldown_hours)
-            await self._conn.execute(
-                "INSERT INTO platform_cooldown_accounts "
-                "(platform, external_id, tg_id, reset_count, last_reset_at) "
-                "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(platform, external_id) DO UPDATE SET "
-                "  tg_id = excluded.tg_id, "
-                "  reset_count = excluded.reset_count, "
-                "  last_reset_at = excluded.last_reset_at",
-                (platform, external_id, tg_id, count, now_iso),
-            )
-        await self._conn.commit()
-
     async def check_platform_cooldown(
-        self, tg_id: int, platform: str, external_id: str | None = None
+        self, tg_id: int | None, platform: str, external_id: str | None = None
     ) -> CooldownCheckResult:
         """Check if re-linking is currently blocked by the anti-abuse cooldown.
         Rules:
@@ -437,11 +462,11 @@ class _AccountsRepo:
                 )
         return result
 
-    async def note_platform_relink(self, tg_id: int, platform: str) -> None:
+    async def note_platform_relink(self, tg_id: int | None, platform: str) -> None:
         """One more account linked by this person inside a cooldown window,
         which is what the PSN allowance counts. Outside a window: nothing."""
         cooldown_hours = await self._cooldown_hours()
-        if cooldown_hours <= 0:
+        if cooldown_hours <= 0 or tg_id is None:
             return
         cursor = await self._conn.execute(
             "SELECT last_reset_at FROM platform_cooldowns WHERE tg_id = ? AND platform = ?",

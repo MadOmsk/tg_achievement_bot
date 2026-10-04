@@ -247,18 +247,23 @@ async def run(settings: Settings) -> None:
         PatchRefresh(repo, steam_extras),
     )
 
-    async def on_linked(tg_id: int, identity: XboxIdentity, origin_chat_id: int | None) -> None:
+    async def on_linked(
+        person: int, tg_id: int | None, identity: XboxIdentity, origin_chat_id: int | None
+    ) -> None:
         """Runs in the web callback, right after the account is stored."""
         # No achievements yet means this account is new to the bot, not someone
         # signing in again after his token expired.
         is_new = not await repo.has_any_achievements(identity.xuid)
-        person = await repo.person_id(tg_id)
-        if person is None:
+        await notifier.user_connected(person, identity.gamertag, is_new=is_new)
+        if tg_id is None:
+            # Started in the browser with no Telegram (#162): nobody to message,
+            # no chat to join. The history is read all the same; the Mini App
+            # shows the account filling up.
+            asyncio.create_task(_quiet_xbox_backfill(person, identity.xuid))  # noqa: RUF006
             return
         locale = await repo.user_locale(person)
         _ = translator("main", locale)
         await bot.send_message(tg_id, _("main-linked", gamertag=identity.gamertag))
-        await notifier.user_connected(person, identity.gamertag, is_new=is_new)
 
         # Pressed «Подключить XBOX» from inside a specific group: finish the
         # job and subscribe him there too, instead of making him find
@@ -285,6 +290,12 @@ async def run(settings: Settings) -> None:
         asyncio.create_task(  # noqa: RUF006
             backfill_handlers.run_xbox(bot, fetcher, repo, tg_id, identity.xuid)
         )
+
+    async def _quiet_xbox_backfill(person: int, xuid: str) -> None:
+        try:
+            await fetcher.backfill(person, xuid)
+        except Exception:
+            log.exception("xbox backfill for person_id=%s failed", person)
 
     web_server = OAuthServer(
         settings,

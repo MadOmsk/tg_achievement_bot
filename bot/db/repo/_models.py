@@ -51,6 +51,8 @@ class User:
     # The person's own id (`users.id`, #156) — what every table about a person
     # points at. Defaulted for the call sites that build a User by hand.
     id: int | None = None
+    # The address this person signs in with, if any (#162).
+    email: str | None = None
 
 
 @dataclass(slots=True)
@@ -738,6 +740,7 @@ def _as_user(row: aiosqlite.Row) -> User:
         gamertag_modern=row["gamertag_modern"],
         photo_file_id=row["photo_file_id"],
         id=row["id"],
+        email=row["email"] if "email" in row.keys() else None,
     )
 
 
