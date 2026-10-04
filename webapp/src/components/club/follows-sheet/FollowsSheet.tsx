@@ -61,7 +61,7 @@ export function FollowsSheet({
   initial?: Kind;
   onClose: () => void;
   /** Open someone's full profile. */
-  onOpen: (tgId: number) => void;
+  onOpen: (personId: number) => void;
   onFind: () => void;
   onFlash: (message: string) => void;
 }) {
@@ -205,13 +205,13 @@ export function FollowsSheet({
                 <button
                   type="button"
                   className="picker-row is-person"
-                  onClick={() => row.tg_id != null && onOpen(row.tg_id)}
+                  onClick={() => onOpen(row.id)}
                 >
                   <FriendMark
                     friend={row.relation.friends || ownerFriends.has(row.id)}
                     label={t(locale, "friends")}
                   >
-                    <Avatar name={row.handle} tgId={row.tg_id ?? undefined} size={40} />
+                    <Avatar name={row.handle} personId={row.id} size={40} />
                   </FriendMark>
                   <span className="picker-row-copy">
                     <strong>

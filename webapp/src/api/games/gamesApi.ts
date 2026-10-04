@@ -19,13 +19,13 @@ export class GamesApi extends BaseApi {
     initData: string,
     platform: string,
     titleId: string,
-    opts?: { force?: boolean; tgId?: number | null },
+    opts?: { force?: boolean; personId?: number | null },
   ): Promise<GameDetails> {
     return this.get<GameDetails>(
       initData,
       GAMES_ROUTES.TITLE(platform, titleId),
-      opts?.force || opts?.tgId
-        ? { force: opts.force ? 1 : undefined, tg_id: opts.tgId ?? undefined }
+      opts?.force || opts?.personId
+        ? { force: opts.force ? 1 : undefined, person: opts.personId ?? undefined }
         : undefined,
     );
   }

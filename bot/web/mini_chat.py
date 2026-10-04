@@ -209,7 +209,7 @@ async def build_summary_payload(
     )
     if members is None:
         subscribers = await repo.chat_subscribers(chat_id)
-        people = [s.tg_id for s in subscribers]
+        people = [s.person_id for s in subscribers]
     else:
         people = members
     games = await repo.users_games_achievements(
@@ -349,7 +349,7 @@ async def build_person_payload(
     settings = await repo.get_chat_daily_settings(chat_id) if chat_id is not None else None
     rare_threshold = settings.rare_threshold_percent if settings else 10.0
     game_rows = await repo.users_games_achievements(
-        [target.tg_id],
+        [target.id],
         month_since,
         rare_threshold=rare_threshold,
         limit=games_limit,
@@ -392,6 +392,7 @@ async def build_person_payload(
         }
 
     return {
+        "person_id": target.id,
         "tg_id": target.tg_id,
         "name": person_label(
             tg_id=target.tg_id,
@@ -444,6 +445,7 @@ def _feed_item_json(
 ) -> dict[str, Any]:
     prog = progress.get((row.platform, row.xuid, row.title_id, row.trophy_group_id))
     return {
+        "person_id": row.person_id,
         "tg_id": row.tg_id,
         "person": person_label(
             tg_id=row.tg_id,
@@ -549,6 +551,7 @@ def _presence_json(row: ChatPresenceRow, locale: str) -> dict[str, Any]:
     else:
         icon = PLATFORM_ICON_UNKNOWN
     return {
+        "person_id": row.person_id,
         "tg_id": row.tg_id,
         "name": presence_display_name(row),
         "state": row.state,
@@ -562,6 +565,7 @@ def _presence_json(row: ChatPresenceRow, locale: str) -> dict[str, Any]:
 
 def _stat_json(row: ChatMemberStat) -> dict[str, Any]:
     return {
+        "person_id": row.person_id,
         "tg_id": row.tg_id,
         "name": person_label(
             tg_id=row.tg_id,

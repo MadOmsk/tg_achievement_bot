@@ -123,7 +123,8 @@ async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) ->
     encoded_game = (
         base64.urlsafe_b64encode(f"{item.platform}:{item.title_id}".encode()).decode().rstrip("=")
     )
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{encoded_game}"
+    person = await repo.person_id(tg_id)
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}p{person}g{encoded_game}"
 
 
 async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
@@ -156,7 +157,8 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
         .decode()
         .rstrip("=")
     )
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{encoded_game}"
+    person = await repo.person_id(tg_id)
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}p{person}g{encoded_game}"
 
 
 async def test_publisher_no_markup_when_no_mini_app_url(repo) -> None:

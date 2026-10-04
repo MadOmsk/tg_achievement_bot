@@ -183,8 +183,6 @@ class Publisher:
         """
         if not achievements:
             return
-        # The Mini App button still opens a person by their Telegram id.
-        tg_id = await self._repo.tg_id_of(person_id)
         # The person's own switch for this account (#20): muted, it stays
         # stored and counted, and posts nowhere.
         if not await self._repo.account_publishes(
@@ -247,7 +245,7 @@ class Publisher:
             # singular above), so every item in `allowed` shares it.
             game_ref = (allowed[0].platform, allowed[0].title_id) if allowed else None
             markup = await self._markup_for(
-                chat.chat_id, chat.locale, person_id=tg_id, game=game_ref
+                chat.chat_id, chat.locale, person_id=person_id, game=game_ref
             )
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
@@ -417,7 +415,6 @@ class Publisher:
         achievements = await localize_descriptions(self._repo, achievements, locale)
         user = await self._repo.get_user(person_id)
         links = await self._repo.platform_links_of(person_id)
-        tg_id = user.tg_id if user else None
         platforms = {account_platform_of(item.platform) for item in achievements}
         accounts = {(account_platform_of(item.platform), item.xuid) for item in achievements}
         name: str | None = None
@@ -502,7 +499,7 @@ class Publisher:
             if len(titles) == 1:
                 game_ref = next(iter(titles))
 
-        markup = await self._markup_for(chat_id, locale, person_id=tg_id, game=game_ref)
+        markup = await self._markup_for(chat_id, locale, person_id=person_id, game=game_ref)
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,

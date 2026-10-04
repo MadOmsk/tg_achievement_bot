@@ -12,7 +12,7 @@ export type FeedProgress = {
 };
 
 export type FeedItem = {
-  tg_id: number;
+  person_id: number;
   person: string;
   name: string;
   game: string | null;
@@ -32,7 +32,7 @@ export type FeedItem = {
 };
 
 export type OnlineMember = {
-  tg_id: number;
+  person_id: number;
   name: string;
   state: string | null;
   platform: string;
@@ -43,7 +43,7 @@ export type OnlineMember = {
 };
 
 export type SummaryMember = {
-  tg_id: number;
+  person_id: number;
   name: string;
   count: number;
   score: number;
@@ -63,7 +63,7 @@ export type SummaryGame = {
 };
 
 export type PersonPayload = {
-  tg_id: number;
+  person_id: number;
   name: string;
   /** The owner keeps their activity private: only the name is real (#157). */
   hidden?: boolean;

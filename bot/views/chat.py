@@ -212,7 +212,7 @@ async def build_stats_text(
         until = None
 
     games = await repo.users_games_achievements(
-        [target.tg_id],
+        [target.id],
         since,
         until=until,
         rare_threshold=rare_threshold,

@@ -29,7 +29,8 @@ import { adminApi } from "./admin/adminApi";
 import { hltbApi } from "./hltb/hltbApi";
 
 export const fetchMe = (initData: string) => userApi.fetchMe(initData);
-export const fetchAvatarBlob = (initData: string, tgId: number) => userApi.fetchAvatarBlob(initData, tgId);
+export const fetchAvatarBlob = (initData: string, personId: number) =>
+  userApi.fetchAvatarBlob(initData, personId);
 export const patchSettings = (...args: Parameters<typeof userApi.patchSettings>) => userApi.patchSettings(...args);
 export const logout = () => userApi.logout();
 export const putAvatar = (initData: string, image: Blob) => userApi.putAvatar(initData, image);

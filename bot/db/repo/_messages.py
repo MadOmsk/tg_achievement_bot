@@ -95,7 +95,7 @@ class _MessagesRepo:
         renders and sorts.
         """
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name "
@@ -110,6 +110,7 @@ class _MessagesRepo:
         )
         return [
             ChatSubscriber(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 gamertag_modern=row["gamertag_modern"],
@@ -146,7 +147,7 @@ class _MessagesRepo:
             # Every field the person chain needs (#51) — this used to select
             # `u.gamertag` alone, so a member with no Xbox account was
             # rendered as the literal word "кто-то".
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -166,7 +167,7 @@ class _MessagesRepo:
             "       s.xuid AS achievement_xuid, s.trophy_group_id,"
             "       s.device, t.platforms AS game_platforms "
             "FROM " + member_source(members) + " sub "
-            "JOIN users u ON u.tg_id = sub.tg_id "
+            "JOIN users u ON u.id = sub.person_id "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
@@ -190,6 +191,7 @@ class _MessagesRepo:
         )
         return [
             RecentAchievement(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 gamertag_modern=row["gamertag_modern"],
@@ -247,7 +249,7 @@ class _MessagesRepo:
             params.append(_iso(until))
         params.append(limit)
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -261,7 +263,7 @@ class _MessagesRepo:
             "       t.icon_url AS game_icon_url, s.description,"
             "       s.xuid AS achievement_xuid, s.trophy_group_id "
             "FROM " + member_source(members) + " sub "
-            "JOIN users u ON u.tg_id = sub.tg_id "
+            "JOIN users u ON u.id = sub.person_id "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
@@ -277,6 +279,7 @@ class _MessagesRepo:
         )
         return [
             RecentAchievement(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 gamertag_modern=row["gamertag_modern"],
@@ -317,7 +320,7 @@ class _MessagesRepo:
         cursor = await self._conn.execute(
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
             "FROM " + member_source(members) + " sub "
-            "JOIN users u ON u.tg_id = sub.tg_id "
+            "JOIN users u ON u.id = sub.person_id "
             "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
@@ -363,7 +366,7 @@ class _MessagesRepo:
             params.append(_iso(until))
         params.append(limit)
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name,"
@@ -392,6 +395,7 @@ class _MessagesRepo:
         )
         return [
             RecentAchievement(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 gamertag_modern=row["gamertag_modern"],
@@ -424,7 +428,7 @@ class _MessagesRepo:
 
     async def users_games_achievements(
         self,
-        tg_ids: Sequence[int],
+        person_ids: Sequence[int],
         since: datetime,
         *,
         rare_threshold: float,
@@ -473,9 +477,9 @@ class _MessagesRepo:
         `limit == 0` means "no cap" (admin-configurable, SPEC 6.4) — passed to
         SQLite as -1, its own documented spelling of "unbounded LIMIT".
         """
-        if not tg_ids:
+        if not person_ids:
             return []
-        owners = ",".join("?" * len(tg_ids))
+        owners = ",".join("?" * len(person_ids))
         date_bound = f"AND {earned_since()}"
         date_params: list[object] = [_iso(since)]
         if until is not None:
@@ -502,10 +506,10 @@ class _MessagesRepo:
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
             + rarity_cache_join()
-            + f"WHERE alu.tg_id IN ({owners}) {date_bound} "
+            + f"WHERE al.person_id IN ({owners}) {date_bound} "
             "GROUP BY s.title_id, s.platform "
             f"{order_sql} LIMIT ?",
-            (rare_threshold, *tg_ids, *date_params, limit or -1),
+            (rare_threshold, *person_ids, *date_params, limit or -1),
         )
         return [
             GameAchievements(

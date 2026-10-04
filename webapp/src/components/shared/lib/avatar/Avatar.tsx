@@ -12,23 +12,23 @@ const avatarPending = new Map<number, Promise<string | null>>();
 // must neither land in the cache nor reach the screen.
 const generations = new Map<number, number>();
 
-function loadTelegramAvatar(tgId: number, initData: string): Promise<string | null> {
-  if (avatarUrls.has(tgId)) return Promise.resolve(avatarUrls.get(tgId) ?? null);
-  const inflight = avatarPending.get(tgId);
+function loadTelegramAvatar(personId: number, initData: string): Promise<string | null> {
+  if (avatarUrls.has(personId)) return Promise.resolve(avatarUrls.get(personId) ?? null);
+  const inflight = avatarPending.get(personId);
   if (inflight) return inflight;
-  const generation = generations.get(tgId) ?? 0;
-  const job = fetchAvatarBlob(initData, tgId).then((blob: Blob | null) => {
-    if ((generations.get(tgId) ?? 0) !== generation) return null;
-    avatarPending.delete(tgId);
+  const generation = generations.get(personId) ?? 0;
+  const job = fetchAvatarBlob(initData, personId).then((blob: Blob | null) => {
+    if ((generations.get(personId) ?? 0) !== generation) return null;
+    avatarPending.delete(personId);
     if (!blob) {
-      avatarUrls.set(tgId, null);
+      avatarUrls.set(personId, null);
       return null;
     }
     const url = URL.createObjectURL(blob);
-    avatarUrls.set(tgId, url);
+    avatarUrls.set(personId, url);
     return url;
   });
-  avatarPending.set(tgId, job);
+  avatarPending.set(personId, job);
   return job;
 }
 
@@ -44,7 +44,7 @@ export function isOnline(row: { state?: string | null; playing?: boolean }): boo
 }
 
 // A picture chosen in the app (#157) replaces the Telegram photo everywhere,
-// one's own face included: then it is fetched by tg_id like anybody else's.
+// one's own face included: then it is fetched by person_id like anybody else's.
 let ownCustom = false;
 let epoch = 0;
 const epochListeners = new Set<() => void>();
@@ -54,12 +54,12 @@ export function setOwnAvatarCustom(custom: boolean): void {
 }
 
 /** Forget a person's cached face, so every avatar of theirs on screen reloads. */
-export function forgetAvatar(tgId: number): void {
-  const url = avatarUrls.get(tgId);
+export function forgetAvatar(personId: number): void {
+  const url = avatarUrls.get(personId);
   if (url) URL.revokeObjectURL(url);
-  avatarUrls.delete(tgId);
-  avatarPending.delete(tgId);
-  generations.set(tgId, (generations.get(tgId) ?? 0) + 1);
+  avatarUrls.delete(personId);
+  avatarPending.delete(personId);
+  generations.set(personId, (generations.get(personId) ?? 0) + 1);
   epoch += 1;
   epochListeners.forEach((listen) => listen());
 }
@@ -75,14 +75,14 @@ export function accountLabel(me: MeResponse): string {
     me.xbox.gamertag_modern ||
     me.xbox.gamertag ||
     me.username ||
-    `id${me.tg_id}`
+    `id${me.person_id}`
   );
 }
 
 export function Avatar({
   name,
   photo,
-  tgId,
+  personId,
   playing,
   online,
   platform,
@@ -91,7 +91,7 @@ export function Avatar({
 }: {
   name: string;
   photo?: string | null;
-  tgId?: number;
+  personId?: number;
   playing?: boolean;
   online?: boolean;
   platform?: string | null;
@@ -113,9 +113,9 @@ export function Avatar({
   useEffect(() => {
     let cancelled = false;
     const takeBlob = () => {
-      if (tgId == null) return;
+      if (personId == null) return;
       const data = window.Telegram?.WebApp?.initData ?? "";
-      void loadTelegramAvatar(tgId, data).then((url) => {
+      void loadTelegramAvatar(personId, data).then((url) => {
         if (!cancelled) setSrc(url);
       });
     };
@@ -150,7 +150,7 @@ export function Avatar({
     return () => {
       cancelled = true;
     };
-  }, [photo, tgId, seen]);
+  }, [photo, personId, seen]);
   const live = Boolean(online || playing);
   const plat = (live && platform) && platformMark(platform);
   const fillBadge = Boolean(plat);

@@ -48,6 +48,8 @@ export type LoginsResponse = {
 };
 
 export type MeResponse = {
+  /** The person's own id (#156): what the app names people by. */
+  person_id: number;
   /** None for a person who signed in by email and has no Telegram (#162). */
   tg_id: number | null;
   handle: Handle | null;

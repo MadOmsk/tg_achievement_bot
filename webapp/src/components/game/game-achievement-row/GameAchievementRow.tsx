@@ -141,7 +141,7 @@ export function GameAchievementRow({
                 key={who.id}
                 className={who.has ? "compare-mark is-has" : "compare-mark"}
               >
-                <Avatar name={who.name} tgId={who.id} size={24} />
+                <Avatar name={who.name} personId={who.id} size={24} />
               </span>
             ))}
           </span>

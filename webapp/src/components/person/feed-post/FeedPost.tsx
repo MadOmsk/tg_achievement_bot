@@ -40,7 +40,7 @@ export function FeedPost({
   revealed: Set<string>;
   showSecrets?: boolean;
   onReveal: (key: string) => void;
-  onOpenPerson: (tgId: number) => void;
+  onOpenPerson: (personId: number) => void;
 }) {
   const head = items[0];
   const openGame = useOpenGame();
@@ -74,11 +74,11 @@ export function FeedPost({
       <div className="post-stage">
         {/* Who and when, and in which game: over the picture's top. */}
         <header className="post-head">
-          <button type="button" className="post-avatar" onClick={() => onOpenPerson(head.tg_id)}>
-            <Avatar name={head.person} tgId={head.tg_id} size={42} />
+          <button type="button" className="post-avatar" onClick={() => onOpenPerson(head.person_id)}>
+            <Avatar name={head.person} personId={head.person_id} size={42} />
           </button>
           <span className="post-head-copy">
-            <button type="button" className="post-name" onClick={() => onOpenPerson(head.tg_id)}>
+            <button type="button" className="post-name" onClick={() => onOpenPerson(head.person_id)}>
               <HandleName text={head.person} />
             </button>
             <span className="post-time">{timeAgo(head.unlocked_at, locale)}</span>

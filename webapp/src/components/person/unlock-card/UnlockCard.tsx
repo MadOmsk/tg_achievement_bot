@@ -22,7 +22,7 @@ export function UnlockHero({
   minimal?: boolean;
   locale: Locale;
   onReveal?: (key: string) => void;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
 }) {
   return (
     <UnlockCard
@@ -57,7 +57,7 @@ export function UnlockCard({
   /** Just the picture, the achievement's name and its game — no marks, progress or description. */
   minimal?: boolean;
   onOpen?: (item: FeedItem) => void;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
   onReveal?: (key: string) => void;
   artRef?: Ref<HTMLDivElement>;
 }) {

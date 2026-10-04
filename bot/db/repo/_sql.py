@@ -117,16 +117,13 @@ MEMBERS_CHAT = 0
 
 def member_source(members: Sequence[int] | None) -> str:
     """What `FROM ... sub` reads in the chat queries: a chat's subscribers, or —
-    for a given list of people — a stand-in with the same shape. Both read as
-    `(chat_id, tg_id)`: a chat is Telegram's, and so is everyone in it (#156).
-    Integers only, formatted here, so nothing is injected."""
+    for a given list of person ids — a stand-in with the same shape. Both read
+    as `(chat_id, person_id)` (#156). Integers only, formatted here, so nothing
+    is injected."""
     if members is None:
-        return (
-            "(SELECT sb.chat_id, sbu.tg_id FROM subscriptions sb"
-            " JOIN users sbu ON sbu.id = sb.person_id WHERE sbu.tg_id IS NOT NULL)"
-        )
+        return "(SELECT sb.chat_id, sb.person_id FROM subscriptions sb)"
     ids = ",".join(str(int(m)) for m in members) or "NULL"
-    return f"(SELECT {MEMBERS_CHAT} AS chat_id, tg_id FROM users WHERE tg_id IN ({ids}))"
+    return f"(SELECT {MEMBERS_CHAT} AS chat_id, id AS person_id FROM users WHERE id IN ({ids}))"
 
 
 # A person's nickname as shown, digits included (#157): `RideTheSun#4821`.

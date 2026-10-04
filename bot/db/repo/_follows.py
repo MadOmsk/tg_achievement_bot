@@ -336,13 +336,12 @@ class _FollowsRepo:
         return [(_person(row), int(row["mutual"])) for row in await cursor.fetchall()]
 
     async def following_members(self, me: int) -> list[int]:
-        """The Telegram ids behind the "following" scope: oneself, and every person
-        followed whose activity the viewer may see (their privacy setting).
-        People with no Telegram id are not here yet — achievements are still
-        reached through `tg_id`."""
+        """The people behind the "following" scope, by person id: oneself, and
+        every person followed whose activity the viewer may see (their privacy
+        setting) — with or without Telegram (#156)."""
         cursor = await self._conn.execute(
-            "SELECT p.id, p.tg_id, p.activity_visible, " + _RELATION + " FROM users p "
-            "WHERE p.tg_id IS NOT NULL AND p.is_excluded = 0"
+            "SELECT p.id, p.activity_visible, " + _RELATION + " FROM users p "
+            "WHERE p.is_excluded = 0"
             "  AND (p.id = :me OR p.id IN (SELECT followee_id FROM follows"
             "                              WHERE follower_id = :me))",
             {"me": me},
@@ -356,7 +355,7 @@ class _FollowsRepo:
                 blocked_by=bool(row["blocked_by"]),
             )
             if can_view(row["activity_visible"], relation, self_view=row["id"] == me):
-                members.append(row["tg_id"])
+                members.append(row["id"])
         return members
 
     async def activity_visible(self, person: int) -> str:

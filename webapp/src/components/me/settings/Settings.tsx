@@ -151,7 +151,7 @@ export function Settings({
       <NicknameForm
         locale={locale}
         handle={me.handle}
-        tgId={me.tg_id ?? undefined}
+        personId={me.person_id ?? undefined}
         avatarCustom={me.avatar_custom}
         onAvatar={onAvatar}
         onAvatarReset={onAvatarReset}

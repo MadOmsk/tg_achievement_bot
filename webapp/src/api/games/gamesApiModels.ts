@@ -5,7 +5,7 @@ export type GameRef = {
   icon_url?: string | null;
   cover?: string | null;
   /** Whose card it was opened from: their progress is shown first. */
-  person?: { tg_id: number; name: string } | null;
+  person?: { person_id: number; name: string } | null;
 };
 
 export type GameAchievement = {

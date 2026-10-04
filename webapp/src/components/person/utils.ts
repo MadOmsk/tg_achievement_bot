@@ -25,7 +25,7 @@ export function gameKey(item: FeedItem): string {
 }
 
 export function feedKey(row: FeedItem): string {
-  return `${row.platform}:${row.title_id}:${row.achievement_id}:${row.tg_id}`;
+  return `${row.platform}:${row.title_id}:${row.achievement_id}:${row.person_id}`;
 }
 
 export function veiled(

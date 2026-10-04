@@ -18,8 +18,8 @@ export class UserApi extends BaseApi {
     return this.get<MeResponse>(initData, USER_ROUTES.ME);
   }
 
-  async fetchAvatarBlob(initData: string, tgId: number): Promise<Blob | null> {
-    const url = this.buildUrl(USER_ROUTES.AVATAR(tgId));
+  async fetchAvatarBlob(initData: string, personId: number): Promise<Blob | null> {
+    const url = this.buildUrl(USER_ROUTES.AVATAR(personId));
     const response = await fetch(url, {
       headers: this.initHeaders(initData),
     });

@@ -74,7 +74,7 @@ export function ClubStats({
   revealed: Set<string>;
   showSecrets?: boolean;
   onReveal: (key: string) => void;
-  onOpenPerson: (tgId: number) => void;
+  onOpenPerson: (personId: number) => void;
   hideHeader?: boolean;
 }) {
   const openGame = useOpenGame();
@@ -132,7 +132,7 @@ export function ClubStats({
       people: new Map<number, string>(),
       items: [],
     };
-    cur.people.set(row.tg_id, row.person);
+    cur.people.set(row.person_id, row.person);
     cur.items.push(row);
     if (!cur.cover && row.game_icon_url) cur.cover = row.game_icon_url;
     together.set(key, cur);
@@ -167,12 +167,12 @@ export function ClubStats({
     </div>
   );
 
-  const faceOf = (tgId: number, name: string, size: number) => (
+  const faceOf = (personId: number, name: string, size: number) => (
     <Avatar
       name={name}
-      tgId={tgId}
-      online={isOnline(online.find((m) => m.tg_id === tgId) ?? {})}
-      platform={online.find((m) => m.tg_id === tgId && isOnline(m))?.platform}
+      personId={personId}
+      online={isOnline(online.find((m) => m.person_id === personId) ?? {})}
+      platform={online.find((m) => m.person_id === personId && isOnline(m))?.platform}
       size={size}
     />
   );
@@ -253,12 +253,12 @@ export function ClubStats({
           {boardRows.length > 0 ? (
             boardRows.map((row, i) => (
               <Row
-                key={row.tg_id}
+                key={row.person_id}
                 className="is-stat"
                 lead={
                   <>
                     <span className="rows-rank">{i + 1}</span>
-                    {faceOf(row.tg_id, row.name, 40)}
+                    {faceOf(row.person_id, row.name, 40)}
                   </>
                 }
                 title={row.name}
@@ -268,7 +268,7 @@ export function ClubStats({
                     : row.count
                 }
                 chevron={false}
-                onClick={() => onOpenPerson(row.tg_id)}
+                onClick={() => onOpenPerson(row.person_id)}
               />
             ))
           ) : (
@@ -281,9 +281,9 @@ export function ClubStats({
         <RowsSection className="is-stat" title={t(locale, "rareFinds")}>
           {finders.map((finder) => (
             <Row
-              key={finder.tgId}
+              key={finder.personId}
               className="is-stat"
-              lead={faceOf(finder.tgId, finder.name, 40)}
+              lead={faceOf(finder.personId, finder.name, 40)}
               title={finder.name}
               subtitle={`${t(locale, "rarerThan")} ${RARE_FIND_PERCENT}%`}
               trailing={finder.items.length}

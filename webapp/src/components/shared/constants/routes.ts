@@ -9,7 +9,7 @@ export const API_BASE_ROUTES = {
 export const USER_ROUTES = {
   ME: "/me",
   DELETE_ME: "/me",
-  AVATAR: (tgId: number) => `/avatar/${tgId}`,
+  AVATAR: (personId: number) => `/avatar/p/${personId}`,
   SETTINGS: "/settings",
   HANDLE: "/me/handle",
   AVATAR_ME: "/me/avatar",

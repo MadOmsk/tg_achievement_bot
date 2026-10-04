@@ -88,6 +88,7 @@ async def build_me_payload(
     )
 
     return {
+        "person_id": person_id,
         "tg_id": tg_id,
         "handle": await handle_block(repo, person_id),
         # A picture chosen in the app replaces the Telegram photo (#157).

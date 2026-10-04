@@ -73,12 +73,12 @@ export function TitleSheet({
   // Whose progress is on the page: the person whose card it was opened from
   // (or yours when it was opened from your own). "Compare" adds yours beside
   // theirs, in the one list.
-  const other = game.person && game.person.tg_id !== meId ? game.person : null;
+  const other = game.person && game.person.person_id !== meId ? game.person : null;
   const viewed = other;
   // What the page showed the last time this game was open: drawn at once, the
   // fresh answers replace it when they arrive.
   const gameKey = `${game.platform}:${game.title_id}`;
-  const detailsKey = `${gameKey}:${viewed?.tg_id ?? "me"}`;
+  const detailsKey = `${gameKey}:${viewed?.person_id ?? "me"}`;
   const seenDetails = recall<GameDetails>("details", detailsKey);
   const [details, setDetails] = useState<GameDetails | null>(
     seenDetails ?? null,
@@ -193,7 +193,7 @@ export function TitleSheet({
     setBusy(known === undefined);
     setError(null);
     void fetchGame(data, game.platform, game.title_id, {
-      tgId: viewed?.tg_id,
+      personId: viewed?.person_id,
     })
       .then((res) => {
         if (cancelled) return;
@@ -209,7 +209,7 @@ export function TitleSheet({
     return () => {
       cancelled = true;
     };
-  }, [data, game.platform, game.title_id, viewed?.tg_id, detailsKey]);
+  }, [data, game.platform, game.title_id, viewed?.person_id, detailsKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -628,7 +628,7 @@ export function TitleSheet({
                                       has: iHave,
                                     },
                                     them: {
-                                      id: other.tg_id,
+                                      id: other.person_id,
                                       name: other.name,
                                       has: row.is_unlocked,
                                     },

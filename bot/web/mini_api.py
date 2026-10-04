@@ -149,6 +149,7 @@ def setup_mini_api(
     app.router.add_get("/api/mini/club/summary", handle_chat_summary)
     app.router.add_get("/api/mini/club/people", handle_chat_person)
     app.router.add_patch("/api/mini/club", handle_patch_chat)
+    app.router.add_get("/api/mini/avatar/p/{person_id}", handle_person_avatar)
     app.router.add_get("/api/mini/avatar/{tg_id}", handle_avatar)
     app.router.add_get("/api/mini/x360-icon/{title_hex}/{image_hex}", handle_x360_icon)
     app.router.add_get(
@@ -707,6 +708,27 @@ async def handle_avatar(request: web.Request) -> web.Response:
     target = await repo.get_user_by_tg(tg_id)
     if tg_id != user.tg_id and target is None:
         raise web.HTTPNotFound(text="no photo")
+    return await _avatar_of(request, target, tg_id)
+
+
+async def handle_person_avatar(request: web.Request) -> web.Response:
+    """The same face by person id (#156) — the only way to ask for somebody who
+    has no Telegram. A face is not activity: anyone with the app may see it."""
+    await _require_user(request)
+    try:
+        person = int(request.match_info["person_id"])
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad person_id") from exc
+    repo: Repo = request.app["mini_repo"]
+    target = await repo.get_user(person)
+    if target is None:
+        raise web.HTTPNotFound(text="no photo")
+    return await _avatar_of(request, target, target.tg_id)
+
+
+async def _avatar_of(request: web.Request, target: User | None, tg_id: int | None) -> web.Response:
+    """The picture the person chose (#157), else their Telegram photo."""
+    repo: Repo = request.app["mini_repo"]
     custom = await repo.custom_avatar_path(target.id) if target and target.id else None
     if custom:
         file = avatars.avatar_dir() / custom
@@ -714,7 +736,7 @@ async def handle_avatar(request: web.Request) -> web.Response:
             body = file.read_bytes()
             return _picture(request, body, image_mime(body))
     bot = request.app.get("mini_bot")
-    if bot is None:
+    if bot is None or tg_id is None:
         raise web.HTTPNotFound(text="no photo")
     result = await load_avatar_bytes(bot, tg_id, file_id=target.photo_file_id if target else None)
     if result is None:
@@ -789,13 +811,25 @@ async def handle_achievement_icon(request: web.Request) -> web.Response:
 
 
 async def handle_chat_person(request: web.Request) -> web.Response:
-    user, chat_id, repo = await _require_chat_member(request)
+    # A chat is optional (#156): it only says which chat the page was opened
+    # from. Without one — somebody who has no chat at all — the privacy check
+    # below is the whole gate, as on a person's card.
+    chat_id: int | None
+    if request.query.get("chat_id") or request.match_info.get("chat_id"):
+        user, chat_id, repo = await _require_chat_member(request)
+    else:
+        user, chat_id = await _require_user(request), None
+        repo = request.app["mini_repo"]
+    # By person id (#156), or by the Telegram id older links carry.
+    raw_person = request.query.get("person")
     raw_target = request.match_info.get("tg_id") or request.query.get("tg_id") or ""
     try:
-        target_id = int(raw_target)
+        if raw_person:
+            target = await repo.get_user(int(raw_person))
+        else:
+            target = await repo.get_user_by_tg(int(raw_target))
     except ValueError as exc:
-        raise web.HTTPBadRequest(text="bad tg_id") from exc
-    target = await repo.get_user_by_tg(target_id)
+        raise web.HTTPBadRequest(text="bad person") from exc
     if target is None or target.id is None:
         raise web.HTTPNotFound(text="person not found")
     locale = await _user_locale(repo, user.person_id)
@@ -803,6 +837,7 @@ async def handle_chat_person(request: web.Request) -> web.Response:
         # The nickname and avatar are public; what they did is not (#157).
         return web.json_response(
             {
+                "person_id": target.id,
                 "tg_id": target.tg_id,
                 "name": await _public_name(repo, target),
                 "hidden": True,
@@ -884,16 +919,21 @@ async def handle_game_details(request: web.Request) -> web.Response:
     # whose privacy setting lets the caller see their activity (#157), not only
     # people from a shared chat.
     viewed = user.person_id
+    raw_person = request.query.get("person")
     raw_viewed = request.query.get("tg_id")
-    if raw_viewed:
+    if raw_person or raw_viewed:
+        # By person id (#156), or by the Telegram id older links carry.
         try:
-            viewed_tg = int(raw_viewed)
+            other = (
+                await repo.get_user(int(raw_person))
+                if raw_person
+                else await repo.get_user_by_tg(int(raw_viewed or ""))
+            )
         except ValueError as exc:
-            raise web.HTTPBadRequest(text="bad tg_id") from exc
-        if viewed_tg != user.tg_id:
-            other = await repo.get_user_by_tg(viewed_tg)
-            if other is None or other.id is None:
-                raise web.HTTPNotFound(text="person not found")
+            raise web.HTTPBadRequest(text="bad person") from exc
+        if other is None or other.id is None:
+            raise web.HTTPNotFound(text="person not found")
+        if other.id != user.person_id:
             if not await _may_see_activity(repo, user.person_id, other.id):
                 raise web.HTTPForbidden(text="activity hidden")
             viewed = other.id

@@ -16,7 +16,7 @@ export function NicknameForm({
   onBack,
   onSubmit,
   onKeep,
-  tgId,
+  personId,
   avatarCustom,
   onAvatar,
   onAvatarReset,
@@ -28,7 +28,7 @@ export function NicknameForm({
   onSubmit: (value: string) => Promise<void>;
   onKeep?: () => Promise<void>;
   /** Whose face it is, and whether it is one chosen in the app. */
-  tgId?: number;
+  personId?: number;
   avatarCustom?: boolean;
   onAvatar: (image: Blob) => Promise<void>;
   onAvatarReset: () => Promise<void>;
@@ -119,7 +119,7 @@ export function NicknameForm({
             onClick={() => file.current?.click()}
             aria-label={t(locale, "avatarChange")}
           >
-            <Avatar name={shown} photo={telegramPhoto()} tgId={tgId} size={168} />
+            <Avatar name={shown} photo={telegramPhoto()} personId={personId} size={168} />
             {preview && (
               <img className="nick-avatar-preview" src={preview} alt="" />
             )}

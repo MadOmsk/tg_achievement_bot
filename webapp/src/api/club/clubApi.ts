@@ -42,15 +42,16 @@ export class ClubApi extends BaseApi {
     });
   }
 
+  /** A person's page; `chatId` is the chat it was opened from, if any. */
   fetchPerson(
     initData: string,
-    chatId: number,
-    tgId: number,
+    chatId: number | null,
+    personId: number,
     opts?: { month?: string },
   ): Promise<PersonPayload> {
     return this.get<PersonPayload>(initData, CLUB_ROUTES.PEOPLE, {
-      chat_id: chatId,
-      tg_id: tgId,
+      chat_id: chatId ?? undefined,
+      person: personId,
       month: opts?.month,
     });
   }

@@ -444,6 +444,8 @@ class ChatPresenceRow:
     handle: str | None = None
     last_name: str | None = None
     device: str | None = None
+    # The person's own id (#156): what the Mini App names people by.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -497,6 +499,8 @@ class ChatMemberStat:
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
+    # The person's own id (#156): what the Mini App names people by.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -514,6 +518,8 @@ class ChatSubscriber:
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
+    # The person's own id (#156): what the Mini App names people by.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -553,6 +559,8 @@ class RecentAchievement:
     device: str | None = None
     # Available platforms for the game (JSON / comma list)
     game_platforms: str | None = None
+    # The person's own id (#156): what the Mini App names people by.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)

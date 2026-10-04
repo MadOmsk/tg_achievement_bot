@@ -300,11 +300,11 @@ every column. History: #106.
   (`target.person_id`), the publisher and the Xbox login all take `users.id`; the
   Mini App's request user carries `person_id`, and `PersonMiddleware` hands
   handlers theirs. **A Telegram id is resolved once, at a Telegram door** — an
-  update, a callback, a URL the Mini App still keys by Telegram id (people,
-  avatars) — with `repo.person_id(tg_id)` / `get_user_by_tg`, and
-  `repo.tg_id_of(person)` goes back for what is Telegram's (a DM, the Mini App
-  button on a post, the cooldowns). A chat's members still read back as `tg_id`
-  through `member_source`. 071 and 078 rebuild their tables with foreign keys
+  update, a callback, an old link that still names a Telegram id — with
+  `repo.person_id(tg_id)` / `get_user_by_tg`, and `repo.tg_id_of(person)` goes
+  back for what is Telegram's (a DM, the cooldowns). A chat's members
+  are person ids (`_sql.member_source`, `(chat_id, person_id)`): subscriptions,
+  and `chat_seen` through `users`. 071 and 078 rebuild their tables with foreign keys
   switched off inside the script itself (the pragma does nothing inside a
   transaction); a migration that rebuilds a parent table follows the same shape.
   **Each way to sign in is a field on the person** (#156, #162): `tg_id`, and
@@ -753,7 +753,8 @@ elsewhere in this file still describe the bot.
     (`services/custom_avatars.py`, Pillow): the server does not trust the client's
     crop. `DELETE` goes back to the Telegram photo; a super-admin takes a picture
     down from the user card in `/admin` («🖼 Сбросить аватар», `a:avclr:`), and
-    deleting the account removes the file. `/api/mini/avatar/{tg_id}` serves the
+    deleting the account removes the file. `/api/mini/avatar/p/{person_id}` (and, for
+    links already out, `/api/mini/avatar/{tg_id}`) serves the
     chosen picture first, with an ETag and `no-cache` so a change shows at once.
   - Endpoints: `PUT /api/mini/me/handle` (`error` is `invalid` or `too_soon`),
     `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.
@@ -770,9 +771,9 @@ elsewhere in this file still describe the bot.
   (owner, 2026-10-03; `follow_log`, migration 076): one such DM per pair a day, and
   following a person again within ten minutes of unfollowing them is refused
   (`FollowTooSoon` → 429 `too_soon`). These tables and routes speak in **person
-  ids** (`users.id`), `tg_id` is sent along only for the avatar — and only to a
-  viewer who may see that person's activity: search is open to anyone with the
-  app, and a Telegram id is not public.
+  ids** (`users.id`); a row's `tg_id` goes only to a viewer who may see that
+  person's activity — a Telegram id is not public. Nickname and face are, so
+  the face is asked for by person id.
   Code: `db/repo/_follows.py`, `services/people.py`, `web/mini_people.py`.
 - **Privacy is one setting** (`users.activity_visible`): who sees my activity in the
   app — everyone (default), friends, nobody. The one rule is
@@ -796,7 +797,7 @@ elsewhere in this file still describe the bot.
   strip of people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/tg/{tg_id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Browser sign-in** (shipped; Telegram by migration 074, email by 079): in a plain
@@ -834,6 +835,18 @@ elsewhere in this file still describe the bot.
     A person without Telegram sees Publishing's chats replaced by «привяжи Telegram».
     A first nickname for such a person comes from the part of the address before
     the @. `ApiError` keeps a refusal's `error` and body for the screens.
+- **The Mini App names people by person id** (#156): every person in its JSON
+  (feed items, ranking rows, `/online` rows, a person's page, `/me`) carries
+  `person_id`, and the app keys faces, profiles, lists and "is this me" by it — a
+  person with no Telegram is a person like any other. Faces:
+  `/api/mini/avatar/p/{person_id}`; a person's page: `/api/mini/club/people?person=`
+  (`chat_id` optional — only which chat it was opened from; the privacy check is
+  the gate); a game's progress: `?person=`. A post's «Открыть» button carries
+  `p<person id>` (`services/mini_app.py`); a button posted before carries
+  `u<tg id>`, which the app still reads and turns into the person
+  (`/api/mini/people/tg/{tg_id}`) — only an old button straight to a game opens on
+  the viewer's own progress. The admin's screens stay on Telegram ids (admins are
+  Telegram, `ADMIN_TG_IDS`).
   - Connecting Xbox from the browser works without Telegram: the pending login is
     keyed by the person (`ConnectService`), and with no Telegram id the history is
     read quietly instead of with a status DM.

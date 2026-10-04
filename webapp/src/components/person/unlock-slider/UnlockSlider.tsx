@@ -120,7 +120,7 @@ function UnlockSliderBase({
   revealed?: Set<string>;
   showSecrets?: boolean;
   onReveal?: (key: string) => void;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
   variant?: "hero" | "feed" | "game";
   /** Whose achievement it is, in the card's corner (off on a person's own page). */
   author?: boolean;
