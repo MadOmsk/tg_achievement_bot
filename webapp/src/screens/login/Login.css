@@ -37,3 +37,15 @@
 .login-error {
   color: #ff8a96;
 }
+
+.login .email-form {
+  margin-top: 6px;
+}
+
+.login-or {
+  margin: 4px 0 -4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

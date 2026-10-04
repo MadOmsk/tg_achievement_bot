@@ -1,22 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { userApi } from "../../api";
 import { t, type Locale } from "../../i18n";
+import { TelegramLogin, type TelegramUser } from "../../components/shared/lib";
+import { EmailCodeForm } from "../../components/me/logins/EmailCodeForm";
 import "./Login.css";
 
-type TelegramUser = Record<string, string | number>;
+type AuthConfig = { bot: string | null; email: boolean };
 
-declare global {
-  interface Window {
-    onTelegramLogin?: (user: TelegramUser) => void;
-  }
-}
-
-/** Sign-in for the Mini App opened in a plain browser (#157): Telegram's own Login
- * Widget, which hands the page a signed identity the server checks with the bot
- * token. WhatsApp will sit beside it. Inside Telegram this screen never shows. */
+/** Sign-in for the Mini App opened in a plain browser: Telegram's Login Widget
+ * (#157) and, when a mail server is set up, a code sent by email (#162). Inside
+ * Telegram this screen never shows. */
 export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () => void }) {
-  const holder = useRef<HTMLDivElement>(null);
-  const [bot, setBot] = useState<string | null | undefined>(undefined);
+  const [config, setConfig] = useState<AuthConfig | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,48 +19,53 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
     userApi
       .authConfig()
       .then((res) => {
-        if (!cancelled) setBot(res.bot_username);
+        if (!cancelled) setConfig({ bot: res.bot_username, email: Boolean(res.email) });
       })
       .catch(() => {
-        if (!cancelled) setBot(null);
+        if (!cancelled) setConfig(null);
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  useEffect(() => {
-    if (!bot || !holder.current) return;
-    window.onTelegramLogin = (user) => {
+  const onTelegram = useCallback(
+    (user: TelegramUser) => {
       setError(null);
       userApi
         .loginTelegram(user)
         .then(onSignedIn)
         .catch((err: unknown) => setError(String(err)));
-    };
-    const script = document.createElement("script");
-    script.async = true;
-    script.src = "https://telegram.org/js/telegram-widget.js?22";
-    script.setAttribute("data-telegram-login", bot);
-    script.setAttribute("data-size", "large");
-    script.setAttribute("data-radius", "14");
-    script.setAttribute("data-userpic", "false");
-    script.setAttribute("data-onauth", "onTelegramLogin(user)");
-    holder.current.appendChild(script);
-    const node = holder.current;
-    return () => {
-      node.innerHTML = "";
-      delete window.onTelegramLogin;
-    };
-  }, [bot, onSignedIn]);
+    },
+    [onSignedIn],
+  );
+
+  const email = config?.email ?? false;
+  const bot = config?.bot ?? null;
 
   return (
     <div className="login">
       <img className="login-mark" src="/logo.svg" alt="" width={96} height={96} />
       <h1>{t(locale, "loginTitle")}</h1>
-      <p className="login-text">{t(locale, "loginText")}</p>
-      {bot === null && <p className="login-text">{t(locale, "loginUnavailable")}</p>}
-      <div ref={holder} className="login-widget" />
+      <p className="login-text">{t(locale, email ? "loginTextBoth" : "loginText")}</p>
+      {config === null && <p className="login-text">{t(locale, "loginUnavailable")}</p>}
+      {email && (
+        <EmailCodeForm
+          locale={locale}
+          submitLabel={t(locale, "loginButton")}
+          onSend={async (address) => (await userApi.emailSignInStart(address, locale)).resend_after}
+          onVerify={async (address, code) => {
+            await userApi.emailSignInVerify(address, code, locale);
+            onSignedIn();
+          }}
+        />
+      )}
+      {email && bot && <p className="login-or">{t(locale, "loginOr")}</p>}
+      {bot && (
+        <div className="login-widget">
+          <TelegramLogin bot={bot} onAuth={onTelegram} />
+        </div>
+      )}
       {error && <p className="login-error">{error}</p>}
     </div>
   );

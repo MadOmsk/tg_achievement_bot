@@ -28,7 +28,7 @@ export function AccountBar({
           <Avatar
             name={name}
             photo={telegramPhoto()}
-            tgId={me.tg_id}
+            tgId={me.tg_id ?? undefined}
             size={48}
             zoomLabel={t(locale, "close")}
           />

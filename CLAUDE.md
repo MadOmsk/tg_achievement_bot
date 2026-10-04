@@ -827,6 +827,13 @@ elsewhere in this file still describe the bot.
     (`DELETE /api/mini/me/email`) only while Telegram is left to sign in with; Telegram
     is added through the Login Widget (`POST /api/mini/me/telegram`). A login that
     belongs to another person is refused (`taken`).
+  - **In the Mini App** one form does both jobs: `components/me/logins/EmailCodeForm`
+    (address, then the code, which sends itself on the sixth digit; a resend
+    countdown; errors worded from the codes above) on the sign-in screen and in
+    Settings → «Вход» (`LoginsPane`); the Login Widget is `shared/lib/telegram-login`.
+    A person without Telegram sees Publishing's chats replaced by «привяжи Telegram».
+    A first nickname for such a person comes from the part of the address before
+    the @. `ApiError` keeps a refusal's `error` and body for the screens.
   - Connecting Xbox from the browser works without Telegram: the pending login is
     keyed by the person (`ConnectService`), and with no Telegram id the history is
     read quietly instead of with a status DM.

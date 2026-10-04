@@ -37,8 +37,19 @@ export type Handle = {
   next_change_at: string | null;
 };
 
+/** The ways a person signs in (#162), as Settings → «Вход» shows them. */
+export type LoginsResponse = {
+  email: string | null;
+  telegram: { linked: boolean; username: string | null };
+  /** Whether a code can be sent at all (a mail server is set up). */
+  email_available: boolean;
+  /** The address may go only while Telegram is left to sign in with. */
+  email_removable: boolean;
+};
+
 export type MeResponse = {
-  tg_id: number;
+  /** None for a person who signed in by email and has no Telegram (#162). */
+  tg_id: number | null;
   handle: Handle | null;
   /** The person chose a picture in the app instead of the Telegram photo. */
   avatar_custom?: boolean;

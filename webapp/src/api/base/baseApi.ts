@@ -2,6 +2,19 @@
  * session cookie signs the request, so no header is sent (#157). */
 export const WEB_SESSION = "web-session";
 
+/** A refused request, with the server's answer kept: `code` is the `error` the
+ * route words for the app (`too_soon`, `wrong_code`…), `body` the rest of it
+ * (`retry_after`, `attempts_left`). The message stays "status: code". */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    readonly body: Record<string, unknown> = {},
+  ) {
+    super(`${status}: ${code}`);
+  }
+}
+
 export class BaseApi {
   constructor(protected readonly baseUrl: string = "") {}
 
@@ -54,13 +67,15 @@ export class BaseApi {
     });
     if (!response.ok) {
       let detail = await response.text();
+      let body: Record<string, unknown> = {};
       try {
         const json = JSON.parse(detail) as { error?: string; message?: string };
+        body = json as Record<string, unknown>;
         detail = json.error || json.message || detail;
       } catch {
         /* keep text */
       }
-      throw new Error(`${response.status}: ${detail}`);
+      throw new ApiError(response.status, detail, body);
     }
     if (response.status === 204) {
       return undefined as T;

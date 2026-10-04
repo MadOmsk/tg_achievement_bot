@@ -1,5 +1,5 @@
 // Base
-export { BaseApi, WEB_SESSION } from "./base/baseApi";
+export { ApiError, BaseApi, WEB_SESSION } from "./base/baseApi";
 
 // User API
 export * from "./user/userApiModels";

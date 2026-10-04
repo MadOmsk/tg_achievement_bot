@@ -133,8 +133,8 @@ class _HandlesRepo:
 
     async def give_handle(self, person_id: int) -> handles.Handle | None:
         """A first nickname from whatever names this person has: their Telegram
-        username, then a platform nickname, at last `Player`. Nothing if they
-        already have one."""
+        username, then a platform nickname, then what comes before the @ of
+        their email (#162), at last `Player`. Nothing if they already have one."""
         user = await self.get_user(person_id)
         links = [
             link
@@ -147,6 +147,7 @@ class _HandlesRepo:
             user.gamertag_modern if user else None,
             user.gamertag if user else None,
             *(link.display_name for link in links),
+            user.email.split("@", 1)[0] if user and user.email else None,
         )
 
     async def give_everyone_a_handle(self) -> int:

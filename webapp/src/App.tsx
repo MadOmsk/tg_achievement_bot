@@ -298,18 +298,18 @@ export function App() {
         first
         locale={locale}
         handle={me.handle}
-        tgId={me.tg_id}
+        tgId={me.tg_id ?? undefined}
         avatarCustom={me.avatar_custom}
         onAvatar={async (image) => {
           await putAvatar(data, image);
           setOwnAvatarCustom(true);
-          forgetAvatar(me.tg_id);
+          if (me.tg_id) forgetAvatar(me.tg_id);
           await reload();
         }}
         onAvatarReset={async () => {
           await deleteAvatar(data);
           setOwnAvatarCustom(false);
-          forgetAvatar(me.tg_id);
+          if (me.tg_id) forgetAvatar(me.tg_id);
           await reload();
         }}
         onSubmit={async (value) => {
@@ -374,7 +374,8 @@ export function App() {
       data={data}
       locale={locale}
       showSecrets={me.settings.show_secrets}
-      meId={me.tg_id}
+      // 0 matches nobody: a person without Telegram is not in a chat's lists.
+      meId={me.tg_id ?? 0}
       initialGame={launch.game}
       onGameChange={onGameChange}
     >
@@ -483,13 +484,13 @@ export function App() {
           onAvatar={async (image) => {
             await putAvatar(data, image);
             setOwnAvatarCustom(true);
-            forgetAvatar(me.tg_id);
+            if (me.tg_id) forgetAvatar(me.tg_id);
             await reload();
           }}
           onAvatarReset={async () => {
             await deleteAvatar(data);
             setOwnAvatarCustom(false);
-            forgetAvatar(me.tg_id);
+            if (me.tg_id) forgetAvatar(me.tg_id);
             await reload();
           }}
           onNickname={async (value) => {
@@ -533,6 +534,7 @@ export function App() {
           onDeleteAccount={async () => {
             await deleteAccount(data);
           }}
+          onLoginsChanged={() => void reload().catch(() => undefined)}
         />
       )}
 

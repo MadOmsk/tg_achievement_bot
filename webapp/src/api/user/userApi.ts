@@ -4,6 +4,7 @@ import type {
   AccountPlatform,
   ChatPatchBody,
   ChatRow,
+  LoginsResponse,
   MeResponse,
   UserSettingsPatch,
 } from "./userApiModels";
@@ -26,13 +27,43 @@ export class UserApi extends BaseApi {
     return response.blob();
   }
 
-  /** The bot a browser's Telegram Login Widget belongs to (#157). */
-  authConfig(): Promise<{ bot_username: string | null }> {
+  /** The bot a browser's Telegram Login Widget belongs to (#157), and whether
+   * a mail server is set up for email sign-in (#162). */
+  authConfig(): Promise<{ bot_username: string | null; email?: boolean }> {
     return this.get(WEB_SESSION, "/auth/config");
   }
 
   loginTelegram(user: Record<string, string | number>): Promise<{ ok: boolean }> {
     return this.post(WEB_SESSION, "/auth/telegram", user);
+  }
+
+  /** Email sign-in (#162): a code to the address, then the code back. */
+  emailSignInStart(email: string, locale: string): Promise<{ ok: boolean; resend_after: number }> {
+    return this.post(WEB_SESSION, "/auth/email/start", { email, locale });
+  }
+
+  emailSignInVerify(email: string, code: string, locale: string): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/email/verify", { email, code, locale });
+  }
+
+  logins(initData: string): Promise<LoginsResponse> {
+    return this.get(initData, "/me/logins");
+  }
+
+  emailLinkStart(initData: string, email: string): Promise<{ ok: boolean; resend_after: number }> {
+    return this.post(initData, "/me/email/start", { email });
+  }
+
+  emailLinkVerify(initData: string, email: string, code: string): Promise<LoginsResponse> {
+    return this.post(initData, "/me/email/verify", { email, code });
+  }
+
+  emailRemove(initData: string): Promise<LoginsResponse> {
+    return this.delete(initData, "/me/email");
+  }
+
+  linkTelegram(initData: string, user: Record<string, string | number>): Promise<LoginsResponse> {
+    return this.post(initData, "/me/telegram", user);
   }
 
   logout(): Promise<{ ok: boolean }> {

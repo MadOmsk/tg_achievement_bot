@@ -28,7 +28,7 @@ export function NicknameForm({
   onSubmit: (value: string) => Promise<void>;
   onKeep?: () => Promise<void>;
   /** Whose face it is, and whether it is one chosen in the app. */
-  tgId: number;
+  tgId?: number;
   avatarCustom?: boolean;
   onAvatar: (image: Blob) => Promise<void>;
   onAvatarReset: () => Promise<void>;

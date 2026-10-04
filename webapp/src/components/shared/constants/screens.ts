@@ -51,6 +51,7 @@ export const SETTINGS_PANES = {
   ROOT: "root",
   PUBLISHING: "publishing",
   PRIVACY: "privacy",
+  LOGINS: "logins",
   NOTIFICATIONS: "notifications",
   NICKNAME: "nickname",
 } as const;

@@ -140,7 +140,9 @@ export function Club({
         // which is dominated by whoever unlocked most recently in-group.
         // A profile page is read inside a chat; with none, the home page falls
         // back to the feed below.
-        activeId ? fetchPerson(data, activeId, me.tg_id) : Promise.reject(new Error("no chat")),
+        activeId && me.tg_id
+          ? fetchPerson(data, activeId, me.tg_id)
+          : Promise.reject(new Error("no chat")),
       ]);
       if (cancelled) return;
       if (f.status === "fulfilled") {
@@ -340,7 +342,7 @@ export function Club({
     void Promise.allSettled([
       fetchFeed(data, scopeRef ?? activeId, { month: ym }),
       fetchSummary(data, scopeRef ?? activeId, { month: ym }),
-      activeId
+      activeId && me.tg_id
         ? fetchPerson(data, activeId, me.tg_id, { month: ym })
         : Promise.reject(new Error("no chat")),
     ])
@@ -551,7 +553,7 @@ export function Club({
                   <Avatar
                     name={accountLabel(me)}
                     photo={telegramPhoto()}
-                    tgId={me.tg_id}
+                    tgId={me.tg_id ?? undefined}
                     online={isOnline(online.find((m) => m.tg_id === me.tg_id) ?? {})}
                     platform={online.find((m) => m.tg_id === me.tg_id && isOnline(m))?.platform}
                     size={48}
@@ -706,7 +708,7 @@ export function Club({
             <StatsSkel head={false} />
           ) : (
             <ClubStats
-              meId={me.tg_id}
+              meId={me.tg_id ?? 0}
               locale={locale}
               day={day}
               month={monthBoard}

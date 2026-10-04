@@ -214,7 +214,8 @@ async def test_a_new_address_becomes_a_new_person_without_telegram(repo: Repo, s
         me = await (await client.get("/api/mini/me")).json()
         assert me["tg_id"] is None
         assert me["is_admin"] is False
-        assert me["handle"]["display"]  # everybody has a nickname
+        # Everybody has a nickname: here the part of the address before the @.
+        assert me["handle"]["display"].startswith("ada")
         assert me["settings"]["locale"] == "en"
         person = await repo.person_by_email("ada@example.com")
         assert person is not None

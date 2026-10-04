@@ -22,6 +22,7 @@ import {
 import { AdminSection } from "../../admin";
 import { NicknameForm } from "../nickname/NicknameForm";
 import { PrivacyPane } from "../privacy/PrivacyPane";
+import { LoginsPane } from "../logins/LoginsPane";
 import { PlatformCard, type AccountRow, type PlatNotes } from "../platform-card/PlatformCard";
 import "./Settings.css";
 
@@ -47,6 +48,7 @@ export function Settings({
   onDisconnectPsn,
   onSync,
   onDeleteAccount,
+  onLoginsChanged,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -76,6 +78,8 @@ export function Settings({
   onDisconnectPsn: (accountId?: string) => void;
   onSync: () => void;
   onDeleteAccount: () => Promise<void>;
+  /** A login was added that the rest of the app shows (Telegram). */
+  onLoginsChanged: () => void;
 }) {
   const [pane, setPane] = useState<SettingsPane>(SETTINGS_PANES.ROOT);
   const [deleting, setDeleting] = useState(false);
@@ -147,7 +151,7 @@ export function Settings({
       <NicknameForm
         locale={locale}
         handle={me.handle}
-        tgId={me.tg_id}
+        tgId={me.tg_id ?? undefined}
         avatarCustom={me.avatar_custom}
         onAvatar={onAvatar}
         onAvatarReset={onAvatarReset}
@@ -173,6 +177,18 @@ export function Settings({
           />
         </Group>
       </>
+    );
+  }
+
+  if (pane === SETTINGS_PANES.LOGINS) {
+    return (
+      <LoginsPane
+        locale={locale}
+        data={data}
+        onBack={back}
+        onFlash={onFlash}
+        onChanged={onLoginsChanged}
+      />
     );
   }
 
@@ -251,7 +267,13 @@ export function Settings({
         </Group>
 
         <Group title={t(locale, "publishingWhere")}>
-          {me.chats.length === 0 ? (
+          {me.tg_id === null ? (
+            // Chats are Telegram's: somebody who signed in by email adds it first.
+            <NavRow
+              label={t(locale, "publishingNeedsTelegram")}
+              onClick={() => setPane(SETTINGS_PANES.LOGINS)}
+            />
+          ) : me.chats.length === 0 ? (
             <InfoRow label={t(locale, "noChatsShort")} />
           ) : (
             me.chats.map((chat) => (
@@ -322,6 +344,7 @@ export function Settings({
             onClick={() => setPane(SETTINGS_PANES.NICKNAME)}
           />
         )}
+        <NavRow label={t(locale, "logins")} onClick={() => setPane(SETTINGS_PANES.LOGINS)} />
         <NavRow label={t(locale, "privacy")} onClick={() => setPane(SETTINGS_PANES.PRIVACY)} />
         <NavRow
           label={t(locale, "notifications")}
