@@ -51,6 +51,19 @@ async def test_following_needs_no_consent_and_two_follows_make_friends(repo: Rep
     assert await repo.follow_counts(alice) == (1, 0)
 
 
+async def test_friends_of_friends_are_suggested_by_how_many_lead_to_them(repo: Repo) -> None:
+    alice, bobby, carol = await _people(repo)
+    await repo.follow(alice, bobby)
+    await repo.follow(bobby, carol)
+    await repo.follow(bobby, alice)  # alice herself is never suggested
+
+    rows = await repo.people_you_may_know(alice)
+    assert [(row.id, mutual) for row, mutual in rows] == [(carol, 1)]
+
+    await repo.follow(alice, carol)  # followed: no longer a suggestion
+    assert await repo.people_you_may_know(alice) == []
+
+
 async def test_another_persons_follows_carry_the_viewers_relation(repo: Repo) -> None:
     alice, bobby, carol = await _people(repo)
     await repo.follow(bobby, carol)

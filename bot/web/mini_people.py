@@ -87,6 +87,23 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         rows = await repo.suggested_people(me)
         return await people_json(repo, me, rows)
 
+    async def may_know(request: web.Request) -> web.Response:
+        """Friends of friends, each with how many of the viewer's follows lead
+        to them."""
+        repo, me = await me_id(request)
+        rows = await repo.people_you_may_know(me)
+        return web.json_response(
+            {
+                "people": [
+                    {
+                        **person_json(row, can_view=await repo.can_view_activity(me, row.id)),
+                        "mutual": mutual,
+                    }
+                    for row, mutual in rows
+                ]
+            }
+        )
+
     async def following(request: web.Request) -> web.Response:
         repo, me = await me_id(request)
         rows = await repo.following_of(me)
@@ -207,6 +224,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     router = app.router
     router.add_get("/api/mini/people/search", search)
     router.add_get("/api/mini/people/suggestions", suggestions)
+    router.add_get("/api/mini/people/may-know", may_know)
     router.add_get("/api/mini/people/tg/{tg_id}", profile_by_tg)
     router.add_get("/api/mini/people/{person_id}", profile)
     router.add_get("/api/mini/people/{person_id}/following", their_following)

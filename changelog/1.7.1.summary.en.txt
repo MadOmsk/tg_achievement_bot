@@ -1,0 +1,6 @@
+• A new feed: large pictures, looping swipe, a tap opens the game
+• Person cards with details for every account
+• See whom other people follow, and their friends
+• A heart on friends, friends first in lists
+• "People you may know" — friends of friends in Search
+• New Steam and PSN connect forms and various interface improvements

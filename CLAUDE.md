@@ -735,7 +735,7 @@ elsewhere in this file still describe the bot.
   one followed (owner, 2026-10-02) — blocking is the way to end it (a block deletes the follows between the two and hides each from
   the other's search and lists; the blocked one cannot follow). Search is by
   nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
-  People from a shared chat (subscribed or seen writing) are suggested. A new
+  People from a shared chat (subscribed or seen writing) are suggested, and friends of friends above them — «Вы можете знать», people followed by those you follow, the most shared first (`repo.people_you_may_know`, `/api/mini/people/may-know`). A new
   follower is told in one DM, unless they turned it off in Settings → Уведомления
   (`user_settings.notify_followers`, migration 075) (`people-new-follower` / `people-new-friend`); friends'
   achievements are never sent as DMs. **Following is not a way to ping somebody**

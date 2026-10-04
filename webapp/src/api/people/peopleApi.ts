@@ -75,6 +75,11 @@ export class PeopleApi extends BaseApi {
     return this.get<People>(initData, "/people/search", { q });
   }
 
+  /** Friends of friends, each with how many of the viewer's follows lead to them. */
+  mayKnow(initData: string): Promise<{ people: Array<PersonRow & { mutual: number }> }> {
+    return this.get(initData, "/people/may-know");
+  }
+
   suggestions(initData: string): Promise<People> {
     return this.get<People>(initData, "/people/suggestions");
   }

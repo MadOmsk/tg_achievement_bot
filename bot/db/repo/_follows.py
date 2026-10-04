@@ -295,6 +295,27 @@ class _FollowsRepo:
         )
         return [_person(row) for row in await cursor.fetchall()]
 
+    async def people_you_may_know(self, me: int) -> list[tuple[PersonRow, int]]:
+        """Friends of friends: people followed by those `me` follows, whom `me`
+        does not follow yet, with how many of `me`'s follows lead to each — the
+        most first."""
+        cursor = await self._conn.execute(
+            "WITH via AS ("
+            "  SELECT f2.followee_id AS id, COUNT(*) AS n FROM follows f1"
+            "  JOIN follows f2 ON f2.follower_id = f1.followee_id"
+            "  WHERE f1.follower_id = :me"
+            "  GROUP BY f2.followee_id"
+            ") "
+            "SELECT p.id, p.tg_id, " + _SHOWN + " AS shown, " + _RELATION + ", v.n AS mutual "
+            "FROM via v JOIN users p ON p.id = v.id "
+            "WHERE p.id != :me AND p.handle IS NOT NULL AND p.is_excluded = 0"
+            "  AND NOT EXISTS (SELECT 1 FROM follows f"
+            "    WHERE f.follower_id = :me AND f.followee_id = p.id)" + _NOT_BLOCKED + " "
+            "ORDER BY v.n DESC, p.handle_norm LIMIT :limit",
+            {"me": me, "limit": SEARCH_LIMIT},
+        )
+        return [(_person(row), int(row["mutual"])) for row in await cursor.fetchall()]
+
     async def following_members(self, me: int) -> list[int]:
         """The Telegram ids behind the "following" scope: oneself, and every person
         followed whose activity the viewer may see (their privacy setting).
