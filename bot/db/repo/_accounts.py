@@ -36,8 +36,9 @@ class _AccountsRepo:
         username: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
-    ) -> None:
-        """Create the user and his settings row on first contact.
+    ) -> int | None:
+        """Create the user and his settings row on first contact; returns the
+        person's own id (#156), None for a non-user id.
         first_name/last_name (Follow-up 2026-09-06, /stats' header) are
         optional here on purpose — most call sites only ever had a username
         to pass before this existed, and the message middleware
@@ -45,7 +46,7 @@ class _AccountsRepo:
         message regardless."""
         if tg_id <= 0:
             log.warning("refusing to create user with non-user tg_id=%s (#66)", tg_id)
-            return
+            return None
 
         now = utcnow_iso()
         await self._conn.execute(
@@ -77,6 +78,7 @@ class _AccountsRepo:
         # to the Mini App). Telegram's real name is never used.
         if from_text(username) != FALLBACK_HANDLE:
             await self.assign_first_handle(tg_id, username)
+        return await self.person_id(tg_id)  # type: ignore[attr-defined]
 
     async def update_username(self, tg_id: int, username: str) -> None:
         await self._conn.execute(

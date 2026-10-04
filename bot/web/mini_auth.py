@@ -38,6 +38,8 @@ class MiniAppUser:
     last_name: str | None
     language_code: str | None
     is_premium: bool
+    # The person's own id (#156), filled in once the request is authenticated.
+    person_id: int | None = None
 
 
 def validate_init_data(

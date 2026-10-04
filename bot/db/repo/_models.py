@@ -48,6 +48,9 @@ class User:
     # mini-app (2026-09-13) — see users.photo_file_id in schema.sql. Only
     # usable with the bot token, so it is not a secret on its own.
     photo_file_id: str | None = None
+    # The person's own id (`users.id`, #156) — what every table about a person
+    # points at. Defaulted for the call sites that build a User by hand.
+    id: int | None = None
 
 
 @dataclass(slots=True)
@@ -97,6 +100,9 @@ class PollTarget:
     # The device presence last reported — what the exit poll of the game just
     # left was played on.
     device: str | None = None
+    # The person's own id (`users.id`, #156) — what the tables about a person
+    # point at; `tg_id` above is only how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -121,6 +127,9 @@ class SteamPollTarget:
     persona_name: str | None = None
     last_online_at: str | None = None
     linked_at: str | None = None
+    # The person's own id (`users.id`, #156) — what the tables about a person
+    # point at; `tg_id` above is only how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -142,6 +151,9 @@ class PsnPollTarget:
     presence_state: str | None = None
     last_online_at: str | None = None
     linked_at: str | None = None
+    # The person's own id (`users.id`, #156) — what the tables about a person
+    # point at; `tg_id` above is only how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -163,6 +175,9 @@ class PsnPresenceTarget:
     # without a second query (#51) — the value it replaces is this
     # platform's own "previous online ID" step.
     online_id: str | None = None
+    # The person's own id (`users.id`, #156) — what the tables about a person
+    # point at; `tg_id` above is only how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -720,6 +735,7 @@ def _as_user(row: aiosqlite.Row) -> User:
         last_name=row["last_name"],
         gamertag_modern=row["gamertag_modern"],
         photo_file_id=row["photo_file_id"],
+        id=row["id"],
     )
 
 

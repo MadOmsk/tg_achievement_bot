@@ -146,6 +146,25 @@ class UsernameMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+class PersonMiddleware(BaseMiddleware):
+    """Who the update is from, as a person (#156): `person_id` in the handler's
+    data, None for somebody the bot has no record of yet. Telegram is only how
+    they reached the bot; everything stored about them is keyed by this id."""
+
+    def __init__(self, repo: Repo) -> None:
+        self._repo = repo
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        sender = getattr(event, "from_user", None)
+        data["person_id"] = await self._repo.person_id(sender.id) if sender else None
+        return await handler(event, data)
+
+
 # ------------------------------------------------------------- subscription
 
 

@@ -8,6 +8,7 @@ tma …``).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import logging
 import time
@@ -1079,10 +1080,21 @@ async def _require_user(request: web.Request) -> MiniAppUser:
         raise
     settings: Settings = request.app["mini_settings"]
     try:
-        return validate_init_data(init_data, settings.bot_token.get_secret_value())
+        user = validate_init_data(init_data, settings.bot_token.get_secret_value())
     except InitDataError as exc:
         log.info("mini initData rejected: %s (len=%s)", exc, len(init_data))
         raise web.HTTPUnauthorized(text="invalid initData") from exc
+    return await _with_person(request, user)
+
+
+async def _with_person(request: web.Request, user: MiniAppUser) -> MiniAppUser:
+    """The request's person (#156): everything about a person is keyed by their
+    own id. A first visit creates them, once; later visits only look them up."""
+    repo: Repo = request.app["mini_repo"]
+    person = await repo.person_id(user.tg_id)
+    if person is None:
+        person = await repo.ensure_user(user.tg_id, user.username)
+    return dataclasses.replace(user, person_id=person)
 
 
 async def _json_body(request: web.Request) -> dict[str, Any]:

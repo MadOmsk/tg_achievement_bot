@@ -33,7 +33,8 @@ class _PollingRepo:
         poller: every tick for them would be a guaranteed failure.
         """
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, xb.external_id AS xuid, p.state, p.title_id, p.title_name,"
+            "SELECT u.tg_id, u.id AS person_id,"
+            " xb.external_id AS xuid, p.state, p.title_id, p.title_name,"
             "       p.changed_at, p.last_ach_poll_at, p.updated_at, u.last_online_at,"
             "       xb_link.linked_at, p.device "
             "FROM users u " + XBOX_ACCOUNT + "JOIN tokens t ON t.person_id = u.id "
@@ -43,6 +44,7 @@ class _PollingRepo:
         return [
             PollTarget(
                 tg_id=row["tg_id"],
+                person_id=row["person_id"],
                 xuid=row["xuid"],
                 state=row["state"],
                 title_id=row["title_id"],
@@ -141,7 +143,8 @@ class _PollingRepo:
         JOIN here unlike `pollable_users()`: Steam has no per-user OAuth at
         all, one shared API key for the whole bot (M-Steam-1)."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, pl.external_id AS steam_id, a.display_name AS persona_name,"
+            "SELECT u.tg_id, u.id AS person_id,"
+            " pl.external_id AS steam_id, a.display_name AS persona_name,"
             "       p.persona_state, p.gameid, p.game_name, p.changed_at, p.last_ach_poll_at,"
             "       p.updated_at, p.last_active_gameid, p.last_active_game_name, p.last_active_at,"
             "       u.last_online_at, pl.linked_at "
@@ -156,6 +159,7 @@ class _PollingRepo:
         return [
             SteamPollTarget(
                 tg_id=row["tg_id"],
+                person_id=row["person_id"],
                 steam_id=row["steam_id"],
                 persona_state=row["persona_state"],
                 gameid=row["gameid"],
@@ -242,7 +246,8 @@ class _PollingRepo:
         shared service credential for the whole bot (M-PSN-1), not
         per-user OAuth."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, pl.external_id AS account_id, a.display_name AS online_id,"
+            "SELECT u.tg_id, u.id AS person_id,"
+            " pl.external_id AS account_id, a.display_name AS online_id,"
             "       ps.last_polled_at, COALESCE(ps.backfill_done, 0) AS backfill_done,"
             "       pp.state AS presence_state, u.last_online_at, pl.linked_at "
             "FROM account_links pl "
@@ -255,6 +260,7 @@ class _PollingRepo:
         return [
             PsnPollTarget(
                 tg_id=row["tg_id"],
+                person_id=row["person_id"],
                 account_id=row["account_id"],
                 online_id=row["online_id"],
                 last_polled_at=row["last_polled_at"],
@@ -319,7 +325,8 @@ class _PollingRepo:
 
     async def psn_presence_pollable_accounts(self) -> list[PsnPresenceTarget]:
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, pl.external_id AS account_id, a.display_name AS online_id,"
+            "SELECT u.tg_id, u.id AS person_id,"
+            " pl.external_id AS account_id, a.display_name AS online_id,"
             "       pp.state, pp.title_id,"
             "       pp.title_name, pp.changed_at, pp.updated_at "
             "FROM account_links pl "
@@ -331,6 +338,7 @@ class _PollingRepo:
         return [
             PsnPresenceTarget(
                 tg_id=row["tg_id"],
+                person_id=row["person_id"],
                 account_id=row["account_id"],
                 state=row["state"],
                 title_id=row["title_id"],

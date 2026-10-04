@@ -31,7 +31,7 @@ from bot.handlers import hltb as hltb_handlers
 from bot.handlers import panel as panel_handlers
 from bot.handlers import psn as psn_handlers
 from bot.handlers import steam as steam_handlers
-from bot.handlers.chat import UsernameMiddleware
+from bot.handlers.chat import PersonMiddleware, UsernameMiddleware
 from bot.i18n import (
     AVAILABLE_LOCALES,
     DEFAULT_LOCALE,
@@ -312,6 +312,9 @@ async def run(settings: Settings) -> None:
     dispatcher["steam_auth"] = steam_auth
     dispatcher["anthropic_auth"] = anthropic_auth
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
+    # After the username one, so a person it just refreshed is found.
+    dispatcher.message.outer_middleware(PersonMiddleware(repo))
+    dispatcher.callback_query.outer_middleware(PersonMiddleware(repo))
     build_i18n_middleware().setup(dispatcher=dispatcher)
     dispatcher.include_router(admin_handlers.router)
     dispatcher.include_router(connect_handlers.router)

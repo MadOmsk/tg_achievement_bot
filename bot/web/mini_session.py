@@ -41,6 +41,7 @@ async def session_user(request: web.Request) -> MiniAppUser | None:
         last_name=user.last_name,
         language_code=None,
         is_premium=False,
+        person_id=user.id,
     )
 
 
