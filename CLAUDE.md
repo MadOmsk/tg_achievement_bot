@@ -873,6 +873,20 @@ elsewhere in this file still describe the bot.
   - Routes: `GET /api/mini/notifications`, `POST …/read`; `GET /api/mini/push/key`,
     `POST|DELETE /api/mini/push/subscription`; the switches through
     `PATCH /api/mini/settings`; `/me` carries `notifications_unread`.
+  - **In the Mini App**: a bell on Home with the unread count opens the list
+    (opening it marks all read; a notice about somebody opens them).
+    Settings → «Уведомления»: where (push on/off, this device's own state with
+    «Включить»/«Отключить», Telegram messages — or «Привязать» without Telegram) and
+    what about (new followers). `components/me/notifications/push.ts` says why a
+    device cannot get pushes, each worded: inside Telegram (the bot's DMs are the
+    notices there), an iPhone page not on the Home Screen (Safari pushes only
+    then), a browser without push, push not set up on the server, or blocked in
+    the browser.
+  - **The app is installable** (a PWA): `webapp/public/manifest.webmanifest` and
+    `sw.js`. The service worker only shows pushes and opens the app on a tap — **no
+    offline cache**, so a deploy is never hidden behind an old copy. It is
+    registered only outside Telegram. Paths are relative or `BASE_URL`, since
+    production serves the app under `/app/`.
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),

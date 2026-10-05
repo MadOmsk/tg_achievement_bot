@@ -50,6 +50,8 @@ export type LoginsResponse = {
 export type MeResponse = {
   /** The person's own id (#156): what the app names people by. */
   person_id: number;
+  /** The app's own notices not yet seen (#164). */
+  notifications_unread?: number;
   /** None for a person who signed in by email and has no Telegram (#162). */
   tg_id: number | null;
   handle: Handle | null;
@@ -69,8 +71,11 @@ export type MeResponse = {
     rarity_mode: string;
     /** Who sees this person's activity in the app (#157). */
     activity_visible?: "all" | "friends" | "nobody";
-    /** A DM from the bot when someone follows this person (#157). */
+    /** Whether to be told when someone follows this person (#157). */
     notify_followers?: boolean;
+    /** Where the app's notices go (#164): pushed to devices, and as a DM. */
+    notify_push?: boolean;
+    notify_telegram?: boolean;
   };
   xbox: {
     linked: boolean;
@@ -144,6 +149,8 @@ export type UserSettingsPatch = Partial<{
   show_secrets: boolean;
   rarity_mode: string;
   notify_followers: boolean;
+  notify_push: boolean;
+  notify_telegram: boolean;
 }>;
 
 // A chat only says whether a person publishes there (#126): the rarity

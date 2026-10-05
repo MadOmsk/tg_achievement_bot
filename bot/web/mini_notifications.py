@@ -53,6 +53,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                     "read": row.read_at is not None,
                     # Whom a tap opens, when the notice is about somebody.
                     "person_id": row.data.get(field) if field else None,
+                    "name": row.data.get("name"),
                 }
             )
         return web.json_response(

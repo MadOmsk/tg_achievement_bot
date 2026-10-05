@@ -24,7 +24,8 @@ export function Icon({
     | "sync"
     | "off"
     | "sort"
-    | "guide";
+    | "guide"
+    | "bell";
   size?: number;
   filled?: boolean;
 }) {
@@ -39,6 +40,14 @@ export function Icon({
     strokeLinejoin: "round" as const,
     "aria-hidden": true,
   };
+  if (name === "bell") {
+    return (
+      <svg {...props}>
+        <path d="M6 16.4V11a6 6 0 0 1 12 0v5.4l1.6 2.1H4.4z" />
+        <path d="M10 20.6a2 2 0 0 0 4 0" />
+      </svg>
+    );
+  }
   if (name === "home") {
     return (
       <svg {...props}>

@@ -1,0 +1,14 @@
+{
+  "name": "Achievement Bot",
+  "short_name": "Ачивки",
+  "description": "Achievements from Xbox, PlayStation and Steam, and the people you play with.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0c12",
+  "theme_color": "#0a0c12",
+  "icons": [
+    { "src": "logo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "logo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

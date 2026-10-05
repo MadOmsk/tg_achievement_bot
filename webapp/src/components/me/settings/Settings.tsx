@@ -23,6 +23,7 @@ import { AdminSection } from "../../admin";
 import { NicknameForm } from "../nickname/NicknameForm";
 import { PrivacyPane } from "../privacy/PrivacyPane";
 import { LoginsPane } from "../logins/LoginsPane";
+import { NotificationsPane } from "../notifications/NotificationsPane";
 import { PlatformCard, type AccountRow, type PlatNotes } from "../platform-card/PlatformCard";
 import "./Settings.css";
 
@@ -60,6 +61,8 @@ export function Settings({
     show_secrets?: boolean;
     rarity_mode?: string;
     notify_followers?: boolean;
+    notify_push?: boolean;
+    notify_telegram?: boolean;
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onNickname: (handle: string) => Promise<void>;
@@ -166,17 +169,15 @@ export function Settings({
 
   if (pane === SETTINGS_PANES.NOTIFICATIONS) {
     return (
-      <>
-        <BackHead title={t(locale, "notifications")} backLabel={t(locale, "back")} onBack={back} />
-        <Group>
-          <ToggleRow
-            label={t(locale, "notifyFollowers")}
-            sub={t(locale, "notifyFollowersHint")}
-            on={me.settings.notify_followers !== false}
-            onChange={(on) => onPatch({ notify_followers: on })}
-          />
-        </Group>
-      </>
+      <NotificationsPane
+        me={me}
+        locale={locale}
+        data={data}
+        onBack={back}
+        onPatch={onPatch}
+        onFlash={onFlash}
+        onAddTelegram={() => setPane(SETTINGS_PANES.LOGINS)}
+      />
     );
   }
 

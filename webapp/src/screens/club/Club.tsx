@@ -26,6 +26,7 @@ import { FollowsSheet } from "../../components/club/follows-sheet/FollowsSheet";
 import { PersonSheet, type SheetPerson } from "../../components/people/person-sheet/PersonSheet";
 import { peopleApi, type PersonRow } from "../../api/people/peopleApi";
 import "./Club.css";
+import { NotificationsBell } from "../../components/me/notifications/NotificationsBell";
 
 const FRIENDS_PREVIEW = 6;
 
@@ -566,6 +567,12 @@ export function Club({
                     }
                   />
                 </div>
+                <NotificationsBell
+                  data={data}
+                  locale={locale}
+                  unread={me.notifications_unread ?? 0}
+                  onOpenPerson={openPerson}
+                />
                 {!hasAccounts ? null : clubReady ? (
                   monthChip(selectedMonth)
                 ) : (
