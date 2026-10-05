@@ -1,0 +1,176 @@
+import { useState, type ReactNode } from "react";
+import type { PersonPayload } from "../../../api";
+import { t, type Locale } from "../../../i18n";
+import { Avatar, EmptyState, Icon, ScoreCup, isOnline } from "../../shared/lib";
+import {
+  COMPLETION_BADGES,
+  PLATFORMS,
+} from "../../shared/constants";
+import { PlayedGames } from "../played-games/PlayedGames";
+import { FriendMark } from "../../people/friend-mark/FriendMark";
+import { RecentPosts } from "../recent-posts/RecentPosts";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
+
+export function PersonProfile({
+  person,
+  status,
+  locale,
+  revealed,
+  showSecrets,
+  monthChip,
+  onBack,
+  onOpenCard,
+  onReveal,
+  people,
+  friend = false,
+}: {
+  person: PersonPayload;
+  /** What they are doing now ("В сети", "3 ч назад", the game), shown after the nick. */
+  status?: string | null;
+  locale: Locale;
+  revealed: Set<string>;
+  showSecrets?: boolean;
+  monthChip?: ReactNode;
+  onBack: () => void;
+  /** The nickname in the bar opens the person's card. */
+  onOpenCard?: () => void;
+  onReveal: (key: string) => void;
+  /** Whom they follow, as on Home: a strip under the gallery. */
+  people?: ReactNode;
+  /** The viewer's friend: marked on the face in the bar. */
+  friend?: boolean;
+}) {
+  const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
+  const feed = person.feed ?? [];
+  const gameCount = new Set(
+    feed.filter((row) => row.game).map((row) => `${row.platform}:${row.title_id}`),
+  ).size;
+  const scoreLines = (person.platforms ?? []).flatMap((p) => {
+    const xbox = p.platform.startsWith(PLATFORMS.XBOX);
+    const count =
+      xbox && p.gamerscore != null
+        ? p.gamerscore
+        : p.achievement_count ?? p.trophy_count;
+    if (count == null) return [];
+    const extra = xbox
+      ? p.completed_games
+        ? `${COMPLETION_BADGES.XBOX} ${p.completed_games}`
+        : null
+      : p.trophy_level != null
+        ? `${t(locale, "level")} ${p.trophy_level}`
+        : p.completed_games
+          ? `${COMPLETION_BADGES.STEAM} ${p.completed_games}`
+          : p.platinum_count
+            ? `${COMPLETION_BADGES.PSN} ${p.platinum_count}`
+            : null;
+    const key = xbox
+      ? PLATFORMS.XBOX
+      : p.platform === PLATFORMS.STEAM
+        ? PLATFORMS.STEAM
+        : PLATFORMS.PSN;
+    const tiers =
+      key === PLATFORMS.PSN && p.bronze != null
+        ? {
+            bronze: p.bronze,
+            silver: p.silver ?? 0,
+            gold: p.gold ?? 0,
+            platinum: p.platinum_count ?? 0,
+          }
+        : null;
+    return [
+      {
+        platform: p.platform,
+        count,
+        extra,
+        unit: xbox && p.gamerscore != null ? "G" : null,
+        day: person.today?.[key] ?? 0,
+        month: person.month?.[key] ?? 0,
+        tiers,
+      },
+    ];
+  });
+  const live = isOnline(person.presence ?? {});
+  const playing = Boolean(person.presence?.playing);
+  return (
+    <>
+      <header className="account-bar person-bar">
+        <div className="account-top">
+          <button
+            type="button"
+            className="person-back"
+            onClick={onBack}
+            aria-label={t(locale, "back")}
+          >
+            <Icon name="back" size={26} />
+          </button>
+          <button
+            type="button"
+            className="account-who"
+            onClick={onOpenCard}
+          >
+            <FriendMark friend={friend} label={t(locale, "friends")}>
+              <Avatar
+                name={person.name}
+                tgId={person.tg_id}
+                size={48}
+                zoomLabel={t(locale, "close")}
+                online={live}
+                playing={playing}
+                platform={person.presence?.platform}
+              />
+            </FriendMark>
+            <span className="person-bar-title">
+              <span className="account-name-row">
+                <strong>
+                  <HandleName text={person.name} />
+                </strong>
+                <ScoreCup locale={locale} lines={scoreLines} markSize={12} />
+              </span>
+              {status && <small>{status}</small>}
+            </span>
+          </button>
+          {monthChip}
+        </div>
+      </header>
+      {feed.length > 0 ? (
+        <RecentPosts
+          items={feed}
+          locale={locale}
+          revealed={revealed}
+          showSecrets={showSecrets}
+          onReveal={onReveal}
+        />
+      ) : (
+        <EmptyState
+          title={t(locale, "emptyPersonTitle")}
+          hint={t(locale, "emptyFeedHint")}
+          slide
+        />
+      )}
+      {people}
+      {feed.length > 0 && (
+        <>
+      <div className="section-head achievements-head">
+        <span className="section-title-group">
+          <h1 className="kicker" style={{ margin: 0 }}>
+            {t(locale, "games")}
+          </h1>
+          {gameCount > 0 && <span className="section-count">{gameCount}</span>}
+        </span>
+        {gameCount > 1 && (
+          <button
+            type="button"
+            className="sort-toggle"
+            aria-label={t(locale, gameSort === "recent" ? "sortProgress" : "sortRecent")}
+            onClick={() => setGameSort((cur) => (cur === "recent" ? "progress" : "recent"))}
+          >
+            <Icon name={gameSort === "recent" ? "sort" : "stats"} size={18} />
+          </button>
+        )}
+      </div>
+      <PlayedGames items={feed} locale={locale} sort={gameSort} />
+        </>
+      )}
+    </>
+  );
+}

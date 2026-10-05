@@ -1,0 +1,96 @@
+# Subscription
+chat-subscribe-groups-only = Эта команда для группового чата — там, где нужны публикации.
+chat-subscribe-connect-first = Сначала подключи хотя бы одну платформу — кнопки ниже.
+chat-subscribe-already = Ты уже публикуешься здесь.
+chat-subscribe-done = Готово. Ачивки { $gamertag } будут прилетать сюда.
+    Какие именно публиковать — в настройках, кнопка ниже.
+chat-unsubscribe-not-subscribed = Ты здесь и не публиковался.
+chat-unsubscribe-confirm-button = Да, отписаться
+chat-cancel-button = Отмена
+chat-close-button = Закрыть
+chat-unsubscribe-prompt = Перестать публиковать твои достижения в этом чате?
+chat-not-your-button = Это не твоя кнопка.
+chat-unsubscribe-done = Больше не публикую твои достижения в этом чате.
+
+# Statistics and presence
+chat-stats-no-gamertag = без геймертега
+# No leading spaces here (2026-09-08 fix) — Fluent's own whitespace handling
+# on a single-line value is not reliable enough to lean on for a "  ·  "
+# separator (found live: it silently collapsed to one side only). The
+# caller builds that separator itself, in Python, like every other segment
+# joined onto this same line.
+chat-stats-psn-level = уровень { $level }
+chat-stats-today = За сутки:  { $achievements }{ $breakdown }{ $value }
+chat-stats-month = С 1 { $month }:  { $achievements }{ $breakdown }{ $value }
+chat-stats-games-header = <b>Игры { $window }</b>
+chat-stats-nothing-connected = Этот человек ещё ничего не подключил.
+chat-group-command-only = Список игроков — по чату, набери команду в группе.
+chat-online-empty = Никого из подключённых в этом чате пока не видел.
+chat-who-prompt = Чья статистика интересует?
+chat-user-not-found = Не нашёл такого пользователя.
+
+# Summary and recent feed
+chat-summary-group-only = Сводка считается по чату — набери команду в группе.
+chat-summary-empty = В этом чате пока никто не подключил аккаунт — сводке не о ком.
+chat-recent-group-only = Лента считается по чату — набери команду в группе.
+chat-recent-empty = Пока пусто.
+chat-recent-header = 🕘 <b>Последние достижения</b>
+chat-untitled = без названия
+chat-recent-row = { $badge } { $gamertag } — { $icon } { $game } · { $name }{ $tail } · { $ago }
+
+# Group hub and chat actions
+chat-unknown-user = Не знаю такого. Bot API не умеет искать людей по @имени — я запоминаю тех, кто писал в чат. Можно ответить на сообщение человека командой /stats.
+chat-panel-text = 🎮 Слежу за достижениями и трофеями тех, кто играет на XBOX, PlayStation и в Steam, и публикую их сюда — с фильтром по редкости, статистикой каждого и итогом дня.
+chat-help-text = Команды чата:
+    /panel — меню и кнопки управления
+    /stats [@кто] — статистика: без аргумента своя, с ником — чужая
+    /who — узнать стату конкретного игрока
+    /online — кто сейчас в игре
+    /recent [N] — последние достижения чата
+    /summary_day — сводка за сутки
+    /summary_month — сводка с 1 числа месяца
+    /hltb — показать сводку игры HowLongToBeat
+    /subscribe — подписаться на публикации
+    /unsubscribe — отписаться от публикаций
+    /help — список команд
+# /help in a DM (#140): what the bot is, the four commands a DM has, and
+# one button into the Mini App. Connecting and unlinking live in /panel.
+chat-help-private-text =
+    🎮 <b>Игровой клуб</b>
+    Слежу за достижениями и трофеями на XBOX, PlayStation и в Steam и публикую их в чаты, где ты подписан, — со статистикой, сводками и лидербордами. Всё это — и в приложении.
+
+    /panel — твоя панель: аккаунты, публикация, настройки
+    /stats — твоя статистика
+    /hltb — сколько идти игру (HowLongToBeat)
+    /help — эта справка
+chat-help-version = <i>Версия { $version }</i>
+chat-hub-nobody = Пока здесь никто не публикуется.
+chat-hub-publishing = Публикуются: { $names }
+chat-hub-publish-button = 🔔 Настройка уведомлений
+chat-hub-toast-all = Публикую все достижения
+chat-hub-toast-rare = Только редкие
+chat-hub-toast-hidden = Ничего не публикую
+chat-hub-xbox-button = 🔗 XBOX
+chat-hub-steam-button = 🎮 Steam
+chat-hub-psn-button = 🎮 PSN
+chat-hub-who-button = 👤 Игрок
+chat-hub-online-button = 🟢 Онлайн
+chat-hub-recent-button = 🕘 Недавние
+chat-hub-summary-day-button = 📅 Сводка дня
+chat-hub-summary-month-button = 📆 Сводка месяца
+chat-hub-settings-button = ⚙️ Настройки
+chat-hub-open-app = Открыть приложение
+chat-app-hint = Смотри в приложении:
+chat-app-no-url = Приложение ещё не настроено (нет MINI_APP_URL).
+chat-subscribe-button-done = Готово, твои достижения будут прилетать сюда.
+chat-delete-last-none = Не нашёл сообщений бота в этом чате.
+chat-delete-last-failed = Не смог удалить — возможно, сообщение слишком старое.
+chat-delete-last-done =
+    🗑 Удалено сообщение:
+    «{ $preview }»
+chat-delete-last-done-generic = 🗑 Сообщение удалено.
+chat-open-mini-app = Открыть Mini App
+chat-promo-text =
+    🎮 <b>Игровой клуб</b>
+    Следим за достижениями и трофеями участников на Xbox, PlayStation и в Steam. Сводки, статистика и лидерборды игроков чата — в Mini App.
+

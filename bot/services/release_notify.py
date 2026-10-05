@@ -1,0 +1,152 @@
+"""Automated release announcement to active group chats (2026-09-19).
+
+Sent once per new version on startup. On production, links to the public
+GitHub release notes in the chat's configured locale. On the test bot, sends
+the test update notice without links.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+from pathlib import Path
+
+from aiogram import Bot
+from aiogram.enums import ParseMode
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from bot.db.repo import Repo
+from bot.i18n import gettext
+from bot.services.chat_gone import chat_is_gone
+from bot.services.message_log import stats_category
+
+log = logging.getLogger(__name__)
+
+CHANGELOG_BASE_URL = "https://github.com/MadOmsk/tg_achievement_bot/blob/main/changelog"
+CHANGELOG_DIR = Path(__file__).resolve().parents[2] / "changelog"
+APP_SETTING_KEY = "last_announced_version"
+
+
+def base_version(full_version: str) -> str:
+    """Extract A.B.C from A.B.C.D for changelog file names."""
+    parts = full_version.split(".")
+    return ".".join(parts[:3]) if len(parts) >= 3 else full_version
+
+
+def load_release_summary(base_ver: str, locale: str) -> str | None:
+    """Load brief release summary from a summary file or extract bullet
+    points from changelog markdown."""
+    summary_file = CHANGELOG_DIR / f"{base_ver}.summary.{locale}.txt"
+    if summary_file.is_file():
+        try:
+            text = summary_file.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+        except OSError:
+            pass
+
+    md_file = CHANGELOG_DIR / f"{base_ver}.{locale}.md"
+    if md_file.is_file():
+        try:
+            content = md_file.read_text(encoding="utf-8")
+            bullets: list[str] = []
+            for line in content.splitlines():
+                line = line.strip()
+                if line.startswith(("- **", "* **")):
+                    match = re.match(r"^[-*]\s+\*\*([^*]+)\*\*", line)
+                    if match:
+                        title = match.group(1).rstrip(".:")
+                        bullets.append(f"• {title}")
+                        if len(bullets) >= 8:
+                            break
+            if bullets:
+                return "\n".join(bullets)
+        except OSError:
+            pass
+    return None
+
+
+async def announce_release_if_needed(
+    bot: Bot,
+    repo: Repo,
+    current_version: str,
+    *,
+    is_test: bool = False,
+    sleep_delay: float = 0.05,
+) -> int:
+    """Announce the new release to all active group chats if not already announced.
+
+    Returns the number of messages successfully delivered.
+    """
+    last_announced = await repo.get_app_setting(APP_SETTING_KEY)
+    if last_announced == current_version:
+        log.debug("release v%s already announced, skipping", current_version)
+        return 0
+
+    chats = await repo.active_group_chats()
+    if not chats:
+        log.info("no active group chats to announce release v%s to", current_version)
+        await repo.set_app_setting(APP_SETTING_KEY, current_version)
+        return 0
+
+    base_ver = base_version(current_version)
+    sent_count = 0
+
+    for chat_id, locale in chats:
+        if is_test:
+            text = gettext(
+                "main", "main-test-release-announced", locale=locale, version=current_version
+            )
+            markup = None
+        else:
+            header = gettext(
+                "main", "main-release-announced", locale=locale, version=current_version
+            )
+            details_prompt = gettext("main", "main-release-details-prompt", locale=locale)
+            summary = load_release_summary(base_ver, locale)
+            if summary:
+                summary_header = gettext("main", "main-release-summary-header", locale=locale)
+                text = f"{header}\n\n{summary_header}\n{summary}\n\n{details_prompt}"
+            else:
+                text = f"{header}\n\n{details_prompt}"
+
+            btn_text = gettext("main", "main-release-button", locale=locale)
+            url = f"{CHANGELOG_BASE_URL}/{base_ver}.{locale}.md"
+            markup = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text=btn_text, url=url)]]
+            )
+
+        try:
+            with stats_category():
+                await bot.send_message(
+                    chat_id, text, parse_mode=ParseMode.HTML, reply_markup=markup
+                )
+            sent_count += 1
+        except Exception as exc:
+            if chat_is_gone(exc) and is_test:
+                # A test bot usually runs on a copy of production's database
+                # and is simply not a member of those chats: "chat not found"
+                # says nothing about them, and deactivating would empty the
+                # copy's chat list (and the Mini App) on every version bump.
+                log.info("chat %s unreachable for the test bot (%s), left active", chat_id, exc)
+            elif chat_is_gone(exc):
+                log.info("chat %s is gone (%s), deactivating", chat_id, exc)
+                await repo.deactivate_chat(chat_id)
+            else:
+                log.warning(
+                    "failed to send release announcement to chat %s", chat_id, exc_info=True
+                )
+
+        if sleep_delay > 0:
+            await asyncio.sleep(sleep_delay)
+
+    await repo.set_app_setting(APP_SETTING_KEY, current_version)
+    log.info(
+        "announced release v%s to %d/%d chat(s) (is_test=%s)",
+        current_version,
+        sent_count,
+        len(chats),
+        is_test,
+    )
+    return sent_count

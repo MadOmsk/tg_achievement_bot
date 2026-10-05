@@ -1,0 +1,536 @@
+"""Entry point: wires the database, Xbox auth, the OAuth callback and aiogram."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import os
+import sys
+
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import TelegramNetworkError
+from aiogram.types import (
+    BotCommand,
+    BotCommandScopeAllGroupChats,
+    BotCommandScopeAllPrivateChats,
+    MenuButtonWebApp,
+    User,
+    WebAppInfo,
+)
+
+from bot.config import Settings, get_settings
+from bot.constants import Platform
+from bot.db.repo import Database, Repo
+from bot.handlers import admin as admin_handlers
+from bot.handlers import backfill as backfill_handlers
+from bot.handlers import chat as chat_handlers
+from bot.handlers import connect as connect_handlers
+from bot.handlers import hltb as hltb_handlers
+from bot.handlers import panel as panel_handlers
+from bot.handlers import psn as psn_handlers
+from bot.handlers import steam as steam_handlers
+from bot.handlers.chat import UsernameMiddleware
+from bot.i18n import (
+    AVAILABLE_LOCALES,
+    DEFAULT_LOCALE,
+    build_i18n_context,
+    build_i18n_middleware,
+    gettext,
+    translator,
+)
+from bot.lock import AlreadyRunningError, single_instance
+from bot.poller.admin_refresh import AdminPanelRefresh
+from bot.poller.avatars import AvatarRefresh
+from bot.poller.catch_up import CatchUpPoller
+from bot.poller.covers import CoverRefresh
+from bot.poller.daily import DailySummary
+from bot.poller.description_backfill import DescriptionBackfill
+from bot.poller.fetcher import Fetcher, catch_up_since
+from bot.poller.flood_flush import FloodFlush
+from bot.poller.message_cleanup import MessageCleanup
+from bot.poller.online_refresh import OnlineAutoRefresh
+from bot.poller.patch_refresh import PatchRefresh
+from bot.poller.presence import PresencePoller
+from bot.poller.psn_fetcher import PsnFetcher
+from bot.poller.psn_presence import PsnPresencePoller
+from bot.poller.psn_trophy_groups import PsnTrophyGroups
+from bot.poller.publisher import Publisher
+from bot.poller.rarity_backfill import RarityBackfill
+from bot.poller.reminders import ReminderJob
+from bot.poller.scheduler import PollerScheduler
+from bot.poller.service_health import ServiceHealth
+from bot.poller.steam_catch_up import SteamCatchUpPoller
+from bot.poller.steam_fetcher import SteamFetcher
+from bot.poller.steam_localization import SteamLocalization
+from bot.poller.steam_presence import SteamPresencePoller
+from bot.poller.title_platforms import TitlePlatformsRefresh
+from bot.services.connect import ConnectService
+from bot.services.crypto import TokenCipher
+from bot.services.message_limits import MessageLimitMiddleware
+from bot.services.message_log import MessageLogMiddleware
+from bot.services.notify import AdminNotifier
+from bot.services.psn.auth import PsnAuth
+from bot.services.release_notify import announce_release_if_needed
+from bot.services.steam.auth import SteamAuth
+from bot.services.steam_extras import SteamExtras
+from bot.services.translate.auth import AnthropicAuth
+from bot.services.xbox.auth import XboxAuthService, XboxIdentity
+from bot.services.xbox.client import XboxClient
+from bot.version import is_test, version
+from bot.views.keyboards import timezone_keyboard
+from bot.web.oauth import OAuthServer
+
+log = logging.getLogger(__name__)
+
+# Outer backstop for startup_catch_up's per-user call (2026-09-09) — see
+# that function's own docstring for why this exists on top of
+# title_history()'s own deadline. Generous on purpose: a real account can
+# legitimately need ~46s for title_history alone (verified live,
+# RideTheSun's 1011-title account) before even starting its own
+# catchup_max_titles (20) achievement fetches, each with its own up-to-3-
+# attempt retry-with-backoff (services/xbox/client.py's own MAX_ATTEMPTS) —
+# a account genuinely on the edge should still get to finish, not be cut
+# off just short of succeeding.
+STARTUP_CATCH_UP_DEADLINE_SECONDS = 120.0
+
+
+def setup_logging(level: str) -> None:
+    # On Windows, stdout/stderr might default to legacy code pages (e.g. cp1251)
+    # when redirected to a file. Reconfigure to UTF-8 so emojis and Unicode
+    # strings never cause UnicodeEncodeError.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    logging.basicConfig(
+        level=level.upper(),
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        # stdout, not the default stderr: manage.ps1 redirects the two streams
+        # to different files, and ordinary progress in the error log is noise
+        # that hides real tracebacks.
+        stream=sys.stdout,
+    )
+    # httpx logs "HTTP Request: GET <full url> ..." at INFO for every call —
+    # harmless for Xbox (auth goes in a header), but Steam's API puts its key
+    # in the URL's own query string (SPEC 1.5's "never in logs" — no
+    # exception for something a library does on our behalf). Found live in
+    # production: the key had been sitting in plain text in journalctl since
+    # M-Steam-1. WARNING still surfaces httpx's own connection/TLS errors.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+async def run(settings: Settings) -> None:
+    database = await Database(settings.db_path).connect()
+    repo = Repo(database)
+    given = await repo.give_everyone_a_handle()
+    if given:
+        log.info("gave %d people a first nickname (#157)", given)
+
+    # The global timezone is a setting, not a constant: the admin can change it
+    # later without touching .env. The value from the environment only seeds it.
+    if await repo.get_app_setting("timezone") is None:
+        await repo.set_app_setting("timezone", settings.tz)
+
+    cipher = TokenCipher(settings.fernet_key.get_secret_value())
+    auth = XboxAuthService(settings, repo, cipher)
+    await auth.start()
+    connect_service = ConnectService(auth, repo)
+
+    bot = Bot(
+        token=settings.bot_token.get_secret_value(),
+        default=DefaultBotProperties(link_preview_is_disabled=True),
+    )
+    # Every group message the bot sends, logged for the admin panel's
+    # "стереть сообщения бота" (SPEC 6.4) — see the module docstring for why
+    # this is one request middleware and not a call in every handler.
+    # Outermost, so nothing downstream ever hands Telegram an oversized
+    # message — including the log middleware's own view of what was sent.
+    bot.session.middleware(MessageLimitMiddleware())
+    bot.session.middleware(MessageLogMiddleware(repo))
+
+    notifier = AdminNotifier(bot, repo, settings.admin_tg_ids)
+    auth.on_token_dead = notifier.token_dead
+
+    # One service-wide PSN client, not per-user OAuth (SPEC 9, M-PSN-1) —
+    # on_dead mirrors XboxAuthService.on_token_dead above, just for the one
+    # shared credential rather than one person's own.
+    psn_auth = PsnAuth(repo, cipher)
+    psn_auth.on_dead = lambda: notifier.service_key_dead(Platform.PSN)
+    # …and its counterpart (#62): a credential that comes back says so,
+    # or the admin is left holding an alarm with no end to it.
+    psn_auth.on_alive = lambda: notifier.service_key_alive(Platform.PSN)
+
+    # The Steam key now lives encrypted in app_settings, admin-settable
+    # without a restart (#17); the .env value is only a first-run seed
+    # SteamAuth imports once. on_dead mirrors psn_auth's above.
+    steam_env_key = settings.steam_api_key.get_secret_value() if settings.steam_api_key else None
+    steam_auth = SteamAuth(repo, cipher, env_key=steam_env_key)
+    steam_auth.on_dead = lambda: notifier.service_key_dead(Platform.STEAM)
+    steam_auth.on_alive = lambda: notifier.service_key_alive(Platform.STEAM)
+
+    # Anthropic (2026-09-09) — achievement-description translation only,
+    # same admin-panel-managed shared-credential shape as Steam/PSN above.
+    anthropic_env_key = (
+        settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
+    )
+    anthropic_auth = AnthropicAuth(repo, cipher, env_key=anthropic_env_key)
+    anthropic_auth.on_dead = notifier.translation_key_dead
+    anthropic_auth.on_alive = notifier.translation_key_alive
+
+    client = XboxClient(auth)
+    publisher = Publisher(bot, repo, settings=settings)
+    steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
+    fetcher = Fetcher(
+        repo,
+        client,
+        publisher,
+        settings.backfill_concurrency,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
+    )
+    poller = PresencePoller(settings, repo, client, fetcher)
+
+    steam_fetcher = SteamFetcher(
+        repo,
+        steam_auth,
+        publisher,
+        settings.backfill_concurrency,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
+    )
+    steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
+    steam_catch_up = SteamCatchUpPoller(settings, repo, steam_fetcher, steam_auth)
+
+    # Trophy sync itself still has no presence poller of its own (SPEC 9,
+    # M-PSN-2) — psn_fetcher.tick() scans every linked account directly on
+    # its own schedule. psn_presence below is a separate, unrelated poller
+    # (issue #1): presence for /online only, never triggers a trophy poll.
+    psn_fetcher = PsnFetcher(
+        settings,
+        repo,
+        psn_auth,
+        publisher,
+        anthropic_auth=anthropic_auth,
+        steam_extras=steam_extras,
+    )
+    psn_presence = PsnPresencePoller(settings, repo, psn_auth, psn_fetcher=psn_fetcher)
+
+    flood_flush = FloodFlush(repo, publisher)
+
+    scheduler = PollerScheduler(
+        poller,
+        fetcher,
+        ReminderJob(bot, repo),
+        DailySummary(bot, repo),
+        repo,
+        steam_poller,
+        MessageCleanup(bot, repo),
+        OnlineAutoRefresh(bot, repo),
+        ServiceHealth(repo, psn_auth, steam_auth, anthropic_auth),
+        AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth, steam_auth),
+        psn_fetcher,
+        psn_presence,
+        flood_flush,
+        DescriptionBackfill(repo, client, anthropic_auth),
+        RarityBackfill(repo, client),
+        SteamLocalization(repo),
+        AvatarRefresh(bot, repo, steam_auth=steam_auth, psn_auth=psn_auth),
+        CatchUpPoller(settings, repo, fetcher),
+        CoverRefresh(repo, client),
+        steam_catch_up,
+        TitlePlatformsRefresh(repo, client),
+        PsnTrophyGroups(repo, psn_auth),
+        PatchRefresh(repo, steam_extras),
+    )
+
+    async def on_linked(tg_id: int, identity: XboxIdentity, origin_chat_id: int | None) -> None:
+        """Runs in the web callback, right after the account is stored."""
+        # No achievements yet means this account is new to the bot, not someone
+        # signing in again after his token expired.
+        is_new = not await repo.has_any_achievements(identity.xuid)
+        locale = await repo.user_locale(tg_id)
+        _ = translator("main", locale)
+        await bot.send_message(tg_id, _("main-linked", gamertag=identity.gamertag))
+        await notifier.user_connected(tg_id, identity.gamertag, is_new=is_new)
+
+        # Pressed «Подключить XBOX» from inside a specific group: finish the
+        # job and subscribe him there too, instead of making him find
+        # /subscribe on his own right after he just did the hard part (6.3).
+        if origin_chat_id is not None and await repo.chat_exists(origin_chat_id):
+            await repo.subscribe(origin_chat_id, tg_id)
+            with contextlib.suppress(Exception):
+                await bot.send_message(tg_id, _("main-linked-subscribed-origin-chat"))
+
+        settings_row = await repo.get_user_settings(tg_id)
+        if settings_row is None or settings_row.tz_offset_min is None:
+            link_i18n = await build_i18n_context(locale)
+            await bot.send_message(
+                tg_id,
+                link_i18n.get("connect-timezone-prompt"),
+                reply_markup=timezone_keyboard(link_i18n),
+            )
+        # New or signing in again, the whole history is (re)read: a reconnect's
+        # history is not complete either — seen_achievements only grows
+        # through live polls and catch-up, both bounded to recent games, so a
+        # re-run is what keeps "Всего"/"За месяц" honest (SPEC 5.4). Either
+        # way the person watches it happen in one status message (owner,
+        # 2026-09-30) instead of a "reading…" line and silence.
+        asyncio.create_task(  # noqa: RUF006
+            backfill_handlers.run_xbox(bot, fetcher, repo, tg_id, identity.xuid)
+        )
+
+    web_server = OAuthServer(
+        settings,
+        connect_service,
+        on_linked,
+        repo,
+        steam_auth=steam_auth,
+        steam_fetcher=steam_fetcher,
+        psn_auth=psn_auth,
+        psn_fetcher=psn_fetcher,
+        xbox_fetcher=fetcher,
+        notifier=notifier,
+        anthropic_auth=anthropic_auth,
+        bot=bot,
+        steam_extras=steam_extras,
+    )
+    await web_server.start()
+
+    dispatcher = Dispatcher()
+    dispatcher["repo"] = repo
+    dispatcher["connect"] = connect_service
+    dispatcher["fetcher"] = fetcher
+    dispatcher["steam_fetcher"] = steam_fetcher
+    dispatcher["settings"] = settings
+    dispatcher["notifier"] = notifier
+    dispatcher["psn_auth"] = psn_auth
+    dispatcher["psn_fetcher"] = psn_fetcher
+    dispatcher["steam_auth"] = steam_auth
+    dispatcher["anthropic_auth"] = anthropic_auth
+    dispatcher.message.outer_middleware(UsernameMiddleware(repo))
+    build_i18n_middleware().setup(dispatcher=dispatcher)
+    dispatcher.include_router(admin_handlers.router)
+    dispatcher.include_router(connect_handlers.router)
+    dispatcher.include_router(panel_handlers.router)
+    dispatcher.include_router(chat_handlers.router)
+    dispatcher.include_router(hltb_handlers.router)
+    dispatcher.include_router(steam_handlers.router)
+    dispatcher.include_router(psn_handlers.router)
+    dispatcher.include_router(backfill_handlers.router)
+
+    async def startup_catch_up() -> None:
+        """Pick up what happened while the bot was down (SPEC 5.8).
+
+        In the background: a restart must not wait for the network before it
+        starts answering people.
+
+        Each user's own call is wrapped in a hard deadline (found live,
+        2026-09-09): under degraded network conditions, catch_up() can
+        legitimately accumulate a lot of time on its own — up to
+        catchup_max_titles (20) achievement fetches after title_history,
+        each with its own up-to-3-attempt retry-with-backoff
+        (services/xbox/client.py's MAX_ATTEMPTS) — and this loop is
+        otherwise sequential, so one account having a bad run must never
+        delay every account after it by that same amount. This is on top
+        of title_history()'s own asyncio.wait_for, not instead of it.
+        """
+        for target in await repo.pollable_users():
+            user = await repo.get_user(target.tg_id)
+            try:
+                await asyncio.wait_for(
+                    fetcher.catch_up(
+                        target.tg_id,
+                        target.xuid,
+                        (user.gamertag if user else None)
+                        or gettext("main", "main-default-player-name", locale=DEFAULT_LOCALE),
+                        await catch_up_since(
+                            repo, target.xuid, settings.catchup_publish_window_hours
+                        ),
+                        settings.catchup_publish_window_hours,
+                        settings.catchup_max_titles,
+                    ),
+                    timeout=STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                )
+            except TimeoutError:
+                log.error(
+                    "catch-up for tg_id=%s exceeded %.0fs overall, moving on",
+                    target.tg_id,
+                    STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                )
+            except Exception:
+                log.exception("catch-up for tg_id=%s failed", target.tg_id)
+        # Once per database: 360 games titlehub forgot, and their totals (#91, #92).
+        await fetcher.fill_x360_gaps_once(
+            [(target.tg_id, target.xuid) for target in await repo.pollable_users()]
+        )
+
+        if await steam_auth.get_key() is not None:
+            for steam_target in await repo.steam_pollable_users():
+                try:
+                    await asyncio.wait_for(
+                        steam_catch_up.catch_up_target(steam_target),
+                        timeout=STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                    )
+                except TimeoutError:
+                    log.error(
+                        "steam catch-up for tg_id=%s exceeded %.0fs overall, moving on",
+                        steam_target.tg_id,
+                        STARTUP_CATCH_UP_DEADLINE_SECONDS,
+                    )
+                except Exception:
+                    log.exception("steam catch-up for tg_id=%s failed", steam_target.tg_id)
+            await steam_fetcher.fill_library_gaps_once(
+                [(t.tg_id, t.steam_id) for t in await repo.steam_pollable_users()]
+            )
+
+    await publisher.start()
+    # Force-exit every anti-flood window still open from before this restart
+    # (2026-09-09 user request) — a window mid-count when the bot last
+    # stopped must not silently swallow its buffered achievements forever;
+    # better to deliver them a little early than never. Awaited directly,
+    # not backgrounded like startup_catch_up below: it only touches the
+    # database and the (already-running) publish queue, no platform API
+    # calls, so it can't meaningfully delay startup.
+    await flood_flush.flush_all()
+    scheduler.start()
+    asyncio.create_task(startup_catch_up())  # noqa: RUF006
+
+    await _publish_command_menu(bot)
+    await _publish_mini_app_menu(bot, settings)
+
+    me = await _me_with_retries(bot)
+    bot_version = version()
+    log.info("bot @%s is up (v%s)", me.username, bot_version)
+    asyncio.create_task(  # noqa: RUF006
+        announce_release_if_needed(bot, repo, bot_version, is_test=is_test())
+    )
+    try:
+        await dispatcher.start_polling(bot, handle_signals=False)
+    finally:
+        scheduler.shutdown()
+        await publisher.stop()
+        await web_server.stop()
+        await auth.close()
+        await bot.session.close()
+        await database.close()
+
+
+# Telegram unreachable for a minute at start-up (found live on the dev
+# server, 2026-10-01) is a blip, not a reason to give up: ~2 minutes in all.
+_ME_RETRY_DELAYS = (5, 10, 20, 30, 60)
+
+
+async def _me_with_retries(bot: Bot) -> User:
+    for delay in _ME_RETRY_DELAYS:
+        try:
+            return await bot.me()
+        except TelegramNetworkError as exc:
+            log.warning("telegram unreachable at start-up (%r), retrying in %ss", exc, delay)
+            await asyncio.sleep(delay)
+    return await bot.me()
+
+
+async def _publish_command_menu(bot: Bot) -> None:
+    """The command list Telegram shows behind the "/" button.
+
+    Two scopes, because the useful commands differ: in a group nobody needs
+    /connect_xbox, and in private nobody needs /online. Most-used first in
+    both — subscribe/unsubscribe is one-time setup, not read every time
+    (SPEC 6.3).
+
+    The menu is published once per shipped locale (#48). This is the one
+    place in the bot that honours Telegram's own `language_code` rather than
+    our `user_settings.locale`, and not by choice: Telegram renders this menu
+    itself, from whatever it was given, so there is no moment at which we
+    could substitute a person's own setting. Everything the bot actually
+    *says* still follows the explicit setting; only this hint list follows
+    the client's language. A locale Telegram has no entry for falls back to
+    the one published with no language_code at all, which stays Russian.
+    """
+
+    def menus(locale: str) -> tuple[list[BotCommand], list[BotCommand]]:
+        _ = translator("main", locale)
+        private = [
+            BotCommand(command="panel", description=_("main-cmd-panel")),
+            BotCommand(command="stats", description=_("main-cmd-stats-private")),
+            # /connect_* and /disconnect_* still work, but the menu leaves
+            # them out (#140): /panel is where accounts are linked and unlinked.
+            BotCommand(command="hltb", description=_("main-cmd-hltb")),
+            BotCommand(command="help", description=_("main-cmd-help")),
+        ]
+        group = [
+            BotCommand(command="panel", description=_("main-cmd-panel-group")),
+            BotCommand(command="subscribe", description=_("main-cmd-subscribe")),
+            BotCommand(command="hltb", description=_("main-cmd-hltb")),
+            BotCommand(command="help", description=_("main-cmd-help")),
+        ]
+        return private, group
+
+    try:
+        for locale in AVAILABLE_LOCALES:
+            private, group = menus(locale)
+            # The default locale is published without a language_code as
+            # well, so it is what any unlisted client language falls back to.
+            language_code = None if locale == DEFAULT_LOCALE else locale
+            await bot.set_my_commands(
+                private, scope=BotCommandScopeAllPrivateChats(), language_code=language_code
+            )
+            await bot.set_my_commands(
+                group, scope=BotCommandScopeAllGroupChats(), language_code=language_code
+            )
+    except Exception:
+        # A cosmetic menu is not worth failing the whole startup for.
+        log.warning("could not publish the command menu", exc_info=True)
+
+
+async def _publish_mini_app_menu(bot: Bot, settings: Settings) -> None:
+    """Private-chat menu button → Mini App (Telegram has no group equivalent).
+    Slash commands stay published separately — the app is an extra door."""
+    url = (settings.mini_app_url or "").strip()
+    if not url:
+        return
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text=gettext("main", "main-menu-open-app", locale=DEFAULT_LOCALE),
+                web_app=WebAppInfo(url=url),
+            )
+        )
+        log.info("mini app menu button -> %s", url)
+    except Exception:
+        log.warning("could not set Mini App menu button", exc_info=True)
+
+
+def main() -> None:
+    settings = get_settings()
+    setup_logging(settings.log_level)
+
+    lock_path = settings.db_path.parent / "bot.lock"
+    try:
+        with single_instance(lock_path):
+            try:
+                asyncio.run(run(settings))
+            except (KeyboardInterrupt, SystemExit):
+                log.info("stopped")
+            except Exception:
+                # A start-up that failed before polling began leaves resources
+                # nobody closes — an open aiosqlite connection's thread is not a
+                # daemon — and the interpreter would wait on it forever: a
+                # process that looks alive and does nothing, which systemd does
+                # not restart (found live on the dev server, 2026-10-01). Exit
+                # for real, with a failure code systemd answers.
+                log.exception("the bot stopped on an error")
+                logging.shutdown()
+                os._exit(1)
+    except AlreadyRunningError:
+        # Not a traceback: this is a normal thing to do by mistake.
+        print(gettext("main", "main-already-running"), file=sys.stderr)
+        raise SystemExit(1) from None
+
+
+if __name__ == "__main__":
+    main()

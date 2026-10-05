@@ -1,0 +1,198 @@
+"""Parsing of the three achievement payloads (SPEC 4, 5.3)."""
+
+from __future__ import annotations
+
+from bot.services.xbox.models import (
+    parse_achievements,
+    parse_rarity_with_title,
+    parse_timestamp,
+    x360_achievement_icon_url,
+)
+
+MODERN = {
+    "achievements": [
+        {
+            "id": "4",
+            "name": "Prison Breakout",
+            "description": "Completed tutorial path",
+            "progressState": "Achieved",
+            "progression": {"timeUnlocked": "2025-08-30T09:17:58.7770000Z"},
+            "mediaAssets": [{"type": "Icon", "url": "https://example/icon.png"}],
+            "rewards": [{"type": "Gamerscore", "value": "10"}],
+            "rarity": {"currentCategory": "Common", "currentPercentage": 65.41},
+            "titleAssociations": [{"name": "Gears of War: Reloaded", "id": 1829869520}],
+            "isSecret": True,
+        },
+        {
+            "id": "5",
+            "name": "Still going",
+            "progressState": "InProgress",
+            "progression": {"timeUnlocked": "0001-01-01T00:00:00.0000000Z"},
+            "rewards": [{"type": "Gamerscore", "value": "20"}],
+            "rarity": {"currentPercentage": 3.0},
+            "titleAssociations": [{"name": "Gears of War: Reloaded", "id": 1829869520}],
+        },
+    ]
+}
+
+X360 = {
+    "achievements": [
+        {
+            "id": 62,
+            "titleId": 1297287339,
+            "name": "Unarmed and Dangerous",
+            "description": "Killed 10 Locusts.",
+            "gamerscore": 15,
+            "unlocked": True,
+            "timeUnlocked": "2026-08-31T16:17:05.8130000Z",
+        },
+        {"id": 63, "titleId": 1297287339, "name": "Locked one", "unlocked": False},
+    ]
+}
+
+
+def test_modern_parses_rarity_and_icon() -> None:
+    parsed = parse_achievements(MODERN, "xbox_modern")
+    assert len(parsed) == 1  # InProgress is dropped
+    item = parsed[0]
+    assert item.rarity_percent == 65.41
+    assert item.gamerscore == 10
+    assert item.icon_url == "https://example/icon.png"
+    assert item.title_id == "1829869520"
+    assert item.title_name == "Gears of War: Reloaded"
+    assert item.platform == "xbox_modern"
+    assert item.is_secret is True
+
+
+def test_missing_is_secret_defaults_to_false() -> None:
+    """Most achievements have no isSecret field at all — absence must not be
+    mistaken for "yes, secret"."""
+    payload = {
+        "achievements": [
+            {
+                "id": "9",
+                "name": "Ordinary",
+                "progressState": "Achieved",
+                "progression": {"timeUnlocked": "2025-01-01T00:00:00.0000000Z"},
+                "rewards": [{"type": "Gamerscore", "value": "5"}],
+                "titleAssociations": [{"name": "Some Game", "id": 1}],
+            }
+        ]
+    }
+    assert parse_achievements(payload, "xbox_modern")[0].is_secret is False
+
+
+def test_x360_is_never_secret() -> None:
+    """Contract 1 has no isSecret concept at all — X360Achievement.to_parsed()
+    always defaults it to False."""
+    assert parse_achievements(X360, "xbox_360", "1297287339")[0].is_secret is False
+
+
+def test_in_progress_never_becomes_a_row() -> None:
+    """An InProgress row in seen_achievements would hide the achievement
+    forever, because the real unlock would look like a duplicate (SPEC 5.3)."""
+    assert [item.achievement_id for item in parse_achievements(MODERN, "xbox_modern")] == ["4"]
+
+
+def test_missing_rarity_block_does_not_crash() -> None:
+    payload = {
+        "achievements": [
+            {
+                "id": "9",
+                "name": "No rarity here",
+                "progressState": "Achieved",
+                "progression": {"timeUnlocked": "2025-01-01T00:00:00.0000000Z"},
+                "rewards": [{"type": "Gamerscore", "value": "5"}],
+                "titleAssociations": [{"name": "Some Game", "id": 1}],
+            }
+        ]
+    }
+    parsed = parse_achievements(payload, "xbox_modern")
+    assert len(parsed) == 1
+    assert parsed[0].rarity_percent is None
+
+
+def test_broken_record_is_skipped_not_fatal() -> None:
+    payload = {"achievements": [{"nonsense": True}, MODERN["achievements"][0]]}
+    assert len(parse_achievements(payload, "xbox_modern")) == 1
+
+
+def test_x360_has_no_rarity_and_only_unlocked() -> None:
+    parsed = parse_achievements(X360, "xbox_360", "1297287339")
+    assert len(parsed) == 1
+    assert parsed[0].rarity_percent is None
+    assert parsed[0].platform == "xbox_360"
+    assert parsed[0].gamerscore == 15
+
+
+def test_seven_digit_fraction_and_placeholder_dates() -> None:
+    assert parse_timestamp("2025-08-30T09:17:58.7770000Z") is not None
+    assert parse_timestamp("0001-01-01T00:00:00.0000000Z") is None
+    # The other Microsoft placeholder; counting it would put unlocks in 1753.
+    assert parse_timestamp("1753-01-01T00:00:00.0000000Z") is None
+    assert parse_timestamp(None) is None
+    assert parse_timestamp("not a date") is None
+
+
+def test_x360_achievement_icon_url() -> None:
+    # 1480657355 in hex is 584109cb
+    assert (
+        x360_achievement_icon_url(1480657355, 3)
+        == "http://image.xboxlive.com/global/t.584109cb/ach/0/3"
+    )
+    assert (
+        x360_achievement_icon_url("1480657355", "10")
+        == "http://image.xboxlive.com/global/t.584109cb/ach/0/a"
+    )
+    assert x360_achievement_icon_url(None, 3) is None
+    assert x360_achievement_icon_url(123, None) is None
+    assert x360_achievement_icon_url("invalid", 3) is None
+
+
+def test_x360_contract_3_parses_rarity_and_icon() -> None:
+    c3_payload = {
+        "achievements": [
+            {
+                "id": 1,
+                "titleId": 1480657355,
+                "name": "Into the Netherworld",
+                "description": "Complete Episode 1 on any difficulty.",
+                "gamerscore": 15,
+                "unlocked": True,
+                "timeUnlocked": "2026-09-23T01:00:00.0000000Z",
+                "imageId": 3,
+                "rarity": {"currentCategory": "Rare", "currentPercentage": 14.8},
+                "isSecret": True,
+            }
+        ]
+    }
+    parsed = parse_achievements(c3_payload, "xbox_360", "1480657355")
+    assert len(parsed) == 1
+    ach = parsed[0]
+    assert ach.rarity_percent == 14.8
+    assert ach.icon_url == "http://image.xboxlive.com/global/t.584109cb/ach/0/3"
+    assert ach.is_secret is True
+    assert ach.gamerscore == 15
+    assert ach.platform == "xbox_360"
+
+
+def test_parse_rarity_with_title_x360_contract_3() -> None:
+    c3_payload = {
+        "achievements": [
+            {
+                "id": 1,
+                "titleId": 1480657355,
+                "name": "Ach 1",
+                "rarity": {"currentPercentage": 14.8},
+            },
+            {
+                "id": 2,
+                "titleId": 1480657355,
+                "name": "Ach 2",
+                "rarity": {"currentPercentage": 5.2},
+            },
+        ]
+    }
+    rarity, title_name = parse_rarity_with_title(c3_payload)
+    assert rarity == {"1": 14.8, "2": 5.2}
+    assert title_name is None

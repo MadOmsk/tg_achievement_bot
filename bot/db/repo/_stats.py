@@ -1,0 +1,510 @@
+"""Xbox title-history cache and the achievement-count aggregates behind
+/stats, /admin's user list, and the daily summary — one mixin of
+bot.db.repo.Repo (2026-09-09 split; see this package's own __init__.py).
+Behavior is unchanged from before the split.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Sequence
+from datetime import datetime
+
+from bot.db.repo._models import TitleHistoryRow, _iso
+from bot.db.repo._sql import (
+    GLOBAL_RARE_THRESHOLD,
+    OWNED_BY_PERSON,
+    OWNED_BY_PERSON_EXISTS,
+    earned_at,
+    earned_date_is_real,
+    earned_since,
+    rarity,
+    rarity_cache_join,
+)
+from bot.util import utcnow_iso
+
+
+class _StatsRepo:
+    # --------------------------------------------------------- title history
+
+    async def save_title_history(self, xuid: str, entries: Sequence[TitleHistoryRow]) -> None:
+        now = utcnow_iso()
+        for entry in entries:
+            await self._conn.execute(
+                "INSERT INTO title_history (xuid, title_id, current_gamerscore, max_gamerscore,"
+                " achievements_unlocked, achievements_total, last_played_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(xuid, title_id) DO UPDATE SET "
+                "  current_gamerscore = excluded.current_gamerscore,"
+                "  max_gamerscore = excluded.max_gamerscore,"
+                "  achievements_unlocked = excluded.achievements_unlocked,"
+                "  achievements_total = excluded.achievements_total,"
+                "  last_played_at = excluded.last_played_at,"
+                "  updated_at = excluded.updated_at",
+                (
+                    xuid,
+                    entry.title_id,
+                    entry.current_gamerscore,
+                    entry.max_gamerscore,
+                    entry.achievements_unlocked,
+                    entry.achievements_total,
+                    entry.last_played_at,
+                    now,
+                ),
+            )
+            entry_plat = getattr(entry, "platform", None)
+            plat_val = entry_plat.value if hasattr(entry_plat, "value") else str(entry_plat or "")
+            if plat_val in ("xbox_360", "x360"):
+                platforms_json = json.dumps(["Xbox360"])
+                effective_entry_plat = "xbox_360"
+            elif getattr(entry, "devices", None):
+                if any(str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices):
+                    platforms_json = json.dumps(["Xbox360"])
+                    effective_entry_plat = "xbox_360"
+                else:
+                    platforms_json = json.dumps(entry.devices)
+                    effective_entry_plat = plat_val or None
+            else:
+                platforms_json = None
+                effective_entry_plat = plat_val or None
+
+            await self._conn.execute(
+                "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
+                " platform = CASE "
+                "   WHEN titles.platform = 'xbox_360' THEN 'xbox_360' "
+                "   WHEN excluded.platform = 'xbox_360' THEN 'xbox_360' "
+                "   ELSE COALESCE(excluded.platform, titles.platform) "
+                " END,"
+                " platforms = CASE "
+                "   WHEN titles.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
+                "   WHEN excluded.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
+                "   ELSE COALESCE(excluded.platforms, titles.platforms) "
+                " END,"
+                " updated_at = excluded.updated_at",
+                (entry.title_id, entry.name, effective_entry_plat, platforms_json, now),
+            )
+            if effective_entry_plat == "xbox_360":
+                await self._conn.execute(
+                    "UPDATE OR IGNORE seen_achievements SET platform = 'xbox_360' "
+                    "WHERE title_id = ? AND platform = 'xbox_modern'",
+                    (entry.title_id,),
+                )
+                await self._conn.execute(
+                    "DELETE FROM seen_achievements WHERE title_id = ? AND platform = 'xbox_modern'",
+                    (entry.title_id,),
+                )
+        await self._conn.commit()
+
+    async def update_gamerscore(self, tg_id: int, gamerscore: int) -> None:
+        """On the account, not the person (#52) — a gamerscore is a fact
+        about an Xbox account and travels with it."""
+        await self._conn.execute(
+            "UPDATE accounts SET gamerscore = ?, updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)",
+            (gamerscore, utcnow_iso(), tg_id),
+        )
+        await self._conn.commit()
+
+    async def update_xbox_names(
+        self, tg_id: int, *, gamertag: str | None, gamertag_modern: str | None
+    ) -> bool:
+        """Refresh the Xbox naming chain from the profile response the
+        poller already made for gamerscore (#51). Writes only when something
+        actually changed, and says whether it did — this runs on every title
+        history refresh, and rewriting the same two strings is pure churn.
+
+        A NULL from the platform never overwrites a stored value: an
+        occasional response missing ModernGamertag should not blank a name
+        the bot already knows.
+        """
+        cursor = await self._conn.execute(
+            "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
+            "                    display_name = COALESCE(?, display_name),"
+            "                    updated_at = ? "
+            "WHERE (platform, external_id) IN ("
+            "  SELECT platform, external_id FROM account_links"
+            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)"
+            "  AND ((? IS NOT NULL AND secondary_name IS NOT ?)"
+            "    OR (? IS NOT NULL AND display_name IS NOT ?))",
+            (
+                gamertag,
+                gamertag_modern,
+                utcnow_iso(),
+                tg_id,
+                gamertag,
+                gamertag,
+                gamertag_modern,
+                gamertag_modern,
+            ),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    # ------------------------------------------------------------ aggregates
+
+    async def _counts(
+        self,
+        where: str,
+        params: list[object],
+        since: datetime | None,
+        until: datetime | None = None,
+    ):
+        """Shared shape behind the two counters below — same aggregate, one
+        by account and one by person. They no longer share a column, only a
+        query: since #52 a row belongs to an account, so "this person's
+        achievements" is a join away rather than a different WHERE."""
+        query = (
+            f"SELECT COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements WHERE {where}"
+        )
+        if since is not None:
+            # The window rule, written once in _sql.py (#69) — a dated row by
+            # its date, an undated live one by when the bot saw it, an undated
+            # backfill row not at all.
+            query += f" AND {earned_since('')}"
+            params = [*params, _iso(since)]
+        if until is not None:
+            query += f" AND {earned_at('')} < ?"
+            params = [*params, _iso(until)]
+        cursor = await self._conn.execute(query, params)
+        row = await cursor.fetchone()
+        return (int(row[0]), int(row[1])) if row else (0, 0)
+
+    async def achievement_counts(self, xuid: str, since: datetime | None) -> tuple[int, int]:
+        """How many achievements and how much gamerscore since a moment.
+
+        Counted regardless of `is_backfill` (SPEC 5.9). Timestamps are stored
+        as UTC ISO strings of one shape, so a string comparison is a time
+        comparison here.
+        """
+        return await self._counts("xuid = ?", [xuid], since)
+
+    async def achievement_counts_for_person(
+        self, tg_id: int, since: datetime | None, until: datetime | None = None
+    ) -> tuple[int, int]:
+        """Same as `achievement_counts`, but summed across every platform a
+        person has connected (SPEC 9, M-Steam-2e) — `/stats`/`/summary`'s
+        counters, not `achievement_counts`' own caller (`scripts/reconcile_
+        achievements.py`, which deliberately stays per-Xbox-account: it
+        checks one xuid's stored gamerscore against what Xbox itself
+        reports for that xuid, a comparison that has no Steam side to sum
+        in). `gamerscore` sums correctly here with no special-casing: a
+        Steam row's gamerscore is always 0 (services/steam/achievements.py),
+        so it never contributes to the sum, by construction, not by a check
+        here."""
+        return await self._counts(OWNED_BY_PERSON_EXISTS, [tg_id], since, until)
+
+    async def achievement_platform_breakdown(
+        self, tg_id: int, since: datetime | None, until: datetime | None = None
+    ) -> tuple[int, int, int]:
+        """The (xbox, steam, psn) counts behind `achievement_counts_for_person`'s
+        single combined total (2026-09-05 follow-up, reversal of "one number
+        only" — SPEC 9 M-Steam-2e originally dropped a per-platform split on
+        purpose; the parenthetical here doesn't touch that decision, the
+        combined number still leads and still sorts). x360 counts as Xbox —
+        there's no separate UI concept of "Xbox 360" anywhere outside the
+        achievement message itself and the games table's own icon.
+
+        PSN's own bucket was missing entirely until #32 (found live: the
+        combined total already included PSN rows via the plain `tg_id`
+        sum in `achievement_counts_for_person`, but this breakdown's two
+        `CASE`s matched neither for a `psn` row, so it silently vanished
+        from the parenthetical while still counting toward the total —
+        the numbers next to each other didn't add up)."""
+        query = (
+            "SELECT SUM(CASE WHEN platform IN ('xbox_modern', 'xbox_360') THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN platform = 'steam' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN platform = 'psn' THEN 1 ELSE 0 END) "
+            "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS
+        )
+        params: list[object] = [tg_id]
+        if since is not None:
+            # The window rule, written once in _sql.py (#69) — a dated row by
+            # its date, an undated live one by when the bot saw it, an undated
+            # backfill row not at all.
+            query += f" AND {earned_since('')}"
+            params.append(_iso(since))
+        if until is not None:
+            query += f" AND {earned_at('')} < ?"
+            params.append(_iso(until))
+        cursor = await self._conn.execute(query, params)
+        row = await cursor.fetchone()
+        return (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)) if row else (0, 0, 0)
+
+    async def achievement_value_breakdown(
+        self,
+        tg_id: int,
+        since: datetime | None,
+        rare_threshold: float,
+        until: datetime | None = None,
+    ) -> tuple[int, tuple[int, int, int, int]]:
+        """What this person's achievements in the window were *worth*, beyond
+        the count and the gamerscore: how many cleared the chat's rarity
+        threshold, and PSN's own tiers (owner, 2026-09-17).
+
+        Returns `(rare, (platinum, gold, silver, bronze))`. Both are zero
+        where the platform has no such notion — Xbox 360 never reports rarity
+        at all, and only PSN has tiers — which needs no special handling: a
+        zero simply renders as nothing, the same way a zero gamerscore does.
+        """
+        # Joined to the catalog, unlike its neighbours here: its percentage is
+        # what makes an Xbox row rare at all, most of them having been stored
+        # by a backfill that carries no percentage. The table stays unaliased
+        # because OWNED_BY_PERSON_EXISTS below names it in full.
+        table = "seen_achievements."
+        value = rarity(table)
+        query = (
+            f"SELECT SUM(CASE WHEN {value} IS NOT NULL AND {value} <= ?"
+            "                THEN 1 ELSE 0 END),"
+            f"       SUM(CASE WHEN {table}trophy_type = 'platinum' THEN 1 ELSE 0 END),"
+            f"       SUM(CASE WHEN {table}trophy_type = 'gold' THEN 1 ELSE 0 END),"
+            f"       SUM(CASE WHEN {table}trophy_type = 'silver' THEN 1 ELSE 0 END),"
+            f"       SUM(CASE WHEN {table}trophy_type = 'bronze' THEN 1 ELSE 0 END) "
+            "FROM seen_achievements " + rarity_cache_join(table) + "WHERE " + OWNED_BY_PERSON_EXISTS
+        )
+        params: list[object] = [rare_threshold, tg_id]
+        if since is not None:
+            query += f" AND {earned_since(table)}"
+            params.append(_iso(since))
+        if until is not None:
+            query += f" AND {earned_at(table)} < ?"
+            params.append(_iso(until))
+        cursor = await self._conn.execute(query, params)
+        row = await cursor.fetchone()
+        if row is None:
+            return 0, (0, 0, 0, 0)
+        return int(row[0] or 0), (
+            int(row[1] or 0),
+            int(row[2] or 0),
+            int(row[3] or 0),
+            int(row[4] or 0),
+        )
+
+    async def psn_trophy_tier_counts(self, tg_id: int) -> tuple[int, int, int, int]:
+        """This person's PSN trophies by tier, over their whole history —
+        `(bronze, silver, gold, platinum)`, the order both callers unpack.
+
+        Deliberately not `achievement_value_breakdown(tg_id, None, …)`, which
+        answers the same question for a *window*: that one exists to say what
+        a window was worth, so it pays for the rarity-cache join and leads
+        with a rare count. A lifetime tier list has no threshold to compare
+        against, and inventing one only to reuse the query would put a
+        meaningless number in front of the answer.
+        """
+        cursor = await self._conn.execute(
+            "SELECT SUM(CASE WHEN trophy_type = 'bronze' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'silver' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'gold' THEN 1 ELSE 0 END),"
+            "       SUM(CASE WHEN trophy_type = 'platinum' THEN 1 ELSE 0 END) "
+            "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS,
+            (tg_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return 0, 0, 0, 0
+        return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0), int(row[3] or 0)
+
+    async def account_facts(self, tg_id: int, account_platform: str) -> dict[str, object]:
+        """What the person card's account table shows besides the counts it
+        already has (#157): how many games, how many rare by the one rarity
+        threshold, and when the newest dated unlock came — for the account of
+        `account_platform` (`xbox` covers both generations) this person holds."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(DISTINCT s.platform || ':' || s.title_id) AS games,"
+            f" SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= {GLOBAL_RARE_THRESHOLD}"
+            "     THEN 1 ELSE 0 END) AS rare,"
+            f" MAX(CASE WHEN {earned_date_is_real()} THEN {earned_at()} END) AS last_at "
+            "FROM seen_achievements s "
+            + OWNED_BY_PERSON
+            + rarity_cache_join()
+            + "WHERE al.tg_id = ? AND s.account_platform = ?",
+            (tg_id, account_platform),
+        )
+        row = await cursor.fetchone()
+        return {
+            "games": int(row["games"] or 0) if row else 0,
+            "rare": int(row["rare"] or 0) if row else 0,
+            "last_at": row["last_at"] if row else None,
+        }
+
+    async def platform_achievement_count(self, tg_id: int, platform: str) -> int:
+        """Lifetime count for one platform (SPEC 9, M-Steam-2e's /stats line
+        next to each connected platform) — deliberately not offered for
+        Xbox (`achievement_counts` never exposes a since=None total either,
+        SPEC 5.4): a lifetime Steam count has no cap to worry about
+        (backfill walks the whole owned-games library via GetOwnedGames),
+        so it doesn't carry the same "could quietly undercount" risk."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = ?",
+            (tg_id, platform),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def xbox_achievement_count(self, tg_id: int) -> int:
+        """A lifetime Xbox count, added to /stats' XBOX line (2026-09-08,
+        user request, confirmed against the previous "never shown, could
+        quietly undercount" call — see CLAUDE.md's Statistics rules for the
+        current wording). Counts `seen_achievements` directly (modern +
+        x360) rather than summing `title_history`: a broad Xbox-wide
+        history endpoint feeds modern's backfill, not a per-title cap, so
+        modern is trustworthy here. x360's own backfill is still a
+        title-by-title pass driven by `title_history`'s own list, so an
+        x360 game `title_history` never learned about remains a silent gap
+        — accepted as the one remaining soft spot, not fixed by this."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform IN ('xbox_modern', 'xbox_360')",
+            (tg_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def xbox_completed_games_count(self, xuid: str) -> int:
+        """Games where every achievement has been earned (#19).
+
+        Prior implementation relied exclusively on title_history's
+        achievements_total, but Microsoft's titlehub API returns total=0 for
+        nearly all Xbox One / Series games (#77). We now check against the
+        global title_achievements catalog, falling back to title_history or
+        titles.achievements_total for games not yet in the catalog.
+        """
+        cursor = await self._conn.execute(
+            """
+            WITH completed_from_catalog AS (
+                SELECT s.title_id
+                FROM seen_achievements s
+                JOIN (
+                    SELECT title_id, COUNT(*) AS catalog_total
+                    FROM title_achievements
+                    WHERE platform IN ('xbox_modern', 'xbox_360') AND listed = 1
+                    GROUP BY title_id
+                ) c ON s.title_id = c.title_id
+                WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
+                GROUP BY s.title_id, c.catalog_total
+                HAVING COUNT(DISTINCT s.achievement_id) >= c.catalog_total AND c.catalog_total > 0
+            ),
+            completed_from_titles AS (
+                SELECT s.title_id
+                FROM seen_achievements s
+                JOIN titles t ON s.title_id = t.title_id
+                WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
+                  AND t.achievements_total > 0
+                GROUP BY s.title_id, t.achievements_total
+                HAVING COUNT(DISTINCT s.achievement_id) >= t.achievements_total
+            ),
+            completed_from_history AS (
+                SELECT title_id
+                FROM title_history
+                WHERE xuid = ? AND achievements_total > 0
+                  AND achievements_unlocked >= achievements_total
+            )
+            SELECT COUNT(*) FROM (
+                SELECT title_id FROM completed_from_catalog
+                UNION
+                SELECT title_id FROM completed_from_titles
+                UNION
+                SELECT title_id FROM completed_from_history
+            )
+            """,
+            (xuid, xuid, xuid),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def psn_platinum_count(self, tg_id: int) -> int:
+        """PSN's own equivalent of "completed" (#19) — Sony only awards a
+        platinum once every other trophy in that game is earned, so this
+        already *is* a 100%-completed-games count, no extra tracking."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = 'psn' AND trophy_type = 'platinum'",
+            (tg_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def account_platinum_count(self, account_id: str) -> int:
+        """`psn_platinum_count` for one PSN account (#10) — a person
+        holding several sees one line per account."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements "
+            "WHERE platform = 'psn' AND xuid = ? AND trophy_type = 'platinum'",
+            (account_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def account_count_since(self, platform: str, external_id: str, since: str) -> int:
+        """What one account earned inside a window (#10) — the admin card's
+        "today" for each of a person's PSN accounts."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM seen_achievements s "
+            f"WHERE s.account_platform = ? AND s.xuid = ? AND {earned_since()}",
+            (platform, external_id, since),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def steam_completed_games_count(self, tg_id: int) -> int:
+        """Steam's own equivalent (#19) — harder than Xbox/PSN: there's no
+        per-user, per-game "total achievements" cached directly. Joins a
+        per-app achieved count (`seen_achievements`) against
+        `steam_schema_cache`'s own per-app achievement list length, done in
+        Python rather than a SQL JSON function — keeps this consistent with
+        every other `steam_schema_cache` read in this codebase, all of which
+        already `json.loads()` the blob in Python."""
+        cursor = await self._conn.execute(
+            "SELECT title_id, COUNT(*) FROM seen_achievements "
+            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = 'steam' GROUP BY title_id",
+            (tg_id,),
+        )
+        achieved_by_app = {row[0]: row[1] for row in await cursor.fetchall()}
+        if not achieved_by_app:
+            return 0
+        placeholders = ",".join("?" * len(achieved_by_app))
+        cursor = await self._conn.execute(
+            f"SELECT appid, achievements FROM steam_schema_cache WHERE appid IN ({placeholders})",
+            list(achieved_by_app.keys()),
+        )
+        completed = 0
+        for row in await cursor.fetchall():
+            total = len(json.loads(row["achievements"]))
+            if total > 0 and achieved_by_app[row["appid"]] >= total:
+                completed += 1
+        return completed
+
+    async def achievement_counts_by_xuid(
+        self, since: datetime | None
+    ) -> dict[str, tuple[int, int]]:
+        """The same numbers for everyone at once — one query for a whole page."""
+        query = "SELECT xuid, COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements"
+        params: list[object] = []
+        if since is not None:
+            query += f" WHERE {earned_since('')}"
+            params.append(_iso(since))
+        cursor = await self._conn.execute(query + " GROUP BY xuid", params)
+        return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
+
+    async def achievement_counts_by_tg_id(
+        self, since: datetime | None
+    ) -> dict[int, tuple[int, int]]:
+        """Same as `achievement_counts_by_xuid`, but summed across every
+        platform a person has connected (SPEC 9, M-Steam-2e) — the admin
+        users list's own combined counters (2026-09-05 follow-up): the list
+        used to show `achievement_counts_by_xuid`'s Xbox-only numbers even
+        for someone with Steam achievements too."""
+        query = (
+            "SELECT al.tg_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
+            "FROM seen_achievements s " + OWNED_BY_PERSON
+        )
+        params: list[object] = []
+        if since is not None:
+            query += f"WHERE {earned_since()}"
+            params.append(_iso(since))
+        cursor = await self._conn.execute(query + " GROUP BY al.tg_id", params)
+        return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}

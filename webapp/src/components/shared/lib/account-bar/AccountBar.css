@@ -1,0 +1,248 @@
+button.account-who:focus,
+button.account-who:focus-visible,
+button.home-me:focus,
+button.home-me:focus-visible,
+button.person-back:focus,
+button.person-back:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.home-chrome .account-bar {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+}
+
+.account-bar {
+  position: relative;
+  z-index: 3;
+  margin-bottom: 18px;
+}
+
+/* Inside the home header's own row, this margin only inflated the row's
+ * height with invisible space — .home-top already spaces the row itself. */
+.home-hello-row .account-bar {
+  margin-bottom: 0;
+}
+
+.is-home .account-bar {
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+}
+
+.is-person .account-bar {
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+}
+
+/* The same padding .home-chrome uses, so a person's own bar and someone
+ * else's read as the same header height. */
+.person-bar {
+  position: sticky;
+  top: 0;
+  z-index: 16;
+  margin: calc(-1 * (14px + var(--safe-top))) -18px 0;
+  /* The back arrow's own box already carries some visual padding (it is a
+   * circle drawn well inside its 44px square) — less padding on this side
+   * than the right keeps the arrow itself, not empty air, close to the edge. */
+  padding: calc(14px + var(--safe-top)) 18px 14px 4px;
+  background: rgba(10, 12, 18, 0.88);
+  backdrop-filter: blur(22px) saturate(1.3);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+}
+
+.account-bar.person-bar {
+  margin: calc(-1 * (14px + var(--safe-top))) -18px 0;
+}
+
+/* Plain glyph, no ring around it — only a tap presses it visibly (see
+ * :active). The same shape every "back" button in the app now uses. */
+.person-back {
+  width: 44px;
+  height: 44px;
+  margin: 0 -8px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.person-back:focus,
+.person-back:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.person-back:active {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.92);
+}
+
+.account-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-who:focus,
+.account-who:focus-visible,
+.account-who:active {
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.person-bar .account-who,
+.person-bar .account-who strong,
+.person-bar .avatar-wrap,
+.person-bar .avatar,
+.person-bar .avatar img {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Takes whatever room the back button leaves — there is no ScoreCup sibling
+ * to balance against here any more, since it now sits inline with the name. */
+.person-bar .account-who {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.account-who strong {
+  display: block;
+  min-width: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The nick and, right after it, its small platform marks — one line. */
+.account-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The platform marks themselves: small (via ScoreCup's own markSize) and
+ * quiet, a footnote to the nick rather than a button of their own. */
+.account-name-row .score-cup-btn {
+  height: auto;
+  padding: 0;
+  opacity: 0.5;
+}
+
+.account-name-row .score-plats {
+  gap: 4px;
+}
+
+/* ScoreCup.css fixes every mark's own size with !important; a plain markSize
+ * prop can't reach it, so it's overridden here, at higher specificity. */
+.account-name-row .score-plats .plat-logo {
+  height: 12px !important;
+  width: auto !important;
+}
+
+.account-name-row .score-plats .plat-logo.is-psn {
+  width: 16px !important;
+}
+
+.icon-btn svg {
+  display: block;
+}
+
+.picker-row strong {
+  font-size: 1.02rem;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.picker-row-copy strong,
+.picker-row-copy p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock button:focus,
+.dock button:focus-visible {
+  outline: none;
+}
+
+/* The bar's name and, under it, a small muted line (a person's status, whose
+ * progress a game page shows): a pair centred together on the avatar, as wide
+ * as the bar allows so a long nick or status is not cut short. */
+.person-bar .person-bar-title {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 1px;
+}
+
+/* Left unset, this fell back to the browser's plain default (1rem) — smaller
+ * and lighter than the count/score sitting next to it on a game page,
+ * though it's the page's actual heading. */
+.person-bar .person-bar-title strong {
+  font-size: 1.1rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.person-bar .person-bar-title small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The status under the nick in the home header: a small, muted line. */
+.account-status {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.2;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The nick and, under it, the status — centred as one pair on the avatar's
+ * own height (the visible avatar is .home-me, not this button's own, hidden
+ * one, so centring needs its own height to work against). */
+.home-chrome .account-who > span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 48px;
+}
+
+.home-chrome .account-who strong {
+  line-height: 1.15;
+}
+
+.dock button {
+  -webkit-tap-highlight-color: transparent;
+}

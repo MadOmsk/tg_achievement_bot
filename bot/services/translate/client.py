@@ -1,0 +1,273 @@
+"""Anthropic API wrapper — translation of *descriptions* only: an
+achievement's own (2026-09-09 user request) and, since 2026-09-12 (#2), a
+game's own summary for the /hltb card. Never a name, of either kind.
+A thin httpx wrapper, not the `anthropic` SDK
+(CLAUDE.md: don't add a dependency unless it's clearly needed) — the same
+choice already made for Steam and Xbox Live, both raw HTTP too.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+
+import httpx
+
+log = logging.getLogger(__name__)
+
+API_BASE = "https://api.anthropic.com/v1"
+ANTHROPIC_VERSION = "2023-06-01"
+# Cheapest model that's good enough for a one/two-sentence achievement
+# description — this is bulk, cache-forever, translate-once work, never a
+# live per-message call (CLAUDE.md's own "no recurring paid LLM usage
+# without explicit rate limits" rule for exactly this class of feature).
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+
+_CONNECT_TIMEOUT_SECONDS = 10.0
+_READ_TIMEOUT_SECONDS = 30.0
+
+_LANGUAGE_NAME = {"ru": "Russian", "en": "English"}
+
+# The reply ceiling for one call. A whole game used to go in one call, and
+# the biggest one waiting on production (a Steam game with 1075 untranslated
+# descriptions, ~20k output tokens) could never fit: the reply was cut off,
+# failed to parse, and was paid for again on every retry. Calls now carry
+# at most `_BATCH_SIZE` descriptions (~19 output tokens each on real data,
+# 2026-10-01), so a reply stays well under this.
+_MAX_OUTPUT_TOKENS = 4096
+_BATCH_SIZE = 40
+
+
+class AnthropicApiError(Exception):
+    """A request to the Anthropic API failed for a reason unrelated to the
+    key itself (network, rate limit, malformed response, ...)."""
+
+
+def _headers(api_key: str) -> dict[str, str]:
+    return {
+        "x-api-key": api_key,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "content-type": "application/json",
+    }
+
+
+def _timeout() -> httpx.Timeout:
+    # httpx.Timeout raises unless either a default or all four of
+    # connect/read/write/pool are given explicitly — found live
+    # (2026-09-09): check_alive() below only ever set two of them, so every
+    # single call raised ValueError before a request was even attempted.
+    return httpx.Timeout(
+        connect=_CONNECT_TIMEOUT_SECONDS,
+        read=_READ_TIMEOUT_SECONDS,
+        write=_CONNECT_TIMEOUT_SECONDS,
+        pool=_CONNECT_TIMEOUT_SECONDS,
+    )
+
+
+async def check_alive(api_key: str) -> bool:
+    """A free liveness probe (SPEC-equivalent to Steam's check_alive) — lists
+    models rather than sending an actual completion, so verifying a key
+    costs nothing. 401/403 means the key itself is bad; anything else
+    (network blip, 5xx) is not evidence the key is dead, same "don't punish
+    a transient failure" reasoning check_health call sites already rely on
+    for Steam/PSN.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=_timeout()) as client:
+            response = await client.get(f"{API_BASE}/models", headers=_headers(api_key))
+    except httpx.RequestError:
+        return True  # can't reach Anthropic right now — not the key's fault
+    if response.status_code in (401, 403):
+        return False
+    return True
+
+
+async def ask_model(
+    api_key: str, prompt: str, *, max_tokens: int = _MAX_OUTPUT_TOKENS, what: str = "request"
+) -> str | None:
+    """One question to Haiku, answered in plain text; None when it could not be
+    asked or answered (logged as `what`). Temperature 0: the same question, the same
+    answer as far as the model allows."""
+    try:
+        async with httpx.AsyncClient(timeout=_long_timeout()) as client:
+            response = await client.post(
+                f"{API_BASE}/messages",
+                headers=_headers(api_key),
+                json={
+                    "model": HAIKU_MODEL,
+                    "max_tokens": max_tokens,
+                    "temperature": 0,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+    except httpx.RequestError as exc:
+        log.warning("anthropic %s failed: %r", what, exc)
+        return None
+    if response.status_code != 200:
+        log.warning("anthropic %s failed: HTTP %s", what, response.status_code)
+        return None
+    try:
+        return response.json()["content"][0]["text"]
+    except (KeyError, IndexError, ValueError) as exc:
+        log.warning("anthropic %s: could not parse response: %r", what, exc)
+        return None
+
+
+def _long_timeout() -> httpx.Timeout:
+    # A whole guide in, a game's worth of text out: minutes are fine here.
+    return httpx.Timeout(connect=10.0, read=180.0, write=20.0, pool=10.0)
+
+
+async def translate_descriptions(
+    api_key: str, texts: dict[str, str], *, target_language: str
+) -> dict[str, str]:
+    """Translate a batch of achievement *descriptions* — never names, never
+    called for those (2026-09-09 user request) — in one call, keyed by
+    whatever id the caller wants back (an achievement_id in practice). The
+    caller hands over one whole game; it goes out in calls of `_BATCH_SIZE`
+    descriptions — not one call per achievement (cost), not one per game
+    (a big game's reply did not fit, see `_MAX_OUTPUT_TOKENS`).
+
+    Returns whatever the model actually translated, keyed the same way —
+    never raises on a malformed or partial response, just logs and returns
+    less than asked for (or nothing): a missing translation means that one
+    achievement's description stays in whatever language it already had,
+    exactly the same "degrade, don't break" shape every platform client
+    here already follows for its own expected failures.
+    """
+    if not texts:
+        return {}
+    ids = list(texts.keys())
+    result: dict[str, str] = {}
+    # One game's list split into calls of `_BATCH_SIZE`: a chunk that fails
+    # loses only its own descriptions, and no reply outgrows its ceiling.
+    for start in range(0, len(ids), _BATCH_SIZE):
+        chunk = {key: texts[key] for key in ids[start : start + _BATCH_SIZE]}
+        result.update(await _translate_batch(api_key, chunk, target_language=target_language))
+    return result
+
+
+async def _translate_batch(
+    api_key: str, texts: dict[str, str], *, target_language: str
+) -> dict[str, str]:
+    """One call: at most `_BATCH_SIZE` descriptions, all or nothing."""
+    language = _LANGUAGE_NAME[target_language]
+    # Numbered plain-text lines, not JSON-in-JSON — asking the model to echo
+    # arbitrary ids back verbatim as JSON keys risks it "fixing" or
+    # re-escaping one, which would silently drop that entry on our own
+    # parse below. A local index avoids that: we already know which
+    # achievement_id maps to which line, since we built the prompt.
+    ids = list(texts.keys())
+    numbered = "\n".join(f"{i + 1}. {texts[key]}" for i, key in enumerate(ids))
+    prompt = (
+        f"Translate each of the following video game achievement descriptions "
+        f"into {language}. Keep the same tone and length, do not add "
+        f"commentary. Reply with ONLY a JSON array of {len(ids)} strings, "
+        f"the translations in the same order, nothing else.\n\n{numbered}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=_timeout()) as client:
+            response = await client.post(
+                f"{API_BASE}/messages",
+                headers=_headers(api_key),
+                json={
+                    "model": HAIKU_MODEL,
+                    "max_tokens": _MAX_OUTPUT_TOKENS,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+    except httpx.RequestError as exc:
+        log.warning("anthropic translate request failed: %r", exc)
+        return {}
+    if response.status_code != 200:
+        log.warning("anthropic translate request failed: HTTP %s", response.status_code)
+        return {}
+
+    try:
+        payload = response.json()
+        if payload.get("stop_reason") == "max_tokens":
+            log.warning("anthropic translate: reply cut off at %s tokens", _MAX_OUTPUT_TOKENS)
+            return {}
+        content = payload["content"][0]["text"]
+        translations = json.loads(_strip_json_fence(content))
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
+        log.warning("anthropic translate: could not parse response: %r", exc)
+        return {}
+    if not isinstance(translations, list):
+        log.warning("anthropic translate: expected a JSON array, got %s", type(translations))
+        return {}
+    # A reply with a line missing or added cannot be matched back to ids:
+    # every description after the gap would get its neighbour's text. None
+    # is better than a wrong one.
+    if len(translations) != len(ids):
+        log.warning(
+            "anthropic translate: asked for %s translations, got %s", len(ids), len(translations)
+        )
+        return {}
+    return dict(zip(ids, translations, strict=True))
+
+
+async def translate_game_description(
+    api_key: str, text: str, *, target_language: str
+) -> str | None:
+    """One game's own summary, for the /hltb card (#2). A separate call from
+    translate_descriptions() above rather than a one-item batch, because the
+    prompts genuinely differ: that one carries a whole game's achievement
+    list and must answer with a JSON array to keep ids aligned, this one is
+    a single paragraph and can just answer with the text — one less thing to
+    mis-parse for no benefit.
+
+    Called lazily, once per game, the first time somebody looks it up (user
+    decision, 2026-09-12: no prewarm) — the result is cached in `hltb_cache`
+    forever, beside the English original.
+
+    Returns None on any failure, never raises: the card then simply shows
+    HLTB's own English text, and the next lookup of that game tries again.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return None
+    language = _LANGUAGE_NAME[target_language]
+    prompt = (
+        f"Translate this video game description into {language}. Keep the same "
+        f"tone and length, do not add commentary, do not translate the game's "
+        f"own title or any character names. Reply with ONLY the translation, "
+        f"nothing else.\n\n{stripped}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=_timeout()) as client:
+            response = await client.post(
+                f"{API_BASE}/messages",
+                headers=_headers(api_key),
+                json={
+                    "model": HAIKU_MODEL,
+                    "max_tokens": _MAX_OUTPUT_TOKENS,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+    except httpx.RequestError as exc:
+        log.warning("anthropic game-description translate failed: %r", exc)
+        return None
+    if response.status_code != 200:
+        log.warning("anthropic game-description translate failed: HTTP %s", response.status_code)
+        return None
+    try:
+        translated = response.json()["content"][0]["text"].strip()
+    except (KeyError, IndexError, ValueError) as exc:
+        log.warning("anthropic game-description translate: could not parse response: %r", exc)
+        return None
+    return translated or None
+
+
+def _strip_json_fence(text: str) -> str:
+    """Haiku sometimes wraps its JSON in a markdown code fence
+    (```json ... ```) despite being asked for "ONLY" the array — found live
+    (2026-09-09) parsing a real response. Strips one if present; the text
+    is returned unchanged otherwise, so a genuinely bare array still parses
+    exactly as before this existed."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.removeprefix("```json").removeprefix("```")
+        stripped = stripped.removesuffix("```")
+        stripped = stripped.strip()
+    return stripped

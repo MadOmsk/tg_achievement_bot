@@ -1,0 +1,460 @@
+"""Steam account linking (M-Steam-1, TODO.md) — URL/ID parsing and the
+platform_links repo round-trip. The vanity-resolution and profile-fetch
+network calls are mocked at the `_get` boundary; nothing here has ever hit
+a real Steam API key (none configured while this was written)."""
+
+from __future__ import annotations
+
+import pytest
+
+from bot.db.repo import Repo
+from bot.services.steam import client as steam_client
+from bot.services.steam.client import (
+    SteamApiError,
+    SteamGameDetailsPrivateError,
+    get_global_percentages,
+    get_owned_games,
+    get_player_achievements,
+    get_presence_batch,
+    get_profile,
+    get_recently_played_games,
+    get_schema,
+    resolve_steam_id,
+)
+
+STEAM_ID = "76561197960287930"  # a real, long-public Valve account (Gabe Newell)
+
+
+async def test_resolve_steam_id_accepts_a_bare_id() -> None:
+    assert await resolve_steam_id("key", STEAM_ID) == STEAM_ID
+
+
+async def test_resolve_steam_id_extracts_from_a_profile_url() -> None:
+    url = f"https://steamcommunity.com/profiles/{STEAM_ID}"
+    assert await resolve_steam_id("key", url) == STEAM_ID
+
+
+async def test_resolve_steam_id_extracts_from_a_profile_url_with_trailing_slash() -> None:
+    url = f"https://steamcommunity.com/profiles/{STEAM_ID}/"
+    assert await resolve_steam_id("key", url) == STEAM_ID
+
+
+async def test_resolve_steam_id_looks_up_a_vanity_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/ISteamUser/ResolveVanityURL/v1/"
+        assert params == {"vanityurl": "gaben"}
+        return {"success": 1, "steamid": STEAM_ID}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    assert await resolve_steam_id("key", "https://steamcommunity.com/id/gaben") == STEAM_ID
+    assert await resolve_steam_id("key", "gaben") == STEAM_ID  # bare vanity name, no URL at all
+
+
+async def test_resolve_steam_id_raises_when_vanity_has_no_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {"success": 42, "message": "No match"}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    with pytest.raises(SteamApiError):
+        await resolve_steam_id("key", "no-such-person-at-all")
+
+
+async def test_get_profile_reads_persona_name_and_visibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/ISteamUser/GetPlayerSummaries/v2/"
+        return {
+            "players": [{"steamid": STEAM_ID, "personaname": "Gabe", "communityvisibilitystate": 3}]
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    profile = await get_profile("key", STEAM_ID)
+
+    assert profile.steam_id == STEAM_ID
+    assert profile.persona_name == "Gabe"
+    assert profile.is_public is True
+
+
+async def test_get_profile_flags_a_private_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {
+            "players": [
+                {"steamid": STEAM_ID, "personaname": "Hiding", "communityvisibilitystate": 1}
+            ]
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    profile = await get_profile("key", STEAM_ID)
+
+    assert profile.is_public is False
+
+
+async def test_get_profile_raises_for_an_unknown_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {"players": []}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    with pytest.raises(SteamApiError):
+        await get_profile("key", "0")
+
+
+async def test_get_player_achievements_parses_unlocked_and_locked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/ISteamUserStats/GetPlayerAchievements/v1/"
+        assert params == {"steamid": STEAM_ID, "appid": "550", "l": "russian"}
+        return {
+            "playerstats": {
+                "steamID": STEAM_ID,
+                "gameName": "Left 4 Dead 2",
+                "success": True,
+                "achievements": [
+                    {
+                        "apiname": "ACH_A",
+                        "achieved": 1,
+                        "unlocktime": 1260104110,
+                        "name": "Достижение А",
+                        "description": "Описание А",
+                    },
+                    {"apiname": "ACH_B", "achieved": 0, "unlocktime": 0, "name": "Б"},
+                ],
+            }
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    achievements = await get_player_achievements("key", STEAM_ID, "550")
+
+    assert len(achievements) == 2
+    a = achievements[0]
+    assert (a.apiname, a.achieved, a.unlocktime) == ("ACH_A", True, 1260104110)
+    assert (a.name, a.description) == ("Достижение А", "Описание А")
+    assert achievements[1].achieved is False
+
+
+async def test_get_player_achievements_returns_empty_on_success_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A private profile (closed after linking) or a game with no stats at
+    # all — Steam answers 200 with success: false, not an HTTP error
+    # (SPEC 9, M-Steam-2b) — treated as "nothing here", not raised.
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {"playerstats": {"success": False}}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    assert await get_player_achievements("key", STEAM_ID, "550") == []
+
+
+async def test_get_schema_parses_icon_and_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/ISteamUserStats/GetSchemaForGame/v2/"
+        assert params == {"appid": "550", "l": "russian"}
+        return {
+            "game": {
+                "gameName": "Left 4 Dead 2",
+                "availableGameStats": {
+                    "achievements": [
+                        {
+                            "name": "ACH_A",
+                            "displayName": "Достижение А",
+                            "hidden": 0,
+                            "icon": "https://example.com/a.jpg",
+                            "icongray": "https://example.com/a_gray.jpg",
+                        },
+                        {
+                            "name": "ACH_SECRET",
+                            "displayName": "???",
+                            "hidden": 1,
+                            "icon": "https://example.com/s.jpg",
+                        },
+                    ]
+                },
+            }
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    schema = await get_schema("key", "550")
+
+    assert [(a.apiname, a.icon, a.hidden) for a in schema] == [
+        ("ACH_A", "https://example.com/a.jpg", False),
+        ("ACH_SECRET", "https://example.com/s.jpg", True),
+    ]
+
+
+async def test_get_global_percentages_parses_percent_strings_as_float(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/"
+        # No key at all (SPEC 9, M-Steam-2b) — this endpoint is public.
+        assert api_key == ""
+        assert params == {"gameid": "550"}
+        return {
+            "achievementpercentages": {
+                "achievements": [
+                    {"name": "ACH_A", "percent": "69.4"},
+                    {"name": "ACH_B", "percent": "12.1"},
+                ]
+            }
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    percentages = await get_global_percentages("550")
+
+    assert percentages == {"ACH_A": 69.4, "ACH_B": 12.1}
+
+
+async def test_get_presence_batch_parses_multiple_players(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    other_id = "76561197981065056"  # a different, real linked account
+
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/ISteamUser/GetPlayerSummaries/v2/"
+        assert params == {"steamids": f"{STEAM_ID},{other_id}"}
+        return {
+            "players": [
+                {
+                    "steamid": STEAM_ID,
+                    "personaname": "Gabe",
+                    "personastate": 1,
+                    "gameid": "550",
+                    "gameextrainfo": "Left 4 Dead 2",
+                },
+                {"steamid": other_id, "personaname": "Offline Guy", "personastate": 0},
+            ]
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    result = await get_presence_batch("key", [STEAM_ID, other_id])
+
+    assert set(result) == {STEAM_ID, other_id}
+    playing = result[STEAM_ID]
+    assert (playing.persona_state, playing.gameid, playing.game_name) == (1, "550", "Left 4 Dead 2")
+    offline = result[other_id]
+    assert (offline.persona_state, offline.gameid, offline.game_name) == (0, None, None)
+
+
+async def test_get_presence_batch_omits_a_profile_steam_did_not_return(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {"players": []}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    assert await get_presence_batch("key", [STEAM_ID]) == {}
+
+
+async def test_get_owned_games_keeps_only_played_ones(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/IPlayerService/GetOwnedGames/v1/"
+        assert params == {
+            "steamid": STEAM_ID,
+            "include_appinfo": "1",
+            "include_played_free_games": "1",  # #120
+        }
+        return {
+            "game_count": 2,
+            "games": [
+                {"appid": 550, "name": "Left 4 Dead 2", "playtime_forever": 2265},
+                {"appid": 10, "name": "Counter-Strike", "playtime_forever": 0},
+            ],
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    games = await get_owned_games("key", STEAM_ID)
+
+    assert [(g.appid, g.name, g.playtime_forever) for g in games] == [
+        ("550", "Left 4 Dead 2", 2265)
+    ]
+
+
+async def test_get_owned_games_returns_empty_for_a_genuinely_empty_library(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A public profile that legitimately owns nothing gets a real,
+    present-but-empty `games` list back from Steam — not an error, unlike
+    the missing-key case below."""
+
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {"game_count": 0, "games": []}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    assert await get_owned_games("key", STEAM_ID) == []
+
+
+async def test_get_owned_games_raises_when_game_details_is_private(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Found live (whalerider84, 2026-09-08): "My Profile" itself was
+    public, but the separate "Game details" privacy setting was still
+    private/friends-only — GetOwnedGames comes back with no `games` key at
+    all (not an empty list), and backfill was silently storing 0
+    achievements with no way to tell this apart from "owns nothing"."""
+
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {}  # Steam's own shape for "not visible to you" here
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    with pytest.raises(SteamGameDetailsPrivateError):
+        await get_owned_games("key", STEAM_ID)
+
+
+async def test_platform_link_round_trip(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    assert await repo.get_platform_link(1, "steam") is None
+
+    await repo.link_platform_account(1, "steam", STEAM_ID, "Gabe")
+    link = await repo.get_platform_link(1, "steam")
+
+    assert link is not None
+    assert (link.platform, link.external_id, link.display_name) == ("steam", STEAM_ID, "Gabe")
+    assert [platform_link.platform for platform_link in await repo.platform_links_of(1)] == [
+        "steam"
+    ]
+
+
+async def test_relinking_replaces_the_previous_account(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "111", "Old Name")
+    await repo.link_platform_account(1, "steam", "222", "New Name")
+
+    link = await repo.get_platform_link(1, "steam")
+
+    assert link is not None
+    assert (link.external_id, link.display_name) == ("222", "New Name")
+
+
+async def test_unlink_removes_the_account(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", STEAM_ID, "Gabe")
+
+    await repo.unlink_platform_account(1, "steam")
+
+    assert await repo.get_platform_link(1, "steam") is None
+
+
+async def test_platform_links_all_spans_every_user(repo: Repo) -> None:
+    """scripts/backfill_steam_titles.py's own way in — needs every Steam
+    link across the whole bot, not any one person's (2026-09-05)."""
+    await repo.ensure_user(1, "one")
+    await repo.ensure_user(2, "two")
+    await repo.link_platform_account(1, "steam", "111", "One")
+    await repo.link_platform_account(2, "steam", "222", "Two")
+    await repo.link_xbox_account(1, "xuid-1", "OneXbox", 0)  # a different platform, not returned
+
+    links = await repo.platform_links_all("steam")
+
+    assert sorted(link.external_id for link in links) == ["111", "222"]
+
+
+async def test_platform_links_all_carries_the_psn_trophy_level(repo: Repo) -> None:
+    """scripts/backfill_psn_levels.py's own way in (#23) — needs to tell an
+    already-cached level apart from one that was never cached, per link.
+    Found live: the SELECT here never selected the column at all, so every
+    link came back with psn_trophy_level=None regardless of the real value."""
+    await repo.ensure_user(1, "one")
+    await repo.link_platform_account(1, "psn", "acc-1", "One")
+    await repo.set_psn_trophy_level(1, 12)
+
+    links = await repo.platform_links_all("psn")
+
+    assert len(links) == 1
+    assert links[0].psn_trophy_level == 12
+
+
+async def test_get_recently_played_games_parses_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        assert path == "/IPlayerService/GetRecentlyPlayedGames/v1/"
+        assert params == {"steamid": STEAM_ID, "count": "10"}
+        return {
+            "total_count": 2,
+            "games": [
+                {
+                    "appid": 550,
+                    "name": "Left 4 Dead 2",
+                    "playtime_2weeks": 120,
+                    "playtime_forever": 2265,
+                    "rtime_last_played": 1700000000,
+                },
+                {
+                    "appid": 730,
+                    "name": "Counter-Strike 2",
+                    "playtime_2weeks": 30,
+                    "playtime_forever": 500,
+                    "rtime_last_played": 1700000500,
+                },
+            ],
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    games = await get_recently_played_games("key", STEAM_ID)
+
+    assert len(games) == 2
+    assert games[0].appid == "550"
+    assert games[0].name == "Left 4 Dead 2"
+    assert games[0].playtime_2weeks == 120
+    assert games[0].playtime_forever == 2265
+    assert games[0].last_played == 1700000000
+
+    assert games[1].appid == "730"
+    assert games[1].last_played == 1700000500
+
+
+async def test_get_recently_played_games_handles_empty_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {"total_count": 0}
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    games = await get_recently_played_games("key", STEAM_ID)
+    assert games == []
+
+
+async def test_a_folded_game_is_listed_beside_its_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Half-Life 2's episodes live inside Half-Life 2 since November 2024 and
+    GetOwnedGames no longer returns them, while their achievements stay on
+    their own app ids (#123)."""
+
+    async def fake_get(path: str, api_key: str, params: dict[str, str]) -> dict:
+        return {
+            "games": [
+                {
+                    "appid": 220,
+                    "name": "Half-Life 2",
+                    "playtime_forever": 900,
+                    "rtime_last_played": 7,
+                    "has_community_visible_stats": True,
+                },
+            ]
+        }
+
+    monkeypatch.setattr(steam_client, "_get", fake_get)
+
+    games = await get_owned_games("key", STEAM_ID)
+
+    assert [(g.appid, g.playtime_forever, g.last_played) for g in games] == [
+        ("220", 900, 7),
+        ("380", 900, 7),
+        ("420", 900, 7),
+    ]

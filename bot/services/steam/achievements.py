@@ -1,0 +1,351 @@
+"""Steam achievements: fetch + cache, composing over services/steam/client.py
+(SPEC 9, M-Steam-2b). Mirrors services/hltb.py's role in the project — a
+cache-backed service layer sitting above a stateless client, the same split
+hltb.py already uses, rather than either putting caching directly in
+client.py or waiting until the poller layer (which is Xbox's own pattern,
+services/xbox/client.py + poller/fetcher.py).
+
+Errors from the client (SteamApiError — private profile, unreachable API,
+bad key) are not caught here on purpose: this is a pure fetch, the same
+"log it and skip this tick" handling XboxApiError already gets belongs to
+the poller that calls this (SPEC 9, M-Steam-2c), not to this layer.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import UTC, datetime, timedelta
+
+from bot.constants import Platform
+from bot.db.repo import Repo, SteamSchemaAchievement, TitleAchievementRow
+from bot.services.models import ParsedAchievement
+from bot.services.steam.client import (
+    RawAchievement,
+    community_descriptions,
+    get_global_percentages,
+    get_player_achievements,
+    get_schema,
+    icon_key,
+    store_name,
+)
+from bot.services.translate.auth import AnthropicAuth
+from bot.services.translate.descriptions import bilingual_descriptions
+from bot.util import parse_iso, utcnow, utcnow_iso
+
+# "Раз в неделю" (SPEC 9, M-Steam-2b) — real unlock percentages drift slowly,
+# and re-fetching more often than this buys nothing (no key-less rate limit
+# to worry about either), while never re-fetching would leave old games'
+# rarity permanently stale.
+RARITY_CACHE_TTL_DAYS = 7
+
+
+log = logging.getLogger(__name__)
+
+
+async def fetch_unlocked(
+    repo: Repo,
+    anthropic_auth: AnthropicAuth,
+    api_key: str,
+    steam_id: str,
+    appid: str,
+    *,
+    title_name: str | None = None,
+) -> list[ParsedAchievement]:
+    """Every currently-unlocked achievement for one Steam game. Writing to
+    seen_achievements and resolving tg_id are the poller's job (SPEC 9,
+    M-Steam-2c) — this only ever reads the Steam API and this module's own
+    cache tables.
+
+    `title_name` is the game's own name, which this call never learns for
+    itself (`GetPlayerAchievements` carries a `gameName`, but the poller
+    already has a better one in hand) and which both callers do have: the
+    `OwnedGame` backfill is walking, the `game_name` polling was handed.
+    It rides on every row so that `insert_new_achievements_steam` can cache
+    it in `titles` (#70). It used to be hardcoded `None` here, on the
+    assumption that presence would have supplied the name already — true
+    only for a game being played *right now*, which is neither what backfill
+    walks nor what a catch-up poll looks at, so every Steam game either of
+    those stored rendered as "без названия" forever.
+    """
+    raw = await get_player_achievements(api_key, steam_id, appid)
+    unlocked = [item for item in raw if item.achieved]
+    if not unlocked:
+        # Nothing achieved yet, or a private/stats-less profile (client.py
+        # already turned Steam's own `success: false` into an empty list) —
+        # either way there is nothing worth a schema/rarity lookup for.
+        return []
+
+    schema_by_id = {a.apiname: a for a in await _schema(repo, api_key, appid)}
+    # A game that added achievements after release (an update, a DLC) has
+    # them missing from a schema cached forever (#49). The achievement
+    # itself still arrives — `unlocked` came from a live call — but it would
+    # publish with no icon and, far worse, `is_secret = False`: a secret
+    # achievement added by a DLC would never be spoilered, giving the plot
+    # away to everyone who has not finished the game. Spoilering is a
+    # courtesy this bot does on its own, and Steam's `hidden` flag is the
+    # only thing driving it.
+    #
+    # Re-fetching only when an unlocked achievement is missing costs one
+    # extra call in exactly the case that is broken and none otherwise — a
+    # TTL would pay for every game whether or not anything changed.
+    if any(item.apiname not in schema_by_id for item in unlocked):
+        refreshed = await _schema(repo, api_key, appid, refresh=True)
+        if refreshed:
+            schema_by_id = {a.apiname: a for a in refreshed}
+    percentages = await _percentages(repo, appid)
+    # Also into the shared per-achievement cache (2026-09-17), so every
+    # platform's rarity is read the same way — steam_rarity_cache stays what
+    # it is, the per-appid blob this call is served from.
+    await repo.cache_rarity(Platform.STEAM, appid, percentages)
+    stored_count = await repo.title_achievements_count(Platform.STEAM.value, appid)
+    api_total = len(raw)
+    catalog = (
+        await repo.get_title_achievements(Platform.STEAM.value, appid)
+        if stored_count > 0 and stored_count == api_total
+        else []
+    )
+    settled = {row.achievement_id for row in catalog if row.description_source}
+    # A whole catalog answers only for descriptions the translator settled
+    # (#127): a refresh alone may hold Steam's English under "ru", and an
+    # earned one still waiting is worth the second request.
+    if catalog and all(item.apiname in settled for item in unlocked if item.description):
+        descriptions = {
+            row.achievement_id: (row.description_ru, row.description_en) for row in catalog
+        }
+    else:
+        descriptions = await _bilingual_descriptions(
+            repo, anthropic_auth, api_key, steam_id, appid, unlocked
+        )
+        now = utcnow_iso()
+        cached_names_map = await repo.cached_names(
+            [(Platform.STEAM.value, appid, item.apiname) for item in raw]
+        )
+        cat_rows = []
+        for item in raw:
+            cached_pair = cached_names_map.get((Platform.STEAM.value, appid, item.apiname))
+            name_ru = (cached_pair[0] if cached_pair and cached_pair[0] else None) or item.name
+            name_en = cached_pair[1] if cached_pair and cached_pair[1] else None
+            cat_rows.append(
+                TitleAchievementRow(
+                    platform=Platform.STEAM.value,
+                    title_id=appid,
+                    achievement_id=item.apiname,
+                    name_ru=name_ru,
+                    name_en=name_en,
+                    description_ru=descriptions.get(item.apiname, (item.description, None))[0],
+                    description_en=descriptions.get(item.apiname, (None, item.description))[1],
+                    icon_url=(
+                        schema_by_id.get(item.apiname).icon
+                        if schema_by_id.get(item.apiname)
+                        else None
+                    ),
+                    is_secret=(
+                        schema_by_id.get(item.apiname).hidden
+                        if schema_by_id.get(item.apiname)
+                        else False
+                    ),
+                    rarity_percent=percentages.get(item.apiname),
+                    updated_at=now,
+                )
+            )
+        # GetPlayerAchievements lists the whole game, earned or not.
+        await repo.upsert_title_achievements(cat_rows, complete=True)
+
+    # Secret achievements come with no description from any Web API call
+    # (#132); the profile page has it once they are earned.
+    empty = {
+        item.apiname: schema_by_id[item.apiname].icon
+        for item in unlocked
+        if item.apiname in schema_by_id
+        and not item.description
+        and not any(descriptions.get(item.apiname, (None, None)))
+    }
+    if empty:
+        descriptions = {
+            **descriptions,
+            **await fill_from_community(repo, anthropic_auth, steam_id, appid, empty),
+        }
+
+    result: list[ParsedAchievement] = []
+    for item in unlocked:
+        schema_item = schema_by_id.get(item.apiname)
+        # The bot only ever renders Russian today (no language switch exists
+        # yet) — the English half is only ever written to
+        # the catalog, for whenever that switch does
+        # (2026-09-09). Falls back to whatever this call itself fetched
+        # (already Russian) if bilingual lookup found nothing to add.
+        description_ru, _description_en = descriptions.get(
+            item.apiname, (item.description, item.description)
+        )
+        result.append(
+            ParsedAchievement(
+                achievement_id=item.apiname,
+                title_id=appid,
+                title_name=title_name,
+                name=item.name,
+                description=description_ru,
+                icon_url=schema_item.icon if schema_item else None,
+                unlocked_at=_parse_unlocktime(item.unlocktime),
+                gamerscore=0,  # Steam has no gamerscore — SPEC 9, M-Steam-2e keeps it Xbox-only
+                rarity_percent=percentages.get(item.apiname),
+                platform=Platform.STEAM,
+                is_secret=schema_item.hidden if schema_item else False,
+            )
+        )
+    return result
+
+
+async def _bilingual_descriptions(
+    repo: Repo,
+    anthropic_auth: AnthropicAuth,
+    api_key: str,
+    steam_id: str,
+    appid: str,
+    unlocked: list[RawAchievement],
+) -> dict[str, tuple[str | None, str | None]]:
+    """A second `l=english` request, only when at least one of this batch's
+    achievements isn't already in the catalog — the
+    common case, once someone has ever unlocked a given achievement before,
+    is that every one of them already is, and the extra Steam call (and any
+    LLM call behind it) is skipped entirely, forever, for that achievement.
+
+    Achievements with no description at all (Steam allows this) are left
+    out — nothing to translate.
+    """
+    candidates = {item.apiname: item.description for item in unlocked if item.description}
+    # A name earns the second request on its own (#61) — see the Xbox version
+    # of this in poller/fetcher.py for why.
+    nameless = await repo.names_missing(Platform.STEAM, appid, [item.apiname for item in unlocked])
+    if not candidates and not nameless:
+        return {}
+
+    result: dict[str, tuple[str | None, str | None]] = {}
+    uncached: dict[str, str] = {}
+    for apiname, russian_text in candidates.items():
+        cached = await repo.get_cached_description(Platform.STEAM, appid, apiname)
+        if cached is not None:
+            result[apiname] = (cached.description_ru, cached.description_en)
+        else:
+            uncached[apiname] = russian_text
+    if not uncached and not nameless:
+        return result
+
+    english_items = await get_player_achievements(api_key, steam_id, appid, language="english")
+    # Steam is the mirror image of Xbox here: its *primary* call already asks
+    # for Russian, so `unlocked` holds the Russian names and this second
+    # response the English ones. Both are Steam's own strings (#61).
+    # Steam's own Web API never localizes a game's name — both endpoints that
+    # carry `gameName` ignore `l=` — but the store page does (#61:
+    # "G.O.P.O.T.A" / "Г.О.П.О.Т.А"). One storefront request per game, asked
+    # only while the Russian side is missing, and a failure changes nothing.
+    if not await repo.has_localized_title(appid):
+        await repo.set_title_names(
+            appid, await store_name(appid, "russian"), await store_name(appid, "english")
+        )
+
+    russian_names = {item.apiname: item.name for item in unlocked}
+    await repo.cache_names(
+        Platform.STEAM,
+        appid,
+        {item.apiname: (russian_names.get(item.apiname), item.name) for item in english_items},
+    )
+    english = {
+        item.apiname: item.description
+        for item in english_items
+        if item.apiname in uncached and item.description
+    }
+    native = {
+        apiname: (russian_text, english.get(apiname)) for apiname, russian_text in uncached.items()
+    }
+    resolved = await bilingual_descriptions(repo, anthropic_auth, Platform.STEAM, appid, native)
+    return {**result, **resolved}
+
+
+# (appid, apiname) pairs this process already looked up on the community
+# page (#132): an achievement the page does not describe either (a private
+# profile, a row that failed to match) is not asked about on every poll.
+_COMMUNITY_TRIED: set[tuple[str, str]] = set()
+
+
+async def fill_from_community(
+    repo: Repo,
+    anthropic_auth: AnthropicAuth,
+    steam_id: str,
+    appid: str,
+    icons: dict[str, str | None],
+) -> dict[str, tuple[str | None, str | None]]:
+    """Descriptions the Web API left empty — secret achievements (#132) —
+    from the profile's achievements page, in both languages, matched by icon,
+    and stored in the catalog like any other description. `icons` is
+    `{apiname: icon_url}` for the achievements to fill; the result holds
+    those it could."""
+    wanted = {
+        apiname: key
+        for apiname, url in icons.items()
+        if (key := icon_key(url)) and (appid, apiname) not in _COMMUNITY_TRIED
+    }
+    if not wanted:
+        return {}
+    _COMMUNITY_TRIED.update((appid, apiname) for apiname in wanted)
+    russian = await community_descriptions(steam_id, appid, language="russian")
+    english = await community_descriptions(steam_id, appid, language="english")
+    native = {
+        apiname: (russian.get(key, (None, None))[1], english.get(key, (None, None))[1])
+        for apiname, key in wanted.items()
+    }
+    native = {apiname: pair for apiname, pair in native.items() if any(pair)}
+    if not native:
+        return {}
+    log.info("steam appid=%s: %s description(s) from the community page", appid, len(native))
+    return await bilingual_descriptions(repo, anthropic_auth, Platform.STEAM, appid, native)
+
+
+# appids whose schema this process already re-fetched (#49) — without it, an
+# `apiname` Steam genuinely does not publish (a leftover from a removed
+# achievement, say) would trigger a fresh schema call on every single poll
+# of that game, forever. One retry per game per process is enough to pick up
+# a real DLC; the next restart is soon enough to try again.
+_REFRESHED_SCHEMAS: set[str] = set()
+
+
+async def _schema(
+    repo: Repo, api_key: str, appid: str, *, refresh: bool = False
+) -> list[SteamSchemaAchievement]:
+    if refresh:
+        if appid in _REFRESHED_SCHEMAS:
+            return []
+        _REFRESHED_SCHEMAS.add(appid)
+        log.info("steam schema for appid=%s refetched: an unlocked achievement was missing", appid)
+    else:
+        cached = await repo.steam_schema_get_cached(appid)
+        if cached is not None:
+            return cached[1]
+    raw = await get_schema(api_key, appid)
+    achievements = [
+        SteamSchemaAchievement(apiname=item.apiname, icon=item.icon, hidden=item.hidden)
+        for item in raw
+    ]
+    await repo.steam_schema_cache_result(appid, None, achievements)
+    return achievements
+
+
+async def _percentages(repo: Repo, appid: str) -> dict[str, float]:
+    cached = await repo.steam_rarity_get_cached(appid)
+    if cached is not None:
+        percentages, cached_at = cached
+        cached_dt = parse_iso(cached_at)
+        if cached_dt is not None and utcnow() - cached_dt < timedelta(days=RARITY_CACHE_TTL_DAYS):
+            return percentages
+
+    percentages = await get_global_percentages(appid)
+    await repo.steam_rarity_cache_result(appid, percentages)
+    return percentages
+
+
+def _parse_unlocktime(unlocktime: int) -> datetime | None:
+    # 0 is Steam's own "no real date" placeholder — same class of problem as
+    # Xbox's 0001-01-01/1753-01-01 (bot/services/xbox/models.py), just a
+    # unix-epoch int instead of an ISO string, so parse_timestamp there
+    # doesn't apply directly; same "placeholder means unknown, not a date"
+    # principle, its own small converter.
+    return datetime.fromtimestamp(unlocktime, tz=UTC) if unlocktime > 0 else None

@@ -1,0 +1,393 @@
+"""Follows, blocks and the activity setting (#157, migration 073).
+
+Everything here speaks in person ids (`users.id`). Following is one-way and needs
+no consent; two people following each other are friends. A block removes the
+follows between the two and stops either finding the other."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+from bot.services import handles
+from bot.services.people import (
+    ACTIVITY_CHOICES,
+    SEARCH_LIMIT,
+    SEARCH_MIN,
+    Relation,
+    can_view,
+)
+from bot.util import utcnow, utcnow_iso
+
+# One follow DM per pair at most this often (#157).
+FOLLOW_NOTICE_INTERVAL = timedelta(days=1)
+# After unfollowing somebody, following them again waits this long (owner,
+# 2026-10-03): a follow-unfollow loop is not a way to keep pinging a person.
+REFOLLOW_COOLDOWN = timedelta(minutes=10)
+
+
+class FollowTooSoon(Exception):
+    """Unfollowed this person a moment ago. `available_at` is when a follow is
+    allowed again."""
+
+    def __init__(self, available_at: str) -> None:
+        super().__init__(available_at)
+        self.available_at = available_at
+
+
+@dataclass(frozen=True, slots=True)
+class PersonRow:
+    """A person as a list shows them: enough to draw a row and its button."""
+
+    id: int
+    tg_id: int | None
+    handle: str
+    relation: Relation
+
+
+# The nickname as shown, with its digits — the same form `_sql.HANDLE_SHOWN` gives
+# the older queries, here keyed on the `p` alias.
+_SHOWN = (
+    "CASE WHEN p.handle_number = 0 THEN p.handle"
+    " ELSE p.handle || '#' || printf('%04d', p.handle_number) END"
+)
+# Relation of `?` (the viewer) to `p`, as four columns.
+_RELATION = (
+    "EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = :me AND f.followee_id = p.id)"
+    " AS following,"
+    " EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = p.id AND f.followee_id = :me)"
+    " AS followed_by,"
+    " EXISTS (SELECT 1 FROM blocks b WHERE b.person_id = :me AND b.blocked_id = p.id)"
+    " AS blocked,"
+    " EXISTS (SELECT 1 FROM blocks b WHERE b.person_id = p.id AND b.blocked_id = :me)"
+    " AS blocked_by"
+)
+_NOT_BLOCKED = (
+    " AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.person_id = :me AND b.blocked_id = p.id)"
+    "   OR (b.person_id = p.id AND b.blocked_id = :me))"
+)
+
+
+def _person(row) -> PersonRow:
+    return PersonRow(
+        id=row["id"],
+        tg_id=row["tg_id"],
+        handle=row["shown"],
+        relation=Relation(
+            following=bool(row["following"]),
+            followed_by=bool(row["followed_by"]),
+            blocked=bool(row["blocked"]),
+            blocked_by=bool(row["blocked_by"]),
+        ),
+    )
+
+
+class _FollowsRepo:
+    async def person_id(self, tg_id: int) -> int | None:
+        cursor = await self._conn.execute("SELECT id FROM users WHERE tg_id = ?", (tg_id,))
+        row = await cursor.fetchone()
+        return row["id"] if row else None
+
+    async def relation(self, me: int, other: int) -> Relation:
+        cursor = await self._conn.execute(
+            "SELECT " + _RELATION + " FROM users p WHERE p.id = :other",
+            {"me": me, "other": other},
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return Relation()
+        return Relation(
+            following=bool(row["following"]),
+            followed_by=bool(row["followed_by"]),
+            blocked=bool(row["blocked"]),
+            blocked_by=bool(row["blocked_by"]),
+        )
+
+    async def follow(self, me: int, other: int) -> bool:
+        """Follow somebody. False when it changed nothing: oneself, a person who
+        does not exist, a block either way, or already following. Raises
+        `FollowTooSoon` inside `REFOLLOW_COOLDOWN` of unfollowing them."""
+        if me == other:
+            return False
+        relation = await self.relation(me, other)
+        if relation.blocked or relation.blocked_by or relation.following:
+            return False
+        cursor = await self._conn.execute(
+            "SELECT unfollowed_at FROM follow_log WHERE follower_id = ? AND followee_id = ?",
+            (me, other),
+        )
+        row = await cursor.fetchone()
+        if row is not None and row["unfollowed_at"]:
+            available = datetime.fromisoformat(row["unfollowed_at"]) + REFOLLOW_COOLDOWN
+            if available > utcnow():
+                raise FollowTooSoon(available.isoformat(timespec="seconds"))
+        cursor = await self._conn.execute(
+            "INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) "
+            "SELECT ?, id, ? FROM users WHERE id = ?",
+            (me, utcnow_iso(), other),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def claim_follow_notice(self, follower: int, followee: int) -> bool:
+        """May the bot tell `followee` about this follow now? True at most once a
+        day per pair, and then the day starts over: a follow-unfollow loop must
+        not become a stream of DMs."""
+        now = utcnow()
+        cursor = await self._conn.execute(
+            "INSERT INTO follow_log (follower_id, followee_id, notified_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (follower_id, followee_id) "
+            "DO UPDATE SET notified_at = excluded.notified_at "
+            "WHERE follow_log.notified_at IS NULL OR follow_log.notified_at <= ?",
+            (
+                follower,
+                followee,
+                now.isoformat(timespec="seconds"),
+                (now - FOLLOW_NOTICE_INTERVAL).isoformat(timespec="seconds"),
+            ),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def unfollow(self, me: int, other: int) -> None:
+        cursor = await self._conn.execute(
+            "DELETE FROM follows WHERE follower_id = ? AND followee_id = ?", (me, other)
+        )
+        if cursor.rowcount > 0:
+            # Starts `REFOLLOW_COOLDOWN`; an unfollow that changed nothing does not.
+            await self._conn.execute(
+                "INSERT INTO follow_log (follower_id, followee_id, unfollowed_at) VALUES (?, ?, ?) "
+                "ON CONFLICT (follower_id, followee_id) "
+                "DO UPDATE SET unfollowed_at = excluded.unfollowed_at",
+                (me, other, utcnow_iso()),
+            )
+        await self._conn.commit()
+
+    async def block(self, me: int, other: int) -> bool:
+        if me == other:
+            return False
+        cursor = await self._conn.execute(
+            "INSERT OR IGNORE INTO blocks (person_id, blocked_id, created_at) "
+            "SELECT ?, id, ? FROM users WHERE id = ?",
+            (me, utcnow_iso(), other),
+        )
+        await self._conn.execute(
+            "DELETE FROM follows WHERE (follower_id = ? AND followee_id = ?)"
+            " OR (follower_id = ? AND followee_id = ?)",
+            (me, other, other, me),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def unblock(self, me: int, other: int) -> None:
+        await self._conn.execute(
+            "DELETE FROM blocks WHERE person_id = ? AND blocked_id = ?", (me, other)
+        )
+        await self._conn.commit()
+
+    async def _list(self, me: int, where: str, params: dict) -> list[PersonRow]:
+        cursor = await self._conn.execute(
+            "SELECT p.id, p.tg_id, " + _SHOWN + " AS shown, " + _RELATION + " FROM users p "
+            "WHERE p.handle IS NOT NULL AND p.is_excluded = 0 " + where + " "
+            "ORDER BY p.handle_norm, p.handle_number",
+            {"me": me, **params},
+        )
+        return [_person(row) for row in await cursor.fetchall()]
+
+    async def person_with_relation(self, me: int, other: int) -> PersonRow | None:
+        rows = await self._list(me, " AND p.id = :other", {"other": other})
+        return rows[0] if rows else None
+
+    async def person_row(self, person: int) -> PersonRow | None:
+        """A person with no relation to anybody, for a message that names them."""
+        return await self.person_with_relation(person, person)
+
+    async def following_of(self, me: int) -> list[PersonRow]:
+        return await self._list(
+            me,
+            " AND p.id IN (SELECT followee_id FROM follows WHERE follower_id = :me)" + _NOT_BLOCKED,
+            {},
+        )
+
+    async def followers_of(self, me: int) -> list[PersonRow]:
+        return await self._list(
+            me,
+            " AND p.id IN (SELECT follower_id FROM follows WHERE followee_id = :me)" + _NOT_BLOCKED,
+            {},
+        )
+
+    async def following_of_person(self, me: int, owner: int) -> list[PersonRow]:
+        """Whom `owner` follows, as `me` sees them: each row's relation is to `me`,
+        and nobody blocked either way with `me` is listed."""
+        return await self._list(
+            me,
+            " AND p.id IN (SELECT followee_id FROM follows WHERE follower_id = :owner)"
+            + _NOT_BLOCKED,
+            {"owner": owner},
+        )
+
+    async def followers_of_person(self, me: int, owner: int) -> list[PersonRow]:
+        """Who follows `owner`, as `me` sees them (see `following_of_person`)."""
+        return await self._list(
+            me,
+            " AND p.id IN (SELECT follower_id FROM follows WHERE followee_id = :owner)"
+            + _NOT_BLOCKED,
+            {"owner": owner},
+        )
+
+    async def blocked_by(self, me: int) -> list[PersonRow]:
+        return await self._list(
+            me, " AND p.id IN (SELECT blocked_id FROM blocks WHERE person_id = :me)", {}
+        )
+
+    async def follow_counts(self, person: int) -> tuple[int, int]:
+        """(followers, following)."""
+        cursor = await self._conn.execute(
+            "SELECT (SELECT COUNT(*) FROM follows WHERE followee_id = :p),"
+            "       (SELECT COUNT(*) FROM follows WHERE follower_id = :p)",
+            {"p": person},
+        )
+        row = await cursor.fetchone()
+        return row[0], row[1]
+
+    async def search_people(self, me: int, query: str) -> list[PersonRow]:
+        """By nickname only: a prefix of at least three characters, or an exact
+        `Name#1234`. Never oneself, a blocked person either way, or an excluded one."""
+        name, _, digits = query.strip().partition("#")
+        norm = handles.normalize(name)
+        if len(norm) < SEARCH_MIN or not norm.isalnum() or not norm.isascii():
+            return []
+        if digits:
+            if not digits.isdigit():
+                return []
+            where = " AND p.handle_norm = :norm AND p.handle_number = :number"
+            params = {"norm": norm, "number": int(digits)}
+        else:
+            where = " AND p.handle_norm LIKE :prefix"
+            params = {"prefix": norm + "%"}
+        rows = await self._list(me, where + " AND p.id != :me" + _NOT_BLOCKED, params)
+        return rows[:SEARCH_LIMIT]
+
+    async def suggested_people(self, me: int) -> list[PersonRow]:
+        """People who share a chat with `me` (subscribed or seen writing there) and
+        whom `me` does not follow yet, those sharing the most chats first."""
+        cursor = await self._conn.execute(
+            "WITH mine AS ("
+            "  SELECT chat_id FROM subscriptions"
+            "  WHERE tg_id = (SELECT tg_id FROM users WHERE id = :me)"
+            "  UNION"
+            "  SELECT chat_id FROM chat_seen"
+            "  WHERE tg_id = (SELECT tg_id FROM users WHERE id = :me)"
+            "), others AS ("
+            "  SELECT tg_id, chat_id FROM subscriptions"
+            "  UNION SELECT tg_id, chat_id FROM chat_seen"
+            "), shared AS ("
+            "  SELECT o.tg_id, COUNT(*) AS n FROM others o JOIN mine m ON m.chat_id = o.chat_id"
+            "  GROUP BY o.tg_id"
+            ") "
+            "SELECT p.id, p.tg_id, " + _SHOWN + " AS shown, " + _RELATION + " "
+            "FROM shared s JOIN users p ON p.tg_id = s.tg_id "
+            "WHERE p.id != :me AND p.handle IS NOT NULL AND p.is_excluded = 0"
+            "  AND NOT EXISTS (SELECT 1 FROM follows f"
+            "    WHERE f.follower_id = :me AND f.followee_id = p.id)" + _NOT_BLOCKED + " "
+            "ORDER BY s.n DESC, p.handle_norm LIMIT :limit",
+            {"me": me, "limit": SEARCH_LIMIT},
+        )
+        return [_person(row) for row in await cursor.fetchall()]
+
+    async def people_you_may_know(self, me: int) -> list[tuple[PersonRow, int]]:
+        """Friends of friends: people followed by those `me` follows, whom `me`
+        does not follow yet, with how many of `me`'s follows lead to each — the
+        most first. Whom somebody follows is part of their activity, so only
+        the follows of people whose activity `me` may see lead anywhere — the
+        same rule as `can_view_activity` (`me` follows them, so "everyone" lets
+        `me` in; "friends" only when they follow `me` back)."""
+        cursor = await self._conn.execute(
+            "WITH via AS ("
+            "  SELECT f2.followee_id AS id, COUNT(*) AS n FROM follows f1"
+            "  JOIN users b ON b.id = f1.followee_id AND b.is_excluded = 0"
+            "   AND (b.activity_visible = 'all'"
+            "        OR (b.activity_visible = 'friends' AND EXISTS (SELECT 1 FROM follows back"
+            "            WHERE back.follower_id = b.id AND back.followee_id = :me)))"
+            "  JOIN follows f2 ON f2.follower_id = f1.followee_id"
+            "  WHERE f1.follower_id = :me"
+            "  GROUP BY f2.followee_id"
+            ") "
+            "SELECT p.id, p.tg_id, " + _SHOWN + " AS shown, " + _RELATION + ", v.n AS mutual "
+            "FROM via v JOIN users p ON p.id = v.id "
+            "WHERE p.id != :me AND p.handle IS NOT NULL AND p.is_excluded = 0"
+            "  AND NOT EXISTS (SELECT 1 FROM follows f"
+            "    WHERE f.follower_id = :me AND f.followee_id = p.id)" + _NOT_BLOCKED + " "
+            "ORDER BY v.n DESC, p.handle_norm LIMIT :limit",
+            {"me": me, "limit": SEARCH_LIMIT},
+        )
+        return [(_person(row), int(row["mutual"])) for row in await cursor.fetchall()]
+
+    async def following_members(self, me: int) -> list[int]:
+        """The Telegram ids behind the "following" scope: oneself, and every person
+        followed whose activity the viewer may see (their privacy setting).
+        People with no Telegram id are not here yet — achievements are still
+        reached through `tg_id`."""
+        cursor = await self._conn.execute(
+            "SELECT p.id, p.tg_id, p.activity_visible, " + _RELATION + " FROM users p "
+            "WHERE p.tg_id IS NOT NULL AND p.is_excluded = 0"
+            "  AND (p.id = :me OR p.id IN (SELECT followee_id FROM follows"
+            "                              WHERE follower_id = :me))",
+            {"me": me},
+        )
+        members = []
+        for row in await cursor.fetchall():
+            relation = Relation(
+                following=bool(row["following"]),
+                followed_by=bool(row["followed_by"]),
+                blocked=bool(row["blocked"]),
+                blocked_by=bool(row["blocked_by"]),
+            )
+            if can_view(row["activity_visible"], relation, self_view=row["id"] == me):
+                members.append(row["tg_id"])
+        return members
+
+    async def activity_visible(self, person: int) -> str:
+        cursor = await self._conn.execute(
+            "SELECT activity_visible FROM users WHERE id = ?", (person,)
+        )
+        row = await cursor.fetchone()
+        return row["activity_visible"] if row else "nobody"
+
+    async def set_activity_visible(self, person: int, value: str) -> None:
+        if value not in ACTIVITY_CHOICES:
+            raise ValueError(value)
+        await self._conn.execute(
+            "UPDATE users SET activity_visible = ? WHERE id = ?", (value, person)
+        )
+        await self._conn.commit()
+
+    async def can_view_activity(self, viewer: int, target: int) -> bool:
+        """The one answer to "may this person see that one's activity?". Besides
+        the target's own setting, the viewer must know them: share an active chat
+        with them or follow them (owner, 2026-10-03) — "everyone" never meant
+        anybody who found the nickname."""
+        if viewer == target:
+            return True
+        relation = await self.relation(viewer, target)
+        if not can_view(await self.activity_visible(target), relation):
+            return False
+        return relation.following or await self._share_chat(viewer, target)
+
+    async def _share_chat(self, a: int, b: int) -> bool:
+        """An active chat both people are subscribed to or were seen writing in —
+        the membership `/online` and "Мои чаты" use."""
+        cursor = await self._conn.execute(
+            "WITH member AS ("
+            "  SELECT chat_id, tg_id FROM subscriptions"
+            "  UNION SELECT chat_id, tg_id FROM chat_seen"
+            ") "
+            "SELECT 1 FROM member ma "
+            "JOIN member mb ON mb.chat_id = ma.chat_id "
+            "JOIN chats c ON c.chat_id = ma.chat_id AND c.is_active = 1 "
+            "WHERE ma.tg_id = (SELECT tg_id FROM users WHERE id = :a)"
+            "  AND mb.tg_id = (SELECT tg_id FROM users WHERE id = :b) "
+            "LIMIT 1",
+            {"a": a, "b": b},
+        )
+        return await cursor.fetchone() is not None

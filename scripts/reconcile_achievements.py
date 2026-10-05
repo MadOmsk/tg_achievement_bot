@@ -1,0 +1,106 @@
+"""One-time reconciliation: pull the *complete* achievement history for every
+already-connected user, the same way `Fetcher.backfill()` does for a brand new
+connect (SPEC 5.4).
+
+Why this is needed: before the reconnect fix, `seen_achievements` only grew
+through live polling and `catch_up` — both bounded to games actually touched
+since a person connected — so anything from a game they had not replayed
+never landed there. Reconnecting from here on re-runs the full backfill and
+closes that gap going forward, but everyone already connected is still
+carrying the old gap until their *next* reconnect. This script closes it now,
+once, instead of waiting.
+
+Adds only what is missing — `insert_new_achievements` is `INSERT OR IGNORE`
+keyed on (xuid, title_id, achievement_id) — and never publishes: every row
+goes in with is_backfill=True. Run it again after a backfill fix (#121: Xbox
+360 unlocks, and the history window) to fill what the old one missed.
+
+**Stop the bot first.** Xbox rotates each person's refresh token and
+invalidates the previous one, so this process refreshing a token while the bot
+does logs that person out (CLAUDE.md, Xbox).
+
+Usage:
+    .venv/Scripts/python.exe -X utf8 -m scripts.reconcile_achievements
+    BOT_ENV_FILE=.env.test python -m scripts.reconcile_achievements   # a second instance
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from aiogram import Bot
+
+from bot.config import get_settings
+from bot.db.repo import Database, Repo
+from bot.poller.fetcher import Fetcher
+from bot.poller.publisher import Publisher
+from bot.services.crypto import TokenCipher
+from bot.services.translate.auth import AnthropicAuth
+from bot.services.xbox.auth import TokenRefreshError, XboxAuthService
+from bot.services.xbox.client import XboxApiError, XboxClient
+
+logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)-7s %(message)s")
+log = logging.getLogger("reconcile")
+
+
+async def main() -> None:
+    settings = get_settings()
+    database = await Database(settings.db_path).connect()
+    repo = Repo(database)
+    cipher = TokenCipher(settings.fernet_key.get_secret_value())
+    auth = XboxAuthService(settings, repo, cipher)
+    await auth.start()
+    # Never actually sends anything: backfill() has no publish step, so the
+    # Publisher instance here is wiring Fetcher expects, not something used.
+    bot = Bot(token=settings.bot_token.get_secret_value())
+    publisher = Publisher(bot, repo)
+    client = XboxClient(auth)
+    anthropic_key = (
+        settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
+    )
+    fetcher = Fetcher(
+        repo,
+        client,
+        publisher,
+        settings.backfill_concurrency,
+        anthropic_auth=AnthropicAuth(repo, cipher, env_key=anthropic_key),
+    )
+
+    users = [u for u in await repo.admin_users() if u.xuid]
+    log.info("reconciling %s connected users", len(users))
+
+    try:
+        for user in users:
+            await _reconcile(repo, fetcher, user)
+    finally:
+        # A connection left open keeps aiosqlite's thread alive and the
+        # process hangs instead of exiting (CLAUDE.md, bring-up).
+        await auth.close()
+        await bot.session.close()
+        await database.close()
+
+
+async def _reconcile(repo: Repo, fetcher: Fetcher, user) -> None:
+    name = user.gamertag or f"id{user.tg_id}"
+    try:
+        _, before_score = await repo.achievement_counts(user.xuid, None)
+        total = await fetcher.backfill(user.tg_id, user.xuid)
+        _, after_score = await repo.achievement_counts(user.xuid, None)
+    except (XboxApiError, TokenRefreshError) as exc:
+        # TokenRefreshError is not an XboxApiError: a network blip during a
+        # refresh used to end the whole run (found live, a DNS hiccup).
+        log.warning("%s: skipped, %s", name, exc)
+        return
+    log.info(
+        "%s: %s achievements on record, +%s gamerscore recovered (%s -> %s)",
+        name,
+        total,
+        after_score - before_score,
+        before_score,
+        after_score,
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

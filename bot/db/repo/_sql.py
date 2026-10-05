@@ -1,0 +1,260 @@
+"""The one SQL fragment that answers "whose achievement is this row" (#52).
+
+`seen_achievements` is keyed by the account that earned a row, not by the
+person who happened to have that account linked — so a person's achievements
+are *the rows of the accounts they hold right now*, resolved through
+`account_links`. Written once here because every statistic asks the same
+question, and because an answer copied into twenty queries is an answer that
+will eventually disagree with itself; the naming chains (#51) had exactly
+that failure a week earlier.
+
+Two consequences fall out of this join and are both intended:
+
+- An account nobody has linked is invisible everywhere. Its rows are still
+  there, waiting for whoever links it next.
+- An account that changes hands takes its history with it, retroactively.
+  A summary already posted will recompute differently. Accepted by the
+  project owner — the alternative is a person keeping numbers earned on an
+  account that is no longer theirs.
+
+Multi-account (#10) needs no change here: a person with two active links on
+one platform simply matches twice.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+# Joins `seen_achievements s` to the person who currently owns each row.
+# `account_platform` is GENERATED on the table, so both Xbox generations
+# resolve to the single `xbox` account without the caller knowing.
+OWNED_BY_PERSON = (
+    "JOIN account_links al ON al.platform = s.account_platform"
+    "   AND al.external_id = s.xuid AND al.is_active = 1 "
+)
+
+# The same thing as a subquery, for statements that cannot take a join —
+# UPDATE/DELETE, and any SELECT whose shape would change if a join were
+# added to it.
+OWNED_BY_PERSON_EXISTS = (
+    "EXISTS (SELECT 1 FROM account_links al"
+    "        WHERE al.tg_id = ? AND al.is_active = 1"
+    "          AND al.platform = seen_achievements.account_platform"
+    "          AND al.external_id = seen_achievements.xuid) "
+)
+
+
+def active_account(
+    alias: str, platform: str, *, on: str = "u.tg_id", by_presence: bool = False
+) -> str:
+    """The two LEFT JOINs that reach one platform's *currently linked*
+    account for a person, exposed under `alias` so a query can keep reading
+    `alias.display_name` the way it read `platform_links.display_name`
+    before #52.
+
+    Two joins rather than one because who has an account and what the
+    account is are now separate facts; `is_active` is the whole point — an
+    account somebody used to hold must contribute nothing.
+
+    Always **one** account, even where a person holds several (PSN, #10) —
+    otherwise every such query would return that person once per account.
+    The first one linked, which is also whose nickname names the person
+    (services/naming.py); `by_presence` picks instead the one that is
+    playing or online right now, for the screens that answer "where is this
+    person" (/online).
+    """
+    link = f"{alias}_link"
+    if by_presence and platform == "psn":
+        order = (
+            "ORDER BY CASE WHEN x_p.state = 'Online' AND x_p.title_id IS NOT NULL THEN 2"
+            "              WHEN x_p.state = 'Online' THEN 1 ELSE 0 END DESC,"
+            "         x_p.updated_at DESC, x.linked_at, x.rowid "
+        )
+        source = (
+            "FROM account_links x "
+            "LEFT JOIN psn_presence_state x_p ON x_p.account_id = x.external_id "
+        )
+    else:
+        order = "ORDER BY x.linked_at, x.rowid "
+        source = "FROM account_links x "
+    return (
+        f"LEFT JOIN account_links {link} ON {link}.tg_id = {on}"
+        f"   AND {link}.platform = '{platform}' AND {link}.is_active = 1"
+        f"   AND {link}.rowid = (SELECT x.rowid {source}"
+        f"      WHERE x.tg_id = {on} AND x.platform = '{platform}' AND x.is_active = 1"
+        f"      {order}LIMIT 1) "
+        f"LEFT JOIN accounts {alias} ON {alias}.platform = {link}.platform"
+        f"   AND {alias}.external_id = {link}.external_id "
+    )
+
+
+# `users` holds only the Telegram identity since #52's cleanup step: an Xbox
+# account is an `accounts` row like any other, reached through the same active
+# link. Every query that used to read u.xuid / u.gamertag / u.gamerscore joins
+# this instead and reads xb.external_id / xb.secondary_name / xb.gamerscore.
+#
+# The two nicknames map the way the naming chain (#51) wants them:
+#   xb.display_name   -> the modern gamertag (what to show)
+#   xb.secondary_name -> the classic one (what profile links are built from)
+XBOX_ACCOUNT = (
+    "LEFT JOIN account_links xb_link ON xb_link.tg_id = u.tg_id"
+    "   AND xb_link.platform = 'xbox' AND xb_link.is_active = 1 "
+    "LEFT JOIN accounts xb ON xb.platform = xb_link.platform"
+    "   AND xb.external_id = xb_link.external_id "
+)
+
+# The chat id a hand-picked set of people stands in for (#157): the Mini App's
+# "following" scope asks the chat queries about people who share no chat. 0 is no
+# real chat (Telegram's are non-zero), so `WHERE sub.chat_id = ?` keeps working.
+MEMBERS_CHAT = 0
+
+
+def member_source(members: Sequence[int] | None) -> str:
+    """What `FROM ... sub` reads in the chat queries: the real `subscriptions`
+    table, or — for a given list of people — a one-column stand-in with the same
+    shape. Integers only, formatted here, so nothing is injected."""
+    if members is None:
+        return "subscriptions"
+    ids = ",".join(str(int(m)) for m in members) or "NULL"
+    return f"(SELECT {MEMBERS_CHAT} AS chat_id, tg_id FROM users WHERE tg_id IN ({ids}))"
+
+
+# A person's nickname as shown, digits included (#157): `RideTheSun#4821`.
+HANDLE_SHOWN = (
+    "CASE WHEN u.handle IS NULL THEN NULL WHEN u.handle_number = 0 THEN u.handle"
+    " ELSE u.handle || '#' || printf('%04d', u.handle_number) END AS handle"
+)
+
+# The same columns, aliased back to the names every row-mapper already reads.
+XBOX_COLUMNS = (
+    "xb.external_id AS xuid, xb.display_name AS gamertag_modern,"
+    "       xb.secondary_name AS gamertag, xb.gamerscore "
+)
+
+
+# ------------------------------------------------------- when it was earned (#69)
+#
+# Two questions, one answer each, written once here for the same reason
+# OWNED_BY_PERSON is: sixteen copies of a date rule will eventually disagree.
+
+
+def earned_at(prefix: str = "s.") -> str:
+    """When this row was earned, as well as it can be known.
+
+    `created_at` stands in when the platform gave no usable time — Microsoft
+    sends a placeholder date for some Xbox 360 achievements, which the parser
+    discards (services/xbox/models.py). Those rows still count (owner
+    decision, 2026-09-13): the stored column keeps its NULL, only what is
+    read carries the fallback.
+    """
+    return f"COALESCE({prefix}unlocked_at, {prefix}created_at)"
+
+
+def earned_date_is_real(prefix: str = "s.") -> str:
+    """Whether `earned_at` above is worth believing for this row.
+
+    It is not, in exactly one case: a backfill row with no platform
+    timestamp. Its `created_at` is when the one-off import ran, which has no
+    relationship at all to when the achievement was earned — that is #69's
+    whole mechanism, a freshly linked library reading as "played this month"
+    (real production data: 767 achievements across 15 games for somebody who
+    had earned none of it). For a live-polled row the fallback is honest: the
+    poller sees an unlock within minutes to hours of it happening.
+
+    Deliberately **not** `is_backfill = 0` on its own, which was the first
+    attempt and failed the other way — it also threw away backfill rows the
+    platform itself had dated, and a person's Steam and Xbox games vanished
+    from /stats entirely. The flag means "do not publish", not "did not
+    happen" (services/stats.py); it earns a say here only where there is no
+    date to believe instead.
+    """
+    return f"({prefix}unlocked_at IS NOT NULL OR {prefix}is_backfill = 0)"
+
+
+def earned_since(prefix: str = "s.") -> str:
+    """The window filter both of the above compose into: one `?`, bound to
+    the start of the window."""
+    return f"{earned_date_is_real(prefix)} AND {earned_at(prefix)} >= ?"
+
+
+# A person whose rarity mode is "none" publishes nothing, and is left out of a
+# chat's lists that are about what gets published (#126: the mode is the
+# person's, not the subscription's). Takes the users alias.
+def publishes(user_alias: str = "u") -> str:
+    return (
+        "NOT EXISTS (SELECT 1 FROM user_settings us_mode"
+        f" WHERE us_mode.tg_id = {user_alias}.tg_id AND us_mode.rarity_mode = 'hidden')"
+    )
+
+
+# --------------------------------------------------------------- names (#61)
+
+# The catalog row holding an achievement's name in both languages (#61, #119),
+# joined to a `seen_achievements s` (and its `titles t`). A list renders from
+# SQL rather than through the
+# publisher's own localization pass, so without these joins /recent, /stats'
+# game list and the monthly "Игры за месяц" showed the language the platform
+# happened to answer in while the notification beside them showed the chat's.
+NAME_CACHE_JOIN = (
+    "LEFT JOIN title_achievements nc ON nc.platform = s.platform"
+    "   AND nc.title_id = s.title_id AND nc.achievement_id = s.achievement_id "
+)
+
+# Selected rather than resolved in SQL: picking with a CASE would mean
+# threading the locale through as a bound parameter in the middle of every
+# query's own parameter list, which is exactly the sort of thing that breaks
+# silently when somebody adds a WHERE clause. The choice is one function,
+# below.
+LOCALIZED_NAME_COLUMNS = "nc.name_ru AS name_ru, nc.name_en AS name_en"
+LOCALIZED_TITLE_COLUMNS = "t.name_ru AS game_ru, t.name_en AS game_en"
+
+
+def pick_name(
+    locale: str, name_ru: str | None, name_en: str | None, stored: str | None
+) -> str | None:
+    """The asked-for language, then the other one, then whatever was stored.
+
+    Same order as the render path uses for a published card
+    (services/descriptions_view.py) — a name is never translated, so "the
+    other language" is the platform's own string too, and better than nothing.
+    """
+    wanted, other = (name_en, name_ru) if locale == "en" else (name_ru, name_en)
+    for candidate in (wanted, other, stored):
+        if candidate and candidate.strip():
+            return candidate
+    return stored
+
+
+# --------------------------------------------------------------- rarity (#69's tail)
+
+
+# The catalog row joined to a `seen_achievements s`, for its percentage. Same
+# shape and the same reasoning as NAME_CACHE_JOIN above: the row carries
+# whatever the platform said the first time somebody here earned the
+# achievement, which on Xbox is usually nothing at all — rarity rides only on
+# contract 4, and backfill uses contract 2. The catalog holds a fact about the
+# achievement and is refreshed; the row is a snapshot and is not.
+def rarity_cache_join(prefix: str = "s.") -> str:
+    """Takes the table's alias because one caller has none: the value
+    breakdown reaches its person through OWNED_BY_PERSON_EXISTS, which names
+    `seen_achievements` in full and stops resolving the moment the table is
+    aliased."""
+    return (
+        f"LEFT JOIN title_achievements rc ON rc.platform = {prefix}platform"
+        f"   AND rc.title_id = {prefix}title_id"
+        f"   AND rc.achievement_id = {prefix}achievement_id "
+    )
+
+
+def rarity(prefix: str = "s.") -> str:
+    """The percentage to believe: the catalog first, the row as the fallback."""
+    return f"COALESCE(rc.rarity_percent, {prefix}rarity_percent)"
+
+
+# The rarity threshold, one for every chat (owner, 2026-10-01): read where a
+# chat's settings are read, so every caller that took the chat's own value
+# gets the global one. chat_settings.rare_threshold_percent is left unread.
+GLOBAL_RARE_THRESHOLD = (
+    "COALESCE((SELECT CAST(value AS REAL) FROM app_settings"
+    " WHERE key = 'rare_threshold_percent'), 10.0)"
+)

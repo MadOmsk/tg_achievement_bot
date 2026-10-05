@@ -1,0 +1,468 @@
+"""Deduplication, backfill and who the poller is allowed to touch."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import timedelta
+
+from bot.db.repo import AchievementRow, Repo
+from bot.poller.fetcher import Fetcher
+from bot.poller.reminders import MAX_REMINDERS, REMINDER_INTERVAL_HOURS, ReminderJob
+from bot.services.xbox.client import X360TitleSummary, XboxApiError, XboxProfileSnapshot
+from bot.services.xbox.models import ParsedAchievement
+from bot.util import utcnow
+
+TG_ID = 42
+XUID = "2533274829605736"
+
+
+def parsed(
+    achievement_id: str, title_id: str = "1", platform: str = "xbox_modern"
+) -> ParsedAchievement:
+    return ParsedAchievement(
+        achievement_id=achievement_id,
+        title_id=title_id,
+        title_name="Gears of War",
+        name=f"Achievement {achievement_id}",
+        description=None,
+        icon_url=None,
+        unlocked_at=None,
+        gamerscore=10,
+        rarity_percent=42.0,
+        platform=platform,  # type: ignore[arg-type]
+    )
+
+
+@dataclass
+class FakeHistoryEntry:
+    title_id: str
+    name: str
+    platform: str
+    current_gamerscore: int | None = 100
+    max_gamerscore: int | None = 1000
+    achievements_unlocked: int | None = 5
+    achievements_total: int | None = 50
+    # Relative, not a fixed date: the catch-up tests ask for "played inside
+    # the last N days", and a hardcoded 2026-09-01 quietly stopped satisfying
+    # that on 2026-09-15 — the test began failing on its own, with nothing
+    # having changed in the code.
+    last_played_at: str | None = field(
+        default_factory=lambda: (utcnow() - timedelta(hours=1)).isoformat(timespec="seconds")
+    )
+    icon_url: str | None = None
+    devices: list[str] = field(default_factory=list)
+
+
+class FakeClient:
+    def __init__(
+        self, by_title=None, everything=None, history=None, x360=None, x360_titles=None
+    ) -> None:
+        self.by_title = by_title or {}
+        self.everything = everything or []
+        self.history = history or []
+        # The achievements service's own 360 lists (#91); None: it refuses.
+        self.x360 = x360 if x360 is not None else []
+        self.x360_titles = x360_titles if x360_titles is not None else []
+        self.title_calls: list[tuple[str, str]] = []
+        self.resolved: list[str] = []
+        self.resolvable: dict[str, FakeHistoryEntry] = {}
+
+    async def title_achievements(self, tg_id, title_id, platform, *, language: str = "en-US"):
+        self.title_calls.append((title_id, platform))
+        return self.by_title.get(title_id, [])
+
+    async def title_achievements_with_total(
+        self, tg_id, title_id, platform, *, language: str = "en-US"
+    ):
+        """The real client reports the size of the set too (#46). These fakes
+        answer with only the unlocked ones, so the total is their length —
+        which is also what a game everybody has 100%ed would really return."""
+        unlocked = await self.title_achievements(tg_id, title_id, platform, language=language)
+        return unlocked, len(unlocked)
+
+    async def all_achievements(self, tg_id):
+        return self.everything
+
+    async def title_history(self, tg_id, max_items: int = 200):
+        return self.history
+
+    async def all_x360_achievements(self, tg_id):
+        if self.x360 == "refused":
+            raise XboxApiError("history refused")
+        return self.x360
+
+    async def x360_title_summaries(self, tg_id):
+        if self.x360 == "refused":
+            raise XboxApiError("history refused")
+        return self.x360_titles
+
+    async def profile(self, tg_id):
+        # One request, three cacheable facts (#51) — the two gamertags were
+        # always in this response and used to be thrown away.
+        return XboxProfileSnapshot(
+            gamerscore=35776, gamertag="RideTheSun", gamertag_modern="Ride The Sun"
+        )
+
+    async def resolve_title(self, tg_id, title_id):
+        self.resolved.append(title_id)
+        return self.resolvable.get(title_id)
+
+
+class FakePublisher:
+    def __init__(self) -> None:
+        self.published: list[list[AchievementRow]] = []
+
+    async def publish(
+        self, tg_id, xuid, gamertag, achievements, title_name=None, *, window_hours=None
+    ) -> None:
+        self.published.append(list(achievements))
+
+
+async def _connected_user(repo: Repo, cipher) -> None:
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.save_refresh_token(TG_ID, cipher.encrypt("refresh"))
+    await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
+
+
+async def test_dedup_publishes_each_achievement_once(repo: Repo, cipher) -> None:
+    await _connected_user(repo, cipher)
+    client = FakeClient(by_title={"1": [parsed("a1"), parsed("a2")]})
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 2
+    # Same answer from Xbox Live a minute later: nothing new, nothing published.
+    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 0
+    assert len(publisher.published) == 1
+
+    client.by_title["1"].append(parsed("a3"))
+    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 1
+    assert [a.achievement_id for a in publisher.published[1]] == ["a3"]
+
+
+async def test_backfill_publishes_nothing(repo: Repo, cipher) -> None:
+    """The whole point of SPEC 5.6: the first connect must be silent."""
+    await _connected_user(repo, cipher)
+    client = FakeClient(
+        everything=[parsed(str(i)) for i in range(50)],
+        history=[FakeHistoryEntry("1", "Gears of War", "xbox_modern")],
+    )
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    stored = await fetcher.backfill(TG_ID, XUID)
+
+    assert stored == 50
+    assert publisher.published == []
+    assert await repo.has_any_achievements(XUID)
+
+
+async def test_backfill_covers_x360_titles_separately(repo: Repo, cipher) -> None:
+    """Contract 2 does not list Xbox 360 achievements — verified live. Without
+    the extra pass the first x360 session would look like fresh unlocks.
+    Since #91 the pass reads the achievements service's own 360 lists, which
+    also know the games titlehub forgot, and their totals (#92)."""
+    await _connected_user(repo, cipher)
+    client = FakeClient(
+        everything=[parsed("m1")],
+        x360=[
+            parsed("x1", title_id="360", platform="xbox_360"),
+            parsed("f1", title_id="forgotten", platform="xbox_360"),
+        ],
+        x360_titles=[
+            X360TitleSummary("360", "Gears of War 3", 82, 1000, 1),
+            X360TitleSummary("forgotten", "Old Game", 1, 10, 1),
+        ],
+        history=[FakeHistoryEntry("1", "Modern Game", "xbox_modern")],  # titlehub forgot both
+    )
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.backfill(TG_ID, XUID)
+
+    assert client.title_calls == []  # no game-by-game requests any more
+    assert await repo.title_name("forgotten") == "Old Game"
+    # Its total is known, so a finished forgotten game counts as completed.
+    assert await repo.xbox_completed_games_count(XUID) == 1
+    # Now the same x360 achievement arrives from a real session: already seen.
+    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", "Gears 3") == 0
+
+
+async def test_excluded_user_is_not_polled(repo: Repo, cipher) -> None:
+    await _connected_user(repo, cipher)
+    assert [t.tg_id for t in await repo.pollable_users()] == [TG_ID]
+
+    await repo._conn.execute("UPDATE users SET is_excluded = 1 WHERE tg_id = ?", (TG_ID,))
+    await repo._conn.commit()
+    assert await repo.pollable_users() == []
+
+
+async def test_dead_token_user_is_not_polled(repo: Repo, cipher) -> None:
+    await _connected_user(repo, cipher)
+    await repo.set_token_status(TG_ID, "invalid")
+    assert await repo.pollable_users() == []
+
+
+class FakeBot:
+    def __init__(self) -> None:
+        self.sent: list[int] = []
+
+    async def send_message(self, chat_id, text, **kwargs):
+        self.sent.append(chat_id)
+
+
+async def test_reminders_stop_after_three(repo: Repo, cipher) -> None:
+    """A person may have left on purpose; a bot that nags forever gets blocked."""
+    await _connected_user(repo, cipher)
+    await repo.set_token_status(TG_ID, "invalid")
+    bot = FakeBot()
+    job = ReminderJob(bot, repo)  # type: ignore[arg-type]
+
+    for _ in range(MAX_REMINDERS + 2):
+        # Pretend the interval has passed, otherwise nothing would be due.
+        await repo._conn.execute(
+            "UPDATE tokens SET last_notified_at = '2000-01-01T00:00:00+00:00' "
+            "WHERE tg_id = ? AND notify_count > 0",
+            (TG_ID,),
+        )
+        await repo._conn.commit()
+        await job.run()
+
+    assert len(bot.sent) == MAX_REMINDERS
+
+
+async def test_reminder_respects_the_interval(repo: Repo, cipher) -> None:
+    await _connected_user(repo, cipher)
+    await repo.set_token_status(TG_ID, "invalid")
+    bot = FakeBot()
+    job = ReminderJob(bot, repo)  # type: ignore[arg-type]
+
+    await job.run()
+    await job.run()  # immediately again — too early
+    assert len(bot.sent) == 1
+    assert await repo.tokens_needing_reminder(MAX_REMINDERS, REMINDER_INTERVAL_HOURS) == []
+
+
+async def test_an_x360_title_name_is_resolved_because_contract_1_has_none(
+    repo: Repo, cipher
+) -> None:
+    """Presence returns an empty name for PC titles; a published message must
+    not say "неизвестная игра" because of it.
+
+    Contract 4 carries the title on every achievement, so for a modern title
+    the achievements response itself is the answer (and since #61 it is
+    stored, in both languages, as the poll goes past — see the test below).
+    Contract 1 carries no name at all, so an x360 title still has to be
+    resolved from titlehub, and the resolved name is what gets stored.
+    """
+    await _connected_user(repo, cipher)
+    x360 = parsed("a1", title_id="360", platform="xbox_360")
+    x360.title_name = None  # contract 1 does not carry it
+    client = FakeClient(by_title={"360": [x360]})
+    client.resolvable["360"] = FakeHistoryEntry("360", "Gears of War 3", "xbox_360")
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", None)
+
+    assert client.resolved, "contract 1 gives no name, so titlehub had to be asked"
+    assert await repo.title_name("360") == "Gears of War 3"
+
+
+async def test_a_modern_title_needs_no_separate_name_lookup(repo: Repo, cipher) -> None:
+    """Contract 4 hands the game's name over with the achievements, in both
+    languages (#61) — so the extra titlehub round-trip that used to resolve it
+    is not made at all."""
+    await _connected_user(repo, cipher)
+    client = FakeClient(by_title={"85494077": [parsed("a1", title_id="85494077")]})
+    client.resolvable["85494077"] = FakeHistoryEntry(
+        "85494077", "Microsoft Solitaire Collection", "xbox_modern"
+    )
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "85494077", "xbox_modern", None)
+
+    assert client.resolved == []
+    assert await repo.title_name("85494077") == "Gears of War"  # what the response said
+
+
+async def test_x360_achievements_get_the_games_box_art_as_their_icon(repo: Repo, cipher) -> None:
+    """Contract 1 never gives a per-achievement icon at all (verified live —
+    a bare imageId int, no documented way to turn it into a URL) — the
+    game's own box art (titlehub's display_image) stands in instead."""
+    await _connected_user(repo, cipher)
+    client = FakeClient(by_title={"360": [parsed("a1", title_id="360", platform="xbox_360")]})
+    client.resolvable["360"] = FakeHistoryEntry(
+        "360", "Gears of War 3", "xbox_360", icon_url="https://example/boxart.jpg"
+    )
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", "Gears of War 3")
+
+    assert publisher.published[0][0].icon_url == "https://example/boxart.jpg"
+    assert await repo.title_icon_url("360") == "https://example/boxart.jpg"
+
+    # Second title, same game: the icon comes from the cache, not another request.
+    client.by_title["360"].append(parsed("a2", title_id="360", platform="xbox_360"))
+    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "360", "xbox_360", "Gears of War 3")
+    assert client.resolved == ["360"]
+
+
+async def test_upsert_title_does_not_blank_a_cached_icon(repo: Repo) -> None:
+    """ensure_title_name() (fetcher.py) upserts just name/platform on every
+    new title it resolves — it must not erase an icon_url a separate
+    ensure_title_icon() call already cached for the same title."""
+    await repo.upsert_title("360", "Gears of War 3", "xbox_360", "https://example/boxart.jpg")
+    await repo.upsert_title("360", "Gears of War 3", "xbox_360")
+    assert await repo.title_icon_url("360") == "https://example/boxart.jpg"
+
+
+def parsed_at(achievement_id: str, when, title_id: str = "1") -> ParsedAchievement:
+    item = parsed(achievement_id, title_id=title_id)
+    item.unlocked_at = when
+    return item
+
+
+async def test_catch_up_publishes_only_what_is_fresh(repo: Repo, cipher) -> None:
+    """After a fortnight of downtime a chat does not want the archive; after a
+    one-minute restart nothing may be lost (SPEC 5.8)."""
+    await _connected_user(repo, cipher)
+    now = utcnow()
+    client = FakeClient(
+        by_title={
+            "1": [
+                parsed_at("recent", now - timedelta(hours=2)),
+                parsed_at("ancient", now - timedelta(days=9)),
+                parsed_at("undated", None),
+            ]
+        },
+        history=[FakeHistoryEntry("1", "Gears of War", "xbox_modern")],
+    )
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    titles, published = await fetcher.catch_up(
+        TG_ID, XUID, "Mad Omsk", now - timedelta(days=14), 24, 20
+    )
+
+    assert titles == 1
+    # "undated" too: the game was last played an hour ago (FakeHistoryEntry's
+    # own default), and that is a real timestamp standing in for a date the
+    # platform never gave. Xbox 360 sends a placeholder the parser discards,
+    # so without this an x360 achievement could never be announced through
+    # catch-up at all (owner report, 2026-09-17).
+    assert published == 2
+    assert [a.achievement_id for a in publisher.published[0]] == ["recent", "undated"]
+    # The old ones are still recorded, so they never surface again as "new".
+    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Gears") == 0
+
+
+async def test_catch_up_keeps_an_undated_row_quiet_when_the_game_is_old(repo: Repo, cipher) -> None:
+    """The window still means something. A dateless achievement falls back to
+    when its game was last played, so a game nobody has touched in a
+    fortnight stays silent — which is the case catch-up's window exists for."""
+    await _connected_user(repo, cipher)
+    now = utcnow()
+    client = FakeClient(
+        by_title={"1": [parsed_at("undated", None)]},
+        history=[
+            FakeHistoryEntry(
+                "1",
+                "Gears of War",
+                "xbox_360",
+                last_played_at=(now - timedelta(days=9)).isoformat(timespec="seconds"),
+            )
+        ],
+    )
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    titles, published = await fetcher.catch_up(
+        TG_ID, XUID, "Mad Omsk", now - timedelta(days=14), 24, 20
+    )
+
+    assert titles == 1
+    assert published == 0
+    # Stored all the same — it must never surface again as "new".
+    assert publisher.published == []
+
+
+async def test_catch_up_also_fills_x360_box_art(repo: Repo, cipher) -> None:
+    """poll_title() and catch_up() both publish live x360 unlocks — the box
+    art fallback (ensure_title_icon) must not be something only one of the
+    two paths remembers to apply."""
+    await _connected_user(repo, cipher)
+    now = utcnow()
+    item = parsed("a1", title_id="360", platform="xbox_360")
+    item.unlocked_at = now
+    client = FakeClient(
+        by_title={"360": [item]},
+        history=[
+            FakeHistoryEntry("360", "Gears of War 3", "xbox_360", last_played_at=now.isoformat())
+        ],
+    )
+    client.resolvable["360"] = FakeHistoryEntry(
+        "360", "Gears of War 3", "xbox_360", icon_url="https://example/boxart.jpg"
+    )
+    publisher = FakePublisher()
+    fetcher = Fetcher(repo, client, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.catch_up(TG_ID, XUID, "Mad Omsk", now - timedelta(days=1), 24, 20)
+
+    assert publisher.published[0][0].icon_url == "https://example/boxart.jpg"
+
+
+async def test_catch_up_skips_games_untouched_since_last_poll(repo: Repo, cipher) -> None:
+    await _connected_user(repo, cipher)
+    now = utcnow()
+    client = FakeClient(
+        by_title={"1": [parsed_at("a1", now)]},
+        history=[
+            FakeHistoryEntry(
+                "1",
+                "Gears of War",
+                "xbox_modern",
+                last_played_at=(now - timedelta(days=3)).isoformat(),
+            )
+        ],
+    )
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    titles, published = await fetcher.catch_up(
+        TG_ID, XUID, "Mad Omsk", now - timedelta(hours=1), 24, 20
+    )
+
+    assert (titles, published) == (0, 0)
+    assert client.title_calls == []
+
+
+async def test_backfill_asks_game_by_game_when_the_360_lists_are_refused(
+    repo: Repo, cipher
+) -> None:
+    await _connected_user(repo, cipher)
+    client = FakeClient(
+        everything=[parsed("m1")],
+        x360="refused",
+        by_title={"360": [parsed("x1", title_id="360", platform="xbox_360")]},
+        history=[FakeHistoryEntry("360", "Gears of War 3", "xbox_360")],
+    )
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    assert await fetcher.backfill(TG_ID, XUID) == 2
+    assert client.title_calls == [("360", "xbox_360")]
+
+
+async def test_x360_gaps_are_filled_once(repo: Repo, cipher) -> None:
+    await _connected_user(repo, cipher)
+    client = FakeClient(
+        x360=[parsed("f1", title_id="forgotten", platform="xbox_360")],
+        x360_titles=[X360TitleSummary("forgotten", "Old Game", 1, 10, 1)],
+    )
+    fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    await fetcher.fill_x360_gaps_once([(TG_ID, XUID)])
+    client.x360 = "refused"  # a second call would raise: it must not happen
+    await fetcher.fill_x360_gaps_once([(TG_ID, XUID)])
+
+    assert await repo.has_any_achievements(XUID)
+    assert await repo.title_name("forgotten") == "Old Game"

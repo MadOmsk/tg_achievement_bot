@@ -1,0 +1,1157 @@
+"""The headline gamerscore next to a name must always be the profile value,
+never a sum over `seen_achievements` (SPEC 5.4) — the sum is permanently
+best-effort (title_history is capped, achievements with no unlock date exist,
+etc.), while the profile number is what a person actually sees on the Xbox
+site. Locked down here after chasing the opposite assumption for a while."""
+
+from __future__ import annotations
+
+from bot.db.repo import (
+    AchievementRow,
+    ChatPresenceRow,
+    GameAchievements,
+    Repo,
+    SteamSchemaAchievement,
+    TitleAchievementRow,
+)
+from bot.handlers.chat import _send_stats_card
+from bot.util import utcnow
+from bot.views.chat import _games_list, build_stats_text, who_label
+from bot.views.parts import (
+    COMPLETED_BADGE_PSN,
+    COMPLETED_BADGE_STEAM,
+    COMPLETED_BADGE_XBOX,
+)
+
+CHAT_ID = -100500
+
+
+class _FakeMessage:
+    def __init__(self, message_id: int) -> None:
+        self.message_id = message_id
+
+
+class FakeBot:
+    """Same pattern as test_single_message.py's own FakeBot — captures the
+    kwargs a real aiogram Bot.send_message would receive, so a missing
+    Telegram-level send option (like disable_web_page_preview) is a plain
+    assertion, not something only visible once it's actually live."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[int, str, dict[str, object]]] = []
+
+    async def send_message(self, chat_id: int, text: str, **kwargs: object) -> _FakeMessage:
+        self.sent.append((chat_id, text, kwargs))
+        return _FakeMessage(len(self.sent))
+
+    async def delete_message(self, chat_id: int, message_id: int) -> None:
+        pass
+
+
+XUID = "xuid-profile-check"
+
+
+def _achievement(title_id: str) -> AchievementRow:
+    return AchievementRow(
+        title_id=title_id,
+        achievement_id="1",
+        name="A",
+        description=None,
+        icon_url=None,
+        unlocked_at=utcnow().isoformat(timespec="seconds"),
+        gamerscore=10,
+        rarity_percent=50.0,
+        platform="xbox_modern",
+    )
+
+
+async def test_header_gamerscore_is_the_profile_value_not_a_sum(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    # Profile says a lot more than seen_achievements will ever sum to.
+    await repo.link_xbox_account(1, XUID, "Someone", 999_999)
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="1",
+                achievement_id="1",
+                name="An achievement",
+                description=None,
+                icon_url=None,
+                unlocked_at="2026-01-01T00:00:00+00:00",
+                gamerscore=10,
+                rarity_percent=50.0,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    # Line 0 is just the display name now (SPEC 9, M-Steam-2e); the Xbox
+    # line with its gamerscore is line 1.
+    xbox_line = text.split("\n")[1]
+    assert "999" in xbox_line  # thousands() formatting, profile value
+    assert "10 G" not in xbox_line
+
+
+async def test_header_shows_the_telegram_username_not_the_gamertag(repo: Repo) -> None:
+    """Follow-up 2026-09-06, user request — the header identifies the
+    person via Telegram, not whichever platform happened to be Xbox; the
+    card already lists XBOX's own name on its own line below."""
+    await repo.ensure_user(1, "realusername")
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    header = text.split("\n")[0]
+    # Bare, with no "@" (#51): a username is never rendered as a live
+    # mention anywhere in the bot.
+    assert "realusername" in header
+    assert "@realusername" not in header
+    assert "GamerTag" not in header
+
+
+async def test_header_shows_the_nickname_never_the_telegram_name(repo: Repo) -> None:
+    await repo.ensure_user(1, None, "Igor", "Petrov")
+    await repo.change_handle(1, "IgorP")
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    header = text.split("\n")[0]
+    assert "IgorP" in header
+    assert "Petrov" not in header
+
+
+async def test_header_ignores_a_first_name_with_no_nickname_yet(repo: Repo) -> None:
+    await repo.ensure_user(1, None, "Igor", None)
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    header = text.split("\n")[0]
+    assert "Igor" not in header
+    assert "GamerTag" in header
+
+
+async def test_header_falls_back_to_gamertag_with_nothing_from_telegram_yet(repo: Repo) -> None:
+    """A brand-new /start before this person's own message middleware has
+    ever run — same defensive last resort this function already had."""
+    await repo.ensure_user(1, None, None, None)
+    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    assert "GamerTag" in text.split("\n")[0]
+
+
+async def test_update_names_does_not_clobber_a_known_name_with_none(repo: Repo) -> None:
+    """Same COALESCE shape update_username already relies on — a message
+    where Telegram's own last_name happens to be absent must not erase a
+    last_name this person already had on file."""
+    await repo.ensure_user(1, None, "Igor", "Petrov")
+    await repo.update_names(1, "Igor", None)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    assert user.first_name == "Igor"
+    assert user.last_name == "Petrov"
+
+
+async def test_steam_line_shows_its_own_lifetime_achievement_count(repo: Repo) -> None:
+    """SPEC 9, M-Steam-2e: unlike Xbox's line (profile gamerscore, never a
+    seen_achievements sum), Steam's line shows a lifetime count from
+    seen_achievements directly — no cap risk there (backfill sees the whole
+    owned-games library), so it's trustworthy as a total."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="a1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at="2026-01-01T00:00:00+00:00",
+                gamerscore=0,
+                rarity_percent=50.0,
+                platform="steam",
+            ),
+            AchievementRow(
+                title_id="550",
+                achievement_id="a2",
+                name="B",
+                description=None,
+                icon_url=None,
+                unlocked_at="2026-01-02T00:00:00+00:00",
+                gamerscore=0,
+                rarity_percent=20.0,
+                platform="steam",
+            ),
+        ],
+        is_backfill=True,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
+    assert "SteamPerson" in steam_line
+    assert "2 достижения" in steam_line
+
+
+def test_games_list_colours_x360_the_same_as_modern_xbox() -> None:
+    """Found live (2026-09-05 platform-icon refactor): chat.py's own
+    _PLATFORM_ICON copy never had an "xbox_360" key at all, so an Xbox 360
+    game silently got no icon here — unlike services/achievements.py's own
+    copy, used everywhere else, which always has. Both now share one dict."""
+    game = GameAchievements(
+        title_id="t1", platform="xbox_360", name="Fallout 3", count=5, score=100
+    )
+    line = _games_list([game])
+    assert "(🟢 <i>360</i>) Fallout 3" in line
+
+
+async def test_games_list_is_capped_by_the_configured_limit(repo: Repo) -> None:
+    """stats_games_limit (default 15) caps how many games show — no separate
+    "показать все игры" button any more, the list is a collapsible quote
+    (SPEC 1.6, 6.4)."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.set_app_setting("stats_games_limit", "2")
+    for i in range(3):
+        await repo.insert_new_achievements(XUID, [_achievement(str(i))], is_backfill=False)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    # 3 distinct games exist, but only 2 (the limit) render as list rows.
+    assert text.count("без названия") == 2
+
+
+async def test_counters_show_platform_breakdown_only_with_two_platforms(repo: Repo) -> None:
+    """2026-09-05 follow-up, reversal of "one combined number only" (SPEC 9,
+    M-Steam-2e): a parenthetical next to "За сутки"/"С 1 <месяц>", but only once
+    there's something to break down."""
+    await repo.ensure_user(1, "both")
+    await repo.link_xbox_account(1, XUID, "Both", 0)
+    await repo.link_platform_account(1, "steam", "76561197960287930", "BothSteam")
+    await repo.insert_new_achievements(XUID, [_achievement("1")], is_backfill=False)
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="s1",
+                name="s1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    today_line = next(line for line in text.split("\n") if line.startswith("За сутки"))
+    assert "(🟢 1 · ⚫ 1)" in today_line
+
+
+async def test_counters_show_psn_in_the_platform_breakdown(repo: Repo) -> None:
+    """#32: the combined "За сутки"/"С 1 <месяц>" number already included PSN
+    (a plain tg_id sum) — only the "(🟢 N · ⚫ N)" breakdown next to it
+    silently had nowhere for a psn row to land."""
+    await repo.ensure_user(1, "triple")
+    await repo.link_xbox_account(1, XUID, "Triple", 0)
+    await repo.link_platform_account(1, "steam", "76561197960287930", "TripleSteam")
+    await repo.link_platform_account(1, "psn", "internal-account-id", "TriplePsn")
+    await repo.insert_new_achievements(XUID, [_achievement("1")], is_backfill=False)
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="s1",
+                name="s1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+    await repo.insert_new_achievements_psn(
+        1,
+        "internal-account-id",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="p1",
+                name="p1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    today_line = next(line for line in text.split("\n") if line.startswith("За сутки"))
+    assert "(🟢 1 · 🔵 1 · ⚫ 1)" in today_line  # Xbox, PlayStation, Steam (2026-09-13)
+
+
+async def test_counters_hide_breakdown_for_a_single_platform(repo: Repo) -> None:
+    await repo.ensure_user(1, "xboxonly")
+    await repo.link_xbox_account(1, XUID, "XboxOnly", 0)
+    await repo.insert_new_achievements(XUID, [_achievement("1")], is_backfill=False)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    today_line = next(line for line in text.split("\n") if line.startswith("За сутки"))
+    assert "🟢" not in today_line and "⚫" not in today_line
+
+
+async def test_games_list_includes_steam_games(repo: Repo) -> None:
+    """Found live: the games table used to be `if target.xuid:` only (SPEC
+    9, M-Steam-2c's own scoping note) — user_games() itself was never
+    Xbox-specific, just never called for a Steam link. Now merged into one
+    combined ranked list, same "one number, not one per platform" spirit
+    as the counters above."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="a1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=50.0,
+                platform="steam",
+                title_name="Left 4 Dead 2",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    assert "Left 4 Dead 2" in text
+
+
+async def test_nicknames_are_plain_text_once_the_admin_turns_links_off(repo: Repo) -> None:
+    """Profile links are the admin's one switch, on by default (2026-09-29)."""
+    await repo.set_app_setting("show_profile_links", "0")
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    assert "<a href" not in text
+
+
+async def test_nicknames_link_out_by_default(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
+    steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
+    assert '<a href="https://account.xbox.com/en-us/profile?gamertag=Someone">Someone</a>' in (
+        xbox_line
+    )
+    assert (
+        '<a href="https://steamcommunity.com/profiles/76561197960287930">SteamPerson</a>'
+        in steam_line
+    )
+
+
+async def test_opted_in_but_no_gamertag_yet_stays_plain(repo: Repo) -> None:
+    """Pre-first-sync edge case (same reasoning as panel_keyboard's own
+    profile-button guard) — an empty gamertag has no page to link to."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "", 0)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    assert "<a href" not in text
+
+
+async def test_zero_limit_shows_every_game_uncapped(repo: Repo) -> None:
+    """0 means "no cap" (SPEC 6.4) — the whole point of dropping the old
+    fixed-height table for a collapsible quote."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.set_app_setting("stats_games_limit", "0")
+    for i in range(5):
+        await repo.insert_new_achievements(XUID, [_achievement(str(i))], is_backfill=False)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    assert text.count("без названия") == 5
+
+
+async def test_psn_line_says_trophies_not_achievements(repo: Repo) -> None:
+    """CLAUDE.md: PSN calls its own achievements "trophies" everywhere —
+    /stats' per-link line used to say "N достижений" for PSN too, same
+    wording as every other platform, which was simply wrong (2026-09-08)."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.insert_new_achievements_psn(
+        1,
+        "acc-1",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="p1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+            )
+        ],
+        is_backfill=True,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
+    assert "1 трофей" in psn_line
+    assert "достижени" not in psn_line
+
+
+async def test_psn_level_suffix_has_a_space_on_both_sides_of_the_dot(repo: Repo) -> None:
+    """Found live: the level suffix used to be its own Fluent string with
+    leading spaces, and Fluent's whitespace handling on a single-line value
+    silently dropped the space before the "·" while keeping the one after —
+    "242 достижения· уровень 73" (2026-09-08). The separator is now built in
+    Python, like every other segment on this line."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.set_psn_trophy_level(1, 73)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
+    assert "  ·  уровень 73" in psn_line
+
+
+async def test_today_and_month_lines_omit_a_zero_score(repo: Repo) -> None:
+    """(+0 G) on every single line was pure noise (2026-09-08, user
+    request) — a Steam/PSN-only person's score is always 0."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="a1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    today_line = next(line for line in text.split("\n") if line.startswith("За сутки"))
+    month_line = next(line for line in text.split("\n") if line.startswith("С 1 "))
+    assert "G)" not in today_line
+    assert "G)" not in month_line
+
+
+async def test_game_row_tail_omits_a_zero_score_too(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="1",
+                achievement_id="a1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    # The games list is one blockquote-wrapped block, no newline between the
+    # opening tag and its first row — "1. " is a substring, not a line start.
+    game_line = next(line for line in text.split("\n") if "1. " in line)
+    assert "G)" not in game_line
+
+
+async def test_xbox_line_shows_the_achievement_count_before_gamerscore(repo: Repo) -> None:
+    """User request (2026-09-08) — see repo.py::xbox_achievement_count's own
+    docstring and CLAUDE.md's Statistics rules for why this is trustworthy."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 500)
+    await repo.insert_new_achievements(XUID, [_achievement("1")], is_backfill=False)
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
+    assert xbox_line.index("1 достижение") < xbox_line.index("gamerscore 500")
+
+
+async def test_xbox_line_shows_completed_games_when_there_are_any(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo._conn.execute(
+        "INSERT INTO title_history "
+        "(xuid, title_id, achievements_unlocked, achievements_total, updated_at) "
+        "VALUES (?, '1', 3, 3, '2026-01-01T00:00:00+00:00')",
+        (XUID,),
+    )
+    await repo._conn.commit()
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    xbox_line = next(line for line in text.split("\n") if "XBOX" in line)
+    assert f"1 {COMPLETED_BADGE_XBOX}" in xbox_line
+
+
+async def test_psn_line_shows_platinum_count_when_there_are_any(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.insert_new_achievements_psn(
+        1,
+        "acc-1",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="p1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+                trophy_type="platinum",
+            )
+        ],
+        is_backfill=True,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    psn_line = next(line for line in text.split("\n") if line.startswith("🔵"))
+    assert f"1 {COMPLETED_BADGE_PSN}" in psn_line
+
+
+async def test_steam_line_shows_completed_games_when_there_are_any(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.steam_schema_cache_result(
+        "550",
+        "Left 4 Dead 2",
+        [SteamSchemaAchievement(apiname="a1", icon="", hidden=False)],
+    )
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id="a1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+
+    assert text is not None
+    steam_line = next(line for line in text.split("\n") if line.startswith("⚫"))
+    assert f"1 {COMPLETED_BADGE_STEAM}" in steam_line
+
+
+async def test_games_list_does_not_truncate_long_names() -> None:
+    """User request (2026-09-08) — this list already lives inside its own
+    collapsible quote, unlike /recent's row, so a long title wrapping costs
+    nothing."""
+    long_name = "Marvel Spider-Man Remastered Definitive Edition Deluxe Collection"
+    line = _games_list([GameAchievements(title_id="t1", platform="psn", name=long_name, count=5)])
+    assert long_name in line
+    assert "…" not in line
+
+
+async def test_xbox_achievement_count_counts_modern_and_x360(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    await repo.insert_new_achievements(XUID, [_achievement("1")], is_backfill=False)
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="2",
+                achievement_id="x1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_360",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    assert await repo.xbox_achievement_count(1) == 2
+
+
+async def test_xbox_completed_games_count_needs_a_nonzero_total(repo: Repo) -> None:
+    await repo._conn.execute(
+        "INSERT INTO title_history "
+        "(xuid, title_id, achievements_unlocked, achievements_total, updated_at) "
+        "VALUES (?, '1', 3, 3, '2026-01-01T00:00:00+00:00'),"
+        "       (?, '2', 0, 0, '2026-01-01T00:00:00+00:00'),"
+        "       (?, '3', 2, 5, '2026-01-01T00:00:00+00:00')",
+        (XUID, XUID, XUID),
+    )
+    await repo._conn.commit()
+
+    assert await repo.xbox_completed_games_count(XUID) == 1  # only title "1" is fully unlocked
+
+
+async def test_xbox_completed_games_count_from_catalog_and_titles(repo: Repo) -> None:
+    # 1. Game '100' completed via title_achievements catalog (2/2 achievements unlocked)
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="100",
+                achievement_id="a1",
+                name_en="Ach 1",
+                gamerscore=10,
+            ),
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="100",
+                achievement_id="a2",
+                name_en="Ach 2",
+                gamerscore=20,
+            ),
+        ]
+    )
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="100",
+                achievement_id="a1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+            AchievementRow(
+                title_id="100",
+                achievement_id="a2",
+                name="Ach 2",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=20,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 2. Game '200' has catalog of 2 achievements, but user only unlocked 1 -> not completed
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="200",
+                achievement_id="b1",
+                name_en="Ach 1",
+                gamerscore=10,
+            ),
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="200",
+                achievement_id="b2",
+                name_en="Ach 2",
+                gamerscore=20,
+            ),
+        ]
+    )
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="200",
+                achievement_id="b1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 3. Game '300' has titles table with achievements_total=1, user unlocked 1 -> completed
+    await repo.upsert_title("300", "Game 300", platform="xbox_modern", achievements_total=1)
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="300",
+                achievement_id="c1",
+                name="Ach 1",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=10,
+                rarity_percent=None,
+                platform="xbox_modern",
+            ),
+        ],
+        is_backfill=False,
+    )
+
+    # 4. Game '100' is also in title_history (overlap test: UNION must deduplicate)
+    await repo._conn.execute(
+        "INSERT INTO title_history "
+        "(xuid, title_id, achievements_unlocked, achievements_total, updated_at) "
+        "VALUES (?, '100', 2, 2, '2026-01-01T00:00:00+00:00')",
+        (XUID,),
+    )
+    await repo._conn.commit()
+
+    # Total completed games: Game '100' and Game '300' = 2
+    assert await repo.xbox_completed_games_count(XUID) == 2
+
+
+async def test_psn_platinum_count_only_counts_platinum_rows(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    # Linked, not merely inserted (#52): a statistic counts the accounts a
+    # person holds, so trophies of an unlinked account are correctly zero.
+    await repo.link_platform_account(1, "psn", "acc-1", "SomeonePSN")
+    await repo.insert_new_achievements_psn(
+        1,
+        "acc-1",
+        [
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="gold",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+                trophy_type="gold",
+            ),
+            AchievementRow(
+                title_id="NPWR00001_00",
+                achievement_id="plat",
+                name="B",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="psn",
+                trophy_type="platinum",
+            ),
+        ],
+        is_backfill=True,
+    )
+
+    assert await repo.psn_platinum_count(1) == 1
+
+
+async def test_steam_completed_games_count_joins_against_the_schema_cache(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "Someone")
+    await repo.steam_schema_cache_result(
+        "550",
+        "Left 4 Dead 2",
+        [
+            SteamSchemaAchievement(apiname="a1", icon="", hidden=False),
+            SteamSchemaAchievement(apiname="a2", icon="", hidden=False),
+        ],
+    )
+    # Fully unlocked (2/2).
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="550",
+                achievement_id=aid,
+                name=aid,
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+            for aid in ("a1", "a2")
+        ],
+        is_backfill=False,
+    )
+    # Another game with no cached schema at all — must not crash or count.
+    await repo.insert_new_achievements_steam(
+        1,
+        "76561197960287930",
+        [
+            AchievementRow(
+                title_id="999",
+                achievement_id="b1",
+                name="B",
+                description=None,
+                icon_url=None,
+                unlocked_at=utcnow().isoformat(timespec="seconds"),
+                gamerscore=0,
+                rarity_percent=None,
+                platform="steam",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    assert await repo.steam_completed_games_count(1) == 1
+
+
+async def test_send_stats_card_disables_the_link_preview(repo: Repo) -> None:
+    """Found live (2026-09-08): a card with show_profile_links on embeds a
+    real <a href> (Mad Omsk's own XBOX profile link) — Telegram attached a
+    link-preview card under the message because nothing here told it not
+    to, unlike connect.py's and panel.py's own links."""
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+    user = await repo.get_user(1)
+    assert user is not None
+    text = await build_stats_text(repo, user, CHAT_ID)
+    assert text is not None
+
+    bot = FakeBot()
+    await _send_stats_card(bot, repo, CHAT_ID, user, text)
+
+    assert len(bot.sent) == 1
+    _chat_id, _text, kwargs = bot.sent[0]
+    assert kwargs.get("disable_web_page_preview") is True
+
+
+class _FakeI18n:
+    def __init__(self, locale: str = "en") -> None:
+        self.locale = locale
+
+    def get(self, key: str, **kwargs: object) -> str:
+        from bot.i18n import gettext
+
+        return gettext("chat", key, locale=self.locale, **kwargs)
+
+
+async def test_stats_games_header_closed_vs_current_month(repo: Repo) -> None:
+    await repo.ensure_user(1, "someone")
+    await repo.link_xbox_account(1, XUID, "Someone", 0)
+
+    # Insert an unlock in March 2026
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="1",
+                achievement_id="1",
+                name="A",
+                description=None,
+                icon_url=None,
+                unlocked_at="2026-03-15T12:00:00+00:00",
+                gamerscore=10,
+                rarity_percent=50.0,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=False,
+    )
+
+    user = await repo.get_user(1)
+    assert user is not None
+
+    # Closed month in current year (March 2026): "Игры марта" without "с 1" or year
+    text_march = await build_stats_text(repo, user, CHAT_ID, target_year=2026, target_month=3)
+    assert text_march is not None
+    assert "<b>Игры марта</b>" in text_march
+    assert "с 1 марта" not in text_march
+
+    # Closed month in previous year (March 2025): "Игры марта 2025" without date "1"
+    await repo.insert_new_achievements(
+        XUID,
+        [
+            AchievementRow(
+                title_id="2",
+                achievement_id="2",
+                name="B",
+                description=None,
+                icon_url=None,
+                unlocked_at="2025-03-15T12:00:00+00:00",
+                gamerscore=10,
+                rarity_percent=50.0,
+                platform="xbox_modern",
+            )
+        ],
+        is_backfill=False,
+    )
+    text_march_prev = await build_stats_text(repo, user, CHAT_ID, target_year=2025, target_month=3)
+    assert text_march_prev is not None
+    assert "<b>Игры марта 2025</b>" in text_march_prev
+    assert "с 1" not in text_march_prev.split("<b>Игры")[1]
+
+    # English locale for closed month: "Games of March"
+    i18n_en = _FakeI18n("en")
+    text_march_en = await build_stats_text(
+        repo,
+        user,
+        CHAT_ID,
+        i18n=i18n_en,
+        target_year=2026,
+        target_month=3,  # type: ignore[arg-type]
+    )
+    assert text_march_en is not None
+    assert "<b>Games of March</b>" in text_march_en
+
+
+def _presence_row(**over) -> ChatPresenceRow:
+    base = dict(
+        tg_id=1,
+        gamertag=None,
+        xuid=None,
+        state=None,
+        title_id=None,
+        title_name=None,
+        platform="none",
+    )
+    base.update(over)
+    return ChatPresenceRow(**base)  # type: ignore[arg-type]
+
+
+def test_who_label_prefers_the_name_then_username_then_gamertag() -> None:
+    """The one person chain (#51, #157): the nickname first, then a bare
+    username, then a platform nickname. Telegram's own name is never used."""
+    assert (
+        who_label(
+            _presence_row(first_name="Igor", last_name="Petrov", username="mad", handle="IgorP")
+        )
+        == "IgorP"
+    )
+    assert who_label(_presence_row(first_name="Igor")) != "Igor"
+    assert who_label(_presence_row(username="mad", gamertag="MadXbox")) == "mad"
+    assert who_label(_presence_row(gamertag="MadXbox")) == "MadXbox"
+
+
+def test_who_label_prefers_the_modern_gamertag_over_the_classic_one() -> None:
+    row = _presence_row(gamertag="MadOmsk", gamertag_modern="Mad Omsk")
+    assert who_label(row) == "Mad Omsk"
+
+
+def test_who_label_falls_back_to_a_platform_name_not_a_bare_id() -> None:
+    # A Steam/PSN-only member with no Telegram identity — used to render "idNNNN".
+    assert who_label(_presence_row(steam_display_name="SteamNick")) == "SteamNick"
+    assert who_label(_presence_row(psn_display_name="PsnNick")) == "PsnNick"
+
+
+def test_who_label_never_stops_at_the_empty_xbox_dash() -> None:
+    """The account chains end at a dash so their own line renders something;
+    inside the person chain that dash is an absence, and stopping on it
+    would show "—" while a real PSN nickname sat one step further down."""
+    assert who_label(_presence_row(psn_display_name="PsnNick")) != "—"
+
+
+def test_who_label_last_resort_is_the_id_when_nothing_else_exists() -> None:
+    assert "1" in who_label(_presence_row(tg_id=1))
+
+
+async def test_who_stats_button_sends_card_with_reply_markup(repo: Repo) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    from aiogram.types import CallbackQuery, Chat, Message
+
+    from bot.handlers.chat import who_stats_button
+
+    await repo.ensure_user(1, "player")
+    await repo.link_xbox_account(1, "xuid-1", "Player", 100)
+
+    chat_message = MagicMock(spec=Message)
+    chat_message.chat = Chat(id=-1001, type="supergroup", title="Chat")
+    chat_message.delete = AsyncMock()
+
+    callback = MagicMock(spec=CallbackQuery)
+    callback.data = "who:stats:1"
+    callback.message = chat_message
+    callback.answer = AsyncMock()
+
+    sent_message = MagicMock(spec=Message, message_id=123)
+    bot = MagicMock()
+    bot.send_message = AsyncMock(return_value=sent_message)
+
+    i18n = MagicMock()
+    i18n.locale = "ru"
+    i18n.get = lambda key, **kwargs: key
+
+    await who_stats_button(callback, repo, bot, i18n)
+
+    callback.answer.assert_called()
+    chat_message.delete.assert_called()
+    bot.send_message.assert_called_once()
+    _, kwargs = bot.send_message.call_args
+    assert kwargs.get("reply_markup") is not None
+
+
+async def test_stats_card_uses_gamertag_modern_for_xbox_line(repo: Repo) -> None:
+    # Links off: the profile *link* rightly carries the classic gamertag.
+    await repo.set_app_setting("show_profile_links", "0")
+    await repo.ensure_user(1, "lostinawave")
+    await repo.link_xbox_account(1, "2535472202229574", "BoAKoAaB", 500)
+    # Set display_name (gamertag_modern) in accounts
+    await repo._conn.execute(
+        "UPDATE accounts SET display_name = 'волкодав' "
+        "WHERE platform = 'xbox' AND external_id = '2535472202229574'"
+    )
+    await repo._conn.commit()
+
+    user = await repo.get_user(1)
+    assert user is not None
+    assert user.gamertag == "BoAKoAaB"
+    assert user.gamertag_modern == "волкодав"
+
+    text = await build_stats_text(repo, user, CHAT_ID)
+    assert text is not None
+    xbox_line = text.split("\n")[1]
+    assert "волкодав" in xbox_line
+    assert "BoAKoAaB" not in xbox_line

@@ -1,0 +1,280 @@
+"""PSN login flow (SPEC 9, M-PSN-1/M-PSN-2) — the shared prompt_for_link()
+step, the AwaitingPsnLink filter, and the resolve+visibility+link body
+(_connect) — small enough to unit-test directly here, unlike Steam's own
+version (no URL parsing). The backfill it kicks off in the background uses
+a trivial FakeFetcher; poller/psn_fetcher.py's own backfill() has its
+real coverage in tests/test_psn_fetcher.py."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from bot.constants import Platform
+from bot.db.repo import Repo
+from bot.handlers import awaiting
+from bot.handlers import psn as psn_handlers
+from bot.handlers.psn import (
+    AwaitingPsnLink,
+    _connect,
+    prompt_for_link,
+)
+from bot.i18n import static_i18n
+from bot.poller.psn_fetcher import PsnBackfillResult
+from bot.services.crypto import TokenCipher
+from bot.services.psn.auth import PsnAuth
+from bot.services.psn.client import PsnApiError, PsnProfile, PsnTokenDeadError
+
+TG_ID = 42
+NPSSO = "fake-npsso"
+ACCOUNT_ID = "psn-account-1"
+
+
+async def _noop(*_args: object, **_kwargs: object) -> None:
+    return None
+
+
+class FakeBot:
+    def __init__(self) -> None:
+        self.sent: list[tuple[int, str]] = []
+
+    async def send_message(self, chat_id: int, text: str, **kwargs: object) -> None:
+        self.sent.append((chat_id, text))
+
+
+class FakeFetcher:
+    """A trivial PsnFetcher stand-in — these tests are about the resolve+
+    visibility+link body, not backfill (that has its own coverage,
+    tests/test_psn_fetcher.py), so this only needs to satisfy the call
+    _connect makes when it kicks the background backfill off."""
+
+    def __init__(self) -> None:
+        self.backfilled: list[tuple[int, str]] = []
+
+    async def backfill(self, tg_id: int, account_id: str) -> PsnBackfillResult:
+        self.backfilled.append((tg_id, account_id))
+        return PsnBackfillResult()
+
+
+def _event(tg_id: int | None) -> SimpleNamespace:
+    user = SimpleNamespace(id=tg_id) if tg_id is not None else None
+    return SimpleNamespace(from_user=user)
+
+
+async def _configured_auth(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> PsnAuth:
+    async def _build(npsso: str) -> object:
+        return object()
+
+    async def _alive(client: object) -> bool:
+        return True
+
+    monkeypatch.setattr("bot.services.psn.auth.build_client", _build)
+    monkeypatch.setattr("bot.services.psn.auth.check_alive", _alive)
+    auth = PsnAuth(repo, cipher)
+    await auth.set_npsso(NPSSO, admin_id=1)
+    return auth
+
+
+async def test_awaiting_filter_is_false_for_an_unarmed_user() -> None:
+    awaiting.clear(TG_ID)
+    assert await AwaitingPsnLink()(_event(TG_ID)) is False
+
+
+async def test_awaiting_filter_is_true_once_armed() -> None:
+    awaiting.expect(TG_ID, "psn")
+    try:
+        assert await AwaitingPsnLink()(_event(TG_ID)) is True
+    finally:
+        awaiting.clear(TG_ID)
+
+
+async def test_awaiting_filter_is_false_with_no_user_at_all() -> None:
+    assert await AwaitingPsnLink()(_event(None)) is False
+
+
+async def test_prompt_replies_not_configured_without_arming(
+    repo: Repo, cipher: TokenCipher
+) -> None:
+    bot = FakeBot()
+    awaiting.clear(TG_ID)
+    auth = PsnAuth(repo, cipher)  # never configured
+
+    await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
+
+    assert bot.sent == [(TG_ID, "Подключение PSN пока не настроено — обратитесь к администратору.")]
+    assert awaiting.is_expecting(TG_ID, "psn") is False
+
+
+async def test_prompt_names_the_linked_accounts_and_offers_another(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#10: with PSN linked, /connect_psn offers to add another account
+    (up to three) instead of asking for an Online ID straight away."""
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "SuperOmsk")
+    bot = FakeBot()
+    awaiting.clear(TG_ID)
+
+    await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
+
+    assert len(bot.sent) == 1
+    assert "SuperOmsk" in bot.sent[0][1] and "1 из 3" in bot.sent[0][1]
+    assert awaiting.is_expecting(TG_ID, "psn") is False
+
+
+async def test_prompt_at_the_limit_says_so(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    await repo.ensure_user(TG_ID, "igor")
+    for n in (1, 2, 3):
+        await repo.link_platform_account(TG_ID, "psn", f"acc-{n}", f"Nick{n}")
+    bot = FakeBot()
+    awaiting.clear(TG_ID)
+
+    await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
+
+    assert "максимум" in bot.sent[0][1]
+    assert awaiting.is_expecting(TG_ID, "psn") is False
+
+
+async def test_prompt_arms_the_wait_and_sends_the_link_prompt(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await repo.ensure_user(TG_ID, "igor")
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    bot = FakeBot()
+    awaiting.clear(TG_ID)
+
+    await prompt_for_link(bot, repo, auth, TG_ID)  # type: ignore[arg-type]
+
+    assert awaiting.is_expecting(TG_ID, "psn") is True
+    assert len(bot.sent) == 1
+    assert "Online ID" in bot.sent[0][1]
+    awaiting.clear(TG_ID)
+
+
+async def test_connect_links_a_visible_profile(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    bot = FakeBot()
+
+    async def _resolve(client: object, online_id: str) -> PsnProfile:
+        return PsnProfile(account_id="acc-1", online_id="Gamer")
+
+    async def _visible(client: object, account_id: str) -> bool:
+        return True
+
+    monkeypatch.setattr(psn_handlers, "resolve_profile", _resolve)
+    monkeypatch.setattr(psn_handlers, "is_trophy_visible", _visible)
+
+    await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
+
+    link = await repo.get_platform_link(TG_ID, "psn")
+    assert link is not None
+    assert link.external_id == "acc-1"
+    assert link.display_name == "Gamer"
+    # The backfill kicked off in the background may or may not have
+    # completed by now — only the link confirmation itself is asserted.
+    assert (TG_ID, "Подключил PSN: Gamer.") in bot.sent
+
+
+async def test_connect_refuses_a_closed_profile_without_linking(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mirrors Steam's own private-profile refusal (services/steam/client.py's
+    is_public check) — checklist item 3, SPEC 9, M-PSN-1."""
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    bot = FakeBot()
+
+    async def _resolve(client: object, online_id: str) -> PsnProfile:
+        return PsnProfile(account_id="acc-1", online_id="Gamer")
+
+    async def _closed(client: object, account_id: str) -> bool:
+        return False
+
+    monkeypatch.setattr(psn_handlers, "resolve_profile", _resolve)
+    monkeypatch.setattr(psn_handlers, "is_trophy_visible", _closed)
+
+    await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
+
+    assert await repo.get_platform_link(TG_ID, "psn") is None
+    assert "скрыты" in bot.sent[-1][1]
+
+
+async def test_connect_reports_unresolvable_online_id(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    bot = FakeBot()
+
+    async def _not_found(client: object, online_id: str) -> PsnProfile:
+        raise PsnApiError("nope")
+
+    monkeypatch.setattr(psn_handlers, "resolve_profile", _not_found)
+
+    await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "nobody")  # type: ignore[arg-type]
+
+    assert await repo.get_platform_link(TG_ID, "psn") is None
+    assert "Не нашёл" in bot.sent[-1][1]
+
+
+async def test_connect_reports_a_dead_service_token(
+    repo: Repo, cipher: TokenCipher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = await _configured_auth(repo, cipher, monkeypatch)
+    bot = FakeBot()
+
+    async def _dead(client: object, online_id: str) -> PsnProfile:
+        raise PsnTokenDeadError("dead")
+
+    monkeypatch.setattr(psn_handlers, "resolve_profile", _dead)
+
+    await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
+
+    assert await repo.get_platform_link(TG_ID, "psn") is None
+    assert "недоступен" in bot.sent[-1][1]
+
+
+async def test_disconnect_removes_the_link(repo: Repo) -> None:
+    await repo.ensure_user(TG_ID, "igor")
+    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Gamer")
+
+    await repo.unlink_platform_account(TG_ID, "psn")
+
+    assert await repo.get_platform_link(TG_ID, "psn") is None
+
+
+async def test_disconnecting_keeps_the_backfill_gate(repo: Repo) -> None:
+    """Found live on the test bot, 2026-09-13: an account earned two trophies
+    and the bot never looked at it.
+
+    Disconnecting used to delete the `psn_poll_state` row. A relink then skips
+    backfill on purpose (#52 — the trophies are already stored and the ordinary
+    tick is a delta), so nothing ever set `backfill_done` again, and
+    `psn_pollable_users` reads a missing row as "not done" and skips the
+    account forever. #52's own rule — deactivate, never delete — had simply
+    not reached this row, which is a gate and not a cache.
+    """
+    from bot.handlers.psn import disconnect_psn_confirm
+
+    await repo.ensure_user(TG_ID, "someone")
+    await repo.link_platform_account(TG_ID, Platform.PSN, ACCOUNT_ID, "Gamer")
+    await repo.mark_psn_backfill_done(ACCOUNT_ID)
+
+    callback = SimpleNamespace(
+        from_user=SimpleNamespace(id=TG_ID, username="someone"),
+        message=None,
+        answer=_noop,
+        data="psn:disconnect:yes",
+    )
+    await disconnect_psn_confirm(callback, repo, static_i18n("psn"))  # type: ignore[arg-type]
+
+    assert await repo.psn_backfill_done(ACCOUNT_ID) is True
+    pollable = [t for t in await repo.psn_pollable_users() if t.account_id == ACCOUNT_ID]
+    assert pollable == [], "an inactive link must not be polled"

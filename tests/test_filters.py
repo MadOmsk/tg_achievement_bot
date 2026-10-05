@@ -1,0 +1,310 @@
+"""Publication filters (SPEC 5.5)."""
+
+from __future__ import annotations
+
+import pytest
+
+from bot.db.repo import AchievementRow, ChatTarget
+from bot.services.achievements import passes_filters
+from bot.views.notification import format_digest, format_single
+from bot.views.parts import rarity_badge, trophy_tier_badge
+
+
+def test_rarity_badge_is_always_one_of_two_icons() -> None:
+    """No third "no badge" state (2026-09-05) — unproven defaults to the
+    cup rather than going unbadged."""
+    assert rarity_badge(2.4) == "💎"
+    assert rarity_badge(15.0) == "💎"  # boundary — inclusive
+    assert rarity_badge(15.1) == "🏆"
+    assert rarity_badge(92.2) == "🏆"
+    assert rarity_badge(None) == "🏆"
+
+
+def test_trophy_tier_badge_covers_all_four_tiers_and_nothing_else() -> None:
+    """New dimension, PSN-only (SPEC 9, M-PSN-1/2) — empty for every other
+    platform (trophy_type is always None there), never a stray space."""
+    assert trophy_tier_badge("bronze") == "🥉"
+    assert trophy_tier_badge("silver") == "🥈"
+    assert trophy_tier_badge("gold") == "🥇"
+    assert trophy_tier_badge("platinum") == "💠"
+    assert trophy_tier_badge(None) == ""
+
+
+def achievement(
+    rarity: float | None = 50.0,
+    platform: str = "xbox_modern",
+    gamerscore: int = 20,
+    is_secret: bool = False,
+    trophy_type: str | None = None,
+) -> AchievementRow:
+    return AchievementRow(
+        title_id="1",
+        achievement_id="a1",
+        name="Ashes to Ashes",
+        description="Kill 100 enemies",
+        icon_url=None,
+        unlocked_at="2026-09-02T10:00:00+00:00",
+        gamerscore=gamerscore,
+        rarity_percent=rarity,
+        platform=platform,
+        title_name="Halo Infinite",
+        is_secret=is_secret,
+        trophy_type=trophy_type,
+    )
+
+
+def chat(
+    min_gamerscore: int = 0, muted: list[str] | None = None, rarity_mode: str = "all"
+) -> ChatTarget:
+    return ChatTarget(
+        chat_id=-100,
+        title="Гейминг-чат",
+        min_gamerscore=min_gamerscore,
+        muted_title_ids=muted or [],
+        rare_threshold_percent=10.0,
+        daily_summary_time="20:00",
+        tz_offset_min=180,
+        rarity_mode=rarity_mode,
+    )
+
+
+@pytest.mark.parametrize(
+    ("threshold", "rarity", "expected"),
+    [(10.0, 2.4, True), (10.0, 10.0, True), (10.0, 10.1, False), (20.0, 15.0, True)],
+)
+def test_rarity_threshold_is_the_chat_setting(
+    threshold: float, rarity: float, expected: bool
+) -> None:
+    """The 10% is a per-chat default, never a constant in the code (SPEC 1.4, 5.5)."""
+    item = achievement(rarity)
+    assert passes_filters(item, chat(rarity_mode="rare"), threshold) is expected
+
+
+def test_x360_obeys_rarity_check() -> None:
+    """Now that Contract 3 supplies rarity for Xbox 360, it obeys the chat's rarity check."""
+    rare_item = achievement(rarity=4.5, platform="xbox_360")
+    assert passes_filters(rare_item, chat(rarity_mode="rare"), 10.0) is True
+
+    common_item = achievement(rarity=25.0, platform="xbox_360")
+    assert passes_filters(common_item, chat(rarity_mode="rare"), 10.0) is False
+    assert passes_filters(common_item, chat(rarity_mode="all"), 10.0) is True
+
+    unproven_item = achievement(rarity=None, platform="xbox_360")
+    assert passes_filters(unproven_item, chat(rarity_mode="rare"), 10.0) is False
+    assert passes_filters(unproven_item, chat(rarity_mode="all"), 10.0) is True
+
+
+def test_hidden_mode_hides_every_platform_including_x360() -> None:
+    """One switch for every platform (SPEC 9, M-Steam-2e) — 'hidden' now
+    silences Xbox 360 too, not just the modern feed."""
+    assert passes_filters(achievement(rarity=30.0), chat(rarity_mode="hidden"), 10.0) is False
+    item = achievement(rarity=None, platform="xbox_360")
+    assert passes_filters(item, chat(rarity_mode="hidden"), 10.0) is False
+
+
+def test_steam_is_not_exempt_from_the_rarity_check() -> None:
+    """Unlike Xbox 360, Steam has a real rarity_percent (M-Steam-2b) — it
+    goes through the ordinary rarity check, no platform exemption."""
+    item = achievement(rarity=30.0, platform="steam")
+    assert passes_filters(item, chat(rarity_mode="rare"), 10.0) is False  # 30% > 10%
+    assert passes_filters(item, chat(rarity_mode="rare"), 50.0) is True
+
+
+def test_rarity_mode_is_per_chat_now() -> None:
+    """SPEC 9, M-Steam-2e's follow-up: rarity_mode moved off the person
+    (one shared value for every chat) onto the subscription (one value per
+    chat) — the same achievement can pass in one chat and not in another."""
+    item = achievement(rarity=30.0)
+    assert passes_filters(item, chat(rarity_mode="all"), 10.0) is True
+    assert passes_filters(item, chat(rarity_mode="rare"), 10.0) is False  # 30% > 10%
+
+
+def test_min_gamerscore_and_mute() -> None:
+    assert passes_filters(achievement(gamerscore=5), chat(min_gamerscore=10), 10.0) is False
+    assert passes_filters(achievement(), chat(muted=["1"]), 10.0) is False
+
+
+def test_single_message_is_the_standardized_form() -> None:
+    """2026-09-05 follow-up: fixed wording on every platform, platform
+    moved off the header onto the game-title line, badge leads the name
+    rather than trailing the percentage."""
+    text = format_single("Igor", achievement(rarity=2.4), "Halo Infinite", locale="ru")
+    assert "<b>Igor</b> получает достижение" in text
+    assert "Halo Infinite (<i>🟢 XBOX</i>)" in text
+    assert "💎 «Ashes to Ashes» · 20 G · 2.4%" in text
+
+
+def test_single_message_for_x360_has_no_rarity_percent_but_still_a_badge() -> None:
+    """No rarity_percent to show a number for (Xbox 360 never carries one),
+    but the badge itself still shows — unproven defaults to the cup, not to
+    no badge at all (found live: a whole game with no badge anywhere read
+    as broken, not as "no data", 2026-09-05)."""
+    text = format_single(
+        "Igor", achievement(rarity=None, platform="xbox_360"), "Halo 3", locale="ru"
+    )
+    assert "Halo 3 (<i>🟢 XBOX 360</i>)" in text
+    assert "🏆 «Ashes to Ashes» · 20 G" in text
+    assert "редкость" not in text
+
+
+def test_single_message_omits_gamerscore_when_zero() -> None:
+    """Not a Steam-specific rule any more (2026-09-05 follow-up) — any
+    platform's 0 gamerscore is omitted the same way, since "0 G" always
+    reads as a real (if trivial) score rather than "not applicable"."""
+    item = achievement(rarity=92.2, platform="steam", gamerscore=0)
+    text = format_single("Igor", item, "Deadlock", locale="ru")
+    lines = text.split("\n")
+    assert "G" not in lines[3]  # header, blank, game line, then this one
+    assert "· 92.2%" in text
+
+
+def test_single_message_shows_gamerscore_when_nonzero_on_any_platform() -> None:
+    """The omission is about the value, not the platform — a platform that
+    usually has none still shows it if this one row genuinely has some."""
+    item = achievement(rarity=50.0, platform="steam", gamerscore=15)
+    text = format_single("Igor", item, "Deadlock", locale="ru")
+    assert "15 G" in text
+
+
+def test_single_message_tags_the_platform() -> None:
+    """SPEC 9, M-Steam-2e — found live: a Steam achievement with no platform
+    mention at all was easy to miss among Xbox ones."""
+    text = format_single(
+        "Igor", achievement(rarity=92.2, platform="steam"), "Deadlock", locale="ru"
+    )
+    assert "⚫ Steam" in text
+
+
+def test_single_message_shows_only_the_trophy_tier_on_psn_not_rarity_too() -> None:
+    """Follow-up 2026-09-06 (user request), reversing M-PSN-2's original
+    "shown alongside rarity_badge(), two different questions" call — the
+    tier already answers the same question for PSN, and showing both could
+    literally repeat itself — a platinum trophy and an "ordinary" rarity cup
+    were the same 🏆 until platinum became 💠 (owner, 2026-09-17). Only the
+    tier icon appears, not a diamond/cup plus it."""
+    text = format_single(
+        "Igor",
+        achievement(rarity=2.4, platform="psn", trophy_type="platinum"),
+        "Bloodborne",
+        locale="ru",
+    )
+    badge_line = text.split("\n")[3]  # header, blank, game line, then this one
+    assert badge_line.startswith("💠 «")
+    assert "💎" not in text
+
+
+def test_single_message_gold_tier_replaces_rarity_badge_too() -> None:
+    text = format_single(
+        "Igor",
+        achievement(rarity=2.4, platform="psn", trophy_type="gold"),
+        "Bloodborne",
+        locale="ru",
+    )
+    badge_line = text.split("\n")[3]
+    assert badge_line.startswith("🥇 «")
+    assert "💎" not in badge_line
+
+
+def test_single_message_has_no_tier_badge_on_other_platforms() -> None:
+    text = format_single(
+        "Igor", achievement(rarity=2.4, platform="xbox_modern"), "Halo Infinite", locale="ru"
+    )
+    assert "🥇" not in text  # would only appear if a tier badge leaked in
+    assert "💎" in text
+
+
+def test_single_message_calls_it_a_trophy_on_psn() -> None:
+    """Follow-up 2026-09-06, user request — the "трофей" wording SPEC 9,
+    M-Steam-2e's original standardization explicitly left for later, once
+    PSN trophies were real data."""
+    text = format_single(
+        "Igor",
+        achievement(rarity=2.4, platform="psn", trophy_type="gold"),
+        "Bloodborne",
+        locale="ru",
+    )
+    assert text.startswith("<b>Igor</b> получает трофей")
+
+
+def test_single_message_still_calls_it_an_achievement_elsewhere() -> None:
+    text = format_single(
+        "Igor", achievement(rarity=2.4, platform="xbox_modern"), "Halo Infinite", locale="ru"
+    )
+    assert text.startswith("<b>Igor</b> получает достижение")
+
+
+def test_digest_header_pluralizes_trophies_for_an_all_psn_digest() -> None:
+    items = [achievement(rarity=r, platform="psn", trophy_type="bronze") for r in (2.4, 11.0, 34.0)]
+    text = format_digest("Igor", "Bloodborne", items, locale="ru")
+    assert "<b>Igor</b> получает 3 трофея" in text
+
+
+def test_digest_header_has_no_gamerscore_total() -> None:
+    """Used to add up gamerscore across all achievements in the header —
+    for an all-Steam session that came out as a lying "+0 G" (2026-09-05
+    follow-up, same reasoning as the single message's gamerscore rule)."""
+    items = [achievement(rarity=r) for r in (2.4, 11.0, 34.0, 50.0, 60.0)]
+    text = format_digest("Igor", "Halo Infinite", items, locale="ru")
+    assert "<b>Igor</b> получает 5 достижений" in text
+    assert "G" not in text.split("\n")[0]
+
+
+def test_digest_lists_every_achievement_no_cutoff() -> None:
+    """Dropped the old "… и ещё N" trim on request (2026-09-05) — a digest
+    exists to say what happened, cutting it short defeats that."""
+    items = [achievement(rarity=r) for r in (2.4, 11.0, 34.0, 50.0, 60.0)]
+    text = format_digest("Igor", "Halo Infinite", items, locale="ru")
+    assert "…" not in text
+    assert text.count("«Ashes to Ashes»") == 5
+
+
+def test_digest_groups_achievements_by_game() -> None:
+    """2026-09-05 follow-up: one block per game, not one flat list —
+    publish() only ever hands over one game's worth today, but the
+    renderer itself must not assume that stays true forever."""
+    halo = achievement(rarity=2.4, platform="xbox_modern")
+    halo.title_id = "1"
+    forza = achievement(rarity=50.0, platform="xbox_modern")
+    forza.title_id = "2"
+    forza.title_name = "Forza Horizon 5"
+    forza.name = "Speed Demon"
+
+    text = format_digest("Igor", None, [halo, forza], locale="ru")
+
+    assert "<b>Igor</b> получает 2 достижения" in text
+    halo_at = text.index("Halo Infinite")
+    forza_at = text.index("Forza Horizon 5")
+    assert halo_at < text.index("Ashes to Ashes") < forza_at < text.index("Speed Demon")
+
+
+def test_secret_achievement_name_and_description_are_spoilered() -> None:
+    """Xbox's own isSecret does not redact name/description (found live) —
+    hiding them is the bot's own doing, via a Telegram spoiler (SPEC 5.5, 7.1)."""
+    text = format_single("Igor", achievement(is_secret=True), "Halo Infinite", locale="ru")
+    assert '<span class="tg-spoiler">Ashes to Ashes</span>' in text
+    assert '<span class="tg-spoiler">Kill 100 enemies</span>' in text
+
+
+def test_non_secret_achievement_has_no_spoiler_markup() -> None:
+    text = format_single("Igor", achievement(is_secret=False), "Halo Infinite", locale="ru")
+    assert "tg-spoiler" not in text
+
+
+def test_secret_achievement_name_is_spoilered_in_a_digest_line_too() -> None:
+    items = [achievement(is_secret=True), achievement(is_secret=False)]
+    text = format_digest("Igor", "Halo Infinite", items, locale="ru")
+    assert '«<span class="tg-spoiler">Ashes to Ashes</span>»' in text
+    assert '<span class="tg-spoiler">Kill 100 enemies</span>' in text
+    assert "«Ashes to Ashes» ·" in text  # the non-secret one, unwrapped
+    assert "\n<i>Kill 100 enemies</i>" in text  # italic in a digest (owner, 2026-09-25)
+
+
+def test_gamertag_and_achievement_text_are_html_escaped() -> None:
+    """format_single/format_digest go out as HTML now (for the spoiler
+    markup) — untrusted text needs escaping or a stray "<"/"&" breaks
+    Telegram's parser, same reasoning as the daily summary's table."""
+    weird = achievement()
+    weird.name = "A&B<C>"
+    text = format_single("We>ird<Name", weird, "Hal&o", locale="ru")
+    assert "<C>" not in text
+    assert "&amp;" in text and "&lt;" in text

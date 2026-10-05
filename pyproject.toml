@@ -1,0 +1,68 @@
+[project]
+name = "xbox-achievement-bot"
+version = "0.1.0"
+description = "Telegram bot publishing Xbox achievements of chat members"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.13",
+    "xbox-webapi>=2.1.0",
+    "aiohttp>=3.9",
+    "httpx>=0.27",
+    "aiosqlite>=0.20",
+    "apscheduler>=3.10",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "cryptography>=42",
+    "howlongtobeatpy>=1.0.23",
+    # Localization infrastructure (2026-09-07, see issue tracking i18n
+    # migration): aiogram_i18n is the native i18n middleware for aiogram 3 —
+    # it injects an I18nContext into every handler and picks up the active
+    # locale per-user/per-chat, instead of a bespoke dict-based lookup we'd
+    # have to maintain ourselves. Fluent (not gettext) because its plural/
+    # selector syntax handles Russian's three-way plural rules (1/2-4/5+)
+    # natively in the .ftl source, where gettext's ngettext would need a
+    # hand-written plural-index expression per string. Only one locale
+    # ("ru") ships today — see bot/locales/ — the bot's user-facing text is
+    # still Russian-only by design (CLAUDE.md), this only moves *where* the
+    # strings live, ahead of actually adding a second language.
+    "aiogram_i18n>=1.4",
+    "fluent.runtime>=0.4",
+    # PSN has no documented public API at all — psnawp_api is a reverse-
+    # engineered wrapper over the same private endpoints the PlayStation App
+    # uses (SPEC 9, M-PSN-1). Same class of dependency as xbox-webapi-python
+    # above, not a "тащить лишнее": reimplementing PSN's auth exchange and
+    # GraphQL search ourselves buys nothing. It is synchronous (requests-
+    # based) — every call goes through asyncio.to_thread, see
+    # services/psn/client.py.
+    "psnawp>=3.0",
+    # A picture a person uploads in the Mini App (#157) is decoded and saved
+    # again as a plain JPEG: what is stored is then an image and nothing else,
+    # with no EXIF (a phone photo's GPS position) and a bounded size, whatever
+    # client sent it.
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6", "pytest>=8", "pytest-asyncio>=0.24"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["bot*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+# Bot messages are Russian by design (CLAUDE.md), so Cyrillic in string literals
+# is not an ambiguity to warn about.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]

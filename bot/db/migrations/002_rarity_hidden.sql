@@ -1,0 +1,12 @@
+-- Originally: adds a third state to user_settings.rarity_mode: 'hidden'.
+--
+-- Now a no-op for a fresh database (edited here after migration 016 moved
+-- rarity_mode off user_settings entirely, onto subscriptions — SPEC 9,
+-- M-Steam-2e's follow-up): schema.sql no longer creates a rarity_mode
+-- column on user_settings at all, so this migration's original rebuild
+-- would collide the moment it runs on a brand-new database, the same class
+-- of problem migration 008's and migration 002's own earlier fix (for
+-- show_x360) already ran into. Production applied the *original* version
+-- of this migration long before rarity_mode ever left user_settings, so
+-- editing the file now only changes what a fresh install sees — it never
+-- replays there.

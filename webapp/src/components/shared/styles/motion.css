@@ -1,0 +1,47 @@
+/* Pictures fade in once loaded (see useImgFade) instead of painting from the
+ * top as they download. */
+.img-fade {
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.img-fade.is-loaded {
+  opacity: 1;
+}
+
+/* prefers-reduced-motion is an app-wide concern, not a screen's own —
+ * one place lists every animated selector instead of a dozen files
+ * each carrying a fragment of the same media query. */
+@media (prefers-reduced-motion: reduce) {
+  .btn:active,
+  .dock button:active,
+  .dock-pill,
+  .toggle::after,
+  .skel,
+  .spinner,
+  .busy-bar::after,
+  .profile-hero-layers,
+  .profile-hero-art,
+  .profile-hero-copy h2,
+  .profile-hero-copy p,
+  .sheet,
+  .sheet-body,
+  .pane-fade,
+  .search-pane,
+  .unlock-slider .profile-hero-layers,
+  .unlock-slider .profile-hero-words,
+  .unlock-slider .game-card-art,
+  .unlock-slide-art,
+  .unlock-slider .unlock-card-art .profile-hero-layers.unlock-slide-art,
+  .unlock-dots button,
+  .home-me,
+  .home-hello-row,
+  .home-search-row,
+  .game-hits,
+  .glass-orb {
+      transition: none;
+      transform: none !important;
+      animation: none;
+    }
+
+}

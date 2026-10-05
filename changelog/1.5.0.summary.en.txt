@@ -1,0 +1,7 @@
+• Mini App: game page — full-bleed cover, complete achievement list, friend comparison, and platinum effects for 100%
+• Profile games of the month: cover art, clean progress bars, and instant tap-through to game details
+• Day calendar in the feed: tap any date or "Today" to jump straight to that day
+• Recent achievements gallery on the home screen and in profiles
+• Smooth looping carousels, faster lazy feed, and skeleton loaders instead of spinners
+• Unified glowing progress bars, crisp PSN tier medals, and secret achievements with visible score
+• Settings: account deletion, secrets toggle, and refined typography

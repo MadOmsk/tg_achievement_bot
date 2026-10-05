@@ -1,0 +1,277 @@
+/* Placeholders for what is loading. They are drawn from the app's own pieces
+ * (glass cards, the same picture and line sizes) and only a soft light passes
+ * over them, so the page does not change shape when the content arrives. */
+/* Tinted with the app's own blue, not a neutral grey, so a loading screen
+ * still looks like this app rather than a generic placeholder. */
+.skel {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 10px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(130, 160, 235, 0.16), transparent 60%),
+    rgba(255, 255, 255, 0.05);
+}
+
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(200, 215, 255, 0.16) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: sheen 1.5s ease-in-out infinite;
+}
+
+.skel.line {
+  height: 13px;
+  margin: 0;
+}
+
+.skel.line.is-thin {
+  height: 11px;
+}
+
+.skel-title {
+  width: 42%;
+  height: 22px;
+  margin: 4px 0 18px;
+}
+
+.skel-rows {
+  display: flex;
+  flex-direction: column;
+  /* The gap of the list it stands in for, where that list sets one. */
+  gap: var(--day-gap, 8px);
+}
+
+.skel-feed-row {
+  cursor: default;
+  pointer-events: none;
+}
+
+.skel-pic {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+}
+
+.skel-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* The first screen: the home page's own geometry, with room between blocks. */
+.app-skel {
+  padding-top: 12px;
+}
+
+/* Follows a real header, already spaced by its own padding — no second gap. */
+.app-skel.is-nested {
+  padding-top: 0;
+}
+
+/* Under a profile's gallery the strip starts 28px lower, as the real one does. */
+.app-skel.is-nested .app-skel-hero {
+  margin-bottom: 28px;
+}
+
+.app-skel-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 18px;
+}
+
+.skel-avatar {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+}
+
+.skel-avatar.is-big {
+  width: 84px;
+  height: 84px;
+}
+
+.app-skel-who {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-skel-hero {
+  aspect-ratio: 1 / 1;
+  margin: 0 -18px 32px;
+  border-radius: 0;
+}
+
+.app-skel .skel-title {
+  margin: 0 0 18px;
+}
+
+.skel-pic.is-big {
+  flex: 0 0 auto;
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+}
+
+.app-skel-game .skel-copy {
+  flex: 1;
+  gap: 12px;
+}
+
+/* The other pages' first screens. */
+.page-skel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 18px;
+  min-height: 40px;
+}
+
+.page-skel-head .skel-title {
+  width: 38%;
+  height: 24px;
+  margin: 0;
+}
+
+.page-skel-chip {
+  width: 92px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.feed-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.skel-post {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--stroke);
+}
+
+.skel-post-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.skel-post-pic {
+  aspect-ratio: 1 / 1;
+  border-radius: 16px;
+}
+
+.skel-post-text {
+  margin: 2px 2px 4px;
+  height: 15px;
+}
+
+.stats-skel-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 0 26px;
+}
+
+.stats-skel-tile {
+  height: 104px;
+  border-radius: 22px;
+}
+
+.app-skel .skel-title.is-small,
+.skel-title.is-small {
+  width: 34%;
+  height: 14px;
+  margin: 0 0 16px;
+}
+
+.stats-skel-strip {
+  display: flex;
+  gap: 10px;
+}
+
+.stats-skel-cover {
+  display: flex;
+  flex: 0 0 108px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-skel-art {
+  width: 108px;
+  height: 108px;
+  margin-bottom: 4px;
+  border-radius: 16px;
+}
+
+.stats-skel-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.skel-avatar.is-row {
+  width: 44px;
+  height: 44px;
+}
+
+.stats-skel-count {
+  width: 18px;
+  margin-left: auto;
+}
+
+@keyframes sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.game-skel-tabs {
+  display: flex;
+  gap: 22px;
+  margin: 0 0 16px;
+}
+
+.skel-avatar.is-friend {
+  width: 80px;
+  height: 80px;
+}
+
+.skel-played-game {
+  box-sizing: border-box;
+  min-height: 88px;
+  cursor: default;
+}
+
+.skel-game-cover {
+  flex: 0 0 60px;
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+}
+
+.app-skel-game {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hair);
+}

@@ -1,0 +1,49 @@
+"""Admin panel PSN parity (#27) — the per-user card gets a 🔄 resync button
+for a linked PSN account, mirroring the Xbox/Steam ones it already had."""
+
+from __future__ import annotations
+
+from bot.db.repo import Repo
+from bot.views.admin import render_user_card
+
+ACCOUNT_ID = "psn-acc-1"
+
+
+def _callback_datas(markup) -> list[str]:
+    return [btn.callback_data for row in markup.inline_keyboard for btn in row if btn.callback_data]
+
+
+async def test_card_shows_a_psn_resync_button_when_psn_is_linked(repo: Repo) -> None:
+    await repo.ensure_user(1, "igor")
+    await repo.link_platform_account(1, "psn", ACCOUNT_ID, "Gamer")
+
+    _text, markup = await render_user_card(repo, 1, locale="ru")
+
+    assert f"a:sync:psn:1:{ACCOUNT_ID}" in _callback_datas(markup)
+
+
+async def test_card_has_a_block_and_buttons_per_psn_account(repo: Repo) -> None:
+    """#10: several PSN accounts, each its own block and its own pair of
+    buttons, named "PSN: nick" rather than a bare nickname."""
+    await repo.ensure_user(1, "igor")
+    await repo.link_platform_account(1, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(1, "psn", "psn-acc-2", "Second")
+
+    text, markup = await render_user_card(repo, 1, locale="ru")
+
+    assert text.index("PSN: Gamer") < text.index("PSN: Second")
+    datas = _callback_datas(markup)
+    assert f"a:sync:psn:1:{ACCOUNT_ID}" in datas and "a:reset:psn:1:psn-acc-2" in datas
+    texts = [btn.text for row in markup.inline_keyboard for btn in row]
+    assert "🔄 Обновить PSN: Second" in texts
+
+
+async def test_card_has_no_psn_resync_button_without_a_psn_link(repo: Repo) -> None:
+    await repo.ensure_user(1, "igor")
+    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamOnly")
+
+    _text, markup = await render_user_card(repo, 1, locale="ru")
+
+    datas = _callback_datas(markup)
+    assert "a:sync:steam:1" in datas
+    assert not any(d.startswith("a:sync:psn:") for d in datas)

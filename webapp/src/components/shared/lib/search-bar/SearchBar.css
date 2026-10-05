@@ -1,0 +1,82 @@
+.home-chrome .search-bar {
+  margin: 0;
+}
+
+.is-home .search-bar {
+  background: rgba(10, 12, 18, 0.28);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.search-bar input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 0;
+  outline: none;
+  font-size: 0.9rem;
+}
+
+.search-bar input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.search-bar:has(input) {
+  cursor: text;
+}
+
+.search-clear {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin: 0 -6px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  outline: none;
+  color: rgba(238, 241, 246, 0.72);
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.search-clear:focus,
+.search-clear:focus-visible,
+.search-clear:active {
+  outline: none;
+  box-shadow: none;
+  background: none;
+}
+
+.dock button {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 48px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: rgba(186, 196, 214, 0.42);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.search-bar.is-busy .glass-orb {
+  width: 6px;
+  height: 6px;
+}
+
+.search-pane,
+.pane-fade {
+  animation: pane-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

@@ -1,0 +1,942 @@
+/* Shared by TitleSheet, GameHero and GameFilterChips — everything
+ * under components/game/ that isn't already a components/shared/lib
+ * primitive. */
+
+.game-cover {
+  position: relative;
+  /* Out to the page edges, square corners. */
+  margin: 0 -18px 4px;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: #0a0c12;
+}
+
+.game-cover .game-cover-back.cover-ph {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+}
+
+.game-cover .game-cover-back.cover-ph.has-img > img {
+  position: absolute;
+  inset: 0;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transform: scale(1.18);
+  object-fit: cover;
+  filter: blur(22px) brightness(0.6) saturate(1.25);
+}
+
+/* No glyph on the backdrop: the fitted layer carries it when there is no picture. */
+.game-cover .game-cover-back.cover-ph.is-empty > .cover-ph-mark {
+  display: none;
+}
+
+/* Progress: a plate hanging off the picture's lower edge — an achievement icon, a
+ * bar and the percentage, so a game in progress is not just a picture. */
+.game-plate {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  margin: -27px 18px 0;
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: rgba(14, 17, 26, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.game-plate strong {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.game-plate-bar {
+  --bar-h: 9px;
+}
+
+.game-plate-pct {
+  width: 58px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.game-plate-icon {
+  display: grid;
+  place-items: center;
+  color: rgba(240, 245, 255, 0.9);
+}
+
+/* The collapsed stand-in for the big glowing medal (see HeroPeek/GameHero's
+ * `compact`) — the same plate everything else in this row uses, its bar
+ * full and platinum instead of mid-progress: the same colors
+ * progress.css already gives a finished game's bar elsewhere (the profile's
+ * games list, the hero bar), plus a slow shimmer passing over it so the
+ * plate has some life at rest instead of sitting there static. */
+.game-plate.is-platinum .game-plate-icon {
+  color: #bfe9fa;
+  filter: drop-shadow(0 0 8px rgba(140, 220, 245, 0.6));
+}
+
+.game-plate-fill.is-platinum {
+  --fill-a: rgba(80, 182, 218, 0.7);
+  --fill-b: rgba(226, 247, 255, 1);
+  --fill-glow: rgba(120, 214, 245, 0.7);
+  position: relative;
+  overflow: hidden;
+}
+
+.game-plate-fill.is-platinum::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.65) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: game-plate-shimmer 3.2s ease-in-out infinite;
+}
+
+@keyframes game-plate-shimmer {
+  0%,
+  25% {
+    transform: translateX(-100%);
+  }
+  75%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.game-plate.is-platinum strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  background: linear-gradient(180deg, #ffffff 10%, #bfe9fa 55%, #86c9e6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Achievements / "Об игре" (#131): one Swiper, endlessly looping, switched
+ * by tab or by swipe — the same shape the profile's own carousels use, so
+ * this page doesn't invent a second interaction for "two things to show
+ * here" (#131's accordion attempt did, and read as its own thing). */
+/* Tabs on the left, that tab's own action row on the right (compare/lock —
+ * "Об игре" simply has none, so the row isn't there at all). */
+.game-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 28px 0 0;
+  min-height: 36px;
+}
+
+.game-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  /* A neighbour too long to fit fades out instead of being cut. */
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+}
+
+/* The labels, three times over, slid left as the tab changes (GameTabBar). */
+.game-tabs-track {
+  display: flex;
+  gap: 18px;
+  width: max-content;
+}
+
+.game-tabs.is-animated {
+  transition: width 0.3s ease;
+}
+
+.game-tabs.is-animated .game-tabs-track {
+  transition: transform 0.3s ease;
+}
+
+.game-tabs button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.game-tabs button.is-on {
+  color: #fff;
+}
+
+/* `overflow: hidden` (Swiper's own default) is what keeps the next slide
+ * from peeking in at the edge — never override it here. */
+.game-tab-swiper {
+  margin-top: 0;
+}
+
+.game-tab-panel {
+  min-height: 1px;
+  padding-top: 12px;
+  /* A short panel ("Об игре") still leaves the page roughly as tall as a
+   * long one — without this, switching to it could yank the scroll
+   * position up along with the page's own height. */
+  padding-bottom: 30dvh;
+}
+
+.game-tab-panel > :first-child,
+.game-tab-panel > .feed > :first-child,
+.game-tab-panel .patch-list > :first-child {
+  margin-top: 0;
+}
+
+/* A message in place of the content carries no room of its own above it. */
+.game-tab-panel > .empty:first-child {
+  padding-top: 0;
+}
+
+.game-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+/* "Об игре"'s own panel — plain text, no card, no outline: the facts table
+ * (its last row, the hours, unfolds), then the description. */
+.about-game-desc {
+  margin: 22px 0 0;
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.about-game-facts {
+  margin: 0;
+}
+
+.about-game-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair);
+  font-size: 0.86rem;
+}
+
+.about-game-fact:first-child {
+  padding-top: 0;
+}
+
+.about-game-fact:last-child {
+  border-bottom: 0;
+}
+
+.about-game-fact dt {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+/* The hours row is the one row that opens: its sub-rows are the same table,
+ * just indented and a step quieter. */
+.about-game-fact.is-toggle {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.about-game-fact.is-sub {
+  padding-left: 14px;
+}
+
+.about-game-fact.is-sub dt,
+.about-game-fact.is-sub dd {
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.about-game-more {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: middle;
+  color: var(--muted);
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+}
+
+.about-game-more.is-open {
+  transform: rotate(-90deg);
+}
+
+.about-game-fact dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-game-score b {
+  font-weight: 750;
+}
+
+.about-game-score small {
+  margin-left: 1px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+/* A tip under a row's description, in the row's own card: the card unfolds
+ * (0fr -> 1fr) rather than jumping, and a small book at its corner says
+ * there is something to open. */
+.feed-row.has-tip {
+  /* The tip is a second grid row; a gap between rows would add space under a
+   * closed card. Its own top padding does the spacing when it opens. */
+  row-gap: 0;
+}
+
+/* The picture stays at the top of the card as it unfolds, level with the
+ * title, not the middle of the whole card. */
+.feed-row.has-wrap .feed-cover {
+  align-self: flex-start;
+}
+
+.feed-row.has-wrap.has-tip {
+  cursor: pointer;
+}
+
+/* The description stops short of the book, so the two never overlap; the
+ * tip below has the card's whole width. */
+.feed-row.has-tip .unlock-game {
+  padding-right: 24px;
+}
+
+/* A small book at the corner of the text column — which never grows, so the
+ * book stays where it is when the tip unfolds and only changes colour. */
+.feed-tip-mark {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  display: inline-flex;
+  color: rgba(224, 229, 240, 0.62);
+  transition: color 0.2s ease;
+}
+
+.feed-row.is-open .feed-tip-mark {
+  color: var(--mint);
+}
+
+/* The tip is a block of its own under the whole row — picture included — and
+ * unfolds (0fr -> 1fr). It is not a child of the text column, so the text
+ * never moves. */
+.ach-tip {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s ease;
+}
+
+.feed-row.is-open .ach-tip {
+  grid-template-rows: 1fr;
+}
+
+.ach-tip-inner {
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ach-tip-body {
+  display: block;
+  padding-top: 12px;
+}
+
+.ach-tip-line {
+  display: block;
+  margin-top: 0.55em;
+  color: rgba(232, 236, 245, 0.86);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ach-tip-line:first-child {
+  margin-top: 0;
+}
+
+/* A line of rich text (a tip, a patch) is a block of its own. */
+.rich-line {
+  display: block;
+}
+
+/* A table in a tip or a patch: the block's full width, scrolling sideways when
+ * it is wider, a hairline between rows, its heading row quieter and bold. */
+.rich-table-wrap {
+  display: block;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.rich-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.rich-table th,
+.rich-table td {
+  padding: 7px 10px 7px 0;
+  border-bottom: 1px solid var(--hair);
+  text-align: left;
+  vertical-align: top;
+}
+
+.rich-table th {
+  color: var(--muted);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rich-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* A guide's screenshot in a tip: the block's full width, its own height. */
+.rich-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 14px 0;
+  border-radius: 12px;
+  cursor: zoom-in;
+}
+
+/* A YouTube video in a tip or a patch, the block's full width: its picture, a
+ * play mark, a tap opens it. */
+.rich-video {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 14px 0;
+  overflow: hidden;
+  border-radius: 12px;
+  aspect-ratio: 16 / 9;
+  background: #0a0c12;
+  cursor: pointer;
+}
+
+.rich-video img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rich-video-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+}
+
+/* The updates tab: one soft card per patch, the newest first. */
+.patch-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--day-gap, 14px);
+}
+
+/* One day's patches under its label, the feed's own day rhythm. */
+.patch-day {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.patch-card {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--glass);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.patch-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.patch-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.patch-card-new {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--mint-dim);
+  color: var(--mint);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 2px;
+}
+
+/* The post, in paragraphs — the same when closed and open, so opening it
+ * changes only how much shows, never how the text sits. Closed, it is cut
+ * after a few lines and fades out. */
+.patch-card-body {
+  display: block;
+  margin-top: 10px;
+  color: rgba(232, 236, 245, 0.9);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+/* Closed: the post run together, three lines, the rest cut off. The type is
+ * the open card's own, so opening it only adds text. */
+.patch-card-body.is-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.patch-card-p {
+  display: block;
+  margin-top: 0.6em;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.patch-card-p:first-child {
+  margin-top: 0;
+}
+
+.patch-card-chevron {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--muted);
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+}
+
+.patch-card.is-open .patch-card-chevron {
+  transform: rotate(-90deg);
+}
+
+/* A completed game: a big platinum medal on the picture's edge, on a glow,
+ * and its label written in the same cool light — no outline. */
+.game-hero {
+  position: relative;
+  margin: 0 -18px 4px;
+}
+
+.game-hero .game-cover {
+  margin: 0;
+}
+
+/* The hero peeks in at half height at rest — the picture is the same on
+ * every visit, not worth the scroll it cost to get past. Pulling down at
+ * the top of the page (this page's own pull-to-refresh is off) reveals the
+ * rest; letting go snaps it back. The clip owns the edge-to-edge bleed
+ * instead of .game-hero, so overflow:hidden here (needed to hide what's
+ * above the fold) doesn't also clip that same bleed horizontally. */
+.hero-peek {
+  position: relative;
+  overflow: hidden;
+  margin: 0 -18px 4px;
+  transition: height 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hero-peek-inner {
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hero-peek .game-hero {
+  margin: 0 0 16px;
+}
+
+/* The peek/reveal fade touches only the picture, not the progress plate
+ * hanging off it — --peek-fade is set on .hero-peek itself (0 collapsed,
+ * 1 fully open) and read here. */
+.hero-peek .game-cover {
+  mask-image: linear-gradient(to bottom, #000 0%, #000 35%, rgba(0, 0, 0, var(--peek-fade, 1)) 100%);
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 35%,
+    rgba(0, 0, 0, var(--peek-fade, 1)) 100%
+  );
+}
+
+.game-hero.is-done:not(.is-compact) {
+  margin-bottom: 120px;
+}
+
+.game-hero.is-done .game-cover::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 60%;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(75% 90% at 50% 100%, rgba(150, 225, 250, 0.5), transparent 72%);
+}
+
+.game-medal {
+  position: absolute;
+  left: 50%;
+  /* The disc's centre sits on the picture's lower edge; the label hangs below. */
+  top: 100%;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transform: translate(-50%, -52px);
+}
+
+.game-medal-disc {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  color: #12303c;
+  background:
+    radial-gradient(circle at 30% 24%, #ffffff 0%, transparent 44%),
+    conic-gradient(from 210deg, #cdeaf7, #f6fbff, #9fd3ea, #eaf6fc, #b7ddef, #cdeaf7);
+  box-shadow:
+    0 0 0 4px rgba(12, 15, 22, 0.9),
+    0 0 0 7px rgba(180, 232, 250, 0.7),
+    0 0 46px rgba(120, 210, 245, 0.7),
+    0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+.game-medal-disc svg {
+  filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.75));
+}
+
+.game-medal-label {
+  margin-top: 12px;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  /* Platinum lettering: a cool metallic gradient with a soft glow behind it. */
+  background: linear-gradient(180deg, #ffffff 10%, #bfe9fa 55%, #86c9e6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgba(140, 220, 245, 0.55));
+}
+
+/* Light rays fanning out of the medal across the picture, turning slowly. */
+.game-rays {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  z-index: 2;
+  width: 190vw;
+  height: 190vw;
+  max-width: 1400px;
+  max-height: 1400px;
+  pointer-events: none;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(200, 244, 255, 0.3) 0deg 5deg,
+    transparent 5deg 20deg
+  );
+  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.55) 30%, transparent 62%);
+  mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.55) 30%, transparent 62%);
+  mix-blend-mode: screen;
+  transform: translate(-50%, 50%) rotate(0deg);
+  animation: game-rays-turn 60s linear infinite;
+}
+
+@keyframes game-rays-turn {
+  to {
+    transform: translate(-50%, 50%) rotate(360deg);
+  }
+}
+
+/* A bright band sweeping over the picture now and then. */
+.game-shine {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.34) 50%,
+    transparent 62%
+  );
+  transform: translateX(-130%);
+  animation: game-shine-pass 6s ease-in-out 1s infinite;
+}
+
+@keyframes game-shine-pass {
+  0% {
+    transform: translateX(-130%);
+  }
+  35%,
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+/* The picture's lower edge as a lit platinum line, brightest under the medal. */
+.game-edge {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 3;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(190, 236, 252, 0.6) 25%,
+    #ffffff 50%,
+    rgba(190, 236, 252, 0.6) 75%,
+    transparent
+  );
+  box-shadow: 0 0 16px 2px rgba(150, 225, 250, 0.6);
+}
+
+/* A finished game's picture gets a cool "platinum" grade: a tint over it and
+ * a soft vignette, so it reads as achieved before anything is read. */
+.game-hero.is-done .game-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(6, 22, 34, 0.5) 100%),
+    linear-gradient(180deg, rgba(150, 225, 250, 0.16), rgba(30, 90, 130, 0.3));
+  mix-blend-mode: soft-light;
+}
+
+.game-hero.is-done .game-cover .fit-layer > img {
+  filter: saturate(1.12) contrast(1.05) brightness(1.03);
+}
+
+/* The game's own page: a full-screen layer over the app, scrolling on its
+ * own, with the same sticky top bar the profile has. */
+.game-page {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 18px calc(28px + var(--safe-bottom));
+  /* The same background as every other page, over a solid colour: if a phone
+   * fails to paint the gradient layers, the feed underneath must still never
+   * show through. (No `local` attachment — some WebViews drop it.) */
+  background-color: var(--bg);
+  background-image: var(--app-bg);
+  isolation: isolate;
+  transform: translateZ(0);
+}
+
+/* The bar brings its own top padding (and the sticky offset is measured
+ * from the layer's edge), so it starts flush with the top. */
+.game-page .person-bar {
+  margin-top: 0;
+}
+
+.game-page > *:not(.person-bar):not(.game-hero):not(.hero-peek) {
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Where the profile has its month chip, the game has a lock: it flips the
+ * list between what is still to earn and what is already earned. */
+.game-lock-chip {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  box-shadow: none;
+  color: rgba(238, 241, 246, 0.9);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.game-lock-chip:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+
+
+/* Title and, under it, whose progress the page shows. */
+.game-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* The icon is centred in its 32px box and drawn with a little air inside its
+   * own square: pull the row out by both, so what is *seen* of the last icon
+   * ends on the page gutter, like every right-hand edge. */
+  margin-right: -10px;
+  min-width: 0;
+}
+
+/* Flips the list between the person's progress and yours. */
+.game-lock-chip.is-on {
+  color: #fff;
+}
+
+.game-lock-chip.is-on svg {
+  fill: rgba(255, 255, 255, 0.22);
+}
+
+/* Each person's mark on an achievement: their avatar, lit when they
+ * have it, dimmed and grey when they do not. */
+.compare-marks {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.compare-mark {
+  position: relative;
+  display: inline-flex;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.compare-mark.is-has {
+  opacity: 1;
+  filter: none;
+}
+
+
+/* The list heading spaced like the home page's "Friends": 28px above it,
+ * 16px below (its own row is taller than the text because of the buttons). */
+.game-page .achievements-head {
+  margin: 28px 0 0;
+  /* As tall as its buttons from the start: they appear only once the list
+   * has loaded, and the heading's spacing used to grow when they did. */
+  min-height: 32px;
+  align-items: center;
+}
+
+/* The room under a group's own DLC label, and the room above the next
+ * group's label, are the same value — other lists give the label above a
+ * little extra, but here the two should read as one even rhythm. */
+.game-page .feed {
+  --day-gap: 14px;
+}
+
+.game-page .feed-day + .feed-day {
+  margin-top: var(--day-gap);
+}
+
+
+/* What the person earned in this game, in the top bar: the number and its unit
+ * (G, achievements, trophies). */
+.person-bar .game-bar-score {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.person-bar .game-bar-score strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.person-bar .game-bar-score small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+/* The same tier medals as everywhere else, tightened for the header — up
+ * to four discs next to the back button and title had too little room to
+ * spare, so the count sits inside each disc instead of beside it. */
+.person-bar .tier-medals {
+  gap: 6px;
+}
+
+/* On a game's page the description is not cut to one line: it wraps. */
+.feed-row.has-wrap .unlock-game {
+  align-items: flex-start;
+}
+
+.feed-row.has-wrap .unlock-game-lead {
+  overflow: visible;
+}
+
+.feed-row.has-wrap .unlock-game-name {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  line-height: 1.4;
+  font-size: 0.86rem;
+  color: rgba(224, 229, 240, 0.76);
+}
+
+.feed-row.has-wrap {
+  align-items: flex-start;
+}
+
+/* Not a button to anything once it isn't secret — no pointer cursor
+ * implying otherwise. */
+.feed-row.has-wrap:not(.is-secret) {
+  cursor: default;
+}

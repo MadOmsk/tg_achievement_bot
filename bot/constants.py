@@ -1,0 +1,136 @@
+"""Shared enums for persisted and external string values."""
+
+from enum import IntEnum, StrEnum
+
+
+class Platform(StrEnum):
+    """Persisted values — `seen_achievements.platform` and friends store
+    these strings directly, so renaming one is a migration (034).
+
+    `XBOX_MODERN` covers Xbox One, Series and the PC Microsoft Store: one
+    achievement service, one contract (4), no distinction the bot could draw
+    even if it wanted to. It was called plain `modern` while Xbox was the
+    only platform here and the word had an obvious subject; next to `steam`
+    and `psn` it stopped having one (2026-09-11, user request), and both
+    Xbox values now say Xbox.
+    """
+
+    XBOX_MODERN = "xbox_modern"
+    XBOX_360 = "xbox_360"
+    STEAM = "steam"
+    PSN = "psn"
+
+
+class AccountPlatform(StrEnum):
+    """Which platform an *account* is on (#52) — coarser than `Platform`
+    above, which says where an achievement came from. Both Xbox generations
+    are one account and one platform to a person (owner decision, they bind
+    as a pair), so there is no `xbox_360` here; `seen_achievements`'
+    GENERATED `account_platform` column computes exactly this mapping.
+    """
+
+    XBOX = "xbox"
+    STEAM = "steam"
+    PSN = "psn"
+
+
+def account_platform_of(platform: str) -> str:
+    """Which account a `seen_achievements.platform` value belongs to — the
+    Python twin of the GENERATED `account_platform` column (#52). Both Xbox
+    generations are one account and one platform to a person."""
+    if platform in (Platform.XBOX_MODERN, Platform.XBOX_360):
+        return AccountPlatform.XBOX
+    return platform
+
+
+# One display order for every screen that lists platforms: Xbox, then
+# PlayStation, then Steam (owner decision, 2026-09-13). It had drifted —
+# /panel listed Xbox → Steam → PSN while /stats, ordering by the column name
+# in SQL, listed Xbox → PSN → Steam. Both are "a fixed order"; they were just
+# not the same one. Anything that renders a list of platforms sorts by this,
+# so a new screen is right without having to remember.
+_DISPLAY_RANK = {
+    Platform.XBOX_MODERN: 0,
+    Platform.XBOX_360: 0,
+    AccountPlatform.XBOX: 0,
+    Platform.PSN: 1,
+    Platform.STEAM: 2,
+}
+
+# How many PSN accounts one person may hold at once (#10, owner). Xbox and
+# Steam stay at one, which the database's own unique index enforces.
+MAX_PSN_ACCOUNTS = 3
+
+
+def platform_display_rank(platform: str) -> int:
+    """Sort key for the order above. An unknown value sorts last rather than
+    raising — a screen with one odd row beats a screen that will not render."""
+    return _DISPLAY_RANK.get(platform, len(_DISPLAY_RANK))
+
+
+class PresenceState(StrEnum):
+    ONLINE = "Online"
+    OFFLINE = "Offline"
+
+
+class TokenStatus(StrEnum):
+    ACTIVE = "active"
+    INVALID = "invalid"
+    REVOKED = "revoked"
+
+
+class RarityMode(StrEnum):
+    ALL = "all"
+    RARE = "rare"
+    HIDDEN = "hidden"
+
+
+class AchievementBadge(StrEnum):
+    DIAMOND = "💎"
+    CUP = "🏆"
+    # "You finished the thing" — a PSN platinum, and a 100%-completed game on
+    # Xbox/Steam (owner, 2026-09-17). It used to be CUP for both, which is
+    # also the badge an *ordinary* achievement leads with, so the rarest
+    # thing in a game and the most ordinary one shared a glyph.
+    PLATINUM = "💠"
+    COMPLETED_XBOX = "🌀"
+    COMPLETED_STEAM = "👾"
+    GOLD = "🥇"
+    SILVER = "🥈"
+    BRONZE = "🥉"
+
+
+class PsnTrophyTier(StrEnum):
+    PLATINUM = "platinum"
+    GOLD = "gold"
+    SILVER = "silver"
+    BRONZE = "bronze"
+
+
+class SettingKey(StrEnum):
+    SUMMARY_TOP_LIMIT = "summary_top_limit"
+    STATS_GAMES_LIMIT = "stats_games_limit"
+    HLTB_RESULTS_LIMIT = "hltb_results_limit"
+    HLTB_PAGE_SIZE = "hltb_page_size"
+    RECENT_LIMIT = "recent_limit"
+    ACCOUNT_RESET_COOLDOWN_HOURS = "account_reset_cooldown_hours"
+
+
+class XboxApiValue(StrEnum):
+    ACHIEVED = "Achieved"
+    ICON = "Icon"
+    GAMERSCORE = "Gamerscore"
+    # The two naming steps of the Xbox chain (#51) — both already ride along
+    # in the profile response read for GAMERSCORE, no extra request.
+    GAMERTAG = "Gamertag"
+    MODERN_GAMERTAG = "ModernGamertag"
+    # The account picture (#55), in the same fixed settings list as the
+    # names above — one more field off a response already being made.
+    GAME_DISPLAY_PIC = "GameDisplayPicRaw"
+    FULL = "Full"
+    ACTIVE = "Active"
+    INVALID_GRANT = "invalid_grant"
+
+
+class SteamCommunityVisibility(IntEnum):
+    PUBLIC = 3

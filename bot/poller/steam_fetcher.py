@@ -1,0 +1,320 @@
+"""Fetching Steam achievements and backfill (SPEC 9, M-Steam-2c/2d) — the
+Steam counterpart of poller/fetcher.py. Smaller than the Xbox version: no
+`ensure_title_name` equivalent (Steam's own presence already carries the
+game's display name, `gameextrainfo` — SPEC 9, M-Steam-2c), and no title-
+history refresh (no Steam analogue exists yet, scoped out of 2c on
+purpose).
+
+The API key is read lazily from SteamAuth on each call rather than held as
+a constructor copy (#17) — so an admin's set/change/clear in the panel
+takes effect without a restart.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from bot.constants import Platform
+from bot.db.repo import AchievementRow, Repo
+from bot.i18n import translator
+from bot.poller.publisher import Publisher
+from bot.services.hltb import ensure_title_match
+from bot.services.models import Progress
+from bot.services.rows import to_achievement_row
+from bot.services.steam.achievements import fetch_unlocked
+from bot.services.steam.auth import SteamAuth, SteamNotConfiguredError
+from bot.services.steam.client import (
+    OwnedGame,
+    SteamApiError,
+    SteamGameDetailsPrivateError,
+    get_owned_games,
+    get_presence_batch,
+    rate_limit_usage,
+)
+from bot.services.steam_extras import SteamExtras
+from bot.services.translate.auth import AnthropicAuth
+from bot.util import parse_iso, utcnow_iso
+
+log = logging.getLogger(__name__)
+
+# Set once every linked account's library has been topped up with the games
+# the backfill never saw: free-to-play ones, left out of GetOwnedGames until
+# the flag that includes them was added (#120), and games Valve folded into
+# another (#123). A new name runs the top-up again for whatever a later fix
+# makes visible.
+LIBRARY_TOPUP_KEY = "steam_library_topup_123"
+
+
+# A backfill's per-game concurrency — Xbox never needed this second level
+# (one call covers its whole library), Steam genuinely does since
+# fetch_unlocked() is one call per game (SPEC 9, M-Steam-2d). Module
+# constant, not a Settings field: internal tuning, not something the admin
+# would ever need to reach for.
+GAME_BACKFILL_CONCURRENCY = 5
+
+
+class SteamFetcher:
+    def __init__(
+        self,
+        repo: Repo,
+        steam_auth: SteamAuth,
+        publisher: Publisher,
+        concurrency: int = 2,
+        *,
+        anthropic_auth: AnthropicAuth,
+        steam_extras: SteamExtras | None = None,
+    ) -> None:
+        self._repo = repo
+        self._steam_extras = steam_extras
+        self._steam_auth = steam_auth
+        self._publisher = publisher
+        self._anthropic_auth = anthropic_auth
+        self._backfill_slots = asyncio.Semaphore(concurrency)  # people backfilling at once
+        self._game_slots = asyncio.Semaphore(GAME_BACKFILL_CONCURRENCY)  # games within one
+
+    def api_usage(self) -> list[tuple[int, int, float]]:
+        """(used, limit, window_seconds) — the admin panel's Steam line,
+        alongside Fetcher's own Xbox one (SPEC 6.4)."""
+        return rate_limit_usage()
+
+    async def poll_title(
+        self,
+        tg_id: int,
+        steam_id: str,
+        persona_name: str,
+        appid: str,
+        game_name: str | None,
+        *,
+        window_hours: int | None = None,
+    ) -> int:
+        """Fetch one game's achievements, keep the new ones, publish them."""
+        api_key = await self._steam_auth.require_key()
+        parsed = await fetch_unlocked(
+            self._repo, self._anthropic_auth, api_key, steam_id, appid, title_name=game_name
+        )
+        rows = [to_achievement_row(item) for item in parsed]
+        new_rows = await self._repo.insert_new_achievements_steam(
+            tg_id, steam_id, rows, is_backfill=False
+        )
+        await self._repo.mark_steam_achievements_polled(steam_id)
+        if not new_rows:
+            return 0
+
+        log.info("tg_id=%s unlocked %s new steam achievements in %s", tg_id, len(new_rows), appid)
+        await self._publisher.publish(
+            tg_id, steam_id, persona_name, new_rows, game_name, window_hours=window_hours
+        )
+        await self._ensure_hltb_match(appid)
+        return len(new_rows)
+
+    async def _ensure_hltb_match(self, title_id: str) -> None:
+        """Which HowLongToBeat entry this game is (#131) — after publishing,
+        never before, same reasoning as Fetcher._ensure_hltb_match."""
+        try:
+            await ensure_title_match(self._repo, title_id)
+        except Exception:
+            log.exception("HLTB match failed for title %s", title_id)
+        if self._steam_extras is not None:
+            self._steam_extras.ensure_title(title_id)
+
+    async def refresh_user(self, tg_id: int, steam_id: str, persona_name: str, locale: str) -> str:
+        """An out-of-turn look at one person, for the admin card (SPEC 6.4)
+        — Steam's counterpart of Fetcher.refresh_user() (2026-09-05
+        follow-up: the admin panel never had a Steam equivalent at all)."""
+        _ = translator("steamfetcher", locale)
+        try:
+            api_key = await self._steam_auth.require_key()
+        except SteamNotConfiguredError:
+            return _("steamfetcher-not-configured")
+        # Re-check achievement visibility as part of the resync (#5, user
+        # request: "ресинк перепроверяет же статус доступности ачивок?") —
+        # it did not, before this. A cheap probe, discarding the games list:
+        # backfill() is the one that actually re-stores anything.
+        try:
+            await get_owned_games(api_key, steam_id)
+        except SteamGameDetailsPrivateError:
+            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+        except SteamApiError:
+            pass  # transient failure — don't overwrite the last known-good status on a blip
+        else:
+            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
+
+        try:
+            snapshots = await get_presence_batch(api_key, [steam_id])
+        except SteamApiError as exc:
+            return _("steamfetcher-refresh-failed", error=exc)
+        snapshot = snapshots.get(steam_id)
+        if snapshot is None:
+            return _("steamfetcher-no-profile")
+
+        await self._repo.save_steam_presence_state(
+            steam_id, snapshot.persona_state, snapshot.gameid, snapshot.game_name, changed=False
+        )
+        published = 0
+        if snapshot.persona_state != 0 and snapshot.gameid is not None:
+            published = await self.poll_title(
+                tg_id,
+                steam_id,
+                snapshot.persona_name or persona_name,
+                snapshot.gameid,
+                snapshot.game_name,
+            )
+
+        where = snapshot.game_name or snapshot.gameid or _("steamfetcher-no-game")
+        state = (
+            _("steamfetcher-online", where=where)
+            if snapshot.persona_state != 0
+            else _("steamfetcher-offline")
+        )
+        return _("steamfetcher-refreshed", state=state, published=published)
+
+    async def catch_up(
+        self, tg_id: int, steam_id: str, persona_name: str, since: str, window_hours: int
+    ) -> int:
+        """Relinking an account the bot already knows (#52).
+
+        A full backfill here would be waste: the history is already stored,
+        and Steam hands us `rtime_last_played` for every owned game in the
+        one call that lists them — so only games touched since our newest
+        stored unlock can hold anything new. Measured against a real
+        account: 301 requests for the backfill, 2 for this.
+
+        What it does find *is* announced, but only inside `window_hours` —
+        someone who unlinked a month ago should not have a month of
+        achievements land in the chat at once.
+        """
+        api_key = await self._steam_auth.require_key()
+        cutoff = parse_iso(since).timestamp()
+        async with self._backfill_slots:
+            try:
+                games = await get_owned_games(api_key, steam_id)
+            except SteamGameDetailsPrivateError:
+                await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+                raise
+            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
+            candidates = [game for game in games if game.last_played > cutoff]
+            log.info(
+                "steam catch-up for tg_id=%s: %s of %s games played since %s",
+                tg_id,
+                len(candidates),
+                len(games),
+                since,
+            )
+            found = 0
+            for game in candidates:
+                async with self._game_slots:
+                    try:
+                        found += await self.poll_title(
+                            tg_id,
+                            steam_id,
+                            persona_name,
+                            game.appid,
+                            game.name,
+                            window_hours=window_hours,
+                        )
+                    except SteamApiError as exc:
+                        log.info("steam catch-up of appid=%s skipped: %s", game.appid, exc)
+            return found
+
+    async def fill_library_gaps(self, tg_id: int, steam_id: str) -> int:
+        """Store, as history, the achievements of every played game this
+        account has nothing stored for (#120) — one request per such game,
+        not per game in the library. Publishes nothing: whatever is there was
+        earned before the bot could see it."""
+        api_key = await self._steam_auth.require_key()
+        async with self._backfill_slots:
+            games = await get_owned_games(api_key, steam_id)
+            stored = await self._repo.steam_titles_with_achievements(steam_id)
+            rows: list[AchievementRow] = []
+            for game in games:
+                if game.appid in stored or not game.has_stats:
+                    continue
+                async with self._game_slots:
+                    try:
+                        parsed = await fetch_unlocked(
+                            self._repo,
+                            self._anthropic_auth,
+                            api_key,
+                            steam_id,
+                            game.appid,
+                            title_name=game.name,
+                        )
+                    except SteamApiError as exc:
+                        log.info("steam top-up of appid=%s skipped: %s", game.appid, exc)
+                        continue
+                rows.extend(to_achievement_row(item) for item in parsed)
+            await self._repo.insert_new_achievements_steam(tg_id, steam_id, rows, is_backfill=True)
+            log.info("steam top-up for tg_id=%s stored %s achievements", tg_id, len(rows))
+            return len(rows)
+
+    async def fill_library_gaps_once(self, targets: list[tuple[int, str]]) -> None:
+        """`fill_library_gaps` for every linked account, once per database
+        (#120): a new link already gets free games through its backfill, and
+        one played later arrives through the catch-up's recently-played list.
+        The mark is not set if Steam failed for somebody, so the next start
+        tries again; a private library is not a failure — asking again would
+        not change it."""
+        if await self._repo.get_app_setting(LIBRARY_TOPUP_KEY):
+            return
+        complete = True
+        for tg_id, steam_id in targets:
+            try:
+                await self.fill_library_gaps(tg_id, steam_id)
+            except SteamGameDetailsPrivateError:
+                continue
+            except Exception:
+                log.exception("steam top-up for tg_id=%s failed", tg_id)
+                complete = False
+        if complete:
+            await self._repo.set_app_setting(LIBRARY_TOPUP_KEY, utcnow_iso())
+
+    async def backfill(self, tg_id: int, steam_id: str, *, progress: Progress | None = None) -> int:
+        """Mark everything already unlocked as seen, publishing nothing —
+        same principle as Xbox's backfill (SPEC 5.6), just spread over one
+        request per played game instead of one call for the whole library
+        (SPEC 9, M-Steam-2d: no Steam equivalent of Xbox's contract 2)."""
+        api_key = await self._steam_auth.require_key()
+        async with self._backfill_slots:
+            try:
+                games = await get_owned_games(api_key, steam_id)
+            except SteamGameDetailsPrivateError:
+                # "My Profile" passed connect_steam's own is_public check,
+                # but the separate "Game details" toggle is still private —
+                # #39 already surfaces this to the person via
+                # _backfill_and_notify's own catch; recorded here too (#5)
+                # so /panel's login row reflects the same finding instead of
+                # only ever logging it. Re-raised unchanged — #39's message
+                # still needs to see this exact exception.
+                await self._repo.set_achievements_visible(tg_id, Platform.STEAM, False)
+                raise
+            await self._repo.set_achievements_visible(tg_id, Platform.STEAM, True)
+            rows: list[AchievementRow] = []
+            done = 0
+            if progress is not None:
+                await progress(0, len(games), 0)
+
+            async def one(game: OwnedGame) -> None:
+                nonlocal done
+                async with self._game_slots:
+                    try:
+                        parsed = await fetch_unlocked(
+                            self._repo,
+                            self._anthropic_auth,
+                            api_key,
+                            steam_id,
+                            game.appid,
+                            title_name=game.name,
+                        )
+                    except SteamApiError as exc:
+                        log.info("steam backfill of appid=%s skipped: %s", game.appid, exc)
+                        parsed = []
+                    rows.extend(to_achievement_row(item) for item in parsed)
+                    done += 1
+                    if progress is not None:
+                        await progress(done, len(games), len(rows))
+
+            await asyncio.gather(*(one(game) for game in games))
+            await self._repo.insert_new_achievements_steam(tg_id, steam_id, rows, is_backfill=True)
+            log.info("steam backfill for tg_id=%s stored %s achievements", tg_id, len(rows))
+            return len(rows)

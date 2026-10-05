@@ -1,0 +1,531 @@
+"""Inline keyboards shared by the connect flow and the panel — and, same as
+format_offset/format_rarity below, small handler-side helpers with no other
+natural home. safe_edit (2026-09-05 refactor) is one of those: imported by
+panel.py, connect.py, steam.py and hltb.py alike, none of which import each
+other back through this module, so it can live wherever without risking a
+cycle — this file already sits underneath all of them.
+
+Every function that renders user-facing text takes an I18nContext (SPEC
+i18n migration, 2026-09-07) — strings live in
+bot/locales/ru/LC_MESSAGES/keyboards.ftl, one file per shared-module the
+same way hltb.py got its own.
+"""
+
+from __future__ import annotations
+
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram_i18n import I18nContext
+
+from bot.constants import Platform, RarityMode
+from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
+from bot.services.naming import link_nickname
+from bot.services.relink import LinkPreview
+from bot.views.parts import PLATFORM_ICON
+
+# Re-exported (not redefined) — services/profile_links.py is the one place
+# that builds these URLs (2026-09-06 follow-up: /stats' nickname links now
+# need the exact same builders), this module just re-uses them for panel.py's
+# own profile buttons below.
+
+# Offsets, not zone names: MSK and CST are ambiguous, +03:00 is not (SPEC 6.1.1).
+COMMON_OFFSETS_HOURS: tuple[int, ...] = (2, 3, 4, 5, 6, 7, 9, 10)
+ALL_OFFSETS_HOURS: tuple[int, ...] = tuple(range(-12, 15))
+
+TZ_SET = "tz:set"
+TZ_MORE = "tz:more"
+TZ_SKIP = "tz:skip"
+TZ_MANUAL = "tz:manual"
+TZ_PICK = "tz:pick"
+# The same picker opened from /panel: its own prefix, so a pick there goes
+# back to the panel instead of ending on a line of its own (owner, 2026-09-30).
+PANEL_TZ = "ptz"
+CLOSE_CALLBACK = "msg:close"
+
+
+def close_button(
+    locale: str | None = None, i18n: I18nContext | None = None
+) -> InlineKeyboardButton:
+    """The universal close button, usable on any inline keyboard."""
+    loc = locale or (i18n.locale if i18n else "ru")
+    return InlineKeyboardButton(
+        text=gettext("chat", "chat-close-button", locale=loc),
+        callback_data=CLOSE_CALLBACK,
+    )
+
+
+def with_close_button(
+    markup: InlineKeyboardMarkup | None,
+    locale: str | None = None,
+    i18n: I18nContext | None = None,
+) -> InlineKeyboardMarkup:
+    """Appends the universal close button to markup, or creates a 1-button markup."""
+    btn = close_button(locale=locale, i18n=i18n)
+    if markup is None:
+        return InlineKeyboardMarkup(inline_keyboard=[[btn]])
+    rows = [list(row) for row in markup.inline_keyboard]
+    if not any(b.callback_data == CLOSE_CALLBACK for row in rows for b in row):
+        rows.append([btn])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def without_close_button(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
+    """The same keyboard with the close button taken out — for what the bot
+    posts on its own schedule (the day and month reports), which a member
+    should not be able to remove for everyone (owner, 2026-10-01)."""
+    if markup is None:
+        return None
+    rows = [[b for b in row if b.callback_data != CLOSE_CALLBACK] for row in markup.inline_keyboard]
+    rows = [row for row in rows if row]
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+def keep_closability(
+    current: InlineKeyboardMarkup | None, redrawn: InlineKeyboardMarkup | None
+) -> InlineKeyboardMarkup | None:
+    """A message redrawn in place keeps whether it can be closed: a scheduled
+    report paged to another day or month stays without its close button."""
+    if current is not None and not any(
+        b.callback_data == CLOSE_CALLBACK for row in current.inline_keyboard for b in row
+    ):
+        return without_close_button(redrawn)
+    return redrawn
+
+
+def _text(i18n: I18nContext | None, key: str, **kwargs: object) -> str:
+    return i18n.get(key, **kwargs) if i18n is not None else gettext("keyboards", key, **kwargs)
+
+
+def format_offset(minutes: int | None, i18n: I18nContext | None = None) -> str:
+    if minutes is None:
+        return _text(i18n, "kb-default")
+    hours, rest = divmod(abs(minutes), 60)
+    sign = "+" if minutes >= 0 else "−"
+    return f"UTC{sign}{hours}" if rest == 0 else f"UTC{sign}{hours}:{rest:02d}"
+
+
+def _offset_button(hours: int, i18n: I18nContext, *, prefix: str = "tz") -> InlineKeyboardButton:
+    minutes = hours * 60
+    return InlineKeyboardButton(
+        text=format_offset(minutes, i18n), callback_data=f"{prefix}:set:{minutes}"
+    )
+
+
+def timezone_keyboard(
+    i18n: I18nContext, *, full: bool = False, in_panel: bool = False
+) -> InlineKeyboardMarkup:
+    """The offsets picker. Right after connecting it can be skipped; opened
+    from /panel it can be left with "‹ Назад" instead, and its buttons carry
+    the panel's own prefix so a pick returns to the panel."""
+    prefix = PANEL_TZ if in_panel else "tz"
+    builder = InlineKeyboardBuilder()
+    offsets = ALL_OFFSETS_HOURS if full else COMMON_OFFSETS_HOURS
+    for hours in offsets:
+        builder.add(_offset_button(hours, i18n, prefix=prefix))
+    builder.adjust(4)
+
+    if not full:
+        builder.row(
+            InlineKeyboardButton(text=i18n.get("kb-tz-other"), callback_data=f"{prefix}:more")
+        )
+    # Faster than scrolling the full −12..+14 grid, and the only way to enter
+    # a half-hour offset like +5:30 at all — the button grid only has whole
+    # hours (SPEC 6.1.1).
+    builder.row(
+        InlineKeyboardButton(text=i18n.get("kb-tz-manual"), callback_data=f"{prefix}:manual")
+    )
+    if in_panel:
+        builder.row(back_to_panel_button(i18n, back=True))
+    else:
+        builder.row(InlineKeyboardButton(text=i18n.get("kb-tz-skip"), callback_data=TZ_SKIP))
+    return builder.as_markup()
+
+
+def panel_button(i18n: I18nContext | StaticI18nContext) -> InlineKeyboardButton:
+    """ "⚙️ Панель" — the way on from a flow's last step (owner, 2026-09-30)."""
+    return InlineKeyboardButton(text=i18n.get("kb-open-panel"), callback_data="panel:refresh")
+
+
+def back_to_panel_button(
+    i18n: I18nContext | StaticI18nContext, *, back: bool = False
+) -> InlineKeyboardButton:
+    """ "‹ В панель" (or "‹ Назад" where the panel is the step before)."""
+    return InlineKeyboardButton(
+        text=i18n.get("kb-back" if back else "kb-back-to-panel"), callback_data="panel:refresh"
+    )
+
+
+def buttons(*rows: InlineKeyboardButton) -> InlineKeyboardMarkup:
+    """One button per row — every flow screen here reads top to bottom."""
+    return InlineKeyboardMarkup(inline_keyboard=[[row] for row in rows])
+
+
+def connect_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)]]
+    )
+
+
+def onboarding_keyboard(
+    url: str,
+    i18n: I18nContext | StaticI18nContext,
+    *,
+    mini_app_url: str = "",
+) -> InlineKeyboardMarkup:
+    """All three platforms, one row each, in the same fixed order /panel
+    uses (#53, #33). /start used to offer the Microsoft sign-in and nothing
+    else, so Steam and PSN existed only for whoever already knew the
+    commands.
+
+    Xbox is a URL button because its flow leaves Telegram for Microsoft;
+    the other two are callbacks — they only need a nickname typed back.
+    When MINI_APP_URL is set, "Open the app" is the last row (DM WebApp
+    button — groups cannot use that shape).
+    """
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(text=i18n.get("kb-connect-xbox"), url=url)],
+        [InlineKeyboardButton(text=i18n.get("kb-panel-connect-psn"), callback_data="psn:connect")],
+        [
+            InlineKeyboardButton(
+                text=i18n.get("kb-panel-connect-steam"), callback_data="steam:connect"
+            )
+        ],
+    ]
+    app = (mini_app_url or "").strip()
+    if app:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("connect-open-app-button"),
+                    web_app=WebAppInfo(url=app),
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# "Never digest" is stored as a number rather than NULL so the publisher stays
+# a single comparison: any real session is smaller than this.
+DIGEST_NEVER = 99
+DIGEST_CHOICES = (2, 3, 4, 5, 6, 8, 10, DIGEST_NEVER)
+
+
+def format_digest(threshold: int, i18n: I18nContext) -> str:
+    if threshold >= DIGEST_NEVER:
+        return i18n.get("kb-digest-never")
+    return i18n.get("kb-digest-from-n", threshold=threshold)
+
+
+# One mode governs every connected platform and every chat a person
+# publishes to (#126 — it was per chat for a while, and somebody in many
+# chats set the same thing in each) — everything, only the rare ones by
+# each chat's own threshold, or nothing. Used to have a separate Xbox 360
+# show/hide switch next to this one; folded in here instead of growing a
+# platform-specific toggle when Steam arrived
+# (services/achievements.py::passes_filters).
+RARITY_CHOICES = (RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN)
+
+
+def format_rarity(mode: str, i18n: I18nContext | None = None) -> str:
+    if mode == RarityMode.HIDDEN:
+        return _text(i18n, "kb-rarity-hidden")
+    if mode == RarityMode.RARE:
+        # No percentage here on purpose: the threshold is per-chat now (SPEC
+        # 5.5), and this panel is not chat-scoped — a single number here
+        # would only ever be right for one of possibly several chats.
+        return _text(i18n, "kb-rarity-rare")
+    return _text(i18n, "kb-rarity-all")
+
+
+#  Language names are endonyms, always written in their own language and
+#  never translated (#48) — the whole point of a language picker is that
+#  someone who cannot read the current interface can still find their own
+#  language in it. Same reasoning as platform brand names, so these live
+#  here rather than in a .ftl.
+LOCALE_NAMES = {"ru": "Русский", "en": "English"}
+
+
+def next_locale(current: str) -> str:
+    """Cycles through the shipped locales, same shape as next_rarity_mode
+    below. Two today, so this is a plain toggle; it stays correct as a cycle
+    if a third ever lands, at which point the button should probably become
+    a submenu instead."""
+    order = list(AVAILABLE_LOCALES)
+    index = order.index(current) if current in order else 0
+    return order[(index + 1) % len(order)]
+
+
+def locale_name(locale: str) -> str:
+    return LOCALE_NAMES.get(locale, locale)
+
+
+def _rarity_or_all(mode: str) -> str:
+    return mode if mode in RARITY_CHOICES else RarityMode.ALL
+
+
+def next_rarity_mode(current: str) -> str:
+    index = RARITY_CHOICES.index(current) if current in RARITY_CHOICES else 0
+    return RARITY_CHOICES[(index + 1) % len(RARITY_CHOICES)]
+
+
+def disconnect_prompt_keyboard(
+    i18n: I18nContext, *, from_panel: bool = False
+) -> InlineKeyboardMarkup:
+    # Cancelling from the panel must restore the panel in place, not just
+    # vanish — it needs its own callback so the handler knows to re-render
+    # rather than delete the (only) message.
+    cancel_data = "panel:disconnect:no" if from_panel else "disconnect:no"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("kb-disconnect-confirm"), callback_data="disconnect:yes"
+                )
+            ],
+            [InlineKeyboardButton(text=i18n.get("kb-cancel"), callback_data=cancel_data)],
+        ]
+    )
+
+
+def steam_disconnect_button(i18n: I18nContext) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        text=i18n.get("kb-steam-disconnect"), callback_data="steam:disconnectprompt"
+    )
+
+
+def psn_disconnect_button(i18n: I18nContext) -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        text=i18n.get("kb-psn-disconnect"), callback_data="psn:disconnectprompt"
+    )
+
+
+def _platform_row(
+    i18n: I18nContext | StaticI18nContext,
+    *,
+    connected: bool,
+    connect_key: str,
+    connect_cb: str,
+    label: str,
+    menu_cb: str,
+    publish_cb: str,
+    publishes: bool | None = True,
+    needs_reconnect: bool = False,
+) -> list[InlineKeyboardButton]:
+    """One platform's row in /panel (#33, #10) — always the same shape and
+    position: `[🟢 XBOX ▸, 🔔 Публикуется]` when connected, or a single wide
+    "🎮 Подключить X" when not. The platform button opens its own screen
+    (profile, unlinking, PSN's several accounts); the second is the platform's
+    publishing switch, `None` meaning some of its accounts post and some do
+    not ("Частично")."""
+    if not connected:
+        return [InlineKeyboardButton(text=i18n.get(connect_key), callback_data=connect_cb)]
+    menu = InlineKeyboardButton(text=label, callback_data=menu_cb)
+    if needs_reconnect:
+        # A dead login posts nothing whatever the switch says, so its place
+        # goes to the way back in (owner, 2026-09-29).
+        return [
+            menu,
+            InlineKeyboardButton(text=i18n.get("kb-xbox-reconnect"), callback_data=connect_cb),
+        ]
+    if publishes is None:
+        publish_key = "kb-publishes-partly"
+    else:
+        publish_key = "kb-publishes-on" if publishes else "kb-publishes-off"
+    return [menu, InlineKeyboardButton(text=i18n.get(publish_key), callback_data=publish_cb)]
+
+
+def panel_keyboard(
+    tz_offset_min: int | None,
+    i18n: I18nContext | StaticI18nContext | None = None,
+    *,
+    connected: bool = True,
+    needs_reconnect: bool = False,
+    steam_connected: bool = False,
+    psn_connected: bool = False,
+    psn_accounts: int = 1,
+    rarity_mode: str = RarityMode.ALL,
+    xbox_publishes: bool = True,
+    psn_publishes: bool | None = True,
+    steam_publishes: bool = True,
+    steam_hidden: bool = False,
+    psn_hidden: bool = False,
+) -> InlineKeyboardMarkup:
+    i18n = i18n or static_i18n("keyboards")
+
+    # One row per platform, Xbox -> PlayStation -> Steam (the one display
+    # order, constants.platform_display_rank), in the same shape and position
+    # whether or not the person has that platform connected (#33).
+    psn_label = (
+        i18n.get(
+            "kb-platform-menu-count",
+            icon=PLATFORM_ICON[Platform.PSN],
+            platform="PSN",
+            count=psn_accounts,
+            alert=" ❗" if psn_hidden else "",
+        )
+        if psn_accounts > 1
+        else i18n.get(
+            "kb-platform-menu",
+            icon=PLATFORM_ICON[Platform.PSN],
+            platform="PSN",
+            alert=" ❗" if psn_hidden else "",
+        )
+    )
+    platform_rows = [
+        _platform_row(
+            i18n,
+            connected=connected,
+            connect_key="kb-panel-connect-xbox",
+            connect_cb="relogin",
+            label=i18n.get(
+                "kb-platform-menu",
+                icon=PLATFORM_ICON[Platform.XBOX_MODERN],
+                platform="XBOX",
+                alert="",
+            ),
+            menu_cb="panel:acc:xbox",
+            publish_cb="panel:pub:xbox",
+            publishes=xbox_publishes,
+            needs_reconnect=needs_reconnect,
+        ),
+        _platform_row(
+            i18n,
+            connected=psn_connected,
+            connect_key="kb-panel-connect-psn",
+            connect_cb="psn:connect",
+            label=psn_label,
+            menu_cb="panel:acc:psn",
+            publish_cb="panel:pub:psn",
+            publishes=psn_publishes,
+        ),
+        _platform_row(
+            i18n,
+            connected=steam_connected,
+            connect_key="kb-panel-connect-steam",
+            connect_cb="steam:connect",
+            label=i18n.get(
+                "kb-platform-menu",
+                icon=PLATFORM_ICON[Platform.STEAM],
+                platform="Steam",
+                alert=" ❗" if steam_hidden else "",
+            ),
+            menu_cb="panel:acc:steam",
+            publish_cb="panel:pub:steam",
+            publishes=steam_publishes,
+        ),
+    ]
+
+    # Every row below applies regardless of which platforms are connected —
+    # timezone, chat list, and the profile-links toggle are person-wide
+    # settings, not Xbox-specific ones (2026-09-09, confirmed live: this used
+    # to hard-gate the entire config section on `connected` — Xbox
+    # specifically — so a Steam/PSN-only person saw nothing but the platform
+    # rows at all, a leftover from before Steam/PSN existed).
+    rows: list[list[InlineKeyboardButton]] = []
+    rows += [
+        [
+            InlineKeyboardButton(
+                text=i18n.get("kb-timezone-row", offset=format_offset(tz_offset_min, i18n)),
+                callback_data="panel:tz",
+            )
+        ],
+        [InlineKeyboardButton(text=i18n.get("kb-my-chats"), callback_data="panel:chatlist")],
+        # Which achievements go out, in every chat at once (#126) — a
+        # carousel: a tap moves to the next mode (owner, 2026-09-30).
+        [
+            InlineKeyboardButton(
+                text=i18n.get(f"kb-publish-{_rarity_or_all(rarity_mode)}"),
+                callback_data="panel:rarity",
+            )
+        ],
+        # Personal, and only ever applies to DMs — a group follows its own
+        # chat_settings.locale, which no individual member can move (#48).
+        [
+            InlineKeyboardButton(
+                text=i18n.get("kb-locale", name=locale_name(i18n.locale)),
+                callback_data="panel:locale",
+            )
+        ],
+    ]
+    rows += platform_rows
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=i18n.get("panel-delete-account"),
+                callback_data="panel:delete_account",
+            )
+        ]
+    )
+    rows.append([InlineKeyboardButton(text=i18n.get("kb-sync"), callback_data="panel:sync")])
+    rows.append([close_button(i18n=i18n)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def deep_link_keyboard(url: str, i18n: I18nContext) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=i18n.get("kb-open"), url=url)]]
+    )
+
+
+def switch_keyboard(platform: str, i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarkup:
+    """Yes/no for "you already have a different account linked" (#52).
+    One shape for every platform: the question is the same everywhere, only
+    the callback prefix differs."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("connect-switch-yes"),
+                    callback_data=f"{platform}:switch:yes",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("connect-switch-cancel"),
+                    callback_data=f"{platform}:switch:no",
+                )
+            ],
+        ]
+    )
+
+
+def switch_prompt(
+    preview: LinkPreview,
+    platform_name: str,
+    incoming_name: str,
+    i18n: I18nContext | StaticI18nContext,
+) -> str:
+    """What changes, in numbers, before anything changes (#52).
+
+    Built from independent paragraphs because the two reasons to ask are
+    independent: this person is replacing their own account, and/or the
+    incoming one belongs to somebody else. Either can happen alone, and
+    when both do, both are worth saying.
+
+    The "already known" line appears only when it is true — it is the
+    difference between "this will take a while" and "this is instant", and
+    staying quiet about it would make a cheap operation look expensive.
+    """
+    parts = []
+    if preview.is_switch and preview.current is not None:
+        parts.append(
+            i18n.get(
+                "connect-switch-confirm",
+                platform=platform_name,
+                current=link_nickname(preview.current),
+                incoming=incoming_name,
+                current_count=preview.current_achievements,
+            )
+        )
+    if preview.taken_from is not None:
+        parts.append(i18n.get("connect-switch-taken", incoming=incoming_name))
+    if preview.incoming_achievements:
+        parts.append(
+            i18n.get(
+                "connect-switch-incoming-known",
+                incoming=incoming_name,
+                incoming_count=preview.incoming_achievements,
+            )
+        )
+    parts.append(i18n.get("connect-switch-question", incoming=incoming_name))
+    return "\n\n".join(parts)

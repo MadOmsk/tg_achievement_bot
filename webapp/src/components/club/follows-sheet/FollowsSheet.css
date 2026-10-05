@@ -1,0 +1,99 @@
+.follows-switch {
+  gap: 8px;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+}
+
+.follows-switch .dd-arrow {
+  color: var(--text);
+}
+
+.follows-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.follows-line:last-child {
+  border-bottom: 0;
+}
+
+.follows-line .picker-row {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.follows-line .follow-btn {
+  flex: none;
+}
+
+.follows-skel-ava {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.follows-skel-name {
+  width: 40%;
+  height: 14px;
+}
+
+.picker-list .follows-line .picker-row.is-person:first-child {
+  padding: 12px 0;
+}
+
+/* The first row's own padding is the distance under the heading: no second gap. */
+.follows-sheet .follows-head {
+  margin-bottom: 10px;
+}
+
+/* The loading rows and the empty card keep the same distance as a real row. */
+.follows-sheet .picker-list > .picker-row:first-child {
+  padding-top: 12px;
+}
+
+.follows-sheet .empty-state.is-slide {
+  margin-top: 12px;
+}
+
+.follows-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.follows-switch {
+  align-items: center;
+}
+
+.follows-count {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.follows-line {
+  max-height: 80px;
+  transition:
+    max-height 0.32s ease,
+    opacity 0.24s ease,
+    transform 0.32s ease;
+}
+
+.follows-line.is-leaving {
+  max-height: 0;
+  opacity: 0;
+  transform: translateX(24px);
+  overflow: hidden;
+  border-bottom-color: transparent;
+}
+
+.follows-sheet .empty-state.is-slide {
+  margin-bottom: 8px;
+}

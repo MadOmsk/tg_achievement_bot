@@ -1,0 +1,69 @@
+# /start, /connect_xbox, /disconnect_xbox and the timezone picker
+# (bot/handlers/connect.py).
+# Connection flow
+connect-xbox-group-redirect = Напиши мне в личку — подключим XBOX там.
+connect-xbox-private-only = Отключить XBOX можно только в личке с ботом.
+connect-timezone-prompt = 🕐 Твой часовой пояс?
+connect-xbox-already-connected = XBOX уже подключён: <b>{ $name }</b>.
+connect-xbox-already-connected-relogin =
+    XBOX уже подключён: <b>{ $name }</b>. Чтобы войти заново, сначала отвяжи его.
+connect-xbox-not-connected = XBOX и так не подключён.
+platform-cooldown-active = Повторное подключение { $platform } временно заблокировано (антифлуд). Попробуйте через { $hours } ч. { $minutes } мин.
+connect-disconnect-yes = Да, отключить
+connect-disconnect-cancel = Отмена
+connect-disconnect-prompt =
+    Отключить XBOX?
+
+    Удалю токен и подписки. Историю достижений оставлю — она нужна статистике чата, и при повторном входе старые достижения не хлынут в чат заново.
+
+    Само разрешение остаётся в аккаунте Microsoft — убрать его можно только самому: { $revoke_url }
+connect-disconnected =
+    ➖ Отключил XBOX. История достижений сохранена.
+
+    Разрешение в аккаунте Microsoft убирается тут: { $revoke_url }
+connect-relogin-prompt =
+    Войди заново — старые достижения в чат не полетят, они уже отмечены как виденные.
+connect-optout-done = Хорошо, больше не напоминаю. Историю достижений сохранил.
+connect-timezone-skip-done = Хорошо, пропустил.
+connect-timezone-set = ✅ Часовой пояс: { $offset }.
+connect-timezone-manual-hint =
+    Пришли смещение одним сообщением, со знаком: например +3, -5 или +5:30.
+connect-timezone-manual-invalid = Это не похоже на реальный часовой пояс. { $hint }
+connect-login-button-hint =
+    Жми кнопку и войди своим аккаунтом Microsoft. Пароль вижу не я — его спрашивает сам Microsoft.
+
+# Смена и перехват аккаунта (#52). Общие для всех платформ: текст один и
+# тот же независимо от того, Steam это, PSN или Xbox — меняется только
+# название платформы и ник.
+connect-switch-confirm =
+    На { $platform } у тебя сейчас { $current }.
+
+    Если привязать { $incoming }, достижения прошлого аккаунта ({ $current_count }) перестанут учитываться в статистике и саммари. Они никуда не денутся — вернёшь аккаунт, вернутся и они.
+connect-switch-taken =
+    ⚠️ Аккаунт { $incoming } уже привязан к другому пользователю бота. Если продолжить, он его потеряет, а достижения аккаунта перейдут к тебе.
+connect-switch-question = Привязываем { $incoming }?
+connect-switch-incoming-known =
+    Про { $incoming } я уже знаю: { $incoming_count } достижений. Заново выкачивать не буду.
+connect-switch-yes = Да, привязать
+connect-switch-cancel = Отмена
+connect-switch-cancelled = Оставил как было.
+connect-account-taken =
+    ⚠️ Аккаунт { $platform } «{ $name }» теперь привязан к другому пользователю бота.
+
+    Его достижения больше не учитываются в твоей статистике. Если это ошибка — привяжи аккаунт заново.
+
+# Онбординг (#53, 2026-09-12): /start больше не ведёт одной платформой.
+# Раньше приветствие обещало «достижения XBOX» и сразу давало вход через
+# Microsoft, а Steam и PSN существовали только для тех, кто знал команды.
+connect-greeting-multi =
+    Привет! Я слежу за достижениями на Xbox, Steam и PlayStation и пишу о новых в чат.
+
+    Что умею:
+    • ловлю новые достижения и трофеи и публикую их;
+    • фильтрую по редкости, если не нужно всё подряд;
+    • веду личную статистику и итог дня.
+
+    Начнём с профиля — подключи хотя бы одну платформу.
+connect-pick-platform = С чего начнём?
+connect-open-app-hint = Или открой приложение:
+connect-open-app-button = Открыть приложение

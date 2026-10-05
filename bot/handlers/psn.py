@@ -1,0 +1,558 @@
+"""`/connect_psn`, `/disconnect_psn` (SPEC 9, M-PSN-1) — symmetric to
+steam.py, minus the link-parsing: PSN has no profile URL a person would ever
+paste, only an Online ID, and psnawp_api resolves that directly to an
+account_id (no separate "vanity name" lookup step the way Steam needs one).
+
+Private chat only, same reasoning as connect_steam/connect_xbox — this is
+personal, not a group setting (SPEC 6.3).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+from html import escape as html_escape
+
+from aiogram import Bot, F, Router
+from aiogram.enums import ChatType, ParseMode
+from aiogram.filters import BaseFilter, Command, CommandObject
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    TelegramObject,
+)
+from aiogram_i18n import I18nContext
+
+from bot.config import get_settings
+from bot.constants import MAX_PSN_ACCOUNTS, Platform
+from bot.db.repo import Repo
+from bot.handlers import awaiting
+from bot.handlers.backfill import run_psn
+from bot.handlers.delivery import notify_previous_owner, safe_edit
+from bot.i18n import StaticI18nContext, static_i18n
+from bot.poller.psn_fetcher import PsnFetcher
+from bot.services import relink
+from bot.services.naming import link_nickname
+from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
+from bot.services.psn.client import (
+    PsnApiError,
+    PsnTokenDeadError,
+    is_trophy_visible,
+    resolve_profile,
+)
+from bot.views.keyboards import deep_link_keyboard, switch_keyboard, switch_prompt
+from bot.views.panel import render_account_menu, render_panel
+from bot.views.parts import platform_label
+
+log = logging.getLogger(__name__)
+
+router = Router(name="psn")
+
+NOT_CONFIGURED_KEY = "psn-not-configured"
+GROUP_HINT_TTL = 30
+
+# Same in-memory "next plain message is the answer" pattern as steam.py's own
+
+# tg_id -> the Online ID waiting on a "yes, switch accounts" tap (#52).
+# Same in-memory, dies-with-the-process treatment as handlers/awaiting.py.
+_pending_switch: dict[int, str] = {}
+
+
+class AwaitingPsnLink(BaseFilter):
+    async def __call__(self, event: TelegramObject) -> bool:
+        user = getattr(event, "from_user", None)
+        return user is not None and awaiting.is_expecting(
+            user.id, "psn", getattr(event, "text", None)
+        )
+
+
+async def _redirect_to_dm(
+    message: Message, bot: Bot, hint_text: str, i18n: I18nContext, *, payload: str | None = None
+) -> None:
+    me = await bot.me()
+    url = f"https://t.me/{me.username}" + (f"?start={payload}" if payload else "")
+    hint = await message.answer(hint_text, reply_markup=deep_link_keyboard(url, i18n))
+    asyncio.create_task(_delete_later(bot, hint.chat.id, hint.message_id))  # noqa: RUF006
+
+
+async def _delete_later(bot: Bot, chat_id: int, message_id: int) -> None:
+    await asyncio.sleep(GROUP_HINT_TTL)
+    with contextlib.suppress(Exception):
+        await bot.delete_message(chat_id, message_id)
+
+
+@router.message(Command("connect_psn"), F.chat.type != ChatType.PRIVATE)
+async def connect_psn_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
+    await _redirect_to_dm(
+        message, bot, i18n.get("psn-connect-group-redirect"), i18n, payload="connectpsn"
+    )
+
+
+@router.message(Command("disconnect_psn"), F.chat.type != ChatType.PRIVATE)
+async def disconnect_psn_in_group(message: Message, bot: Bot, i18n: I18nContext) -> None:
+    await _redirect_to_dm(message, bot, i18n.get("psn-private-only"), i18n)
+
+
+async def prompt_for_link(
+    bot: Bot,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    tg_id: int,
+    i18n: I18nContext | StaticI18nContext | None = None,
+) -> None:
+    """The shared "now send me your Online ID" step — bare /connect_psn, the
+    panel button and the deep link all go through this one place.
+
+    A person who already holds PSN accounts is asked first whether to add
+    another (#10) — up to MAX_PSN_ACCOUNTS; at the limit, told so."""
+    i18n = i18n or static_i18n("psn")
+    if await psn_auth.status() == STATUS_NOT_CONFIGURED:
+        await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
+        return
+    links = await repo.platform_links_for(tg_id, Platform.PSN)
+    if len(links) >= MAX_PSN_ACCOUNTS:
+        await bot.send_message(
+            tg_id,
+            i18n.get("psn-accounts-full", max=MAX_PSN_ACCOUNTS),
+            reply_markup=_full_keyboard(i18n),
+        )
+        return
+    if links:
+        await bot.send_message(
+            tg_id,
+            i18n.get(
+                "psn-has-accounts",
+                names=", ".join(f"<b>{html_escape(link_nickname(link))}</b>" for link in links),
+                count=len(links),
+                max=MAX_PSN_ACCOUNTS,
+            ),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=i18n.get("psn-add-button"), callback_data="psn:add"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text=i18n.get("psn-accounts-button"), callback_data="panel:acc:psn"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text=i18n.get("psn-cancel-button"), callback_data="psn:dismiss"
+                        )
+                    ],
+                ]
+            ),
+        )
+        return
+    awaiting.expect(tg_id, "psn")
+    await bot.send_message(tg_id, i18n.get("psn-link-prompt"))
+
+
+def _full_keyboard(i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("psn-accounts-button"), callback_data="panel:acc:psn"
+                )
+            ]
+        ]
+    )
+
+
+@router.callback_query(F.data == "psn:add")
+async def psn_add(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """ "Link another PSN account" (#10): the Online ID prompt, in place of
+    the screen it was tapped on."""
+    links = await repo.platform_links_for(callback.from_user.id, Platform.PSN)
+    if len(links) >= MAX_PSN_ACCOUNTS:
+        await callback.answer(i18n.get("psn-accounts-full", max=MAX_PSN_ACCOUNTS), show_alert=True)
+        return
+    awaiting.expect(callback.from_user.id, "psn")
+    await safe_edit(
+        callback,
+        i18n.get("psn-add-prompt", count=len(links) + 1, max=MAX_PSN_ACCOUNTS),
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get("psn-cancel-button"), callback_data="psn:addcancel"
+                    )
+                ]
+            ]
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "psn:addcancel")
+async def psn_add_cancel(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    awaiting.clear(callback.from_user.id)
+    screen = await render_account_menu(
+        repo, callback.from_user.id, Platform.PSN, locale=i18n.locale
+    ) or await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "psn:dismiss")
+async def psn_dismiss(callback: CallbackQuery) -> None:
+    if isinstance(callback.message, Message):
+        with contextlib.suppress(Exception):
+            await callback.message.delete()
+    await callback.answer()
+
+
+@router.callback_query(F.data == "psn:connect")
+async def psn_connect_button(
+    callback: CallbackQuery, repo: Repo, psn_auth: PsnAuth, bot: Bot, i18n: I18nContext
+) -> None:
+    await prompt_for_link(bot, repo, psn_auth, callback.from_user.id, i18n)
+    await callback.answer()
+
+
+@router.message(Command("connect_psn"), F.chat.type == ChatType.PRIVATE)
+async def connect_psn(
+    message: Message,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
+    command: CommandObject,
+    bot: Bot,
+    i18n: I18nContext,
+) -> None:
+    raw = (command.args or "").strip()
+    if not raw:
+        await prompt_for_link(bot, repo, psn_auth, message.chat.id, i18n)
+        return
+    username = message.from_user.username if message.from_user else None
+    await _connect(bot, repo, psn_auth, psn_fetcher, message.chat.id, username, raw, i18n)
+
+
+@router.message(F.chat.type == ChatType.PRIVATE, AwaitingPsnLink())
+async def psn_link_provided(
+    message: Message,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
+    bot: Bot,
+    i18n: I18nContext,
+) -> None:
+    awaiting.clear(message.from_user.id)
+    username = message.from_user.username if message.from_user else None
+    await _connect(
+        bot,
+        repo,
+        psn_auth,
+        psn_fetcher,
+        message.chat.id,
+        username,
+        (message.text or "").strip(),
+        i18n,
+    )
+
+
+async def _connect(
+    bot: Bot,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
+    tg_id: int,
+    username: str | None,
+    raw: str,
+    i18n: I18nContext | StaticI18nContext | None = None,
+    *,
+    confirmed: bool = False,
+) -> None:
+    i18n = i18n or static_i18n("psn")
+    if await psn_auth.status() == STATUS_NOT_CONFIGURED:
+        await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
+        return
+    if not raw:
+        await prompt_for_link(bot, repo, psn_auth, tg_id, i18n)
+        return
+
+    try:
+        client = await psn_auth.get_client()
+        profile = await resolve_profile(client, raw)
+    except PsnNotConfiguredError:
+        await bot.send_message(tg_id, i18n.get(NOT_CONFIGURED_KEY))
+        return
+    except PsnTokenDeadError:
+        log.warning("connect_psn: service token dead, tg_id=%s", tg_id)
+        await bot.send_message(tg_id, i18n.get("psn-service-token-dead"))
+        return
+    except PsnApiError as exc:
+        log.info("connect_psn: could not resolve tg_id=%s raw=%r: %s", tg_id, raw, exc)
+        await bot.send_message(tg_id, i18n.get("psn-profile-not-found", raw=raw))
+        return
+
+    if not await is_trophy_visible(client, profile.account_id):
+        log.info(
+            "connect_psn: private profile for tg_id=%s account_id=%s", tg_id, profile.account_id
+        )
+        await bot.send_message(tg_id, i18n.get("psn-profile-private"))
+        return
+
+    await repo.ensure_user(tg_id, username)
+
+    held = await repo.platform_links_for(tg_id, Platform.PSN)
+    if (
+        all(link.external_id != profile.account_id for link in held)
+        and len(held) >= MAX_PSN_ACCOUNTS
+    ):
+        await bot.send_message(
+            tg_id,
+            i18n.get("psn-accounts-full", max=MAX_PSN_ACCOUNTS),
+            reply_markup=_full_keyboard(i18n),
+        )
+        return
+
+    cooldown = await repo.check_platform_cooldown(tg_id, Platform.PSN, profile.account_id)
+    if cooldown.is_blocked:
+        hours = cooldown.remaining_seconds // 3600
+        minutes = (cooldown.remaining_seconds % 3600) // 60
+        await bot.send_message(
+            tg_id,
+            i18n.get(
+                "platform-cooldown-active",
+                platform="PlayStation",
+                hours=hours,
+                minutes=minutes,
+            ),
+        )
+        return
+
+    # Same as Steam's own switch guard (#52): trading one PSN account for
+    # another leaves the first one's trophies behind, so ask before doing it
+    # — but never for relinking the same account.
+    preview = await relink.preview(repo, tg_id, Platform.PSN, profile.account_id)
+    if preview.needs_confirmation and not confirmed:
+        _pending_switch[tg_id] = raw
+        await bot.send_message(
+            tg_id,
+            switch_prompt(
+                preview, platform_label(Platform.PSN, i18n.locale), profile.online_id, i18n
+            ),
+            reply_markup=switch_keyboard("psn", i18n),
+        )
+        return
+
+    taken_from = await relink.perform(
+        repo, tg_id, Platform.PSN, profile.account_id, profile.online_id
+    )
+    # Already verified True right above (#5) — recorded so /panel's login
+    # row has a real answer from the moment someone links, not just after
+    # the first backfill/resync gets around to setting it.
+    await repo.set_achievements_visible(tg_id, Platform.PSN, True, external_id=profile.account_id)
+    log.info("connect_psn: tg_id=%s linked account_id=%s", tg_id, profile.account_id)
+    count = len(await repo.platform_links_for(tg_id, Platform.PSN))
+    await bot.send_message(
+        tg_id,
+        i18n.get(
+            "psn-connected-count",
+            name=html_escape(profile.online_id),
+            count=count,
+            max=MAX_PSN_ACCOUNTS,
+        )
+        if count > 1
+        else i18n.get("psn-connected", name=html_escape(profile.online_id)),
+        parse_mode=ParseMode.HTML,
+    )
+    if taken_from is not None:
+        await notify_previous_owner(
+            bot,
+            taken_from,
+            Platform.PSN,
+            profile.online_id,
+            locale=await repo.user_locale(taken_from),
+        )
+
+    # Backgrounded (SPEC 9, M-Steam-2d's own reasoning applies here too) —
+    # the reply above must not wait for it. Run on every link, not just the
+    # first (link_platform_account already replaces an existing one) —
+    # idempotent (INSERT OR IGNORE) and safe, same as Xbox/Steam's own
+    # reconnect handling.
+    # Known account -> no backfill (#52). Its trophies are already stored,
+    # and the regular tick is itself a delta; all a relink has to arrange is
+    # that the catch-up does not arrive as a month of trophies at once.
+    if await repo.account_latest_unlock(Platform.PSN, profile.account_id) is not None:
+        # This account's history is already stored, so #21's gate is satisfied
+        # by definition — say so explicitly rather than relying on the row
+        # having survived, which is exactly what used to fail (see
+        # disconnect_psn_confirm below).
+        await repo.mark_psn_backfill_done(profile.account_id)
+        psn_fetcher.expect_relink_catch_up(
+            profile.account_id, get_settings().catchup_publish_window_hours
+        )
+        await bot.send_message(tg_id, i18n.get("psn-catch-up-started"))
+        return
+
+    asyncio.create_task(  # noqa: RUF006
+        run_psn(bot, psn_fetcher, repo, tg_id, profile.account_id, profile.online_id)
+    )
+
+
+@router.callback_query(F.data == "psn:switch:yes")
+async def psn_switch_confirmed(
+    callback: CallbackQuery,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
+    bot: Bot,
+    i18n: I18nContext,
+) -> None:
+    raw = _pending_switch.pop(callback.from_user.id, None)
+    await callback.answer()
+    if raw is None:
+        return  # the prompt outlived a restart, or was answered twice
+    with contextlib.suppress(Exception):
+        await callback.message.delete()
+    await _connect(
+        bot,
+        repo,
+        psn_auth,
+        psn_fetcher,
+        callback.from_user.id,
+        callback.from_user.username,
+        raw,
+        i18n,
+        confirmed=True,
+    )
+
+
+@router.callback_query(F.data == "psn:switch:no")
+async def psn_switch_cancelled(callback: CallbackQuery, i18n: I18nContext) -> None:
+    _pending_switch.pop(callback.from_user.id, None)
+    await callback.answer()
+    with contextlib.suppress(Exception):
+        await callback.message.edit_text(i18n.get("connect-switch-cancelled"))
+
+
+def _disconnect_prompt_keyboard(i18n: I18nContext, *, from_panel: bool) -> InlineKeyboardMarkup:
+    cancel_data = "panel:psndisconnect:no" if from_panel else "psn:disconnect:no"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=i18n.get("psn-disconnect-confirm-button"),
+                    callback_data="psn:disconnect:yes",
+                )
+            ],
+            [InlineKeyboardButton(text=i18n.get("psn-cancel-button"), callback_data=cancel_data)],
+        ]
+    )
+
+
+@router.message(Command("disconnect_psn"), F.chat.type == ChatType.PRIVATE)
+async def disconnect_psn_command(message: Message, repo: Repo, i18n: I18nContext) -> None:
+    links = await repo.platform_links_for(message.chat.id, Platform.PSN)
+    if not links:
+        await message.answer(i18n.get("psn-already-disconnected"))
+        return
+    if len(links) > 1:
+        # Which one (#10) — the PSN screen has an unlink button per account.
+        screen = await render_account_menu(repo, message.chat.id, Platform.PSN, locale=i18n.locale)
+        if screen is not None:
+            await message.answer(
+                screen.text, reply_markup=screen.keyboard, parse_mode=ParseMode.HTML
+            )
+            return
+    link = links[0]
+    await message.answer(
+        i18n.get("psn-disconnect-prompt", name=link_nickname(link)),
+        reply_markup=_disconnect_prompt_keyboard(i18n, from_panel=False),
+    )
+
+
+@router.callback_query(F.data == "psn:disconnectprompt")
+async def psn_disconnect_button(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    link = await repo.get_platform_link(callback.from_user.id, Platform.PSN)
+    if link is None:
+        await callback.answer(i18n.get("psn-already-disconnected"), show_alert=True)
+        return
+    await safe_edit(
+        callback,
+        i18n.get("psn-disconnect-prompt", name=link_nickname(link)),
+        _disconnect_prompt_keyboard(i18n, from_panel=True),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "psn:disconnect:no")
+async def disconnect_psn_cancel(callback: CallbackQuery) -> None:
+    if isinstance(callback.message, Message):
+        with contextlib.suppress(Exception):
+            await callback.message.delete()
+    await callback.answer()
+
+
+@router.callback_query(F.data == "psn:disconnect:yes")
+async def disconnect_psn_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    await repo.unlink_platform_account(callback.from_user.id, Platform.PSN)
+    # The `psn_poll_state` row stays. It used to be deleted here, by symmetry
+    # with Steam's own presence-cache cleanup — but this row is not a cache,
+    # it is #21's gate, and deleting it broke every reconnect: a relink skips
+    # backfill by design (#52 — the trophies are already stored and the
+    # ordinary tick is a delta), so nothing ever set `backfill_done` again,
+    # and `psn_pollable_users` reads a missing row as "not done" and skips the
+    # account forever. Found live on the test bot, 2026-09-13: an account
+    # earned two trophies and the bot never looked. An inactive link is
+    # already filtered out of every poller by `is_active`, so the row costs
+    # nothing where it is.
+    await safe_edit(callback, i18n.get("psn-disconnected"))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("psn:unlink:"))
+async def psn_unlink_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    """One account's unlink button on the PSN screen (#10) — the same
+    tap-to-confirm as /disconnect_psn, for that account only."""
+    assert callback.data is not None
+    account_id = callback.data.rsplit(":", 1)[1]
+    links = await repo.platform_links_for(callback.from_user.id, Platform.PSN)
+    link = next((item for item in links if item.external_id == account_id), None)
+    if link is None:
+        await callback.answer(i18n.get("psn-already-disconnected"), show_alert=True)
+        return
+    await safe_edit(
+        callback,
+        i18n.get("psn-disconnect-prompt", name=link_nickname(link)),
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get("psn-disconnect-confirm-button"),
+                        callback_data=f"psn:unlinky:{account_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get("psn-cancel-button"), callback_data="panel:acc:psn"
+                    )
+                ],
+            ]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("psn:unlinky:"))
+async def psn_unlink_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    account_id = callback.data.rsplit(":", 1)[1]
+    # Only this account; the person's others stay linked. Its trophies and
+    # `psn_poll_state` stay too, for the reasons disconnect_psn_confirm gives.
+    await repo.unlink_account(callback.from_user.id, Platform.PSN, account_id)
+    await callback.answer(i18n.get("psn-disconnected"))
+    screen = await render_account_menu(
+        repo, callback.from_user.id, Platform.PSN, locale=i18n.locale
+    ) or await render_panel(repo, callback.from_user.id, locale=i18n.locale)
+    await safe_edit(callback, screen.text, screen.keyboard, parse_mode=ParseMode.HTML)

@@ -1,0 +1,706 @@
+"""Self-dedup bookkeeping for /panel, /summary, /recent and a person's own
+/stats (each replacing its own previous copy), /recent's own query,
+recent-games lookups, daily-report/publication markers, and bot-message
+cleanup tracking — one mixin of bot.db.repo.Repo (2026-09-09 split; see
+this package's own __init__.py). Behavior is unchanged from before the
+split.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import datetime
+
+from bot.db.repo._models import (
+    ChatSubscriber,
+    DeletableMessage,
+    GameAchievements,
+    RecentAchievement,
+    User,
+    _as_user,
+    _iso,
+)
+from bot.db.repo._sql import (
+    HANDLE_SHOWN,
+    LOCALIZED_NAME_COLUMNS,
+    LOCALIZED_TITLE_COLUMNS,
+    NAME_CACHE_JOIN,
+    OWNED_BY_PERSON,
+    XBOX_ACCOUNT,
+    XBOX_COLUMNS,
+    active_account,
+    earned_at,
+    earned_date_is_real,
+    earned_since,
+    member_source,
+    pick_name,
+    publishes,
+    rarity,
+    rarity_cache_join,
+)
+from bot.util import utcnow_iso
+
+
+class _MessagesRepo:
+    # --------------------------------------------------- self-dedup messages
+
+    async def tracked_message(self, chat_id: int, kind: str, subject_id: int = 0) -> int | None:
+        """The message_id this (chat, kind, subject) last sent, if any
+        (Follow-up 2026-09-06) — /panel, /summary, /recent and a specific
+        person's /stats card each replace their own previous copy instead
+        of accumulating (see tracked_messages in schema.sql for the exact
+        scope of `kind`/`subject_id`)."""
+        cursor = await self._conn.execute(
+            "SELECT message_id FROM tracked_messages "
+            "WHERE chat_id = ? AND kind = ? AND subject_id = ?",
+            (chat_id, kind, subject_id),
+        )
+        row = await cursor.fetchone()
+        return row["message_id"] if row else None
+
+    async def set_tracked_message(
+        self, chat_id: int, kind: str, subject_id: int, message_id: int
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO tracked_messages (chat_id, kind, subject_id, message_id, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(chat_id, kind, subject_id) DO UPDATE SET"
+            " message_id = excluded.message_id, updated_at = excluded.updated_at",
+            (chat_id, kind, subject_id, message_id, utcnow_iso()),
+        )
+        await self._conn.commit()
+
+    async def record_chat_seen(self, chat_id: int, tg_id: int) -> None:
+        """A message from a *known* tg_id in this group — feeds /online's
+        membership list (SPEC 6.3). The `SELECT ... WHERE EXISTS` guard keeps
+        the same "never create a user row just for writing a message" rule
+        as `update_username`: someone the bot has no `users` row for yet
+        leaves no trace here either."""
+        await self._conn.execute(
+            "INSERT INTO chat_seen (chat_id, tg_id, last_seen_at) "
+            "SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE tg_id = ?) "
+            "ON CONFLICT (chat_id, tg_id) DO UPDATE SET last_seen_at = excluded.last_seen_at",
+            (chat_id, tg_id, utcnow_iso(), tg_id),
+        )
+        await self._conn.commit()
+
+    async def chat_subscribers(self, chat_id: int) -> list[ChatSubscriber]:
+        """Who publishes here, with everything the person chain needs (#51).
+
+        Returns the fields, not a rendered label: this used to select
+        `u.gamertag` alone and sort by it — so a member without an Xbox
+        account was listed as a bare id and sorted as if nameless — and the
+        obvious fix, resolving the name here, would put display logic in the
+        one layer that is supposed to hold nothing but SQL. The caller
+        renders and sorts.
+        """
+        cursor = await self._conn.execute(
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
+            "       psn.display_name AS psn_name "
+            "FROM subscriptions s "
+            "JOIN users u ON u.tg_id = s.tg_id "
+            + XBOX_ACCOUNT
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            + "WHERE s.chat_id = ? AND u.is_excluded = 0 AND "
+            + publishes(),
+            (chat_id,),
+        )
+        return [
+            ChatSubscriber(
+                tg_id=row["tg_id"],
+                gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
+                username=row["username"],
+                first_name=row["first_name"],
+                handle=row["handle"],
+                last_name=row["last_name"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def chat_recent(
+        self,
+        chat_id: int,
+        limit: int,
+        *,
+        locale: str = "ru",
+        since: datetime | None = None,
+        until: datetime | None = None,
+        members: Sequence[int] | None = None,
+    ) -> list[RecentAchievement]:
+        where = f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+        params: list[object] = [chat_id]
+        if since is not None:
+            where += f"AND {earned_at()} >= ? "
+            params.append(_iso(since))
+        if until is not None:
+            where += f"AND {earned_at()} < ? "
+            params.append(_iso(until))
+        params.append(limit)
+        cursor = await self._conn.execute(
+            # Every field the person chain needs (#51) — this used to select
+            # `u.gamertag` alone, so a member with no Xbox account was
+            # rendered as the literal word "кто-то".
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
+            "       psn.display_name AS psn_name,"
+            "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
+            "       " + LOCALIZED_TITLE_COLUMNS + ","
+            # Aliased, and it matters: XBOX_COLUMNS above already selects
+            # `xb.gamerscore` — the person's lifetime profile score — under
+            # that same bare name, and sqlite3.Row resolves a duplicate to
+            # the *first* one. Every /recent row was showing the player's
+            # career total (249 504 G) in place of what the achievement was
+            # actually worth (15 G). Found by rendering the screen.
+            f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
+            "       s.platform, " + earned_at() + " AS unlocked_at,"
+            "       s.is_secret, s.trophy_type,"
+            "       s.title_id, s.achievement_id, s.icon_url,"
+            "       t.icon_url AS game_icon_url, s.description,"
+            "       s.xuid AS achievement_xuid, s.trophy_group_id,"
+            "       s.device, t.platforms AS game_platforms "
+            "FROM " + member_source(members) + " sub "
+            "JOIN users u ON u.tg_id = sub.tg_id "
+            + XBOX_ACCOUNT
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            # Through the accounts this person holds right now (#52, _sql.py).
+            # The old join was `s.tg_id = u.tg_id`, which is the column that
+            # made an account's history follow the person rather than the
+            # account.
+            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + NAME_CACHE_JOIN
+            + rarity_cache_join()
+            # An undated backfill row is not "recent" (#69): its created_at is
+            # when the import ran, so right after somebody connects their whole
+            # imported history would sort to the top of this list — in the one
+            # window where the first link is supposed to be silent.
+            + where
+            + f"ORDER BY {earned_at()} DESC LIMIT ?",
+            params,
+        )
+        return [
+            RecentAchievement(
+                tg_id=row["tg_id"],
+                gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
+                username=row["username"],
+                first_name=row["first_name"],
+                handle=row["handle"],
+                last_name=row["last_name"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
+                name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
+                game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
+                gamerscore=int(row["achievement_gamerscore"] or 0),
+                rarity_percent=row["rarity_percent"],
+                platform=row["platform"],
+                unlocked_at=row["unlocked_at"],
+                is_secret=bool(row["is_secret"]),
+                trophy_type=row["trophy_type"],
+                title_id=row["title_id"] or "",
+                achievement_id=row["achievement_id"] or "",
+                icon_url=row["icon_url"],
+                game_icon_url=row["game_icon_url"],
+                description=row["description"],
+                xuid=row["achievement_xuid"] or "",
+                trophy_group_id=row["trophy_group_id"],
+                device=row["device"],
+                game_platforms=row["game_platforms"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def chat_ultra_rares(
+        self,
+        chat_id: int,
+        *,
+        since: datetime,
+        until: datetime | None = None,
+        max_percent: float = 0.5,
+        limit: int = 80,
+        locale: str = "ru",
+        members: Sequence[int] | None = None,
+    ) -> list[RecentAchievement]:
+        """Month finds under `max_percent` rarity — Mini App stats «Находки».
+
+        Cache first (`rarity()`), row as fallback. Soft `limit` only so a
+        pathological month cannot dump hundreds of rows into the payload;
+        the SPA also scrolls the list rather than growing the page."""
+        where = (
+            f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            f"AND {rarity()} IS NOT NULL AND {rarity()} < ? "
+            f"AND {earned_at()} >= ? "
+        )
+        params: list[object] = [chat_id, max_percent, _iso(since)]
+        if until is not None:
+            where += f"AND {earned_at()} < ? "
+            params.append(_iso(until))
+        params.append(limit)
+        cursor = await self._conn.execute(
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
+            "       psn.display_name AS psn_name,"
+            "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
+            "       " + LOCALIZED_TITLE_COLUMNS + ","
+            "       s.gamerscore AS achievement_gamerscore,"
+            f"       {rarity()} AS rarity_percent,"
+            "       s.platform, " + earned_at() + " AS unlocked_at,"
+            "       s.is_secret, s.trophy_type,"
+            "       s.title_id, s.achievement_id, s.icon_url,"
+            "       t.icon_url AS game_icon_url, s.description,"
+            "       s.xuid AS achievement_xuid, s.trophy_group_id "
+            "FROM " + member_source(members) + " sub "
+            "JOIN users u ON u.tg_id = sub.tg_id "
+            + XBOX_ACCOUNT
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + NAME_CACHE_JOIN
+            + rarity_cache_join()
+            + where
+            + f"ORDER BY {rarity()} ASC, {earned_at()} DESC LIMIT ?",
+            params,
+        )
+        return [
+            RecentAchievement(
+                tg_id=row["tg_id"],
+                gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
+                username=row["username"],
+                first_name=row["first_name"],
+                handle=row["handle"],
+                last_name=row["last_name"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
+                name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
+                game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
+                gamerscore=int(row["achievement_gamerscore"] or 0),
+                rarity_percent=row["rarity_percent"],
+                platform=row["platform"],
+                unlocked_at=row["unlocked_at"],
+                is_secret=bool(row["is_secret"]),
+                trophy_type=row["trophy_type"],
+                title_id=row["title_id"] or "",
+                achievement_id=row["achievement_id"] or "",
+                icon_url=row["icon_url"],
+                game_icon_url=row["game_icon_url"],
+                description=row["description"],
+                xuid=row["achievement_xuid"] or "",
+                trophy_group_id=row["trophy_group_id"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def chat_unlock_months(
+        self, chat_id: int, limit: int = 24, *, members: Sequence[int] | None = None
+    ) -> list[str]:
+        """Distinct `YYYY-MM` prefixes of unlock timestamps in this chat.
+
+        The Mini App month picker lists these; ISO strings are UTC, so a
+        late-evening Moscow unlock on the 1st can land in the previous UTC
+        month. Close enough for a picker — the feed itself uses the chat's
+        timezone window, not this list."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
+            "FROM " + member_source(members) + " sub "
+            "JOIN users u ON u.tg_id = sub.tg_id "
+            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            "ORDER BY ym DESC LIMIT ?",
+            (chat_id, limit),
+        )
+        return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
+
+    async def person_unlock_months(self, tg_id: int, limit: int = 24) -> list[str]:
+        """Distinct `YYYY-MM` of this person's unlocks (not scoped to a chat)."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
+            "FROM users u "
+            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            "ORDER BY ym DESC LIMIT ?",
+            (tg_id, limit),
+        )
+        return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
+
+    async def person_recent(
+        self,
+        tg_id: int,
+        limit: int,
+        *,
+        locale: str = "ru",
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[RecentAchievement]:
+        """One person's unlocks, newest first — the Mini App person card's
+        feed. Same columns as `chat_recent`, scoped to the account they hold
+        right now rather than to a chat's subscribers."""
+        where = f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+        params: list[object] = [tg_id]
+        if since is not None:
+            where += f"AND {earned_at()} >= ? "
+            params.append(_iso(since))
+        if until is not None:
+            where += f"AND {earned_at()} < ? "
+            params.append(_iso(until))
+        params.append(limit)
+        cursor = await self._conn.execute(
+            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "       u.last_name, " + XBOX_COLUMNS + ","
+            "       steam.display_name AS steam_name,"
+            "       psn.display_name AS psn_name,"
+            "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
+            "       " + LOCALIZED_TITLE_COLUMNS + ","
+            f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
+            "       s.platform, " + earned_at() + " AS unlocked_at,"
+            "       s.is_secret, s.trophy_type,"
+            "       s.title_id, s.achievement_id, s.icon_url,"
+            "       t.icon_url AS game_icon_url, s.description,"
+            "       s.xuid AS achievement_xuid, s.trophy_group_id,"
+            "       s.device, t.platforms AS game_platforms "
+            "FROM users u "
+            + XBOX_ACCOUNT
+            + active_account("steam", "steam")
+            + active_account("psn", "psn")
+            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN seen_achievements s ON s.account_platform = al.platform"
+            "   AND s.xuid = al.external_id "
+            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + NAME_CACHE_JOIN
+            + rarity_cache_join()
+            + where
+            + f"ORDER BY {earned_at()} DESC LIMIT ?",
+            params,
+        )
+        return [
+            RecentAchievement(
+                tg_id=row["tg_id"],
+                gamertag=row["gamertag"],
+                gamertag_modern=row["gamertag_modern"],
+                username=row["username"],
+                first_name=row["first_name"],
+                handle=row["handle"],
+                last_name=row["last_name"],
+                steam_name=row["steam_name"],
+                psn_name=row["psn_name"],
+                name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
+                game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
+                gamerscore=int(row["achievement_gamerscore"] or 0),
+                rarity_percent=row["rarity_percent"],
+                platform=row["platform"],
+                unlocked_at=row["unlocked_at"],
+                is_secret=bool(row["is_secret"]),
+                trophy_type=row["trophy_type"],
+                title_id=row["title_id"] or "",
+                achievement_id=row["achievement_id"] or "",
+                icon_url=row["icon_url"],
+                game_icon_url=row["game_icon_url"],
+                description=row["description"],
+                xuid=row["achievement_xuid"] or "",
+                trophy_group_id=row["trophy_group_id"],
+                device=row["device"],
+                game_platforms=row["game_platforms"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def users_games_achievements(
+        self,
+        tg_ids: Sequence[int],
+        since: datetime,
+        *,
+        rare_threshold: float,
+        limit: int = 15,
+        locale: str = "ru",
+        until: datetime | None = None,
+        order: str = "count",
+    ) -> list[GameAchievements]:
+        """Games these people earned achievements in since `since`, ranked by
+        how many.
+
+        **One listing, two scopes** (2026-09-17, owner decision): `/stats`
+        passes one person, the monthly summary's own games block passes every
+        subscriber of the chat. They were two near-identical queries before —
+        `user_games` and `chat_top_games` — which had already drifted apart on
+        grouping and ordering, in the way two copies of one answer always do.
+        Overlap adds up: two people who earned the same achievement are two
+        achievements here, because the chat-wide block is a count of what the
+        chat did, not of distinct achievements.
+
+        **Which rows count as "since".** A real platform timestamp is
+        authoritative whatever the row's origin; `created_at` stands in for it
+        only on a live-polled row, where "when the bot saw it" genuinely is
+        about when it was earned. A backfill row with no timestamp is ancient
+        by definition — its `created_at` is when the import ran, which is
+        what made a whole imported library look like this month's play (#69).
+        `is_backfill` itself is *not* a filter here: that flag means "do not
+        publish", not "did not happen" (services/stats.py), so a freshly
+        connected account shows its real recent games immediately.
+
+        **Grouped by `(title_id, platform)`**, never `title_id` alone: a
+        Steam appid and an Xbox title id are both bare numbers and can
+        collide by accident. `user_games` grouped by title_id only and had
+        that latent bug; the monthly block never did.
+
+        **Ordered by count, then by the most recent unlock** by default
+        (owner, 2026-09-17) — gamerscore takes no part in it, having no
+        meaning at all on two of the three platforms, where it is always 0.
+        Pass `order="recent"` for the Mini App trending strip, which wants
+        the freshest unlock first regardless of how many.
+
+        `rare_threshold` is the chat's own `rare_threshold_percent`; rows keep
+        whatever rarity the platform reported when they were stored, which can
+        be old but is the only figure there is.
+
+        `limit == 0` means "no cap" (admin-configurable, SPEC 6.4) — passed to
+        SQLite as -1, its own documented spelling of "unbounded LIMIT".
+        """
+        if not tg_ids:
+            return []
+        owners = ",".join("?" * len(tg_ids))
+        date_bound = f"AND {earned_since()}"
+        date_params: list[object] = [_iso(since)]
+        if until is not None:
+            date_bound += f" AND {earned_at()} < ?"
+            date_params.append(_iso(until))
+        order_sql = (
+            "ORDER BY last_earned DESC, cnt DESC"
+            if order == "recent"
+            else "ORDER BY cnt DESC, last_earned DESC"
+        )
+        cursor = await self._conn.execute(
+            "SELECT s.title_id, s.platform, t.name, t.icon_url, t.platforms, "
+            + LOCALIZED_TITLE_COLUMNS
+            + ","
+            "       COUNT(*) AS cnt, COALESCE(SUM(s.gamerscore), 0) AS score,"
+            f"       SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= ?"
+            "                THEN 1 ELSE 0 END) AS rare,"
+            "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze,"
+            "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
+            "       SUM(CASE WHEN s.trophy_type = 'gold' THEN 1 ELSE 0 END) AS gold,"
+            "       SUM(CASE WHEN s.trophy_type = 'platinum' THEN 1 ELSE 0 END) AS platinum,"
+            "       MAX(" + earned_at() + ") AS last_earned "
+            "FROM seen_achievements s "
+            + OWNED_BY_PERSON
+            + "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + rarity_cache_join()
+            + f"WHERE al.tg_id IN ({owners}) {date_bound} "
+            "GROUP BY s.title_id, s.platform "
+            f"{order_sql} LIMIT ?",
+            (rare_threshold, *tg_ids, *date_params, limit or -1),
+        )
+        return [
+            GameAchievements(
+                title_id=row["title_id"],
+                platform=row["platform"],
+                # The chat's language, where the platform gave a second name
+                # (#61) — a list beside a localized notification must not be
+                # the one thing still in the platform's own language.
+                name=pick_name(locale, row["game_ru"], row["game_en"], row["name"]),
+                count=int(row["cnt"]),
+                score=int(row["score"] or 0),
+                rare=int(row["rare"] or 0),
+                bronze=int(row["bronze"] or 0),
+                silver=int(row["silver"] or 0),
+                gold=int(row["gold"] or 0),
+                platinum=int(row["platinum"] or 0),
+                icon_url=row["icon_url"],
+                platforms=row["platforms"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def chat_recent_games(self, chat_id: int, limit: int = 10) -> list[str]:
+        """Distinct game names the chat's known members have actually played
+        recently, most-recent first — quick-pick shortcuts for /hltb so the
+        common case ("what does everyone here keep talking about") needs no
+        typing at all (SPEC 6.6). Same membership as /online and /who: the
+        union of who publishes here and who's just been seen writing here,
+        not only publishers."""
+        cursor = await self._conn.execute(
+            "SELECT t.name AS name, MAX(th.last_played_at) AS last_played "
+            "FROM title_history th "
+            "JOIN titles t ON t.title_id = th.title_id "
+            "WHERE th.xuid IN ("
+            "  SELECT xb.external_id FROM users u "
+            + XBOX_ACCOUNT
+            + "  WHERE xb.external_id IS NOT NULL AND u.tg_id IN ("
+            "    SELECT tg_id FROM subscriptions WHERE chat_id = ? "
+            "    UNION "
+            "    SELECT tg_id FROM chat_seen WHERE chat_id = ?"
+            "  )"
+            ") AND th.last_played_at IS NOT NULL "
+            "GROUP BY t.name "
+            "ORDER BY last_played DESC LIMIT ?",
+            (chat_id, chat_id, limit),
+        )
+        return [row["name"] for row in await cursor.fetchall() if row["name"]]
+
+    async def find_user_by_username(self, username: str) -> User | None:
+        cursor = await self._conn.execute(
+            "SELECT * FROM users WHERE lower(username) = lower(?)", (username.lstrip("@"),)
+        )
+        row = await cursor.fetchone()
+        return _as_user(row) if row else None
+
+    async def daily_report_sent(self, chat_id: int, report_date: str) -> bool:
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM daily_reports WHERE chat_id = ? AND report_date = ?",
+            (chat_id, report_date),
+        )
+        return await cursor.fetchone() is not None
+
+    async def mark_daily_report_sent(self, chat_id: int, report_date: str) -> None:
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO daily_reports (chat_id, report_date, sent_at) VALUES (?, ?, ?)",
+            (chat_id, report_date, utcnow_iso()),
+        )
+        await self._conn.commit()
+
+    async def log_bot_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        *,
+        is_system: bool = True,
+        is_achievement: bool = False,
+        preview: str | None = None,
+    ) -> None:
+        """Called from the request middleware (bot/services/message_log.py)
+        for every message the bot sends *or edits* in a group — the only
+        record that lets the admin panel's "стереть сообщения бота" find
+        anything to delete (SPEC 6.4). Upserts rather than INSERT OR IGNORE
+        (2026-09-05 follow-up, is_system): an edit refreshes both sent_at
+        and is_system, on purpose — /hltb's own multi-step flow, for one,
+        edits the same message from a search prompt into the final result
+        card, and that edit must both reclassify it as "stats" and reset its
+        auto-delete clock, not leave it tagged (and aging out) as whatever
+        it was first logged as.
+
+        `preview` (2026-09-09) is the first couple of lines of the
+        message's own text/caption, for /delete_last's own "Удалено: ..."
+        confirmation (`last_deletable_bot_message` below) — also
+        refreshed on an edit, same reasoning as is_system above.
+        """
+        await self._conn.execute(
+            "INSERT INTO bot_messages"
+            " (chat_id, message_id, sent_at, is_system, is_achievement, preview) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(chat_id, message_id) DO UPDATE SET"
+            " sent_at = excluded.sent_at, is_system = excluded.is_system,"
+            " is_achievement = excluded.is_achievement, preview = excluded.preview",
+            (
+                chat_id,
+                message_id,
+                utcnow_iso(),
+                1 if is_system else 0,
+                1 if is_achievement else 0,
+                preview,
+            ),
+        )
+        await self._conn.commit()
+
+    async def bot_messages_since(self, chat_id: int, since: datetime) -> list[int]:
+        cursor = await self._conn.execute(
+            "SELECT message_id FROM bot_messages WHERE chat_id = ? AND sent_at >= ?",
+            (chat_id, _iso(since)),
+        )
+        return [row[0] for row in await cursor.fetchall()]
+
+    async def system_bot_messages_since(self, chat_id: int, since: datetime) -> list[int]:
+        """Same as `bot_messages_since`, restricted to is_system rows — the
+        admin panel's "удалить системные сообщения за 24 часа" (2026-09-05
+        follow-up), a narrower sibling of the unconditional 24h wipe that
+        leaves published achievements/stats/summaries untouched."""
+        cursor = await self._conn.execute(
+            "SELECT message_id FROM bot_messages WHERE chat_id = ? AND sent_at >= ? "
+            "AND is_system = 1",
+            (chat_id, _iso(since)),
+        )
+        return [row[0] for row in await cursor.fetchall()]
+
+    async def all_system_bot_messages(self, chat_id: int) -> list[int]:
+        """Unbounded version of `system_bot_messages_since` — the admin
+        panel's "удалить все системные сообщения" (2026-09-05 follow-up),
+        for whenever the 24h window isn't enough."""
+        cursor = await self._conn.execute(
+            "SELECT message_id FROM bot_messages WHERE chat_id = ? AND is_system = 1",
+            (chat_id,),
+        )
+        return [row[0] for row in await cursor.fetchall()]
+
+    async def due_system_messages(self, cutoff: datetime) -> list[tuple[int, int]]:
+        """System messages old enough to auto-delete (poller/message_cleanup.py,
+        2026-09-05 follow-up) — across every chat, not one at a time, since
+        the cleanup tick sweeps the whole bot in one pass."""
+        cursor = await self._conn.execute(
+            "SELECT chat_id, message_id FROM bot_messages WHERE is_system = 1 AND sent_at <= ?",
+            (_iso(cutoff),),
+        )
+        return [(row[0], row[1]) for row in await cursor.fetchall()]
+
+    async def last_bot_message(self, chat_id: int) -> int | None:
+        """For the admin panel's unconditional 24h wipe — deliberately not
+        filtered at all, unlike `last_deletable_bot_message` below."""
+        cursor = await self._conn.execute(
+            "SELECT message_id FROM bot_messages WHERE chat_id = ? "
+            "ORDER BY message_id DESC LIMIT 1",
+            (chat_id,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def last_deletable_bot_message(self, chat_id: int) -> DeletableMessage | None:
+        """For /delete_last and the admin panel's / Mini App's own "delete
+        last" (#101, owner): the bot's newest message in the chat whatever it
+        is — a prompt, /help, a stats reply — except an achievement
+        notification, which is never deleted this way. It used to skip
+        system messages instead, which made achievement posts exactly what it
+        took. Telegram message_ids are assigned sequentially per chat, so the
+        highest one logged here *is* the most recent, no timestamp-tie
+        ambiguity the way sent_at alone would have.
+
+        Returns the row's own `preview` alongside the id (2026-09-09) — the
+        caller's own confirmation names what it's about to delete, rather
+        than deleting silently; `None` there just means an older row or a
+        message with no text/caption, never a reason to fail the delete.
+        """
+        cursor = await self._conn.execute(
+            "SELECT message_id, preview FROM bot_messages"
+            " WHERE chat_id = ? AND is_achievement = 0 "
+            "ORDER BY message_id DESC LIMIT 1",
+            (chat_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return DeletableMessage(message_id=row["message_id"], preview=row["preview"])
+
+    async def forget_bot_messages(self, chat_id: int, message_ids: Sequence[int]) -> None:
+        """Drops the log rows after an actual delete attempt — called
+        regardless of whether Telegram could delete every one of them (some
+        may already be gone), since there is nothing more to do about those
+        either way."""
+        await self._conn.executemany(
+            "DELETE FROM bot_messages WHERE chat_id = ? AND message_id = ?",
+            [(chat_id, message_id) for message_id in message_ids],
+        )
+        await self._conn.commit()

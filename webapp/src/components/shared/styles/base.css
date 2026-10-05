@@ -1,0 +1,402 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
+}
+
+html.is-sheet-open,
+html.is-sheet-open body {
+  overscroll-behavior: none;
+}
+
+/* The page background, shared by the body and every full-screen layer that
+ * covers it (the game page), so they cannot drift apart. */
+:root {
+  --app-bg:
+    radial-gradient(880px 520px at 6% -14%, rgba(120, 150, 230, 0.22), transparent 58%),
+    radial-gradient(640px 480px at 108% 0%, rgba(90, 170, 255, 0.1), transparent 52%),
+    radial-gradient(760px 520px at -6% 108%, rgba(196, 140, 90, 0.16), transparent 58%),
+    radial-gradient(720px 440px at 70% 112%, rgba(40, 48, 80, 0.35), transparent 55%),
+    linear-gradient(180deg, #121620 0%, #0a0c12 48%, #07080c 100%);
+}
+
+body {
+  background: var(--app-bg);
+}
+
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.22;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  padding: calc(14px + var(--safe-top)) 18px calc(108px + var(--safe-bottom));
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0 0 14px;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+textarea {
+  background: rgba(0, 0, 0, 0.28);
+  border: 0;
+  border-radius: 12px;
+  color: var(--text);
+  color-scheme: dark;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  box-shadow: 0 0 0 1000px #12161f inset;
+  transition: background-color 99999s ease-out;
+}
+
+option {
+  background: #12161f;
+  color: var(--text);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.muted.tight {
+  margin: 4px 0 0;
+}
+
+.kicker {
+  margin: 24px 0 12px;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.error {
+  color: var(--danger);
+  margin: 12px 0;
+}
+
+.busy {
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.glass,
+.unlock,
+.feed-row,
+.list button {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  align-items: center;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  align-items: center;
+}
+
+.input.wide {
+  width: 100%;
+  margin: 8px 0;
+}
+
+.empty {
+  padding: 28px 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.glass-orb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 16px rgba(208, 220, 255, 0.35);
+  animation: glass-pulse 1.15s ease-in-out infinite;
+}
+
+.glass-orb:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.glass-orb:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+.chat-settings-title {
+  margin: 0;
+  padding: 2px 0 10px;
+  font-size: 1rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.chat-settings-card + .chat-settings-card {
+  margin-top: 8px;
+}
+
+@keyframes glass-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scale(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* A plain pill button, shared well beyond any one screen (connect
+ * flows, platform cards, an unlock card's own actions) — kept global
+ * rather than co-located with any single one of them. */
+/* The app's actions (owner, 2026-10-02), one look each:
+ *   .btn            a pill, no outline — the action ("Подписаться", "Подключить");
+ *   .btn.is-quiet   the same pill, paler — a state that opens choices ("Друзья ⌄");
+ *   .see-all        blue text with → — goes somewhere ("Все →", "Искать →");
+ *   DropdownArrow   ⌄ on anything that picks from a list; Chevron → on a row
+ *                   that opens a screen. */
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  min-height: 42px;
+  padding: 8px 18px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.btn.is-quiet {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+
+.btn .dd-arrow {
+  color: inherit;
+}
+
+.btn.sm {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn.danger {
+  background: rgba(255, 107, 122, 0.16);
+  color: #ff8a96;
+}
+
+a.btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Under a full-screen page nothing of the app is visible: stop painting it.
+ * `visibility` (unlike display or content-visibility) keeps the layout, so the
+ * scroll position is still there when the page is closed. */
+html.has-game-page #root {
+  visibility: hidden;
+}
+
+/* No focus ring or tap flash on the app's buttons: Android's WebView leaves one on a
+ * button after it is tapped (a dropdown keeps focus while its menu is open). */
+.btn,
+.dd-trigger,
+.dd-item,
+.fr-row,
+.see-all {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:focus,
+.dd-trigger:focus,
+.dd-item:focus,
+.fr-row:focus,
+.see-all:focus {
+  outline: none;
+}
+
+/* A follow state reads like every other dropdown: muted text and ⌄, no pill. */
+.dd-trigger.follow-state {
+  min-height: 34px;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.dd-trigger.follow-state .dd-arrow {
+  color: inherit;
+}
+
+/* The follow control's pop when its state flips; two names so it replays. */
+.follow-btn.is-pop,
+.follow-btn.is-pop2 {
+  animation: follow-pop 0.32s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.follow-btn.is-pop2 {
+  animation-name: follow-pop2;
+}
+
+@keyframes follow-pop {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.6;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes follow-pop2 {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.6;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .follow-btn.is-pop,
+  .follow-btn.is-pop2 {
+    animation: none;
+  }
+}
+
+/* Text fields (owner, 2026-10-03): no browser focus ring anywhere; a field shows
+ * focus by brightening its own surface and edge, softly. */
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
+  outline: none;
+}
+
+.search-bar,
+/* The digits of a taken nickname, #4821: part of it, but quieter. */
+.handle-tag {
+  color: var(--muted);
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.nick-field,
+.input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.search-bar:focus-within,
+.nick-field:focus-within,
+.input:focus {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 4px rgba(155, 182, 255, 0.08);
+}

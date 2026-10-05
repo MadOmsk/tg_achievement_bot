@@ -1,0 +1,21 @@
+# Normalize line endings: LF in the repo and in the working tree.
+# The bot runs on Linux; CRLF from Windows checkouts breaks shell scripts
+# and makes every diff noisy.
+* text=auto eol=lf
+
+# Binary
+*.db binary
+*.png binary
+*.jpg binary
+
+# Windows PowerShell 5.1 reads .ps1 in the system codepage unless the file
+# has a UTF-8 BOM, and Cyrillic strings then break the parser.
+*.ps1 text eol=crlf working-tree-encoding=UTF-8
+
+# cmd misparses a .bat with LF-only line endings.
+*.bat text eol=crlf
+
+# Shell scripts run on Linux. A CRLF copy dies with
+# `syntax error near unexpected token $'in'` the moment bash reads it,
+# which is exactly how the first deploy script reached the server.
+*.sh text eol=lf
