@@ -1,0 +1,6 @@
+• The app is now called Unlocked — a new logo, and it installs on your phone
+• Sign in by email; newcomers sign up in a browser with a friend's invite
+• The app's own notifications: a bell, push, friends' posts — you choose whose
+• New settings: your profile on top, with accounts, sign-in and privacy inside
+• The phone's back button no longer closes the app
+• Various interface improvements
