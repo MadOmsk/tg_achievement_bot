@@ -44,8 +44,9 @@ export function EmailCodeForm({
   locale: Locale;
   initialEmail?: string;
   submitLabel: string;
-  /** Sends a code; resolves with how many seconds until another may be sent. */
-  onSend: (email: string) => Promise<number>;
+  /** Sends a code; resolves with how many seconds until another may be sent,
+   * and whether no code is needed at all (the dev server's no-code mode). */
+  onSend: (email: string) => Promise<{ resendAfter: number; skipCode?: boolean }>;
   onVerify: (email: string, code: string) => Promise<void>;
 }) {
   const [email, setEmail] = useState(initialEmail);
@@ -70,7 +71,12 @@ export function EmailCodeForm({
     setBusy(true);
     setError(null);
     try {
-      setWait(await onSend(address));
+      const sent = await onSend(address);
+      if (sent.skipCode) {
+        await onVerify(address, "");
+        return;
+      }
+      setWait(sent.resendAfter);
       setSentTo(address);
       setCode("");
     } catch (err) {

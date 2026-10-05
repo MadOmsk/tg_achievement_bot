@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -34,19 +35,39 @@ log = logging.getLogger(__name__)
 
 VAPID_KEY_SETTING = "vapid_private_key"
 
-# What a notification is about, and how it reads: the Fluent key for the line,
-# and the person the Mini App opens on a tap (a key of `data`), if any.
-KINDS: dict[str, tuple[str, str | None]] = {
-    "new_follower": ("notification-new-follower", "person_id"),
-    "new_friend": ("notification-new-friend", "person_id"),
+
+@dataclass(frozen=True, slots=True)
+class Kind:
+    """What a notification is about, and how it travels."""
+
+    # The Fluent key for the line.
+    key: str
+    # The person a tap opens (a key of `data`), if the notice is about somebody.
+    person_field: str | None = None
+    # Whether it also goes as a Telegram DM. Off where the bot already sends a
+    # better one of its own (the dead Xbox login's reminder, with its button).
+    telegram: bool = True
+
+
+KINDS: dict[str, Kind] = {
+    "new_follower": Kind("notification-new-follower", "person_id"),
+    "new_friend": Kind("notification-new-friend", "person_id"),
+    # The person's Xbox login stopped working (#164): in the list and as a push;
+    # the DM is poller/reminders.py's, which carries the relogin button.
+    "xbox_login_dead": Kind("notification-xbox-login-dead", telegram=False),
 }
+UNKNOWN = Kind("notification-unknown")
 
 SendDm = Callable[[int, str], Awaitable[None]]
 
 
 def wording(kind: str, data: dict[str, Any], locale: str) -> str:
-    key, _ = KINDS.get(kind, ("notification-unknown", None))
-    return gettext("notifications", key, locale=locale, **{k: str(v) for k, v in data.items()})
+    return gettext(
+        "notifications",
+        KINDS.get(kind, UNKNOWN).key,
+        locale=locale,
+        **{k: str(v) for k, v in data.items()},
+    )
 
 
 class Notifier:
@@ -96,7 +117,7 @@ class Notifier:
         text = wording(kind, data, locale)
         if settings is None or settings.notify_push:
             await self._push(recipient, kind, data, text)
-        if settings is None or settings.notify_telegram:
+        if KINDS.get(kind, UNKNOWN).telegram and (settings is None or settings.notify_telegram):
             await self._telegram(recipient, text)
 
     async def _push(self, person_id: int, kind: str, data: dict[str, Any], text: str) -> None:
@@ -150,7 +171,7 @@ class Notifier:
 
     def _url_for(self, kind: str, data: dict[str, Any]) -> str:
         """Where a tap opens: the person the notice is about, else the app."""
-        _, field = KINDS.get(kind, ("", None))
+        field = KINDS.get(kind, UNKNOWN).person_field
         base = self._app_url
         if field and data.get(field) is not None:
             separator = "&" if "?" in base else "?"

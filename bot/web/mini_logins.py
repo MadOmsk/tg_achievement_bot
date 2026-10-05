@@ -43,6 +43,7 @@ from bot.services.email_login import (
     EmailInvalid,
     EmailLogin,
     EmailTooSoon,
+    TrustingEmailLogin,
 )
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_login_widget
 from bot.web.mini_session import start_session
@@ -68,6 +69,15 @@ RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
 def build_email_login(settings: Settings, repo: Repo) -> EmailLogin | None:
     """The email sign-in, or None when there is no way to send mail. The codes'
     HMAC key is derived from FERNET_KEY, the one secret every install has."""
+    if settings.email_skip_code:
+        if settings.smtp_host:
+            log.error("EMAIL_SKIP_CODE is ignored: a mail server is configured (SMTP_HOST)")
+        else:
+            log.warning(
+                "EMAIL_SKIP_CODE is on: an email address signs in with no code. "
+                "Development only — never on a server."
+            )
+            return TrustingEmailLogin(repo)
     sender = build_sender(settings)
     if sender is None:
         return None
@@ -110,7 +120,10 @@ async def _send(
     except EmailSendError as exc:
         log.warning("sign-in code not sent: %s", exc)
         return _error("send_failed", 502)
-    return web.json_response({"ok": True, "resend_after": email_login.RESEND_SECONDS})
+    return web.json_response(
+        # `skip_code`: the dev server's no-code mode — the app goes straight on.
+        {"ok": True, "resend_after": email_login.RESEND_SECONDS, "skip_code": login.skips_code}
+    )
 
 
 async def _check(

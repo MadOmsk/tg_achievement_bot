@@ -75,6 +75,9 @@ def _hash(secret: bytes, email: str, code: str) -> str:
 
 
 class EmailLogin:
+    # The dev server's "no code" mode (`EMAIL_SKIP_CODE`): see TrustingEmailLogin.
+    skips_code = False
+
     def __init__(self, repo: Repo, sender: EmailSender, secret: bytes) -> None:
         self._repo = repo
         self._sender = sender
@@ -135,3 +138,24 @@ class EmailLogin:
             raise CodeWrong(left)
         await self._repo.use_email_code(live.id)
         return email
+
+
+class TrustingEmailLogin(EmailLogin):
+    """Development only (`EMAIL_SKIP_CODE`): no mail and no code — the address
+    typed in is taken as proved. Built only when no mail server is configured
+    (`web/mini_logins.build_email_login`), and announced loudly in the log."""
+
+    skips_code = True
+
+    def __init__(self, repo: Repo) -> None:
+        self._repo = repo
+
+    async def send_code(
+        self, raw_email: str, purpose: str, *, locale: str, person_id: int | None = None
+    ) -> str:
+        return normalize_email(raw_email)
+
+    async def check_code(
+        self, raw_email: str, code: str, purpose: str, *, person_id: int | None = None
+    ) -> str:
+        return normalize_email(raw_email)

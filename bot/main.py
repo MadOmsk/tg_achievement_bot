@@ -154,7 +154,6 @@ async def run(settings: Settings) -> None:
     bot.session.middleware(MessageLogMiddleware(repo))
 
     notifier = AdminNotifier(bot, repo, settings.admin_tg_ids)
-    auth.on_token_dead = notifier.token_dead
 
     # One service-wide PSN client, not per-user OAuth (SPEC 9, M-PSN-1) —
     # on_dead mirrors XboxAuthService.on_token_dead above, just for the one
@@ -309,6 +308,14 @@ async def run(settings: Settings) -> None:
         app_url=settings.mini_app_url,
         contact=f"mailto:{settings.smtp_from}" if settings.smtp_from else None,
     )
+
+    async def on_xbox_login_dead(person: int) -> None:
+        # The admin hears of it, and the person in their own list and on their
+        # devices (#164); the Telegram reminder is poller/reminders.py's.
+        await notifier.token_dead(person)
+        await notifications.notify(person, "xbox_login_dead")
+
+    auth.on_token_dead = on_xbox_login_dead
 
     web_server = OAuthServer(
         settings,

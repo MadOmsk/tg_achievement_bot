@@ -249,8 +249,10 @@ App entry points), the poller interval settings, and the mail server for email s
 `SMTP_PASSWORD`, `SMTP_FROM`; #162).
 
 - **No mail server, no email sign-in** — not an error: the sign-in screen offers
-  Telegram only. `EMAIL_LOG_CODES=true` writes the codes to the log instead of
-  sending them, for the dev server only. Another way to send mail is one more class
+  Telegram only. For the dev server only: `EMAIL_LOG_CODES=true` writes the codes to
+  the log instead of sending them, and `EMAIL_SKIP_CODE=true` takes a typed address
+  as proved with no code at all (anybody could sign in as anybody, so it is ignored,
+  with an error in the log, whenever `SMTP_HOST` is set). Another way to send mail is one more class
   behind `services/email.py::EmailSender`.
 
 - **`STEAM_API_KEY` and `ANTHROPIC_API_KEY` are first-run seeds** (#17): the auth
@@ -867,7 +869,11 @@ elsewhere in this file still describe the bot.
   default (`user_settings.notify_push`); the DM needs Telegram and the person's
   switch (`notify_telegram`, on by default so nobody lost the DMs they had; migration
   080). One channel failing never stops the others, nor what caused the notice.
-  Today's kinds: a new follower, a new friend. **Not** friends' achievements.
+  Each kind (`notifier.KINDS`) says which channels it takes. Today: a new follower,
+  a new friend, and a dead Xbox login (`xbox_login_dead`, from
+  `XboxAuthService.on_token_dead`) — that one in the list and as a push only: its
+  DM is `poller/reminders.py`'s, which carries the relogin button. **Not** friends'
+  achievements.
   - **Web Push without a new dependency**: `services/webpush.py` seals a message
     (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
     with `httpx`; `tests/test_webpush.py` checks it against the RFC's own example.

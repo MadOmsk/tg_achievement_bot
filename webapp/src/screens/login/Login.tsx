@@ -53,7 +53,10 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
         <EmailCodeForm
           locale={locale}
           submitLabel={t(locale, "loginButton")}
-          onSend={async (address) => (await userApi.emailSignInStart(address, locale)).resend_after}
+          onSend={async (address) => {
+            const res = await userApi.emailSignInStart(address, locale);
+            return { resendAfter: res.resend_after, skipCode: res.skip_code };
+          }}
           onVerify={async (address, code) => {
             await userApi.emailSignInVerify(address, code, locale);
             onSignedIn();

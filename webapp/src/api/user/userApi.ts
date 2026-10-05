@@ -38,7 +38,10 @@ export class UserApi extends BaseApi {
   }
 
   /** Email sign-in (#162): a code to the address, then the code back. */
-  emailSignInStart(email: string, locale: string): Promise<{ ok: boolean; resend_after: number }> {
+  emailSignInStart(
+    email: string,
+    locale: string,
+  ): Promise<{ ok: boolean; resend_after: number; skip_code?: boolean }> {
     return this.post(WEB_SESSION, "/auth/email/start", { email, locale });
   }
 
@@ -50,7 +53,10 @@ export class UserApi extends BaseApi {
     return this.get(initData, "/me/logins");
   }
 
-  emailLinkStart(initData: string, email: string): Promise<{ ok: boolean; resend_after: number }> {
+  emailLinkStart(
+    initData: string,
+    email: string,
+  ): Promise<{ ok: boolean; resend_after: number; skip_code?: boolean }> {
     return this.post(initData, "/me/email/start", { email });
   }
 

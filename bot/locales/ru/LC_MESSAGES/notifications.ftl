@@ -3,3 +3,4 @@
 notification-new-follower = У тебя новый подписчик — { $name }
 notification-new-friend = Вы с { $name } теперь друзья
 notification-unknown = Что-то новое в приложении
+notification-xbox-login-dead = Вход в Xbox слетел — подключи аккаунт заново, чтобы ачивки снова приходили

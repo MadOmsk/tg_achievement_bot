@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # Development only: write sign-in codes to the log instead of sending mail.
     # Never on a server — a log is not a mailbox.
     email_log_codes: bool = False
+    # Development only: an address typed in is taken as proved, no code at all —
+    # anybody could sign in as anybody. Ignored whenever SMTP_HOST is set, so a
+    # server that sends mail can never run this way by mistake.
+    email_skip_code: bool = False
 
     # Poller intervals, seconds (SPEC 5.2, 5.3)
     presence_interval_in_game: int = 60

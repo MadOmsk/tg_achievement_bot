@@ -75,7 +75,10 @@ export function LoginsPane({
         locale={locale}
         initialEmail={logins.email ?? ""}
         submitLabel={t(locale, "emailConfirm")}
-        onSend={async (email) => (await userApi.emailLinkStart(data, email)).resend_after}
+        onSend={async (email) => {
+          const res = await userApi.emailLinkStart(data, email);
+          return { resendAfter: res.resend_after, skipCode: res.skip_code };
+        }}
         onVerify={async (email, code) => {
           setLogins(await userApi.emailLinkVerify(data, email, code));
           setEditing(false);

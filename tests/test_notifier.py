@@ -153,3 +153,18 @@ async def test_the_list_and_the_subscription_routes(repo: Repo, settings) -> Non
         assert await repo.push_subscriptions_of(ada) == []
     finally:
         await client.close()
+
+
+async def test_a_dead_xbox_login_is_told_but_leaves_the_dm_to_the_reminder(repo: Repo) -> None:
+    ada = await repo.ensure_user(1, "ada")
+    assert ada
+    await repo.save_push_subscription(ada, "https://push.example/a", **_browser(), user_agent=None)
+    service, sent = _PushService(), []
+
+    await _notifier(repo, service, sent).notify(ada, "xbox_login_dead")
+
+    [row] = await repo.notifications_of(ada)
+    assert row.kind == "xbox_login_dead"
+    assert service.got == ["https://push.example/a"]
+    # The reminder job sends the DM, with its relogin button: no second one.
+    assert sent == []

@@ -409,3 +409,43 @@ async def test_telegram_stays_when_it_is_the_last_way_in_or_an_admins(repo: Repo
         assert await repo.person_id(42) is not None
     finally:
         await client.close()
+
+
+# ------------------------------------------------- the dev server's no-code mode
+
+
+async def test_the_no_code_mode_takes_the_address_as_proved(repo: Repo, settings) -> None:
+    from bot.services.email_login import TrustingEmailLogin
+    from bot.web.mini_logins import build_email_login
+
+    settings.email_skip_code = True
+    login = build_email_login(settings, repo)
+    assert isinstance(login, TrustingEmailLogin)
+
+    app = web.Application(middlewares=[cors_middleware()])
+    setup_mini_api(app, settings, repo)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        start = await (
+            await client.post("/api/mini/auth/email/start", json={"email": "Dev@Example.com"})
+        ).json()
+        assert start["skip_code"] is True
+        signed = await client.post(
+            "/api/mini/auth/email/verify", json={"email": "dev@example.com", "code": ""}
+        )
+        assert signed.status == 200
+        assert (await client.get("/api/mini/me")).status == 200
+    finally:
+        await client.close()
+
+
+def test_the_no_code_mode_never_runs_beside_a_mail_server(repo: Repo, settings) -> None:
+    from bot.services.email_login import TrustingEmailLogin
+    from bot.web.mini_logins import build_email_login
+
+    settings.email_skip_code = True
+    settings.smtp_host, settings.smtp_from = "mail.example.com", "bot@example.com"
+    login = build_email_login(settings, repo)
+    assert login is not None and not isinstance(login, TrustingEmailLogin)
+    assert login.skips_code is False

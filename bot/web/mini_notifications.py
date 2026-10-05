@@ -18,7 +18,7 @@ from typing import Any
 from aiohttp import web
 
 from bot.db.repo import Repo
-from bot.services.notifier import KINDS, Notifier, wording
+from bot.services.notifier import KINDS, UNKNOWN, Notifier, wording
 from bot.web.mini_auth import MiniAppUser
 
 RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
@@ -43,7 +43,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         rows = await repo.notifications_of(user.person_id)
         items = []
         for row in rows:
-            _, field = KINDS.get(row.kind, ("", None))
+            field = KINDS.get(row.kind, UNKNOWN).person_field
             items.append(
                 {
                     "id": row.id,
