@@ -158,7 +158,7 @@ export function MergeSheet({
           </Group>
         )}
 
-        {error && <p className="email-note is-error">{error}</p>}
+        {error && <p className="field-note is-error">{error}</p>}
         <div className="merge-actions">
           <button type="button" className="btn" disabled={busy || !psnOk} onClick={() => void submit()}>
             {t(locale, "mergeDo")}

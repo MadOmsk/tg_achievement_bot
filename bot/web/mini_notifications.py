@@ -43,7 +43,17 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         rows = await repo.notifications_of(user.person_id)
         items = []
         for row in rows:
-            field = KINDS.get(row.kind, UNKNOWN).person_field
+            spec = KINDS.get(row.kind, UNKNOWN)
+            field = spec.person_field
+            game = (
+                {
+                    "platform": row.data["platform"],
+                    "title_id": row.data["title_id"],
+                    "name": row.data.get("game"),
+                }
+                if spec.game and row.data.get("platform") and row.data.get("title_id")
+                else None
+            )
             items.append(
                 {
                     "id": row.id,
@@ -54,6 +64,8 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                     # Whom a tap opens, when the notice is about somebody.
                     "person_id": row.data.get(field) if field else None,
                     "name": row.data.get("name"),
+                    # The game a tap opens, on that person's progress.
+                    "game": game,
                 }
             )
         return web.json_response(
@@ -63,8 +75,14 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     async def mark_read(request: web.Request) -> web.Response:
         user = await require_user(request)
         repo: Repo = request.app["mini_repo"]
-        await repo.mark_notifications_read(user.person_id)
-        return web.json_response({"ok": True, "unread": 0})
+        # One notice (a tap on it) or, with no ids, all of them.
+        body = await _body(request) if request.can_read_body else {}
+        raw = body.get("ids")
+        ids = [int(i) for i in raw if isinstance(i, int)] if isinstance(raw, list) else None
+        await repo.mark_notifications_read(user.person_id, ids)
+        return web.json_response(
+            {"ok": True, "unread": await repo.unread_notifications(user.person_id)}
+        )
 
     async def push_key(request: web.Request) -> web.Response:
         await require_user(request)

@@ -2,7 +2,7 @@
 # no markup: it is the whole message.
 email-code-subject = Your sign-in code: { $code }
 email-code-body =
-    Your code to sign in to Achievement Bot: { $code }
+    Your code to sign in to Unlocked: { $code }
 
     It works for { $minutes } { $minutes ->
         [one] minute

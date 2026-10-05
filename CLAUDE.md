@@ -8,6 +8,13 @@ connected Xbox, Steam, and PlayStation Network accounts, with per-chat rarity
 filters, personal stats, an admin panel, daily summaries, HowLongToBeat lookup,
 and a Telegram Mini App.
 
+**The app is called Unlocked** (owner, 2026-10-05): it is no longer only a bot.
+The name and the logo (an "achievement unlocked" toast with a cup,
+`webapp/public/logo.svg`; the PNGs and `apple-touch-icon.png` are rendered from
+it) are what the Mini App, the installed app, pushes, sign-in emails and the
+Xbox sign-in page show. The bots keep their Telegram names until changed in
+BotFather.
+
 This file is the single source of truth for current behavior, invariants, and open
 work — read it in full before making product or architecture changes, and **keep it
 current**: when a change alters something this file states (a rule, an invariant, the
@@ -78,6 +85,8 @@ name, or when the tree goes stale.
 ├── pyproject.toml             dependencies, ruff, pytest config
 ├── manage.ps1 / manage.bat    the dev server's process manager and its double-click dashboard
 ├── webapp/                    Telegram Mini App SPA (Vite/React); built by CI, never served by the bot
+├── docs/                      guides for whoever runs a server, English and Russian
+│                              (`mail-setup.md` / `.ru.md`: the mail server for email sign-in)
 ├── changelog/                 release notes per version: `<v>.ru.md` / `.en.md` (what a chat member
 │                              notices), `.summary.<locale>.txt` (the announcement's bullets),
 │                              `.contributors.md` (what changed about working here)
@@ -141,6 +150,7 @@ name, or when the tree goes stale.
 │   │   ├── notify.py             notifications to the admin
 │   │   ├── email.py              sending mail: one `EmailSender`, SMTP or (dev) the log (#162)
 │   │   ├── email_login.py        sign-in codes by email: rules, rationing, checking (#162)
+│   │   ├── invites.py            invite codes: their form, and sign-ups waiting for one
 │   │   ├── notifier.py           the app's own notifications: list, push, Telegram DM (#164)
 │   │   ├── webpush.py            Web Push: RFC 8291 encryption and VAPID, on `cryptography` (#164)
 │   │   ├── mini_app.py           Mini App open-button URLs
@@ -185,7 +195,8 @@ name, or when the tree goes stale.
 │   │                            Init Data auth), mini_auth.py, mini_me.py, mini_chat.py,
 │   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py,
 │   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept),
-│   │                            mini_notifications.py (the list, push subscriptions)
+│   │                            mini_notifications.py (the list, push subscriptions),
+│                            mini_invites.py (signing up with an invite, a member's codes)
 │   │
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
@@ -246,7 +257,8 @@ Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `OAUTH_LISTEN_HOST` /
 `OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
 App entry points), the poller interval settings, and the mail server for email sign-in
 (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
-`SMTP_PASSWORD`, `SMTP_FROM`; #162).
+`SMTP_PASSWORD`, `SMTP_FROM` — a bare address, it is also push's contact; #162;
+setting it up: `docs/mail-setup.md`).
 
 - **No mail server, no email sign-in** — not an error: the sign-in screen offers
   Telegram only. For the dev server only: `EMAIL_LOG_CODES=true` writes the codes to
@@ -783,8 +795,8 @@ elsewhere in this file still describe the bot.
   nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
   People from a shared chat (subscribed or seen writing) are suggested, and friends of friends above them — «Вы можете знать», people followed by those you follow, the most shared first (`repo.people_you_may_know`, `/api/mini/people/may-know`). A new
   follower is told through the app's own notifications (below), unless they turned
-  it off in Settings → Уведомления (`user_settings.notify_followers`, migration 075);
-  friends' achievements never are. **Following is not a way to ping somebody**
+  it off in Settings → Уведомления (`user_settings.notify_followers`, migration 075).
+  New posts are told as well, by the follower's own choice (below). **Following is not a way to ping somebody**
   (owner, 2026-10-03; `follow_log`, migration 076): one such DM per pair a day, and
   following a person again within ten minutes of unfollowing them is refused
   (`FollowTooSoon` → 429 `too_soon`). These tables and routes speak in **person
@@ -804,9 +816,9 @@ elsewhere in this file still describe the bot.
   `/online`: those show what the chat was already told. Every new screen that shows
   another person's activity must call `repo.can_view_activity`. Publishing to
   chats is unrelated and works as before.
-- **Publishing** (shipped): Settings → Публикация has the rarity mode, secrets, a
-  switch per chat and a switch per game account (#20). Settings → Приватность has
-  the one privacy setting and the list of blocked people.
+- **Publishing** (shipped): Settings → «Посты в чатах» has the rarity mode, a
+  switch per chat and a switch per game account (#20). Settings → Профиль →
+  Приватность has the one privacy setting and the list of blocked people.
 - **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
   became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
   dock tab; the `summary` screen name and `?t=summary` links still work).
@@ -841,6 +853,30 @@ elsewhere in this file still describe the bot.
     `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
     `last_login`, `admin`, `in_telegram`, `not_linked`; a `taken` that a merge can
     answer carries a `merge` preview (`GET|POST|DELETE /api/mini/me/merge`).
+    On the sign-in screen, once a code went out only the code is on the screen
+    («Введи код из письма») — not the address step's text nor Telegram's widget;
+    the forms are `noValidate`, so a bad address is worded by the app, never by
+    the browser's bubble.
+  - **Invites** (owner, 2026-10-05; `services/invites.py`, `web/mini_invites.py`,
+    `db/repo/_invites.py`, migration 082): for now **somebody new signs up in a
+    browser only with a code** — by email, or by the Login Widget. Inside
+    Telegram (the bot, the Mini App there) nobody needs one: those people come
+    from the community's chats. Any member makes codes in Settings → «Пригласить
+    друга» (`XXXX-XXXX-XXXX-XXXX`, no look-alike symbols): one code lets one
+    person in, never expires, no limit, and who came by it is kept and shown. A
+    sign-in that proved somebody new without a usable code answers
+    `invite_required` (403) with a `signup` token, kept in memory 15 minutes;
+    the app asks for the code and `POST /api/mini/auth/signup` finishes it. A
+    shared link (`?invite=`; a code's copy icon puts the code and its link in
+    the clipboard) carries the code into the sign-in, and no step shows. An
+    unused code is deleted by its trash icon.
+    `invite_invalid`, `signup_expired`. The dev server's no-code email mode still
+    asks for an invite.
+  - **Asked once for an email** (owner, 2026-10-05; migration 083): somebody
+    with no address meets «Добавь почту» on opening the app, after the nickname,
+    wherever they opened it — until they add one or say «Позже»
+    (`users.email_prompted_at`, `POST /api/mini/me/email/later`); `/me` says
+    `email_prompt` only where a mail server can send the code.
   - **Telegram through the bot** (#162): «Открыть Telegram и привязать» gets a
     `t.me/<bot>?start=link_<token>` link (`GET /api/mini/me/telegram/link`); writing
     to the bot through it adds that Telegram, or offers the merge when it already is
@@ -892,10 +928,18 @@ elsewhere in this file still describe the bot.
   switch (`notify_telegram`, on by default so nobody lost the DMs they had; migration
   080). One channel failing never stops the others, nor what caused the notice.
   Each kind (`notifier.KINDS`) says which channels it takes. Today: a new follower,
-  a new friend, and a dead Xbox login (`xbox_login_dead`, from
+  a new friend, a dead Xbox login (`xbox_login_dead`, from
   `XboxAuthService.on_token_dead`) — that one in the list and as a push only: its
-  DM is `poller/reminders.py`'s, which carries the relogin button. **Not** friends'
-  achievements.
+  DM is `poller/reminders.py`'s, which carries the relogin button — and a new post.
+  - **A new post** (`new_post`; owner, 2026-10-05): somebody followed earned new
+    achievements in one game. Each follower picks whose (`user_settings.notify_posts`,
+    migration 081: `friends` — the default —, `following`, `none`; Settings →
+    Уведомления → «Новые посты», a dropdown), and `repo.can_view_activity` still gates it.
+    `Publisher.publish` fires it once per call, before any chat filter and after
+    the account's own posting switch (#20), in a background task
+    (`Publisher.on_new_post` → `Notifier.tell_about_post`), so it never holds up
+    publishing. One game is one post: a person hears of it once in
+    `POST_NOTICE_INTERVAL` (3 h), however many polls bring its achievements in.
   - **Web Push without a new dependency**: `services/webpush.py` seals a message
     (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
     with `httpx`; `tests/test_webpush.py` checks it against the RFC's own example.
@@ -907,8 +951,11 @@ elsewhere in this file still describe the bot.
   - Routes: `GET /api/mini/notifications`, `POST …/read`; `GET /api/mini/push/key`,
     `POST|DELETE /api/mini/push/subscription`; the switches through
     `PATCH /api/mini/settings`; `/me` carries `notifications_unread`.
-  - **In the Mini App**: a bell on Home with the unread count opens the list
-    (opening it marks all read; a notice about somebody opens them).
+  - **In the Mini App**: a bell on Home with the unread count opens the list. A
+    notice is read once tapped (`POST …/read` with `ids`), or all at once by
+    «Прочитать все» (no `ids`). A tap opens what it is about: a new post's game
+    on the author's progress (`game` in the list, `g=` beside `p=` in a push's
+    URL — `Kind.game`), else the person.
     Settings → «Уведомления»: where (push on/off, this device's own state with
     «Включить»/«Отключить», Telegram messages — or «Привязать» without Telegram) and
     what about (new followers). `components/me/notifications/push.ts` says why a
@@ -920,7 +967,33 @@ elsewhere in this file still describe the bot.
     `sw.js`. The service worker only shows pushes and opens the app on a tap — **no
     offline cache**, so a deploy is never hidden behind an old copy. It is
     registered only outside Telegram. Paths are relative or `BASE_URL`, since
-    production serves the app under `/app/`.
+    production serves the app under `/app/`. A browser that can install it gets
+    a banner above the dock (`shared/lib/install-prompt`): Chromium's own install
+    dialog behind «Установить» (`beforeinstallprompt`, caught at start-up in
+    `main.tsx`), on an iPhone the Share → Add to Home Screen steps. Never inside
+    Telegram or once installed; closed, it rests 14 days (`localStorage`).
+- **Settings, top to bottom** (owner, 2026-10-05): the home is rows that open
+  screens and nothing else — a switch or a picker lives one screen in. Each row
+  starts with its glyph (`RowGlyph`, bare, no tile; the profile row with the
+  face) and says in its second line what is inside. The profile card opens
+  «Профиль» — «Как видят другие», the game accounts, «Вход», «Приватность», then
+  «Выйти» / «Удалить аккаунт»; then «Посты в чатах» (what of yours goes to the
+  chats — named so, not «Публикация», to tell it from what is sent to you),
+  «Уведомления», «Общие» (language, timezone, secret achievements); the admin's
+  screens, the API load on «Ключи» beside the keys. Inside a screen, a row
+  shows its current choice on the right where there is one. Back from a
+  profile screen is the profile; back from connecting an account opens it too
+  (its notes are there). The follows drawer also lists the people one blocked.
+- **The phone's "back" steps back inside the app** (owner, 2026-10-05;
+  `shared/lib/back-stack`): Android's back in the installed app, and Telegram's
+  header button (`BackButton`) inside Telegram, close the topmost open layer —
+  a screen with a back arrow (`BackHead`), a sheet, the game page, a person's
+  page, then any tab back to Home — and only then leave. Each layer calls
+  `useBackHandler`; a new layer that reuses a component (one arrow, another
+  title) passes `layer` so it counts as new. The history holds **one** entry of
+  ours while anything is open, re-armed after each back: one per layer raced a
+  closing layer's history step against an opening one's new entry, lost one,
+  and the last back left the app. A new screen with its own way out registers too.
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
@@ -931,10 +1004,19 @@ elsewhere in this file still describe the bot.
 - **Actions look one way each** (owner, 2026-10-02; `components/shared/styles/base.css`):
   `.btn` is a pill without an outline — the action ("Подписаться", "Подключить");
   `.btn.is-quiet` is the paler pill of a state that opens choices ("Друзья ⌄");
+  `.btn.is-wide` is a form's own action, the whole width under its field;
   `.see-all` is blue text with → for going somewhere ("Все →", "Искать →");
   `DropdownArrow` ⌄ marks anything picked from a list (dropdowns, the month), and the
   row `Chevron` → a row that opens a screen. The follow control is one component,
   `FollowButton`: follow at once, and behind "Друзья ⌄" unfollow and block.
+- **One text field** (owner, 2026-10-05; `base.css`): every place one types —
+  sign-in and email, the nickname (`.is-big`), a sign-in code (`.is-code`), a
+  Steam/PSN link, an admin key — is `<label className="field"><input/></label>`,
+  with `.field-note` under it (`.is-error` for what went wrong, and the field
+  takes `.is-error` too) and a `.btn.is-wide`, stacked by `.form-stack`. Focus
+  is the same everywhere: a brighter surface and an accent edge and ring — the
+  search bar shares it in its pill shape, and a settings row's number
+  (`.fr-number`) in miniature. A new form never styles an input of its own.
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 
@@ -1642,7 +1724,8 @@ actually invocable (`tests/test_handler_wiring.py`).
 - **GitHub is kept in English** (owner, 2026-09-24): issues, comments, PR descriptions,
   commit messages — even when the conversation was Russian. The exceptions are the
   files deliberately kept in two languages: `README.md` / `README.ru.md`,
-  `changelog/<v>.ru.md` / `.en.md` and their summaries, and `bot/locales/ru|en/`.
+  `docs/*.md` / `*.ru.md`, `changelog/<v>.ru.md` / `.en.md` and their summaries,
+  and `bot/locales/ru|en/`.
 - Comment *why*, not *what* — especially in the pollers and around token refresh.
 - Prefer small, precise changes that preserve behavior unless the task is to change
   it.

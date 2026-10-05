@@ -1,15 +1,20 @@
 import { useState } from "react";
-import type { AccountPlatform, MeResponse } from "../../../api";
+import type { AccountPlatform, MeResponse, NotifyPosts } from "../../../api";
 import { t, timezoneLabel, type Locale } from "../../../i18n";
 import {
+  Avatar,
   BackHead,
   ChoiceRow,
   Group,
+  HandleName,
   InfoRow,
   NavRow,
   PlatformLogo,
+  RowGlyph,
   SelectRow,
   ToggleRow,
+  accountLabel,
+  telegramPhoto,
 } from "../../shared/lib";
 import {
   PLATFORMS,
@@ -24,8 +29,15 @@ import { NicknameForm } from "../nickname/NicknameForm";
 import { PrivacyPane } from "../privacy/PrivacyPane";
 import { LoginsPane } from "../logins/LoginsPane";
 import { NotificationsPane } from "../notifications/NotificationsPane";
+import { InvitesPane } from "../invites/InvitesPane";
 import { PlatformCard, type AccountRow, type PlatNotes } from "../platform-card/PlatformCard";
 import "./Settings.css";
+
+const PRIVACY_VALUE = {
+  all: "privacyAll",
+  friends: "privacyFriends",
+  nobody: "privacyNobody",
+} as const;
 
 export function Settings({
   me,
@@ -63,6 +75,7 @@ export function Settings({
     notify_followers?: boolean;
     notify_push?: boolean;
     notify_telegram?: boolean;
+    notify_posts?: NotifyPosts;
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onNickname: (handle: string) => Promise<void>;
@@ -84,7 +97,10 @@ export function Settings({
   /** A login was added that the rest of the app shows (Telegram). */
   onLoginsChanged: () => void;
 }) {
-  const [pane, setPane] = useState<SettingsPane>(SETTINGS_PANES.ROOT);
+  // Back from connecting an account, the profile opens: its notes are there.
+  const [pane, setPane] = useState<SettingsPane>(() =>
+    notes && Object.values(notes).some(Boolean) ? SETTINGS_PANES.PROFILE : SETTINGS_PANES.ROOT,
+  );
   const [deleting, setDeleting] = useState(false);
   const tz = me.settings.tz_offset_min;
 
@@ -135,7 +151,13 @@ export function Settings({
       ]
     : [];
 
-  const back = () => setPane(SETTINGS_PANES.ROOT);
+  // What a screen goes back to: the profile's own screens to the profile.
+  const back = () =>
+    setPane(
+      pane === SETTINGS_PANES.NICKNAME || pane === SETTINGS_PANES.LOGINS || pane === SETTINGS_PANES.PRIVACY
+        ? SETTINGS_PANES.PROFILE
+        : SETTINGS_PANES.ROOT,
+    );
   // Said as what goes to the chats, not as a rarity: "everything", "only rare", "nothing".
   const publishOptions = [
     { value: RARITY_MODES.ALL as string, label: t(locale, "publishAll") },
@@ -247,15 +269,8 @@ export function Settings({
     return (
       <>
         <BackHead title={t(locale, "publishing")} backLabel={t(locale, "back")} onBack={back} />
-        {/* First what the app shows you; then what goes to the chats: what,
-            where, from which accounts — one question per group. */}
-        <Group>
-          <ToggleRow
-            label={t(locale, "showSecrets")}
-            on={me.settings.show_secrets}
-            onChange={(on) => onPatch({ show_secrets: on })}
-          />
-        </Group>
+        {/* What goes to the chats: what, where, from which accounts — one
+            question per group. */}
         <Group title={t(locale, "publishingWhat")}>
           {/* One mode for every chat this person publishes to (#126). */}
           <SelectRow
@@ -314,121 +329,203 @@ export function Settings({
     );
   }
 
+  const deleteAccount = async () => {
+    // Telegram's own confirmation, like turning off publishing to a chat.
+    if (!window.confirm(t(locale, "deleteWarning"))) return;
+    setDeleting(true);
+    try {
+      await onDeleteAccount();
+      window.alert(t(locale, "deleteDone"));
+      if (window.Telegram?.WebApp?.close) window.Telegram.WebApp.close();
+      else window.location.reload();
+    } catch (err) {
+      onFlash(`${t(locale, "error")}: ${String(err)}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (pane === SETTINGS_PANES.INVITES) {
+    return <InvitesPane locale={locale} data={data} onBack={back} />;
+  }
+
+  // The app's own preferences, the same for every screen of it.
+  if (pane === SETTINGS_PANES.GENERAL) {
+    return (
+      <>
+        <BackHead title={t(locale, "groupGeneral")} backLabel={t(locale, "back")} onBack={back} />
+        <Group>
+          <ChoiceRow
+            label={t(locale, "language")}
+            value={locale}
+            options={[
+              { value: "ru", label: "RU" },
+              { value: "en", label: "EN" },
+            ]}
+            onChange={(v) => onPatch({ locale: v as Locale })}
+          />
+          <SelectRow
+            label={t(locale, "timezone")}
+            value={tz ?? TZ_UNSET}
+            options={tzOptions}
+            onChange={(v) => onPatch({ tz_offset_min: v === TZ_UNSET ? null : v })}
+          />
+        </Group>
+        <Group hint={t(locale, "showSecretsHint")}>
+          <ToggleRow
+            label={t(locale, "showSecrets")}
+            on={me.settings.show_secrets}
+            onChange={(on) => onPatch({ show_secrets: on })}
+          />
+        </Group>
+      </>
+    );
+  }
+
+  // The profile: who you are to others, your game accounts, how you sign in
+  // and who sees you — and leaving, last.
+  if (pane === SETTINGS_PANES.PROFILE) {
+    return (
+      <>
+        <BackHead title={t(locale, "profile")} backLabel={t(locale, "back")} onBack={back} />
+        {me.handle && (
+          <Group>
+            <NavRow
+              label={t(locale, "profileLook")}
+              sub={t(locale, "profileLookSub")}
+              onClick={() => setPane(SETTINGS_PANES.NICKNAME)}
+            />
+          </Group>
+        )}
+
+        <Group title={t(locale, "accounts")}>
+          <PlatformCard
+            mark={PLATFORMS.XBOX}
+            title="Xbox"
+            accounts={xboxAccounts}
+            locale={locale}
+            onConnect={onConnectXbox}
+            onSync={me.xbox.linked ? onSync : undefined}
+            notes={[
+              me.xbox.needs_reconnect ? { kind: "error", text: t(locale, "reconnectHint") } : null,
+              notes?.xbox,
+            ]}
+          />
+          <PlatformCard
+            mark={PLATFORMS.PSN}
+            title="PlayStation"
+            accounts={psnAccounts}
+            locale={locale}
+            onConnect={onConnectPsn}
+            onAdd={psnAccounts.length && psnAccounts.length < psnMax ? onConnectPsn : undefined}
+            onSync={me.psn.linked ? onSync : undefined}
+            notes={[psnHidden ? { kind: "warn", text: t(locale, "hiddenPsn") } : null, notes?.psn]}
+          />
+          <PlatformCard
+            mark={PLATFORMS.STEAM}
+            title="Steam"
+            accounts={steamAccounts}
+            locale={locale}
+            onConnect={onConnectSteam}
+            onSync={me.steam.linked ? onSync : undefined}
+            notes={[
+              me.steam.linked && me.steam.achievements_visible === false
+                ? { kind: "warn", text: t(locale, "hiddenSteam") }
+                : null,
+              notes?.steam,
+            ]}
+          />
+        </Group>
+
+        <Group>
+          <NavRow
+            label={t(locale, "logins")}
+            sub={t(locale, "loginsSub")}
+            onClick={() => setPane(SETTINGS_PANES.LOGINS)}
+          />
+          <NavRow
+            label={t(locale, "privacy")}
+            sub={t(locale, "privacySub")}
+            value={t(locale, PRIVACY_VALUE[me.settings.activity_visible ?? "all"])}
+            onClick={() => setPane(SETTINGS_PANES.PRIVACY)}
+          />
+        </Group>
+
+        <Group>
+          {onLogout && <NavRow danger label={t(locale, "logout")} onClick={onLogout} />}
+          <NavRow
+            danger
+            disabled={deleting}
+            label={t(locale, "deleteAccount")}
+            onClick={() => void deleteAccount()}
+          />
+        </Group>
+      </>
+    );
+  }
+
   return (
     <>
       <header className="page-head">
         <h1>{t(locale, "settings")}</h1>
       </header>
 
-      <Group title={t(locale, "groupGeneral")}>
-        <ChoiceRow
-          label={t(locale, "language")}
-          value={locale}
-          options={[
-            { value: "ru", label: "RU" },
-            { value: "en", label: "EN" },
-          ]}
-          onChange={(v) => onPatch({ locale: v as Locale })}
-        />
-        <SelectRow
-          label={t(locale, "timezone")}
-          value={tz ?? TZ_UNSET}
-          options={tzOptions}
-          onChange={(v) => onPatch({ tz_offset_min: v === TZ_UNSET ? null : v })}
+      {/* Who you are first — everything about you behind it — then what you
+          set for the chats and the notices, and the app's own preferences. */}
+      <Group>
+        <NavRow
+          className="settings-me"
+          lead={
+            <Avatar
+              name={accountLabel(me)}
+              photo={telegramPhoto()}
+              personId={me.person_id ?? undefined}
+              size={52}
+            />
+          }
+          label={
+            <span className="settings-me-name">
+              {me.handle ? <HandleName text={me.handle.display} /> : accountLabel(me)}
+            </span>
+          }
+          sub={t(locale, "profileSub")}
+          onClick={() => setPane(SETTINGS_PANES.PROFILE)}
         />
       </Group>
 
-      <Group title={t(locale, "groupProfile")}>
-        {me.handle && (
-          <NavRow
-            label={t(locale, "profileLook")}
-            onClick={() => setPane(SETTINGS_PANES.NICKNAME)}
-          />
-        )}
-        <NavRow label={t(locale, "logins")} onClick={() => setPane(SETTINGS_PANES.LOGINS)} />
-        <NavRow label={t(locale, "privacy")} onClick={() => setPane(SETTINGS_PANES.PRIVACY)} />
+      <Group>
         <NavRow
+          lead={<RowGlyph name="gift" />}
+          label={t(locale, "invites")}
+          sub={t(locale, "invitesSub")}
+          onClick={() => setPane(SETTINGS_PANES.INVITES)}
+        />
+      </Group>
+
+      <Group>
+        <NavRow
+          lead={<RowGlyph name="send" />}
+          label={t(locale, "publishing")}
+          sub={t(locale, "publishingSub")}
+          onClick={() => setPane(SETTINGS_PANES.PUBLISHING)}
+        />
+        <NavRow
+          lead={<RowGlyph name="bell" />}
           label={t(locale, "notifications")}
+          sub={t(locale, "notificationsSub")}
           onClick={() => setPane(SETTINGS_PANES.NOTIFICATIONS)}
         />
         <NavRow
-          label={t(locale, "publishing")}
-          value={me.chats.filter((c) => c.is_subscribed).length || undefined}
-          onClick={() => setPane(SETTINGS_PANES.PUBLISHING)}
-        />
-      </Group>
-
-      <Group title={t(locale, "accounts")}>
-        <PlatformCard
-          mark={PLATFORMS.XBOX}
-          title="Xbox"
-          accounts={xboxAccounts}
-          locale={locale}
-          onConnect={onConnectXbox}
-          onSync={me.xbox.linked ? onSync : undefined}
-          notes={[
-            me.xbox.needs_reconnect ? { kind: "error", text: t(locale, "reconnectHint") } : null,
-            notes?.xbox,
-          ]}
-        />
-        <PlatformCard
-          mark={PLATFORMS.PSN}
-          title="PlayStation"
-          accounts={psnAccounts}
-          locale={locale}
-          onConnect={onConnectPsn}
-          onAdd={psnAccounts.length && psnAccounts.length < psnMax ? onConnectPsn : undefined}
-          onSync={me.psn.linked ? onSync : undefined}
-          notes={[psnHidden ? { kind: "warn", text: t(locale, "hiddenPsn") } : null, notes?.psn]}
-        />
-        <PlatformCard
-          mark={PLATFORMS.STEAM}
-          title="Steam"
-          accounts={steamAccounts}
-          locale={locale}
-          onConnect={onConnectSteam}
-          onSync={me.steam.linked ? onSync : undefined}
-          notes={[
-            me.steam.linked && me.steam.achievements_visible === false
-              ? { kind: "warn", text: t(locale, "hiddenSteam") }
-              : null,
-            notes?.steam,
-          ]}
+          lead={<RowGlyph name="sliders" />}
+          label={t(locale, "groupGeneral")}
+          sub={t(locale, "generalSub")}
+          onClick={() => setPane(SETTINGS_PANES.GENERAL)}
         />
       </Group>
 
       {me.is_admin && onAdmin && (
-        <AdminSection
-          data={data}
-          locale={locale}
-          onNavigate={onAdmin}
-          onFail={(err) => onFlash(`${t(locale, "error")}: ${String(err)}`)}
-        />
+        <AdminSection locale={locale} onNavigate={onAdmin} />
       )}
-
-      <Group>
-        {onLogout && <NavRow danger label={t(locale, "logout")} onClick={onLogout} />}
-        <NavRow
-          danger
-          disabled={deleting}
-          label={t(locale, "deleteAccount")}
-          onClick={async () => {
-            // Telegram's own confirmation, like turning off publishing to a chat.
-            if (!window.confirm(t(locale, "deleteWarning"))) return;
-            setDeleting(true);
-            try {
-              await onDeleteAccount();
-              window.alert(t(locale, "deleteDone"));
-              if (window.Telegram?.WebApp?.close) window.Telegram.WebApp.close();
-              else window.location.reload();
-            } catch (err) {
-              onFlash(`${t(locale, "error")}: ${String(err)}`);
-            } finally {
-              setDeleting(false);
-            }
-          }}
-        />
-      </Group>
     </>
   );
 }

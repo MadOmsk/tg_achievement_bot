@@ -91,9 +91,22 @@ def register(app: web.Application) -> None:
             raise web.HTTPUnauthorized(text="invalid login") from exc
         except Exception as exc:
             raise web.HTTPBadRequest(text="invalid json") from exc
-        person = await repo.ensure_user(user.tg_id, user.username, user.first_name, user.last_name)
+        person = await repo.person_id(user.tg_id)
         if person is None:
-            raise web.HTTPNotFound(text="no person")
+            # Somebody new: only with an invite, for now (owner, 2026-10-05).
+            # Imported here: mini_invites itself opens sessions through this module.
+            from bot.web.mini_invites import sign_up
+
+            proof = {
+                "kind": "telegram",
+                "tg_id": user.tg_id,
+                "username": user.username,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+            }
+            return await sign_up(request, proof, body.get("invite"))
+        # Known already: keep Telegram's names fresh.
+        await repo.ensure_user(user.tg_id, user.username, user.first_name, user.last_name)
         return await start_session(request, repo, person)
 
     async def logout(request: web.Request) -> web.Response:

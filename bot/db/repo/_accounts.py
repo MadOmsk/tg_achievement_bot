@@ -43,7 +43,11 @@ class _AccountsRepo:
         optional here on purpose — most call sites only ever had a username
         to pass before this existed, and the message middleware
         (handlers/chat.py) backfills both from this person's very next
-        message regardless."""
+        message regardless.
+
+        The username is the one Telegram just sent, always: None means the
+        person has none (or removed it), and keeping the old one instead left
+        a stale name on people who never had one."""
         if tg_id <= 0:
             log.warning("refusing to create user with non-user tg_id=%s (#66)", tg_id)
             return None
@@ -53,7 +57,7 @@ class _AccountsRepo:
             "INSERT INTO users (tg_id, username, first_name, last_name, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(tg_id) DO UPDATE SET "
-            "  username = COALESCE(excluded.username, users.username),"
+            "  username = excluded.username,"
             "  first_name = COALESCE(excluded.first_name, users.first_name),"
             "  last_name = COALESCE(excluded.last_name, users.last_name),"
             "  updated_at = excluded.updated_at",
@@ -741,6 +745,7 @@ class _AccountsRepo:
             "notify_followers",
             "notify_push",
             "notify_telegram",
+            "notify_posts",
         }
         unknown = set(fields) - allowed
         if unknown:

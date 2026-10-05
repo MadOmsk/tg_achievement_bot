@@ -1,0 +1,17 @@
+.invites-make {
+  margin: 4px 0 24px;
+}
+
+.invite-code {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.invite-who {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}

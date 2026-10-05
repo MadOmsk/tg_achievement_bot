@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -46,6 +47,10 @@ SEND_INTERVAL_SECONDS = 3.0  # ~20 messages a minute
 # achievements than this still lists every one of them in the text (SPEC
 # 7.2), the gallery is just illustrative, not required to be exhaustive.
 MEDIA_GROUP_MAX = 10
+
+# Told when a person has new achievements in one game, for the people following
+# them (#164): (person_id, platform, title_id, game, count).
+PostNotice = Callable[[int, str, str, str, int], Awaitable[None]]
 
 
 @dataclass(slots=True)
@@ -109,6 +114,9 @@ class Publisher:
         # the life of the process instead of deactivated, see `_send`.
         self._unreachable: set[int] = set()
         self._worker: asyncio.Task[None] | None = None
+        # Set once the app's notifications exist (bot/main.py).
+        self.on_new_post: PostNotice | None = None
+        self._notices: set[asyncio.Task[None]] = set()
 
     async def _get_bot_username(self) -> str:
         if self._bot_username:
@@ -198,6 +206,7 @@ class Publisher:
             ]
             if not achievements:
                 return
+        self._tell_followers(person_id, achievements, title_name)
 
         for chat in await self._repo.publication_targets(person_id):
             allowed = [
@@ -288,6 +297,28 @@ class Publisher:
                         reply_markup=markup,
                     )
                 )
+
+    def _tell_followers(
+        self, person_id: int, achievements: list[AchievementRow], title_name: str | None
+    ) -> None:
+        """The followers' notice is about the post itself, not any chat: it goes
+        whatever the chats filter, in the background, so pushes to many devices
+        never hold up publishing."""
+        if self.on_new_post is None:
+            return
+        first = achievements[0]
+        game = first.title_name or title_name or first.title_id
+        notice = self.on_new_post
+
+        async def tell() -> None:
+            try:
+                await notice(person_id, first.platform, first.title_id, game, len(achievements))
+            except Exception:
+                log.exception("post notices for person_id=%s failed", person_id)
+
+        task = asyncio.create_task(tell())
+        self._notices.add(task)
+        task.add_done_callback(self._notices.discard)
 
     async def _apply_flood_filter(
         self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]

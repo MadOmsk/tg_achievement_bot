@@ -56,6 +56,13 @@ async def test_sign_in_sets_a_cookie_that_signs_later_requests(repo: Repo, setti
         bad = await client.post("/api/mini/auth/telegram", json={**_widget(token), "id": "7"})
         assert bad.status == 401
 
+        # Somebody new needs an invite (owner, 2026-10-05) …
+        asked = await client.post("/api/mini/auth/telegram", json=_widget(token))
+        assert (asked.status, (await asked.json())["error"]) == (403, "invite_required")
+        assert await repo.person_id(42) is None
+
+        # … a member already known (here: written to the bot) does not.
+        await repo.ensure_user(42, "tester")
         ok = await client.post("/api/mini/auth/telegram", json=_widget(token))
         assert ok.status == 200
         cookie = ok.cookies["ab_session"]

@@ -14,8 +14,17 @@
 }
 
 .bell-button + .month-chip,
-.bell-button + .month-chip-skel {
+.bell-button + .month-chip-skel,
+.bell-skel + .month-chip-skel {
   margin-left: 4px;
+}
+
+/* The bell's own box, empty, while the app loads. */
+.bell-skel {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
 }
 
 .bell-count {
@@ -33,6 +42,17 @@
   line-height: 16px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+.notices-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notices-head h2 {
+  margin: 0;
 }
 
 .notices-list {
@@ -59,8 +79,8 @@
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--glass);
   color: var(--muted);
@@ -74,6 +94,10 @@
   min-width: 0;
   font-size: 0.92rem;
   line-height: 1.35;
+}
+
+.notice-row.is-unread .notice-copy > span {
+  font-weight: 600;
 }
 
 .notice-copy small {

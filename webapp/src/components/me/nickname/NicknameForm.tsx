@@ -167,7 +167,7 @@ export function NicknameForm({
           {first && <p className="nick-intro">{t(locale, "nicknameIntro")}</p>}
         </div>
 
-        <label className={locked ? "nick-field is-locked" : "nick-field"}>
+        <label className={["field is-big", locked ? "is-locked" : "", note ? "is-error" : ""].filter(Boolean).join(" ")}>
           <input
             value={value}
             onChange={(e) => setValue(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 20))}
@@ -188,12 +188,12 @@ export function NicknameForm({
           )}
         </label>
         {(note || (locked && waitUntil)) && (
-          <p className={note ? "nick-hint is-error" : "nick-hint"}>
+          <p className={note ? "field-note is-error" : "field-note"}>
             {note ?? `${t(locale, "nicknameNext")} ${waitUntil?.toLocaleDateString(locale)}`}
           </p>
         )}
 
-        <button type="submit" className="btn nick-save" disabled={!valid || busy || locked || (unchanged && !first)}>
+        <button type="submit" className="btn is-wide" disabled={!valid || busy || locked || (unchanged && !first)}>
           {unchanged && first ? t(locale, "nicknameKeep") : t(locale, "nicknameSave")}
         </button>
       </form>

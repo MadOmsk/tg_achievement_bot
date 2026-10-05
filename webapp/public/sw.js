@@ -15,7 +15,7 @@ self.addEventListener("push", (event) => {
   }
   const scope = self.registration.scope;
   event.waitUntil(
-    self.registration.showNotification(message.title || "Achievement Bot", {
+    self.registration.showNotification(message.title || "Unlocked", {
       body: message.body || "",
       tag: message.tag || undefined,
       icon: `${scope}logo-192.png`,

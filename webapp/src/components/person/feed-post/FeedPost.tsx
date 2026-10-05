@@ -131,8 +131,10 @@ export function FeedPost({
                     </h2>
                     {(marks.length > 0 || tier) && (
                       <span className="post-marks">
-                        {tier && <TierDisc tier={tier} size={14} />}
+                        {/* Rarity first, then the trophy's tier — as on every card. */}
                         {marks.join(" · ")}
+                        {tier && marks.length > 0 && " · "}
+                        {tier && <TierDisc tier={tier} size={14} />}
                       </span>
                     )}
                   </div>

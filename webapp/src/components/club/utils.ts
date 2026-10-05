@@ -19,6 +19,12 @@ export function formatMonth(
     .replace(" г.", "");
 }
 
+/** This month as "YYYY-MM", in the device's own time — the month a page opens on. */
+export function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function rankPeople(members: OnlineMember[]): OnlineMember[] {
   return [...members].sort(
     (a, b) =>

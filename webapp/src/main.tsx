@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 // component's own co-located stylesheet in the built output.
 import "./components/shared/styles/index.css";
 import { App } from "./App";
+import { captureInstallPrompt } from "./components/shared/lib/install-prompt/install";
 
 const root = document.getElementById("root");
 if (!root) {
@@ -23,6 +24,7 @@ if ("serviceWorker" in navigator && !window.Telegram?.WebApp?.initData) {
   void navigator.serviceWorker
     .register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
     .catch(() => undefined);
+  captureInstallPrompt();
 }
 
 createRoot(root).render(

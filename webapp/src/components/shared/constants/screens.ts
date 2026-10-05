@@ -49,6 +49,9 @@ export function asLaunchTab(value: string | null): LaunchTab {
 /** The sub-panes of the settings screen. */
 export const SETTINGS_PANES = {
   ROOT: "root",
+  PROFILE: "profile",
+  GENERAL: "general",
+  INVITES: "invites",
   PUBLISHING: "publishing",
   PRIVACY: "privacy",
   LOGINS: "logins",

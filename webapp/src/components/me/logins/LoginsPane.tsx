@@ -111,7 +111,7 @@ export function LoginsPane({
     <div className="logins-form">
       <EmailCodeForm
         locale={locale}
-        initialEmail={logins.email ?? ""}
+        placeholder={logins.email ?? undefined}
         submitLabel={t(locale, "emailConfirm")}
         onSend={async (email) => {
           const res = await userApi.emailLinkStart(data, email);

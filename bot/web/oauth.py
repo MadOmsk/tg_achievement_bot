@@ -37,7 +37,7 @@ OnLinked = Callable[[int, "int | None", XboxIdentity, "int | None"], Awaitable[N
 
 _PAGE = """<!doctype html>
 <meta charset="utf-8">
-<title>Xbox Achievement Bot</title>
+<title>Unlocked</title>
 <style>
   body {{ font: 16px/1.5 system-ui, sans-serif; margin: 15vh auto; max-width: 30rem;
           padding: 0 1rem; text-align: center; }}

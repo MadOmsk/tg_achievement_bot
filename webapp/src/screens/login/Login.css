@@ -18,6 +18,16 @@
 
 .login h1 {
   margin: 6px 0 0;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+
+.login-tagline {
+  max-width: 30ch;
+  margin: -8px 0 6px;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.4;
 }
 
 .login-text,
@@ -48,4 +58,9 @@
   font-size: 0.8rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.add-email-later {
+  margin-top: 6px;
+  color: var(--muted);
 }

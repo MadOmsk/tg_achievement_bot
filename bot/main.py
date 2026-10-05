@@ -311,6 +311,9 @@ async def run(settings: Settings) -> None:
         contact=f"mailto:{settings.smtp_from}" if settings.smtp_from else None,
     )
 
+    # Followers hear of a new post by their own choice (owner, 2026-10-05).
+    publisher.on_new_post = notifications.tell_about_post
+
     async def on_xbox_login_dead(person: int) -> None:
         # The admin hears of it, and the person in their own list and on their
         # devices (#164); the Telegram reminder is poller/reminders.py's.

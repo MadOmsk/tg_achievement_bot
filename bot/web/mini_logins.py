@@ -4,7 +4,8 @@ which may come first.
 
 Sign-in by email: `POST /api/mini/auth/email/start` sends a code,
 `POST /api/mini/auth/email/verify` checks it and opens a session — for the
-person with that address, or a new person when nobody has it yet.
+person with that address, or a new person when nobody has it yet, who needs an
+invite (`web/mini_invites.py`).
 
 Settings → «Вход»: `GET /api/mini/me/logins`; `POST /api/mini/me/email/start`
 and `/verify` add or change the address — never remove it: email is the main
@@ -54,6 +55,7 @@ from bot.services.email_login import (
 )
 from bot.services.merge import MergeRefused
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_login_widget
+from bot.web.mini_invites import sign_up
 from bot.web.mini_session import start_session
 
 log = logging.getLogger(__name__)
@@ -169,13 +171,16 @@ def register(app: web.Application, require_user: RequireUser) -> None:
             return checked
         person = await repo.person_by_email(checked)
         if person is None:
-            person = await repo.create_email_person(checked)
-            locale = body.get("locale")
-            if locale:
-                await repo.update_user_settings(person, locale=normalize_locale(str(locale)))
-            await repo.give_handle(person)
-            log.info("new person_id=%s signed up by email", person)
+            # Somebody new: only with an invite, for now (owner, 2026-10-05).
+            proof = {"kind": "email", "email": checked, "locale": body.get("locale")}
+            return await sign_up(request, proof, body.get("invite"))
         return await start_session(request, repo, person)
+
+    async def email_later(request: web.Request) -> web.Response:
+        user = await require_user(request)
+        repo: Repo = request.app["mini_repo"]
+        await repo.put_off_email_prompt(user.person_id)
+        return web.json_response({"ok": True})
 
     async def logins(request: web.Request) -> web.Response:
         user = await require_user(request)
@@ -296,6 +301,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     app.router.add_get("/api/mini/me/logins", logins)
     app.router.add_post("/api/mini/me/email/start", email_start)
     app.router.add_post("/api/mini/me/email/verify", email_verify)
+    app.router.add_post("/api/mini/me/email/later", email_later)
     app.router.add_post("/api/mini/me/telegram", telegram_link)
     app.router.add_delete("/api/mini/me/telegram", telegram_remove)
     app.router.add_get("/api/mini/me/telegram/link", telegram_link_url)

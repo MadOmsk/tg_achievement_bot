@@ -254,10 +254,6 @@ a:focus-visible {
   color: var(--muted);
 }
 
-.btn .dd-arrow {
-  color: inherit;
-}
-
 .btn.sm {
   min-height: 34px;
   padding: 6px 12px;
@@ -321,10 +317,6 @@ html.has-game-page #root {
   white-space: nowrap;
 }
 
-.dd-trigger.follow-state .dd-arrow {
-  color: inherit;
-}
-
 /* The follow control's pop when its state flips; two names so it replays. */
 .follow-btn.is-pop,
 .follow-btn.is-pop2 {
@@ -375,7 +367,6 @@ select:focus-visible {
   outline: none;
 }
 
-.search-bar,
 /* The digits of a taken nickname, #4821: part of it, but quieter. */
 .handle-tag {
   color: var(--muted);
@@ -383,8 +374,22 @@ select:focus-visible {
   opacity: 0.75;
 }
 
-.nick-field,
-.input {
+/* One text field for the whole app (owner, 2026-10-05): sign-in, email, the
+ * nickname, a Steam/PSN link, an admin key — and the search bar, in its own
+ * pill shape. Focus brightens the surface and lights the edge in the accent. */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: 16px;
+  cursor: text;
+}
+
+.field,
+.search-bar {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   transition:
@@ -393,10 +398,92 @@ select:focus-visible {
     box-shadow 0.18s ease;
 }
 
+.field:focus-within,
 .search-bar:focus-within,
-.nick-field:focus-within,
-.input:focus {
+.is-home .search-bar:focus-within {
   background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 0 0 4px rgba(155, 182, 255, 0.08);
+  border-color: rgba(155, 182, 255, 0.42);
+  box-shadow: 0 0 0 4px rgba(155, 182, 255, 0.12);
+}
+
+.field input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 550;
+}
+
+.field input::placeholder {
+  color: var(--muted);
+  font-weight: 450;
+  opacity: 0.75;
+}
+
+.field.is-big {
+  min-height: 56px;
+  padding: 0 18px;
+  border-radius: 18px;
+}
+
+.field.is-big input {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.field.is-code input {
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  font-variant-numeric: tabular-nums;
+}
+
+.field.is-invite input {
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.field.is-error {
+  border-color: rgba(255, 107, 122, 0.5);
+}
+
+.field.is-locked {
+  opacity: 0.55;
+}
+
+/* The line under a field: a hint, or what went wrong. */
+.field-note {
+  margin: 0 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.field-note.is-error {
+  color: #ff8a96;
+}
+
+/* A form's own action: the whole width, under its field. */
+.btn.is-wide {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 4px;
+}
+
+/* A field, its note and its button, one under another. */
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }

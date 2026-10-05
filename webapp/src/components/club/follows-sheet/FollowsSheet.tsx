@@ -1,40 +1,45 @@
 import { useEffect, useRef, useState } from "react";
 import { peopleApi, type PersonRow, type Relation } from "../../../api/people/peopleApi";
-import { t, type Locale } from "../../../i18n";
+import { t, type Locale, type TranslationKey } from "../../../i18n";
 import { Avatar, Dropdown, DropdownArrow, EmptyState, Sheet } from "../../shared/lib";
 import { FollowButton } from "../../people/follow-button/FollowButton";
 import { FriendMark } from "../../people/friend-mark/FriendMark";
 import "./FollowsSheet.css";
 import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
-type Kind = "friends" | "following" | "followers";
+type Kind = "friends" | "following" | "followers" | "blocked";
 
-const TITLE: Record<Kind, "friends" | "peopleFollowing" | "peopleFollowers"> = {
+const TITLE: Record<Kind, TranslationKey> = {
   friends: "friends",
   following: "peopleFollowing",
   followers: "peopleFollowers",
+  blocked: "blockedTitle",
 };
-const EMPTY: Record<Kind, "friendsListEmpty" | "followingEmpty" | "followersEmpty"> = {
+const EMPTY: Record<Kind, TranslationKey | undefined> = {
   friends: "friendsListEmpty",
   following: "followingEmpty",
   followers: "followersEmpty",
+  blocked: undefined,
 };
 
-const EMPTY_TITLE: Record<Kind, "friendsListEmptyTitle" | "followingEmptyTitle" | "followersEmptyTitle"> = {
+const EMPTY_TITLE: Record<Kind, TranslationKey> = {
   friends: "friendsListEmptyTitle",
   following: "followingEmptyTitle",
   followers: "followersEmptyTitle",
+  blocked: "blockedEmpty",
 };
-const THEIR_EMPTY: Record<Kind, "theirFollowingEmpty" | "followersEmptyTitle" | "friendsListEmptyTitle"> = {
+const THEIR_EMPTY: Record<Kind, TranslationKey> = {
   friends: "friendsListEmptyTitle",
   following: "theirFollowingEmpty",
   followers: "followersEmptyTitle",
+  blocked: "blockedEmpty",
 };
 
 /** Whether a person still belongs in a list after a change. Somebody else's
  * lists do not depend on what the viewer does. */
 function stays(kind: Kind, relation: Relation, theirs: boolean): boolean {
   if (theirs) return !relation.blocked;
+  if (kind === "blocked") return relation.blocked;
   if (kind === "friends") return relation.friends && !relation.blocked;
   if (kind === "following") return relation.following;
   return !relation.blocked;
@@ -78,9 +83,9 @@ export function FollowsSheet({
     Promise.all(
       owner != null
         ? [peopleApi.followingOf(data, owner), peopleApi.followersOf(data, owner)]
-        : [peopleApi.following(data), peopleApi.followers(data)],
+        : [peopleApi.following(data), peopleApi.followers(data), peopleApi.blocked(data)],
     )
-      .then(([following, followers]) => {
+      .then(([following, followers, blocked]) => {
         if (cancelled) return;
         // Friends follow each other: one's own from the relation, somebody
         // else's as the people in both of their lists.
@@ -97,7 +102,12 @@ export function FollowsSheet({
             (a, b) =>
               Number(ids.has(b.id) || b.relation.friends) - Number(ids.has(a.id) || a.relation.friends),
           );
-        setLists({ friends, following: first(following.people), followers: first(followers.people) });
+        setLists({
+          friends,
+          following: first(following.people),
+          followers: first(followers.people),
+          blocked: blocked?.people ?? [],
+        });
       })
       .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`));
     return () => {
@@ -145,15 +155,22 @@ export function FollowsSheet({
         });
       }, 950);
     }
-    setLists((all) =>
-      all
-        ? {
-            friends: all.friends.map((row) => (row.id === id ? { ...row, relation } : row)),
-            following: all.following.map((row) => (row.id === id ? { ...row, relation } : row)),
-            followers: all.followers.map((row) => (row.id === id ? { ...row, relation } : row)),
-          }
-        : all,
-    );
+    setLists((all) => {
+      if (!all) return all;
+      const update = (rows: PersonRow[]) => rows.map((row) => (row.id === id ? { ...row, relation } : row));
+      // Blocked from another list: they show up in the blocked one at once.
+      const person = [...all.following, ...all.followers].find((row) => row.id === id);
+      const blocked =
+        relation.blocked && person && !all.blocked.some((row) => row.id === id)
+          ? [{ ...person, relation }, ...all.blocked]
+          : update(all.blocked);
+      return {
+        friends: update(all.friends),
+        following: update(all.following),
+        followers: update(all.followers),
+        blocked,
+      };
+    });
   };
 
   return (
@@ -164,7 +181,10 @@ export function FollowsSheet({
             className="dd-trigger follows-switch"
             align="start"
             value={kind}
-            options={(["following", "friends", "followers"] as Kind[]).map((value) => ({
+            options={(theirs
+              ? (["following", "friends", "followers"] as Kind[])
+              : (["following", "friends", "followers", "blocked"] as Kind[])
+            ).map((value) => ({
               value,
               label: t(locale, TITLE[value]),
               hint: lists ? String(lists[value].length) : undefined,
@@ -191,8 +211,8 @@ export function FollowsSheet({
         ) : rows.length === 0 ? (
           <EmptyState
             title={t(locale, theirs ? THEIR_EMPTY[kind] : EMPTY_TITLE[kind])}
-            hint={theirs ? undefined : t(locale, EMPTY[kind])}
-            action={theirs ? undefined : { label: t(locale, "find"), onClick: onFind }}
+            hint={theirs || !EMPTY[kind] ? undefined : t(locale, EMPTY[kind])}
+            action={theirs || kind === "blocked" ? undefined : { label: t(locale, "find"), onClick: onFind }}
             slide
           />
         ) : (

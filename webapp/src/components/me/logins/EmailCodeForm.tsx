@@ -37,17 +37,24 @@ function clock(seconds: number): string {
 export function EmailCodeForm({
   locale,
   initialEmail = "",
+  placeholder,
   submitLabel,
   onSend,
   onVerify,
+  onStep,
 }: {
   locale: Locale;
   initialEmail?: string;
+  /** What the empty field suggests; the app's own example by default. */
+  placeholder?: string;
   submitLabel: string;
   /** Sends a code; resolves with how many seconds until another may be sent,
    * and whether no code is needed at all (the dev server's no-code mode). */
   onSend: (email: string) => Promise<{ resendAfter: number; skipCode?: boolean }>;
   onVerify: (email: string, code: string) => Promise<void>;
+  /** The address a code went to once it did, null back on the address step:
+   * the screen around the form can step aside while the code is typed. */
+  onStep?: (sentTo: string | null) => void;
 }) {
   const [email, setEmail] = useState(initialEmail);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -65,7 +72,8 @@ export function EmailCodeForm({
 
   useEffect(() => {
     if (sentTo) codeRef.current?.focus();
-  }, [sentTo]);
+    onStep?.(sentTo);
+  }, [sentTo, onStep]);
 
   const send = async (address: string) => {
     setBusy(true);
@@ -112,24 +120,25 @@ export function EmailCodeForm({
   if (!sentTo) {
     return (
       <form
-        className="email-form"
+        noValidate
+        className="email-form form-stack"
         onSubmit={(event) => {
           event.preventDefault();
           void send(email.trim());
         }}
       >
-        <label className="email-field glass">
+        <label className={error ? "field is-error" : "field"}>
           <input
             type="email"
             inputMode="email"
             autoComplete="email"
-            placeholder={t(locale, "emailPlaceholder")}
+            placeholder={placeholder ?? t(locale, "emailPlaceholder")}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
         </label>
-        {error && <p className="email-note is-error">{error}</p>}
-        <button type="submit" className="btn email-submit" disabled={busy || !email.trim()}>
+        {error && <p className="field-note is-error">{error}</p>}
+        <button type="submit" className="btn is-wide" disabled={busy || !email.trim()}>
           {t(locale, "emailGetCode")}
         </button>
       </form>
@@ -138,16 +147,17 @@ export function EmailCodeForm({
 
   return (
     <form
-      className="email-form"
+      noValidate
+      className="email-form form-stack"
       onSubmit={(event) => {
         event.preventDefault();
         void verify(code);
       }}
     >
-      <p className="email-note">
+      <p className="field-note">
         {t(locale, "emailCodeSent")} <b>{sentTo}</b>
       </p>
-      <label className="email-field glass is-code">
+      <label className={error ? "field is-code is-error" : "field is-code"}>
         <input
           ref={codeRef}
           inputMode="numeric"
@@ -163,8 +173,8 @@ export function EmailCodeForm({
           }}
         />
       </label>
-      {error && <p className="email-note is-error">{error}</p>}
-      <button type="submit" className="btn email-submit" disabled={busy || code.length !== CODE_LENGTH}>
+      {error && <p className="field-note is-error">{error}</p>}
+      <button type="submit" className="btn is-wide" disabled={busy || code.length !== CODE_LENGTH}>
         {submitLabel}
       </button>
       <div className="email-links">

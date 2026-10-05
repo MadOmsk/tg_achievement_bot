@@ -1,6 +1,6 @@
 {
-  "name": "Achievement Bot",
-  "short_name": "Ачивки",
+  "name": "Unlocked",
+  "short_name": "Unlocked",
   "description": "Achievements from Xbox, PlayStation and Steam, and the people you play with.",
   "start_url": "./",
   "scope": "./",

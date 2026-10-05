@@ -86,6 +86,8 @@ class UserSettings:
     # Where notifications go (#164): pushed to devices, and as a Telegram DM.
     notify_push: bool = True
     notify_telegram: bool = True
+    # Whose new posts this person is told about: friends / following / none.
+    notify_posts: str = "friends"
 
 
 @dataclass(slots=True)
@@ -782,6 +784,7 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         notify_followers=bool(row["notify_followers"]) if "notify_followers" in keys else True,
         notify_push=bool(row["notify_push"]) if "notify_push" in keys else True,
         notify_telegram=bool(row["notify_telegram"]) if "notify_telegram" in keys else True,
+        notify_posts=row["notify_posts"] if "notify_posts" in keys else "friends",
     )
 
 

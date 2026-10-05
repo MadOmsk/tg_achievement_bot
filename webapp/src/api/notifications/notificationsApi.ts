@@ -12,6 +12,8 @@ export type NotificationItem = {
   person_id: number | null;
   /** That person's nickname, for their face's initials. */
   name: string | null;
+  /** The game a tap opens, on that person's progress (a new post). */
+  game: { platform: string; title_id: string; name: string | null } | null;
 };
 
 export class NotificationsApi extends BaseApi {
@@ -23,8 +25,9 @@ export class NotificationsApi extends BaseApi {
     return this.get(initData, "/notifications");
   }
 
-  markRead(initData: string): Promise<{ ok: boolean; unread: number }> {
-    return this.post(initData, "/notifications/read");
+  /** Mark these notices read; with no ids, all of them. */
+  markRead(initData: string, ids?: number[]): Promise<{ ok: boolean; unread: number }> {
+    return this.post(initData, "/notifications/read", ids ? { ids } : {});
   }
 
   pushKey(initData: string): Promise<{ available: boolean; public_key: string | null }> {

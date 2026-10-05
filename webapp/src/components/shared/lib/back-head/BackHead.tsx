@@ -1,3 +1,4 @@
+import { useBackHandler } from "../back-stack/backStack";
 import { Icon } from "../icon/Icon";
 
 export function BackHead({
@@ -9,6 +10,8 @@ export function BackHead({
   onBack: () => void;
   backLabel: string;
 }) {
+  // The phone's "back" does what the arrow does.
+  useBackHandler(true, onBack, title);
   return (
     <header className="page-head">
       <button type="button" className="icon-btn" onClick={onBack} aria-label={backLabel}>

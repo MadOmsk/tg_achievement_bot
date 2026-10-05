@@ -1,3 +1,6 @@
+/** Whose new posts a person is told about: friends, everybody followed, nobody. */
+export type NotifyPosts = "friends" | "following" | "none";
+
 export type PresenceInfo = {
   state: string | null;
   title_name?: string | null;
@@ -95,6 +98,8 @@ export type MeResponse = {
   person_id: number;
   /** The app's own notices not yet seen (#164). */
   notifications_unread?: number;
+  /** No email yet and not put off: the app asks for one once (owner, 2026-10-05). */
+  email_prompt?: boolean;
   /** None for a person who signed in by email and has no Telegram (#162). */
   tg_id: number | null;
   handle: Handle | null;
@@ -119,6 +124,8 @@ export type MeResponse = {
     /** Where the app's notices go (#164): pushed to devices, and as a DM. */
     notify_push?: boolean;
     notify_telegram?: boolean;
+    /** Whose new posts this person is told about. */
+    notify_posts?: NotifyPosts;
   };
   xbox: {
     linked: boolean;
@@ -194,6 +201,7 @@ export type UserSettingsPatch = Partial<{
   notify_followers: boolean;
   notify_push: boolean;
   notify_telegram: boolean;
+  notify_posts: NotifyPosts;
 }>;
 
 // A chat only says whether a person publishes there (#126): the rarity
@@ -203,4 +211,18 @@ export type ChatPatchAction = "subscribe" | "unsubscribe" | "forget";
 export type ChatPatchBody = {
   action?: ChatPatchAction;
   [key: string]: unknown;
+};
+
+/** A member's invite codes (owner, 2026-10-05): unused first, then whom each let in. */
+export type InviteItem = {
+  code: string;
+  created_at: string;
+  used_at: string | null;
+  used_by: { person_id: number; name: string | null } | null;
+};
+
+export type InvitesResponse = {
+  /** Where a shared link opens; null to build it from the page's own address. */
+  link_base: string | null;
+  items: InviteItem[];
 };

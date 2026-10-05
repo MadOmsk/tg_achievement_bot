@@ -110,6 +110,8 @@ async def build_me_payload(
             # Where notifications go (#164); Telegram only matters with Telegram.
             "notify_push": bool(settings_row.notify_push) if settings_row else True,
             "notify_telegram": bool(settings_row.notify_telegram) if settings_row else True,
+            # Whose new posts are told about: friends / following / none.
+            "notify_posts": settings_row.notify_posts if settings_row else "friends",
             # Who sees this person's activity in the app (#157).
             "activity_visible": await repo.activity_visible(person_id),
         },

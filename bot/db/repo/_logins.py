@@ -65,6 +65,21 @@ class _LoginsRepo:
         )
         await self._conn.commit()
 
+    async def email_prompt_due(self, person_id: int) -> bool:
+        """Whether to ask this person for an email on opening the app: they have
+        none, and have not put it off."""
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM users WHERE id = ? AND email IS NULL AND email_prompted_at IS NULL",
+            (person_id,),
+        )
+        return await cursor.fetchone() is not None
+
+    async def put_off_email_prompt(self, person_id: int) -> None:
+        await self._conn.execute(
+            "UPDATE users SET email_prompted_at = ? WHERE id = ?", (utcnow_iso(), person_id)
+        )
+        await self._conn.commit()
+
     async def set_telegram(
         self,
         person_id: int,
@@ -81,7 +96,7 @@ class _LoginsRepo:
         if row is not None and int(row["id"]) != person_id:
             raise LoginTaken(str(tg_id))
         await self._conn.execute(
-            "UPDATE users SET tg_id = ?, username = COALESCE(?, username),"
+            "UPDATE users SET tg_id = ?, username = ?,"
             " first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name),"
             " updated_at = ? WHERE id = ?",
             (tg_id, username, first_name, last_name, utcnow_iso(), person_id),

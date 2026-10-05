@@ -11,6 +11,12 @@ type TelegramWebApp = {
   setBackgroundColor?: (color: string) => void;
   themeParams: Record<string, string>;
   colorScheme: string;
+  /** Telegram's own back arrow in the Mini App's header (Bot API 6.1+). */
+  BackButton?: {
+    show: () => void;
+    hide: () => void;
+    onClick: (callback: () => void) => void;
+  };
   initDataUnsafe?: {
     start_param?: string;
     user?: { photo_url?: string; first_name?: string; username?: string };

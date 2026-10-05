@@ -92,7 +92,7 @@ async def test_steam_status_shows_visibility_and_when_it_was_checked(repo: Repo)
     await repo.set_achievements_visible(await repo.person_id(TG_ID), "steam", True)
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
     # Only whether all is well — not when it was checked (owner, 2026-09-30).
-    assert "Вход Steam: ✅ ачивки видны\n" in text
+    assert "Вход Steam: ✅ достижения видны\n" in text
 
 
 async def test_psn_linked_gets_its_own_profile_button(repo: Repo) -> None:
@@ -557,4 +557,4 @@ async def test_a_platform_whose_achievements_are_hidden_gets_a_mark(repo: Repo) 
     buttons = {b.callback_data: b.text for row in markup.inline_keyboard for b in row}
     assert buttons["panel:acc:steam"] == "⚫ Steam ▸"
     assert buttons["panel:acc:psn"] == "🔵 PSN (2) ❗ ▸"
-    assert "Вход PSN2: ⚠️ ачивки скрыты" in text
+    assert "Вход PSN2: ⚠️ достижения скрыты" in text

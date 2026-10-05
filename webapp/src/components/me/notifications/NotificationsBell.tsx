@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { notificationsApi, type NotificationItem } from "../../../api/notifications/notificationsApi";
 import { t, timeAgo, type Locale } from "../../../i18n";
-import { Avatar, Icon, Sheet } from "../../shared/lib";
+import { Avatar, Icon, Sheet, useOpenGame } from "../../shared/lib";
 import "./Notifications.css";
 
 /** The bell on Home (#164): how many notices are unread, and the list behind
- * it. Opening the list marks them read; a notice about somebody opens them. */
+ * it. A notice is read once tapped, or all at once; a tap opens what it is
+ * about — the game of a new post, else the person. */
 export function NotificationsBell({
   data,
   locale,
@@ -24,6 +25,8 @@ export function NotificationsBell({
 
   useEffect(() => setCount(unread), [unread]);
 
+  const openGame = useOpenGame();
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -32,10 +35,7 @@ export function NotificationsBell({
       .then((res) => {
         if (cancelled) return;
         setItems(res.items);
-        if (res.unread > 0) {
-          setCount(0);
-          void notificationsApi.markRead(data).catch(() => undefined);
-        }
+        setCount(res.unread);
       })
       .catch(() => {
         if (!cancelled) setItems([]);
@@ -44,6 +44,29 @@ export function NotificationsBell({
       cancelled = true;
     };
   }, [open, data]);
+
+  const markRead = (ids?: number[]) => {
+    setItems((list) =>
+      list?.map((item) => (!ids || ids.includes(item.id) ? { ...item, read: true } : item)) ?? list,
+    );
+    setCount((n) => (ids ? Math.max(0, n - ids.length) : 0));
+    void notificationsApi.markRead(data, ids).catch(() => undefined);
+  };
+
+  const openItem = (item: NotificationItem) => {
+    if (!item.read) markRead([item.id]);
+    setOpen(false);
+    if (item.game && openGame) {
+      openGame({
+        platform: item.game.platform,
+        title_id: item.game.title_id,
+        name: item.game.name,
+        person: item.person_id != null ? { person_id: item.person_id, name: item.name ?? "" } : null,
+      });
+    } else if (item.person_id != null) {
+      onOpenPerson(item.person_id);
+    }
+  };
 
   return (
     <>
@@ -59,7 +82,14 @@ export function NotificationsBell({
       {open && (
         <Sheet mid onClose={() => setOpen(false)}>
           <div className="sheet-content notices-sheet">
-            <h2>{t(locale, "notificationsTitle")}</h2>
+            <div className="notices-head">
+              <h2>{t(locale, "notificationsTitle")}</h2>
+              {count > 0 && (
+                <button type="button" className="see-all" onClick={() => markRead()}>
+                  {t(locale, "notificationsReadAll")}
+                </button>
+              )}
+            </div>
             {items === null ? (
               <div className="notices-list" aria-busy>
                 {[0, 1, 2].map((n) => (
@@ -74,10 +104,10 @@ export function NotificationsBell({
                   const body = (
                     <>
                       {item.person_id != null ? (
-                        <Avatar name={item.name ?? "?"} personId={item.person_id} size={36} />
+                        <Avatar name={item.name ?? "?"} personId={item.person_id} size={44} />
                       ) : (
                         <span className="notice-mark">
-                          <Icon name="bell" size={18} />
+                          <Icon name="bell" size={20} />
                         </span>
                       )}
                       <span className="notice-copy">
@@ -87,22 +117,20 @@ export function NotificationsBell({
                       {!item.read && <span className="notice-dot" aria-hidden />}
                     </>
                   );
-                  return item.person_id != null ? (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className="notice-row"
-                      onClick={() => {
-                        setOpen(false);
-                        onOpenPerson(item.person_id as number);
-                      }}
-                    >
+                  const rowClass = item.read ? "notice-row" : "notice-row is-unread";
+                  return item.person_id != null || item.game ? (
+                    <button key={item.id} type="button" className={rowClass} onClick={() => openItem(item)}>
                       {body}
                     </button>
                   ) : (
-                    <div key={item.id} className="notice-row">
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={rowClass}
+                      onClick={() => !item.read && markRead([item.id])}
+                    >
                       {body}
-                    </div>
+                    </button>
                   );
                 })}
               </div>

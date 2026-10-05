@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { MeResponse } from "../../../api";
+import type { MeResponse, NotifyPosts } from "../../../api";
 import { t, type Locale, type TranslationKey } from "../../../i18n";
-import { BackHead, Group, InfoRow, ToggleRow } from "../../shared/lib";
+import { BackHead, Group, InfoRow, SelectRow, ToggleRow } from "../../shared/lib";
 import { disablePush, enablePush, pushState, type PushState } from "./push";
 import "./Notifications.css";
 
@@ -29,7 +29,12 @@ export function NotificationsPane({
   locale: Locale;
   data: string;
   onBack: () => void;
-  onPatch: (body: { notify_push?: boolean; notify_telegram?: boolean; notify_followers?: boolean }) => void;
+  onPatch: (body: {
+    notify_push?: boolean;
+    notify_telegram?: boolean;
+    notify_followers?: boolean;
+    notify_posts?: NotifyPosts;
+  }) => void;
   onFlash: (message: string) => void;
   /** Opens Settings → «Вход», for somebody with no Telegram yet. */
   onAddTelegram: () => void;
@@ -108,6 +113,17 @@ export function NotificationsPane({
           sub={t(locale, "notifyFollowersHint")}
           on={me.settings.notify_followers !== false}
           onChange={(on) => onPatch({ notify_followers: on })}
+        />
+        <SelectRow<NotifyPosts>
+          label={t(locale, "notifyPosts")}
+          sub={t(locale, "notifyPostsHint")}
+          value={me.settings.notify_posts ?? "friends"}
+          options={[
+            { value: "friends", label: t(locale, "notifyPostsFriends") },
+            { value: "following", label: t(locale, "notifyPostsFollowing") },
+            { value: "none", label: t(locale, "notifyPostsNone") },
+          ]}
+          onChange={(value) => onPatch({ notify_posts: value })}
         />
       </Group>
     </>

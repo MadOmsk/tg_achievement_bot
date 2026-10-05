@@ -13,7 +13,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from bot.db.repo import Repo
-from bot.services import email_login
+from bot.services import email_login, invites
 from bot.services.email import EmailSendError, SmtpSender, build_sender
 from bot.services.email_login import (
     CodeExpired,
@@ -182,12 +182,27 @@ async def _client(repo: Repo, settings, sender: FakeSender | None) -> TestClient
     return client
 
 
+async def _invite(repo: Repo) -> str:
+    """A fresh invite from a member (owner, 2026-10-05: signing up takes one)."""
+    member = await repo.ensure_user(999_001, "inviter")
+    assert member is not None
+    code = invites.new_code()
+    await repo.create_invite(member, code)
+    return code
+
+
 async def _sign_in(client: TestClient, sender: FakeSender, email: str) -> None:
+    repo: Repo = client.server.app["mini_repo"]
     start = await client.post("/api/mini/auth/email/start", json={"email": email, "locale": "en"})
     assert start.status == 200
     ok = await client.post(
         "/api/mini/auth/email/verify",
-        json={"email": email, "code": sender.last_code(), "locale": "en"},
+        json={
+            "email": email,
+            "code": sender.last_code(),
+            "locale": "en",
+            "invite": await _invite(repo),
+        },
     )
     assert ok.status == 200
 
@@ -233,7 +248,10 @@ async def test_a_new_address_becomes_a_new_person_without_telegram(repo: Repo, s
         await repo._conn.execute("UPDATE email_codes SET created_at = '2000-01-01T00:00:00'")
         await _sign_in(client, sender, "ada@example.com")
         assert await repo.person_by_email("ada@example.com") == person
-        cursor = await repo._conn.execute("SELECT COUNT(*) FROM users")
+        # One person, besides the member whose invites let them in.
+        cursor = await repo._conn.execute(
+            "SELECT COUNT(*) FROM users WHERE id != ?", (await repo.person_id(999_001),)
+        )
         assert (await cursor.fetchone())[0] == 1
     finally:
         await client.close()
@@ -273,7 +291,10 @@ async def test_an_email_person_adds_telegram(repo: Repo, settings) -> None:
     token = settings.bot_token.get_secret_value()
     try:
         await _sign_in(client, sender, "ada@example.com")
-        linked = await client.post("/api/mini/me/telegram", json=_widget(token, tg_id=77))
+        linked = await client.post(
+            "/api/mini/me/telegram",
+            json={**_widget(token, tg_id=77), "invite": await _invite(repo)},
+        )
         assert linked.status == 200
         assert (await linked.json())["telegram"]["linked"] is True
         assert (await (await client.get("/api/mini/me")).json())["tg_id"] == 77
@@ -285,7 +306,10 @@ async def test_an_email_person_adds_telegram(repo: Repo, settings) -> None:
         # A Telegram account somebody else has is refused.
         await repo.ensure_user(88, "other")
         await repo._conn.execute("UPDATE users SET tg_id = NULL WHERE tg_id = 77")
-        taken = await client.post("/api/mini/me/telegram", json=_widget(token, tg_id=88))
+        taken = await client.post(
+            "/api/mini/me/telegram",
+            json={**_widget(token, tg_id=88), "invite": await _invite(repo)},
+        )
         assert (await taken.json())["error"] == "taken"
     finally:
         await client.close()
@@ -297,7 +321,10 @@ async def test_a_telegram_person_adds_an_address(repo: Repo, settings) -> None:
     token = settings.bot_token.get_secret_value()
     try:
         assert (
-            await client.post("/api/mini/auth/telegram", json=_widget(token, tg_id=42))
+            await client.post(
+                "/api/mini/auth/telegram",
+                json={**_widget(token, tg_id=42), "invite": await _invite(repo)},
+            )
         ).status == 200
         start = await client.post("/api/mini/me/email/start", json={"email": "Ada@Example.com"})
         assert start.status == 200
@@ -359,7 +386,10 @@ async def test_telegram_can_be_taken_away_while_an_address_is_left(repo: Repo, s
     token = settings.bot_token.get_secret_value()
     try:
         await _sign_in(client, sender, "ada@example.com")
-        await client.post("/api/mini/me/telegram", json=_widget(token, tg_id=77))
+        await client.post(
+            "/api/mini/me/telegram",
+            json={**_widget(token, tg_id=77), "invite": await _invite(repo)},
+        )
         person = await repo.person_by_email("ada@example.com")
         assert person is not None
         await repo.upsert_chat(-100, "Chat", 77)
@@ -386,7 +416,10 @@ async def test_telegram_can_be_taken_away_while_an_address_is_left(repo: Repo, s
 
         # That Telegram account is nobody's now: it signs in as a new person.
         client.session.cookie_jar.clear()
-        again = await client.post("/api/mini/auth/telegram", json=_widget(token, tg_id=77))
+        again = await client.post(
+            "/api/mini/auth/telegram",
+            json={**_widget(token, tg_id=77), "invite": await _invite(repo)},
+        )
         assert again.status == 200
         assert await repo.person_id(77) not in (None, person)
     finally:
@@ -398,7 +431,10 @@ async def test_telegram_stays_when_it_is_the_last_way_in_or_an_admins(repo: Repo
     client = await _client(repo, settings, sender)
     token = settings.bot_token.get_secret_value()
     try:
-        await client.post("/api/mini/auth/telegram", json=_widget(token, tg_id=42))
+        await client.post(
+            "/api/mini/auth/telegram",
+            json={**_widget(token, tg_id=42), "invite": await _invite(repo)},
+        )
         lone = await client.delete("/api/mini/me/telegram")
         assert (lone.status, (await lone.json())["error"]) == (409, "last_login")
 
@@ -439,7 +475,9 @@ async def test_the_no_code_mode_takes_the_address_as_proved(repo: Repo, settings
         ).json()
         assert start["skip_code"] is True
         signed = await client.post(
-            "/api/mini/auth/email/verify", json={"email": "dev@example.com", "code": ""}
+            "/api/mini/auth/email/verify",
+            # The code step is skipped; the invite is not — dev signs up as prod does.
+            json={"email": "dev@example.com", "code": "", "invite": await _invite(repo)},
         )
         assert signed.status == 200
         assert (await client.get("/api/mini/me")).status == 200
@@ -456,3 +494,102 @@ def test_the_no_code_mode_never_runs_beside_a_mail_server(repo: Repo, settings) 
     login = build_email_login(settings, repo)
     assert login is not None and not isinstance(login, TrustingEmailLogin)
     assert login.skips_code is False
+
+
+async def test_somebody_new_needs_an_invite(repo: Repo, settings) -> None:
+    """Signing up takes a code a member made (owner, 2026-10-05); the address,
+    once proved, waits for it instead of being proved again."""
+    sender = FakeSender()
+    client = await _client(repo, settings, sender)
+    try:
+        await client.post("/api/mini/auth/email/start", json={"email": "new@example.com"})
+        asked = await client.post(
+            "/api/mini/auth/email/verify",
+            json={"email": "new@example.com", "code": sender.last_code()},
+        )
+        assert asked.status == 403
+        body = await asked.json()
+        assert body["error"] == "invite_required"
+        assert await repo.person_by_email("new@example.com") is None
+
+        wrong = await client.post(
+            "/api/mini/auth/signup",
+            json={"signup": body["signup"], "invite": "AAAA-BBBB-CCCC-DDDD"},
+        )
+        assert (await wrong.json())["error"] == "invite_invalid"
+
+        code = await _invite(repo)
+        typed = code.lower().replace("-", " ")
+        ok = await client.post(
+            "/api/mini/auth/signup", json={"signup": body["signup"], "invite": typed}
+        )
+        assert ok.status == 200
+        person = await repo.person_by_email("new@example.com")
+        assert person is not None
+        [row] = [r for r in await repo.invites_of(await repo.person_id(999_001)) if r.code == code]
+        assert row.used_by == person
+
+        # A code lets one person in.
+        again = await client.post(
+            "/api/mini/auth/signup", json={"signup": body["signup"], "invite": code}
+        )
+        assert (await again.json())["error"] == "signup_expired"
+        assert not await repo.invite_usable(code)
+    finally:
+        await client.close()
+
+
+async def test_a_member_makes_and_takes_back_codes(repo: Repo, settings) -> None:
+    member = await repo.ensure_user(5, "ada")
+    assert member is not None
+    client = await _client(repo, settings, FakeSender())
+    try:
+        client.session.cookie_jar.update_cookies(
+            {"ab_session": await repo.create_session(member, "t")}
+        )
+        made = await (await client.post("/api/mini/me/invites")).json()
+        assert invites.normalize(made["code"]) == made["code"]
+        listing = await (await client.get("/api/mini/me/invites")).json()
+        assert [item["code"] for item in listing["items"]] == [made["code"]]
+        assert listing["items"][0]["used_by"] is None
+        gone = await client.delete(f"/api/mini/me/invites/{made['code']}")
+        assert gone.status == 200
+        assert (await (await client.get("/api/mini/me/invites")).json())["items"] == []
+    finally:
+        await client.close()
+
+
+def test_codes_read_back_however_they_are_typed() -> None:
+    code = invites.new_code()
+    assert len(code) == 19 and code.count("-") == 3
+    assert invites.normalize(code.lower().replace("-", "")) == code
+    assert invites.normalize("0000-1111-OOOO-IIII") is None
+    assert invites.normalize("ABCD") is None
+
+
+async def test_somebody_with_no_email_is_asked_once(repo: Repo, settings) -> None:
+    """The app asks for an email on opening (owner, 2026-10-05) — until it is
+    added, or put off."""
+    person = await repo.ensure_user(31, "tgonly")
+    assert person is not None
+    client = await _client(repo, settings, FakeSender())
+    try:
+        client.session.cookie_jar.update_cookies(
+            {"ab_session": await repo.create_session(person, "t")}
+        )
+        assert (await (await client.get("/api/mini/me")).json())["email_prompt"] is True
+        assert (await client.post("/api/mini/me/email/later")).status == 200
+        assert (await (await client.get("/api/mini/me")).json())["email_prompt"] is False
+    finally:
+        await client.close()
+
+    # No mail server: nothing to ask for.
+    other = await repo.ensure_user(32, "other")
+    client = await _client(repo, settings, None)
+    try:
+        client.session.cookie_jar.update_cookies(
+            {"ab_session": await repo.create_session(other, "t")}
+        )
+        assert (await (await client.get("/api/mini/me")).json())["email_prompt"] is False
+    finally:
+        await client.close()

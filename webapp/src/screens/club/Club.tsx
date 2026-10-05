@@ -13,10 +13,11 @@ import {
 } from "../../api";
 import { t, type Locale } from "../../i18n";
 import { FeedPosts, HiddenProfile, PersonProfile, PlayedGames, RecentPosts } from "../person";
-import { AccountBar, Avatar, EmptyState, FeedSkel, FriendsSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, EmptyState, MonthChipSkel, FeedSkel, FriendsSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
+  currentMonth,
   formatMonth,
   statusOf,
 } from "../../components/club";
@@ -576,7 +577,7 @@ export function Club({
                 {!hasAccounts ? null : clubReady ? (
                   monthChip(selectedMonth)
                 ) : (
-                  <span className="skel month-chip-skel" aria-hidden />
+                  <MonthChipSkel label={formatMonth(selectedMonth || currentMonth(), locale, "chip")} />
                 )}
               </div>
             </div>
@@ -664,7 +665,7 @@ export function Club({
             {clubReady ? (
               monthChip(selectedMonth)
             ) : (
-              <span className="skel month-chip-skel" aria-hidden />
+              <MonthChipSkel label={formatMonth(selectedMonth || currentMonth(), locale, "chip")} />
             )}
           </header>
           {!clubReady || monthBusy ? (
@@ -696,7 +697,7 @@ export function Club({
             {clubReady ? (
               monthChip(selectedMonth)
             ) : (
-              <span className="skel month-chip-skel" aria-hidden />
+              <MonthChipSkel label={formatMonth(selectedMonth || currentMonth(), locale, "chip")} />
             )}
           </header>
           {!clubReady ? (

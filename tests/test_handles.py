@@ -116,3 +116,11 @@ async def test_mini_api_handle_flow(repo: Repo, settings) -> None:
         assert body["available_at"]
     finally:
         await client.close()
+
+
+async def test_a_username_removed_in_telegram_is_removed_here(repo: Repo) -> None:
+    """What Telegram sends is the username: none means none, not "keep the old"."""
+    person = await repo.ensure_user(7, "oldname")
+    await repo.ensure_user(7, None)
+    user = await repo.get_user(person)
+    assert user is not None and user.username is None

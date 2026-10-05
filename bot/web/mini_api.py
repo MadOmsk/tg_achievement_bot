@@ -33,7 +33,7 @@ from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
 from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
-from bot.services.notifier import Notifier
+from bot.services.notifier import POST_NOTICE_CHOICES, Notifier
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -53,7 +53,7 @@ from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
-from bot.web import mini_logins, mini_notifications, mini_people, mini_session
+from bot.web import mini_invites, mini_logins, mini_notifications, mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
@@ -130,6 +130,7 @@ def setup_mini_api(
     mini_session.register(app)
     mini_logins.register(app, _require_user)
     mini_notifications.register(app, _require_user)
+    mini_invites.register(app, _require_user)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
@@ -208,6 +209,11 @@ async def handle_me(request: web.Request) -> web.Response:
         last_name=user.last_name,
         is_admin=settings.is_admin(user.tg_id),
     )
+    # Ask once for an email, the main way in (owner, 2026-10-05) — only where
+    # one can be added at all.
+    payload["email_prompt"] = request.app.get("mini_email_login") is not None and (
+        await repo.email_prompt_due(user.person_id)
+    )
     return web.json_response(payload)
 
 
@@ -268,6 +274,11 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
     for switch in ("notify_followers", "notify_push", "notify_telegram"):
         if switch in body:
             fields[switch] = 1 if body[switch] else 0
+    if "notify_posts" in body:
+        posts = str(body["notify_posts"])
+        if posts not in POST_NOTICE_CHOICES:
+            raise web.HTTPBadRequest(text="bad notify_posts")
+        fields["notify_posts"] = posts
     if "rarity_mode" in body:
         mode = str(body["rarity_mode"])
         if mode not in {RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN}:

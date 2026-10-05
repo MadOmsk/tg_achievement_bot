@@ -1,3 +1,4 @@
+import { DropdownArrow } from "../dropdown/Dropdown";
 import "./Skeleton.css";
 import "../../../person/feed-post/FeedPost.css";
 
@@ -134,12 +135,31 @@ export function AppSkel() {
               <span className="skel line" style={{ width: 70 }} />
               <span className="skel line" style={{ width: 128, height: 17 }} />
             </span>
-            <span className="skel month-chip-skel" />
+            {/* The bell's place, so the header does not shift when it comes. */}
+            <span className="bell-skel" />
+            <MonthChipSkel />
           </div>
         </div>
       </div>
       <HomeBodySkel />
     </div>
+  );
+}
+
+/** This month's chip label, as the header shows it before anything is loaded. */
+function thisMonthLabel(): string {
+  return new Date().toLocaleDateString("ru-RU", { month: "short" });
+}
+
+/** The month chip while loading: the chip's own label and arrow, invisible, so
+ * it is exactly as wide as the chip that replaces it and nothing beside it
+ * moves when it does. */
+export function MonthChipSkel({ label }: { label?: string }) {
+  return (
+    <span className="skel month-chip-skel" aria-hidden>
+      <span>{label || thisMonthLabel()}</span>
+      <DropdownArrow />
+    </span>
   );
 }
 

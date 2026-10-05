@@ -29,6 +29,7 @@ import {
   Icon,
   TierMedals,
   asTier,
+  useBackHandler,
   type ScoreCupLine,
   type TierCounts,
 } from "../../shared/lib";
@@ -70,6 +71,8 @@ export function TitleSheet({
   meId: number;
   onClose: () => void;
 }) {
+  // The phone's "back" leaves the game page.
+  useBackHandler(true, onClose, `${game.platform}:${game.title_id}`);
   // Whose progress is on the page: the person whose card it was opened from
   // (or yours when it was opened from your own). "Compare" adds yours beside
   // theirs, in the one list.

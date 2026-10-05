@@ -36,8 +36,9 @@ import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/m
 import { People } from "./screens/people";
 import { FOLLOWS_CHANGED } from "./components/people/follow-button/FollowButton";
 import { Login } from "./screens/login";
+import { AddEmailScreen } from "./components/me/logins/AddEmailScreen";
 import { peopleApi } from "./api/people/peopleApi";
-import { AppSkel, GameSkel, Icon, SettingsSkel, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
+import { AppSkel, GameSkel, Icon, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 // Settings and the connect forms are a few kilobytes and sit behind the dock like
@@ -263,6 +264,15 @@ export function App() {
     setRefreshKey((n) => n + 1);
   });
 
+  // The phone's "back": from another tab to Home, and out of a person's page
+  // (opened later, so it closes first). Screens, sheets and the game page
+  // register their own.
+  useBackHandler(screen.name !== SCREEN_NAMES.HOME, () => {
+    setPersonId(null);
+    setScreen(SCREENS.home);
+  });
+  useBackHandler(personId != null, () => setPersonId(null));
+
   if (state.status === "loading") {
     return launch.game ? <GameSkel /> : <AppSkel />;
   }
@@ -352,6 +362,12 @@ export function App() {
         }}
       />
     );
+  }
+
+  // Then, once, an email for whoever has none (owner, 2026-10-05): the main way
+  // in, without Telegram.
+  if (me.email_prompt) {
+    return <AddEmailScreen locale={locale} data={data} onDone={reload} />;
   }
 
   // Every screen.name comparison the render below needs, computed once —
@@ -616,6 +632,7 @@ export function App() {
         />
       )}
 
+      {!isConnectScreen && <InstallPrompt locale={locale} />}
       {!isConnectScreen && (
         <nav className="dock">
           <span

@@ -46,6 +46,21 @@ class _NotificationsRepo:
         await self._conn.commit()
         return int(cursor.lastrowid)
 
+    async def post_noticed_since(
+        self, person_id: int, author: int, platform: str, title_id: str, since: str
+    ) -> bool:
+        """Whether this person was already told about `author`'s post in this game
+        since `since`: one game's evening is one post, not a notice per poll."""
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM notifications WHERE person_id = ? AND kind = 'new_post'"
+            " AND json_extract(data, '$.person_id') = ?"
+            " AND json_extract(data, '$.platform') = ?"
+            " AND json_extract(data, '$.title_id') = ?"
+            " AND created_at >= ? LIMIT 1",
+            (person_id, author, platform, title_id, since),
+        )
+        return await cursor.fetchone() is not None
+
     async def notifications_of(self, person_id: int, limit: int = 50) -> list[NotificationRow]:
         cursor = await self._conn.execute(
             "SELECT id, kind, data, created_at, read_at FROM notifications"
@@ -71,11 +86,20 @@ class _NotificationsRepo:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
-    async def mark_notifications_read(self, person_id: int) -> None:
-        await self._conn.execute(
-            "UPDATE notifications SET read_at = ? WHERE person_id = ? AND read_at IS NULL",
-            (utcnow_iso(), person_id),
-        )
+    async def mark_notifications_read(self, person_id: int, ids: list[int] | None = None) -> None:
+        """Mark these notices read — all of them when `ids` is None."""
+        if ids is None:
+            await self._conn.execute(
+                "UPDATE notifications SET read_at = ? WHERE person_id = ? AND read_at IS NULL",
+                (utcnow_iso(), person_id),
+            )
+        elif ids:
+            marks = ",".join("?" * len(ids))
+            await self._conn.execute(
+                "UPDATE notifications SET read_at = ? WHERE person_id = ? AND read_at IS NULL"
+                f" AND id IN ({marks})",
+                (utcnow_iso(), person_id, *ids),
+            )
         await self._conn.commit()
 
     # ------------------------------------------------------------------ push

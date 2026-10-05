@@ -2,7 +2,7 @@
 # no markup: it is the whole message.
 email-code-subject = Код для входа: { $code }
 email-code-body =
-    Твой код для входа в Achievement Bot: { $code }
+    Твой код для входа в Unlocked: { $code }
 
     Он действует { $minutes } { $minutes ->
         [one] минуту

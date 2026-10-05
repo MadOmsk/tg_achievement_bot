@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS users (
     -- 079): a way to sign in besides Telegram. NULL = none.
     email           TEXT,
     email_linked_at TEXT,
+    -- When a person with no email put off adding one (migration 083): the app
+    -- asks once, on opening it.
+    email_prompted_at TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
     UNIQUE (handle_norm, handle_number),
@@ -148,7 +151,11 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- Where the app's notifications go (#164, migration 080): pushed to the
     -- devices that allowed it, and as a Telegram DM (only with Telegram linked).
     notify_push      INTEGER NOT NULL DEFAULT 1,
-    notify_telegram  INTEGER NOT NULL DEFAULT 1
+    notify_telegram  INTEGER NOT NULL DEFAULT 1,
+    -- Whose new posts this person is told about (migration 081): friends,
+    -- everybody they follow, or nobody.
+    notify_posts     TEXT    NOT NULL DEFAULT 'friends'
+        CHECK (notify_posts IN ('friends', 'following', 'none'))
 );
 
 -- Rare-achievement threshold, daily-summary time and its timezone are always
@@ -902,6 +909,18 @@ CREATE INDEX IF NOT EXISTS idx_notifications_person ON notifications (person_id,
 
 -- One row per browser that allowed push (#164). `endpoint` is the push
 -- service's address for that browser; `p256dh`/`auth` are its keys.
+-- Invites (migration 082): a code a member made lets one new person sign up in
+-- a browser — by email or Telegram's Login Widget. Inside Telegram nobody needs
+-- one.
+CREATE TABLE IF NOT EXISTS invites (
+    code        TEXT PRIMARY KEY,
+    created_by  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    used_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    used_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_invites_created_by ON invites (created_by, created_at);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     endpoint    TEXT PRIMARY KEY,
     person_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

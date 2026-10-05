@@ -1,6 +1,7 @@
 import { BaseApi, WEB_SESSION } from "../base/baseApi";
 import { API_BASE_ROUTES, USER_ROUTES } from "../../components/shared/constants/routes";
 import type {
+  InvitesResponse,
   AccountPlatform,
   ChatPatchBody,
   ChatRow,
@@ -35,8 +36,26 @@ export class UserApi extends BaseApi {
     return this.get(WEB_SESSION, "/auth/config");
   }
 
-  loginTelegram(user: Record<string, string | number>): Promise<{ ok: boolean }> {
-    return this.post(WEB_SESSION, "/auth/telegram", user);
+  /** `invite`: somebody new signs up only with one (owner, 2026-10-05). */
+  loginTelegram(user: Record<string, string | number>, invite?: string | null): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/telegram", invite ? { ...user, invite } : user);
+  }
+
+  /** Finish a sign-up that waited for its invite (`signup` from the refusal). */
+  signUp(signup: string, invite: string): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/signup", { signup, invite });
+  }
+
+  invites(initData: string): Promise<InvitesResponse> {
+    return this.get(initData, "/me/invites");
+  }
+
+  createInvite(initData: string): Promise<{ code: string }> {
+    return this.post(initData, "/me/invites");
+  }
+
+  deleteInvite(initData: string, code: string): Promise<{ ok: boolean }> {
+    return this.request(initData, `/me/invites/${encodeURIComponent(code)}`, { method: "DELETE" });
   }
 
   /** Email sign-in (#162): a code to the address, then the code back. */
@@ -47,8 +66,13 @@ export class UserApi extends BaseApi {
     return this.post(WEB_SESSION, "/auth/email/start", { email, locale });
   }
 
-  emailSignInVerify(email: string, code: string, locale: string): Promise<{ ok: boolean }> {
-    return this.post(WEB_SESSION, "/auth/email/verify", { email, code, locale });
+  emailSignInVerify(
+    email: string,
+    code: string,
+    locale: string,
+    invite?: string | null,
+  ): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/email/verify", { email, code, locale, invite: invite || undefined });
   }
 
   logins(initData: string): Promise<LoginsResponse> {
@@ -64,6 +88,11 @@ export class UserApi extends BaseApi {
 
   emailLinkVerify(initData: string, email: string, code: string): Promise<LoginsResponse> {
     return this.post(initData, "/me/email/verify", { email, code });
+  }
+
+  /** «Позже» on the app's one ask for an email. */
+  emailLater(initData: string): Promise<{ ok: boolean }> {
+    return this.post(initData, "/me/email/later");
   }
 
   /** A t.me link that adds Telegram by writing to the bot from it. */
