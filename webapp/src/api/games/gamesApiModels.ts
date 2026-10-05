@@ -4,8 +4,9 @@ export type GameRef = {
   name?: string | null;
   icon_url?: string | null;
   cover?: string | null;
-  /** Whose card it was opened from: their progress is shown first. */
-  person?: { person_id: number; name: string } | null;
+  /** Whose card it was opened from: their progress is shown first. A post's
+   * button from before person ids (#156) knows only their Telegram id. */
+  person?: { person_id?: number; tg_id?: number; name: string } | null;
 };
 
 export type GameAchievement = {
@@ -70,6 +71,8 @@ export type GameHltbDetails = {
 
 export type GameDetails = {
   ok: boolean;
+  /** Whose progress this is, when not the viewer's own. */
+  viewed?: { person_id: number; name: string } | null;
   platform: string;
   title_id: string;
   name: string | null;

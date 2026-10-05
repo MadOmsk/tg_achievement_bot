@@ -946,6 +946,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
     # whose privacy setting lets the caller see their activity (#157), not only
     # people from a shared chat.
     viewed = user.person_id
+    viewed_json = None
     raw_person = request.query.get("person")
     raw_viewed = request.query.get("tg_id")
     if raw_person or raw_viewed:
@@ -964,6 +965,9 @@ async def handle_game_details(request: web.Request) -> web.Response:
             if not await _may_see_activity(repo, user.person_id, other.id):
                 raise web.HTTPForbidden(text="activity hidden")
             viewed = other.id
+            # Whose progress this is: an old link names them only by Telegram
+            # id, so the page learns the person and their nickname from here.
+            viewed_json = {"person_id": other.id, "name": await _public_name(repo, other)}
 
     checklist = await catalog_service.get_title_checklist_for_user(
         platform, title_id, person_id=viewed, force=force
@@ -985,6 +989,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "ok": True,
+            "viewed": viewed_json,
             "platform": platform,
             "title_id": title_id,
             "name": title_info.get("name"),

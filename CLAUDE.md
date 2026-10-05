@@ -872,9 +872,9 @@ elsewhere in this file still describe the bot.
   (`chat_id` optional — only which chat it was opened from; the privacy check is
   the gate); a game's progress: `?person=`. A post's «Открыть» button carries
   `p<person id>` (`services/mini_app.py`); a button posted before carries
-  `u<tg id>`, which the app still reads and turns into the person
-  (`/api/mini/people/tg/{tg_id}`) — only an old button straight to a game opens on
-  the viewer's own progress. **The admin is named by Telegram id** (`ADMIN_TG_IDS`);
+  `u<tg id>`, which the app still reads: a profile is looked up by it
+  (`/api/mini/people/tg/{tg_id}`), and a game page asks by it (`?tg_id=`) and learns
+  the person from the answer's `viewed` (person id and nickname). **The admin is named by Telegram id** (`ADMIN_TG_IDS`);
   **the people the admin manages, by person id** — somebody who signed in by email
   has no Telegram id: `/admin`'s buttons carry `p<person id>` (`a:u:p12`, a bare
   number from a button drawn before is a Telegram id and still works), the Mini

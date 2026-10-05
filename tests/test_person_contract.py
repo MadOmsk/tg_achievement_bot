@@ -167,3 +167,25 @@ async def test_the_admin_manages_somebody_without_telegram(repo: Repo, settings)
         assert await repo.get_user(ada) is None
     finally:
         await client.close()
+
+
+async def test_an_old_link_to_a_game_names_whose_progress_it_shows(repo: Repo, settings) -> None:
+    player = await repo.ensure_user(30, "player")
+    viewer = await repo.ensure_user(40, "viewer")
+    assert player and viewer
+    await repo.link_platform_account(player, "steam", STEAM_ID, "PlayerSteam")
+    await repo.insert_new_achievements_steam(player, STEAM_ID, [_row("a1")], is_backfill=False)
+    await repo.follow(viewer, player)
+    client = await _client(repo, settings)
+    try:
+        await _sign_in_as(client, repo, viewer)
+        # A post's button from before person ids carries a Telegram id.
+        old = await (await client.get("/api/mini/games/steam/440?tg_id=30")).json()
+        assert old["viewed"]["person_id"] == player
+        assert old["viewed"]["name"] == "player"
+        new = await (await client.get(f"/api/mini/games/steam/440?person={player}")).json()
+        assert new["viewed"]["person_id"] == player
+        own = await (await client.get("/api/mini/games/steam/440")).json()
+        assert own["viewed"] is None
+    finally:
+        await client.close()

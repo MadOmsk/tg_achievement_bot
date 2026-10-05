@@ -137,7 +137,13 @@ function launchContext(): {
         ? {
             platform: game.slice(0, colon),
             title_id: game.slice(colon + 1),
-            person: personNum ? { person_id: personNum, name: "" } : null,
+            // A post's button from before person ids names a Telegram id: the
+            // game page asks by it and learns the person from the answer.
+            person: personNum
+              ? { person_id: personNum, name: "" }
+              : legacyTg
+                ? { tg_id: Number(legacyTg), name: "" }
+                : null,
           }
         : null,
   };

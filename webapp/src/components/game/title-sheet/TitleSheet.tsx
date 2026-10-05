@@ -73,12 +73,15 @@ export function TitleSheet({
   // Whose progress is on the page: the person whose card it was opened from
   // (or yours when it was opened from your own). "Compare" adds yours beside
   // theirs, in the one list.
-  const other = game.person && game.person.person_id !== meId ? game.person : null;
-  const viewed = other;
+  // Asked for: by person id, or by the Telegram id an old post's button carries.
+  const asked =
+    game.person && (game.person.person_id ?? null) !== meId ? game.person : null;
   // What the page showed the last time this game was open: drawn at once, the
   // fresh answers replace it when they arrive.
   const gameKey = `${game.platform}:${game.title_id}`;
-  const detailsKey = `${gameKey}:${viewed?.person_id ?? "me"}`;
+  const detailsKey = `${gameKey}:${
+    asked?.person_id ?? (asked?.tg_id != null ? `tg${asked.tg_id}` : "me")
+  }`;
   const seenDetails = recall<GameDetails>("details", detailsKey);
   const [details, setDetails] = useState<GameDetails | null>(
     seenDetails ?? null,
@@ -193,7 +196,8 @@ export function TitleSheet({
     setBusy(known === undefined);
     setError(null);
     void fetchGame(data, game.platform, game.title_id, {
-      personId: viewed?.person_id,
+      personId: asked?.person_id,
+      tgId: asked?.tg_id,
     })
       .then((res) => {
         if (cancelled) return;
@@ -209,7 +213,7 @@ export function TitleSheet({
     return () => {
       cancelled = true;
     };
-  }, [data, game.platform, game.title_id, viewed?.person_id, detailsKey]);
+  }, [data, game.platform, game.title_id, asked?.person_id, asked?.tg_id, detailsKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -386,6 +390,14 @@ export function TitleSheet({
       ),
     [myDetails],
   );
+  // Whose progress it is, as the answer names them (an old link knew only a
+  // Telegram id, and a link's own name is empty); null when it is one's own.
+  const other: { person_id: number; name: string } | null =
+    details?.viewed ??
+    (asked?.person_id != null && asked.person_id !== meId
+      ? { person_id: asked.person_id, name: asked.name }
+      : null);
+  const viewed = other;
   const comparing = compare && Boolean(myDetails) && Boolean(other);
 
   // With nothing earned (or everything earned) there is only one list to show:
