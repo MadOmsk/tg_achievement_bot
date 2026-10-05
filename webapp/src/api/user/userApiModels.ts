@@ -37,6 +37,42 @@ export type Handle = {
   next_change_at: string | null;
 };
 
+/** One side of a merge (#162): what that account brings. */
+export type MergeSide = {
+  person_id: number;
+  handle: string | null;
+  email: string | null;
+  telegram: string | null;
+  has_telegram: boolean;
+  /** platform → its accounts, [{ id, name }] */
+  accounts: Record<string, Array<{ id: string; name: string | null }>>;
+  follows: number;
+  chats: number;
+};
+
+type Pick<T> = { keep: T; absorb: T };
+
+/** Two accounts that are one person, and where the person must choose (#162). */
+export type MergePreview = {
+  keep: MergeSide;
+  absorb: MergeSide;
+  conflicts: {
+    xbox?: Pick<{ id: string; name: string | null }>;
+    steam?: Pick<{ id: string; name: string | null }>;
+    telegram?: Pick<{ name: string | null; admin: boolean }>;
+    email?: Pick<string>;
+    psn?: { accounts: Array<{ id: string; name: string | null }>; max: number };
+  };
+};
+
+export type MergeChoices = Partial<{
+  xbox: "keep" | "absorb";
+  steam: "keep" | "absorb";
+  telegram: "keep" | "absorb";
+  email: "keep" | "absorb";
+  psn: string[];
+}>;
+
 /** The ways a person signs in (#162), as Settings → «Вход» shows them. */
 export type LoginsResponse = {
   email: string | null;
@@ -48,6 +84,8 @@ export type LoginsResponse = {
     removable?: boolean;
     blocked?: "last_login" | "admin" | "in_telegram" | null;
   };
+  /** A merge waiting for the person's word, e.g. after linking Telegram in the bot. */
+  merge_pending?: boolean;
   /** Whether a code can be sent at all (a mail server is set up). */
   email_available: boolean;
 };

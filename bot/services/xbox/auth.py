@@ -153,6 +153,11 @@ class XboxAuthService:
         )
         self._managers.pop(person_id, None)
 
+    def forget(self, person_id: int) -> None:
+        """Drop the cached login of a person whose Xbox account changed hands — a
+        merge (#162) — so the next request reads the stored token afresh."""
+        self._managers.pop(person_id, None)
+
     # ------------------------------------------------------------ refresh
 
     async def authenticated_manager(self, person_id: int) -> AuthenticationManager:

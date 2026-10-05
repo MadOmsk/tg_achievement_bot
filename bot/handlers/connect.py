@@ -26,6 +26,7 @@ from bot.handlers.panel import send_panel
 from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
+from bot.services.merge import PeopleMerge
 from bot.services.naming import xbox_nickname
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
@@ -83,12 +84,16 @@ async def start_with_payload(
     steam_auth: SteamAuth,
     bot: Bot,
     i18n: I18nContext,
+    merge: PeopleMerge,
 ) -> None:
     """Deep link from a group chat: its buttons send people here (SPEC 6.3)."""
     tg_id = _sender_tg_id(message)
     if tg_id is None:
         return
-    await repo.ensure_user(tg_id, _username(message))
+    here = await repo.ensure_user(tg_id, _username(message))
+    if (command.args or "").startswith("link_"):
+        await _link_telegram(message, repo, merge, i18n, tg_id, here, command.args or "")
+        return
     if command.args == "panel":
         await send_panel(bot, repo, tg_id, i18n)
         return
@@ -481,6 +486,45 @@ async def _send_login_link(
         i18n.get("connect-login-button-hint"),
         reply_markup=connect_keyboard(url, i18n),
     )
+
+
+async def _link_telegram(
+    message: Message,
+    repo: Repo,
+    merge: PeopleMerge,
+    i18n: I18nContext,
+    tg_id: int,
+    here: int | None,
+    args: str,
+) -> None:
+    """`?start=link_<token>` from the Mini App's «Вход» (#162): this Telegram
+    account is added to the person who asked for the link. The person this
+    account already is — made a moment ago by its very first message, or a real
+    one — is folded into them: at once when it has nothing to lose, else the
+    merge waits in the app for their choices."""
+    person = merge.redeem(args.removeprefix("link_"))
+    if person is None:
+        await message.answer(i18n.get("connect-link-expired"))
+        return
+    if here == person:
+        await message.answer(i18n.get("connect-link-already"))
+        return
+    target = await repo.get_user(person)
+    if target is None:
+        await message.answer(i18n.get("connect-link-expired"))
+        return
+    if target.tg_id is not None:
+        await message.answer(i18n.get("connect-link-other-telegram"))
+        return
+    if here is None:
+        await repo.set_telegram(person, tg_id, _username(message))
+        await message.answer(i18n.get("connect-link-done"))
+        return
+    if await merge.absorb_if_empty(person, here):
+        await message.answer(i18n.get("connect-link-done"))
+        return
+    merge.offer(person, here)
+    await message.answer(i18n.get("connect-link-merge-in-app"))
 
 
 def _parse_connect_payload(args: str) -> tuple[bool, int | None]:

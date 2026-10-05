@@ -72,9 +72,11 @@ class OAuthServer:
         bot: Any = None,
         steam_extras: Any = None,
         notifications: Any = None,
+        merge: Any = None,
     ) -> None:
         self._steam_extras = steam_extras
         self._notifications = notifications
+        self._merge = merge
         self._settings = settings
         self._connect = connect
         self._on_linked = on_linked
@@ -113,6 +115,7 @@ class OAuthServer:
             bot=self._bot,
             steam_extras=self._steam_extras,
             notifications=self._notifications,
+            merge=self._merge,
         )
 
         self._runner = web.AppRunner(app)

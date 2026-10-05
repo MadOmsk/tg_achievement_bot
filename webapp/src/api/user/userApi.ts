@@ -5,6 +5,8 @@ import type {
   ChatPatchBody,
   ChatRow,
   LoginsResponse,
+  MergeChoices,
+  MergePreview,
   MeResponse,
   UserSettingsPatch,
 } from "./userApiModels";
@@ -62,6 +64,23 @@ export class UserApi extends BaseApi {
 
   emailLinkVerify(initData: string, email: string, code: string): Promise<LoginsResponse> {
     return this.post(initData, "/me/email/verify", { email, code });
+  }
+
+  /** A t.me link that adds Telegram by writing to the bot from it. */
+  telegramLinkUrl(initData: string): Promise<{ url: string }> {
+    return this.get(initData, "/me/telegram/link");
+  }
+
+  pendingMerge(initData: string): Promise<{ merge: MergePreview | null }> {
+    return this.get(initData, "/me/merge");
+  }
+
+  merge(initData: string, choices: MergeChoices): Promise<LoginsResponse> {
+    return this.post(initData, "/me/merge", { choices });
+  }
+
+  cancelMerge(initData: string): Promise<{ ok: boolean }> {
+    return this.delete(initData, "/me/merge");
   }
 
   removeTelegram(initData: string): Promise<LoginsResponse> {

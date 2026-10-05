@@ -18,6 +18,13 @@ itself: `invalid`, `too_soon` (with `retry_after` seconds), `unavailable` (no
 mail server), `send_failed`, `wrong_code` (with `attempts_left`), `expired`,
 `taken`, `already`, `last_login`, `admin`, `in_telegram`, `not_linked`.
 
+**Merging** (`services/merge.py`): adding a login that belongs to somebody
+else answers `taken` with a `merge` preview — the same human, proved by the code
+or the signature — and the offer waits: `GET /api/mini/me/merge` shows it,
+`POST` performs it with the person's `choices`, `DELETE` turns it down.
+`GET /api/mini/me/telegram/link` gives a `t.me/<bot>?start=link_<token>` link that
+adds Telegram by writing to the bot from it.
+
 `DELETE /api/mini/me/telegram` takes Telegram away while an address is left to
 sign in with — never from a super-admin, and only from a browser (see
 `_telegram_blocked`).
@@ -45,6 +52,7 @@ from bot.services.email_login import (
     EmailTooSoon,
     TrustingEmailLogin,
 )
+from bot.services.merge import MergeRefused
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_login_widget
 from bot.web.mini_session import start_session
 
@@ -182,9 +190,8 @@ def register(app: web.Application, require_user: RequireUser) -> None:
             address = email_login.normalize_email(str(body.get("email", "")))
         except EmailInvalid:
             return _error("invalid", 400)
-        owner = await repo.person_by_email(address)
-        if owner is not None and owner != user.person_id:
-            return _error("taken", 409)
+        # An address somebody else signs in with still gets its code: typing it
+        # back proves this person reads that mailbox, and then the two may merge.
         locale = await repo.user_locale(user.person_id)
         return await _send(request, email_login.LINK, address, locale, user.person_id)
 
@@ -198,7 +205,8 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         try:
             await repo.set_email(user.person_id, checked)
         except LoginTaken:
-            return _error("taken", 409)
+            owner = await repo.person_by_email(checked)
+            return await _offer_merge(request, user.person_id, owner)
         return web.json_response(await _logins_payload(request, repo, user.person_id))
 
     async def telegram_link(request: web.Request) -> web.Response:
@@ -222,7 +230,8 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                 widget.last_name,
             )
         except LoginTaken:
-            return _error("taken", 409)
+            owner = await repo.person_id(widget.tg_id)
+            return await _offer_merge(request, user.person_id, owner)
         log.info("person_id=%s added a Telegram account", user.person_id)
         return web.json_response(await _logins_payload(request, repo, user.person_id))
 
@@ -241,6 +250,47 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         log.info("person_id=%s removed their Telegram account", user.person_id)
         return web.json_response(await _logins_payload(request, repo, user.person_id))
 
+    async def telegram_link_url(request: web.Request) -> web.Response:
+        """A `t.me` link that adds Telegram by writing to the bot from it — for a
+        phone, or a host the Login Widget does not render on."""
+        user = await require_user(request)
+        if user.tg_id is not None:
+            return _error("already", 409)
+        merge = request.app.get("mini_merge")
+        bot_username = await _bot_username(request)
+        if merge is None or not bot_username:
+            return _error("unavailable", 503)
+        token = merge.link_token(user.person_id)
+        return web.json_response({"url": f"https://t.me/{bot_username}?start=link_{token}"})
+
+    async def merge_get(request: web.Request) -> web.Response:
+        user = await require_user(request)
+        merge = request.app.get("mini_merge")
+        absorb = merge.pending(user.person_id) if merge else None
+        preview = await merge.preview(user.person_id, absorb) if absorb else None
+        return web.json_response({"merge": preview})
+
+    async def merge_do(request: web.Request) -> web.Response:
+        user = await require_user(request)
+        repo: Repo = request.app["mini_repo"]
+        merge = request.app.get("mini_merge")
+        absorb = merge.pending(user.person_id) if merge else None
+        if merge is None or absorb is None:
+            return _error("expired", 410)
+        body = await _body(request)
+        try:
+            await merge.merge(user.person_id, absorb, body.get("choices") or {})
+        except MergeRefused as exc:
+            return _error(exc.reason, 409)
+        return web.json_response(await _logins_payload(request, repo, user.person_id))
+
+    async def merge_cancel(request: web.Request) -> web.Response:
+        user = await require_user(request)
+        merge = request.app.get("mini_merge")
+        if merge is not None:
+            merge.drop(user.person_id)
+        return web.json_response({"ok": True})
+
     app.router.add_post("/api/mini/auth/email/start", sign_in_start)
     app.router.add_post("/api/mini/auth/email/verify", sign_in_verify)
     app.router.add_get("/api/mini/me/logins", logins)
@@ -248,6 +298,33 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     app.router.add_post("/api/mini/me/email/verify", email_verify)
     app.router.add_post("/api/mini/me/telegram", telegram_link)
     app.router.add_delete("/api/mini/me/telegram", telegram_remove)
+    app.router.add_get("/api/mini/me/telegram/link", telegram_link_url)
+    app.router.add_get("/api/mini/me/merge", merge_get)
+    app.router.add_post("/api/mini/me/merge", merge_do)
+    app.router.add_delete("/api/mini/me/merge", merge_cancel)
+
+
+async def _offer_merge(request: web.Request, keep: int, absorb: int | None) -> web.Response:
+    """The login just proved belongs to somebody else: the same human, so offer
+    to make the two one (`services/merge.py`). Without the merge service it is a
+    plain refusal."""
+    merge = request.app.get("mini_merge")
+    if merge is None or absorb is None or absorb == keep:
+        return _error("taken", 409)
+    merge.offer(keep, absorb)
+    return _error("taken", 409, merge=await merge.preview(keep, absorb))
+
+
+async def _bot_username(request: web.Request) -> str | None:
+    username = request.app.get("mini_bot_username")
+    bot = request.app.get("mini_bot")
+    if username is None and bot is not None:
+        try:
+            username = (await bot.me()).username
+        except Exception:
+            log.warning("could not read the bot's username for a Telegram link")
+        request.app["mini_bot_username"] = username
+    return username
 
 
 def _telegram_blocked(request: web.Request, user: User | None) -> str | None:
@@ -280,7 +357,12 @@ async def _logins_payload(request: web.Request, repo: Repo, person_id: int) -> d
             "removable": has_telegram and _telegram_blocked(request, user) is None,
             "blocked": _telegram_blocked(request, user) if has_telegram else None,
         },
+        # A merge waiting for the person's word (#162), e.g. after linking
+        # Telegram through the bot: the app opens it.
+        "merge_pending": bool(
+            request.app.get("mini_merge") and request.app["mini_merge"].pending(person_id)
+        ),
         # Whether a code can be sent at all; without a mail server the address
-        # can still be seen and removed, not added.
+        # can be seen, not added.
         "email_available": request.app.get("mini_email_login") is not None,
     }

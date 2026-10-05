@@ -1,14 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
-import { userApi, type LoginsResponse } from "../../../api";
+import { ApiError, userApi, type LoginsResponse, type MergePreview } from "../../../api";
 import { t, type Locale, type TranslationKey } from "../../../i18n";
 import { BackHead, Group, InfoRow, NavRow, SettingsSkel, TelegramLogin, type TelegramUser } from "../../shared/lib";
 import { EmailCodeForm } from "./EmailCodeForm";
+import { MergeSheet } from "./MergeSheet";
 import "./Logins.css";
 
-/** Settings → «Вход» (#162): the ways this person signs in. An address is added
- * or changed by a code sent to it, and removed only while Telegram is left;
- * Telegram is added through its Login Widget, which works only in a browser —
- * inside Telegram a person always has it already. */
+// Why Telegram cannot be taken away right now, worded (#162).
+const BLOCKED: Record<string, TranslationKey> = {
+  last_login: "telegramKeepLast",
+  in_telegram: "telegramKeepInside",
+  admin: "telegramKeepAdmin",
+};
+
+/** A refusal that came with a merge offer: the login proved is somebody else's. */
+function mergeOffer(err: unknown): MergePreview | null {
+  return err instanceof ApiError && err.code === "taken" && err.body.merge
+    ? (err.body.merge as MergePreview)
+    : null;
+}
+
+/** Settings → «Вход» (#162): the ways this person signs in. The address is the
+ * main way in: added or changed by a code, never removed. Telegram is added
+ * through its Login Widget or a link that opens the bot, and taken away while an
+ * address is left. A login that turns out to be another account of the same
+ * person opens the merge (`MergeSheet`). */
 export function LoginsPane({
   locale,
   data,
@@ -20,30 +36,43 @@ export function LoginsPane({
   data: string;
   onBack: () => void;
   onFlash: (message: string) => void;
-  /** The logins changed in a way the rest of the app shows (Telegram added). */
+  /** The logins changed in a way the rest of the app shows (Telegram added, a merge). */
   onChanged: () => void;
 }) {
-  // Why Telegram cannot be taken away right now, worded (#162).
-  const BLOCKED: Record<string, TranslationKey> = {
-    last_login: "telegramKeepLast",
-    in_telegram: "telegramKeepInside",
-    admin: "telegramKeepAdmin",
-  };
   const [logins, setLogins] = useState<LoginsResponse | null>(null);
   const [editing, setEditing] = useState(false);
   const [bot, setBot] = useState<string | null>(null);
+  const [merge, setMerge] = useState<MergePreview | null>(null);
   const inTelegram = Boolean(window.Telegram?.WebApp?.initData);
   const fail = useCallback((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`), [locale, onFlash]);
 
+  const load = useCallback(() => {
+    userApi
+      .logins(data)
+      .then((res) => {
+        setLogins(res);
+        if (res.merge_pending) {
+          void userApi.pendingMerge(data).then((pending) => setMerge(pending.merge));
+        }
+      })
+      .catch(fail);
+  }, [data, fail]);
+
   useEffect(() => {
-    userApi.logins(data).then(setLogins).catch(fail);
+    load();
     if (!inTelegram) {
       userApi
         .authConfig()
         .then((res) => setBot(res.bot_username))
         .catch(() => setBot(null));
     }
-  }, [data, fail, inTelegram]);
+    // Back from the bot (the t.me link): see what it did.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load, inTelegram]);
 
   const linkTelegram = useCallback(
     (user: TelegramUser) => {
@@ -53,12 +82,21 @@ export function LoginsPane({
           setLogins(res);
           onChanged();
         })
-        .catch((err: unknown) =>
-          onFlash(String(err).includes("taken") ? t(locale, "telegramTaken") : `${t(locale, "error")}: ${String(err)}`),
-        );
+        .catch((err: unknown) => {
+          const offer = mergeOffer(err);
+          if (offer) setMerge(offer);
+          else fail(err);
+        });
     },
-    [data, locale, onChanged, onFlash],
+    [data, fail, onChanged],
   );
+
+  const openBot = () => {
+    userApi
+      .telegramLinkUrl(data)
+      .then((res) => window.open(res.url, "_blank", "noopener"))
+      .catch(fail);
+  };
 
   if (logins === null) {
     return (
@@ -80,7 +118,14 @@ export function LoginsPane({
           return { resendAfter: res.resend_after, skipCode: res.skip_code };
         }}
         onVerify={async (email, code) => {
-          setLogins(await userApi.emailLinkVerify(data, email, code));
+          try {
+            setLogins(await userApi.emailLinkVerify(data, email, code));
+          } catch (err) {
+            const offer = mergeOffer(err);
+            if (!offer) throw err;
+            setMerge(offer);
+            return;
+          }
           setEditing(false);
           onFlash(t(locale, "emailSaved"));
         }}
@@ -120,12 +165,21 @@ export function LoginsPane({
       >
         {logins.telegram.linked ? (
           <InfoRow label={t(locale, "telegramLinked")} value={logins.telegram.username ?? undefined} />
-        ) : bot ? (
-          <div className="logins-widget">
-            <TelegramLogin bot={bot} onAuth={linkTelegram} />
-          </div>
         ) : (
-          <InfoRow label={t(locale, "loginUnavailable")} />
+          <>
+            {bot && (
+              <div className="logins-widget">
+                <TelegramLogin bot={bot} onAuth={linkTelegram} />
+              </div>
+            )}
+            {/* The widget renders only on a host BotFather knows, and on a phone
+                the bot itself is nearer: the link opens it with a one-time token. */}
+            <div className="logins-link">
+              <button type="button" className="see-all" onClick={openBot}>
+                {t(locale, "telegramViaBot")}
+              </button>
+            </div>
+          </>
         )}
       </Group>
 
@@ -148,6 +202,22 @@ export function LoginsPane({
             }}
           />
         </Group>
+      )}
+
+      {merge && (
+        <MergeSheet
+          preview={merge}
+          data={data}
+          locale={locale}
+          onClose={() => setMerge(null)}
+          onDone={() => {
+            setMerge(null);
+            setEditing(false);
+            onFlash(t(locale, "mergeDone"));
+            load();
+            onChanged();
+          }}
+        />
       )}
     </>
   );

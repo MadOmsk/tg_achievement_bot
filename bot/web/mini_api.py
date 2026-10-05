@@ -31,6 +31,7 @@ from bot.services.crypto import TokenCipher
 from bot.services.email_login import EmailLogin
 from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
+from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
 from bot.services.notifier import Notifier
 from bot.services.notify import AdminNotifier
@@ -94,6 +95,7 @@ def setup_mini_api(
     steam_extras: SteamExtras | None = None,
     email_login: EmailLogin | None = None,
     notifications: Notifier | None = None,
+    merge: PeopleMerge | None = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -120,6 +122,8 @@ def setup_mini_api(
     app["mini_email_login"] = email_login or mini_logins.build_email_login(settings, repo)
     # The app's own notifications (#164); AdminNotifier above is the operator's.
     app["mini_notifications"] = notifications or _default_notifier(settings, repo, bot)
+    # Merging two people (#162): main.py's, shared with the bot's /start link_….
+    app["mini_merge"] = merge or PeopleMerge(repo, settings.is_admin)
 
     app.router.add_get("/api/mini/health", handle_health)
     mini_people.register(app, _require_user)

@@ -45,6 +45,7 @@ Layout:
                     their one-time codes, Telegram added later (#162).
     _notifications.py  the app's own notifications: the list per person and
                     the browsers that allowed push (#164).
+    _merge.py       folding one person into another, in one transaction.
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -74,6 +75,7 @@ from bot.db.repo._flood import _FloodRepo
 from bot.db.repo._follows import FollowTooSoon, PersonRow, _FollowsRepo
 from bot.db.repo._handles import HandleInvalid, HandleState, HandleTooSoon, _HandlesRepo
 from bot.db.repo._logins import EmailCode, LoginTaken, _LoginsRepo
+from bot.db.repo._merge import MergeChoices, MergeSide, _MergeRepo
 from bot.db.repo._messages import _MessagesRepo
 from bot.db.repo._models import (
     AchievementRow,
@@ -147,6 +149,8 @@ __all__ = [
     "HandleTooSoon",
     "HltbCacheRow",
     "LoginTaken",
+    "MergeChoices",
+    "MergeSide",
     "NotificationRow",
     "OnlineAutoRefreshRow",
     "PersonRow",
@@ -196,6 +200,7 @@ class Repo(
     _SessionsRepo,
     _LoginsRepo,
     _NotificationsRepo,
+    _MergeRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

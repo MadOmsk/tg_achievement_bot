@@ -67,3 +67,10 @@ connect-greeting-multi =
 connect-pick-platform = С чего начнём?
 connect-open-app-hint = Или открой приложение:
 connect-open-app-button = Открыть приложение
+
+# Adding Telegram to an app account by a t.me link (#162)
+connect-link-done = Готово — Telegram привязан к твоему аккаунту в приложении.
+connect-link-already = Этот Telegram уже привязан к этому аккаунту.
+connect-link-expired = Ссылка устарела. Возьми новую в приложении: Настройки → Вход.
+connect-link-other-telegram = К этому аккаунту уже привязан другой Telegram.
+connect-link-merge-in-app = Этот Telegram уже связан с другим аккаунтом. Открой приложение: Настройки → Вход — там можно объединить их в один.

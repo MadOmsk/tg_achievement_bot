@@ -309,13 +309,20 @@ async def test_a_telegram_person_adds_an_address(repo: Repo, settings) -> None:
         assert body["email"] == "ada@example.com"
         assert await repo.person_by_email("ada@example.com") == await repo.person_id(42)
 
-        # Somebody else's address is refused before any mail goes out.
+        # Somebody else's address: the code still goes — it proves the mailbox
+        # is this person's — and then the two are offered a merge.
         other = await repo.create_email_person("bob@example.com")
         assert other
-        sent = len(sender.sent)
-        taken = await client.post("/api/mini/me/email/start", json={"email": "bob@example.com"})
-        assert (taken.status, (await taken.json())["error"]) == (409, "taken")
-        assert len(sender.sent) == sent
+        await repo._conn.execute("UPDATE email_codes SET created_at = '2000-01-01T00:00:00'")
+        start = await client.post("/api/mini/me/email/start", json={"email": "bob@example.com"})
+        assert start.status == 200
+        taken = await client.post(
+            "/api/mini/me/email/verify",
+            json={"email": "bob@example.com", "code": sender.last_code()},
+        )
+        body = await taken.json()
+        assert (taken.status, body["error"]) == (409, "taken")
+        assert body["merge"]["absorb"]["person_id"] == other
     finally:
         await client.close()
 

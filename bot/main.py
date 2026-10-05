@@ -68,6 +68,7 @@ from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
+from bot.services.merge import PeopleMerge
 from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notifier import Notifier
@@ -81,6 +82,7 @@ from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.version import is_test, version
 from bot.views.keyboards import timezone_keyboard
+from bot.web.mini_logins import forget_file
 from bot.web.oauth import OAuthServer
 
 log = logging.getLogger(__name__)
@@ -317,6 +319,15 @@ async def run(settings: Settings) -> None:
 
     auth.on_token_dead = on_xbox_login_dead
 
+    async def on_people_merged(keep: int, absorb: int) -> None:
+        # The Xbox account and its token may have changed hands (#162).
+        auth.forget(keep)
+        auth.forget(absorb)
+
+    merge = PeopleMerge(
+        repo, settings.is_admin, on_merged=on_people_merged, forget_picture=forget_file
+    )
+
     web_server = OAuthServer(
         settings,
         connect_service,
@@ -332,6 +343,7 @@ async def run(settings: Settings) -> None:
         bot=bot,
         steam_extras=steam_extras,
         notifications=notifications,
+        merge=merge,
     )
     await web_server.start()
 
@@ -342,6 +354,7 @@ async def run(settings: Settings) -> None:
     dispatcher["steam_fetcher"] = steam_fetcher
     dispatcher["settings"] = settings
     dispatcher["notifier"] = notifier
+    dispatcher["merge"] = merge
     dispatcher["psn_auth"] = psn_auth
     dispatcher["psn_fetcher"] = psn_fetcher
     dispatcher["steam_auth"] = steam_auth

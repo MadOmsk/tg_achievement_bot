@@ -78,6 +78,7 @@ async def test_start_with_payload_connectsteam_arms_waiting_and_prompts(
         steam_auth=steam_auth,
         bot=bot,  # type: ignore[arg-type]
         i18n=i18n,
+        merge=None,  # type: ignore[arg-type]
     )
 
     try:
@@ -114,6 +115,7 @@ async def test_start_with_payload_connectpsn_arms_waiting_and_prompts(
         steam_auth=steam_auth,
         bot=bot,  # type: ignore[arg-type]
         i18n=i18n,
+        merge=None,  # type: ignore[arg-type]
     )
 
     try:

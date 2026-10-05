@@ -320,13 +320,25 @@ every column. History: #106.
   column added to `users` that needs an index gets it in its migration, with the
   rule written into the `CREATE TABLE` for new databases: `schema.sql` runs before
   the migrations, so a standalone index on a new column fails on an old file.
-  Merging two people is the person's own request (not built; linking a login that
-  is somebody else's is refused as `taken`):
-  the same platform accounts (or one side empty) merge at once; a conflict (two
-  different Steam ids) is put to the person, and settings come from the fresher side.
+  **Merging two people** (built; `services/merge.py`, `db/repo/_merge.py`): when a
+  signed-in person adds a login that is somebody else's and proves it (an email's
+  code, the Login Widget's signature, or writing to the bot through a `link_`
+  token), the app is offered the merge instead of `taken`. The person signed in
+  stays, with their nickname; the other is folded in and deleted, in one
+  transaction. One side empty: take the other's. Both have one (Xbox, Steam,
+  Telegram, email): the person picks, and the account not picked is unlinked like
+  any unlink, its history kept; the Xbox login follows the Xbox account kept. PSN
+  accounts add up to `MAX_PSN_ACCOUNTS`, past that the person picks. Chats, follows
+  and blocks (never a self-follow), sessions, notifications and push devices move;
+  settings come from the side changed more recently. A person the bot made a
+  moment ago (a Telegram account's first message, with nothing to lose) is folded
+  in without asking. Offers and `link_` tokens live in memory for ten minutes. The
+  merge defers foreign keys to commit (`chat_seen` points at `users.tg_id`, which
+  moves between the two rows).
   **A super-admin stays an ordinary person named by `ADMIN_TG_IDS`** (owner,
   2026-10-02): no role field. So a super-admin must always keep a Telegram id —
-  nothing (unlinking a login, a merge) may leave them without one.
+  nothing (removing Telegram, a merge) may leave them without one; both refuse
+  with `admin`.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
@@ -827,7 +839,13 @@ elsewhere in this file still describe the bot.
     address gets one a minute and five an hour. The answer never says whether an
     address is known. Errors are codes the Mini App words: `invalid`, `too_soon`,
     `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
-    `last_login`, `admin`, `in_telegram`, `not_linked`.
+    `last_login`, `admin`, `in_telegram`, `not_linked`; a `taken` that a merge can
+    answer carries a `merge` preview (`GET|POST|DELETE /api/mini/me/merge`).
+  - **Telegram through the bot** (#162): «Открыть Telegram и привязать» gets a
+    `t.me/<bot>?start=link_<token>` link (`GET /api/mini/me/telegram/link`); writing
+    to the bot through it adds that Telegram, or offers the merge when it already is
+    somebody — for a phone, or a host the Login Widget does not render on
+    (`handlers/connect.py::_link_telegram`).
   - **Settings → «Вход»**: `GET /api/mini/me/logins`. **Email is the main way in
     and is never removed** (owner, 2026-10-05) — only added or changed, by the same
     code (`/api/mini/me/email/start|verify`). Telegram is added through the Login
