@@ -23,11 +23,16 @@
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 14px 18px 34px;
-  /* No glass up here: only a light shade, and a shadow on the text, enough to
-   * read it over any picture. */
-  background: linear-gradient(180deg, rgba(8, 10, 16, 0.55) 0%, rgba(8, 10, 16, 0) 100%);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+  padding: 14px 18px 44px;
+  /* No glass up here: a shade, deep enough to read the name over a light
+   * picture too (owner, 2026-10-05), and a shadow on the text. */
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 16, 0.78) 0%,
+    rgba(8, 10, 16, 0.5) 45%,
+    rgba(8, 10, 16, 0) 100%
+  );
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
 }
 
 .post-avatar,
