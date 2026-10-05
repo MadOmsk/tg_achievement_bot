@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { fetchAvatarBlob, type MeResponse } from "../../../../api";
 import { platformMark } from "../../../../i18n";
 import { PlatformLogo } from "../platform/Platform";
 import { useImgFade } from "../img-fade/useImgFade";
+import { openImage } from "../image-viewer/ImageViewer";
 import "./Avatar.css";
 
 const avatarUrls = new Map<number, string | null>();
@@ -100,7 +100,6 @@ export function Avatar({
   zoomLabel?: string;
 }) {
   const [src, setSrc] = useState<string | null>(null);
-  const [zoomed, setZoomed] = useState(false);
   const [seen, setSeen] = useState(epoch);
   useEffect(() => {
     const listen = () => setSeen(epoch);
@@ -164,7 +163,8 @@ export function Avatar({
           src && zoomLabel
             ? (e) => {
                 e.stopPropagation();
-                setZoomed(true);
+                // The app's one full-screen picture: zoomable, closed by back.
+                openImage(src);
               }
             : undefined
         }
@@ -182,23 +182,6 @@ export function Avatar({
           <span>{initials(name)}</span>
         )}
       </span>
-      {(zoomed && src && zoomLabel) &&
-        createPortal(
-          <button
-            type="button"
-            className="avatar-zoom"
-            aria-label={zoomLabel}
-            onClick={(e) => {
-              // A portal bubbles through the React tree: keep the tap that
-              // closes the photo from reaching whatever wraps the avatar.
-              e.stopPropagation();
-              setZoomed(false);
-            }}
-          >
-            <img src={src} alt="" draggable={false} />
-          </button>,
-          document.body,
-        )}
       {live && (
         <span
           className={

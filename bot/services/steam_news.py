@@ -36,7 +36,7 @@ _NEWS_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/"
 
 # Steam's own announcements; the same feed also carries other sites' articles.
 _OFFICIAL_FEED = "steam_community_announcements"
-PATCHES_SHOWN = 10
+# The last thirty of the developer's posts, patches and news alike.
 _NEWS_FETCHED = 30
 TEXT_CHARS = 4000
 
@@ -74,6 +74,13 @@ _BB_BLOCKS = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 _CLAN_IMAGE = re.compile(r"\{STEAM_CLAN_IMAGE\}\S*")
+# A post's pictures, on Steam's own image host or anywhere: `[img src="…"]`
+# (what Steam writes now) or `[img]…[/img]` (older posts).
+_BB_IMAGE = re.compile(
+    r'\[img\b[^\]]*?\bsrc="([^"]+)"[^\]]*\]|\[img[^\]]*\]\s*([^\[\s]+?)\s*\[/img\]',
+    re.IGNORECASE,
+)
+_CLAN_IMAGE_HOST = "https://clan.akamai.steamstatic.com/images"
 _BB_LINK = re.compile(r"\[url=([^\]]*)\](.*?)\[/url\]", re.DOTALL | re.IGNORECASE)
 _HALF_LINK = re.compile(r"\[[^\]]*$|\]\([^)]*$")
 _BB_HEADING = re.compile(r"\[h[1-6]\](.*?)\[/h[1-6]\]", re.DOTALL | re.IGNORECASE)
@@ -85,10 +92,23 @@ _BB_TAG = re.compile(r"\[/?[a-z0-9*]+(?:[ =][^\]]*)?\](?!\()", re.IGNORECASE)
 
 @dataclass(frozen=True, slots=True)
 class Patch:
+    """One post of the developer's: a patch, or other news."""
+
     gid: str
     title: str
     date: str  # ISO date, UTC
     text: str  # the whole post, cleaned, cut only when very long
+    kind: str = "patch"  # "patch" or "news"
+    image: str | None = None  # the post's first picture
+
+
+def first_image(bbcode: str) -> str | None:
+    """The address of a post's first picture, or None."""
+    for match in _BB_IMAGE.finditer(bbcode):
+        url = (match.group(1) or match.group(2)).replace("{STEAM_CLAN_IMAGE}", _CLAN_IMAGE_HOST)
+        if url.startswith("https://"):
+            return url
+    return None
 
 
 def is_patch_title(title: str) -> bool:
@@ -97,9 +117,13 @@ def is_patch_title(title: str) -> bool:
 
 def _link(match: re.Match[str]) -> str:
     """`[url=X]label[/url]` as `[label](X)` — the Mini App draws it as a link.
-    Only web addresses; anything else keeps just its words."""
+    Only web addresses; anything else keeps just its words. A picture wrapped
+    in a link (already its own address line) stays a picture, the link let go:
+    as a link's words it showed as a bare address."""
     url = match.group(1).strip()
     label = match.group(2).strip()
+    if label.startswith("https://") and not any(ch.isspace() for ch in label):
+        return f"\n{label}\n"
     if not url.lower().startswith(("http://", "https://")) or not label:
         return label
     return f"[{label}]({url})"
@@ -114,10 +138,19 @@ def _table(match: re.Match[str]) -> str:
     return "\n" + "\n".join(row for row in rows if row) + "\n"
 
 
+def _image_line(match: re.Match[str]) -> str:
+    """A picture as its address alone on a line — the Mini App draws it."""
+    url = (match.group(1) or match.group(2)).replace("{STEAM_CLAN_IMAGE}", _CLAN_IMAGE_HOST)
+    return f"\n{url}\n" if url.startswith("https://") else ""
+
+
 def plain_text(bbcode: str) -> str:
-    """Steam's BBCode reduced to readable paragraphs: pictures, videos and
-    tables go, links and headings keep their words, list items become dashes."""
+    """Steam's BBCode reduced to readable paragraphs: a picture and a video
+    become their address on a line of their own (the Mini App draws them),
+    tables become lines, links and headings keep their words, list items
+    become dashes."""
     text = _BB_YOUTUBE.sub(r"\nhttps://www.youtube.com/watch?v=\1\n", bbcode)
+    text = _BB_IMAGE.sub(_image_line, text)
     text = _BB_TABLE.sub(_table, text)
     text = _BB_BLOCKS.sub("", text)
     text = _CLAN_IMAGE.sub("", text)
@@ -165,25 +198,30 @@ def pick_appid(items: list[dict], names: list[str]) -> int | None:
 
 
 def parse_patches(payload: dict) -> list[Patch]:
-    patches = []
+    """The developer's own posts, newest first, each marked a patch or news.
+    Other sites' articles in the same feed are left out."""
+    posts = []
     for item in payload.get("appnews", {}).get("newsitems", []):
+        if item.get("feedname") != _OFFICIAL_FEED:
+            continue
         title = str(item.get("title") or "").strip()
+        contents = str(item.get("contents") or "")
         # The developer's own "patchnotes" tag is the surest sign; a title that
         # reads like a patch covers the posts nobody tagged.
         tagged = "patchnotes" in (item.get("tags") or [])
-        if item.get("feedname") != _OFFICIAL_FEED or not (tagged or is_patch_title(title)):
-            continue
         published = datetime.fromtimestamp(int(item["date"]), UTC).date().isoformat()
-        patches.append(
+        posts.append(
             Patch(
                 gid=str(item["gid"]),
                 title=title,
                 date=published,
-                text=shorten(plain_text(str(item.get("contents") or ""))),
+                text=shorten(plain_text(contents)),
+                kind="patch" if tagged or is_patch_title(title) else "news",
+                image=first_image(contents),
             )
         )
-    patches.sort(key=lambda p: p.date, reverse=True)
-    return patches[:PATCHES_SHOWN]
+    posts.sort(key=lambda p: p.date, reverse=True)
+    return posts
 
 
 async def _search_appid(client: httpx.AsyncClient, names: list[str]) -> int | None:

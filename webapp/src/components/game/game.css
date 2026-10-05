@@ -511,7 +511,8 @@
 
 .patch-card-new {
   display: inline-block;
-  margin-left: 8px;
+  flex: none;
+  margin-top: 2px;
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--mint-dim);
@@ -553,18 +554,6 @@
 
 .patch-card-p:first-child {
   margin-top: 0;
-}
-
-.patch-card-chevron {
-  display: inline-flex;
-  margin-left: auto;
-  color: var(--muted);
-  transform: rotate(90deg);
-  transition: transform 0.2s ease;
-}
-
-.patch-card.is-open .patch-card-chevron {
-  transform: rotate(-90deg);
 }
 
 /* A completed game: a big platinum medal on the picture's edge, on a glow,

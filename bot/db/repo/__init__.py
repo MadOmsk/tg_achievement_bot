@@ -121,7 +121,7 @@ from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
 from bot.db.repo._sessions import _SessionsRepo
 from bot.db.repo._stats import _StatsRepo
-from bot.db.repo._steam import StoredPatch, TitleSteam, _SteamRepo
+from bot.db.repo._steam import GameNewsRow, StoredPatch, TitleSteam, _SteamRepo
 
 __all__ = [
     # Re-exported for scripts/backfill_*.py and the odd test that reaches
@@ -146,6 +146,7 @@ __all__ = [
     "FloodState",
     "FollowTooSoon",
     "GameAchievements",
+    "GameNewsRow",
     "HandleInvalid",
     "HandleState",
     "HandleTooSoon",

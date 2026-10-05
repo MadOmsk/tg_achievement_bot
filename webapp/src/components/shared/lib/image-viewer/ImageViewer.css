@@ -1,0 +1,34 @@
+/* A picture full screen, over everything — the post and game pages too. */
+.image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #05070b;
+  touch-action: none;
+  animation: image-viewer-in 0.2s ease;
+}
+
+.image-viewer > img {
+  /* Opened as large as the screen allows, the whole of it seen: a small one
+   * grows to the screen's width (a tall one to its height). */
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.22s ease;
+  will-change: transform;
+}
+
+.image-viewer > img.is-moving {
+  transition: none;
+}
+
+@keyframes image-viewer-in {
+  from {
+    opacity: 0;
+  }
+}

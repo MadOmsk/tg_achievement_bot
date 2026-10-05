@@ -60,6 +60,7 @@ from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
 from bot.web.mini_chat import (
     _https_url,
     build_feed_payload,
+    build_news_payload,
     build_online_payload,
     build_person_payload,
     build_summary_payload,
@@ -156,6 +157,7 @@ def setup_mini_api(
     # Query-string twins: Telegram group ids are negative, and a path
     # segment starting with `-` 404s on some aiohttp/proxy stacks.
     app.router.add_get("/api/mini/club/feed", handle_chat_feed)
+    app.router.add_get("/api/mini/club/news", handle_club_news)
     app.router.add_get("/api/mini/club/online", handle_chat_online)
     app.router.add_get("/api/mini/club/summary", handle_chat_summary)
     app.router.add_get("/api/mini/club/people", handle_chat_person)
@@ -658,6 +660,27 @@ async def handle_chat_feed(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
+async def handle_club_news(request: web.Request) -> web.Response:
+    """Game news (owner, 2026-10-05): what the developers of the games the
+    viewer and the people they follow play posted on Steam that month. Only the
+    viewer's own circle — no chat has news of its own."""
+    scoped = await _following_scope(request)
+    if scoped is None:
+        raise web.HTTPBadRequest(text="news is scope=following only")
+    user, repo, members, tz = scoped
+    try:
+        payload = await build_news_payload(
+            repo,
+            members=members,
+            month=request.query.get("month") or None,
+            tz_of=tz,
+            locale=await _user_locale(repo, user.person_id),
+        )
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad month") from exc
+    return web.json_response(payload)
+
+
 async def handle_chat_online(request: web.Request) -> web.Response:
     scoped = await _following_scope(request)
     if scoped is not None:
@@ -1145,6 +1168,9 @@ async def handle_game_patches(request: web.Request) -> web.Response:
                     "title": (p.title_ru if ru and p.title_ru else p.title),
                     "date": p.published_at,
                     "text": (p.text_ru if ru and p.text_ru else p.text_en) or "",
+                    "image": p.image_url,
+                    # The post on Steam, for its own page's last button.
+                    "url": f"https://store.steampowered.com/news/app/{appid}/view/{p.gid}",
                 }
                 for p in patches
             ],

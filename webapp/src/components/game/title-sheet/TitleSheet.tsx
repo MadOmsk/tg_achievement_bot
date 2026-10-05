@@ -38,6 +38,7 @@ import { groupLabel, pickLocale, type FilterType } from "../utils";
 import { GameHero } from "../game-hero/GameHero";
 import { HeroPeek } from "../game-hero/HeroPeek";
 import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
+import { AchievementPage } from "../achievement-page/AchievementPage";
 import { GameTabBar } from "../game-tab-bar/GameTabBar";
 import { recall, remember } from "../game-cache";
 
@@ -53,8 +54,6 @@ const GUIDES_WAIT_MS = 8000;
 const GUIDES_RETRY_MS = 20000;
 const GUIDES_TRIES = 4;
 const GUIDES_REFRESH_MS = 30000;
-
-const groupOf = (row: GameAchievement) => row.trophy_group_id ?? "default";
 
 export function TitleSheet({
   game,
@@ -163,27 +162,15 @@ export function TitleSheet({
     };
   }, [data, game.platform, game.title_id, gameKey]);
 
-  // Which achievement's tip is showing, per group of the list (a PSN game's
-  // DLC is a group of its own): opening one closes the other in its group.
-  const [openTips, setOpenTips] = useState<Record<string, string | null>>({});
-  const toggleTip = useCallback((group: string, id: string) => {
-    setOpenTips((cur) => ({ ...cur, [group]: cur[group] === id ? null : id }));
-  }, []);
+  // The achievement whose own page is open (AchievementPage), if any.
+  const [openAchievement, setOpenAchievement] = useState<string | null>(null);
   const [tabEpoch, setTabEpoch] = useState(0);
   const collapseAll = useCallback(() => {
-    setOpenTips({});
     setTabEpoch((n) => n + 1);
   }, []);
   const refreshTabHeight = useCallback(() => {
     tabSwiper?.updateAutoHeight(0);
   }, [tabSwiper]);
-  // A tip unfolding changes the height the tab swiper sized itself to: once as
-  // it starts, and once more when its animation is done.
-  useEffect(() => {
-    refreshTabHeight();
-    const id = window.setTimeout(refreshTabHeight, 320);
-    return () => window.clearTimeout(id);
-  }, [openTips, refreshTabHeight]);
   // HLTB's own hours/description (#131), fetched on its own request so a
   // game's first-ever match never delays the achievements below —
   // `undefined` while that request is still out, `null` once it has
@@ -631,8 +618,7 @@ export function TitleSheet({
                             locale={locale}
                             onToggleReveal={toggleReveal}
                             tip={guideTips[row.achievement_id]}
-                            open={openTips[groupOf(row)] === row.achievement_id}
-                            onToggleTip={(id) => toggleTip(groupOf(row), id)}
+                            onOpen={setOpenAchievement}
                             fallbackIcon={cover}
                             compare={
                               comparing && other
@@ -667,6 +653,7 @@ export function TitleSheet({
                       locale={locale}
                       collapseKey={tabEpoch}
                       onLayout={refreshTabHeight}
+                      game={{ name: title, icon_url: game.icon_url ?? details?.icon_url ?? null }}
                     />
                   </Suspense>
                 </div>
@@ -708,9 +695,23 @@ export function TitleSheet({
     </>
   );
 
+  const shownAchievement = openAchievement
+    ? achievements.find((ach) => ach.achievement_id === openAchievement)
+    : undefined;
+
   return (
     <div className="game-page" data-no-pull>
       {content}
+      {shownAchievement && (
+        <AchievementPage
+          row={shownAchievement}
+          tip={guideTips[shownAchievement.achievement_id]}
+          game={title}
+          fallbackIcon={cover}
+          locale={locale}
+          onClose={() => setOpenAchievement(null)}
+        />
+      )}
     </div>
   );
 }

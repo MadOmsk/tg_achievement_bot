@@ -100,6 +100,9 @@ export type GamePatch = {
   title: string;
   date: string;
   text: string;
+  image?: string | null;
+  /** The post on Steam. */
+  url?: string;
 };
 
 export type GamePatchesResponse = {

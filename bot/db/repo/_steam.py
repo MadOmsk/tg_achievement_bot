@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import aiosqlite
 
-from bot.db.repo._sql import earned_since
+from bot.db.repo._sql import earned_at, earned_date_is_real, earned_since
 from bot.util import looks_russian, utcnow_iso
 
 
@@ -26,6 +26,28 @@ class StoredPatch:
     text_en: str | None
     title_ru: str | None
     text_ru: str | None
+    # "patch" or "news" (migration 084), and the post's first picture.
+    kind: str = "patch"
+    image_url: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GameNewsRow:
+    """One post of a game's developer, with the game it is about (ours)."""
+
+    steam_appid: int
+    gid: str
+    kind: str
+    title: str
+    published_at: str
+    text_en: str | None
+    image_url: str | None
+    platform: str
+    title_id: str
+    game: str
+    game_ru: str | None
+    game_en: str | None
+    game_icon_url: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,12 +228,22 @@ class _SteamRepo:
         for patch in patches:
             await self._conn.execute(
                 "INSERT INTO game_patches"
-                " (steam_appid, gid, title, published_at, text_en, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)"
+                " (steam_appid, gid, title, published_at, text_en, created_at, kind, image_url)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(steam_appid, gid) DO UPDATE SET"
                 "  title = excluded.title, published_at = excluded.published_at,"
-                "  text_en = excluded.text_en",
-                (appid, patch.gid, patch.title, patch.published_at, patch.text_en, now),
+                "  text_en = excluded.text_en, kind = excluded.kind,"
+                "  image_url = excluded.image_url",
+                (
+                    appid,
+                    patch.gid,
+                    patch.title,
+                    patch.published_at,
+                    patch.text_en,
+                    now,
+                    patch.kind,
+                    patch.image_url,
+                ),
             )
         await self._conn.execute(
             "INSERT INTO steam_apps (appid, patches_checked_at) VALUES (?, ?)"
@@ -220,10 +252,71 @@ class _SteamRepo:
         )
         await self._conn.commit()
 
-    async def game_patches(self, appid: int, limit: int) -> list[StoredPatch]:
+    async def games_news(
+        self,
+        members: list[int],
+        *,
+        played_since: str,
+        since: str,
+        until: str,
+        limit: int,
+    ) -> list[GameNewsRow]:
+        """The developers' posts dated in [since, until) about the games these
+        people earned something in since `played_since`, newest first — one row
+        per post, even when two of our games (an Xbox and a Steam version) are
+        one Steam app. Dates are ISO; `since`/`until` compare with the post's day."""
+        ids = ",".join(str(int(m)) for m in members) or "NULL"
         cursor = await self._conn.execute(
-            "SELECT gid, title, published_at, text_en, title_ru, text_ru FROM game_patches"
-            " WHERE steam_appid = ? ORDER BY published_at DESC LIMIT ?",
+            "WITH played AS ("
+            "  SELECT s.title_id, MAX(s.platform) AS platform"
+            "  FROM seen_achievements s"
+            "  JOIN account_links al ON al.platform = s.account_platform"
+            "   AND al.external_id = s.xuid AND al.is_active = 1"
+            f"  WHERE al.person_id IN ({ids}) AND {earned_date_is_real('s.')}"
+            f"    AND {earned_at('s.')} >= ?"
+            "  GROUP BY s.title_id"
+            "), apps AS ("
+            "  SELECT p.title_id, p.platform, t.name, t.name_ru, t.name_en, t.icon_url,"
+            "         CASE WHEN p.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
+            "              ELSE t.steam_appid END AS appid"
+            "  FROM played p JOIN titles t ON t.title_id = p.title_id"
+            ") "
+            "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
+            "       gp.text_en, gp.image_url, a.platform, a.title_id,"
+            "       a.name, a.name_ru, a.name_en, a.icon_url "
+            "FROM game_patches gp JOIN apps a ON a.appid = gp.steam_appid "
+            "WHERE gp.published_at >= ? AND gp.published_at < ? "
+            "GROUP BY gp.steam_appid, gp.gid "
+            "ORDER BY gp.published_at DESC, gp.steam_appid, gp.gid "
+            "LIMIT ?",
+            (played_since, since, until, limit),
+        )
+        return [
+            GameNewsRow(
+                steam_appid=int(row["steam_appid"]),
+                gid=row["gid"],
+                kind=row["kind"],
+                title=row["title"],
+                published_at=row["published_at"],
+                text_en=row["text_en"],
+                image_url=row["image_url"],
+                platform=row["platform"],
+                title_id=str(row["title_id"]),
+                game=row["name"],
+                game_ru=row["name_ru"],
+                game_en=row["name_en"],
+                game_icon_url=row["icon_url"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    async def game_patches(self, appid: int, limit: int) -> list[StoredPatch]:
+        """The app's patch notes — the game page's «Обновления»; the rest of the
+        developer's posts are «Новости»'s (`games_news`)."""
+        cursor = await self._conn.execute(
+            "SELECT gid, title, published_at, text_en, title_ru, text_ru, image_url"
+            " FROM game_patches"
+            " WHERE steam_appid = ? AND kind = 'patch' ORDER BY published_at DESC LIMIT ?",
             (appid, limit),
         )
         return [
@@ -234,6 +327,7 @@ class _SteamRepo:
                 text_en=row["text_en"],
                 title_ru=row["title_ru"],
                 text_ru=row["text_ru"],
+                image_url=row["image_url"],
             )
             for row in await cursor.fetchall()
         ]

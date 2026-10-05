@@ -728,6 +728,11 @@ CREATE TABLE IF NOT EXISTS game_patches (
     title_ru     TEXT,
     text_ru      TEXT,
     created_at   TEXT    NOT NULL,
+    -- A patch, or any other post of the developer's (migration 084): the
+    -- Mini App's «Новости» lists both, the game page only the patches.
+    kind         TEXT    NOT NULL DEFAULT 'patch' CHECK (kind IN ('patch', 'news')),
+    -- The post's first picture, for its card.
+    image_url    TEXT,
     PRIMARY KEY (steam_appid, gid)
 );
 

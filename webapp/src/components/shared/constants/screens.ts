@@ -4,6 +4,7 @@
 export const SCREEN_NAMES = {
   HOME: "home",
   FEED: "feed",
+  NEWS: "news",
   SUMMARY: "summary",
   PEOPLE: "people",
   SETTINGS: "settings",
@@ -15,6 +16,7 @@ export const SCREEN_NAMES = {
 export const SCREENS = {
   home: { name: SCREEN_NAMES.HOME },
   feed: { name: SCREEN_NAMES.FEED },
+  news: { name: SCREEN_NAMES.NEWS },
   summary: { name: SCREEN_NAMES.SUMMARY },
   people: { name: SCREEN_NAMES.PEOPLE },
   settings: { name: SCREEN_NAMES.SETTINGS },
@@ -35,6 +37,7 @@ export type DockTab =
 export const LAUNCH_TABS = [
   SCREEN_NAMES.HOME,
   SCREEN_NAMES.FEED,
+  SCREEN_NAMES.NEWS,
   SCREEN_NAMES.SUMMARY,
 ] as const;
 export type LaunchTab = (typeof LAUNCH_TABS)[number];

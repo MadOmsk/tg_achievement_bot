@@ -9,17 +9,21 @@ import "./FitImg.css";
  * `height` (the default) shows the whole picture top to bottom and crops
  * whatever does not fit sideways; `width` does the opposite — the full width
  * first, the vertical overflow is what gets cropped (HowLongToBeat's covers
- * are portrait, so height-first would leave them a thin strip).
+ * are portrait, so height-first would leave them a thin strip); `contain` shows
+ * all of it, whichever way it is longer (a post's picture: nothing cut).
  */
 export function FitImg({
   src,
   mode = "height",
   kind = "achievement",
+  top = false,
 }: {
   src?: string | null;
-  mode?: "height" | "width";
+  mode?: "height" | "width" | "contain";
   /** Which glyph stands in, centred in the block, when there is no picture. */
   kind?: "game" | "achievement";
+  /** `contain`: a picture wider than the block sits at its top, not its middle. */
+  top?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   const url = (src ?? "").trim();
@@ -39,7 +43,7 @@ export function FitImg({
     );
   }
   return (
-    <span className={`fit-layer is-${mode}`} aria-hidden>
+    <span className={`fit-layer is-${mode}${top ? " is-top" : ""}`} aria-hidden>
       <img
         ref={fade.ref}
         src={url}

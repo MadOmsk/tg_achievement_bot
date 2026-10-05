@@ -820,7 +820,7 @@ elsewhere in this file still describe the bot.
   switch per chat and a switch per game account (#20). Settings → Профиль →
   Приватность has the one privacy setting and the list of blocked people.
 - **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
-  became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
+  became "Рейтинг" beside the feed (a `Достижения | Новости | Рейтинг` switch in the page head — the feed is «Достижения», game news «Новости»; one
   dock tab; the `summary` screen name and `?t=summary` links still work).
   **Scope** (owner, 2026-10-02): there is no chat picker — the Feed, the Ranking, Home's
   strip of people and `/club/online` are always about oneself plus the followed people
@@ -1465,8 +1465,8 @@ sent to a chat.
   `poller/patch_refresh.py`, one game a tick, only for games played in the last 30
   days — so a crowd opening a game, or thousands of games, never means a read each.
 - **Links, videos, pictures** stay in the text: a link as `[label](url)`, a video (a
-  guide's embedded player, a patch's `[previewyoutube]`) and a guide's screenshot as
-  their address alone on a line — the Mini App draws a link, a video card and a
+  guide's embedded player, a post's `[previewyoutube]`) and a picture (a guide's
+  screenshot, a post's `[img]`) as their address alone on a line — the Mini App draws a link, a video card and a
   picture (`webapp/src/components/game/rich-text/RichText.tsx`).
 - **Steam's community site refuses bursts** (429): guide pages are read one at a
   time, 2.5 s apart, for the whole bot; a refusal pauses every read for 90 s. Pages
@@ -1475,12 +1475,51 @@ sent to a chat.
   keeps its tips but not its time stamp. **The guides endpoint never waits for a
   fill**: it starts one in the background and answers with what is stored and
   `complete: false`, and the Mini App asks again until it is true.
-- **Patches**: the developer's own announcements (`GetNewsForApp`, `feeds=
+- **Patches and news**: every post of the developer's own (`GetNewsForApp`, `feeds=
   steam_community_announcements` — on a busy day the default feed is other sites'
-  articles only), a post tagged `patchnotes` or titled like a patch (update, patch,
-  hotfix, a version number; not a demo or playtest). Re-read by
-  `poller/patch_refresh.py` for games somebody earned something in over the last 30
-  days, every `patch_refresh_hours` (6, /admin), three apps a tick.
+  articles only), the last thirty, kept in `game_patches` with its `kind` and first
+  picture (migration 084): a patch is a post tagged `patchnotes` or titled like one
+  (update, patch, hotfix, a version number; not a demo or playtest), anything else
+  is news. The game page's «Обновления» shows the patches; **«Новости»** (owner,
+  2026-10-05; `repo.games_news`, `GET /api/mini/club/news?scope=following&month=`)
+  shows both, untranslated, for the games the viewer and the people they follow
+  earned something in within 60 days before the month's end, newest first, one
+  card per post however many of our games are that Steam app, laid out as the
+  achievements' posts are (days; the game's face and name where a post has its
+  author; the picture edge to edge, all of it seen; the text on frosted glass).
+  A post opens whole on a page of its own over everything, the game page too
+  (`components/game/news-page/NewsPage`: its own scroll and back; the picture,
+  the game, the day, the title, the full text with its pictures, videos and
+  links, then «Открыть в Steam»); a patch in a game's «Обновления» opens on the
+  same page. Its game opens the game.
+- **An achievement has a page of its own** (owner, 2026-10-05;
+  `components/game/achievement-page/AchievementPage`, on the same layout as a
+  post's page, `components/game/post-page/PostPage.css`): a row on the game page
+  opens it (a secret one is revealed first). The game in the head, its rarity and
+  points (or trophy) at the head's right, as the game page shows its score; the
+  picture whole; when it was earned; its name and description; then «Как
+  получить», the Steam guides' tip whole, when there is one — a row with a tip
+  carries the book mark. A post's page puts its kind («Патч», «Новость») at the
+  head's right the same way (`BackHead`'s `aside`).
+- **A picture opens in the app, full screen** (owner, 2026-10-05;
+  `shared/lib/image-viewer`: `openImage(src)`, one `ImageViewerHost` in the app
+  shell): the pictures in a guide's tip, a post or a patch, the picture at the top
+  of a post's or an achievement's page, and a face that zooms. Never on Steam. As
+  large as the screen allows, all of it; two fingers zoom and move it, a double
+  tap zooms in or back; a tap at its own size or the phone's back closes it —
+  nothing is drawn over the picture. The feeds keep their taps (a post opens its game or its page).
+- **A post's frame is its picture's shape** (owner, 2026-10-05; both feeds,
+  `shared/lib/img-ratio`): proportions read when the picture loads and
+  remembered (`localStorage`), kept between 4:5 and 1.91:1; beyond that the
+  picture is whole over its blurred copy. A picture wider than a square
+  (`isWide`) is its own height, edge to edge, and the text comes under it
+  instead of over it; a square or a tall one keeps the text over its foot. A
+  feed's frame is never wider than 1.3:1 (`FEED_RATIO_MAX`): a wider picture
+  keeps its whole height and loses a little of its sides. A post of several
+  achievements takes the first one's shape for every slide. Console exclusives have no Steam
+  app and so no news. Re-read by `poller/patch_refresh.py` for games somebody
+  earned something in over the last 30 days, every `patch_refresh_hours` (6,
+  /admin), three apps a tick.
 
 ## Versioning
 

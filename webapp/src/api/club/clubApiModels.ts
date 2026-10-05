@@ -117,3 +117,27 @@ export type SummaryResponse = {
   month: SummaryMember[];
   games: SummaryGame[];
 };
+
+/** A post of a game's developer on Steam (owner, 2026-10-05), untranslated. */
+export type NewsItem = {
+  gid: string;
+  appid: number;
+  kind: "patch" | "news";
+  title: string;
+  /** ISO date. */
+  date: string;
+  excerpt: string;
+  /** The whole post: pictures and videos on lines of their own. */
+  text: string;
+  image: string | null;
+  /** The post on Steam. */
+  url: string;
+  game: { platform: string; title_id: string; name: string; icon_url: string | null };
+};
+
+export type NewsResponse = {
+  items: NewsItem[];
+  month: string;
+  current_month: string;
+  months: string[];
+};

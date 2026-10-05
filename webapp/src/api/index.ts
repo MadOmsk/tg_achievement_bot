@@ -51,6 +51,7 @@ export const syncXbox = (initData: string) => userApi.syncXbox(initData);
 export const patchChat = (...args: Parameters<typeof userApi.patchChat>) => userApi.patchChat(...args);
 
 export const fetchFeed = (...args: Parameters<typeof clubApi.fetchFeed>) => clubApi.fetchFeed(...args);
+export const fetchNews = (...args: Parameters<typeof clubApi.fetchNews>) => clubApi.fetchNews(...args);
 export const fetchOnline = (...args: Parameters<typeof clubApi.fetchOnline>) => clubApi.fetchOnline(...args);
 export const fetchSummary = (...args: Parameters<typeof clubApi.fetchSummary>) => clubApi.fetchSummary(...args);
 export const fetchPerson = (...args: Parameters<typeof clubApi.fetchPerson>) => clubApi.fetchPerson(...args);

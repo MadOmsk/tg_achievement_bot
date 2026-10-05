@@ -34,6 +34,19 @@
   transform: translateY(-50%);
 }
 
+/* All of it, whichever side is longer; the backdrop fills the rest. */
+.fit-layer.is-contain > img {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* A wide picture against the top edge; the backdrop shows below it only. */
+.fit-layer.is-contain.is-top > img {
+  object-position: 50% 0;
+}
+
 /* No picture: the glyph stands in, centred in the visible block. */
 .fit-layer.is-empty {
   display: grid;

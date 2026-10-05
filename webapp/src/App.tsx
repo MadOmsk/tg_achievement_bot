@@ -38,7 +38,7 @@ import { FOLLOWS_CHANGED } from "./components/people/follow-button/FollowButton"
 import { Login } from "./screens/login";
 import { AddEmailScreen } from "./components/me/logins/AddEmailScreen";
 import { peopleApi } from "./api/people/peopleApi";
-import { AppSkel, GameSkel, Icon, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
+import { AppSkel, GameSkel, Icon, ImageViewerHost, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 // Settings and the connect forms are a few kilobytes and sit behind the dock like
@@ -375,13 +375,14 @@ export function App() {
   const isHome = screen.name === SCREEN_NAMES.HOME;
   const isFeed = screen.name === SCREEN_NAMES.FEED;
   const isSummary = screen.name === SCREEN_NAMES.SUMMARY;
+  const isNews = screen.name === SCREEN_NAMES.NEWS;
   const isPeople = screen.name === SCREEN_NAMES.PEOPLE;
   const isSettings = screen.name === SCREEN_NAMES.SETTINGS;
   const isAdmin = screen.name === SCREEN_NAMES.ADMIN;
   const isConnectSteam = screen.name === SCREEN_NAMES.CONNECT_STEAM;
   const isConnectPsn = screen.name === SCREEN_NAMES.CONNECT_PSN;
   const isSettingsOrAdmin = isSettings || isAdmin;
-  const isClubPane = isHome || isFeed || isSummary;
+  const isClubPane = isHome || isFeed || isSummary || isNews;
   const isConnectScreen = isConnectSteam || isConnectPsn;
 
   const showChrome = !personOpen && isHome;
@@ -389,7 +390,9 @@ export function App() {
     ? SCREEN_NAMES.FEED
     : isSummary
       ? SCREEN_NAMES.SUMMARY
-      : SCREEN_NAMES.HOME;
+      : isNews
+        ? SCREEN_NAMES.NEWS
+        : SCREEN_NAMES.HOME;
   const goHome = () => {
     if (isHome && !personOpen) {
       window.scrollTo(0, 0);
@@ -404,7 +407,7 @@ export function App() {
       tab === SCREEN_NAMES.SETTINGS
         ? isSettingsOrAdmin
         : tab === SCREEN_NAMES.FEED
-          ? (isFeed || isSummary) && !personOpen
+          ? (isFeed || isSummary || isNews) && !personOpen
           : screen.name === tab && !personOpen;
     if (already) {
       window.scrollTo(0, 0);
@@ -437,6 +440,7 @@ export function App() {
       {pullIndicator}
       {busy && <div className="busy-bar" />}
       <Toaster />
+      <ImageViewerHost closeLabel={t(locale, "close")} />
 
       {/* Kept mounted (just hidden) off the club pane, not unmounted:
           leaving it and coming back — e.g. through Settings — used to reset
@@ -639,7 +643,7 @@ export function App() {
             className="dock-pill"
             style={{
               transform: `translateX(${
-                (isSettingsOrAdmin ? 3 : isPeople ? 2 : isFeed || isSummary ? 1 : 0) * 100
+                (isSettingsOrAdmin ? 3 : isPeople ? 2 : isFeed || isSummary || isNews ? 1 : 0) * 100
               }%)`,
             }}
             aria-hidden
@@ -654,11 +658,11 @@ export function App() {
           </button>
           <button
             type="button"
-            className={(isFeed || isSummary) && !personOpen ? "is-on" : undefined}
+            className={(isFeed || isSummary || isNews) && !personOpen ? "is-on" : undefined}
             onClick={() => goTab(SCREEN_NAMES.FEED)}
             aria-label={t(locale, "feed")}
           >
-            <Icon name="feed" filled={(isFeed || isSummary) && !personOpen} />
+            <Icon name="feed" filled={(isFeed || isSummary || isNews) && !personOpen} />
           </button>
           <button
             type="button"

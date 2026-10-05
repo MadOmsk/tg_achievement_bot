@@ -17,6 +17,7 @@ import { AccountBar, Avatar, EmptyState, MonthChipSkel, FeedSkel, FriendsSkel, H
 import {
   ClubStats,
   FriendsStrip,
+  NewsFeed,
   currentMonth,
   formatMonth,
   statusOf,
@@ -376,15 +377,21 @@ export function Club({
     <Dropdown
       className="dd-trigger pane-switch"
       align="start"
-      value={pane === SCREEN_NAMES.SUMMARY ? SCREEN_NAMES.SUMMARY : SCREEN_NAMES.FEED}
+      value={pane === SCREEN_NAMES.HOME ? SCREEN_NAMES.FEED : pane}
       options={[
-        { value: SCREEN_NAMES.FEED, label: t(locale, "feed") },
+        { value: SCREEN_NAMES.FEED, label: t(locale, "achievementsTab") },
+        { value: SCREEN_NAMES.NEWS, label: t(locale, "news") },
         { value: SCREEN_NAMES.SUMMARY, label: t(locale, "ranking") },
       ]}
       onChange={(next) => onPane(next)}
       trigger={
         <>
-          <h1>{t(locale, pane === SCREEN_NAMES.SUMMARY ? "ranking" : "feed")}</h1>
+          <h1>
+            {t(
+              locale,
+              pane === SCREEN_NAMES.SUMMARY ? "ranking" : pane === SCREEN_NAMES.NEWS ? "news" : "achievementsTab",
+            )}
+          </h1>
           <DropdownArrow />
         </>
       }
@@ -687,6 +694,20 @@ export function Club({
               onOpenPerson={openPerson}
             />
           )}
+        </>
+      )}
+
+      {pane === SCREEN_NAMES.NEWS && (
+        <>
+          <header className="page-head is-split">
+            {paneSwitch}
+            {clubReady ? (
+              monthChip(selectedMonth)
+            ) : (
+              <MonthChipSkel label={formatMonth(selectedMonth || currentMonth(), locale, "chip")} />
+            )}
+          </header>
+          <NewsFeed data={data} locale={locale} month={selectedMonth || currentMonth()} />
         </>
       )}
 

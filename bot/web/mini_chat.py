@@ -17,6 +17,7 @@ from bot.db.repo import (
     User,
     UserChatRow,
 )
+from bot.db.repo._sql import MEMBERS_CHAT, pick_name
 from bot.i18n import translator
 from bot.services.achievement_icons import format_achievement_icon_url
 from bot.services.naming import person_name, xbox_nickname
@@ -582,4 +583,75 @@ def _stat_json(row: ChatMemberStat) -> dict[str, Any]:
         "xbox": row.xbox_count,
         "steam": row.steam_count,
         "psn": row.psn_count,
+    }
+
+
+# Game news (owner, 2026-10-05): what the developers of the games one's circle
+# plays posted on Steam that month. A game counts if somebody earned something
+# in it within this long before the month ended — a patch for last month's game
+# is news too.
+NEWS_PLAYED_DAYS = 60
+NEWS_MAX = 200
+NEWS_EXCERPT = 220
+_MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_BARE_URL = re.compile(r"^https?://\S+$")
+
+
+def _news_excerpt(text: str | None) -> str:
+    """The start of a post as plain words: links keep their label, a line that
+    is only an address (a video, a picture) goes."""
+    if not text:
+        return ""
+    lines = [
+        _MD_LINK.sub(r"\1", line).strip()
+        for line in text.splitlines()
+        if not _BARE_URL.match(line.strip())
+    ]
+    words = " ".join(line.lstrip("- ").strip() for line in lines if line.strip())
+    if len(words) <= NEWS_EXCERPT:
+        return words
+    return words[:NEWS_EXCERPT].rsplit(" ", 1)[0].rstrip(",;:-") + "…"
+
+
+async def build_news_payload(
+    repo: Repo, *, members: list[int], month: str | None, tz_of: int | None, locale: str
+) -> dict[str, Any]:
+    key, _since, until, current, _month_num = await _club_month(
+        repo, MEMBERS_CHAT, month, tz_of=tz_of, scoped=True
+    )
+    year, month_num = (int(part) for part in key.split("-"))
+    first = f"{key}-01"
+    after = f"{year + month_num // 12:04d}-{month_num % 12 + 1:02d}-01"
+    rows = await repo.games_news(
+        members,
+        played_since=(until - timedelta(days=NEWS_PLAYED_DAYS)).isoformat(timespec="seconds"),
+        since=first,
+        until=after,
+        limit=NEWS_MAX,
+    )
+    return {
+        "items": [
+            {
+                "gid": row.gid,
+                "appid": row.steam_appid,
+                "kind": row.kind,
+                "title": row.title,
+                "date": row.published_at,
+                "excerpt": _news_excerpt(row.text_en),
+                # The whole post, pictures and videos as their own lines.
+                "text": row.text_en or "",
+                "image": _https_url(row.image_url),
+                "url": f"https://store.steampowered.com/news/app/{row.steam_appid}/view/{row.gid}",
+                "game": {
+                    "platform": row.platform,
+                    "title_id": row.title_id,
+                    "name": pick_name(locale, row.game_ru, row.game_en, row.game),
+                    "icon_url": _https_url(row.game_icon_url),
+                },
+            }
+            for row in rows
+        ],
+        "month": key,
+        "current_month": current,
+        "months": await _month_choices(repo, MEMBERS_CHAT, current, key, members=members),
     }
