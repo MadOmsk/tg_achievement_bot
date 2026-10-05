@@ -17,9 +17,9 @@ async def test_card_shows_a_psn_resync_button_when_psn_is_linked(repo: Repo) -> 
     await repo.ensure_user(1, "igor")
     await repo.link_platform_account(await repo.person_id(1), "psn", ACCOUNT_ID, "Gamer")
 
-    _text, markup = await render_user_card(repo, 1, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
-    assert f"a:sync:psn:1:{ACCOUNT_ID}" in _callback_datas(markup)
+    assert f"a:sync:psn:p1:{ACCOUNT_ID}" in _callback_datas(markup)
 
 
 async def test_card_has_a_block_and_buttons_per_psn_account(repo: Repo) -> None:
@@ -29,11 +29,11 @@ async def test_card_has_a_block_and_buttons_per_psn_account(repo: Repo) -> None:
     await repo.link_platform_account(await repo.person_id(1), "psn", ACCOUNT_ID, "Gamer")
     await repo.link_platform_account(await repo.person_id(1), "psn", "psn-acc-2", "Second")
 
-    text, markup = await render_user_card(repo, 1, locale="ru")
+    text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     assert text.index("PSN: Gamer") < text.index("PSN: Second")
     datas = _callback_datas(markup)
-    assert f"a:sync:psn:1:{ACCOUNT_ID}" in datas and "a:reset:psn:1:psn-acc-2" in datas
+    assert f"a:sync:psn:p1:{ACCOUNT_ID}" in datas and "a:reset:psn:p1:psn-acc-2" in datas
     texts = [btn.text for row in markup.inline_keyboard for btn in row]
     assert "🔄 Обновить PSN: Second" in texts
 
@@ -44,8 +44,8 @@ async def test_card_has_no_psn_resync_button_without_a_psn_link(repo: Repo) -> N
         await repo.person_id(1), "steam", "76561197960287930", "SteamOnly"
     )
 
-    _text, markup = await render_user_card(repo, 1, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     datas = _callback_datas(markup)
-    assert "a:sync:steam:1" in datas
+    assert "a:sync:steam:p1" in datas
     assert not any(d.startswith("a:sync:psn:") for d in datas)

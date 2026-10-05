@@ -55,7 +55,7 @@ async def test_admin_users_includes_visibility_status_for_steam_and_psn(repo: Re
     assert users[0].psn_achievements_visible is True
 
 
-async def test_achievement_counts_by_tg_id_sums_every_platform(repo: Repo) -> None:
+async def test_achievement_counts_by_person_sums_every_platform(repo: Repo) -> None:
     """The admin users list's own combined counter — used to be
     achievement_counts_by_xuid, which showed 0 for a Steam-only person and
     only the Xbox half for someone with both."""
@@ -99,7 +99,7 @@ async def test_achievement_counts_by_tg_id_sums_every_platform(repo: Repo) -> No
         is_backfill=False,
     )
 
-    counts = await repo.achievement_counts_by_tg_id(None)
+    counts = await repo.achievement_counts_by_person(None)
 
     assert counts[1] == (2, 10)
 

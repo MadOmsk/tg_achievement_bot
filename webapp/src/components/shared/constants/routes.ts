@@ -50,7 +50,8 @@ export const ADMIN_ROUTES = {
   LIMITS: "/limits",
   DEFAULTS: "/defaults",
   USERS: "/users",
-  USER: (tgId: number) => `/users/${tgId}`,
+  /** A person by their own id (#156): somebody who signed in by email has no Telegram id. */
+  USER: (personId: number) => `/users/p${personId}`,
   CHATS: "/chats",
   CHAT: (chatId: number) => `/chats/${chatId}`,
   CHAT_ACTIONS: (chatId: number) => `/chats/${chatId}/actions`,

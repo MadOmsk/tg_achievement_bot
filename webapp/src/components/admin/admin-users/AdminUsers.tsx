@@ -13,7 +13,7 @@ export function AdminUsers({
 }: {
   data: string;
   locale: Locale;
-  onSelectUser: (tgId: number) => void;
+  onSelectUser: (personId: number) => void;
   onBack: () => void;
   onFail: (err: unknown) => void;
 }) {
@@ -59,7 +59,7 @@ export function AdminUsers({
             <Group>
               {shown.map((row) => (
                 <NavRow
-                  key={row.tg_id}
+                  key={row.person_id}
                   label={row.name}
                   sub={[
                     `${t(locale, "usersToday")} ${row.today}`,
@@ -75,7 +75,7 @@ export function AdminUsers({
                       {row.steam && <PlatformLogo platform={PLATFORMS.STEAM} size={16} />}
                     </span>
                   }
-                  onClick={() => onSelectUser(row.tg_id)}
+                  onClick={() => onSelectUser(row.person_id)}
                 />
               ))}
             </Group>

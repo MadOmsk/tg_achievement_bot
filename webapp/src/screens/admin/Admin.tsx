@@ -57,7 +57,7 @@ export function Admin({
         <AdminUsers
           data={data}
           locale={locale}
-          onSelectUser={(tgId) => setScreen({ name: ADMIN_SCREENS.USER, tgId })}
+          onSelectUser={(personId) => setScreen({ name: ADMIN_SCREENS.USER, personId })}
           onBack={onBack}
           onFail={fail}
         />
@@ -66,7 +66,7 @@ export function Admin({
       return (
         <AdminUserDetail
           data={data}
-          tgId={screen.tgId}
+          personId={screen.personId}
           locale={locale}
           onBack={() => setScreen({ name: ADMIN_SCREENS.USERS })}
           onFail={fail}

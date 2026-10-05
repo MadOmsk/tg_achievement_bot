@@ -32,6 +32,6 @@ export type AdminScreen =
   | { name: typeof A.LIMITS }
   | { name: typeof A.DEFAULTS }
   | { name: typeof A.USERS }
-  | { name: typeof A.USER; tgId: number }
+  | { name: typeof A.USER; personId: number }
   | { name: typeof A.CHATS }
   | { name: typeof A.CHAT; chatId: number };

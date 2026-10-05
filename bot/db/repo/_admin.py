@@ -98,7 +98,7 @@ class _AdminRepo:
         `WHERE u.xuid IS NOT NULL`, which hid every Steam-only person from
         the admin panel entirely."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
@@ -117,6 +117,7 @@ class _AdminRepo:
         return [
             AdminUserRow(
                 tg_id=row["tg_id"],
+                person_id=row["person_id"],
                 gamertag=row["gamertag"],
                 username=row["username"],
                 xuid=row["xuid"],
@@ -163,17 +164,17 @@ class _AdminRepo:
             by_user.setdefault(int(row["tg_id"]), []).append(int(row["chat_id"]))
         return by_user
 
-    async def set_excluded(self, tg_id: int, excluded: bool, by: int | None) -> None:
+    async def set_excluded(self, person_id: int, excluded: bool, by: int | None) -> None:
         """Exclusion is never silent: the person sees it in his panel (SPEC 6.4)."""
         await self._conn.execute(
             "UPDATE users SET is_excluded = ?, excluded_by = ?, excluded_at = ?, updated_at = ? "
-            "WHERE tg_id = ?",
+            "WHERE id = ?",
             (
                 1 if excluded else 0,
                 by if excluded else None,
                 utcnow_iso() if excluded else None,
                 utcnow_iso(),
-                tg_id,
+                person_id,
             ),
         )
         await self._conn.commit()

@@ -144,3 +144,26 @@ async def test_a_persons_page_needs_no_chat_but_keeps_privacy(repo: Repo, settin
         assert [game["title_id"] for game in seen["games"]] == ["440"]
     finally:
         await client.close()
+
+
+async def test_the_admin_manages_somebody_without_telegram(repo: Repo, settings) -> None:
+    ada = await _email_player(repo)
+    admin = await repo.ensure_user(500, "boss")
+    assert admin is not None
+    settings.admin_tg_ids = [500]
+    client = await _client(repo, settings)
+    try:
+        await _sign_in_as(client, repo, admin)
+        users = (await (await client.get("/api/mini/admin/users")).json())["users"]
+        [row] = [u for u in users if u["person_id"] == ada]
+        assert row["tg_id"] is None and row["month"] == 2
+
+        card = await (await client.get(f"/api/mini/admin/users/p{ada}")).json()
+        assert (card["person_id"], card["email"]) == (ada, "ada@example.com")
+        excluded = await client.patch(f"/api/mini/admin/users/p{ada}", json={"excluded": True})
+        assert (await excluded.json())["is_excluded"] is True
+
+        assert (await client.delete(f"/api/mini/admin/users/p{ada}")).status == 200
+        assert await repo.get_user(ada) is None
+    finally:
+        await client.close()

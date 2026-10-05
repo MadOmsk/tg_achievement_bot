@@ -50,7 +50,7 @@ async def test_header_shows_nickname_username_and_tg_id_not_the_real_name(repo: 
     await repo.ensure_user(7, "igorp", "Igor", "Petrov")
     await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
 
-    text, _markup = await render_user_card(repo, 7, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
 
     header = text.split("\n")[0]
     assert "igorp" in header.replace("@igorp", "")  # the nickname made from the username
@@ -65,7 +65,7 @@ async def test_header_tgid_is_never_at_prefixed(repo: Repo) -> None:
     await repo.ensure_user(7, None, None, None)
     await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
 
-    text, _markup = await render_user_card(repo, 7, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
 
     header = text.split("\n")[0]
     assert "tg_id 7" in header
@@ -80,7 +80,7 @@ async def test_header_tgid_has_no_thousands_separators(repo: Repo) -> None:
     await repo.ensure_user(127383366, "whalerider84", None, None)
     await repo.link_xbox_account(await repo.person_id(127383366), XUID, "GamerTag", 0)
 
-    text, _markup = await render_user_card(repo, 127383366, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(127383366), locale="ru")
 
     assert "tg_id 127383366" in text.splitlines()[0]
 
@@ -90,7 +90,7 @@ async def test_xbox_block_shows_id_count_today_and_gamerscore(repo: Repo) -> Non
     await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 500)
     await repo.insert_new_achievements(XUID, [_achievement("1", "xbox_modern")], is_backfill=False)
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     block = _block(text, "XBOX:")
     assert "GamerTag" in block[0]
@@ -113,7 +113,7 @@ async def test_steam_block_shows_id_and_count(repo: Repo) -> None:
         is_backfill=False,
     )
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     block = _block(text, "Steam:")
     assert "SteamPerson" in block[0]
@@ -133,7 +133,7 @@ async def test_steam_status_line_shows_visibility_not_nickname(repo: Repo) -> No
     )
     await repo.set_achievements_visible(await repo.person_id(1), "steam", True)
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     status_line = _block(text, "Steam:")[2]
     assert "ачивки видны" in status_line
@@ -151,7 +151,7 @@ async def test_psn_block_shows_trophies_wording_and_level(repo: Repo) -> None:
         is_backfill=False,
     )
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     block = _block(text, "PSN:")
     assert "PsnPerson" in block[0]
@@ -170,7 +170,7 @@ async def test_psn_block_shows_last_online_from_the_presence_poller(repo: Repo) 
     await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
     await repo.save_psn_presence_state("acc-1", "Online", "CUSA14296_00", "Rust", changed=True)
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     online_line = _block(text, "PSN:")[4]
     assert "Rust" in online_line
@@ -181,7 +181,7 @@ async def test_psn_status_line_shows_visibility_not_nickname(repo: Repo) -> None
     await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
     await repo.set_achievements_visible(await repo.person_id(1), "psn", False)
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     status_line = _block(text, "PSN:")[2]
     assert "ачивки скрыты" in status_line
@@ -198,7 +198,7 @@ async def test_blocks_appear_in_the_one_display_order(repo: Repo) -> None:
     )
     await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     assert text.index("XBOX:") < text.index("PSN:") < text.index("Steam:")
 
@@ -213,20 +213,20 @@ async def test_reset_button_appears_next_to_each_connected_platforms_refresh_but
     )
     await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
 
-    _text, markup = await render_user_card(repo, 1, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     datas = _callback_datas(markup)
-    assert "a:sync:xbox:1" in datas and "a:reset:xbox:1" in datas
-    assert "a:sync:steam:1" in datas and "a:reset:steam:1" in datas
+    assert "a:sync:xbox:p1" in datas and "a:reset:xbox:p1" in datas
+    assert "a:sync:steam:p1" in datas and "a:reset:steam:p1" in datas
     # PSN names its account (#10): a person may hold several.
-    assert "a:sync:psn:1:acc-1" in datas and "a:reset:psn:1:acc-1" in datas
+    assert "a:sync:psn:p1:acc-1" in datas and "a:reset:psn:p1:acc-1" in datas
 
 
 async def test_no_reset_buttons_for_platforms_never_connected(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 0)
 
-    _text, markup = await render_user_card(repo, 1, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     datas = _callback_datas(markup)
     assert not any(d.startswith("a:reset:steam") or d.startswith("a:reset:psn") for d in datas)
@@ -348,7 +348,7 @@ async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatc
     assert drawn, "the prompt never rendered"
     text, markup = drawn[0]
     assert "PSN: PsnPerson" in text
-    assert "a:resetok:psn:1:acc-1" in _callback_datas(markup)
+    assert "a:resetok:psn:p1:acc-1" in _callback_datas(markup)
 
 
 async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> None:
@@ -388,10 +388,10 @@ async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> Non
 async def test_admin_card_has_delete_user_button(repo: Repo) -> None:
     await repo.ensure_user(7, "someone")
     await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
-    _text, markup = await render_user_card(repo, 7, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
     datas = _callback_datas(markup)
-    assert "a:udel:7" in datas
-    assert datas[-2] == "a:udel:7"
+    assert "a:udel:p1" in datas
+    assert datas[-2] == "a:udel:p1"
     assert datas[-1] == "a:users:0"
 
 
@@ -412,19 +412,19 @@ async def test_admin_delete_user_flow(repo: Repo, i18n, monkeypatch) -> None:
     await admin_handlers.admin_delete_user_step1(cb1, repo, i18n)  # type: ignore[arg-type]
     assert len(drawn) == 1
     _text1, markup1 = drawn[-1]
-    assert "a:udel1:7" in _callback_datas(markup1)
-    assert "a:u:7" in _callback_datas(markup1)
+    assert "a:udel1:p1" in _callback_datas(markup1)
+    assert "a:u:p1" in _callback_datas(markup1)
 
     # Step 2
-    cb2 = _FakeCallback("a:udel1:7")
+    cb2 = _FakeCallback("a:udel1:p1")
     await admin_handlers.admin_delete_user_step2(cb2, repo, i18n)  # type: ignore[arg-type]
     assert len(drawn) == 2
     _text2, markup2 = drawn[-1]
-    assert "a:udel2:7" in _callback_datas(markup2)
-    assert "a:u:7" in _callback_datas(markup2)
+    assert "a:udel2:p1" in _callback_datas(markup2)
+    assert "a:u:p1" in _callback_datas(markup2)
 
     # Confirm
-    cb3 = _FakeCallback("a:udel2:7")
+    cb3 = _FakeCallback("a:udel2:p1")
     await admin_handlers.admin_delete_user_confirmed(cb3, repo, i18n)  # type: ignore[arg-type]
     assert len(drawn) == 3
     assert cb3.answers

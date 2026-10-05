@@ -874,8 +874,12 @@ elsewhere in this file still describe the bot.
   `p<person id>` (`services/mini_app.py`); a button posted before carries
   `u<tg id>`, which the app still reads and turns into the person
   (`/api/mini/people/tg/{tg_id}`) — only an old button straight to a game opens on
-  the viewer's own progress. The admin's screens stay on Telegram ids (admins are
-  Telegram, `ADMIN_TG_IDS`).
+  the viewer's own progress. **The admin is named by Telegram id** (`ADMIN_TG_IDS`);
+  **the people the admin manages, by person id** — somebody who signed in by email
+  has no Telegram id: `/admin`'s buttons carry `p<person id>` (`a:u:p12`, a bare
+  number from a button drawn before is a Telegram id and still works), the Mini
+  App's admin `/api/mini/admin/users/p<person id>`, and the roster's day and month
+  counts are per person.
   - Connecting Xbox from the browser works without Telegram: the pending login is
     keyed by the person (`ConnectService`), and with no Telegram id the history is
     read quietly instead of with a status DM.
@@ -1051,7 +1055,8 @@ keyboard.
   Settings: digest size (#126), summary time, timezone, mutes,
   minimum gamerscore, summary switch, anti-flood, language (#48).
 - **The per-user card**: the Telegram identity in full (`tg_id` passed to Fluent as a
-  string, never `@N`), then one block per platform in the display order — nickname,
+  string, never `@N`) — or the email of somebody who has no Telegram — then one block
+  per platform in the display order — nickname,
   lifetime count with completions (🌀/👾/💠) and level, today's count, diagnostics.
 - **"🔄 Обновить"** is the only UI path besides `/panel`'s sync that calls a platform
   outside a background job: presence, the current game, then a catch-up since the

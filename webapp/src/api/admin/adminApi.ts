@@ -53,12 +53,12 @@ export class AdminApi extends BaseApi {
     return this.get(initData, ADMIN_ROUTES.USERS);
   }
 
-  fetchUser(initData: string, tgId: number): Promise<AdminUserCard> {
-    return this.get<AdminUserCard>(initData, ADMIN_ROUTES.USER(tgId));
+  fetchUser(initData: string, personId: number): Promise<AdminUserCard> {
+    return this.get<AdminUserCard>(initData, ADMIN_ROUTES.USER(personId));
   }
 
-  patchUser(initData: string, tgId: number, body: Record<string, unknown>): Promise<AdminUserCard> {
-    return this.patch<AdminUserCard>(initData, ADMIN_ROUTES.USER(tgId), body);
+  patchUser(initData: string, personId: number, body: Record<string, unknown>): Promise<AdminUserCard> {
+    return this.patch<AdminUserCard>(initData, ADMIN_ROUTES.USER(personId), body);
   }
 
   fetchChats(initData: string): Promise<{ chats: AdminChatRow[] }> {

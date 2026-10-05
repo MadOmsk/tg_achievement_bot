@@ -129,14 +129,14 @@ async def test_the_super_admin_can_take_a_picture_down(
     monkeypatch.chdir(tmp_path)
     await repo.ensure_user(7, "player7")
     await repo.link_xbox_account(await repo.person_id(7), "x7", "Tag7", 100)
-    _text, markup = await render_user_card(repo, 7, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
     data = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert "a:avclr:7" not in data
+    assert "a:avclr:p1" not in data
 
     await custom_avatars.store(repo, await repo.person_id(7), _photo())
-    _text, markup = await render_user_card(repo, 7, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
     data = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert "a:avclr:7" in data
+    assert "a:avclr:p1" in data
 
     answered: list[str] = []
     redrawn: list[object] = []

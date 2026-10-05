@@ -131,14 +131,15 @@ async def build_admin_defaults(repo: Repo) -> dict[str, Any]:
 
 async def build_admin_users(repo: Repo) -> dict[str, Any]:
     users = await repo.admin_users()
-    today = await repo.achievement_counts_by_tg_id(today_cutoff_utc())
-    month = await repo.achievement_counts_by_tg_id(month_cutoff_utc(180))
+    today = await repo.achievement_counts_by_person(today_cutoff_utc())
+    month = await repo.achievement_counts_by_person(month_cutoff_utc(180))
     chats = await repo.admin_chats()
     by_chat = await repo.admin_user_chat_ids()
     rows = []
     for user in users:
         rows.append(
             {
+                "person_id": user.person_id,
                 "tg_id": user.tg_id,
                 "name": person_name(
                     tg_id=user.tg_id,
@@ -155,8 +156,8 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
                 "last_name": user.last_name,
                 "is_excluded": user.is_excluded,
                 "last_online_at": user.last_online_at,
-                "today": today.get(user.tg_id, (0, 0))[0],
-                "month": month.get(user.tg_id, (0, 0))[0],
+                "today": today.get(user.person_id, (0, 0))[0],
+                "month": month.get(user.person_id, (0, 0))[0],
                 "xbox": bool(user.xuid),
                 "steam": bool(user.steam_id),
                 "psn": bool(user.psn_account_id),
@@ -169,11 +170,10 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
     }
 
 
-async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
-    user = await repo.get_user_by_tg(tg_id)
-    if user is None or user.id is None:
+async def build_admin_user(repo: Repo, person: int) -> dict[str, Any] | None:
+    user = await repo.get_user(person)
+    if user is None:
         return None
-    person = user.id
     steam = await repo.get_platform_link(person, Platform.STEAM)
     psn_links = await repo.platform_links_for(person, Platform.PSN)
     psn = psn_links[0] if psn_links else None
@@ -222,9 +222,11 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
             ],
         }
     return {
-        "tg_id": tg_id,
+        "person_id": person,
+        "tg_id": user.tg_id,
+        "email": user.email,
         "name": person_name(
-            tg_id=tg_id,
+            tg_id=user.tg_id,
             handle=user.handle,
             username=user.username,
             xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
@@ -281,10 +283,10 @@ def setup_admin_routes(app: web.Application) -> None:
     app.router.add_get("/api/mini/admin/defaults", handle_admin_defaults)
     app.router.add_patch("/api/mini/admin/defaults", handle_admin_defaults_patch)
     app.router.add_get("/api/mini/admin/users", handle_admin_users)
-    app.router.add_get("/api/mini/admin/users/{tg_id}", handle_admin_user)
-    app.router.add_patch("/api/mini/admin/users/{tg_id}", handle_admin_user_patch)
-    app.router.add_delete("/api/mini/admin/users/{tg_id}", handle_admin_user_delete)
-    app.router.add_post("/api/mini/admin/users/{tg_id}/delete", handle_admin_user_delete)
+    app.router.add_get("/api/mini/admin/users/{ref}", handle_admin_user)
+    app.router.add_patch("/api/mini/admin/users/{ref}", handle_admin_user_patch)
+    app.router.add_delete("/api/mini/admin/users/{ref}", handle_admin_user_delete)
+    app.router.add_post("/api/mini/admin/users/{ref}/delete", handle_admin_user_delete)
     app.router.add_get("/api/mini/admin/chats", handle_admin_chats)
     app.router.add_patch("/api/mini/admin/chats/{chat_id}", handle_admin_chat_patch)
     app.router.add_post("/api/mini/admin/chats/{chat_id}/actions", handle_admin_chat_action)
@@ -428,10 +430,24 @@ async def handle_admin_users(request: web.Request) -> web.Response:
     return web.json_response(await build_admin_users(repo))
 
 
+async def _person_of(request: web.Request) -> int:
+    """The person a user route is about: `p<person id>` (#156), or the bare
+    Telegram id older screens sent."""
+    repo: Repo = request.app["mini_repo"]
+    raw = request.match_info["ref"]
+    try:
+        person = int(raw[1:]) if raw.startswith("p") else await repo.person_id(int(raw))
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad person") from exc
+    if person is None:
+        raise web.HTTPNotFound()
+    return person
+
+
 async def handle_admin_user(request: web.Request) -> web.Response:
     await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
-    payload = await build_admin_user(repo, int(request.match_info["tg_id"]))
+    payload = await build_admin_user(repo, await _person_of(request))
     if payload is None:
         raise web.HTTPNotFound()
     return web.json_response(payload)
@@ -440,16 +456,16 @@ async def handle_admin_user(request: web.Request) -> web.Response:
 async def handle_admin_user_patch(request: web.Request) -> web.Response:
     admin = await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
-    tg_id = int(request.match_info["tg_id"])
+    person = await _person_of(request)
     body = await request.json()
     if "excluded" in body:
-        await repo.set_excluded(tg_id, bool(body["excluded"]), admin.tg_id)
+        await repo.set_excluded(person, bool(body["excluded"]), admin.tg_id)
     action = body.get("action")
     platform = str(body.get("platform") or "")
     if action in ("sync", "reset") and platform in ("xbox", "steam", "psn"):
         account_id = str(body.get("account_id") or "").strip() or None
-        await _admin_platform_action(request, tg_id, platform, action, account_id)
-    payload = await build_admin_user(repo, tg_id)
+        await _admin_platform_action(request, person, platform, action, account_id)
+    payload = await build_admin_user(repo, person)
     if payload is None:
         raise web.HTTPNotFound()
     return web.json_response(payload)
@@ -458,8 +474,7 @@ async def handle_admin_user_patch(request: web.Request) -> web.Response:
 async def handle_admin_user_delete(request: web.Request) -> web.Response:
     await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
-    tg_id = int(request.match_info["tg_id"])
-    deleted = await repo.delete_user(tg_id, is_admin=True)
+    deleted = await repo.delete_person(await _person_of(request), is_admin=True)
     if not deleted:
         raise web.HTTPNotFound()
     return web.json_response({"ok": True})
@@ -556,15 +571,12 @@ async def handle_admin_chat_action(request: web.Request) -> web.Response:
 
 
 async def _admin_platform_action(
-    request: web.Request, tg_id: int, platform: str, action: str, account_id: str | None = None
+    request: web.Request, person: int, platform: str, action: str, account_id: str | None = None
 ) -> None:
     repo: Repo = request.app["mini_repo"]
     xbox = request.app.get("mini_xbox_fetcher")
     steam_fetcher = request.app.get("mini_steam_fetcher")
     psn_fetcher = request.app.get("mini_psn_fetcher")
-    person = await repo.person_id(tg_id)
-    if person is None:
-        raise web.HTTPNotFound(text="no such person")
     locale = await repo.user_locale(person)
     if platform == "xbox":
         user = await repo.get_user(person)
@@ -574,7 +586,7 @@ async def _admin_platform_action(
             await repo.reset_xbox_data(person, user.xuid)
             await xbox.backfill(person, user.xuid)
         else:
-            await xbox.refresh_user(person, user.xuid, user.gamertag or f"id{tg_id}", locale)
+            await xbox.refresh_user(person, user.xuid, user.gamertag or f"id{person}", locale)
         return
     if platform == "steam":
         link = await repo.get_platform_link(person, Platform.STEAM)

@@ -372,6 +372,8 @@ class AdminUserRow:
     gamertag_modern: str | None = None
     steam_achievements_visible: bool | None = None
     psn_achievements_visible: bool | None = None
+    # The person's own id (#156): the admin's buttons name them by it.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)

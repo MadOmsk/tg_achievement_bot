@@ -121,7 +121,7 @@ async def test_the_admin_roster_counters_follow_the_same_rule(repo: Repo) -> Non
     await _subscribed_person(repo)
     await _store(repo, [_row("a1", unlocked_at=None)], is_backfill=True)
 
-    by_person = await repo.achievement_counts_by_tg_id(month_cutoff_utc(180))
+    by_person = await repo.achievement_counts_by_person(month_cutoff_utc(180))
     assert by_person.get(TG_ID, (0, 0))[0] == 0
 
 

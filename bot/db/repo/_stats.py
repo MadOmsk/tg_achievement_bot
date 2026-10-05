@@ -490,21 +490,21 @@ class _StatsRepo:
         cursor = await self._conn.execute(query + " GROUP BY xuid", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
 
-    async def achievement_counts_by_tg_id(
+    async def achievement_counts_by_person(
         self, since: datetime | None
     ) -> dict[int, tuple[int, int]]:
         """Same as `achievement_counts_by_xuid`, but summed across every
         platform a person has connected (SPEC 9, M-Steam-2e) — the admin
         users list's own combined counters (2026-09-05 follow-up): the list
         used to show `achievement_counts_by_xuid`'s Xbox-only numbers even
-        for someone with Steam achievements too."""
+        for someone with Steam achievements too. Keyed by person id (#156)."""
         query = (
-            "SELECT alu.tg_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
+            "SELECT al.person_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
             "FROM seen_achievements s " + OWNED_BY_PERSON
         )
         params: list[object] = []
         if since is not None:
             query += f"WHERE {earned_since()}"
             params.append(_iso(since))
-        cursor = await self._conn.execute(query + " GROUP BY alu.tg_id", params)
+        cursor = await self._conn.execute(query + " GROUP BY al.person_id", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
