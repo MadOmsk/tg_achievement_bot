@@ -36,18 +36,46 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
   return (await navigator.serviceWorker.getRegistration(import.meta.env.BASE_URL)) ?? null;
 }
 
-export async function pushState(data: string): Promise<PushState> {
+const LAST_STATE_KEY = "push-state";
+
+function remember(state: PushState): PushState {
+  try {
+    localStorage.setItem(LAST_STATE_KEY, state);
+  } catch {
+    // Private mode: the next screen asks again.
+  }
+  return state;
+}
+
+/** What can be told at once, without the server or the service worker: the
+ * device's own limits, else what this device was the last time it was asked.
+ * The screen draws it straight away and `pushState` corrects it. */
+export function quickPushState(): PushState {
   if (window.Telegram?.WebApp?.initData) return "telegram";
   if (isIos() && !standalone()) return "ios-install";
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
     return "unsupported";
   }
-  const key = await notificationsApi.pushKey(data).catch(() => null);
-  if (!key?.available) return "unavailable";
   if (Notification.permission === "denied") return "denied";
+  try {
+    const last = localStorage.getItem(LAST_STATE_KEY) as PushState | null;
+    if (last === "on" || last === "off" || last === "unavailable") return last;
+  } catch {
+    // No storage: assume off until asked.
+  }
+  return Notification.permission === "granted" ? "on" : "off";
+}
+
+export async function pushState(data: string): Promise<PushState> {
+  const quick = quickPushState();
+  if (quick === "telegram" || quick === "ios-install" || quick === "unsupported" || quick === "denied") {
+    return quick;
+  }
+  const key = await notificationsApi.pushKey(data).catch(() => null);
+  if (!key?.available) return remember("unavailable");
   const reg = await registration();
   const sub = await reg?.pushManager.getSubscription();
-  return sub ? "on" : "off";
+  return remember(sub ? "on" : "off");
 }
 
 /** Ask the browser, subscribe with the server's key, and hand the subscription
@@ -67,7 +95,7 @@ export async function enablePush(data: string): Promise<PushState> {
     (await reg.pushManager.getSubscription()) ??
     (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key.public_key) }));
   await notificationsApi.subscribe(data, sub.toJSON());
-  return "on";
+  return remember("on");
 }
 
 export async function disablePush(data: string): Promise<PushState> {
@@ -77,5 +105,5 @@ export async function disablePush(data: string): Promise<PushState> {
     await notificationsApi.unsubscribe(data, sub.endpoint).catch(() => undefined);
     await sub.unsubscribe();
   }
-  return "off";
+  return remember("off");
 }

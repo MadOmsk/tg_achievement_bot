@@ -24,7 +24,7 @@ export function Group({
   children: ReactNode;
 }) {
   return (
-    <section className="fr-group">
+    <section className={title || aside ? "fr-group" : "fr-group is-bare"}>
       {(title || aside) && (
         <div className="fr-head">
           {title && <p className="fr-title">{title}</p>}

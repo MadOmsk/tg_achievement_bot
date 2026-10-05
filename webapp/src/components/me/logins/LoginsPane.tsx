@@ -137,9 +137,9 @@ export function LoginsPane({
     <>
       <BackHead title={t(locale, "logins")} backLabel={t(locale, "back")} onBack={onBack} />
 
-      <Group title={t(locale, "emailTitle")} hint={t(locale, "emailHint")}>
+      <Group title={t(locale, "emailTitle")}>
         {logins.email && !editing ? (
-          <InfoRow label={logins.email}>
+          <InfoRow label={logins.email} sub={t(locale, "emailHint")}>
             {logins.email_available && (
               <button type="button" className="btn sm is-quiet" onClick={() => setEditing(true)}>
                 {t(locale, "emailChangeShort")}
@@ -153,20 +153,16 @@ export function LoginsPane({
         )}
       </Group>
 
-      <Group
-        title="Telegram"
-        hint={
-          !logins.telegram.linked
-            ? t(locale, "telegramWhy")
-            : logins.telegram.blocked
-              ? t(locale, BLOCKED[logins.telegram.blocked])
-              : undefined
-        }
-      >
+      <Group title="Telegram">
         {logins.telegram.linked ? (
-          <InfoRow label={t(locale, "telegramLinked")} value={logins.telegram.username ?? undefined} />
+          <InfoRow
+            label={t(locale, "telegramLinked")}
+            sub={logins.telegram.blocked ? t(locale, BLOCKED[logins.telegram.blocked]) : undefined}
+            value={logins.telegram.username ?? undefined}
+          />
         ) : (
           <>
+            <InfoRow label={t(locale, "telegramNotLinked")} sub={t(locale, "telegramWhy")} />
             {bot && (
               <div className="logins-widget">
                 <TelegramLogin bot={bot} onAuth={linkTelegram} />

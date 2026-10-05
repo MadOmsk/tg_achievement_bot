@@ -956,9 +956,11 @@ elsewhere in this file still describe the bot.
     «Прочитать все» (no `ids`). A tap opens what it is about: a new post's game
     on the author's progress (`game` in the list, `g=` beside `p=` in a push's
     URL — `Kind.game`), else the person.
-    Settings → «Уведомления»: where (push on/off, this device's own state with
-    «Включить»/«Отключить», Telegram messages — or «Привязать» without Telegram) and
-    what about (new followers). `components/me/notifications/push.ts` says why a
+    Settings → «Уведомления»: where (Telegram messages — or «Привязать» without
+    Telegram — then one push switch: this device subscribed or not; owner,
+    2026-10-05) and what about (new followers, new posts). A hint under a setting
+    is its row's second line, never a note under the group, unless it is about a
+    choice among the group's rows. `components/me/notifications/push.ts` says why a
     device cannot get pushes, each worded: inside Telegram (the bot's DMs are the
     notices there), an iPhone page not on the Home Screen (Safari pushes only
     then), a browser without push, push not set up on the server, or blocked in
@@ -976,11 +978,11 @@ elsewhere in this file still describe the bot.
   screens and nothing else — a switch or a picker lives one screen in. Each row
   starts with its glyph (`RowGlyph`, bare, no tile; the profile row with the
   face) and says in its second line what is inside. The profile card opens
-  «Профиль» — «Как видят другие», the game accounts, «Вход», «Приватность», then
+  «Профиль» — «Как видят другие», «Вход», «Приватность», the game accounts, then
   «Выйти» / «Удалить аккаунт»; then «Посты в чатах» (what of yours goes to the
   chats — named so, not «Публикация», to tell it from what is sent to you),
   «Уведомления», «Общие» (language, timezone, secret achievements); the admin's
-  screens, the API load on «Ключи» beside the keys. Inside a screen, a row
+  screens, the API load on «Ключи» beside the keys; «Пригласить друга» last. Inside a screen, a row
   shows its current choice on the right where there is one. Back from a
   profile screen is the profile; back from connecting an account opens it too
   (its notes are there). The follows drawer also lists the people one blocked.

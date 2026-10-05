@@ -370,10 +370,9 @@ export function Settings({
             options={tzOptions}
             onChange={(v) => onPatch({ tz_offset_min: v === TZ_UNSET ? null : v })}
           />
-        </Group>
-        <Group hint={t(locale, "showSecretsHint")}>
           <ToggleRow
             label={t(locale, "showSecrets")}
+            sub={t(locale, "showSecretsHint")}
             on={me.settings.show_secrets}
             onChange={(on) => onPatch({ show_secrets: on })}
           />
@@ -382,21 +381,32 @@ export function Settings({
     );
   }
 
-  // The profile: who you are to others, your game accounts, how you sign in
-  // and who sees you — and leaving, last.
+  // The profile: who you are to others, how you sign in and who sees you, your
+  // game accounts — and leaving, last.
   if (pane === SETTINGS_PANES.PROFILE) {
     return (
       <>
         <BackHead title={t(locale, "profile")} backLabel={t(locale, "back")} onBack={back} />
-        {me.handle && (
-          <Group>
+        <Group>
+          {me.handle && (
             <NavRow
               label={t(locale, "profileLook")}
               sub={t(locale, "profileLookSub")}
               onClick={() => setPane(SETTINGS_PANES.NICKNAME)}
             />
-          </Group>
-        )}
+          )}
+          <NavRow
+            label={t(locale, "logins")}
+            sub={t(locale, "loginsSub")}
+            onClick={() => setPane(SETTINGS_PANES.LOGINS)}
+          />
+          <NavRow
+            label={t(locale, "privacy")}
+            sub={t(locale, "privacySub")}
+            value={t(locale, PRIVACY_VALUE[me.settings.activity_visible ?? "all"])}
+            onClick={() => setPane(SETTINGS_PANES.PRIVACY)}
+          />
+        </Group>
 
         <Group title={t(locale, "accounts")}>
           <PlatformCard
@@ -434,20 +444,6 @@ export function Settings({
                 : null,
               notes?.steam,
             ]}
-          />
-        </Group>
-
-        <Group>
-          <NavRow
-            label={t(locale, "logins")}
-            sub={t(locale, "loginsSub")}
-            onClick={() => setPane(SETTINGS_PANES.LOGINS)}
-          />
-          <NavRow
-            label={t(locale, "privacy")}
-            sub={t(locale, "privacySub")}
-            value={t(locale, PRIVACY_VALUE[me.settings.activity_visible ?? "all"])}
-            onClick={() => setPane(SETTINGS_PANES.PRIVACY)}
           />
         </Group>
 
@@ -495,15 +491,6 @@ export function Settings({
 
       <Group>
         <NavRow
-          lead={<RowGlyph name="gift" />}
-          label={t(locale, "invites")}
-          sub={t(locale, "invitesSub")}
-          onClick={() => setPane(SETTINGS_PANES.INVITES)}
-        />
-      </Group>
-
-      <Group>
-        <NavRow
           lead={<RowGlyph name="send" />}
           label={t(locale, "publishing")}
           sub={t(locale, "publishingSub")}
@@ -526,6 +513,15 @@ export function Settings({
       {me.is_admin && onAdmin && (
         <AdminSection locale={locale} onNavigate={onAdmin} />
       )}
+
+      <Group>
+        <NavRow
+          lead={<RowGlyph name="gift" />}
+          label={t(locale, "invites")}
+          sub={t(locale, "invitesSub")}
+          onClick={() => setPane(SETTINGS_PANES.INVITES)}
+        />
+      </Group>
     </>
   );
 }

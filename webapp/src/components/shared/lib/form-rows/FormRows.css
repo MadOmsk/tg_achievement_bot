@@ -2,6 +2,12 @@
   margin: 0 0 26px;
 }
 
+/* A group with no title starts with a row, whose own padding already sits above
+ * its text: without this, the gap before it read wider than before a title. */
+.fr-group + .fr-group.is-bare {
+  margin-top: -10px;
+}
+
 .fr-head {
   display: flex;
   align-items: center;

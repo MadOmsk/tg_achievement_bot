@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { MeResponse, NotifyPosts } from "../../../api";
 import { t, type Locale, type TranslationKey } from "../../../i18n";
 import { BackHead, Group, InfoRow, SelectRow, ToggleRow } from "../../shared/lib";
-import { disablePush, enablePush, pushState, type PushState } from "./push";
+import { disablePush, enablePush, pushState, quickPushState, type PushState } from "./push";
 import "./Notifications.css";
 
 /** Why this device gets no pushes, when it cannot (#164). */
@@ -39,7 +39,8 @@ export function NotificationsPane({
   /** Opens Settings → «Вход», for somebody with no Telegram yet. */
   onAddTelegram: () => void;
 }) {
-  const [device, setDevice] = useState<PushState | null>(null);
+  // Drawn at once from what is known now; the real answer replaces it.
+  const [device, setDevice] = useState<PushState>(quickPushState);
   const [busy, setBusy] = useState(false);
   const pushOn = me.settings.notify_push !== false;
   const hasTelegram = me.tg_id !== null;
@@ -55,9 +56,13 @@ export function NotificationsPane({
   }, [data]);
 
   const toggleDevice = async (on: boolean) => {
+    if (busy) return;
     setBusy(true);
     try {
-      setDevice(on ? await enablePush(data) : await disablePush(data));
+      const next = on ? await enablePush(data) : await disablePush(data);
+      setDevice(next);
+      // Pushes to anywhere were switched off once: turning them on here means them.
+      if (next === "on" && !pushOn) onPatch({ notify_push: true });
     } catch (err) {
       onFlash(`${t(locale, "error")}: ${String(err)}`);
     } finally {
@@ -70,28 +75,7 @@ export function NotificationsPane({
   return (
     <>
       <BackHead title={t(locale, "notifications")} backLabel={t(locale, "back")} onBack={onBack} />
-      <Group title={t(locale, "notifyWhere")} hint={pushOn && hint ? t(locale, hint) : undefined}>
-        <ToggleRow
-          label={t(locale, "notifyPush")}
-          sub={t(locale, "notifyPushHint")}
-          on={pushOn}
-          onChange={(on) => onPatch({ notify_push: on })}
-        />
-        {pushOn && (device === "on" || device === "off") && (
-          <InfoRow
-            label={t(locale, "pushThisDevice")}
-            sub={t(locale, device === "on" ? "pushDeviceOn" : "pushDeviceOff")}
-          >
-            <button
-              type="button"
-              className={device === "on" ? "btn sm is-quiet" : "btn sm"}
-              disabled={busy}
-              onClick={() => void toggleDevice(device !== "on")}
-            >
-              {t(locale, device === "on" ? "pushDisable" : "pushEnable")}
-            </button>
-          </InfoRow>
-        )}
+      <Group title={t(locale, "notifyWhere")}>
         {hasTelegram ? (
           <ToggleRow
             label={t(locale, "notifyTelegram")}
@@ -105,6 +89,18 @@ export function NotificationsPane({
               {t(locale, "notifyTelegramAdd")}
             </button>
           </InfoRow>
+        )}
+        {/* One row for push (owner, 2026-10-05): on is this device subscribed;
+            a device that cannot get pushes says why instead of a switch. */}
+        {device === "on" || device === "off" ? (
+          <ToggleRow
+            label={t(locale, "notifyPush")}
+            sub={t(locale, "notifyPushHint")}
+            on={device === "on" && pushOn}
+            onChange={(on) => void toggleDevice(on)}
+          />
+        ) : (
+          <InfoRow label={t(locale, "notifyPush")} sub={hint ? t(locale, hint) : t(locale, "notifyPushHint")} />
         )}
       </Group>
       <Group title={t(locale, "notifyWhat")}>
