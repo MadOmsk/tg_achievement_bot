@@ -7,16 +7,20 @@ Sign-in by email: `POST /api/mini/auth/email/start` sends a code,
 person with that address, or a new person when nobody has it yet.
 
 Settings → «Вход»: `GET /api/mini/me/logins`; `POST /api/mini/me/email/start`
-and `/verify` add or change the address; `DELETE /api/mini/me/email` removes
-it while a Telegram account is left to sign in with; `POST /api/mini/me/telegram`
-adds a Telegram account through the Login Widget. An address or a Telegram
+and `/verify` add or change the address — never remove it: email is the main
+way in (owner, 2026-10-05); `POST /api/mini/me/telegram` adds a Telegram account
+through the Login Widget. An address or a Telegram
 account that already belongs to somebody else is refused (`taken`): joining two
 people is a merge, a separate request of the person's own.
 
 Answers that need wording carry an `error` code for the Mini App to word
 itself: `invalid`, `too_soon` (with `retry_after` seconds), `unavailable` (no
 mail server), `send_failed`, `wrong_code` (with `attempts_left`), `expired`,
-`taken`, `already`, `last_login`.
+`taken`, `already`, `last_login`, `admin`, `in_telegram`, `not_linked`.
+
+`DELETE /api/mini/me/telegram` takes Telegram away while an address is left to
+sign in with — never from a super-admin, and only from a browser (see
+`_telegram_blocked`).
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from typing import Any
 from aiohttp import web
 
 from bot.config import Settings
-from bot.db.repo import LoginTaken, Repo
+from bot.db.repo import LoginTaken, Repo, User
 from bot.i18n import normalize_locale
 from bot.services import email_login
 from bot.services.email import EmailSendError, build_sender
@@ -44,6 +48,19 @@ from bot.web.mini_auth import InitDataError, MiniAppUser, validate_login_widget
 from bot.web.mini_session import start_session
 
 log = logging.getLogger(__name__)
+
+
+def forget_file(relative: str) -> None:
+    """The Telegram photo kept on disk goes with the Telegram account."""
+    from bot.services.avatars import avatar_dir
+
+    try:
+        path = avatar_dir() / relative
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        log.warning("could not remove the Telegram photo %s", relative)
+
 
 RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
 
@@ -171,16 +188,6 @@ def register(app: web.Application, require_user: RequireUser) -> None:
             return _error("taken", 409)
         return web.json_response(await _logins_payload(request, repo, user.person_id))
 
-    async def email_remove(request: web.Request) -> web.Response:
-        user = await require_user(request)
-        repo: Repo = request.app["mini_repo"]
-        person = await repo.get_user(user.person_id)
-        # Never the last way in: without Telegram the address is all there is.
-        if person is None or person.tg_id is None:
-            return _error("last_login", 409)
-        await repo.set_email(user.person_id, None)
-        return web.json_response(await _logins_payload(request, repo, user.person_id))
-
     async def telegram_link(request: web.Request) -> web.Response:
         user = await require_user(request)
         repo: Repo = request.app["mini_repo"]
@@ -206,13 +213,46 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         log.info("person_id=%s added a Telegram account", user.person_id)
         return web.json_response(await _logins_payload(request, repo, user.person_id))
 
+    async def telegram_remove(request: web.Request) -> web.Response:
+        user = await require_user(request)
+        repo: Repo = request.app["mini_repo"]
+        person = await repo.get_user(user.person_id)
+        if person is None or person.tg_id is None:
+            return _error("not_linked", 409)
+        blocked = _telegram_blocked(request, person)
+        if blocked is not None:
+            return _error(blocked, 409)
+        photo = await repo.remove_telegram(user.person_id)
+        if photo:
+            forget_file(photo)
+        log.info("person_id=%s removed their Telegram account", user.person_id)
+        return web.json_response(await _logins_payload(request, repo, user.person_id))
+
     app.router.add_post("/api/mini/auth/email/start", sign_in_start)
     app.router.add_post("/api/mini/auth/email/verify", sign_in_verify)
     app.router.add_get("/api/mini/me/logins", logins)
     app.router.add_post("/api/mini/me/email/start", email_start)
     app.router.add_post("/api/mini/me/email/verify", email_verify)
-    app.router.add_delete("/api/mini/me/email", email_remove)
     app.router.add_post("/api/mini/me/telegram", telegram_link)
+    app.router.add_delete("/api/mini/me/telegram", telegram_remove)
+
+
+def _telegram_blocked(request: web.Request, user: User | None) -> str | None:
+    """Why Telegram may not be taken away right now, or None if it may:
+    `last_login` — without an address there would be no way in; `admin` — a
+    super-admin is named by Telegram id and must keep one; `in_telegram` — the app
+    opened in Telegram signs in with that very account, and would come back as a
+    new person the moment it is gone, so it is done from a browser."""
+    settings: Settings = request.app["mini_settings"]
+    if user is None or user.tg_id is None:
+        return None
+    if not user.email:
+        return "last_login"
+    if settings.is_admin(user.tg_id):
+        return "admin"
+    if request.headers.get("X-Telegram-Init-Data"):
+        return "in_telegram"
+    return None
 
 
 async def _logins_payload(request: web.Request, repo: Repo, person_id: int) -> dict[str, Any]:
@@ -220,12 +260,14 @@ async def _logins_payload(request: web.Request, repo: Repo, person_id: int) -> d
     has_telegram = bool(user and user.tg_id is not None)
     return {
         "email": user.email if user else None,
-        "telegram": {"linked": has_telegram, "username": user.username if has_telegram else None}
-        if user
-        else {"linked": False, "username": None},
+        "telegram": {
+            "linked": has_telegram,
+            "username": user.username if user and has_telegram else None,
+            # Whether it may be taken away, and if not, why (`_telegram_blocked`).
+            "removable": has_telegram and _telegram_blocked(request, user) is None,
+            "blocked": _telegram_blocked(request, user) if has_telegram else None,
+        },
         # Whether a code can be sent at all; without a mail server the address
         # can still be seen and removed, not added.
         "email_available": request.app.get("mini_email_login") is not None,
-        # The address goes only while Telegram stays to sign in with.
-        "email_removable": bool(user and user.email and has_telegram),
     }

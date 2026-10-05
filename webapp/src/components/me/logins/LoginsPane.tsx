@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { userApi, type LoginsResponse } from "../../../api";
-import { t, type Locale } from "../../../i18n";
+import { t, type Locale, type TranslationKey } from "../../../i18n";
 import { BackHead, Group, InfoRow, NavRow, SettingsSkel, TelegramLogin, type TelegramUser } from "../../shared/lib";
 import { EmailCodeForm } from "./EmailCodeForm";
 import "./Logins.css";
@@ -23,6 +23,12 @@ export function LoginsPane({
   /** The logins changed in a way the rest of the app shows (Telegram added). */
   onChanged: () => void;
 }) {
+  // Why Telegram cannot be taken away right now, worded (#162).
+  const BLOCKED: Record<string, TranslationKey> = {
+    last_login: "telegramKeepLast",
+    in_telegram: "telegramKeepInside",
+    admin: "telegramKeepAdmin",
+  };
   const [logins, setLogins] = useState<LoginsResponse | null>(null);
   const [editing, setEditing] = useState(false);
   const [bot, setBot] = useState<string | null>(null);
@@ -101,7 +107,13 @@ export function LoginsPane({
 
       <Group
         title="Telegram"
-        hint={logins.telegram.linked ? undefined : t(locale, "telegramWhy")}
+        hint={
+          !logins.telegram.linked
+            ? t(locale, "telegramWhy")
+            : logins.telegram.blocked
+              ? t(locale, BLOCKED[logins.telegram.blocked])
+              : undefined
+        }
       >
         {logins.telegram.linked ? (
           <InfoRow label={t(locale, "telegramLinked")} value={logins.telegram.username ?? undefined} />
@@ -114,14 +126,22 @@ export function LoginsPane({
         )}
       </Group>
 
-      {logins.email && logins.email_removable && (
+      {/* Email is the main way in (owner, 2026-10-05): changed, never removed.
+          Telegram may go while an address is left. */}
+      {logins.telegram.removable && (
         <Group>
           <NavRow
             danger
-            label={t(locale, "emailRemove")}
+            label={t(locale, "telegramRemove")}
             onClick={() => {
-              if (!window.confirm(t(locale, "emailRemoveConfirm"))) return;
-              userApi.emailRemove(data).then(setLogins).catch(fail);
+              if (!window.confirm(t(locale, "telegramRemoveConfirm"))) return;
+              userApi
+                .removeTelegram(data)
+                .then((res) => {
+                  setLogins(res);
+                  onChanged();
+                })
+                .catch(fail);
             }}
           />
         </Group>

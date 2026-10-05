@@ -825,12 +825,18 @@ elsewhere in this file still describe the bot.
     address gets one a minute and five an hour. The answer never says whether an
     address is known. Errors are codes the Mini App words: `invalid`, `too_soon`,
     `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
-    `last_login`.
-  - **Settings → «Вход»**: `GET /api/mini/me/logins`; an address is added or changed
-    by the same code (`/api/mini/me/email/start|verify`) and removed
-    (`DELETE /api/mini/me/email`) only while Telegram is left to sign in with; Telegram
-    is added through the Login Widget (`POST /api/mini/me/telegram`). A login that
-    belongs to another person is refused (`taken`).
+    `last_login`, `admin`, `in_telegram`, `not_linked`.
+  - **Settings → «Вход»**: `GET /api/mini/me/logins`. **Email is the main way in
+    and is never removed** (owner, 2026-10-05) — only added or changed, by the same
+    code (`/api/mini/me/email/start|verify`). Telegram is added through the Login
+    Widget (`POST /api/mini/me/telegram`) and taken away (`DELETE`) only while an
+    address is left, never from a super-admin, and only from a browser — inside
+    Telegram the app signs in with that very account (`mini_logins._telegram_blocked`:
+    `last_login`, `admin`, `in_telegram`). Taking it away drops what came with it:
+    the chats (publishing needs Telegram), `chat_seen`, Telegram's names and photo;
+    the nickname, accounts, history and follows stay, and that Telegram account
+    becomes a new person if it opens the bot again (`repo.remove_telegram`). A login
+    that belongs to another person is refused (`taken`).
   - **In the Mini App** one form does both jobs: `components/me/logins/EmailCodeForm`
     (address, then the code, which sends itself on the sixth digit; a resend
     countdown; errors worded from the codes above) on the sign-in screen and in

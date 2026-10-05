@@ -40,11 +40,16 @@ export type Handle = {
 /** The ways a person signs in (#162), as Settings → «Вход» shows them. */
 export type LoginsResponse = {
   email: string | null;
-  telegram: { linked: boolean; username: string | null };
+  telegram: {
+    linked: boolean;
+    username: string | null;
+    /** Whether it may be taken away now; if not, why (`last_login`, `admin`,
+     * `in_telegram`). */
+    removable?: boolean;
+    blocked?: "last_login" | "admin" | "in_telegram" | null;
+  };
   /** Whether a code can be sent at all (a mail server is set up). */
   email_available: boolean;
-  /** The address may go only while Telegram is left to sign in with. */
-  email_removable: boolean;
 };
 
 export type MeResponse = {

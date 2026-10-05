@@ -58,8 +58,8 @@ export class UserApi extends BaseApi {
     return this.post(initData, "/me/email/verify", { email, code });
   }
 
-  emailRemove(initData: string): Promise<LoginsResponse> {
-    return this.delete(initData, "/me/email");
+  removeTelegram(initData: string): Promise<LoginsResponse> {
+    return this.delete(initData, "/me/telegram");
   }
 
   linkTelegram(initData: string, user: Record<string, string | number>): Promise<LoginsResponse> {

@@ -51,16 +51,17 @@ class _LoginsRepo:
         await self._conn.commit()
         return person
 
-    async def set_email(self, person_id: int, email: str | None) -> None:
-        """Give a person an address, or take it away (None). Raises LoginTaken
+    async def set_email(self, person_id: int, email: str) -> None:
+        """Give a person an address, or a new one in place of the old. Never
+        none: email is the main way in (owner, 2026-10-05). Raises LoginTaken
         when another person already signs in with it."""
-        if email is not None:
-            owner = await self.person_by_email(email)
-            if owner is not None and owner != person_id:
-                raise LoginTaken(email)
+        owner = await self.person_by_email(email)
+        if owner is not None and owner != person_id:
+            raise LoginTaken(email)
+        now = utcnow_iso()
         await self._conn.execute(
             "UPDATE users SET email = ?, email_linked_at = ?, updated_at = ? WHERE id = ?",
-            (email, utcnow_iso() if email else None, utcnow_iso(), person_id),
+            (email, now, now, person_id),
         )
         await self._conn.commit()
 
@@ -86,6 +87,34 @@ class _LoginsRepo:
             (tg_id, username, first_name, last_name, utcnow_iso(), person_id),
         )
         await self._conn.commit()
+
+    async def remove_telegram(self, person_id: int) -> str | None:
+        """Take Telegram away from a person (#162): the id, and what came with
+        it — the names and photo Telegram gave, the chats (publishing to them
+        needs Telegram), and where they were seen writing. The nickname, the
+        accounts and their history, the follows all stay. Returns the stored
+        photo's path for the caller to delete, if there was one.
+
+        The Telegram account itself is then nobody's: opening the bot again
+        makes it a new person. The reset cooldowns keyed by it stay, on purpose
+        (they must outlive a person)."""
+        cursor = await self._conn.execute(
+            "SELECT tg_id, photo_path FROM users WHERE id = ?", (person_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None or row["tg_id"] is None:
+            return None
+        tg_id = row["tg_id"]
+        await self._conn.execute("DELETE FROM subscriptions WHERE person_id = ?", (person_id,))
+        await self._conn.execute("DELETE FROM chat_seen WHERE tg_id = ?", (tg_id,))
+        await self._conn.execute(
+            "UPDATE users SET tg_id = NULL, username = NULL, first_name = NULL,"
+            " last_name = NULL, photo_file_id = NULL, photo_unique_id = NULL,"
+            " photo_checked_at = NULL, photo_path = NULL, updated_at = ? WHERE id = ?",
+            (utcnow_iso(), person_id),
+        )
+        await self._conn.commit()
+        return row["photo_path"]
 
     # ------------------------------------------------------------------ codes
 

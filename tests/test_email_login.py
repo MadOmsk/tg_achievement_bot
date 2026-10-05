@@ -223,10 +223,9 @@ async def test_a_new_address_becomes_a_new_person_without_telegram(repo: Repo, s
         logins = await (await client.get("/api/mini/me/logins")).json()
         assert logins["email"] == "ada@example.com"
         assert logins["telegram"]["linked"] is False
-        # The only way in cannot be removed.
-        assert logins["email_removable"] is False
-        gone = await client.delete("/api/mini/me/email")
-        assert (await gone.json())["error"] == "last_login"
+        # Email is the main way in: there is no way to remove it.
+        assert "email_removable" not in logins
+        assert (await client.delete("/api/mini/me/email")).status == 404
 
         # Signing in again finds the same person.
         await client.post("/api/mini/auth/logout")
@@ -279,9 +278,9 @@ async def test_an_email_person_adds_telegram(repo: Repo, settings) -> None:
         assert (await linked.json())["telegram"]["linked"] is True
         assert (await (await client.get("/api/mini/me")).json())["tg_id"] == 77
         assert await repo.person_id(77) == await repo.person_by_email("ada@example.com")
-        # Now the address may go: Telegram is left to sign in with.
-        gone = await client.delete("/api/mini/me/email")
-        assert (await gone.json())["email"] is None
+        # Even with Telegram linked, the address stays.
+        assert (await client.delete("/api/mini/me/email")).status == 404
+        assert await repo.person_by_email("ada@example.com") is not None
 
         # A Telegram account somebody else has is refused.
         await repo.ensure_user(88, "other")
@@ -308,7 +307,6 @@ async def test_a_telegram_person_adds_an_address(repo: Repo, settings) -> None:
         )
         body = await done.json()
         assert body["email"] == "ada@example.com"
-        assert body["email_removable"] is True
         assert await repo.person_by_email("ada@example.com") == await repo.person_id(42)
 
         # Somebody else's address is refused before any mail goes out.
@@ -329,5 +327,85 @@ async def test_a_person_without_telegram_can_be_deleted(repo: Repo, settings) ->
         await _sign_in(client, sender, "ada@example.com")
         assert (await client.delete("/api/mini/me")).status == 200
         assert await repo.person_by_email("ada@example.com") is None
+    finally:
+        await client.close()
+
+
+# --------------------------------------------------------- taking Telegram away
+
+
+def _init_data(token: str, tg_id: int) -> str:
+    import json as _json
+    from urllib.parse import urlencode
+
+    user = _json.dumps({"id": tg_id, "first_name": "Test", "username": "t"}, separators=(",", ":"))
+    pairs = {"auth_date": str(int(time.time())), "user": user}
+    check = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs))
+    secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+    pairs["hash"] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    return urlencode(pairs)
+
+
+async def test_telegram_can_be_taken_away_while_an_address_is_left(repo: Repo, settings) -> None:
+    sender = FakeSender()
+    client = await _client(repo, settings, sender)
+    token = settings.bot_token.get_secret_value()
+    try:
+        await _sign_in(client, sender, "ada@example.com")
+        await client.post("/api/mini/me/telegram", json=_widget(token, tg_id=77))
+        person = await repo.person_by_email("ada@example.com")
+        assert person is not None
+        await repo.upsert_chat(-100, "Chat", 77)
+        await repo.subscribe(-100, person)
+        await repo.record_chat_seen(-100, 77)
+
+        logins = await (await client.get("/api/mini/me/logins")).json()
+        assert logins["telegram"]["removable"] is True
+
+        # Inside Telegram the same request is refused: the app signs in with it.
+        inside = await client.delete(
+            "/api/mini/me/telegram", headers={"X-Telegram-Init-Data": _init_data(token, 77)}
+        )
+        assert (await inside.json())["error"] == "in_telegram"
+
+        gone = await client.delete("/api/mini/me/telegram")
+        body = await gone.json()
+        assert gone.status == 200 and body["telegram"]["linked"] is False
+        user = await repo.get_user(person)
+        assert user is not None and user.tg_id is None and user.username is None
+        assert user.handle  # the nickname stays
+        assert await repo.chats_of_user(person) == []
+        assert await repo.user_chats(77) == []
+
+        # That Telegram account is nobody's now: it signs in as a new person.
+        client.session.cookie_jar.clear()
+        again = await client.post("/api/mini/auth/telegram", json=_widget(token, tg_id=77))
+        assert again.status == 200
+        assert await repo.person_id(77) not in (None, person)
+    finally:
+        await client.close()
+
+
+async def test_telegram_stays_when_it_is_the_last_way_in_or_an_admins(repo: Repo, settings) -> None:
+    sender = FakeSender()
+    client = await _client(repo, settings, sender)
+    token = settings.bot_token.get_secret_value()
+    try:
+        await client.post("/api/mini/auth/telegram", json=_widget(token, tg_id=42))
+        lone = await client.delete("/api/mini/me/telegram")
+        assert (lone.status, (await lone.json())["error"]) == (409, "last_login")
+
+        # An address now, but a super-admin keeps their Telegram all the same.
+        await client.post("/api/mini/me/email/start", json={"email": "boss@example.com"})
+        await client.post(
+            "/api/mini/me/email/verify",
+            json={"email": "boss@example.com", "code": sender.last_code()},
+        )
+        settings.admin_tg_ids = [42]
+        logins = await (await client.get("/api/mini/me/logins")).json()
+        assert logins["telegram"]["blocked"] == "admin"
+        admin = await client.delete("/api/mini/me/telegram")
+        assert (await admin.json())["error"] == "admin"
+        assert await repo.person_id(42) is not None
     finally:
         await client.close()
