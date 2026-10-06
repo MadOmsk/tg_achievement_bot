@@ -290,8 +290,11 @@ every column. History: #106.
   was written for. The test is "was the file empty before schema.sql ran", not
   "does `schema_migrations` exist".
 - **A migration adding a column schema.sql already created is not an error**:
-  `_apply_one` swallows `duplicate column name`, and only that, and logs it. A
-  database skipping versions meets both halves of the bring-up at once.
+  `_apply_one` leaves that `ADD COLUMN` out of the script before it runs, and logs
+  it (#167 — swallowing the error used to skip the rest of the migration). A
+  database skipping versions meets both halves of the bring-up at once. Indexes on
+  columns a migration added are `_database.py::INDEXES_AFTER_MIGRATIONS`, made after
+  the migrations on every start, since a new database is baselined.
 - **A failed bring-up stops the process.** `connect()` closes the connection before
   re-raising; an open aiosqlite connection keeps a non-daemon thread alive and the
   bot neither serves nor exits. The same holds for anything later in `run()`

@@ -6,6 +6,7 @@ own __init__.py for the full picture. Behavior is unchanged.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from pathlib import Path
 from typing import Self
@@ -52,6 +53,34 @@ INDEXES_AFTER_MIGRATIONS = (
     # The primary key (platform, title_id, achievement_id) already serves it.
     "DROP INDEX IF EXISTS idx_title_achievements_title",
 )
+
+
+_ADD_COLUMN = re.compile(
+    r"\s*ALTER\s+TABLE\s+[\"`]?(?P<table>\w+)[\"`]?\s+ADD\s+(?:COLUMN\s+)?"
+    r"[\"`]?(?P<column>\w+)",
+    re.IGNORECASE,
+)
+
+
+def _statements(script: str) -> list[str]:
+    """A migration cut into its statements, each with the text before it (its
+    comments), so joining them again gives the script back. SQLite's own
+    `complete_statement` decides where one ends — a trigger's body has `;`
+    inside it."""
+    statements: list[str] = []
+    current = ""
+    for line in script.splitlines(keepends=True):
+        current += line
+        if sqlite3.complete_statement(current):
+            statements.append(current)
+            current = ""
+    if current.strip():
+        statements.append(current)
+    return statements
+
+
+def _without_comments(statement: str) -> str:
+    return " ".join(line.split("--", 1)[0] for line in statement.splitlines())
 
 
 class SchemaTooNewError(RuntimeError):
@@ -208,19 +237,34 @@ class Database:
         with `name_ru`, and 044 died on "duplicate column name: name_ru" —
         which would have been the production deploy, not a rehearsal.
 
-        Only that one error is swallowed, and it is logged: it means the column
-        is already exactly where the migration wanted it.
+        So an ADD COLUMN whose column is already there is left out of the
+        script before it runs, and logged: the column is already exactly where
+        the migration wanted it. It used to be the error that was swallowed —
+        but `executescript` stops at the failing statement, so everything after
+        it in that migration silently never ran, and the migration was still
+        recorded as applied (#167). Any other error stops start-up.
         """
         # A local file of a few kilobytes, read once at startup before the
         # bot serves anything — the blocking read ASYNC240 warns about is
         # what this has always done, just now one call further in.
         script = path.read_text(encoding="utf-8")  # noqa: ASYNC240
-        try:
-            await self.conn.executescript(script)
-        except sqlite3.OperationalError as exc:
-            if "duplicate column name" not in str(exc):
-                raise
-            log.info("migration %s: %s — schema.sql had already added it", path.stem, exc)
+        kept: list[str] = []
+        for statement in _statements(script):
+            added = _ADD_COLUMN.match(_without_comments(statement))
+            if added and await self._has_column(added["table"], added["column"]):
+                log.info(
+                    "migration %s: %s.%s exists already (schema.sql added it), skipped",
+                    path.stem,
+                    added["table"],
+                    added["column"],
+                )
+                continue
+            kept.append(statement)
+        await self.conn.executescript("".join(kept))
+
+    async def _has_column(self, table: str, column: str) -> bool:
+        cursor = await self.conn.execute(f"PRAGMA table_info({table})")
+        return any(row["name"].lower() == column.lower() for row in await cursor.fetchall())
 
     async def _seed_app_settings(self) -> None:
         for key, value in DEFAULT_APP_SETTINGS.items():
