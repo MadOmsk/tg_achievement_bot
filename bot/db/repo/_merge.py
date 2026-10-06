@@ -96,12 +96,10 @@ class _MergeRepo:
         now = utcnow_iso()
         conn = self._conn
         a = {"keep": keep, "absorb": absorb, "now": now}
-        try:
+        async with self.transaction():
             # Checked at commit, not per statement: a Telegram id moving from one
             # row to the other is briefly nobody's, and `chat_seen` points at it.
-            # The pragma lasts for the open transaction only, so open it first.
-            if not conn.in_transaction:
-                await conn.execute("BEGIN")
+            # The pragma lasts for the open transaction only, so it goes inside.
             await conn.execute("PRAGMA defer_foreign_keys = ON")
             # Whose Xbox account stays decides whose Xbox login stays with it.
             cursor = await conn.execute(
@@ -248,8 +246,4 @@ class _MergeRepo:
             if dropped_tg is not None:
                 await conn.execute("DELETE FROM chat_seen WHERE tg_id = ?", (dropped_tg,))
             await conn.execute("DELETE FROM users WHERE id = :absorb", a)
-            await conn.commit()
-        except BaseException:
-            await conn.rollback()
-            raise
         return gone

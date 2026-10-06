@@ -122,37 +122,40 @@ class _AchievementsRepo:
         rows it actually wrote are the new ones. A backfill row never carries
         a device — history is not where anything was earned *now*. PSN's
         tier and group are NULL on the other platforms' rows."""
-        new_rows: list[AchievementRow] = []
-        now = utcnow_iso()
-        for item in achievements:
-            cursor = await self._conn.execute(
-                "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
-                " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
-                " trophy_group_id, device, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    external_id,
-                    item.title_id,
-                    item.achievement_id,
-                    item.name,
-                    item.description,
-                    item.icon_url,
-                    item.unlocked_at,
-                    item.gamerscore,
-                    item.rarity_percent,
-                    item.platform,
-                    1 if is_backfill else 0,
-                    1 if item.is_secret else 0,
-                    item.trophy_type,
-                    item.trophy_group_id,
-                    None if is_backfill else (item.device or device_default),
-                    now,
-                ),
-            )
-            if cursor.rowcount:
-                new_rows.append(item)
-        await self._conn.commit()
+        # One batch is one transaction (#167): a cancelled poll (a catch-up past
+        # its deadline) leaves none of it, rather than rows a later commit or
+        # rollback of somebody else decides about.
+        async with self.transaction():
+            new_rows: list[AchievementRow] = []
+            now = utcnow_iso()
+            for item in achievements:
+                cursor = await self._conn.execute(
+                    "INSERT OR IGNORE INTO seen_achievements "
+                    "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
+                    " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
+                    " trophy_group_id, device, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        external_id,
+                        item.title_id,
+                        item.achievement_id,
+                        item.name,
+                        item.description,
+                        item.icon_url,
+                        item.unlocked_at,
+                        item.gamerscore,
+                        item.rarity_percent,
+                        item.platform,
+                        1 if is_backfill else 0,
+                        1 if item.is_secret else 0,
+                        item.trophy_type,
+                        item.trophy_group_id,
+                        None if is_backfill else (item.device or device_default),
+                        now,
+                    ),
+                )
+                if cursor.rowcount:
+                    new_rows.append(item)
         return new_rows
 
     async def insert_new_achievements(

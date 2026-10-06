@@ -1731,6 +1731,15 @@ History: #112.
 
 - Handlers are thin — services and repo methods, never raw SQL or platform logic.
 - All SQL lives in `bot/db/repo/`, `schema.sql` and the migrations.
+- **Writes that must land together go in `async with self.transaction()`** (#167,
+  `db/repo/_tx.py`). The bot has one connection: a transaction is the
+  connection's, so one coroutine's `commit()` used to commit another's half-written
+  work and a `rollback()` threw it away. While a block is open everybody else
+  waits before their next statement, `commit()` inside it waits for its end, an
+  exception rolls back only the block, and a block inside a block is a savepoint.
+  Never call `rollback()` (inside a block it raises); keep network calls and file
+  deletion out of a block — it holds the connection. Single statements stay as
+  they were: execute, then commit.
 - Platform clients (`services/xbox|steam|psn`) know nothing about Telegram.
 - Everything is async; wrap synchronous libraries (`psnawp`) in `asyncio.to_thread`.
 - No new dependency unless clearly needed.

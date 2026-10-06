@@ -57,7 +57,7 @@ already say just as well.
 
 from __future__ import annotations
 
-import aiosqlite
+from contextlib import AbstractAsyncContextManager
 
 from bot.db.repo._accounts import _AccountsRepo
 from bot.db.repo._achievements import _AchievementsRepo
@@ -122,6 +122,7 @@ from bot.db.repo._polling import _PollingRepo
 from bot.db.repo._sessions import _SessionsRepo
 from bot.db.repo._stats import _StatsRepo
 from bot.db.repo._steam import GameNewsRow, StoredPatch, TitleSteam, _SteamRepo
+from bot.db.repo._tx import GatedConnection, transaction
 
 __all__ = [
     # Re-exported for scripts/backfill_*.py and the odd test that reaches
@@ -213,5 +214,9 @@ class Repo(
         self._db = db
 
     @property
-    def _conn(self) -> aiosqlite.Connection:
-        return self._db.conn
+    def _conn(self) -> GatedConnection:
+        return GatedConnection(self._db.conn, self._db.gate)
+
+    def transaction(self) -> AbstractAsyncContextManager[None]:
+        """A block of writes that lands whole or not at all (#167, `_tx.py`)."""
+        return transaction(self._conn)

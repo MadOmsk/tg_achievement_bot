@@ -113,66 +113,70 @@ class _PlatformLinksRepo:
         caller's job. `idx_links_one_owner` is what makes that a defined
         event rather than two silent owners.
         """
-        now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO accounts (platform, external_id, display_name, first_seen_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(platform, external_id) DO UPDATE SET "
-            "  display_name = COALESCE(excluded.display_name, accounts.display_name),"
-            "  updated_at = excluded.updated_at",
-            (platform, external_id, display_name, now, now),
-        )
-
-        cursor = await self._conn.execute(
-            "SELECT u.tg_id FROM account_links al JOIN users u ON u.id = al.person_id "
-            "WHERE al.platform = ? AND al.external_id = ? AND al.is_active = 1"
-            " AND al.person_id != ?",
-            (platform, external_id, person_id),
-        )
-        row = await cursor.fetchone()
-        taken_from = row["tg_id"] if row else None
-
-        cursor = await self._conn.execute(
-            "SELECT 1 FROM account_links "
-            "WHERE person_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
-            (person_id, platform, external_id),
-        )
-        if await cursor.fetchone() is None:
-            # A link this person did not already have: it spends one of the
-            # re-links a recent deletion left them (PSN, owner 2026-09-30).
-            # The reset cooldowns stay with the Telegram account (they outlive a
-            # deleted person), so they are asked by its id.
-            await self.note_platform_relink(  # type: ignore[attr-defined]
-                await self.tg_id_of(person_id),
-                platform,  # type: ignore[attr-defined]
+        # One transaction (#167): the old holder unlinked and the new link not yet
+        # in is an account nobody holds, and a poll in between drops its rows.
+        async with self.transaction():
+            now = utcnow_iso()
+            await self._conn.execute(
+                "INSERT INTO accounts"
+                " (platform, external_id, display_name, first_seen_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(platform, external_id) DO UPDATE SET "
+                "  display_name = COALESCE(excluded.display_name, accounts.display_name),"
+                "  updated_at = excluded.updated_at",
+                (platform, external_id, display_name, now, now),
             )
 
-        # Both deactivations happen before the new link goes in: the account
-        # may be held by someone else (idx_links_one_owner), and this person
-        # may already hold a different account on the same platform
-        # (idx_links_one_active_per_platform). Either index would reject the
-        # insert otherwise.
-        await self._conn.execute(
-            "UPDATE account_links SET is_active = 0, unlinked_at = ? "
-            "WHERE platform = ? AND external_id = ? AND is_active = 1",
-            (now, platform, external_id),
-        )
-        # PSN keeps the person's other accounts (#10): a new one is added
-        # beside them, up to the limit handlers/psn.py enforces.
-        if platform != AccountPlatform.PSN:
+            cursor = await self._conn.execute(
+                "SELECT u.tg_id FROM account_links al JOIN users u ON u.id = al.person_id "
+                "WHERE al.platform = ? AND al.external_id = ? AND al.is_active = 1"
+                " AND al.person_id != ?",
+                (platform, external_id, person_id),
+            )
+            row = await cursor.fetchone()
+            taken_from = row["tg_id"] if row else None
+
+            cursor = await self._conn.execute(
+                "SELECT 1 FROM account_links "
+                "WHERE person_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
+                (person_id, platform, external_id),
+            )
+            if await cursor.fetchone() is None:
+                # A link this person did not already have: it spends one of the
+                # re-links a recent deletion left them (PSN, owner 2026-09-30).
+                # The reset cooldowns stay with the Telegram account (they outlive a
+                # deleted person), so they are asked by its id.
+                await self.note_platform_relink(  # type: ignore[attr-defined]
+                    await self.tg_id_of(person_id),
+                    platform,  # type: ignore[attr-defined]
+                )
+
+            # Both deactivations happen before the new link goes in: the account
+            # may be held by someone else (idx_links_one_owner), and this person
+            # may already hold a different account on the same platform
+            # (idx_links_one_active_per_platform). Either index would reject the
+            # insert otherwise.
             await self._conn.execute(
                 "UPDATE account_links SET is_active = 0, unlinked_at = ? "
-                "WHERE person_id = ? AND platform = ? AND is_active = 1",
-                (now, person_id, platform),
+                "WHERE platform = ? AND external_id = ? AND is_active = 1",
+                (now, platform, external_id),
             )
-        await self._conn.execute(
-            "INSERT INTO account_links (person_id, platform, external_id, is_active, linked_at) "
-            "VALUES (?, ?, ?, 1, ?) "
-            "ON CONFLICT(person_id, platform, external_id) DO UPDATE SET "
-            "  is_active = 1, linked_at = excluded.linked_at, unlinked_at = NULL",
-            (person_id, platform, external_id, now),
-        )
-        await self._conn.commit()
+            # PSN keeps the person's other accounts (#10): a new one is added
+            # beside them, up to the limit handlers/psn.py enforces.
+            if platform != AccountPlatform.PSN:
+                await self._conn.execute(
+                    "UPDATE account_links SET is_active = 0, unlinked_at = ? "
+                    "WHERE person_id = ? AND platform = ? AND is_active = 1",
+                    (now, person_id, platform),
+                )
+            await self._conn.execute(
+                "INSERT INTO account_links"
+                " (person_id, platform, external_id, is_active, linked_at) "
+                "VALUES (?, ?, ?, 1, ?) "
+                "ON CONFLICT(person_id, platform, external_id) DO UPDATE SET "
+                "  is_active = 1, linked_at = excluded.linked_at, unlinked_at = NULL",
+                (person_id, platform, external_id, now),
+            )
         return taken_from
 
     async def update_platform_names(

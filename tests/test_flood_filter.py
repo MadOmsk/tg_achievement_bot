@@ -374,3 +374,30 @@ async def test_a_flush_sends_only_what_arrived_inside_its_window(repo: Repo) -> 
     assert publisher._queue.qsize() == 1
     job = publisher._queue.get_nowait()
     assert "held" in job.text and "old" not in job.text
+
+
+async def test_an_ended_throttled_window_is_not_written_over_before_its_sweep(
+    repo: Repo,
+) -> None:
+    """#167: an achievement arriving after a throttled window ended but before
+    flood_flush swept it started a fresh window over it, and what the old one
+    held back was never sent. Now it is held too, and both go out together."""
+    await _setup_chat(repo, flood_limit=1)
+    person = await repo.person_id(TG_ID)
+    held, late = achievement("held"), achievement("late")
+    await repo.insert_new_achievements(XUID, [held], is_backfill=False)
+    await repo.set_flood_state(
+        person,
+        CHAT_ID,
+        window_started_at=utcnow() - timedelta(minutes=61),
+        count_in_window=1,
+        throttled=True,
+    )
+    publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+    await repo.insert_new_achievements(XUID, [late], is_backfill=False)
+    await publisher.publish(person, XUID, "Gamer", [late])
+    assert publisher._queue.qsize() == 0  # held, not posted on its own
+
+    await FloodFlush(repo, publisher).tick()
+    job = publisher._queue.get_nowait()
+    assert "held" in job.text and "late" in job.text

@@ -54,20 +54,30 @@ class _HandlesRepo:
     async def _store_handle(
         self, person_id: int, name: str, number: int, *, confirmed: bool, changed: bool
     ) -> bool:
-        """Write a nickname; False if the unique index says somebody just took it."""
+        """Write a nickname; False if the unique index says somebody just took it.
+        In a transaction of its own (#167): the bare `rollback()` this used to
+        call threw away every other coroutine's uncommitted writes as well."""
         now = utcnow_iso()
         try:
-            await self._conn.execute(
-                "UPDATE users SET handle = ?, handle_norm = ?, handle_number = ?, "
-                "  handle_confirmed_at = CASE WHEN ? THEN COALESCE(handle_confirmed_at, ?) "
-                "                             ELSE handle_confirmed_at END, "
-                "  handle_changed_at = CASE WHEN ? THEN ? ELSE handle_changed_at END "
-                "WHERE id = ?",
-                (name, handles.normalize(name), number, confirmed, now, changed, now, person_id),
-            )
-            await self._conn.commit()
+            async with self.transaction():
+                await self._conn.execute(
+                    "UPDATE users SET handle = ?, handle_norm = ?, handle_number = ?, "
+                    "  handle_confirmed_at = CASE WHEN ? THEN COALESCE(handle_confirmed_at, ?) "
+                    "                             ELSE handle_confirmed_at END, "
+                    "  handle_changed_at = CASE WHEN ? THEN ? ELSE handle_changed_at END "
+                    "WHERE id = ?",
+                    (
+                        name,
+                        handles.normalize(name),
+                        number,
+                        confirmed,
+                        now,
+                        changed,
+                        now,
+                        person_id,
+                    ),
+                )
         except sqlite3.IntegrityError:
-            await self._conn.rollback()
             return False
         return True
 

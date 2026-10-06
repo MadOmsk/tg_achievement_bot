@@ -13,6 +13,7 @@ from typing import Self
 import aiosqlite
 
 from bot.constants import SettingKey
+from bot.db.repo._tx import TransactionGate
 from bot.util import utcnow_iso
 from bot.version import schema_gap
 
@@ -63,6 +64,8 @@ class Database:
     def __init__(self, path: Path) -> None:
         self._path = path
         self._conn: aiosqlite.Connection | None = None
+        # Who holds the connection for a block of writes (#167, `_tx.py`).
+        self.gate = TransactionGate()
 
     @property
     def conn(self) -> aiosqlite.Connection:

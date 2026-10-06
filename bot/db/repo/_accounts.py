@@ -52,29 +52,31 @@ class _AccountsRepo:
             log.warning("refusing to create user with non-user tg_id=%s (#66)", tg_id)
             return None
 
-        now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO users (tg_id, username, first_name, last_name, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(tg_id) DO UPDATE SET "
-            "  username = excluded.username,"
-            "  first_name = COALESCE(excluded.first_name, users.first_name),"
-            "  last_name = COALESCE(excluded.last_name, users.last_name),"
-            "  updated_at = excluded.updated_at",
-            (tg_id, username, first_name, last_name, now, now),
-        )
-        # The rarity mode starts from the admin's default for new people
-        # (#126). Profile links are no longer a person's setting at all — the
-        # admin's one switch decides for everybody (owner, 2026-09-29), and
-        # `user_settings.show_profile_links` is left unread.
-        default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
-        await self._conn.execute(
-            "INSERT OR IGNORE INTO user_settings (person_id, rarity_mode) VALUES ("
-            + PERSON_BY_TG
-            + ", ?)",
-            (tg_id, default_rarity_mode or "all"),
-        )
-        await self._conn.commit()
+        # The person and their settings row land together (#167).
+        async with self.transaction():
+            now = utcnow_iso()
+            await self._conn.execute(
+                "INSERT INTO users"
+                " (tg_id, username, first_name, last_name, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(tg_id) DO UPDATE SET "
+                "  username = excluded.username,"
+                "  first_name = COALESCE(excluded.first_name, users.first_name),"
+                "  last_name = COALESCE(excluded.last_name, users.last_name),"
+                "  updated_at = excluded.updated_at",
+                (tg_id, username, first_name, last_name, now, now),
+            )
+            # The rarity mode starts from the admin's default for new people
+            # (#126). Profile links are no longer a person's setting at all — the
+            # admin's one switch decides for everybody (owner, 2026-09-29), and
+            # `user_settings.show_profile_links` is left unread.
+            default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
+            await self._conn.execute(
+                "INSERT OR IGNORE INTO user_settings (person_id, rarity_mode) VALUES ("
+                + PERSON_BY_TG
+                + ", ?)",
+                (tg_id, default_rarity_mode or "all"),
+            )
         # A new person starts with a nickname made from their username; the
         # Mini App asks them to keep or change it (#157). With no usable
         # username they have none yet, so the screens name them by a platform
@@ -167,132 +169,124 @@ class _AccountsRepo:
         # deleted person's face must not stay behind on disk.
         pictures = [p for p in (row["photo_path"], row["custom_avatar_path"]) if p]
 
-        # Step 1: Find all linked platform accounts for this user
-        cursor = await self._conn.execute(
-            "SELECT platform, external_id, is_active FROM account_links WHERE person_id = ?",
-            (person_id,),
-        )
-        link_rows = await cursor.fetchall()
-        linked_accounts = [(r["platform"], r["external_id"]) for r in link_rows]
-        held: dict[str, int] = {}
-        for r in link_rows:
-            if r["is_active"]:
-                held[r["platform"]] = held.get(r["platform"], 0) + 1
-
-        from bot.services.avatars import avatar_dir
-
-        # Step 2: Clean up platform accounts that belong to this user
-        for platform, external_id in linked_accounts:
-            # Check if any OTHER active user has linked this account
+        # One transaction (#167): a deletion that stopped halfway — or whose
+        # cooldown write committed the first half — left accounts without
+        # their rows, or rows without their person.
+        async with self.transaction():
+            # Step 1: Find all linked platform accounts for this user
             cursor = await self._conn.execute(
-                "SELECT 1 FROM account_links "
-                "WHERE platform = ? AND external_id = ? AND is_active = 1"
-                " AND person_id != ?",
-                (platform, external_id, person_id),
+                "SELECT platform, external_id, is_active FROM account_links WHERE person_id = ?",
+                (person_id,),
             )
-            other_owner = await cursor.fetchone()
+            link_rows = await cursor.fetchall()
+            linked_accounts = [(r["platform"], r["external_id"]) for r in link_rows]
+            held: dict[str, int] = {}
+            for r in link_rows:
+                if r["is_active"]:
+                    held[r["platform"]] = held.get(r["platform"], 0) + 1
 
-            if not other_owner:
-                # Wipe seen_achievements
-                await self._conn.execute(
-                    "DELETE FROM seen_achievements WHERE account_platform = ? AND xuid = ?",
-                    (platform, external_id),
-                )
-                # Wipe publications
-                await self._conn.execute(
-                    "DELETE FROM publications WHERE xuid = ?",
-                    (external_id,),
-                )
-                # Wipe title_history
-                await self._conn.execute(
-                    "DELETE FROM title_history WHERE xuid = ?",
-                    (external_id,),
-                )
-                # Wipe presence and poller state
-                if platform in (AccountPlatform.XBOX, "xbox_modern", "xbox_360"):
-                    await self._conn.execute(
-                        "DELETE FROM presence_state WHERE xuid = ?",
-                        (external_id,),
-                    )
-                elif platform == AccountPlatform.STEAM:
-                    await self._conn.execute(
-                        "DELETE FROM steam_presence_state WHERE steam_id = ?",
-                        (external_id,),
-                    )
-                elif platform == AccountPlatform.PSN:
-                    await self._conn.execute(
-                        "DELETE FROM psn_presence_state WHERE account_id = ?",
-                        (external_id,),
-                    )
-                    await self._conn.execute(
-                        "DELETE FROM psn_title_progress WHERE account_id = ?",
-                        (external_id,),
-                    )
-                    await self._conn.execute(
-                        "DELETE FROM psn_poll_state WHERE account_id = ?",
-                        (external_id,),
-                    )
+            from bot.services.avatars import avatar_dir
 
-                # Wipe avatar on disk
+            # Step 2: Clean up platform accounts that belong to this user
+            for platform, external_id in linked_accounts:
+                # Check if any OTHER active user has linked this account
                 cursor = await self._conn.execute(
-                    "SELECT avatar_path FROM accounts WHERE platform = ? AND external_id = ?",
-                    (platform, external_id),
+                    "SELECT 1 FROM account_links "
+                    "WHERE platform = ? AND external_id = ? AND is_active = 1"
+                    " AND person_id != ?",
+                    (platform, external_id, person_id),
                 )
-                acc_row = await cursor.fetchone()
-                if acc_row and acc_row["avatar_path"]:
-                    try:
-                        acc_path = avatar_dir() / acc_row["avatar_path"]
-                        if acc_path.is_file():
-                            acc_path.unlink()
-                    except OSError:
-                        log.warning(
-                            "failed to remove platform avatar platform=%s ext_id=%s path=%s",
-                            platform,
-                            external_id,
-                            acc_row["avatar_path"],
+                other_owner = await cursor.fetchone()
+
+                if not other_owner:
+                    # Wipe seen_achievements
+                    await self._conn.execute(
+                        "DELETE FROM seen_achievements WHERE account_platform = ? AND xuid = ?",
+                        (platform, external_id),
+                    )
+                    # Wipe publications
+                    await self._conn.execute(
+                        "DELETE FROM publications WHERE xuid = ?",
+                        (external_id,),
+                    )
+                    # Wipe title_history
+                    await self._conn.execute(
+                        "DELETE FROM title_history WHERE xuid = ?",
+                        (external_id,),
+                    )
+                    # Wipe presence and poller state
+                    if platform in (AccountPlatform.XBOX, "xbox_modern", "xbox_360"):
+                        await self._conn.execute(
+                            "DELETE FROM presence_state WHERE xuid = ?",
+                            (external_id,),
+                        )
+                    elif platform == AccountPlatform.STEAM:
+                        await self._conn.execute(
+                            "DELETE FROM steam_presence_state WHERE steam_id = ?",
+                            (external_id,),
+                        )
+                    elif platform == AccountPlatform.PSN:
+                        await self._conn.execute(
+                            "DELETE FROM psn_presence_state WHERE account_id = ?",
+                            (external_id,),
+                        )
+                        await self._conn.execute(
+                            "DELETE FROM psn_title_progress WHERE account_id = ?",
+                            (external_id,),
+                        )
+                        await self._conn.execute(
+                            "DELETE FROM psn_poll_state WHERE account_id = ?",
+                            (external_id,),
                         )
 
-                # Wipe account_links and accounts
+                    # Its avatar goes from disk once the rows are gone for good.
+                    cursor = await self._conn.execute(
+                        "SELECT avatar_path FROM accounts WHERE platform = ? AND external_id = ?",
+                        (platform, external_id),
+                    )
+                    acc_row = await cursor.fetchone()
+                    if acc_row and acc_row["avatar_path"]:
+                        pictures.append(acc_row["avatar_path"])
+
+                    # Wipe account_links and accounts
+                    await self._conn.execute(
+                        "DELETE FROM account_links WHERE platform = ? AND external_id = ?",
+                        (platform, external_id),
+                    )
+                    await self._conn.execute(
+                        "DELETE FROM accounts WHERE platform = ? AND external_id = ?",
+                        (platform, external_id),
+                    )
+
+            # One reset per platform for the person, and one per account for
+            # each account it held: several PSN accounts (#10) each keep their own
+            # count and their own free re-link, and a single deletion never counts
+            # twice against anything.
+            if not is_admin:
+                reset: dict[str, list[str]] = {}
+                for platform, external_id in linked_accounts:
+                    reset.setdefault(platform, []).append(external_id)
+                for platform, external_ids in reset.items():
+                    await self.record_platform_reset(
+                        tg_id, platform, *external_ids, held=held.get(platform, 1)
+                    )
+
+            if is_admin and tg_id is not None:
+                await self.clear_platform_cooldown(tg_id)
+
+            # Step 3: Remove user, tokens, and related records
+            await self._conn.execute("DELETE FROM tokens WHERE person_id = ?", (person_id,))
+            await self._conn.execute("DELETE FROM users WHERE id = ?", (person_id,))
+            if tg_id is not None:
                 await self._conn.execute(
-                    "DELETE FROM account_links WHERE platform = ? AND external_id = ?",
-                    (platform, external_id),
+                    "DELETE FROM tracked_messages"
+                    " WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
+                    (tg_id, tg_id),
                 )
                 await self._conn.execute(
-                    "DELETE FROM accounts WHERE platform = ? AND external_id = ?",
-                    (platform, external_id),
+                    "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
+                    (tg_id,),
                 )
-
-        # One reset per platform for the person, and one per account for
-        # each account it held: several PSN accounts (#10) each keep their own
-        # count and their own free re-link, and a single deletion never counts
-        # twice against anything.
-        if not is_admin:
-            reset: dict[str, list[str]] = {}
-            for platform, external_id in linked_accounts:
-                reset.setdefault(platform, []).append(external_id)
-            for platform, external_ids in reset.items():
-                await self.record_platform_reset(
-                    tg_id, platform, *external_ids, held=held.get(platform, 1)
-                )
-
-        if is_admin and tg_id is not None:
-            await self.clear_platform_cooldown(tg_id)
-
-        # Step 3: Remove user, tokens, and related records
-        await self._conn.execute("DELETE FROM tokens WHERE person_id = ?", (person_id,))
-        await self._conn.execute("DELETE FROM users WHERE id = ?", (person_id,))
-        if tg_id is not None:
-            await self._conn.execute(
-                "DELETE FROM tracked_messages"
-                " WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
-                (tg_id, tg_id),
-            )
-            await self._conn.execute(
-                "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
-                (tg_id,),
-            )
-
-        await self._conn.commit()
 
         for picture in pictures:
             try:
@@ -610,16 +604,16 @@ class _AccountsRepo:
         Returns the tg_id the account was taken from, when somebody else was
         holding it — same contract as `link_platform_account`.
         """
-        taken_from = await self.link_platform_account(
-            person_id, AccountPlatform.XBOX, xuid, gamertag
-        )
-        await self._conn.execute(
-            "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
-            "       gamerscore = COALESCE(?, gamerscore), updated_at = ? "
-            "WHERE platform = ? AND external_id = ?",
-            (gamertag, gamerscore, utcnow_iso(), AccountPlatform.XBOX, xuid),
-        )
-        await self._conn.commit()
+        async with self.transaction():
+            taken_from = await self.link_platform_account(
+                person_id, AccountPlatform.XBOX, xuid, gamertag
+            )
+            await self._conn.execute(
+                "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
+                "       gamerscore = COALESCE(?, gamerscore), updated_at = ? "
+                "WHERE platform = ? AND external_id = ?",
+                (gamertag, gamerscore, utcnow_iso(), AccountPlatform.XBOX, xuid),
+            )
         return taken_from
 
     async def unlink_xbox_account(self, person_id: int) -> None:

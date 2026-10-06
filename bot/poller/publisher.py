@@ -343,13 +343,17 @@ class Publisher:
         """
         now = utcnow()
         state = await self._repo.get_flood_state(person_id, chat.chat_id)
-        if state is not None and now >= state.window_started_at + timedelta(
-            minutes=chat.flood_window_minutes
+        if (
+            state is not None
+            and not state.throttled
+            and now >= state.window_started_at + timedelta(minutes=chat.flood_window_minutes)
         ):
-            # This window is over. Whatever it left buffered is
-            # flood_flush.py's job to find and send, not this one's —
-            # simplest to just treat this as "no window open" and let a
-            # fresh one start below, same as if nothing had ever run yet.
+            # This window is over: a fresh one starts below, same as if
+            # nothing had ever run yet. A *throttled* one that is over stays
+            # as it is until flood_flush.py sweeps it (within the minute):
+            # starting afresh here wrote over the state the sweep looks for,
+            # and what the window held back was never sent (#167). Whatever
+            # arrives meanwhile is held too and goes out in the same digest.
             state = None
 
         window_started_at = state.window_started_at if state is not None else now

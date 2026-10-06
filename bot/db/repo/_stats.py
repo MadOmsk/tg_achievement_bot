@@ -28,66 +28,71 @@ class _StatsRepo:
     # --------------------------------------------------------- title history
 
     async def save_title_history(self, xuid: str, entries: Sequence[TitleHistoryRow]) -> None:
-        now = utcnow_iso()
-        for entry in entries:
-            await self._conn.execute(
-                "INSERT INTO title_history (xuid, title_id, current_gamerscore, max_gamerscore,"
-                " achievements_unlocked, achievements_total, last_played_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(xuid, title_id) DO UPDATE SET "
-                "  current_gamerscore = excluded.current_gamerscore,"
-                "  max_gamerscore = excluded.max_gamerscore,"
-                "  achievements_unlocked = excluded.achievements_unlocked,"
-                "  achievements_total = excluded.achievements_total,"
-                "  last_played_at = excluded.last_played_at,"
-                "  updated_at = excluded.updated_at",
-                (
-                    xuid,
-                    entry.title_id,
-                    entry.current_gamerscore,
-                    entry.max_gamerscore,
-                    entry.achievements_unlocked,
-                    entry.achievements_total,
-                    entry.last_played_at,
-                    now,
-                ),
-            )
-            entry_plat = getattr(entry, "platform", None)
-            plat_val = entry_plat.value if hasattr(entry_plat, "value") else str(entry_plat or "")
-            if plat_val in ("xbox_360", "x360"):
-                platforms_json = json.dumps(["Xbox360"])
-                effective_entry_plat = "xbox_360"
-            elif getattr(entry, "devices", None):
-                if any(str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices):
+        # A game moved to 360 moves whole, or not at all (#167).
+        async with self.transaction():
+            now = utcnow_iso()
+            for entry in entries:
+                await self._conn.execute(
+                    "INSERT INTO title_history (xuid, title_id, current_gamerscore, max_gamerscore,"
+                    " achievements_unlocked, achievements_total, last_played_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(xuid, title_id) DO UPDATE SET "
+                    "  current_gamerscore = excluded.current_gamerscore,"
+                    "  max_gamerscore = excluded.max_gamerscore,"
+                    "  achievements_unlocked = excluded.achievements_unlocked,"
+                    "  achievements_total = excluded.achievements_total,"
+                    "  last_played_at = excluded.last_played_at,"
+                    "  updated_at = excluded.updated_at",
+                    (
+                        xuid,
+                        entry.title_id,
+                        entry.current_gamerscore,
+                        entry.max_gamerscore,
+                        entry.achievements_unlocked,
+                        entry.achievements_total,
+                        entry.last_played_at,
+                        now,
+                    ),
+                )
+                entry_plat = getattr(entry, "platform", None)
+                plat_val = (
+                    entry_plat.value if hasattr(entry_plat, "value") else str(entry_plat or "")
+                )
+                if plat_val in ("xbox_360", "x360"):
                     platforms_json = json.dumps(["Xbox360"])
                     effective_entry_plat = "xbox_360"
+                elif getattr(entry, "devices", None):
+                    if any(
+                        str(d).lower() in ("xbox360", "xbox 360", "x360") for d in entry.devices
+                    ):
+                        platforms_json = json.dumps(["Xbox360"])
+                        effective_entry_plat = "xbox_360"
+                    else:
+                        platforms_json = json.dumps(entry.devices)
+                        effective_entry_plat = plat_val or None
                 else:
-                    platforms_json = json.dumps(entry.devices)
+                    platforms_json = None
                     effective_entry_plat = plat_val or None
-            else:
-                platforms_json = None
-                effective_entry_plat = plat_val or None
 
-            await self._conn.execute(
-                "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
-                "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
-                " platform = CASE "
-                "   WHEN titles.platform = 'xbox_360' THEN 'xbox_360' "
-                "   WHEN excluded.platform = 'xbox_360' THEN 'xbox_360' "
-                "   ELSE COALESCE(excluded.platform, titles.platform) "
-                " END,"
-                " platforms = CASE "
-                "   WHEN titles.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
-                "   WHEN excluded.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
-                "   ELSE COALESCE(excluded.platforms, titles.platforms) "
-                " END,"
-                " updated_at = excluded.updated_at",
-                (entry.title_id, entry.name, effective_entry_plat, platforms_json, now),
-            )
-            if effective_entry_plat == "xbox_360":
-                await self._move_title_rows(entry.title_id, "xbox_modern", "xbox_360")
-        await self._conn.commit()
+                await self._conn.execute(
+                    "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
+                    " platform = CASE "
+                    "   WHEN titles.platform = 'xbox_360' THEN 'xbox_360' "
+                    "   WHEN excluded.platform = 'xbox_360' THEN 'xbox_360' "
+                    "   ELSE COALESCE(excluded.platform, titles.platform) "
+                    " END,"
+                    " platforms = CASE "
+                    "   WHEN titles.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
+                    "   WHEN excluded.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
+                    "   ELSE COALESCE(excluded.platforms, titles.platforms) "
+                    " END,"
+                    " updated_at = excluded.updated_at",
+                    (entry.title_id, entry.name, effective_entry_plat, platforms_json, now),
+                )
+                if effective_entry_plat == "xbox_360":
+                    await self._move_title_rows(entry.title_id, "xbox_modern", "xbox_360")
 
     async def update_gamerscore(self, person_id: int, gamerscore: int) -> None:
         """On the account, not the person (#52) — a gamerscore is a fact
