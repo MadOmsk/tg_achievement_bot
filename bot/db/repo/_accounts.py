@@ -308,12 +308,9 @@ class _AccountsRepo:
         from bot.constants import SettingKey
         from bot.services.admin_settings import DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
 
-        cursor = await self._conn.execute(
-            "SELECT value FROM app_settings WHERE key = ?",
-            (SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS,),
+        return await self.get_int_setting(
+            SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS, DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
         )
-        row = await cursor.fetchone()
-        return int(row["value"]) if row else DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
 
     @staticmethod
     def _elapsed_seconds(last_reset_at: str) -> float:
@@ -324,8 +321,10 @@ class _AccountsRepo:
             if moment.tzinfo is None:
                 moment = moment.replace(tzinfo=UTC)
             return (utcnow() - moment).total_seconds()
-        except Exception:
-            return 0
+        except (TypeError, ValueError):
+            # A timestamp nobody can read is no reset at all — never one
+            # that keeps a person blocked for good.
+            return float("inf")
 
     def _next_count(self, existing: Any, cooldown_hours: int) -> int:
         """1 for the first reset in a window, one more for each after it."""

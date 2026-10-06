@@ -789,7 +789,10 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
 
 
 def _iso(moment: datetime) -> str:
-    """Stored timestamps are UTC ISO strings truncated to seconds."""
+    """Stored timestamps are UTC ISO strings truncated to seconds. A naive
+    moment is already UTC (`astimezone` would take it for local time)."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
     return moment.astimezone(UTC).isoformat(timespec="seconds")
 
 

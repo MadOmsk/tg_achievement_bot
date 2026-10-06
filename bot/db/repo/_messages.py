@@ -561,7 +561,7 @@ class _MessagesRepo:
 
     async def find_user_by_username(self, username: str) -> User | None:
         cursor = await self._conn.execute(
-            "SELECT * FROM users WHERE lower(username) = lower(?)", (username.lstrip("@"),)
+            self._USER_COLUMNS + "WHERE lower(u.username) = lower(?)", (username.lstrip("@"),)
         )
         row = await cursor.fetchone()
         return _as_user(row) if row else None

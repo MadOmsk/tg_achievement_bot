@@ -129,6 +129,12 @@ async def test_search_finds_a_numbered_nickname_by_its_digits(repo: Repo) -> Non
     assert len(await repo.search_people(alice, "bobby")) == 2
 
 
+async def test_search_by_digits_takes_exactly_four_plain_digits(repo: Repo) -> None:
+    alice, _, _ = await _people(repo)
+    for query in ("bobby#²", "bobby#" + "9" * 20, "bobby#12", "bobby#١٢٣٤"):
+        assert await repo.search_people(alice, query) == []
+
+
 async def test_suggestions_are_people_from_shared_chats_not_yet_followed(repo: Repo) -> None:
     alice, bobby, carol = await _people(repo)
     await repo.upsert_chat(-100, "Chat", 1)
@@ -401,3 +407,10 @@ async def test_the_card_sums_several_psn_accounts_into_one_row(repo: Repo) -> No
     assert psn["name"] == "First, Second"
     assert psn["trophy_level"] == 450
     assert psn["linked_at"] is not None
+
+
+async def test_a_name_lookup_builds_a_whole_user(repo: Repo) -> None:
+    await repo.ensure_user(1, "Alice")
+    await repo.link_xbox_account(await repo.person_id(1), "x1", "AliceTag", 10)
+    user = await repo.find_user_by_username("@alice")
+    assert user is not None and user.xuid == "x1" and user.gamertag == "AliceTag"

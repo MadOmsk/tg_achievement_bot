@@ -182,6 +182,19 @@ async def test_cooldown_second_reset_blocks_relink(repo: Repo) -> None:
     assert check.remaining_seconds <= 24 * 3600
 
 
+async def test_a_malformed_cooldown_setting_falls_back_to_the_default(repo: Repo) -> None:
+    await repo.set_app_setting(SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS, "abc")
+    await repo.ensure_user(ALICE, "alice")
+    await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
+    await repo.delete_user(ALICE, is_admin=False)  # no ValueError
+    check = await repo.check_platform_cooldown(ALICE, "xbox", XBOX_XUID)
+    assert check.is_blocked is False
+
+
+def test_an_unreadable_reset_time_is_no_reset_at_all() -> None:
+    assert Repo._elapsed_seconds("not a time") == float("inf")
+
+
 async def test_cooldown_per_platform_isolation(repo: Repo) -> None:
     """Cooldowns are tracked independently per platform (xbox, steam, psn)."""
     await repo.ensure_user(ALICE, "alice")

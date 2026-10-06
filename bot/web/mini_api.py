@@ -921,9 +921,11 @@ async def handle_chat_person(request: web.Request) -> web.Response:
 
 
 async def _may_see_activity(repo: Repo, viewer: int | None, target: int) -> bool:
-    """The one privacy check for a person's page (#157)."""
+    """The one privacy check for a person's page (#157). Nobody to ask about
+    sees nothing: a request always resolves to a person, so this only shuts a
+    door a future path might leave open."""
     if viewer is None:
-        return True
+        return False
     return await repo.can_view_activity(viewer, target)
 
 

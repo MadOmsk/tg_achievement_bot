@@ -270,7 +270,9 @@ class _FollowsRepo:
         if len(norm) < SEARCH_MIN or not norm.isalnum() or not norm.isascii():
             return []
         if digits:
-            if not digits.isdigit():
+            # Exactly the four digits shown: `isdigit` lets "²" through to
+            # `int()`, and a long number overflows SQLite's integer.
+            if len(digits) != 4 or not digits.isascii() or not digits.isdecimal():
                 return []
             where = " AND p.handle_norm = :norm AND p.handle_number = :number"
             params = {"norm": norm, "number": int(digits)}
