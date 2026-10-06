@@ -109,6 +109,52 @@ class _AchievementsRepo:
             (account_platform, external_id, now, now),
         )
 
+    async def _insert_rows(
+        self,
+        external_id: str,
+        achievements: Sequence[AchievementRow],
+        *,
+        is_backfill: bool,
+        device_default: str | None = None,
+    ) -> list[AchievementRow]:
+        """The one insert behind every platform's `insert_new_achievements*`
+        (#167): INSERT OR IGNORE on the primary key is the dedup, and the
+        rows it actually wrote are the new ones. A backfill row never carries
+        a device — history is not where anything was earned *now*. PSN's
+        tier and group are NULL on the other platforms' rows."""
+        new_rows: list[AchievementRow] = []
+        now = utcnow_iso()
+        for item in achievements:
+            cursor = await self._conn.execute(
+                "INSERT OR IGNORE INTO seen_achievements "
+                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
+                " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
+                " trophy_group_id, device, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    external_id,
+                    item.title_id,
+                    item.achievement_id,
+                    item.name,
+                    item.description,
+                    item.icon_url,
+                    item.unlocked_at,
+                    item.gamerscore,
+                    item.rarity_percent,
+                    item.platform,
+                    1 if is_backfill else 0,
+                    1 if item.is_secret else 0,
+                    item.trophy_type,
+                    item.trophy_group_id,
+                    None if is_backfill else (item.device or device_default),
+                    now,
+                ),
+            )
+            if cursor.rowcount:
+                new_rows.append(item)
+        await self._conn.commit()
+        return new_rows
+
     async def insert_new_achievements(
         self, xuid: str, achievements: Sequence[AchievementRow], *, is_backfill: bool
     ) -> list[AchievementRow]:
@@ -125,35 +171,7 @@ class _AchievementsRepo:
             return []
         await self._ensure_account(AccountPlatform.XBOX, xuid)
 
-        new_rows: list[AchievementRow] = []
-        now = utcnow_iso()
-        for item in achievements:
-            cursor = await self._conn.execute(
-                "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at, "
-                "gamerscore, rarity_percent, platform, is_backfill, is_secret, device, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    xuid,
-                    item.title_id,
-                    item.achievement_id,
-                    item.name,
-                    item.description,
-                    item.icon_url,
-                    item.unlocked_at,
-                    item.gamerscore,
-                    item.rarity_percent,
-                    item.platform,
-                    1 if is_backfill else 0,
-                    1 if item.is_secret else 0,
-                    None if is_backfill else item.device,
-                    now,
-                ),
-            )
-            if cursor.rowcount:
-                new_rows.append(item)
-        await self._conn.commit()
-        return new_rows
+        return await self._insert_rows(xuid, achievements, is_backfill=is_backfill)
 
     async def insert_new_achievements_steam(
         self,
@@ -187,35 +205,9 @@ class _AchievementsRepo:
             await self.upsert_title(title_id, name, Platform.STEAM, platforms='["PC"]')
         await self._ensure_account(AccountPlatform.STEAM, steam_id)
 
-        new_rows: list[AchievementRow] = []
-        now = utcnow_iso()
-        for item in achievements:
-            cursor = await self._conn.execute(
-                "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at, "
-                "gamerscore, rarity_percent, platform, is_backfill, is_secret, device, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    steam_id,
-                    item.title_id,
-                    item.achievement_id,
-                    item.name,
-                    item.description,
-                    item.icon_url,
-                    item.unlocked_at,
-                    item.gamerscore,
-                    item.rarity_percent,
-                    item.platform,
-                    1 if is_backfill else 0,
-                    1 if item.is_secret else 0,
-                    None if is_backfill else (item.device or "PC"),
-                    now,
-                ),
-            )
-            if cursor.rowcount:
-                new_rows.append(item)
-        await self._conn.commit()
-        return new_rows
+        return await self._insert_rows(
+            steam_id, achievements, is_backfill=is_backfill, device_default="PC"
+        )
 
     async def insert_new_achievements_psn(
         self,
@@ -244,38 +236,7 @@ class _AchievementsRepo:
             await self.upsert_title(title_id, name, Platform.PSN)
         await self._ensure_account(AccountPlatform.PSN, account_id)
 
-        new_rows: list[AchievementRow] = []
-        now = utcnow_iso()
-        for item in achievements:
-            cursor = await self._conn.execute(
-                "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
-                " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
-                " trophy_group_id, device, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    account_id,
-                    item.title_id,
-                    item.achievement_id,
-                    item.name,
-                    item.description,
-                    item.icon_url,
-                    item.unlocked_at,
-                    item.gamerscore,
-                    item.rarity_percent,
-                    item.platform,
-                    1 if is_backfill else 0,
-                    1 if item.is_secret else 0,
-                    item.trophy_type,
-                    item.trophy_group_id,
-                    None if is_backfill else item.device,
-                    now,
-                ),
-            )
-            if cursor.rowcount:
-                new_rows.append(item)
-        await self._conn.commit()
-        return new_rows
+        return await self._insert_rows(account_id, achievements, is_backfill=is_backfill)
 
     async def get_psn_title_progress(self, account_id: str, np_communication_id: str) -> int | None:
         """The last-seen `progress` for one (account, game) — poller/
