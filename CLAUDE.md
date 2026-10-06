@@ -950,7 +950,8 @@ elsewhere in this file still describe the bot.
   and Telegram each carry only the kinds switched on there — none by default**
   (owner, 2026-10-06; `user_settings.notify_push_on` / `notify_telegram_on`, comma-
   separated `KINDS` keys with a choice after a colon where the kind has one,
-  migration 087, which keeps the follower DMs of whoever had them). Beside that, each channel has its own switch (`notify_push`, `notify_telegram`;
+  migration 088, which keeps the follower DMs of whoever had them; 087's per-kind
+  switches are left unread). Beside that, each channel has its own switch (`notify_push`, `notify_telegram`;
   migration 080), and the DM needs Telegram. One channel failing never stops the
   others, nor what caused the notice.
   Each kind (`notifier.KINDS`) says which channels it takes. Today: a new follower,

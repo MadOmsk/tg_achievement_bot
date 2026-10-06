@@ -148,17 +148,24 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- regression rather than a feature. Explicit opt-in, default 'ru'.
     locale           TEXT    NOT NULL DEFAULT 'ru',
     -- Whether to be told when someone follows this person (#157, migration 075);
-    -- no longer read: 087 moved it onto the channels' lists.
+    -- no longer read: 088 moved it onto the channels' lists.
     notify_followers INTEGER NOT NULL DEFAULT 1,
     -- Where the app's notifications go (#164, migration 080): pushed to the
     -- devices that allowed it, and as a Telegram DM (only with Telegram linked).
     notify_push      INTEGER NOT NULL DEFAULT 1,
     notify_telegram  INTEGER NOT NULL DEFAULT 1,
     -- Whose posts this person was told about (migration 081); no longer read:
-    -- each channel says it in notify_push_on / notify_telegram_on (087).
+    -- each channel says it in notify_push_on / notify_telegram_on (088).
     notify_posts     TEXT    NOT NULL DEFAULT 'friends'
         CHECK (notify_posts IN ('friends', 'following', 'none')),
-    -- The kinds of notice switched on for each channel (migration 087), none
+    -- A switch per kind (migration 087); no longer read since 088, kept so a
+    -- new database has the columns an upgraded one has.
+    notify_new_posts INTEGER NOT NULL DEFAULT 1,
+    notify_friends   INTEGER NOT NULL DEFAULT 1,
+    notify_account   INTEGER NOT NULL DEFAULT 1,
+    notify_game_news TEXT    NOT NULL DEFAULT 'all'
+        CHECK (notify_game_news IN ('all', 'patch', 'news', 'none')),
+    -- The kinds of notice switched on for each channel (migration 088), none
     -- by default; comma-separated keys of services/notifier.py::KINDS, a choice
     -- after a colon where the kind has one (new_post:friends, game_news:patch).
     -- The app's own list keeps every notice.
