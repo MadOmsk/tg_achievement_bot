@@ -58,7 +58,9 @@ async def test_a_notice_reaches_every_channel_that_is_on(repo: Repo) -> None:
     ada = await repo.ensure_user(1, "ada")
     bob = await repo.ensure_user(2, "bob")
     assert ada and bob
-    await repo.save_push_subscription(ada, "https://push.example/a", **_browser(), user_agent=None)
+    await repo.save_push_subscription(
+        ada, "https://fcm.googleapis.com/fcm/send/a", **_browser(), user_agent=None
+    )
     await repo.save_push_subscription(
         ada, "https://push.example/gone", **_browser(), user_agent=None
     )
@@ -69,17 +71,24 @@ async def test_a_notice_reaches_every_channel_that_is_on(repo: Repo) -> None:
 
     rows = await repo.notifications_of(ada)
     assert [(row.kind, row.data["name"]) for row in rows] == [("new_follower", "bob")]
-    assert sorted(service.got) == ["https://push.example/a", "https://push.example/gone"]
+    assert sorted(service.got) == [
+        "https://fcm.googleapis.com/fcm/send/a",
+        "https://push.example/gone",
+    ]
     assert sent == [(1, "У тебя новый подписчик — bob")]
     # A browser that unsubscribed is forgotten; the other stays.
-    assert [s.endpoint for s in await repo.push_subscriptions_of(ada)] == ["https://push.example/a"]
+    assert [s.endpoint for s in await repo.push_subscriptions_of(ada)] == [
+        "https://fcm.googleapis.com/fcm/send/a"
+    ]
 
 
 async def test_the_switches_are_the_persons_own(repo: Repo) -> None:
     ada = await repo.ensure_user(1, "ada")
     assert ada
     await repo.update_user_settings(ada, notify_push=0, notify_telegram=0, locale="en")
-    await repo.save_push_subscription(ada, "https://push.example/a", **_browser(), user_agent=None)
+    await repo.save_push_subscription(
+        ada, "https://fcm.googleapis.com/fcm/send/a", **_browser(), user_agent=None
+    )
     service, sent = _PushService(), []
 
     await _notifier(repo, service, sent).notify(ada, "new_friend", person_id=2, name="bob")
@@ -125,7 +134,7 @@ async def test_the_list_and_the_subscription_routes(repo: Repo, settings) -> Non
 
         bad = await client.post("/api/mini/push/subscription", json={"endpoint": "http://x"})
         assert bad.status == 400
-        sub = {"endpoint": "https://push.example/a", "keys": _browser()}
+        sub = {"endpoint": "https://fcm.googleapis.com/fcm/send/a", "keys": _browser()}
         assert (await client.post("/api/mini/push/subscription", json=sub)).status == 200
         assert len(await repo.push_subscriptions_of(ada)) == 1
 
@@ -163,14 +172,16 @@ async def test_the_list_and_the_subscription_routes(repo: Repo, settings) -> Non
 async def test_a_dead_xbox_login_is_told_but_leaves_the_dm_to_the_reminder(repo: Repo) -> None:
     ada = await repo.ensure_user(1, "ada")
     assert ada
-    await repo.save_push_subscription(ada, "https://push.example/a", **_browser(), user_agent=None)
+    await repo.save_push_subscription(
+        ada, "https://fcm.googleapis.com/fcm/send/a", **_browser(), user_agent=None
+    )
     service, sent = _PushService(), []
 
     await _notifier(repo, service, sent).notify(ada, "xbox_login_dead")
 
     [row] = await repo.notifications_of(ada)
     assert row.kind == "xbox_login_dead"
-    assert service.got == ["https://push.example/a"]
+    assert service.got == ["https://fcm.googleapis.com/fcm/send/a"]
     # The reminder job sends the DM, with its relogin button: no second one.
     assert sent == []
 
@@ -285,3 +296,18 @@ async def test_a_post_opens_its_game_on_the_authors_progress(repo: Repo, setting
         assert (await everything.json())["unread"] == 0
     finally:
         await client.close()
+
+
+def test_only_a_push_service_is_a_push_endpoint() -> None:
+    from bot.web.mini_notifications import is_push_service
+
+    assert is_push_service("https://fcm.googleapis.com/fcm/send/abc")
+    assert is_push_service("https://updates.push.services.mozilla.com/wpush/v2/x")
+    assert is_push_service("https://web.push.apple.com/QA")
+    assert is_push_service("https://db5p.notify.windows.com/w/?token=1")
+    # The server posts to it: never an internal or arbitrary host.
+    assert not is_push_service("https://127.0.0.1/x")
+    assert not is_push_service("https://localhost:8080/x")
+    assert not is_push_service("https://fcm.googleapis.com.evil.example/x")
+    assert not is_push_service("http://fcm.googleapis.com/x")
+    assert not is_push_service("https://fcm.googleapis.com:8443/x")

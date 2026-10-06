@@ -72,6 +72,9 @@ class PeopleMerge:
         self._forget_picture = forget_picture
         self._offers: dict[int, _Offer] = {}
         self._link_tokens: dict[str, tuple[int, float]] = {}
+        # A link opened from a Telegram account that already is somebody: that
+        # somebody says yes in the bot before any merge is offered.
+        self._confirmations: dict[int, tuple[int, int, float]] = {}
 
     # ------------------------------------------------------------- offers
 
@@ -107,6 +110,19 @@ class PeopleMerge:
         if entry is None or time.monotonic() - entry[1] > LINK_TTL_SECONDS:
             return None
         return entry[0]
+
+    def ask_to_confirm(self, tg_id: int, keep: int, absorb: int) -> None:
+        """`absorb` opened `keep`'s link from their Telegram. Opening a link is
+        not consent — anybody can be sent one — so the merge is offered to
+        `keep` only once `absorb` says yes in the bot (`confirmed`)."""
+        self._confirmations[tg_id] = (keep, absorb, time.monotonic())
+
+    def confirmed(self, tg_id: int) -> tuple[int, int] | None:
+        """The (keep, absorb) this Telegram account was asked about, once."""
+        entry = self._confirmations.pop(tg_id, None)
+        if entry is None or time.monotonic() - entry[2] > OFFER_TTL_SECONDS:
+            return None
+        return entry[0], entry[1]
 
     # ------------------------------------------------------------ preview
 

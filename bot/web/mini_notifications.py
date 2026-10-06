@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from aiohttp import web
 
@@ -23,6 +24,33 @@ from bot.web.mini_auth import MiniAppUser
 
 RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
 MAX_ENDPOINT_LENGTH = 1024
+# The push services browsers subscribe through (Chrome and every Chromium
+# browser, Firefox, Safari, Edge). The server posts to whatever address is
+# stored here, so an arbitrary one would make it call any host a person
+# names — an internal one included.
+PUSH_HOSTS = (
+    "fcm.googleapis.com",
+    "android.googleapis.com",
+    "updates.push.services.mozilla.com",
+    "push.services.mozilla.com",
+    "web.push.apple.com",
+    "push.apple.com",
+    "notify.windows.com",
+)
+
+
+def is_push_service(endpoint: str) -> bool:
+    """An https address on one of the known push services' hosts."""
+    try:
+        parts = urlsplit(endpoint)
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    return (
+        parts.scheme == "https"
+        and parts.port in (None, 443)
+        and any(host == known or host.endswith("." + known) for known in PUSH_HOSTS)
+    )
 
 
 async def _body(request: web.Request) -> dict[str, Any]:
@@ -99,8 +127,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         endpoint = str(body.get("endpoint") or "")
         keys = body.get("keys") if isinstance(body.get("keys"), dict) else {}
         p256dh, auth = str(keys.get("p256dh") or ""), str(keys.get("auth") or "")
-        # A push service's address is always https; anything else is not one.
-        if not endpoint.startswith("https://") or len(endpoint) > MAX_ENDPOINT_LENGTH:
+        if len(endpoint) > MAX_ENDPOINT_LENGTH or not is_push_service(endpoint):
             raise web.HTTPBadRequest(text="bad endpoint")
         if not p256dh or not auth:
             raise web.HTTPBadRequest(text="bad keys")

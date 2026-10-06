@@ -523,8 +523,49 @@ async def _link_telegram(
     if await merge.absorb_if_empty(person, here):
         await message.answer(i18n.get("connect-link-done"))
         return
-    merge.offer(person, here)
-    await message.answer(i18n.get("connect-link-merge-in-app"))
+    # This Telegram already is somebody with something to lose. Whoever sent
+    # the link may not be them: the merge is offered in the app only after they
+    # say yes here, told whose account theirs would be folded into.
+    current = await repo.get_user(here)
+    merge.ask_to_confirm(tg_id, person, here)
+    await message.answer(
+        i18n.get(
+            "connect-link-merge-confirm",
+            current=(current.handle if current else None) or "—",
+            other=target.handle or "—",
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get("connect-link-merge-yes"), callback_data="lnkm:yes"
+                    ),
+                    InlineKeyboardButton(
+                        text=i18n.get("connect-link-merge-no"), callback_data="lnkm:no"
+                    ),
+                ]
+            ]
+        ),
+    )
+
+
+@router.callback_query(F.data.in_({"lnkm:yes", "lnkm:no"}))
+async def link_merge_answer(
+    callback: CallbackQuery, repo: Repo, merge: PeopleMerge, i18n: I18nContext
+) -> None:
+    """The answer to `connect-link-merge-confirm`: only a yes from the Telegram
+    account being folded in lets the app offer the merge."""
+    asked = merge.confirmed(callback.from_user.id)
+    yes = callback.data == "lnkm:yes"
+    if yes and asked is not None and await repo.person_id(callback.from_user.id) == asked[1]:
+        merge.offer(*asked)
+        text = i18n.get("connect-link-merge-in-app")
+    elif yes:
+        text = i18n.get("connect-link-expired")
+    else:
+        text = i18n.get("connect-link-merge-cancelled")
+    await safe_edit(callback, text, None)
+    await callback.answer()
 
 
 def _parse_connect_payload(args: str) -> tuple[bool, int | None]:

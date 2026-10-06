@@ -289,9 +289,87 @@ async def test_a_telegram_link_to_a_real_person_waits_for_the_app(repo: Repo) ->
         i18n=SimpleNamespace(get=lambda key, **_kw: key),  # type: ignore[arg-type]
         merge=merge,
     )
-    assert sent == ["connect-link-merge-in-app"]
-    assert merge.pending(ada) == tg
-    assert await repo.person_id(77) == tg  # nothing merged without the person's word
+    # Opening somebody's link is not consent: the Telegram side is asked first,
+    # and nothing waits in the app until it says yes.
+    assert sent == ["connect-link-merge-confirm"]
+    assert merge.pending(ada) is None
+    assert await repo.person_id(77) == tg
+
+    from bot.handlers.connect import link_merge_answer
+
+    edited: list[str] = []
+
+    async def _edit(_callback, text, _markup=None, **_kw) -> None:
+        edited.append(text)
+
+    import bot.handlers.connect as connect_module
+
+    connect_module.safe_edit, original = _edit, connect_module.safe_edit
+    try:
+
+        async def _answer(*_a, **_kw) -> None:
+            return None
+
+        i18n = SimpleNamespace(get=lambda key, **_kw: key)
+        # Somebody else's Telegram cannot answer for this one.
+        stranger = SimpleNamespace(
+            data="lnkm:yes", from_user=SimpleNamespace(id=78), answer=_answer
+        )
+        await link_merge_answer(stranger, repo, merge, i18n)  # type: ignore[arg-type]
+        assert merge.pending(ada) is None and edited[-1] == "connect-link-expired"
+
+        yes = SimpleNamespace(data="lnkm:yes", from_user=SimpleNamespace(id=77), answer=_answer)
+        await link_merge_answer(yes, repo, merge, i18n)  # type: ignore[arg-type]
+        assert edited[-1] == "connect-link-merge-in-app"
+        assert merge.pending(ada) == tg
+        assert await repo.person_id(77) == tg  # still the app person's word to give
+    finally:
+        connect_module.safe_edit = original
+
+
+async def test_a_telegram_link_can_be_turned_down_in_the_bot(repo: Repo) -> None:
+    from bot.handlers.connect import link_merge_answer, start_with_payload
+
+    ada = await _email_person(repo)
+    tg = await repo.ensure_user(77, "ada_tg")
+    await repo.link_platform_account(tg, "steam", "s-77", "AdaSteam")
+    merge = _merge(repo)
+
+    class _Msg:
+        from_user = SimpleNamespace(id=77, username="ada_tg")
+        chat = SimpleNamespace(id=77, type="private")
+
+        async def answer(self, text: str, **_kw) -> None:
+            return None
+
+    i18n = SimpleNamespace(get=lambda key, **_kw: key)
+    await start_with_payload(
+        message=_Msg(),  # type: ignore[arg-type]
+        command=SimpleNamespace(args=f"link_{merge.link_token(ada)}"),  # type: ignore[arg-type]
+        repo=repo,
+        connect=None,  # type: ignore[arg-type]
+        settings=None,  # type: ignore[arg-type]
+        psn_auth=None,  # type: ignore[arg-type]
+        steam_auth=None,  # type: ignore[arg-type]
+        bot=None,  # type: ignore[arg-type]
+        i18n=i18n,  # type: ignore[arg-type]
+        merge=merge,
+    )
+
+    async def _answer(*_a, **_kw) -> None:
+        return None
+
+    no = SimpleNamespace(
+        data="lnkm:no", from_user=SimpleNamespace(id=77), answer=_answer, message=None
+    )
+    await link_merge_answer(no, repo, merge, i18n)  # type: ignore[arg-type]
+    assert merge.pending(ada) is None
+    # Asked once: a later yes finds nothing to agree to.
+    yes = SimpleNamespace(
+        data="lnkm:yes", from_user=SimpleNamespace(id=77), answer=_answer, message=None
+    )
+    await link_merge_answer(yes, repo, merge, i18n)  # type: ignore[arg-type]
+    assert merge.pending(ada) is None
 
 
 async def test_the_link_to_the_bot_carries_a_one_time_token(repo: Repo, settings) -> None:

@@ -35,6 +35,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
+from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -97,6 +99,59 @@ def build_email_login(settings: Settings, repo: Repo) -> EmailLogin | None:
     return EmailLogin(repo, sender, secret)
 
 
+class _Throttle:
+    """At most `limit` events per key in a sliding `window` seconds, in memory.
+    The per-address limits of `services/email_login.py` stop a mailbox from
+    being flooded; these stop one client from going through many addresses
+    (sending mail in our name) or guessing codes in bulk."""
+
+    def __init__(self, limit: int, window: float) -> None:
+        self.limit = limit
+        self.window = window
+        self._events: dict[str, deque[float]] = {}
+
+    def retry_after(self, key: str) -> int:
+        """0 and the event counted, or how many seconds until one more is allowed."""
+        now = time.monotonic()
+        events = self._events.setdefault(key, deque())
+        while events and now - events[0] >= self.window:
+            events.popleft()
+        if len(events) >= self.limit:
+            return max(1, int(self.window - (now - events[0])) + 1)
+        events.append(now)
+        if len(self._events) > 10_000:
+            # Forget keys whose window has passed, so the dict stays small.
+            for stale in [
+                k for k, v in self._events.items() if not v or now - v[-1] >= self.window
+            ]:
+                del self._events[stale]
+        return 0
+
+
+# Codes sent from one client an hour, and by the whole app an hour (a mail
+# server's reputation is shared by everybody); code checks from one client.
+SENDS_PER_CLIENT = (10, 3600)
+SENDS_TOTAL = (100, 3600)
+CHECKS_PER_CLIENT = (20, 600)
+THROTTLES = "mini_login_throttles"
+
+
+def _client(request: web.Request) -> str:
+    """Who is asking: nginx's X-Real-IP (it overwrites any the client sent),
+    else the socket's peer."""
+    return request.headers.get("X-Real-IP") or request.remote or "?"
+
+
+def _throttled(request: web.Request, *names: str) -> web.Response | None:
+    for name in names:
+        key = "all" if name == "sends_total" else _client(request)
+        wait = request.app[THROTTLES][name].retry_after(key)
+        if wait:
+            log.info("email sign-in throttled for %s (%ss)", key, wait)
+            return _error("too_soon", 429, retry_after=wait)
+    return None
+
+
 def _error(code: str, status: int, **extra: Any) -> web.Response:
     return web.json_response({"error": code, **extra}, status=status)
 
@@ -121,6 +176,8 @@ async def _send(
     login: EmailLogin | None = request.app.get("mini_email_login")
     if login is None:
         return _error("unavailable", 503)
+    if not login.skips_code and (refused := _throttled(request, "sends", "sends_total")):
+        return refused
     try:
         await login.send_code(raw_email, purpose, locale=locale, person_id=person_id)
     except EmailInvalid:
@@ -142,6 +199,8 @@ async def _check(
     login: EmailLogin | None = request.app.get("mini_email_login")
     if login is None:
         return _error("unavailable", 503)
+    if not login.skips_code and (refused := _throttled(request, "checks")):
+        return refused
     try:
         return await login.check_code(
             str(body.get("email", "")), str(body.get("code", "")), purpose, person_id=person_id
@@ -157,6 +216,12 @@ async def _check(
 def register(app: web.Application, require_user: RequireUser) -> None:
     """Add the routes. `require_user` is the Mini API's own check, passed in to
     keep this module out of an import cycle."""
+    # Kept on the app, so each app (and each test's) starts with clean counts.
+    app[THROTTLES] = {
+        "sends": _Throttle(*SENDS_PER_CLIENT),
+        "sends_total": _Throttle(*SENDS_TOTAL),
+        "checks": _Throttle(*CHECKS_PER_CLIENT),
+    }
 
     async def sign_in_start(request: web.Request) -> web.Response:
         body = await _body(request)

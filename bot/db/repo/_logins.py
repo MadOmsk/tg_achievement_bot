@@ -186,17 +186,29 @@ class _LoginsRepo:
             expires_at=row["expires_at"],
         )
 
-    async def count_email_code_attempt(self, code_id: int) -> None:
-        await self._conn.execute(
-            "UPDATE email_codes SET attempts = attempts + 1 WHERE id = ?", (code_id,)
+    async def take_email_code_attempt(self, code_id: int, max_attempts: int) -> int | None:
+        """Spend one guess on a live code before it is compared, and return how
+        many have been spent with it; None when none was left (or the code is
+        used). Counting first, in one statement, is what holds the limit: a
+        check of an earlier read let parallel guesses all see the same count."""
+        cursor = await self._conn.execute(
+            "UPDATE email_codes SET attempts = attempts + 1 "
+            "WHERE id = ? AND used_at IS NULL AND attempts < ? RETURNING attempts",
+            (code_id, max_attempts),
         )
+        row = await cursor.fetchone()
         await self._conn.commit()
+        return int(row["attempts"]) if row else None
 
-    async def use_email_code(self, code_id: int) -> None:
-        await self._conn.execute(
-            "UPDATE email_codes SET used_at = ? WHERE id = ?", (utcnow_iso(), code_id)
+    async def use_email_code(self, code_id: int) -> bool:
+        """Mark a code used; False when somebody already did — a code proves
+        one sign-in, never two."""
+        cursor = await self._conn.execute(
+            "UPDATE email_codes SET used_at = ? WHERE id = ? AND used_at IS NULL",
+            (utcnow_iso(), code_id),
         )
         await self._conn.commit()
+        return cursor.rowcount > 0
 
     async def forget_old_email_codes(self, before: str) -> None:
         await self._conn.execute("DELETE FROM email_codes WHERE created_at < ?", (before,))

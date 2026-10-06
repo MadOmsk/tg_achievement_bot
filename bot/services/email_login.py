@@ -125,18 +125,23 @@ class EmailLogin:
         if live is None or (purpose == LINK and live.person_id != person_id):
             raise CodeExpired()
         expires = parse_iso(live.expires_at)
-        if expires is None or expires <= utcnow() or live.attempts >= MAX_ATTEMPTS:
+        if expires is None or expires <= utcnow():
             await self._repo.use_email_code(live.id)
+            raise CodeExpired()
+        # The guess is counted before it is compared, in one statement: parallel
+        # requests can no longer all read "no guesses yet" and try a code each.
+        spent = await self._repo.take_email_code_attempt(live.id, MAX_ATTEMPTS)
+        if spent is None:
             raise CodeExpired()
         typed = re.sub(r"\D", "", code or "")
         if not hmac.compare_digest(live.code_hash, _hash(self._secret, email, typed)):
-            await self._repo.count_email_code_attempt(live.id)
-            left = MAX_ATTEMPTS - live.attempts - 1
+            left = MAX_ATTEMPTS - spent
             if left <= 0:
                 await self._repo.use_email_code(live.id)
                 raise CodeExpired()
             raise CodeWrong(left)
-        await self._repo.use_email_code(live.id)
+        if not await self._repo.use_email_code(live.id):
+            raise CodeExpired()
         return email
 
 

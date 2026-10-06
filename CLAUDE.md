@@ -335,7 +335,11 @@ every column. History: #106.
   **Merging two people** (built; `services/merge.py`, `db/repo/_merge.py`): when a
   signed-in person adds a login that is somebody else's and proves it (an email's
   code, the Login Widget's signature, or writing to the bot through a `link_`
-  token), the app is offered the merge instead of `taken`. The person signed in
+  token), the app is offered the merge instead of `taken`. **Opening a `link_`
+  token is not consent** — anybody can be sent one: when that Telegram already is
+  somebody with something to lose, the bot first asks *them* («Объединить» /
+  «Отмена», naming both accounts, `lnkm:yes|no`), and only their yes offers the
+  merge in the app (`PeopleMerge.ask_to_confirm` / `confirmed`). The person signed in
   stays, with their nickname; the other is folded in and deleted, in one
   transaction. One side empty: take the other's. Both have one (Xbox, Steam,
   Telegram, email): the person picks, and the account not picked is unlinked like
@@ -848,7 +852,12 @@ elsewhere in this file still describe the bot.
     a session — for the person with that address, or a new person without Telegram,
     who gets a nickname at once. A code lives 10 minutes and takes 5 guesses; only an
     HMAC of it is stored (keyed from `FERNET_KEY`); a new one replaces the last; one
-    address gets one a minute and five an hour. The answer never says whether an
+    address gets one a minute and five an hour. **A guess is counted before it is
+    compared, in one statement** (`take_email_code_attempt`), so parallel requests
+    cannot share one count; a code marks itself used only once. Per client
+    (nginx's `X-Real-IP`, in memory, `mini_logins`): ten codes sent an hour and
+    twenty checked in ten minutes, and a hundred sent an hour by the whole app —
+    the mail server's reputation is everybody's. The answer never says whether an
     address is known. Errors are codes the Mini App words: `invalid`, `too_soon`,
     `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
     `last_login`, `admin`, `in_telegram`, `not_linked`; a `taken` that a merge can
@@ -946,7 +955,10 @@ elsewhere in this file still describe the bot.
     The server's key pair is made once and kept encrypted in `app_settings`
     (`vapid_private_key`) — a new one would orphan every subscribed browser. A
     browser that unsubscribed (404/410) is forgotten at once, one that keeps
-    refusing after five tries. Push needs `MINI_APP_URL` (where a tap opens) and a
+    refusing after five tries. **Only a known push service is stored as an
+    endpoint** (`mini_notifications.PUSH_HOSTS`: FCM, Mozilla, Apple, Windows; https
+    on 443): the server posts to it, and an arbitrary address would make it call
+    any host, an internal one included. Push needs `MINI_APP_URL` (where a tap opens) and a
     contact for the push services (`SMTP_FROM`, else the app's https address).
   - Routes: `GET /api/mini/notifications`, `POST …/read`; `GET /api/mini/push/key`,
     `POST|DELETE /api/mini/push/subscription`; the switches through

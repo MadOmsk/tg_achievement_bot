@@ -593,3 +593,49 @@ async def test_somebody_with_no_email_is_asked_once(repo: Repo, settings) -> Non
         assert (await (await client.get("/api/mini/me")).json())["email_prompt"] is False
     finally:
         await client.close()
+
+
+async def test_parallel_guesses_cannot_go_past_the_limit(repo: Repo) -> None:
+    """The guess is counted before it is compared, in one statement: many
+    requests at once used to read the same "no guesses yet" and each try."""
+    import asyncio
+
+    sender = FakeSender()
+    login = email_login.EmailLogin(repo, sender, b"secret")
+    await login.send_code("a@example.com", email_login.SIGN_IN, locale="ru")
+    code = sender.last_code()
+    wrong = [_wrong(code)] * 20
+
+    async def guess(typed: str) -> str:
+        try:
+            await login.check_code("a@example.com", typed, email_login.SIGN_IN)
+        except email_login.CodeWrong:
+            return "wrong"
+        except email_login.CodeExpired:
+            return "expired"
+        return "ok"
+
+    results = await asyncio.gather(*(guess(typed) for typed in wrong))
+    assert results.count("wrong") == email_login.MAX_ATTEMPTS - 1
+    # Even the right code is no good once the guesses ran out.
+    assert await guess(code) == "expired"
+
+
+async def test_one_client_cannot_go_through_many_addresses(repo: Repo, settings) -> None:
+    from bot.web import mini_logins
+
+    sender = FakeSender()
+    client = await _client(repo, settings, sender)
+    try:
+        statuses = []
+        for i in range(mini_logins.SENDS_PER_CLIENT[0] + 1):
+            response = await client.post(
+                "/api/mini/auth/email/start", json={"email": f"p{i}@example.com"}
+            )
+            statuses.append(response.status)
+        assert statuses[:-1] == [200] * mini_logins.SENDS_PER_CLIENT[0]
+        last = await client.post("/api/mini/auth/email/start", json={"email": "z@example.com"})
+        assert (last.status, (await last.json())["error"]) == (429, "too_soon")
+        assert len(sender.sent) == mini_logins.SENDS_PER_CLIENT[0]
+    finally:
+        await client.close()
