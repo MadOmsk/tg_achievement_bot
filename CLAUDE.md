@@ -169,8 +169,10 @@ name, or when the tree goes stale.
 │   │   │                         (fetch_unlocked + schema/rarity cache)
 │   │   ├── psn/                  auth.py (NPSSO, PsnAuth), client.py (to_thread wrapper),
 │   │   │                         achievements.py (sync_account, one game at a time, #26)
-│   │   └── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
-│   │                             client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
+│   │   ├── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
+│   │   │                         client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
+│   │   └── youtube/              video guides: auth.py (#17 shape), client.py (Data API v3), guides.py (what a
+│   │                             video names, no DB access), videos.py (an achievement's videos)
 │   │
 │   ├── poller/                  APScheduler jobs, one tick a minute
 │   │   ├── scheduler.py, cadence.py              job assembly; shared interval/dormancy math
@@ -183,6 +185,7 @@ name, or when the tree goes stale.
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
 │   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
 │   │   ├── patch_refresh.py      played games' patch notes, re-read every few hours
+│   │   ├── guide_videos.py       guide channels' YouTube videos: the newest page, the whole history weekly
 │   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
@@ -253,7 +256,7 @@ Required environment variables: `BOT_TOKEN`, `ADMIN_TG_IDS` (comma-separated
 super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
-Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `OAUTH_LISTEN_HOST` /
+Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
 `OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
 App entry points), the poller interval settings, and the mail server for email sign-in
 (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
@@ -267,12 +270,13 @@ setting it up: `docs/mail-setup.md`).
   with an error in the log, whenever `SMTP_HOST` is set). Another way to send mail is one more class
   behind `services/email.py::EmailSender`.
 
-- **`STEAM_API_KEY` and `ANTHROPIC_API_KEY` are first-run seeds** (#17): the auth
-  wrapper (`SteamAuth` / `AnthropicAuth`) imports the env value once into
+- **`STEAM_API_KEY`, `ANTHROPIC_API_KEY` and `YOUTUBE_API_KEY` are first-run seeds**
+  (#17): the auth wrapper (`SteamAuth` / `AnthropicAuth` / `YouTubeAuth`) imports the env value once into
   `app_settings`, encrypted, and from then on the admin panel's "🔑 Ключи платформ"
   owns it — set / change / clear with no restart. Clearing it in the panel disables
   the seed, so a stale env var cannot resurrect it. No Steam key: `/connect_steam`
-  says "not configured". No Anthropic key: translation is skipped. Neither is fatal.
+  says "not configured". No Anthropic key: translation is skipped. No YouTube key:
+  no video guides. None is fatal.
 - **Everything else tunable lives in `app_settings`**, editable live from `/admin`:
   display limits, summary caps, HLTB limits, `account_reset_cooldown_hours` (see
   Data model, default 24h, 0 = off).
@@ -523,7 +527,7 @@ every column. History: #106.
 
 `tokens` stores encrypted Xbox refresh tokens only (access/XSTS tokens stay in
 memory); status is active / invalid / revoked. Shared credentials (PSN NPSSO, Steam
-key, Anthropic key) are encrypted in `app_settings`.
+key, Anthropic key, YouTube key) are encrypted in `app_settings`.
 
 ## Platform integrations
 
@@ -953,12 +957,20 @@ elsewhere in this file still describe the bot.
   - **A new post** (`new_post`; owner, 2026-10-05): somebody followed earned new
     achievements in one game. Each follower picks whose (`user_settings.notify_posts`,
     migration 081: `friends` — the default —, `following`, `none`; Settings →
-    Уведомления → «Новые посты», a dropdown), and `repo.can_view_activity` still gates it.
+    Уведомления → «От кого», a dropdown), and `repo.can_view_activity` still gates it.
+    It names the first achievement that is not secret, and carries its picture.
     `Publisher.publish` fires it once per call, before any chat filter and after
     the account's own posting switch (#20), in a background task
     (`Publisher.on_new_post` → `Notifier.tell_about_post`), so it never holds up
     publishing. One game is one post: a person hears of it once in
     `POST_NOTICE_INTERVAL` (3 h), however many polls bring its achievements in.
+  - **A game's news** (`game_news`; owner, 2026-10-06): a developer's post read
+    for the first time (`SteamExtras.refresh_patches` → `on_new_posts` →
+    `Notifier.tell_about_game_news`) is told to everybody who earned something in
+    that game in the last 60 days (`repo.game_news_readers`), in the list and as
+    a push, never as a DM, of the kinds each picks (`user_settings.notify_game_news`:
+    all, patches, news, none). Only posts of the last two days, two at most a
+    read, and none from an app's first read (its history). A tap opens the game.
   - **Web Push without a new dependency**: `services/webpush.py` seals a message
     (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
     with `httpx`; `tests/test_webpush.py` checks it against the RFC's own example.
@@ -977,10 +989,18 @@ elsewhere in this file still describe the bot.
     notice is read once tapped (`POST …/read` with `ids`), or all at once by
     «Прочитать все» (no `ids`). A tap opens what it is about: a new post's game
     on the author's progress (`game` in the list, `g=` beside `p=` in a push's
-    URL — `Kind.game`), else the person.
+    URL — `Kind.game`), else the person. A row is short (owner, 2026-10-06): a
+    small face, the name in bold and one line (`listed()`: «получает достижение
+    «…»», its `lead`), the game under it, how long ago at the right; unread rows stand on a
+    tint, with no dot.
     Settings → «Уведомления»: where (Telegram messages — or «Привязать» without
     Telegram — then one push switch: this device subscribed or not; owner,
-    2026-10-05) and what about (new followers, new posts). A hint under a setting
+    2026-10-05), then by what they are about (owner, 2026-10-06; migration 087):
+    «Люди» — «От кого» (friends / following / nobody), new posts, new
+    followers, new friends; «Игры» — which game posts (all / patches / news / none); «Аккаунты» — the Xbox sign-in. `Kind.switch` names the setting; `Notifier.notify` keeps
+    With no channel delivering here — this device not subscribed to push and no
+    Telegram messages — the groups of kinds are hidden: they would choose nothing.
+    and sends nothing of a kind switched off. A hint under a setting
     is its row's second line, never a note under the group, unless it is about a
     choice among the group's rows. `components/me/notifications/push.ts` says why a
     device cannot get pushes, each worded: inside Telegram (the bot's DMs are the
@@ -1020,6 +1040,11 @@ elsewhere in this file still describe the bot.
   the second back. Changes are reconciled once a moment's layers settle (a
   layer closing as another opens is no step at all), and nothing is pushed
   while a step back of our own is on its way. A new screen with its own way out registers too.
+- **A reload comes back where it was** (owner, 2026-10-06; `App.tsx::PLACE_KEY`):
+  the screen, the person and the game open are kept in `sessionStorage` for the
+  tab's session, and a reload with no link of its own (`c`, `p`, `u`, `t`, `g`,
+  a start parameter) opens them again instead of Home. A link always wins;
+  connecting an account starts over at Home.
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
@@ -1043,6 +1068,19 @@ elsewhere in this file still describe the bot.
   is the same everywhere: a brighter surface and an accent edge and ring — the
   search bar shares it in its pill shape, and a settings row's number
   (`.fr-number`) in miniature. A new form never styles an input of its own.
+- **A finished game** (owner, 2026-10-06: beautiful but laconic, a real joy;
+  `game/game-hero/GameHero`): a platinum medal on the picture's lower edge — a
+  metal disc, an iridescent rim turning slowly, a breathing glow, stars twinkling round it, «Пройдено на
+  100%» and the day the last achievement came — at rest and open alike, no rays.
+  The first time one opens one's own finished game, the medal pops in with a ring
+  of sparks and a tap of the phone, once per game on the device
+  (`localStorage` `celebrated-games`).
+  A game not finished wears the same medal, quieter (owner, 2026-10-06): a dark
+  disc, its rim filled clockwise as far as the person got — white, as the
+  progress bars in the lists —, and
+  the percentage and the day of the last achievement under it (how many is in the tab's title) — the bar plate it replaced is gone. Its own effects, not
+  the platinum's: the rim fills from nothing as the page opens (`@property --p`),
+  a bright point pulses at the arc's end, and the picture dims round it.
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 
@@ -1152,7 +1190,7 @@ keyboard.
   (`ADMIN_TG_IDS`); the **админ чата** is the per-chat role #15 proposes, which does
   not exist yet.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
-  set / change / clear the Steam key, PSN NPSSO and Anthropic key (#17) — a key is
+  set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; global limits, each on its own row with its value and its own
   input, `0` rendered as "без ограничения", and the rarity threshold on top; defaults
@@ -1386,7 +1424,12 @@ History: #112.
 - `/hltb` works in DMs and groups: asks for a game (a reply to the prompt works in
   groups), suggests recent games of known members, cleans platform-noisy titles,
   shows candidates instead of trusting the first result, and caches the chosen result
-  by HLTB id forever. An HLTB outage is an expected failure.
+  by HLTB id. An HLTB outage is an expected failure.
+- **A cached entry is read again when stale** (owner, 2026-10-06;
+  `services/hltb.py::is_stale`): every 3 days for a game of this year or last, or
+  one with no main-story time yet — its players are still timing it —, else every
+  90 days. On the next lookup, never by a walker; a failed re-read keeps what is
+  stored, and an unchanged summary keeps its translation.
 - **Game descriptions come from HLTB itself** (#2): no id-matching between services,
   and console exclusives are covered. Read from the page's `__NEXT_DATA__`
   (`profile_summary`, beside `genre`), never from rendered HTML whose class names
@@ -1547,6 +1590,40 @@ sent to a chat.
   earned something in over the last 30 days, every `patch_refresh_hours` (6,
   /admin), three apps a tick.
 
+### Video guides from YouTube
+
+Guide videos for an achievement, shown on its page in «Как получить» (owner,
+2026-10-06). Today one channel, TrophyTom (`services/youtube/guides.py::CHANNELS`).
+
+- **Read by `poller/guide_videos.py`** with the YouTube Data API key: a channel's
+  whole history, eight pages of 50 a tick, the place kept
+  (`guide_channels.backfill_token`) so a failure resumes; then its newest page every
+  6 hours, and the whole history again every week (`read_through_at`) — a timeline
+  is often added to a video long after upload, and only a full pass sees it on an
+  old one. A page is one unit of the key's 10 000 a day (~220 a week for the
+  re-read). A refused call rests the channel an hour. A page lands in one
+  transaction. Nothing is downloaded: a card links to YouTube at the moment.
+- **What a video names** (`guide_videos`, `guide_marks`, migration 086): a title
+  with 🏆 names one achievement right before it ("House Flipper Remastered - Beach
+  please 🏆 Trophy / Achievement Guide"); a description's timeline names moments
+  ("02:42 – ACHIEVEMENT – Chainsaw Go…", "– TROPHY – … – PART 2", or a bare name in a
+  whole-game video). Every timeline line is kept; collectibles and chapters match
+  nothing and never show.
+- **Matched on reading, exactly** (`services/youtube/videos.py`): a video is a
+  game's when its title's first part(s) — split at " - ", normalized as HLTB's
+  matcher does — are one of the game's names or their edition-cut cores, so
+  "Gears of War 2 - …" is never Gears of War's; a moment is an achievement's when
+  its label equals the achievement's English name, normalized. Nothing is guessed:
+  a near miss shows nothing. The newest three per achievement, parts in order.
+- `/guides` answers them as `videos` beside `tips`; a row with a tip carries the
+  book mark, one with a video the video mark beside it.
+- **The game's own guide** (`videos.py::game_guide`, `guide` in `/guides`): what is
+  matched to one achievement rarely covers them all, so a game the channel has
+  videos of gets a video button in the game page's head — its whole-game video
+  when one is titled so ("Full Game", "All Achievements"), else the channel's
+  search for the game. Never on the picture: that is the game's own (a gallery
+  later).
+
 ## Versioning
 
 **`A.B.C.D`** (#56) from `bot/version.py`, shown at the end of `/help` and the hub
@@ -1572,7 +1649,7 @@ History: #112.
 
 - Never commit `.env`, databases, logs, PID files or runtime data.
 - Every stored credential is Fernet-encrypted: Xbox refresh tokens, the PSN NPSSO, the
-  Steam key, the Anthropic key. Losing `FERNET_KEY` means every user reconnects and
+  Steam key, the Anthropic key, the YouTube key. Losing `FERNET_KEY` means every user reconnects and
   every shared key is re-entered — back it up.
 - Never log a token, key, NPSSO, authorization header, or a URL with a secret in its
   query — `httpx` logs full URLs at INFO, and Steam's `GetOwnedGames` carries the key.

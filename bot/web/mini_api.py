@@ -33,7 +33,7 @@ from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
 from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
-from bot.services.notifier import POST_NOTICE_CHOICES, Notifier
+from bot.services.notifier import GAME_NEWS_CHOICES, POST_NOTICE_CHOICES, Notifier
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -52,6 +52,8 @@ from bot.services.steam.client import (
 from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
+from bot.services.youtube.guides import video_url
+from bot.services.youtube.videos import achievement_videos, game_guide
 from bot.util import parse_iso
 from bot.web import mini_invites, mini_logins, mini_notifications, mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
@@ -97,6 +99,7 @@ def setup_mini_api(
     email_login: EmailLogin | None = None,
     notifications: Notifier | None = None,
     merge: PeopleMerge | None = None,
+    youtube_auth: Any = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -108,6 +111,7 @@ def setup_mini_api(
     app["mini_xbox_fetcher"] = xbox_fetcher
     app["mini_notifier"] = notifier
     app["mini_anthropic_auth"] = anthropic_auth
+    app["mini_youtube_auth"] = youtube_auth
     app["mini_bot"] = bot
     app["mini_steam_extras"] = steam_extras or SteamExtras(repo, steam_auth, anthropic_auth)
 
@@ -273,9 +277,21 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
-    for switch in ("notify_followers", "notify_push", "notify_telegram"):
+    for switch in (
+        "notify_followers",
+        "notify_push",
+        "notify_telegram",
+        "notify_new_posts",
+        "notify_friends",
+        "notify_account",
+    ):
         if switch in body:
             fields[switch] = 1 if body[switch] else 0
+    if "notify_game_news" in body:
+        which = str(body["notify_game_news"])
+        if which not in GAME_NEWS_CHOICES:
+            raise web.HTTPBadRequest(text="bad notify_game_news")
+        fields["notify_game_news"] = which
     if "notify_posts" in body:
         posts = str(body["notify_posts"])
         if posts not in POST_NOTICE_CHOICES:
@@ -1140,7 +1156,39 @@ async def handle_game_guides(request: web.Request) -> web.Response:
         # Tips stored before pictures stopped counting as advice are dropped here.
         if text and has_prose(text):
             tips[achievement_id] = {"text": text}
-    return web.json_response({"ok": True, "tips": tips, "complete": complete})
+    videos: dict[str, list[dict[str, Any]]] = {}
+    try:
+        for achievement_id, found in (await achievement_videos(repo, platform, title_id)).items():
+            videos[achievement_id] = [
+                {
+                    "id": video.video_id,
+                    "title": video.title,
+                    "channel": video.channel,
+                    "start": video.start_seconds,
+                    "part": video.part,
+                    "url": video_url(video.video_id, video.start_seconds),
+                }
+                for video in found
+            ]
+    except Exception:
+        # Videos are extra: the tips still answer.
+        log.exception("guide videos failed for %s/%s", platform, title_id)
+    guide: dict[str, Any] | None = None
+    try:
+        found_guide = await game_guide(repo, title_id)
+        if found_guide is not None:
+            guide = {
+                "url": found_guide.url,
+                "channel": found_guide.channel,
+                "count": found_guide.count,
+                "video_id": found_guide.video_id,
+                "title": found_guide.title,
+            }
+    except Exception:
+        log.exception("game guide failed for %s/%s", platform, title_id)
+    return web.json_response(
+        {"ok": True, "tips": tips, "videos": videos, "guide": guide, "complete": complete}
+    )
 
 
 async def handle_game_patches(request: web.Request) -> web.Response:

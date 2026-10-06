@@ -27,7 +27,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from bot.db.repo import Repo
+from bot.db.repo import Repo, StoredPatch
 from bot.i18n import gettext
 from bot.services import webpush
 from bot.services.crypto import TokenCipher
@@ -43,6 +43,13 @@ POST_NOTICE_CHOICES = ("friends", "following", "none")
 # One game's evening is one post: a person hears of it once in this long,
 # however many polls bring its achievements in.
 POST_NOTICE_INTERVAL = timedelta(hours=3)
+# Which of a game's posts a person is told about (`user_settings.notify_game_news`).
+GAME_NEWS_CHOICES = ("all", "patch", "news", "none")
+# A game's news is told to those who earned something in it this recently,
+# for posts no older than this, and at most this many from one read.
+GAME_NEWS_PLAYED = timedelta(days=60)
+GAME_NEWS_FRESH = timedelta(days=2)
+GAME_NEWS_AT_ONCE = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,16 +66,41 @@ class Kind:
     # Whether a tap opens the game the notice is about (`platform`, `title_id`
     # in `data`), on that person's progress.
     game: bool = False
+    # The list's line after the name in bold; None: the whole line, no name.
+    lead: str | None = None
+    # The person's own switch for this kind (a `UserSettings` field).
+    switch: str | None = None
 
 
 KINDS: dict[str, Kind] = {
-    "new_follower": Kind("notification-new-follower", "person_id"),
-    "new_friend": Kind("notification-new-friend", "person_id"),
+    "new_follower": Kind(
+        "notification-new-follower",
+        "person_id",
+        lead="notification-new-follower-lead",
+        switch="notify_followers",
+    ),
+    "new_friend": Kind(
+        "notification-new-friend",
+        "person_id",
+        lead="notification-new-friend-lead",
+        switch="notify_friends",
+    ),
     # Somebody followed earned something new (owner, 2026-10-05).
-    "new_post": Kind("notification-new-post", "person_id", game=True),
+    "new_post": Kind(
+        "notification-new-post",
+        "person_id",
+        game=True,
+        lead="notification-new-post-lead",
+        switch="notify_new_posts",
+    ),
     # The person's Xbox login stopped working (#164): in the list and as a push;
     # the DM is poller/reminders.py's, which carries the relogin button.
-    "xbox_login_dead": Kind("notification-xbox-login-dead", telegram=False),
+    # A new post of the developer of a game the person plays (owner, 2026-10-06):
+    # in the list and as a push — a DM for every patch would be too many.
+    "game_news": Kind("notification-game-news", game=True, telegram=False),
+    "xbox_login_dead": Kind(
+        "notification-xbox-login-dead", telegram=False, switch="notify_account"
+    ),
 }
 UNKNOWN = Kind("notification-unknown")
 
@@ -80,12 +112,42 @@ def wording(kind: str, data: dict[str, Any], locale: str) -> str:
         "notifications",
         KINDS.get(kind, UNKNOWN).key,
         locale=locale,
-        # A count stays a number: Fluent picks a plural form only from a number.
-        **{
-            k: v if isinstance(v, int) and not isinstance(v, bool) else str(v)
-            for k, v in data.items()
-        },
+        **_fluent_args(data),
     )
+
+
+def _fluent_args(data: dict[str, Any]) -> dict[str, Any]:
+    # A count stays a number: Fluent picks a plural form only from a number.
+    return {
+        k: v if isinstance(v, int) and not isinstance(v, bool) else str(v) for k, v in data.items()
+    }
+
+
+def listed(kind: str, data: dict[str, Any], locale: str) -> dict[str, str | None]:
+    """How the list draws a notice, short (owner, 2026-10-06): the name in bold
+    and one line — "получает достижение «Name»" — and under it the game."""
+    spec = KINDS.get(kind, UNKNOWN)
+    if kind == "game_news":
+        lead = gettext(
+            "notifications", "notification-game-news-lead", locale=locale, **_fluent_args(data)
+        )
+        return {"lead": lead, "detail": data.get("game"), "image": data.get("icon")}
+    if spec.lead is None or not data.get("name"):
+        return {"lead": wording(kind, data, locale), "detail": None, "image": None}
+    lead = gettext("notifications", spec.lead, locale=locale, **_fluent_args(data))
+    detail = None
+    if kind == "new_post":
+        if data.get("achievement"):
+            what = gettext(
+                "notifications",
+                "notification-achievement",
+                locale=locale,
+                name=str(data["achievement"]),
+                more=int(data.get("count") or 1) - 1,
+            )
+            lead = f"{lead} {what}"
+        detail = str(data["game"]) if data.get("game") else None
+    return {"lead": lead, "detail": detail, "image": data.get("icon")}
 
 
 class Notifier:
@@ -129,8 +191,12 @@ class Notifier:
         return self._keys
 
     async def notify(self, recipient: int, kind: str, **data: Any) -> None:
-        await self._repo.add_notification(recipient, kind, data)
         settings = await self._repo.get_user_settings(recipient)
+        switch = KINDS.get(kind, UNKNOWN).switch
+        # Switched off: not kept, not sent.
+        if switch and settings is not None and not getattr(settings, switch):
+            return
+        await self._repo.add_notification(recipient, kind, data)
         locale = settings.locale if settings else "ru"
         text = wording(kind, data, locale)
         if settings is None or settings.notify_push:
@@ -139,7 +205,14 @@ class Notifier:
             await self._telegram(recipient, text)
 
     async def tell_about_post(
-        self, author: int, platform: str, title_id: str, game: str, count: int
+        self,
+        author: int,
+        platform: str,
+        title_id: str,
+        game: str,
+        count: int,
+        achievement: str | None = None,
+        icon: str | None = None,
     ) -> None:
         """Tell the people following `author` about new achievements in one game,
         each by their own choice (friends, everybody followed, nobody) and only
@@ -171,9 +244,58 @@ class Notifier:
                     count=count,
                     pretty=thousands(count),
                     trophies="yes" if platform == "psn" else "no",
+                    # For the list: what was earned, and its picture.
+                    **({"achievement": achievement} if achievement else {}),
+                    **({"icon": icon} if icon else {}),
                 )
             except Exception:
                 log.exception("post notice to person_id=%s failed", recipient)
+
+    async def tell_about_game_news(self, appid: int, posts: list[StoredPatch]) -> None:
+        """Tell the people who play a game of its developer's new posts — those
+        dated in the last two days, the newest few; each person their own game's
+        name and page. One recipient failing never stops the rest."""
+        now = utcnow()
+        recent = sorted(
+            (
+                post
+                for post in posts
+                if post.published_at >= (now - GAME_NEWS_FRESH).isoformat(timespec="seconds")[:10]
+            ),
+            key=lambda post: post.published_at,
+            reverse=True,
+        )[:GAME_NEWS_AT_ONCE]
+        if not recent:
+            return
+        since = (now - GAME_NEWS_PLAYED).isoformat(timespec="seconds")
+        for (
+            person,
+            platform,
+            title_id,
+            name_ru,
+            name_en,
+            name,
+        ) in await self._repo.game_news_readers(appid, played_since=since):
+            settings = await self._repo.get_user_settings(person)
+            locale = settings.locale if settings else "ru"
+            which = settings.notify_game_news if settings else "all"
+            game = (name_ru if locale == "ru" else name_en) or name_en or name_ru or name
+            for post in recent:
+                if which == "none" or which not in ("all", post.kind):
+                    continue
+                try:
+                    await self.notify(
+                        person,
+                        "game_news",
+                        platform=platform,
+                        title_id=title_id,
+                        game=game,
+                        title=post.title,
+                        post=post.kind,
+                        **({"icon": post.image_url} if post.image_url else {}),
+                    )
+                except Exception:
+                    log.exception("game news notice to person_id=%s failed", person)
 
     async def _push(self, person_id: int, kind: str, data: dict[str, Any], text: str) -> None:
         if not self.push_available:

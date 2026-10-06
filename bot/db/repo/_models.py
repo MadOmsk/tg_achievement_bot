@@ -86,8 +86,14 @@ class UserSettings:
     # Where notifications go (#164): pushed to devices, and as a Telegram DM.
     notify_push: bool = True
     notify_telegram: bool = True
-    # Whose new posts this person is told about: friends / following / none.
+    # Whose activity this person is told about: friends / following / none.
     notify_posts: str = "friends"
+    # A switch per kind of notice (migration 087).
+    notify_new_posts: bool = True
+    notify_friends: bool = True
+    notify_account: bool = True
+    # Which of a game's posts: all / patch / news / none.
+    notify_game_news: str = "all"
 
 
 @dataclass(slots=True)
@@ -668,6 +674,8 @@ class HltbCacheRow:
     description_en: str | None = None
     description_ru: str | None = None
     details: dict | None = None
+    # When it was read from HLTB (set on reading; ignored on writing).
+    cached_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -785,6 +793,10 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         notify_push=bool(row["notify_push"]) if "notify_push" in keys else True,
         notify_telegram=bool(row["notify_telegram"]) if "notify_telegram" in keys else True,
         notify_posts=row["notify_posts"] if "notify_posts" in keys else "friends",
+        notify_new_posts=bool(row["notify_new_posts"]) if "notify_new_posts" in keys else True,
+        notify_friends=bool(row["notify_friends"]) if "notify_friends" in keys else True,
+        notify_account=bool(row["notify_account"]) if "notify_account" in keys else True,
+        notify_game_news=row["notify_game_news"] if "notify_game_news" in keys else "all",
     )
 
 

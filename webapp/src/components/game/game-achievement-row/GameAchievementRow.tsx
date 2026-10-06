@@ -12,6 +12,7 @@ export function GameAchievementRow({
   compare,
   fallbackIcon,
   tip,
+  hasVideo = false,
   onOpen,
 }: {
   row: GameAchievement;
@@ -22,6 +23,8 @@ export function GameAchievementRow({
   fallbackIcon?: string | null;
   /** What the Steam guides say about getting it: the row is marked, its page shows it. */
   tip?: AchievementTip;
+  /** A guide video names it: marked as a tip is. */
+  hasVideo?: boolean;
   /** Opens the achievement's own page (AchievementPage). */
   onOpen: (id: string) => void;
   /** Both people's state on this achievement (the compare view). */
@@ -49,6 +52,7 @@ export function GameAchievementRow({
     ? () => onToggleReveal(row.achievement_id)
     : () => onOpen(row.achievement_id);
   const hasTip = !isSecret && tip !== undefined;
+  const showVideo = !isSecret && hasVideo;
 
   return (
     <div
@@ -61,7 +65,8 @@ export function GameAchievementRow({
         "feed-row",
         "has-wrap",
         isSecret ? "is-secret" : "",
-        hasTip ? "has-tip" : "",
+        hasTip || showVideo ? "has-tip" : "",
+        hasTip && showVideo ? "has-both" : "",
         row.is_unlocked ? "" : "is-locked-row",
       ]
         .filter(Boolean)
@@ -118,9 +123,10 @@ export function GameAchievementRow({
             </p>
           )
         )}
-        {hasTip && (
+        {(hasTip || showVideo) && (
           <span className="feed-tip-mark" aria-hidden>
-            <Icon name="guide" size={16} />
+            {showVideo && <Icon name="video" size={16} />}
+            {hasTip && <Icon name="guide" size={16} />}
           </span>
         )}
       </span>

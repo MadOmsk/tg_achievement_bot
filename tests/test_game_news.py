@@ -109,3 +109,13 @@ async def test_the_news_route_reads_the_viewers_circle(repo: Repo, settings) -> 
         assert body["month"] == today[:7]
     finally:
         await client.close()
+
+
+async def test_an_excluded_person_hears_no_game_news(repo: Repo) -> None:
+    """An excluded person is told nothing (#171 review)."""
+    person = await _player(repo)
+    assert [row[0] for row in await repo.game_news_readers(620, played_since="2000-01-01")] == [
+        person
+    ]
+    await repo.set_excluded(person, True, None)
+    assert await repo.game_news_readers(620, played_since="2000-01-01") == []

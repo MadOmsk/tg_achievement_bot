@@ -12,10 +12,11 @@ import { BackHead, Group, InfoRow, NavRow, SettingsSkel } from "../../shared/lib
 import { ADMIN_KEY_NAMES, type AdminKeyName } from "../../shared/constants";
 import "./AdminKeys.css";
 
-const LABELS: Record<AdminKeyName, "keySteam" | "keyPsn" | "keyAnthropic"> = {
+const LABELS: Record<AdminKeyName, "keySteam" | "keyPsn" | "keyAnthropic" | "keyYoutube"> = {
   steam: "keySteam",
   psn: "keyPsn",
   anthropic: "keyAnthropic",
+  youtube: "keyYoutube",
 };
 
 /** The shared keys. A key is never shown back: one can only set, replace or clear it. */
@@ -53,7 +54,7 @@ export function AdminKeys({
     return (
       <>
         <BackHead title={t(locale, "adminKeys")} backLabel={t(locale, "back")} onBack={onBack} />
-        <SettingsSkel groups={[3]} />
+        <SettingsSkel groups={[4]} />
       </>
     );
   }

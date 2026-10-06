@@ -5,6 +5,7 @@ howlongtobeatpy calls themselves are out of scope for a unit test."""
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 from bot.db.repo import HltbCacheRow, Repo, TitleHistoryRow
 from bot.services.hltb import (
@@ -529,3 +530,75 @@ async def test_chat_recent_games_orders_by_recency_and_dedupes(repo: Repo) -> No
     names = await repo.chat_recent_games(CHAT_ID)
 
     assert names == ["Newer Game", "Older Game"]
+
+
+async def _store_old(repo: Repo, *, main_hours: float | None, year: int, days_ago: int) -> None:
+    from bot.util import utcnow
+
+    await repo.hltb_cache_result(
+        HltbCacheRow(
+            hltb_id=152017,
+            name="Gears of War: E-Day",
+            release_year=year,
+            main_hours=main_hours,
+            extra_hours=None,
+            completionist_hours=None,
+            description_en="The Master Chief returns.",
+            description_ru="Мастер Чиф возвращается.",
+            details={},
+        )
+    )
+    old = (utcnow() - timedelta(days=days_ago)).isoformat(timespec="seconds")
+    await repo._conn.execute("UPDATE hltb_cache SET cached_at = ?", (old,))
+    await repo._conn.commit()
+
+
+async def test_a_young_games_times_are_read_again_once_stale(repo: Repo, monkeypatch) -> None:
+    from bot.services import hltb
+
+    await _store_old(repo, main_hours=None, year=2026, days_ago=4)
+    reads: list[int] = []
+
+    class FakeHltb:
+        async def async_search_from_id(self, hltb_id: int):
+            reads.append(hltb_id)
+            return object()
+
+    async def no_page(url: str):
+        return None
+
+    async def no_translation(text, auth):
+        raise AssertionError("the same summary keeps its translation")
+
+    fresh = result(152017, 2026)
+    fresh.description_ru = None
+    monkeypatch.setattr(hltb, "HowLongToBeat", FakeHltb)
+    monkeypatch.setattr(hltb, "_as_result", lambda entry: fresh)
+    monkeypatch.setattr(hltb, "_fetch_page_game", no_page)
+    monkeypatch.setattr(hltb, "_translate", no_translation)
+
+    got = await hltb.resolve(repo, 152017)
+    assert reads == [152017]
+    assert got.main_hours == 11.3
+    assert got.description_ru == "Мастер Чиф возвращается."
+    # Just read: trusted again, no request.
+    await hltb.resolve(repo, 152017)
+    assert reads == [152017]
+
+
+async def test_a_settled_game_is_trusted_and_a_failed_re_read_keeps_the_stored(
+    repo: Repo, monkeypatch
+) -> None:
+    from bot.services import hltb
+
+    class Down:
+        async def async_search_from_id(self, hltb_id: int):
+            raise RuntimeError("HLTB is down")
+
+    monkeypatch.setattr(hltb, "HowLongToBeat", Down)
+    await _store_old(repo, main_hours=12.0, year=2015, days_ago=30)
+    assert (await hltb.resolve(repo, 152017)).main_hours == 12.0  # no read at all
+
+    await _store_old(repo, main_hours=None, year=2026, days_ago=10)
+    got = await hltb.resolve(repo, 152017)
+    assert got.name == "Gears of War: E-Day" and got.main_hours is None

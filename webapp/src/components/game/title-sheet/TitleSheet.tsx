@@ -19,6 +19,8 @@ import {
   type GameAchievement,
   type GameDetails,
   type AchievementTip,
+  type AchievementVideo,
+  type GameGuide,
   type GameHltb,
   type GamePatch,
   type GameRef,
@@ -44,6 +46,7 @@ import { AchievementPage } from "../achievement-page/AchievementPage";
 import { GameTabBar } from "../game-tab-bar/GameTabBar";
 import type { PostFilter } from "../patch-notes/PatchNotes";
 import { recall, remember } from "../game-cache";
+import { openUrl } from "../rich-text/RichText";
 
 // The tabs nobody sees at first are their own chunks, fetched when opened.
 const HltbAbout = lazy(() =>
@@ -116,11 +119,19 @@ export function TitleSheet({
   const [guideTips, setGuideTips] = useState<Record<string, AchievementTip>>(
     seenTips ?? {},
   );
+  const [guideVideos, setGuideVideos] = useState<Record<string, AchievementVideo[]>>(
+    recall<Record<string, AchievementVideo[]>>("videos", gameKey) ?? {},
+  );
+  const [gameGuide, setGameGuide] = useState<GameGuide | null>(
+    recall<GameGuide | null>("guide", gameKey) ?? null,
+  );
   const [guidesReady, setGuidesReady] = useState(seenTips !== undefined);
   useEffect(() => {
     let cancelled = false;
     const known = recall<Record<string, AchievementTip>>("tips", gameKey);
     setGuideTips(known ?? {});
+    setGuideVideos(recall<Record<string, AchievementVideo[]>>("videos", gameKey) ?? {});
+    setGameGuide(recall<GameGuide | null>("guide", gameKey) ?? null);
     setGuidesReady(known !== undefined);
     // The first look at a game reads several guides and can take a while: the
     // page waits for it, but not past a limit — the tips still land when they
@@ -138,7 +149,13 @@ export function TitleSheet({
         .then((res) => {
           if (cancelled) return;
           setGuideTips(res.tips ?? {});
-          if (res.complete) remember("tips", gameKey, res.tips ?? {});
+          setGuideVideos(res.videos ?? {});
+          setGameGuide(res.guide ?? null);
+          if (res.complete) {
+            remember("guide", gameKey, res.guide ?? null);
+            remember("tips", gameKey, res.tips ?? {});
+            remember("videos", gameKey, res.videos ?? {});
+          }
           if (!res.complete && tries < GUIDES_TRIES) {
             retry = window.setTimeout(ask, GUIDES_RETRY_MS);
           }
@@ -299,6 +316,15 @@ export function TitleSheet({
       ? Math.round((unlocked / total) * 100)
       : (details?.completion_percent ?? 0);
   const isCompleted = total > 0 && unlocked >= total;
+  // The day the last achievement was earned: when the game was finished.
+  const completedAt = useMemo(
+    () =>
+      achievements.reduce<string | null>(
+        (last, a) => (a.is_unlocked && a.unlocked_at && (!last || a.unlocked_at > last) ? a.unlocked_at : last),
+        null,
+      ),
+    [achievements],
+  );
 
   const scoreLines = useMemo<ScoreCupLine[]>(() => {
     const isXbox = game.platform.startsWith(PLATFORMS.XBOX);
@@ -483,6 +509,18 @@ export function TitleSheet({
               {viewed?.name && <small>{viewed.name}</small>}
             </span>
           </div>
+          {/* The game's video guide in the head, not on the picture — that is
+              the game's own (owner, 2026-10-06). */}
+          {gameGuide && (
+            <button
+              type="button"
+              className="game-guide-btn"
+              aria-label={`${t(locale, gameGuide.video_id ? "gameGuideVideo" : "gameGuideVideos")} · ${gameGuide.channel}`}
+              onClick={() => openUrl(gameGuide.url)}
+            >
+              <Icon name="video" size={22} />
+            </button>
+          )}
           {earnedLine &&
             (game.platform === PLATFORMS.PSN ? (
               <TierMedals counts={tierCounts} discSize={18} numbersInside />
@@ -505,6 +543,8 @@ export function TitleSheet({
             loading={loading}
             locale={locale}
             compact={!open}
+            completedAt={completedAt}
+            celebrateKey={isCompleted && !other ? `${game.platform}:${game.title_id}` : null}
           />
         )}
       </HeroPeek>
@@ -647,6 +687,7 @@ export function TitleSheet({
                             locale={locale}
                             onToggleReveal={toggleReveal}
                             tip={guideTips[row.achievement_id]}
+                            hasVideo={Boolean(guideVideos[row.achievement_id]?.length)}
                             onOpen={setOpenAchievement}
                             fallbackIcon={cover}
                             compare={
@@ -736,6 +777,7 @@ export function TitleSheet({
         <AchievementPage
           row={shownAchievement}
           tip={guideTips[shownAchievement.achievement_id]}
+          videos={guideVideos[shownAchievement.achievement_id]}
           game={title}
           fallbackIcon={cover}
           locale={locale}

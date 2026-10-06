@@ -1,4 +1,4 @@
-export const ADMIN_KEY_NAMES = ["steam", "psn", "anthropic"] as const;
+export const ADMIN_KEY_NAMES = ["steam", "psn", "anthropic", "youtube"] as const;
 export type AdminKeyName = (typeof ADMIN_KEY_NAMES)[number];
 
 export const ADMIN_USER_PLATFORMS = ["xbox", "psn", "steam"] as const;

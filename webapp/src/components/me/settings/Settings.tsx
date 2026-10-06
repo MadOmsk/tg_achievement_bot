@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AccountPlatform, MeResponse, NotifyPosts } from "../../../api";
+import type { AccountPlatform, MeResponse, GameNewsChoice, NotifyPosts } from "../../../api";
 import { t, timezoneLabel, type Locale } from "../../../i18n";
 import {
   Avatar,
@@ -76,6 +76,10 @@ export function Settings({
     notify_push?: boolean;
     notify_telegram?: boolean;
     notify_posts?: NotifyPosts;
+    notify_new_posts?: boolean;
+    notify_friends?: boolean;
+    notify_account?: boolean;
+    notify_game_news?: GameNewsChoice;
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onNickname: (handle: string) => Promise<void>;

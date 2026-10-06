@@ -1,8 +1,8 @@
 • The app is now called Unlocked — a new logo, and it installs on your phone
 • Sign in by email; newcomers sign up in a browser with a friend's invite
-• The app's own notifications: a bell, push, friends' posts — you choose whose
+• The app's own notifications: a bell, push, friends' posts and game news — you choose what
 • "News": what the developers of your games post on Steam
-• Pages of their own for posts and achievements — full text and guide tips
+• Pages of their own for posts and achievements — full text, guide tips and videos
 • New settings: your profile on top, with accounts, sign-in and privacy inside
 • The phone's back button no longer closes the app
 • Various interface improvements

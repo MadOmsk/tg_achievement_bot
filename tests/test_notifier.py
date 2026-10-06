@@ -245,8 +245,8 @@ async def test_publishing_tells_followers_without_waiting_for_them(repo: Repo, m
     pub = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
     told: list[tuple] = []
 
-    async def on_new_post(*args) -> None:
-        told.append(args)
+    async def on_new_post(*args, **kwargs) -> None:
+        told.append((*args, kwargs))
 
     async def publishes(*_args) -> bool:
         return True
@@ -260,7 +260,10 @@ async def test_publishing_tells_followers_without_waiting_for_them(repo: Repo, m
 
     await pub.publish(7, "x1", "ada", [achievement("a1", None), achievement("a2", None)], "Halo 3")
     await asyncio.sleep(0)
-    assert told == [(7, "xbox_360", "1", "Halo 3", 2)]
+    first = achievement("a1", None)
+    assert told == [
+        (7, "xbox_360", "1", "Halo 3", 2, {"achievement": first.name, "icon": first.icon_url})
+    ]
 
 
 async def test_a_post_opens_its_game_on_the_authors_progress(repo: Repo, settings) -> None:
@@ -311,3 +314,131 @@ def test_only_a_push_service_is_a_push_endpoint() -> None:
     assert not is_push_service("https://fcm.googleapis.com.evil.example/x")
     assert not is_push_service("http://fcm.googleapis.com/x")
     assert not is_push_service("https://fcm.googleapis.com:8443/x")
+
+
+async def test_the_list_names_the_achievement_and_never_a_secret_one(
+    repo: Repo, monkeypatch
+) -> None:
+    import asyncio
+    from dataclasses import replace
+
+    from bot.poller.publisher import Publisher
+    from bot.services.notifier import listed
+    from tests.test_publisher import achievement
+
+    pub = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+    told: list[dict] = []
+
+    async def on_new_post(*args, **kwargs) -> None:
+        told.append(kwargs)
+
+    async def publishes(*_args) -> bool:
+        return True
+
+    async def no_chats(_person: int) -> list:
+        return []
+
+    monkeypatch.setattr(repo, "account_publishes", publishes)
+    monkeypatch.setattr(repo, "publication_targets", no_chats)
+    pub.on_new_post = on_new_post
+    secret = replace(achievement("a1", None), is_secret=True, name="Hidden")
+    shown = replace(achievement("a2", None), name="Open Door", icon_url="https://x/i.png")
+    await pub.publish(7, "x1", "ada", [secret, shown], "Halo 3")
+    await asyncio.sleep(0)
+    assert told == [{"achievement": "Open Door", "icon": "https://x/i.png"}]
+
+    data = {
+        "person_id": 7,
+        "name": "ada",
+        "game": "Halo 3",
+        "count": 2,
+        "pretty": "2",
+        "trophies": "no",
+        **told[0],
+    }
+    assert listed("new_post", data, "ru") == {
+        "lead": "получает 2 достижения — «Open Door» и ещё 1",
+        "detail": "Halo 3",
+        "image": "https://x/i.png",
+    }
+    assert listed("xbox_login_dead", {}, "en")["detail"] is None
+
+
+async def test_a_kind_switched_off_is_neither_kept_nor_sent(repo: Repo) -> None:
+    ada, bob, _ = await _people(repo)
+    sent: list = []
+    notifier = _notifier(repo, _PushService(), sent)
+    await repo.update_user_settings(bob, notify_friends=0)
+    await notifier.notify(bob, "new_friend", person_id=ada, name="ada")
+    assert await repo.notifications_of(bob) == []
+    await notifier.notify(bob, "new_follower", person_id=ada, name="ada")
+    assert [row.kind for row in await repo.notifications_of(bob)] == ["new_follower"]
+
+
+async def test_a_games_new_post_is_told_to_its_players_only_once_and_never_its_history(
+    repo: Repo, monkeypatch
+) -> None:
+    from bot.services import steam_extras as se
+    from bot.services.steam_news import Patch
+    from bot.util import utcnow
+
+    _ada, bob, _ = await _people(repo)
+    notifier = _notifier(repo, _PushService(), [])
+    told: list[tuple[int, str]] = []
+
+    async def readers(appid, *, played_since):
+        return [(bob, "steam", "620", None, "Portal 2", "Portal 2")]
+
+    monkeypatch.setattr(repo, "game_news_readers", readers)
+    today = utcnow().isoformat(timespec="seconds")
+    reads = [
+        [Patch(gid="old", title="Old", date="2020-01-01T00:00:00Z", text="", kind="news")],
+        [
+            Patch(gid="old", title="Old", date="2020-01-01T00:00:00Z", text="", kind="news"),
+            Patch(gid="p1", title="Update 2", date=today, text="", kind="patch"),
+        ],
+    ]
+
+    async def fetch_patches(appid):
+        return reads.pop(0)
+
+    monkeypatch.setattr(se, "fetch_patches", fetch_patches)
+    extras = se.SteamExtras(repo, None)
+
+    async def tell(appid, posts):
+        told.extend((appid, p.gid) for p in posts)
+        await notifier.tell_about_game_news(appid, posts)
+
+    extras.on_new_posts = tell
+    await extras.refresh_patches(620)  # the first read: history
+    await extras.refresh_patches(620)
+    assert told == [(620, "p1")]
+    rows = await repo.notifications_of(bob)
+    assert [(row.kind, row.data["title"], row.data["post"]) for row in rows] == [
+        ("game_news", "Update 2", "patch")
+    ]
+
+
+async def test_game_news_follow_the_persons_choice_of_kind(repo: Repo, monkeypatch) -> None:
+    from bot.db.repo import StoredPatch
+    from bot.util import utcnow
+
+    _ada, bob, _ = await _people(repo)
+    notifier = _notifier(repo, _PushService(), [])
+
+    async def readers(appid, *, played_since):
+        return [(bob, "steam", "620", None, "Portal 2", "Portal 2")]
+
+    monkeypatch.setattr(repo, "game_news_readers", readers)
+    today = utcnow().isoformat(timespec="seconds")
+    posts = [
+        StoredPatch("n1", "Sale", today, None, None, None, kind="news"),
+        StoredPatch("p1", "Update", today, None, None, None, kind="patch"),
+    ]
+    await repo.update_user_settings(bob, notify_game_news="patch")
+    await notifier.tell_about_game_news(620, posts)
+    assert [row.data["title"] for row in await repo.notifications_of(bob)] == ["Update"]
+
+    await repo.update_user_settings(bob, notify_game_news="none")
+    await notifier.tell_about_game_news(620, posts)
+    assert len(await repo.notifications_of(bob)) == 1

@@ -68,6 +68,7 @@ from bot.services.translate.auth import (
     AnthropicAuth,
     AnthropicKeyInvalidError,
 )
+from bot.services.youtube.auth import YouTubeAuth, YouTubeKeyInvalidError
 from bot.util import parse_iso, parse_utc_offset, utcnow
 from bot.views.admin import (
     _cancel_input_keyboard,
@@ -217,6 +218,8 @@ PSN_NPSSO_KEY = "psn_npsso"
 # Anthropic (2026-09-09 user request) — achievement-description translation
 # only, same admin-settable-shared-credential shape as the two above (#17).
 ANTHROPIC_KEY_KEY = "anthropic_api_key"
+# YouTube (2026-10-06) — video guides on an achievement's page.
+YOUTUBE_KEY_KEY = "youtube_api_key"
 
 
 class AwaitingAdminTextInput(BaseFilter):
@@ -229,6 +232,7 @@ class AwaitingAdminTextInput(BaseFilter):
             STEAM_KEY_KEY,
             PSN_NPSSO_KEY,
             ANTHROPIC_KEY_KEY,
+            YOUTUBE_KEY_KEY,
         )
 
 
@@ -238,11 +242,13 @@ async def keys_menu(
     steam_auth: SteamAuth,
     psn_auth: PsnAuth,
     anthropic_auth: AnthropicAuth,
+    youtube_auth: YouTubeAuth,
     i18n: I18nContext,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
-        callback, *await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        callback,
+        *await render_keys(steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale),
     )
 
 
@@ -257,11 +263,13 @@ _KEYSET_APP_SETTING_KEY = {
     "steam": STEAM_KEY_KEY,
     "psn": PSN_NPSSO_KEY,
     "anthropic": ANTHROPIC_KEY_KEY,
+    "youtube": YOUTUBE_KEY_KEY,
 }
 _KEYSET_PROMPT = {
     STEAM_KEY_KEY: "admin-keys-steam-prompt",
     PSN_NPSSO_KEY: "admin-keys-psn-prompt",
     ANTHROPIC_KEY_KEY: "admin-keys-anthropic-prompt",
+    YOUTUBE_KEY_KEY: "admin-keys-youtube-prompt",
 }
 
 
@@ -281,19 +289,22 @@ async def keys_clear(
     steam_auth: SteamAuth,
     psn_auth: PsnAuth,
     anthropic_auth: AnthropicAuth,
+    youtube_auth: YouTubeAuth,
     i18n: I18nContext,
 ) -> None:
     assert callback.data is not None
     platform = callback.data.rsplit(":", 1)[1]
-    auth: SteamAuth | PsnAuth | AnthropicAuth = {
+    auth: SteamAuth | PsnAuth | AnthropicAuth | YouTubeAuth = {
         "steam": steam_auth,
         "psn": psn_auth,
         "anthropic": anthropic_auth,
+        "youtube": youtube_auth,
     }[platform]
     await auth.clear(callback.from_user.id)
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
-        callback, *await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        callback,
+        *await render_keys(steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale),
     )
 
 
@@ -325,6 +336,7 @@ async def admin_text_input(
     psn_auth: PsnAuth,
     steam_auth: SteamAuth,
     anthropic_auth: AnthropicAuth,
+    youtube_auth: YouTubeAuth,
     i18n: I18nContext,
 ) -> None:
     _ = translator("admin", i18n.locale)
@@ -346,7 +358,9 @@ async def admin_text_input(
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        text, markup = await render_keys(
+            steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale
+        )
         await message.answer(_("admin-keys-steam-saved", text=text), reply_markup=markup)
         return
 
@@ -376,7 +390,9 @@ async def admin_text_input(
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        text, markup = await render_keys(
+            steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale
+        )
         await message.answer(_("admin-keys-psn-saved", text=text), reply_markup=markup)
         return
 
@@ -392,8 +408,26 @@ async def admin_text_input(
             )
             return
         _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await render_keys(steam_auth, psn_auth, anthropic_auth, locale=i18n.locale)
+        text, markup = await render_keys(
+            steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale
+        )
         await message.answer(_("admin-keys-anthropic-saved", text=text), reply_markup=markup)
+        return
+
+    if key == YOUTUBE_KEY_KEY:
+        try:
+            await youtube_auth.set_key(raw, message.from_user.id)
+        except YouTubeKeyInvalidError:
+            await message.answer(
+                _("admin-keys-youtube-invalid"),
+                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
+            )
+            return
+        _awaiting_input.pop(message.from_user.id, None)
+        text, markup = await render_keys(
+            steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale
+        )
+        await message.answer(_("admin-keys-youtube-saved", text=text), reply_markup=markup)
         return
 
 

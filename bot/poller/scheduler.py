@@ -21,6 +21,7 @@ from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher
 from bot.poller.flood_flush import FloodFlush
+from bot.poller.guide_videos import GuideVideos
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.patch_refresh import PatchRefresh
@@ -67,6 +68,7 @@ class PollerScheduler:
         title_platforms: TitlePlatformsRefresh,
         psn_trophy_groups: PsnTrophyGroups,
         patch_refresh: PatchRefresh | None = None,
+        guide_videos: GuideVideos | None = None,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -90,6 +92,7 @@ class PollerScheduler:
         self._title_platforms = title_platforms
         self._psn_trophy_groups = psn_trophy_groups
         self._patch_refresh = patch_refresh
+        self._guide_videos = guide_videos
         self._steam_catch_up = steam_catch_up
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -161,6 +164,14 @@ class PollerScheduler:
                 self._patch_refresh.tick,
                 IntervalTrigger(seconds=TICK_SECONDS),
                 id="patch_refresh",
+                coalesce=True,
+                max_instances=1,
+            )
+        if self._guide_videos is not None:
+            self._scheduler.add_job(
+                self._guide_videos.tick,
+                IntervalTrigger(seconds=TICK_SECONDS),
+                id="guide_videos",
                 coalesce=True,
                 max_instances=1,
             )

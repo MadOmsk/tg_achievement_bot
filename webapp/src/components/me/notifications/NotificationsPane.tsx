@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { MeResponse, NotifyPosts } from "../../../api";
+import type { MeResponse, GameNewsChoice, NotifyPosts } from "../../../api";
 import { t, type Locale, type TranslationKey } from "../../../i18n";
 import { BackHead, Group, InfoRow, SelectRow, ToggleRow } from "../../shared/lib";
 import { disablePush, enablePush, pushState, quickPushState, type PushState } from "./push";
@@ -34,6 +34,10 @@ export function NotificationsPane({
     notify_telegram?: boolean;
     notify_followers?: boolean;
     notify_posts?: NotifyPosts;
+    notify_new_posts?: boolean;
+    notify_friends?: boolean;
+    notify_account?: boolean;
+    notify_game_news?: GameNewsChoice;
   }) => void;
   onFlash: (message: string) => void;
   /** Opens Settings → «Вход», for somebody with no Telegram yet. */
@@ -71,6 +75,10 @@ export function NotificationsPane({
   };
 
   const hint = device ? DEVICE_HINT[device] : undefined;
+  // With nothing to deliver them (no push here, no Telegram messages) the
+  // kinds below would choose nothing: they are hidden (owner, 2026-10-06).
+  const delivering =
+    (device === "on" && pushOn) || (hasTelegram && me.settings.notify_telegram !== false);
 
   return (
     <>
@@ -103,25 +111,72 @@ export function NotificationsPane({
           <InfoRow label={t(locale, "notifyPush")} sub={hint ? t(locale, hint) : t(locale, "notifyPushHint")} />
         )}
       </Group>
-      <Group title={t(locale, "notifyWhat")}>
-        <ToggleRow
-          label={t(locale, "notifyFollowers")}
-          sub={t(locale, "notifyFollowersHint")}
-          on={me.settings.notify_followers !== false}
-          onChange={(on) => onPatch({ notify_followers: on })}
-        />
-        <SelectRow<NotifyPosts>
-          label={t(locale, "notifyPosts")}
-          sub={t(locale, "notifyPostsHint")}
-          value={me.settings.notify_posts ?? "friends"}
-          options={[
-            { value: "friends", label: t(locale, "notifyPostsFriends") },
-            { value: "following", label: t(locale, "notifyPostsFollowing") },
-            { value: "none", label: t(locale, "notifyPostsNone") },
-          ]}
-          onChange={(value) => onPatch({ notify_posts: value })}
-        />
-      </Group>
+      {delivering && (
+        <>
+          {/* By what they are about (owner, 2026-10-06): people, games, accounts;
+              whose activity first, then a switch per kind. */}
+          <Group title={t(locale, "notifyPeople")}>
+            <SelectRow<NotifyPosts>
+              label={t(locale, "notifyFrom")}
+              sub={t(locale, "notifyFromHint")}
+              value={me.settings.notify_posts ?? "friends"}
+              options={[
+                { value: "friends", label: t(locale, "notifyPostsFriends") },
+                { value: "following", label: t(locale, "notifyPostsFollowing") },
+                { value: "none", label: t(locale, "notifyPostsNone") },
+              ]}
+              onChange={(value) => onPatch({ notify_posts: value })}
+            />
+            <ToggleRow
+              label={t(locale, "notifyPosts")}
+              sub={t(locale, "notifyPostsHint")}
+              on={me.settings.notify_new_posts !== false && me.settings.notify_posts !== "none"}
+              // "Nobody" switched them off too: turning them on brings friends back.
+              onChange={(on) =>
+                onPatch(
+                  on && me.settings.notify_posts === "none"
+                    ? { notify_new_posts: true, notify_posts: "friends" }
+                    : { notify_new_posts: on },
+                )
+              }
+            />
+            <ToggleRow
+              label={t(locale, "notifyFollowers")}
+              sub={t(locale, "notifyFollowersHint")}
+              on={me.settings.notify_followers !== false}
+              onChange={(on) => onPatch({ notify_followers: on })}
+            />
+            <ToggleRow
+              label={t(locale, "notifyFriends")}
+              sub={t(locale, "notifyFriendsHint")}
+              on={me.settings.notify_friends !== false}
+              onChange={(on) => onPatch({ notify_friends: on })}
+            />
+          </Group>
+          <Group title={t(locale, "notifyGames")}>
+            <SelectRow<GameNewsChoice>
+              label={t(locale, "notifyGameNews")}
+              sub={t(locale, "notifyGameNewsHint")}
+              value={me.settings.notify_game_news ?? "all"}
+              options={[
+                { value: "all", label: t(locale, "postsAll") },
+                { value: "patch", label: t(locale, "notifyGameNewsPatch") },
+                { value: "news", label: t(locale, "notifyGameNewsNews") },
+                { value: "none", label: t(locale, "notifyGameNewsNone") },
+              ]}
+              onChange={(value) => onPatch({ notify_game_news: value })}
+            />
+          </Group>
+          <Group title={t(locale, "notifyAccounts")}>
+            <ToggleRow
+              label={t(locale, "notifyAccount")}
+              sub={t(locale, "notifyAccountHint")}
+              on={me.settings.notify_account !== false}
+              onChange={(on) => onPatch({ notify_account: on })}
+            />
+          </Group>
+        </>
+      )}
     </>
   );
 }

@@ -73,7 +73,9 @@ class OAuthServer:
         steam_extras: Any = None,
         notifications: Any = None,
         merge: Any = None,
+        youtube_auth: Any = None,
     ) -> None:
+        self._youtube_auth = youtube_auth
         self._steam_extras = steam_extras
         self._notifications = notifications
         self._merge = merge
@@ -116,6 +118,7 @@ class OAuthServer:
             steam_extras=self._steam_extras,
             notifications=self._notifications,
             merge=self._merge,
+            youtube_auth=self._youtube_auth,
         )
 
         self._runner = web.AppRunner(app)

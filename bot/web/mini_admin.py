@@ -34,12 +34,13 @@ from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURE
 from bot.services.steam.auth import SteamAuth, SteamKeyInvalidError
 from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED
 from bot.services.translate.auth import AnthropicAuth, AnthropicKeyInvalidError
+from bot.services.youtube.auth import YouTubeAuth, YouTubeKeyInvalidError
 from bot.util import utcnow
 from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 
 log = logging.getLogger(__name__)
 
-_KEY_NAMES = ("steam", "psn", "anthropic")
+_KEY_NAMES = ("steam", "psn", "anthropic", "youtube")
 
 
 def _usage_text(windows: list[tuple[int, int, float]]) -> str:
@@ -79,7 +80,10 @@ async def build_admin_home(
 
 
 async def build_admin_keys(
-    steam_auth: SteamAuth | None, psn_auth: PsnAuth | None, anthropic_auth: AnthropicAuth | None
+    steam_auth: SteamAuth | None,
+    psn_auth: PsnAuth | None,
+    anthropic_auth: AnthropicAuth | None,
+    youtube_auth: YouTubeAuth | None = None,
 ) -> dict[str, bool]:
     steam = False
     psn = False
@@ -90,7 +94,8 @@ async def build_admin_keys(
         psn = await psn_auth.status() != PSN_NOT_CONFIGURED
     if anthropic_auth is not None:
         anthropic = await anthropic_auth.status() != ANTHROPIC_NOT_CONFIGURED
-    return {"steam": steam, "psn": psn, "anthropic": anthropic}
+    youtube = youtube_auth is not None and await youtube_auth.configured()
+    return {"steam": steam, "psn": psn, "anthropic": anthropic, "youtube": youtube}
 
 
 async def build_admin_limits(repo: Repo, *, locale: str) -> dict[str, Any]:
@@ -326,6 +331,7 @@ async def handle_admin_key_put(request: web.Request) -> web.Response:
     steam_auth: SteamAuth | None = request.app.get("mini_steam_auth")
     psn_auth: PsnAuth | None = request.app.get("mini_psn_auth")
     anthropic_auth: AnthropicAuth | None = request.app.get("mini_anthropic_auth")
+    youtube_auth: YouTubeAuth | None = request.app.get("mini_youtube_auth")
     try:
         if name == "steam":
             if steam_auth is None:
@@ -335,11 +341,15 @@ async def handle_admin_key_put(request: web.Request) -> web.Response:
             if psn_auth is None:
                 raise web.HTTPServiceUnavailable(text="psn unavailable")
             await psn_auth.set_npsso(value, admin.tg_id)
+        elif name == "youtube":
+            if youtube_auth is None:
+                raise web.HTTPServiceUnavailable(text="youtube unavailable")
+            await youtube_auth.set_key(value, admin.tg_id)
         else:
             if anthropic_auth is None:
                 raise web.HTTPServiceUnavailable(text="anthropic unavailable")
             await anthropic_auth.set_key(value, admin.tg_id)
-    except (SteamKeyInvalidError, AnthropicKeyInvalidError):
+    except (SteamKeyInvalidError, AnthropicKeyInvalidError, YouTubeKeyInvalidError):
         return web.json_response({"ok": False, "error": "invalid"}, status=400)
     except Exception:
         log.exception("mini admin set key %s failed", name)
@@ -356,6 +366,7 @@ async def handle_admin_key_delete(request: web.Request) -> web.Response:
         "steam": request.app.get("mini_steam_auth"),
         "psn": request.app.get("mini_psn_auth"),
         "anthropic": request.app.get("mini_anthropic_auth"),
+        "youtube": request.app.get("mini_youtube_auth"),
     }[name]
     if auth is None:
         raise web.HTTPServiceUnavailable()
@@ -620,6 +631,7 @@ async def _keys_payload(request: web.Request) -> dict[str, bool]:
         request.app.get("mini_steam_auth"),
         request.app.get("mini_psn_auth"),
         request.app.get("mini_anthropic_auth"),
+        request.app.get("mini_youtube_auth"),
     )
 
 

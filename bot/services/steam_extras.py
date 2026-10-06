@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+from collections.abc import Awaitable, Callable
 
 from bot.db.repo import Repo, StoredPatch
 from bot.services.hltb_match import normalize
@@ -40,6 +41,9 @@ class SteamExtras:
         self._locks: dict[str, asyncio.Lock] = {}
         # Background fills in flight: a reference keeps each alive until done.
         self._running: dict[str, asyncio.Task[bool]] = {}
+        # Told of an app's posts that are new since its last read (main.py:
+        # the players' notices).
+        self.on_new_posts: Callable[[int, list[StoredPatch]], Awaitable[None]] | None = None
 
     def ensure_title(self, title_id: str) -> None:
         """Fill the game in the background if it is not filled yet — never on
@@ -196,22 +200,28 @@ class SteamExtras:
         patches = await fetch_patches(appid)
         if patches is None:
             return
-        await self._repo.save_game_patches(
-            appid,
-            [
-                StoredPatch(
-                    gid=p.gid,
-                    title=p.title,
-                    published_at=p.date,
-                    text_en=p.text,
-                    title_ru=None,
-                    text_ru=None,
-                    kind=p.kind,
-                    image_url=p.image,
-                )
-                for p in patches
-            ],
-        )
+        known = await self._repo.game_patch_gids(appid)
+        stored = [
+            StoredPatch(
+                gid=p.gid,
+                title=p.title,
+                published_at=p.date,
+                text_en=p.text,
+                title_ru=None,
+                text_ru=None,
+                kind=p.kind,
+                image_url=p.image,
+            )
+            for p in patches
+        ]
+        await self._repo.save_game_patches(appid, stored)
+        # A first read is the app's history, not news: nothing is told then.
+        fresh = [p for p in stored if p.gid not in known] if known else []
+        if fresh and self.on_new_posts is not None:
+            try:
+                await self.on_new_posts(appid, fresh)
+            except Exception:
+                log.exception("new post notices for steam app %s failed", appid)
 
 
 def _asked_about(row) -> tuple[str, str]:

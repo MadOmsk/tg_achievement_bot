@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import type { AchievementTip, GameAchievement } from "../../../api";
+import type { AchievementTip, AchievementVideo, GameAchievement } from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import { BackHead, CoverImg, FitImg, TierDisc, asTier, useImageRatio, openImage } from "../../shared/lib";
+import { BackHead, CoverImg, FitImg, Icon, TierDisc, asTier, useImageRatio, openImage } from "../../shared/lib";
 import { paragraphsOf } from "../patch-notes/PatchNotes";
-import { RichLines } from "../rich-text/RichText";
+import { RichLines, openUrl } from "../rich-text/RichText";
 import { pickLocale } from "../utils";
 import "../post-page/PostPage.css";
 
@@ -18,6 +18,48 @@ function dayOf(iso: string, locale: Locale): string {
   });
 }
 
+function clock(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = String(seconds % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+/** A guide video, opened on YouTube at the moment it is about. */
+/** A video's title without the game it begins with — the page names it already —
+ * and without the channel's "🏆 Trophy / Achievement Guide" tail. */
+function shortTitle(title: string, game: string): string {
+  let text = title.split("🏆")[0].trim();
+  const lower = text.toLowerCase();
+  const prefix = `${game.toLowerCase()} - `;
+  if (lower.startsWith(prefix)) text = text.slice(prefix.length);
+  return text.replace(/\s+[-–—]\s*$/, "").trim() || title;
+}
+
+function GuideVideo({ video, game, locale }: { video: AchievementVideo; game: string; locale: Locale }) {
+  const from = video.start > 0 ? `${t(locale, "achVideoFrom")} ${clock(video.start)}` : null;
+  const byline = [video.channel, video.part ? `${t(locale, "achVideoPart")} ${video.part}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <button type="button" className="guide-video" onClick={() => openUrl(video.url)}>
+      <span className="guide-video-pic">
+        <img src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`} alt="" loading="lazy" />
+        <span className="guide-video-play" aria-hidden>
+          <Icon name="play" size={18} />
+        </span>
+        {from && <span className="guide-video-from">{from}</span>}
+      </span>
+      <span className="guide-video-copy">
+        <span className="guide-video-title" lang="en">
+          {shortTitle(video.title, game)}
+        </span>
+        {byline && <span className="guide-video-by">{byline}</span>}
+      </span>
+    </button>
+  );
+}
+
 /** An achievement on a page of its own (owner, 2026-10-05), laid out as a
  * post's page: the game named in the head; its picture, all of it; its rarity,
  * its points or trophy, and when it was earned; its name and description; then
@@ -26,6 +68,7 @@ function dayOf(iso: string, locale: Locale): string {
 export function AchievementPage({
   row,
   tip,
+  videos,
   game,
   fallbackIcon,
   locale,
@@ -33,6 +76,8 @@ export function AchievementPage({
 }: {
   row: GameAchievement;
   tip?: AchievementTip;
+  /** Guide videos that name it, each from the moment it starts. */
+  videos?: AchievementVideo[];
   /** The game's name, for the head. */
   game: string;
   /** Shown when the achievement has no picture of its own. */
@@ -84,17 +129,28 @@ export function AchievementPage({
         </div>
         <h1 className="post-page-title">{name}</h1>
         {description && <p className="post-page-lead">{description}</p>}
-        {tip && (
+        {(tip || videos?.length) && (
           <section className="post-page-section">
             <h2>{t(locale, "achHowTo")}</h2>
-            <div className="post-page-text">
-              {paragraphsOf(tip.text).map((paragraph, i) => (
-                <p key={i}>
-                  <RichLines text={paragraph} className="rich-line" />
-                </p>
-              ))}
-            </div>
-            <p className="post-page-source">{t(locale, "achTipSource")}</p>
+            {videos && videos.length > 0 && (
+              <div className="guide-videos">
+                {videos.map((video) => (
+                  <GuideVideo key={`${video.id}:${video.start}`} video={video} game={game} locale={locale} />
+                ))}
+              </div>
+            )}
+            {tip && (
+              <>
+                <div className="post-page-text">
+                  {paragraphsOf(tip.text).map((paragraph, i) => (
+                    <p key={i}>
+                      <RichLines text={paragraph} className="rich-line" />
+                    </p>
+                  ))}
+                </div>
+                <p className="post-page-source">{t(locale, "achTipSource")}</p>
+              </>
+            )}
           </section>
         )}
       </article>

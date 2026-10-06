@@ -59,7 +59,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .notice-row {
@@ -67,23 +67,41 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 10px 4px;
+  margin: 0 -10px;
+  padding: 9px 10px;
+  box-sizing: content-box;
   border: 0;
+  border-radius: 14px;
   background: none;
   color: var(--text);
   font: inherit;
   text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.notice-row.is-unread {
+  background: rgba(124, 140, 255, 0.1);
 }
 
 .notice-mark {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: var(--glass);
   color: var(--muted);
+}
+
+.notice-pic {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  object-fit: cover;
+  background: var(--glass);
 }
 
 .notice-copy {
@@ -92,25 +110,36 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  font-size: 0.92rem;
-  line-height: 1.35;
 }
 
-.notice-row.is-unread .notice-copy > span {
-  font-weight: 600;
+.notice-line {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.notice-line b {
+  font-weight: 700;
+}
+
+.notice-time {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  white-space: nowrap;
 }
 
 .notice-copy small {
+  overflow: hidden;
   color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.notice-dot {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #4f9cff;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notice-skel {

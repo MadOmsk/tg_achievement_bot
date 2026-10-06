@@ -252,6 +252,47 @@ class _SteamRepo:
         )
         await self._conn.commit()
 
+    async def game_patch_gids(self, appid: int) -> set[str]:
+        """The posts of the app already stored."""
+        cursor = await self._conn.execute(
+            "SELECT gid FROM game_patches WHERE steam_appid = ?", (appid,)
+        )
+        return {row[0] for row in await cursor.fetchall()}
+
+    async def game_news_readers(
+        self, appid: int, *, played_since: str
+    ) -> list[tuple[int, str, str, str | None, str | None, str]]:
+        """Who plays the Steam app's game: everybody who earned something in one
+        of our games that is this app since `played_since`, with that game —
+        `(person_id, platform, title_id, name_ru, name_en, name)`, one row each."""
+        cursor = await self._conn.execute(
+            "SELECT al.person_id, MAX(s.platform) AS platform, s.title_id,"
+            "       t.name_ru, t.name_en, t.name"
+            " FROM seen_achievements s"
+            " JOIN account_links al ON al.platform = s.account_platform"
+            "  AND al.external_id = s.xuid AND al.is_active = 1"
+            # An excluded person is told nothing (CLAUDE.md, Statistics rules).
+            " JOIN users u ON u.id = al.person_id AND u.is_excluded = 0"
+            " JOIN titles t ON t.title_id = s.title_id"
+            " WHERE (CASE WHEN s.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
+            "        ELSE t.steam_appid END) = ?"
+            f"  AND {earned_date_is_real('s.')} AND {earned_at('s.')} >= ?"
+            " GROUP BY al.person_id"
+            " ORDER BY al.person_id",
+            (appid, played_since),
+        )
+        return [
+            (
+                int(row["person_id"]),
+                row["platform"],
+                row["title_id"],
+                row["name_ru"],
+                row["name_en"],
+                row["name"],
+            )
+            for row in await cursor.fetchall()
+        ]
+
     async def games_news(
         self,
         members: list[int],

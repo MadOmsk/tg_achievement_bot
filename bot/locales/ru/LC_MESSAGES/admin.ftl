@@ -37,6 +37,7 @@ admin-keys-screen =
     PSN: { $psn }
     Steam: { $steam }
     Anthropic: { $anthropic }
+    YouTube: { $youtube }
 admin-keys-set = ✅ настроен
 admin-keys-unset = ⚠️ не настроен
 admin-keys-steam-add = Задать ключ Steam
@@ -48,6 +49,9 @@ admin-keys-psn-clear = Убрать NPSSO (PSN)
 admin-keys-anthropic-add = Задать ключ Anthropic
 admin-keys-anthropic-change = Сменить ключ Anthropic
 admin-keys-anthropic-clear = Убрать ключ Anthropic
+admin-keys-youtube-add = Задать ключ YouTube
+admin-keys-youtube-change = Сменить ключ YouTube
+admin-keys-youtube-clear = Убрать ключ YouTube
 admin-keys-steam-prompt =
     Пришли Steam Web API key одним сообщением — получить его:
     https://steamcommunity.com/dev/apikey
@@ -72,6 +76,15 @@ admin-keys-anthropic-prompt =
 admin-keys-anthropic-invalid = Ключ Anthropic не подошёл — проверь и пришли ещё раз.
 admin-keys-anthropic-saved =
     Ключ Anthropic сохранён.
+
+    { $text }
+admin-keys-youtube-prompt =
+    Пришли ключ YouTube Data API одним сообщением — получить его:
+    console.cloud.google.com → включить «YouTube Data API v3» →
+    Credentials → Create credentials → API key (бесплатно).
+admin-keys-youtube-invalid = Ключ YouTube не подошёл — проверь и пришли ещё раз.
+admin-keys-youtube-saved =
+    Ключ YouTube сохранён.
 
     { $text }
 
