@@ -998,6 +998,8 @@ elsewhere in this file still describe the bot.
     2026-10-05), then by what they are about (owner, 2026-10-06; migration 087):
     «Люди» — «От кого» (friends / following / nobody), new posts, new
     followers, new friends; «Игры» — which game posts (all / patches / news / none); «Аккаунты» — the Xbox sign-in. `Kind.switch` names the setting; `Notifier.notify` keeps
+    With no channel delivering here — this device not subscribed to push and no
+    Telegram messages — the groups of kinds are hidden: they would choose nothing.
     and sends nothing of a kind switched off. A hint under a setting
     is its row's second line, never a note under the group, unless it is about a
     choice among the group's rows. `components/me/notifications/push.ts` says why a
