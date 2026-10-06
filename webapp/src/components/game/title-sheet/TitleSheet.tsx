@@ -27,6 +27,8 @@ import { t, type Locale } from "../../../i18n";
 import {
   RowsSkel,
   Icon,
+  Dropdown,
+  DropdownArrow,
   TierMedals,
   asTier,
   useBackHandler,
@@ -40,12 +42,19 @@ import { HeroPeek } from "../game-hero/HeroPeek";
 import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
 import { AchievementPage } from "../achievement-page/AchievementPage";
 import { GameTabBar } from "../game-tab-bar/GameTabBar";
+import type { PostFilter } from "../patch-notes/PatchNotes";
 import { recall, remember } from "../game-cache";
 
 // The tabs nobody sees at first are their own chunks, fetched when opened.
 const HltbAbout = lazy(() =>
   import("../hltb-about/HltbAbout").then((m) => ({ default: m.HltbAbout })),
 );
+const FILTER_LABEL = {
+  all: "postsAll",
+  news: "postsNews",
+  patch: "postsPatches",
+} as const;
+
 const PatchNotes = lazy(() =>
   import("../patch-notes/PatchNotes").then((m) => ({ default: m.PatchNotes })),
 );
@@ -94,6 +103,7 @@ export function TitleSheet({
   const [myDetails, setMyDetails] = useState<GameDetails | null>(null);
   // Always opens on what was earned; the lock flips to what is still to earn.
   const [showEarned, setShowEarned] = useState(true);
+  const [postFilter, setPostFilter] = useState<PostFilter>("all");
   const showAllSecrets = initialShowSecrets;
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
   // Achievements / "Об игре": one Swiper, endlessly looping, switched by tab
@@ -561,7 +571,26 @@ export function TitleSheet({
                     )}
                   </div>
                 ),
-                ...(hasUpdates ? [null] : []),
+                ...(hasUpdates
+                  ? [
+                      <Dropdown<PostFilter>
+                        key="posts-filter"
+                        className="dd-trigger posts-filter"
+                        value={postFilter}
+                        options={(["all", "news", "patch"] as PostFilter[]).map((value) => ({
+                          value,
+                          label: t(locale, FILTER_LABEL[value]),
+                        }))}
+                        onChange={setPostFilter}
+                        trigger={
+                          <>
+                            {t(locale, FILTER_LABEL[postFilter])}
+                            <DropdownArrow />
+                          </>
+                        }
+                      />,
+                    ]
+                  : []),
                 null,
               ]}
             />
@@ -650,6 +679,7 @@ export function TitleSheet({
                   <Suspense fallback={null}>
                     <PatchNotes
                       patches={patches}
+                      filter={postFilter}
                       locale={locale}
                       collapseKey={tabEpoch}
                       onLayout={refreshTabHeight}

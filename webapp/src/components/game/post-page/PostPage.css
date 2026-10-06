@@ -92,6 +92,12 @@
   text-transform: none;
 }
 
+.post-page-kind {
+  margin-left: auto;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+}
+
 .post-page-title {
   margin: 0;
   font-size: 1.35rem;

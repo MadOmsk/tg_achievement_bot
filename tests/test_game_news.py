@@ -78,8 +78,12 @@ async def test_news_are_the_played_games_posts_of_the_month(repo: Repo) -> None:
     assert {row.gid: row.kind for row in rows} == {"n1": "news", "p1": "patch"}
     assert rows[0].game == "Portal 2"
 
-    # The game page's «Обновления» shows the patches only.
-    assert [p.gid for p in await repo.game_patches(620, 10)] == ["p1"]
+    # The game page's «Новости» tab has both, newest first, each with its kind.
+    assert [(p.gid, p.kind) for p in await repo.game_patches(620, 10)] == [
+        ("n1", "news"),
+        ("p1", "patch"),
+        ("old", "news"),
+    ]
 
 
 async def test_the_news_route_reads_the_viewers_circle(repo: Repo, settings) -> None:

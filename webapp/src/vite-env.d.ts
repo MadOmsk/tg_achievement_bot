@@ -17,6 +17,9 @@ type TelegramWebApp = {
     hide: () => void;
     onClick: (callback: () => void) => void;
   };
+  HapticFeedback?: {
+    impactOccurred: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void;
+  };
   initDataUnsafe?: {
     start_param?: string;
     user?: { photo_url?: string; first_name?: string; username?: string };

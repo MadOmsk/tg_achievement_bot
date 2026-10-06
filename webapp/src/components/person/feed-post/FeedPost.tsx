@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { EffectCreative } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
-import type { CreativeEffectOptions, Swiper as SwiperInstance } from "swiper/types";
+import type { CreativeEffectOptions } from "swiper/types";
 import "swiper/css";
 import "swiper/css/effect-creative";
 import type { FeedItem } from "../../../api";
@@ -46,14 +46,6 @@ export function FeedPost({
   const openGame = useOpenGame();
   const many = items.length > 1;
   const [active, setActive] = useState(0);
-  // The dots sit just over the open picture's text, whose height differs from
-  // one picture to the next: measured, not guessed. Looping, Swiper moves the
-  // slides around, so the open one is asked of Swiper, not counted.
-  const [textHeight, setTextHeight] = useState<number | null>(null);
-  const measure = (swiper: SwiperInstance) => {
-    const copy = swiper.slides[swiper.activeIndex]?.querySelector<HTMLElement>(".post-copy");
-    if (copy) setTextHeight(copy.offsetHeight);
-  };
   const canOpenGame = Boolean(openGame && head.title_id);
   // The frame takes the first picture's proportions, and every slide shares
   // it: a post does not change height as it is swiped. A wide one has its
@@ -63,7 +55,7 @@ export function FeedPost({
 
   return (
     <article
-      className={["post", canOpenGame ? "is-link" : "", wide ? "is-wide" : ""].filter(Boolean).join(" ")}
+      className={["post", canOpenGame ? "is-link" : "", wide ? "is-wide" : "", many ? "has-dots" : ""].filter(Boolean).join(" ")}
       // The whole post opens the game on this person's progress; the author, the
       // game line and "Открыть" keep their own taps.
       onClick={
@@ -100,11 +92,7 @@ export function FeedPost({
           longSwipesRatio={0.12}
           allowTouchMove={many}
           loop={many}
-          onSwiper={many ? measure : undefined}
-          onSlideChange={(swiper) => {
-            setActive(swiper.realIndex);
-            measure(swiper);
-          }}
+          onSlideChange={(swiper) => setActive(swiper.realIndex)}
         >
           {items.map((item) => {
             const key = feedKey(item);
@@ -161,19 +149,12 @@ export function FeedPost({
             );
           })}
         </Swiper>
-        {/* Over the pictures, not on them: the dots stay while the pictures move. */}
+        {/* Inside the text's block, at its foot: the row stays while the slides move. */}
         {many && (
-          <span className="post-dots-frame" aria-hidden>
-            <span
-              className="post-dots"
-              // Over the picture's foot: a wide one has its text under it, so the
-              // dots sit just above the text; otherwise in the text's fade.
-              style={textHeight != null ? { bottom: wide ? textHeight + 12 : textHeight - 12 } : undefined}
-            >
-              {items.map((item, i) => (
-                <span key={feedKey(item)} className={i === active ? "is-on" : undefined} />
-              ))}
-            </span>
+          <span className="post-dots" aria-hidden>
+            {items.map((item, i) => (
+              <span key={feedKey(item)} className={i === active ? "is-on" : undefined} />
+            ))}
           </span>
         )}
       </div>

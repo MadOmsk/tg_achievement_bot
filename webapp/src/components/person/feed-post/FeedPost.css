@@ -174,41 +174,38 @@
 
 /* The dots: a layer over the whole post that does not scroll, so they stay
  * while the pictures move under it; just over the open picture's text. */
-.post-dots-frame {
+.post-dots {
   position: absolute;
-  inset: 0 -18px;
+  left: 0;
+  right: 0;
+  bottom: 14px;
   z-index: 5;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
   pointer-events: none;
 }
 
-.post-dots {
-  position: absolute;
-  left: 50%;
-  bottom: 110px;
-  transition: bottom 0.25s ease;
-  display: flex;
-  gap: 5px;
-  /* A quiet pill under them: they read over any picture. */
-  padding: 5px 7px;
-  border-radius: 999px;
-  background: rgba(8, 10, 16, 0.42);
-  transform: translateX(-50%);
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+/* Room for the dots under the text, as much as above it. */
+.post.has-dots .post-copy {
+  padding-bottom: 33px;
 }
 
 .post-dots span {
   width: 5px;
   height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--muted);
+  opacity: 0.4;
   transition:
     width 0.2s ease,
-    background 0.2s ease;
+    opacity 0.2s ease;
 }
 
 .post-dots span.is-on {
   width: 14px;
-  background: #ffffff;
+  background: var(--text);
+  opacity: 1;
 }
 
 /* The text lies over the picture's foot on frosted glass: a strong blur that

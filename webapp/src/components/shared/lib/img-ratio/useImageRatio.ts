@@ -9,7 +9,7 @@ export const RATIO_MAX = 1.91;
 /** A feed post's frame is never wider than this (owner, 2026-10-05): a wide
  * picture keeps its whole height and gives up a little of its sides, rather
  * than making a thin strip of a post. */
-export const FEED_RATIO_MAX = 1.3;
+export const FEED_RATIO_MAX = 1.15;
 
 export function isWide(ratio: number): boolean {
   return ratio > 1.05;

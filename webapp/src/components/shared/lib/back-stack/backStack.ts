@@ -5,36 +5,39 @@ import { useEffect, useRef } from "react";
  * of leaving it. Each open layer — a screen with a back arrow, a sheet, the game
  * page, a tab other than Home — registers here; "back" closes the topmost.
  *
- * The browser's history holds one entry of ours, no more, while anything is
- * open: popping it is the "back", and it is put back while layers remain. One
- * entry, not one per layer, because a layer closing and another opening in the
- * same moment would race a history step against a new entry and lose one —
- * and the last "back" would then leave the app. */
+ * The history holds one entry of ours per open layer, pushed when the layer
+ * opens — while the tap that opened it still counts: Chrome lets "back" skip
+ * any entry a page added without the user's gesture, so an entry put back
+ * after a "back" was skipped and the next "back" left the app. Changes are
+ * reconciled once a moment's layers have settled: a layer closing as another
+ * opens is no history step at all, and nothing is pushed while a step back of
+ * our own is still on its way. */
 
 type Entry = { onBack: () => void };
 
 const stack: Entry[] = [];
-// Whether our entry is in the history now.
-let armed = false;
-// History steps this module took itself: their popstate is not a "back".
-let quiet = 0;
+// How many entries of ours are in the history now.
+let depth = 0;
+// A step back of our own whose popstate has not come yet: not a "back".
+let stepping = false;
 let listening = false;
 
 function telegramButton() {
   return window.Telegram?.WebApp?.BackButton;
 }
 
-/** Bring the history and Telegram's button in line with the stack, once the
- * layers opening and closing in this moment have settled. */
+/** Bring the history and Telegram's button in line with the stack. */
 function settle(): void {
   window.setTimeout(() => {
-    if (stack.length > 0 && !armed) {
-      window.history.pushState({ backStack: true }, "");
-      armed = true;
-    } else if (stack.length === 0 && armed) {
-      armed = false;
-      quiet += 1;
-      window.history.back();
+    if (stepping) return;
+    while (depth < stack.length) {
+      window.history.pushState({ backStack: depth + 1 }, "");
+      depth += 1;
+    }
+    if (depth > stack.length) {
+      stepping = true;
+      window.history.go(stack.length - depth);
+      depth = stack.length;
     }
     const button = telegramButton();
     if (stack.length > 0) button?.show();
@@ -46,11 +49,12 @@ function listen(): void {
   if (listening) return;
   listening = true;
   window.addEventListener("popstate", () => {
-    if (quiet > 0) {
-      quiet -= 1;
+    if (stepping) {
+      stepping = false;
+      settle();
       return;
     }
-    armed = false;
+    depth = Math.max(0, depth - 1);
     stack.pop()?.onBack();
     settle();
   });

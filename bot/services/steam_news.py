@@ -96,7 +96,7 @@ class Patch:
 
     gid: str
     title: str
-    date: str  # ISO date, UTC
+    date: str  # ISO date and time, UTC: 2026-10-05T14:32:00Z
     text: str  # the whole post, cleaned, cut only when very long
     kind: str = "patch"  # "patch" or "news"
     image: str | None = None  # the post's first picture
@@ -209,7 +209,7 @@ def parse_patches(payload: dict) -> list[Patch]:
         # The developer's own "patchnotes" tag is the surest sign; a title that
         # reads like a patch covers the posts nobody tagged.
         tagged = "patchnotes" in (item.get("tags") or [])
-        published = datetime.fromtimestamp(int(item["date"]), UTC).date().isoformat()
+        published = datetime.fromtimestamp(int(item["date"]), UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         posts.append(
             Patch(
                 gid=str(item["gid"]),
