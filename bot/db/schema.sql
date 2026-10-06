@@ -120,8 +120,9 @@ CREATE TABLE IF NOT EXISTS user_settings (
     person_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     -- Which achievements this person publishes, in every chat they are
     -- subscribed to (#126): 'all', 'rare' (at or below each chat's own
-    -- threshold), or 'hidden' — nothing published, and left out of chats'
-    -- summaries and /recent. One value for every platform: a platform with no
+    -- threshold), or 'hidden' — nothing published. Only notifications: the
+    -- person still counts in a chat's summaries, rankings and /recent, and
+    -- leaving those is unsubscribing (#167). One value for every platform: a platform with no
     -- rarity at all (Xbox 360) is exempt from 'rare' rather than getting a
     -- switch of its own. It was per subscription until #126 — somebody in
     -- many chats had to set the same thing in each.

@@ -34,7 +34,6 @@ from bot.db.repo._sql import (
     earned_since,
     member_source,
     pick_name,
-    publishes,
     rarity,
     rarity_cache_join,
 )
@@ -85,7 +84,10 @@ class _MessagesRepo:
         await self._conn.commit()
 
     async def chat_subscribers(self, chat_id: int) -> list[ChatSubscriber]:
-        """Who publishes here, with everything the person chain needs (#51).
+        """Who is subscribed here, with everything the person chain needs (#51).
+        A person whose rarity mode publishes nothing is still one (#167): the
+        mode is about notifications, and leaving a chat's statistics is
+        unsubscribing.
 
         Returns the fields, not a rendered label: this used to select
         `u.gamertag` alone and sort by it — so a member without an Xbox
@@ -104,8 +106,7 @@ class _MessagesRepo:
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + "WHERE s.chat_id = ? AND u.is_excluded = 0 AND "
-            + publishes(),
+            + "WHERE s.chat_id = ? AND u.is_excluded = 0",
             (chat_id,),
         )
         return [

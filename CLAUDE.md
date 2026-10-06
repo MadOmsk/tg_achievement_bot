@@ -720,6 +720,11 @@ known rarity is at or below the rarity threshold (a platform with no rarity at a
 Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
 isn't muted there; it wasn't already published there.
 
+- **`hidden` is about notifications only** (owner, 2026-10-06; #167): a person who
+  publishes nothing still counts in a chat's summaries, rankings, `/recent`, its
+  subscriber list and the Mini App. Leaving a chat's statistics is unsubscribing;
+  who sees one's activity in the Mini App is `users.activity_visible`.
+
 - **The rarity threshold is one for every chat** (owner, 2026-10-01):
   `app_settings['rare_threshold_percent']`, 10% until an admin changes it in
   /admin → global settings; no chat overrides it. The repo reads it wherever a

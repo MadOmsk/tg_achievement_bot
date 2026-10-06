@@ -136,7 +136,8 @@ async def test_subscribe_button_cycles_all_rare_hidden_all(
     assert await _mode(repo) == RarityMode.HIDDEN
     callback3.answer.assert_called_once_with("Ничего не публикую")
     subs3 = await repo.chat_subscribers(CHAT_ID)
-    assert not any(s.tg_id == TG_ID for s in subs3)  # Excluded from hub publishing roster!
+    # Still a subscriber (#167): the mode is about notifications only.
+    assert any(s.tg_id == TG_ID for s in subs3)
 
     # 4. Press again -> ALL
     callback4, _ = _make_callback()
@@ -144,7 +145,7 @@ async def test_subscribe_button_cycles_all_rare_hidden_all(
     assert await _mode(repo) == RarityMode.ALL
     callback4.answer.assert_called_once_with("Публикую все достижения")
     subs4 = await repo.chat_subscribers(CHAT_ID)
-    assert any(s.tg_id == TG_ID for s in subs4)  # Back in roster!
+    assert any(s.tg_id == TG_ID for s in subs4)
 
 
 async def test_the_mode_outlives_a_subscription(repo: Repo) -> None:
