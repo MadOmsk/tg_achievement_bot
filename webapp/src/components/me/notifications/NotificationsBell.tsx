@@ -179,7 +179,12 @@ function NoticeRow({
       </span>
       <span className="notice-copy">
         <span className="notice-line">
-          {item.bold && <b>{item.bold}</b>} {lead}
+          {item.bold && (
+            <>
+              <b>{item.bold}</b>{" "}
+            </>
+          )}
+          {lead}
         </span>
         {item.detail && <small className="notice-detail">{item.detail}</small>}
       </span>
