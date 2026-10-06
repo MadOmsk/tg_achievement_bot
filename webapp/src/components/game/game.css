@@ -877,7 +877,8 @@
   left: 50%;
   width: 5px;
   height: 5px;
-  margin: 0.5px 0 0 -2.5px;
+  /* On the visible rim's middle line: the disc's dark edge covers its inner 3px. */
+  margin: -1px 0 0 -2.5px;
   border-radius: 50%;
   background: #f4fcff;
   box-shadow:

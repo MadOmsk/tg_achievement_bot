@@ -124,30 +124,33 @@ def _fluent_args(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def listed(kind: str, data: dict[str, Any], locale: str) -> dict[str, str | None]:
-    """How the list draws a notice, short (owner, 2026-10-06): the name in bold
-    and one line — "получает достижение «Name»" — and under it the game."""
+    """How the list draws a notice (owner, 2026-10-06): `bold` then `lead` on
+    one line — "Anastasiafil получает «Okay, Boomer.» и ещё 2", "Gears of War:
+    E-Day — патч" —, `detail` under it (the game, a post's title), and `image`,
+    the achievement's or the post's picture, at the row's end."""
     spec = KINDS.get(kind, UNKNOWN)
+    args = _fluent_args(data)
     if kind == "game_news":
-        lead = gettext(
-            "notifications", "notification-game-news-lead", locale=locale, **_fluent_args(data)
-        )
-        return {"lead": lead, "detail": data.get("game"), "image": data.get("icon")}
+        return {
+            "bold": data.get("game"),
+            "lead": gettext("notifications", "notification-game-news-lead", locale=locale, **args),
+            "detail": data.get("title"),
+            "image": data.get("icon"),
+        }
     if spec.lead is None or not data.get("name"):
-        return {"lead": wording(kind, data, locale), "detail": None, "image": None}
-    lead = gettext("notifications", spec.lead, locale=locale, **_fluent_args(data))
-    detail = None
-    if kind == "new_post":
-        if data.get("achievement"):
-            what = gettext(
-                "notifications",
-                "notification-achievement",
-                locale=locale,
-                name=str(data["achievement"]),
-                more=int(data.get("count") or 1) - 1,
-            )
-            lead = f"{lead} {what}"
-        detail = str(data["game"]) if data.get("game") else None
-    return {"lead": lead, "detail": detail, "image": data.get("icon")}
+        return {"bold": None, "lead": wording(kind, data, locale), "detail": None, "image": None}
+    if kind == "new_post" and data.get("achievement"):
+        lead = gettext(
+            "notifications",
+            "notification-new-post-named",
+            locale=locale,
+            name=str(data["achievement"]),
+            more=int(data.get("count") or 1) - 1,
+        )
+    else:
+        lead = gettext("notifications", spec.lead, locale=locale, **args)
+    detail = str(data["game"]) if kind == "new_post" and data.get("game") else None
+    return {"bold": data.get("name"), "lead": lead, "detail": detail, "image": data.get("icon")}
 
 
 class Notifier:

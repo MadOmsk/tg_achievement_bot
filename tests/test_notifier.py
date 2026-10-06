@@ -357,7 +357,8 @@ async def test_the_list_names_the_achievement_and_never_a_secret_one(
         **told[0],
     }
     assert listed("new_post", data, "ru") == {
-        "lead": "получает 2 достижения — «Open Door» и ещё 1",
+        "bold": "ada",
+        "lead": "получает «Open Door» и ещё 1",
         "detail": "Halo 3",
         "image": "https://x/i.png",
     }

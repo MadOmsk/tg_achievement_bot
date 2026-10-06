@@ -7,9 +7,9 @@ notification-game-news = { $post ->
    *[other] News
 } for { $game }: { $title }
 notification-game-news-lead = { $post ->
-    [patch] Patch
-   *[other] News
-}: { $title }
+    [patch] — a new patch
+   *[other] — news
+}
 notification-unknown = Something new in the app
 notification-xbox-login-dead = Your Xbox sign-in expired — connect the account again to keep getting achievements
 # New achievements of somebody followed (owner, 2026-10-05). $trophies is yes on PSN.
@@ -37,7 +37,7 @@ notification-new-post-lead = earned { $trophies ->
        *[other] { $pretty } achievements
     }
 }
-notification-achievement = { $more ->
-    [0] “{ $name }”
-   *[other] — “{ $name }” and { $more } more
+notification-new-post-named = earned “{ $name }”{ $more ->
+    [0] {""}
+   *[other] {" "}and { $more } more
 }

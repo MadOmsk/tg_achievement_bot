@@ -6,7 +6,8 @@ export type NotificationItem = {
   id: number;
   kind: string;
   text: string;
-  /** The list's line: after the name in bold (or the whole line, with no name). */
+  /** The list's line: `bold` (a nickname, a game) then `lead`. */
+  bold?: string | null;
   lead: string;
   /** What it is about — an achievement and its game. */
   detail: string | null;
@@ -18,6 +19,8 @@ export type NotificationItem = {
   person_id: number | null;
   /** That person's nickname, for their face's initials. */
   name: string | null;
+  /** A notice about a game (its news): the game's picture, for its face. */
+  cover?: string | null;
   /** The game a tap opens, on that person's progress (a new post). */
   game: { platform: string; title_id: string; name: string | null } | null;
 };

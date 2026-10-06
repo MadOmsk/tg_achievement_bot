@@ -989,10 +989,14 @@ elsewhere in this file still describe the bot.
     notice is read once tapped (`POST …/read` with `ids`), or all at once by
     «Прочитать все» (no `ids`). A tap opens what it is about: a new post's game
     on the author's progress (`game` in the list, `g=` beside `p=` in a push's
-    URL — `Kind.game`), else the person. A row is short (owner, 2026-10-06): a
-    small face, the name in bold and one line (`listed()`: «получает достижение
-    «…»», its `lead`), the game under it, how long ago at the right; unread rows stand on a
-    tint, with no dot.
+    URL — `Kind.game`), else the person. A row is drawn as an activity feed's (owner, 2026-10-06;
+    `listed()` gives `bold`, `lead`, `detail`, `image`): grouped by day; a face —
+    the person's, or the game's cover for its news — with a coloured mark of
+    what it is about (cup, people, a handshake for a friend, news); one line, «**Anastasiafil** получает
+    «…» и ещё 2» or «**Gears of War: E-Day** — новый патч»; under it the game or the post; how long ago at the right. Unread rows are in full light with a small
+    accent dot left of the face; read ones step back. The list scrolls inside the
+    sheet. A friend's face everywhere carries the same handshake mark
+    (`people/friend-mark`).
     Settings → «Уведомления»: where (Telegram messages — or «Привязать» without
     Telegram — then one push switch: this device subscribed or not; owner,
     2026-10-05), then by what they are about (owner, 2026-10-06; migration 087):

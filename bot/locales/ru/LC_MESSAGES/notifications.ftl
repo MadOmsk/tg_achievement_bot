@@ -7,9 +7,9 @@ notification-game-news = { $post ->
    *[other] Новость
 } в { $game }: { $title }
 notification-game-news-lead = { $post ->
-    [patch] Патч
-   *[other] Новость
-}: { $title }
+    [patch] — новый патч
+   *[other] — новость
+}
 notification-unknown = Что-то новое в приложении
 notification-xbox-login-dead = Вход в Xbox слетел — подключи аккаунт заново, чтобы достижения снова приходили
 # Новые достижения того, на кого подписан (owner, 2026-10-05). $trophies — yes для PSN.
@@ -43,7 +43,7 @@ notification-new-post-lead = получает { $trophies ->
        *[many] { $pretty } достижений
     }
 }
-notification-achievement = { $more ->
-    [0] «{ $name }»
-   *[other] — «{ $name }» и ещё { $more }
+notification-new-post-named = получает «{ $name }»{ $more ->
+    [0] {""}
+   *[other] {" "}и ещё { $more }
 }

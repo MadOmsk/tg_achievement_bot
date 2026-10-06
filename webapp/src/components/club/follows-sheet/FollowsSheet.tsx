@@ -75,7 +75,7 @@ export function FollowsSheet({
   // Every list at once, so each count is known before switching to it.
   const [lists, setLists] = useState<Record<Kind, PersonRow[]> | null>(null);
   const rows = lists ? lists[kind] : null;
-  // The hearts mark friends of either: the owner's of these lists, and the viewer's.
+  // The friend marks show friends of either: the owner's of these lists, and the viewer's.
   const [ownerFriends, setOwnerFriends] = useState<Set<number>>(new Set());
 
   useEffect(() => {

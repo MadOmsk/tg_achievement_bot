@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Icon } from "../../shared/lib";
 import "./FriendMark.css";
 
 /** An avatar with a small mark at its lower left when the person is the
@@ -20,12 +21,7 @@ export function FriendMark({
       {children}
       {friend && (
         <span className="friend-mark" title={label} aria-label={label}>
-          <svg width={big ? 16 : 13} height={big ? 16 : 13} viewBox="0 0 24 24" aria-hidden>
-            <path
-              d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.2 0 3.7 1.2 5.2 3 1.5-1.8 3-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"
-              fill="currentColor"
-            />
-          </svg>
+          <Icon name="handshake" size={big ? 14 : 12} filled />
         </span>
       )}
     </span>
