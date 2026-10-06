@@ -118,46 +118,6 @@ async def test_counters_today_crosses_midnight_correctly(repo: Repo) -> None:
     assert counters.today_score == 30
 
 
-async def test_counts_by_xuid_covers_everyone_in_one_query(repo: Repo) -> None:
-    await _link(repo, 1, XUID)
-    await _link(repo, 2, "other")
-    await repo.insert_new_achievements(
-        XUID, [row("a", "2026-09-02T09:00:00+00:00")], is_backfill=False
-    )
-    await repo.insert_new_achievements(
-        "other", [row("b", "2026-09-02T09:00:00+00:00", 25)], is_backfill=False
-    )
-
-    counts = await repo.achievement_counts_by_xuid(datetime(2026, 9, 1, tzinfo=UTC))
-
-    assert counts[XUID] == (1, 10)
-    assert counts["other"] == (1, 25)
-
-
-async def test_recent_achievements_orders_newest_first_and_respects_limit(
-    repo: Repo,
-) -> None:
-    await _link(repo, 1, XUID)
-    await repo.insert_new_achievements(
-        XUID,
-        [
-            row("first", "2026-09-01T10:00:00+00:00"),
-            row("second", "2026-09-02T10:00:00+00:00"),
-            row("third", "2026-09-03T10:00:00+00:00"),
-            # No usable date from the platform, so it is ordered by when the
-            # bot stored it — which is now, making it the most recent of all
-            # (owner decision, 2026-09-13; it used to be hidden entirely).
-            row("undated", None),
-        ],
-        is_backfill=False,
-    )
-
-    recent = await repo.recent_achievements(XUID, limit=2)
-
-    assert [item.achievement_id for item in recent] == ["undated", "third"]
-    assert recent[0].unlocked_at is not None, "the stand-in reaches the caller"
-
-
 async def test_insert_for_an_unlinked_account_is_stored_but_invisible(repo: Repo) -> None:
     """Nobody has this account linked. Since #52 the rows still belong to it
     and are recorded — an achievement is proof the account exists — but they

@@ -263,48 +263,6 @@ class _AchievementsRepo:
         )
         await self._conn.commit()
 
-    async def recent_achievements(self, xuid: str, limit: int = 5) -> list[AchievementRow]:
-        """The last N unlocks, newest first — for the panel (SPEC 6.2).
-        Undated rows never win: an unknown unlock time is not "recent"."""
-        cursor = await self._conn.execute(
-            "SELECT s.title_id, s.achievement_id, s.name, s.description, s.icon_url,"
-            "       s.gamerscore, "
-            f"      {rarity()} AS rarity_percent,"
-            "       s.platform, s.is_secret, s.trophy_type, s.trophy_group_id,"
-            "       t.name AS game,"
-            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder
-            # date for some Xbox 360 achievements, which the parser discards
-            # (see services/xbox/models.py). Those rows still count (owner
-            # decision, 2026-09-13) — when the platform gives no usable time,
-            # when the bot first saw it is the honest stand-in. The stored
-            # column keeps the NULL; only what is read carries the fallback.
-            "       COALESCE(s.unlocked_at, s.created_at) AS seen_at "
-            "FROM seen_achievements s "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            + rarity_cache_join()
-            + "WHERE s.xuid = ? "
-            "ORDER BY seen_at DESC LIMIT ?",
-            (xuid, limit),
-        )
-        return [
-            AchievementRow(
-                title_id=row["title_id"],
-                achievement_id=row["achievement_id"],
-                name=row["name"],
-                description=row["description"],
-                icon_url=row["icon_url"],
-                unlocked_at=row["seen_at"],
-                gamerscore=row["gamerscore"],
-                rarity_percent=row["rarity_percent"],
-                platform=row["platform"],
-                title_name=row["game"],
-                is_secret=bool(row["is_secret"]),
-                trophy_type=row["trophy_type"],
-                trophy_group_id=row["trophy_group_id"],
-            )
-            for row in await cursor.fetchall()
-        ]
-
     async def has_any_achievements(self, xuid: str) -> bool:
         cursor = await self._conn.execute(
             "SELECT 1 FROM seen_achievements WHERE xuid = ? LIMIT 1", (xuid,)

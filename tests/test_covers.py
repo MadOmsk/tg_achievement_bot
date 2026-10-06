@@ -182,19 +182,6 @@ async def test_a_failed_download_still_keeps_the_url(repo: Repo, monkeypatch, tm
     assert [t.title_id for t in await repo.titles_needing_cover(10)] == [STEAM_APPID]
 
 
-async def test_coverage_counts_what_is_left(repo: Repo, monkeypatch, tmp_path) -> None:
-    await repo.upsert_title(STEAM_APPID, "Team Fortress 2", Platform.STEAM)
-    await repo.upsert_title(PSN_TITLE, "Marvel's Spider-Man", Platform.PSN)
-    assert await repo.cover_coverage() == (0, 0, 2)
-
-    _downloads_to(monkeypatch, tmp_path)
-    await CoverRefresh(repo, _FakeXbox()).tick()  # type: ignore[arg-type]
-
-    files, urls, total = await repo.cover_coverage()
-    assert (files, total) == (1, 2)
-    assert urls == 1
-
-
 async def _xbox_owner_with(repo: Repo, cipher, *, tg_id: int = 7) -> None:
     await repo.ensure_user(tg_id, "igor")
     await repo.save_refresh_token(await repo.person_id(tg_id), cipher.encrypt("refresh"))

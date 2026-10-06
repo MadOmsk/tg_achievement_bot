@@ -484,17 +484,6 @@ class _MessagesRepo:
         )
         return [(row[0], row[1]) for row in await cursor.fetchall()]
 
-    async def last_bot_message(self, chat_id: int) -> int | None:
-        """For the admin panel's unconditional 24h wipe — deliberately not
-        filtered at all, unlike `last_deletable_bot_message` below."""
-        cursor = await self._conn.execute(
-            "SELECT message_id FROM bot_messages WHERE chat_id = ? "
-            "ORDER BY message_id DESC LIMIT 1",
-            (chat_id,),
-        )
-        row = await cursor.fetchone()
-        return row[0] if row else None
-
     async def last_deletable_bot_message(self, chat_id: int) -> DeletableMessage | None:
         """For /delete_last and the admin panel's / Mini App's own "delete
         last" (#101, owner): the bot's newest message in the chat whatever it

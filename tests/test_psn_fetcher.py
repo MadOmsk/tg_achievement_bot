@@ -321,7 +321,7 @@ async def test_insert_new_achievements_psn_dedups_and_keeps_the_tier(repo: Repo)
 
     assert len(first) == 1
     assert second == []  # already seen, same key as the first call
-    recent = await repo.recent_achievements(ACCOUNT_ID, 5)
+    recent = await repo.person_recent(await repo.person_id(TG_ID), 5)
     assert recent[0].trophy_type == "platinum"
 
 

@@ -286,10 +286,6 @@ async def test_the_walker_fills_xbox_360_title_and_views_pick_up_cache(repo: Rep
     assert (TG_ID, "t-360") in client.asked
 
     # Verify cached rarity is picked up in queries
-    recent = await repo.recent_achievements(XUID, limit=5)
-    assert len(recent) == 1
-    assert recent[0].rarity_percent == 8.5
-
     person_rec = await repo.person_recent(await repo.person_id(TG_ID), limit=5)
     assert len(person_rec) == 1
     assert person_rec[0].rarity_percent == 8.5

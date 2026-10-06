@@ -659,20 +659,6 @@ class _AdminRepo:
         )
         await self._conn.commit()
 
-    async def cover_coverage(self) -> tuple[int, int, int]:
-        """(with a file, with a URL, total) — what the admin panel and the
-        one-off script both report progress against."""
-        cursor = await self._conn.execute(
-            "SELECT COUNT(*),"
-            "       SUM(CASE WHEN icon_url IS NOT NULL AND icon_url != '' THEN 1 ELSE 0 END),"
-            "       SUM(CASE WHEN cover_path IS NOT NULL THEN 1 ELSE 0 END) "
-            "FROM titles"
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return 0, 0, 0
-        return int(row[2] or 0), int(row[1] or 0), int(row[0] or 0)
-
     async def hltb_all_ids(self) -> list[int]:
         """For the one-off platforms backfill (scripts/backfill_hltb_platforms.py)
         — every id already cached, so it can be re-resolved with the field

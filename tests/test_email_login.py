@@ -642,3 +642,16 @@ async def test_one_client_cannot_go_through_many_addresses(repo: Repo, settings)
         assert len(sender.sent) == limit
     finally:
         await client.close()
+
+
+async def test_codes_older_than_a_day_are_forgotten_on_the_next_send(repo: Repo) -> None:
+    """#167: the cleanup existed but nothing called it, so the table only grew."""
+    login = EmailLogin(repo, FakeSender(), b"secret")
+    await login.send_code("old@example.com", email_login.SIGN_IN, locale="en")
+    stale = (utcnow() - timedelta(days=2)).isoformat(timespec="seconds")
+    await repo._conn.execute("UPDATE email_codes SET created_at = ?", (stale,))
+    await repo._conn.commit()
+
+    await login.send_code("new@example.com", email_login.SIGN_IN, locale="en")
+    cursor = await repo._conn.execute("SELECT email FROM email_codes")
+    assert [row[0] for row in await cursor.fetchall()] == ["new@example.com"]

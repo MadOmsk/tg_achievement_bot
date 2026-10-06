@@ -103,6 +103,11 @@ class EmailLogin:
             wait = 3600 - int((now - oldest).total_seconds()) if oldest else 3600
             raise EmailTooSoon(max(wait, 1))
 
+        # Nothing reads a code past the hour the limit above counts (#167):
+        # without this the table only ever grew.
+        await self._repo.forget_old_email_codes(
+            (now - timedelta(days=1)).isoformat(timespec="seconds")
+        )
         code = f"{secrets.randbelow(10**CODE_LENGTH):0{CODE_LENGTH}d}"
         expires = (now + timedelta(minutes=CODE_TTL_MINUTES)).isoformat(timespec="seconds")
         await self._repo.add_email_code(

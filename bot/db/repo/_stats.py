@@ -408,21 +408,10 @@ class _StatsRepo:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
-    async def psn_platinum_count(self, person_id: int) -> int:
-        """PSN's own equivalent of "completed" (#19) — Sony only awards a
-        platinum once every other trophy in that game is earned, so this
-        already *is* a 100%-completed-games count, no extra tracking."""
-        cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM seen_achievements "
-            "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = 'psn' AND trophy_type = 'platinum'",
-            (person_id,),
-        )
-        row = await cursor.fetchone()
-        return int(row[0]) if row else 0
-
     async def account_platinum_count(self, account_id: str) -> int:
-        """`psn_platinum_count` for one PSN account (#10) — a person
-        holding several sees one line per account."""
+        """PSN's own equivalent of "completed" (#19), for one PSN account
+        (#10): Sony awards a platinum only once every other trophy in that
+        game is earned. A person holding several sees one line per account."""
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM seen_achievements "
             "WHERE platform = 'psn' AND xuid = ? AND trophy_type = 'platinum'",
@@ -470,26 +459,12 @@ class _StatsRepo:
                 completed += 1
         return completed
 
-    async def achievement_counts_by_xuid(
-        self, since: datetime | None
-    ) -> dict[str, tuple[int, int]]:
-        """The same numbers for everyone at once — one query for a whole page."""
-        query = "SELECT xuid, COUNT(*), COALESCE(SUM(gamerscore), 0) FROM seen_achievements"
-        params: list[object] = []
-        if since is not None:
-            query += f" WHERE {earned_since('')}"
-            params.append(_iso(since))
-        cursor = await self._conn.execute(query + " GROUP BY xuid", params)
-        return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
-
     async def achievement_counts_by_person(
         self, since: datetime | None
     ) -> dict[int, tuple[int, int]]:
-        """Same as `achievement_counts_by_xuid`, but summed across every
-        platform a person has connected (SPEC 9, M-Steam-2e) — the admin
-        users list's own combined counters (2026-09-05 follow-up): the list
-        used to show `achievement_counts_by_xuid`'s Xbox-only numbers even
-        for someone with Steam achievements too. Keyed by person id (#156)."""
+        """Achievements and gamerscore per person, summed across every
+        platform they hold — the admin users list's combined counters. Keyed
+        by person id (#156)."""
         query = (
             "SELECT al.person_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
             "FROM seen_achievements s " + OWNED_BY_PERSON
