@@ -41,12 +41,14 @@ PERSON_BY_TG = "(SELECT id FROM users WHERE tg_id = ?)"
 
 # The same thing as a subquery, for statements that cannot take a join —
 # UPDATE/DELETE, and any SELECT whose shape would change if a join were
-# added to it.
+# added to it. A list rather than a correlated EXISTS (#167): the EXISTS
+# scanned every row of the table and probed each, this one looks up the
+# person's few accounts in idx_seen_account — twenty times faster on
+# production's copy, same rows.
 OWNED_BY_PERSON_EXISTS = (
-    "EXISTS (SELECT 1 FROM account_links al"
-    "        WHERE al.person_id = ? AND al.is_active = 1"
-    "          AND al.platform = seen_achievements.account_platform"
-    "          AND al.external_id = seen_achievements.xuid) "
+    "(seen_achievements.account_platform, seen_achievements.xuid) IN ("
+    "  SELECT al.platform, al.external_id FROM account_links al"
+    "  WHERE al.person_id = ? AND al.is_active = 1) "
 )
 
 
