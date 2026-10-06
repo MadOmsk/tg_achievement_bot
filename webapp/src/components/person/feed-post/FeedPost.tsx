@@ -105,6 +105,9 @@ export function FeedPost({
             ].filter(Boolean);
             return (
               <SwiperSlide key={key} className="post-slide">
+                {/* The same picture once more, blurred under the whole slide: a
+                    wide post's text below the picture takes its colours. */}
+                {wide && <CoverImg src={item.icon_url} kind="achievement" className="post-slide-back" />}
                 <div className="post-media" style={{ aspectRatio: ratio }}>
                   <CoverImg src={item.icon_url} kind="achievement" className="post-media-back" />
                   {/* All of the picture; the frame is its shape, within reason. */}

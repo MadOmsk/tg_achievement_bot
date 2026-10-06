@@ -121,6 +121,7 @@
 
 .post-track .post-slide {
   position: relative;
+  overflow: hidden;
   display: flex;
   box-sizing: border-box;
   flex-direction: column;
@@ -147,6 +148,25 @@
 
 .post-media .cover-ph.post-media-back > img {
   border-radius: 0;
+}
+
+/* A wide post: its picture again, blurred and stretched under the whole slide,
+ * so the text below the picture shows through in its colours. */
+.post-slide .cover-ph.post-slide-back {
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  filter: blur(36px) saturate(1.3);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.post-slide .cover-ph.post-slide-back > img {
+  border-radius: 0;
+  object-fit: cover;
 }
 
 .post-media .fit-layer {
@@ -296,7 +316,7 @@
 .post.is-wide .post-copy {
   position: relative;
   padding-top: 12px;
-  background: rgba(8, 10, 16, 0.78);
+  background: rgba(8, 10, 16, 0.5);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   -webkit-mask-image: none;

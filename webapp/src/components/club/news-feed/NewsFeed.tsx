@@ -132,6 +132,7 @@ function NewsPostCard({
         </header>
         <div className="post-track news-track">
           <div className="post-slide">
+            {wide && <CoverImg src={picture} kind="game" className="post-slide-back" />}
             <div className="post-media" style={{ aspectRatio: ratio }}>
               <CoverImg src={picture} kind="game" className="post-media-back" />
               <FitImg src={picture} kind="game" mode={wide ? "height" : "contain"} top />
