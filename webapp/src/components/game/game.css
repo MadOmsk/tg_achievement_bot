@@ -649,6 +649,14 @@
   width: 94px;
   height: 94px;
   border-radius: 50%;
+}
+
+/* Only the rim's colours turn; the disc and its cup never move. */
+.game-medal-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
   background: conic-gradient(
     from 0deg,
     #e9f8ff,
@@ -664,9 +672,7 @@
 }
 
 .game-medal-ring > .game-medal-disc {
-  animation:
-    game-ring-turn 8s linear infinite reverse,
-    game-medal-glow 3.2s ease-in-out infinite;
+  animation: game-medal-glow 3.2s ease-in-out infinite;
 }
 
 @keyframes game-ring-turn {
@@ -730,9 +736,7 @@
 /* The first opening of one's own finished game: the medal pops in and a
  * ring of sparks flies out of it, once. */
 .game-medal.is-party .game-medal-ring {
-  animation:
-    game-medal-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) both,
-    game-ring-turn 8s linear 0.7s infinite;
+  animation: game-medal-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) both;
 }
 
 .game-medal.is-party .game-medal-label,
@@ -837,6 +841,10 @@
 
 /* Not finished: the same medal, quieter — a dark disc, a muted cup, and the
  * rim filled clockwise as far as the person got, the rest a faint track. */
+.game-medal.is-progress .game-medal-ring::before {
+  content: none;
+}
+
 .game-medal.is-progress .game-medal-ring {
   background:
     conic-gradient(
@@ -916,7 +924,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .game-medal-ring,
+  .game-medal-ring::before,
   .game-medal-ring > .game-medal-disc,
   .game-medal-label,
   .game-stars i,
