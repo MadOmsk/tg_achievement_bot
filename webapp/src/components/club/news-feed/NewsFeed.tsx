@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchNews, type NewsItem } from "../../../api";
-import { dayLabel, t, type Locale } from "../../../i18n";
+import { dayKey, dayLabel, t, timeAgo, type Locale } from "../../../i18n";
 import { NewsPage } from "../../game/news-page/NewsPage";
 import { CoverImg, EmptyState, FeedSkel, FitImg, FEED_RATIO_MAX, isWide, useImageRatio, useOpenGame } from "../../shared/lib";
 import "../../person/feed-post/FeedPost.css";
@@ -40,7 +40,7 @@ export function NewsFeed({ data, locale, month }: { data: string; locale: Locale
   const days: Array<{ date: string; posts: NewsItem[] }> = [];
   for (const item of items) {
     const last = days[days.length - 1];
-    if (last && last.date === item.date) last.posts.push(item);
+    if (last && dayKey(last.date) === dayKey(item.date)) last.posts.push(item);
     else days.push({ date: item.date, posts: [item] });
   }
 
@@ -56,7 +56,7 @@ export function NewsFeed({ data, locale, month }: { data: string; locale: Locale
     <div className="feed-days">
       {days.map((day) => (
         <section key={day.date} className="feed-day">
-          <span className="feed-day-label">{dayLabel(`${day.date}T12:00:00`, locale)}</span>
+          <span className="feed-day-label">{dayLabel(day.date, locale)}</span>
           <div className="feed-posts">
             {day.posts.map((item) => (
               <NewsPostCard
@@ -90,19 +90,6 @@ export function NewsFeed({ data, locale, month }: { data: string; locale: Locale
       )}
     </div>
   );
-}
-
-/** How long ago a post was, as an achievement's head says it — in days: Steam's
- * post keeps its day here, not its hour. */
-function daysAgo(iso: string, locale: Locale): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const days = Math.max(0, Math.round((today - new Date(y, m - 1, d).getTime()) / 86_400_000));
-  if (days === 0) return t(locale, "dayToday").toLowerCase();
-  if (days === 1) return t(locale, "dayYesterday").toLowerCase();
-  return `${days} ${t(locale, "daysAgo")}`;
 }
 
 /** One post, laid out as an achievement post; its frame takes its picture's
@@ -140,11 +127,12 @@ function NewsPostCard({
             <button type="button" className="post-name" onClick={onOpenGame}>
               {item.game.name}
             </button>
-            <span className="post-time">{daysAgo(item.date, locale)}</span>
+            <span className="post-time">{timeAgo(item.date, locale)}</span>
           </span>
         </header>
         <div className="post-track news-track">
           <div className="post-slide">
+            {wide && <CoverImg src={picture} kind="game" className="post-slide-back" />}
             <div className="post-media" style={{ aspectRatio: ratio }}>
               <CoverImg src={picture} kind="game" className="post-media-back" />
               <FitImg src={picture} kind="game" mode={wide ? "height" : "contain"} top />

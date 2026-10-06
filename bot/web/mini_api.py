@@ -1107,7 +1107,7 @@ def _extract_init_data(request: web.Request) -> str:
 
 
 # How many of a game's patches its "Обновления" tab lists.
-PATCHES_SHOWN = 10
+PATCHES_SHOWN = 30
 
 
 def _extras(request: web.Request) -> SteamExtras:
@@ -1169,6 +1169,7 @@ async def handle_game_patches(request: web.Request) -> web.Response:
                     "date": p.published_at,
                     "text": (p.text_ru if ru and p.text_ru else p.text_en) or "",
                     "image": p.image_url,
+                    "kind": p.kind,
                     # The post on Steam, for its own page's last button.
                     "url": f"https://store.steampowered.com/news/app/{appid}/view/{p.gid}",
                 }

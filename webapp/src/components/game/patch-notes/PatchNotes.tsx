@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { GamePatch } from "../../../api";
-import { dayKey, dayLabel, t, type Locale } from "../../../i18n";
+import { t, timeAgo, type Locale } from "../../../i18n";
 import { NewsPage } from "../news-page/NewsPage";
 import { withoutLinks } from "../rich-text/RichText";
 
@@ -29,38 +29,33 @@ function previewOf(text: string): string {
 }
 
 function isFresh(iso: string): boolean {
-  const date = new Date(`${iso}T00:00:00`).getTime();
+  const date = new Date(iso).getTime();
   return !Number.isNaN(date) && Date.now() - date < FRESH_DAYS * 86_400_000;
 }
 
-/** A patch's day, read in local time: the date alone would be read as UTC. */
-function localDay(date: string): string {
-  return `${date}T00:00:00`;
+/** A post's hour and minute, in the reader's own time. */
+export function clockOf(iso: string, locale: Locale): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime()) || iso.length <= 10) return "";
+  return date.toLocaleTimeString(locale === "en" ? "en-GB" : "ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-/** The "Обновления" tab: a game's latest patches from Steam, grouped by day
- * under the same labels the feed uses, one soft card each. A card shows the
- * start of the post and opens it whole on its own page (NewsPage). */
-/** Patches in runs of one day, newest first (they arrive so). */
-function daysOf(
-  patches: GamePatch[],
-): { key: string; date: string; patches: GamePatch[] }[] {
-  const days: { key: string; date: string; patches: GamePatch[] }[] = [];
-  for (const patch of patches) {
-    const key = dayKey(localDay(patch.date));
-    const last = days[days.length - 1];
-    if (last && last.key === key) last.patches.push(patch);
-    else days.push({ key, date: patch.date, patches: [patch] });
-  }
-  return days;
-}
+export type PostFilter = "all" | "news" | "patch";
 
+/** The "Обновления" tab: the developer's posts from Steam, newest first, plain
+ * rows with a hairline between, as every list. A row shows its kind and time,
+ * the start of the post and its first picture; it opens whole on its own page
+ * (NewsPage). */
 export function PatchNotes({
   patches,
   locale,
   collapseKey,
   onLayout,
   game,
+  filter = "all",
 }: {
   /** undefined: still being asked. */
   patches: GamePatch[] | undefined;
@@ -72,6 +67,7 @@ export function PatchNotes({
   /** The game these are of: a patch's own page names it, as a post from
    * «Новости» does (already on its page, it opens nothing). */
   game?: { name: string; icon_url: string | null };
+  filter?: PostFilter;
 }) {
   // A patch opens whole on a page of its own, as a post in «Новости» does.
   const [open, setOpen] = useState<GamePatch | null>(null);
@@ -104,47 +100,42 @@ export function PatchNotes({
     );
   }
 
+  const shown = patches.filter((patch) => filter === "all" || (patch.kind ?? "patch") === filter);
+
   return (
     <div className="patch-list">
-      {patches.length === 0 && (
+      {shown.length === 0 && (
         <p className="empty">{t(locale, "patchesEmpty")}</p>
       )}
-      {daysOf(patches).map((day) => (
-        <section key={day.key} className="patch-day">
-          <p className="feed-day-label">
-            {dayLabel(localDay(day.date), locale)}
-          </p>
-          {day.patches.map((patch) => {
-            const key = `${patch.date}|${patch.title}`;
-            return (
-              <div
-                key={key}
-                role="button"
-                tabIndex={0}
-                className="patch-card"
-                onClick={() => setOpen(patch)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") setOpen(patch);
-                }}
-              >
-                <span className="patch-card-head">
-                  <span className="patch-card-name">{patch.title}</span>
-                  {/* At the top right, not after the title: there it hung on a
-                      line of its own whenever the title wrapped. */}
-                  {isFresh(patch.date) && (
-                    <span className="patch-card-new">{t(locale, "patchesNew")}</span>
-                  )}
-                </span>
-                {patch.text && (
-                  <span className="patch-card-body is-preview">
-                    {previewOf(patch.text)}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </section>
-      ))}
+      {shown.map((patch) => {
+        const kind = t(locale, patch.kind === "news" ? "newsPost" : "newsPatch");
+        return (
+          <div
+            key={`${patch.date}|${patch.title}`}
+            role="button"
+            tabIndex={0}
+            className="patch-card"
+            onClick={() => setOpen(patch)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") setOpen(patch);
+            }}
+          >
+            {/* When on the left, as a feed post says it; the kind on the right. */}
+            <span className="patch-card-meta">
+              <span className="patch-card-when">{timeAgo(patch.date, locale)}</span>
+              {isFresh(patch.date) && <span className="patch-card-new">{t(locale, "patchesNew")}</span>}
+              <span className="patch-card-kind">{kind}</span>
+            </span>
+            <span className="patch-card-row">
+              <span className="patch-card-main">
+                <span className="patch-card-name">{patch.title}</span>
+                {patch.text && <span className="patch-card-body is-preview">{previewOf(patch.text)}</span>}
+              </span>
+              {patch.image && <img className="patch-card-pic" src={patch.image} alt="" loading="lazy" />}
+            </span>
+          </div>
+        );
+      })}
       {open && (
         <NewsPage
           post={{
@@ -153,7 +144,7 @@ export function PatchNotes({
             text: open.text,
             image: open.image ?? null,
             url: open.url ?? "",
-            kind: "patch",
+            kind: open.kind ?? "patch",
           }}
           locale={locale}
           game={game}

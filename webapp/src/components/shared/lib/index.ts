@@ -25,5 +25,6 @@ export * from "./handle-name/HandleName";
 export * from "./telegram-login";
 export * from "./install-prompt";
 export * from "./back-stack";
+export * from "./haptic";
 export * from "./img-ratio";
 export * from "./image-viewer";

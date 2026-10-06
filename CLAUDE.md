@@ -1006,10 +1006,12 @@ elsewhere in this file still describe the bot.
   a screen with a back arrow (`BackHead`), a sheet, the game page, a person's
   page, then any tab back to Home — and only then leave. Each layer calls
   `useBackHandler`; a new layer that reuses a component (one arrow, another
-  title) passes `layer` so it counts as new. The history holds **one** entry of
-  ours while anything is open, re-armed after each back: one per layer raced a
-  closing layer's history step against an opening one's new entry, lost one,
-  and the last back left the app. A new screen with its own way out registers too.
+  title) passes `layer` so it counts as new. The history holds **one entry per open
+  layer, pushed when it opens** — never after a back: Chrome lets back skip an
+  entry added without the user's gesture, and a re-armed one closed the app on
+  the second back. Changes are reconciled once a moment's layers settle (a
+  layer closing as another opens is no step at all), and nothing is pushed
+  while a step back of our own is on its way. A new screen with its own way out registers too.
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
@@ -1494,7 +1496,7 @@ sent to a chat.
   articles only), the last thirty, kept in `game_patches` with its `kind` and first
   picture (migration 084): a patch is a post tagged `patchnotes` or titled like one
   (update, patch, hotfix, a version number; not a demo or playtest), anything else
-  is news. The game page's «Обновления» shows the patches; **«Новости»** (owner,
+  is news. A post keeps its time, not only its day (migration 085: `published_at` is `…T14:32:00Z`, shown in the reader's own time). The game page's «Обновления» shows both, with a filter at the tab's right (all / news / patches); **«Новости»** (owner,
   2026-10-05; `repo.games_news`, `GET /api/mini/club/news?scope=following&month=`)
   shows both, untranslated, for the games the viewer and the people they follow
   earned something in within 60 days before the month's end, newest first, one
@@ -1513,8 +1515,9 @@ sent to a chat.
   points (or trophy) at the head's right, as the game page shows its score; the
   picture whole; when it was earned; its name and description; then «Как
   получить», the Steam guides' tip whole, when there is one — a row with a tip
-  carries the book mark. A post's page puts its kind («Патч», «Новость») at the
-  head's right the same way (`BackHead`'s `aside`).
+  carries the book mark. A post's page keeps the head for the game alone: its kind
+  («Патч», «Новость») sits at the right of the date line, as in the list of
+  updates (owner, 2026-10-06).
 - **A picture opens in the app, full screen** (owner, 2026-10-05;
   `shared/lib/image-viewer`: `openImage(src)`, one `ImageViewerHost` in the app
   shell): the pictures in a guide's tip, a post or a patch, the picture at the top
@@ -1528,7 +1531,7 @@ sent to a chat.
   picture is whole over its blurred copy. A picture wider than a square
   (`isWide`) is its own height, edge to edge, and the text comes under it
   instead of over it; a square or a tall one keeps the text over its foot. A
-  feed's frame is never wider than 1.3:1 (`FEED_RATIO_MAX`): a wider picture
+  feed's frame is never wider than 1.15:1 (`FEED_RATIO_MAX`): a wider picture
   keeps its whole height and loses a little of its sides. A post of several
   achievements takes the first one's shape for every slide. Console exclusives have no Steam
   app and so no news. Re-read by `poller/patch_refresh.py` for games somebody

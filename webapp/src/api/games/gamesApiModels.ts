@@ -101,6 +101,7 @@ export type GamePatch = {
   date: string;
   text: string;
   image?: string | null;
+  kind?: "patch" | "news";
   /** The post on Steam. */
   url?: string;
 };

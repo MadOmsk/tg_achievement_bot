@@ -311,12 +311,12 @@ class _SteamRepo:
         ]
 
     async def game_patches(self, appid: int, limit: int) -> list[StoredPatch]:
-        """The app's patch notes — the game page's «Обновления»; the rest of the
-        developer's posts are «Новости»'s (`games_news`)."""
+        """The developer's latest posts, patches and news both — the game page's
+        «Новости» tab, filtered there by `kind`."""
         cursor = await self._conn.execute(
-            "SELECT gid, title, published_at, text_en, title_ru, text_ru, image_url"
+            "SELECT gid, title, published_at, text_en, title_ru, text_ru, image_url, kind"
             " FROM game_patches"
-            " WHERE steam_appid = ? AND kind = 'patch' ORDER BY published_at DESC LIMIT ?",
+            " WHERE steam_appid = ? ORDER BY published_at DESC LIMIT ?",
             (appid, limit),
         )
         return [
@@ -328,6 +328,7 @@ class _SteamRepo:
                 title_ru=row["title_ru"],
                 text_ru=row["text_ru"],
                 image_url=row["image_url"],
+                kind=row["kind"],
             )
             for row in await cursor.fetchall()
         ]
