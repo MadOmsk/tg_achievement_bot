@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { notificationsApi, type NotificationItem } from "../../../api/notifications/notificationsApi";
-import { t, timeAgo, type Locale } from "../../../i18n";
+import { dayKey, dayLabel, t, timeAgo, type Locale } from "../../../i18n";
 import { Avatar, Icon, Sheet, useOpenGame } from "../../shared/lib";
 import "./Notifications.css";
 
@@ -101,9 +101,16 @@ export function NotificationsBell({
             ) : items.length === 0 ? (
               <p className="empty">{t(locale, "notificationsEmpty")}</p>
             ) : (
-              <div className="notices-list">
-                {items.map((item) => (
-                  <NoticeRow key={item.id} item={item} locale={locale} onOpen={() => openItem(item)} />
+              <div className="notices-days">
+                {daysOf(items).map((day) => (
+                  <section key={day.key} className="notices-day">
+                    <span className="feed-day-label">{dayLabel(day.items[0].created_at, locale)}</span>
+                    <div className="notices-list">
+                      {day.items.map((item) => (
+                        <NoticeRow key={item.id} item={item} locale={locale} onOpen={() => openItem(item)} />
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
             )}
@@ -114,9 +121,32 @@ export function NotificationsBell({
   );
 }
 
-/** One notice, short (owner, 2026-10-06): a small face, the name in bold and
- * what happened in one line, the game under it, how long ago at the right. Unread ones
- * stand on a tint, with no dot. */
+/** Notices in runs of one day, newest first. */
+function daysOf(items: NotificationItem[]): { key: string; items: NotificationItem[] }[] {
+  const days: { key: string; items: NotificationItem[] }[] = [];
+  const sorted = [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  for (const item of sorted) {
+    const key = dayKey(item.created_at);
+    const last = days[days.length - 1];
+    if (last && last.key === key) last.items.push(item);
+    else days.push({ key, items: [item] });
+  }
+  return days;
+}
+
+/** What a notice is about, as a small mark on its face. */
+const BADGE: Partial<Record<string, ComponentProps<typeof Icon>["name"]>> = {
+  new_post: "cup",
+  new_follower: "people",
+  new_friend: "handshake",
+  game_news: "feed",
+};
+
+/** One notice (owner, 2026-10-06), as an activity feed draws it: a face — the
+ * person's, or the game's for its news — marked with what it is about; one
+ * line, the name or the game in bold and what happened; under it the game or
+ * the post; how long ago at the right. Unread ones are in full light with a
+ * dot left of the face; read ones step back. */
 function NoticeRow({
   item,
   locale,
@@ -128,30 +158,32 @@ function NoticeRow({
 }) {
   // A list item from before the short form came has no lead: its whole line.
   const lead = item.lead ?? item.text;
-  const named = item.person_id != null && item.name && lead !== item.text;
+  const badge = BADGE[item.kind];
   return (
     <button type="button" className={item.read ? "notice-row" : "notice-row is-unread"} onClick={onOpen}>
-      {item.person_id != null ? (
-        <Avatar name={item.name ?? "?"} personId={item.person_id} size={34} />
-      ) : item.image ? (
-        <img className="notice-pic" src={item.image} alt="" loading="lazy" />
-      ) : (
-        <span className="notice-mark">
-          <Icon name="bell" size={16} />
-        </span>
-      )}
+      <span className="notice-face">
+        {item.person_id != null ? (
+          <Avatar name={item.name ?? "?"} personId={item.person_id} size={44} />
+        ) : item.cover ? (
+          <img className="notice-cover" src={item.cover} alt="" loading="lazy" />
+        ) : (
+          <span className="notice-mark">
+            <Icon name="bell" size={18} />
+          </span>
+        )}
+        {badge && (
+          <span className={`notice-badge is-${item.kind}`} aria-hidden>
+            <Icon name={badge} size={9} filled />
+          </span>
+        )}
+      </span>
       <span className="notice-copy">
         <span className="notice-line">
-          {named ? (
-            <>
-              <b>{item.name}</b> {lead}
-            </>
-          ) : (
-            lead
-          )}
+          {item.bold && <b>{item.bold}</b>} {lead}
         </span>
-        {item.detail && <small>{item.detail}</small>}
+        {item.detail && <small className="notice-detail">{item.detail}</small>}
       </span>
+      {/* At the right, the same place on every row. */}
       <span className="notice-time">{timeAgo(item.created_at, locale)}</span>
     </button>
   );

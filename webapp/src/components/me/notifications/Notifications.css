@@ -55,11 +55,37 @@
   margin: 0;
 }
 
+/* The sheet keeps its height; the list scrolls inside it, under the head. */
+.sheet-body.is-mid > .notices-sheet {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notices-days {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 12px -18px 0;
+  padding: 0 18px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.notices-day {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .notices-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 12px;
 }
 
 .notice-row {
@@ -67,11 +93,8 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  margin: 0 -10px;
-  padding: 9px 10px;
-  box-sizing: content-box;
+  padding: 9px 0;
   border: 0;
-  border-radius: 14px;
   background: none;
   color: var(--text);
   font: inherit;
@@ -80,41 +103,96 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.notice-row.is-unread {
-  background: rgba(124, 140, 255, 0.1);
+.notice-row:active {
+  opacity: 0.7;
+}
+
+/* An unread notice: a small accent dot just left of its face. */
+.notice-row {
+  position: relative;
+}
+
+.notice-row.is-unread::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -12px;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 6px rgba(155, 182, 255, 0.7);
+}
+
+.notice-face {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+}
+
+.notice-cover {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--glass);
 }
 
 .notice-mark {
   display: grid;
   place-items: center;
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--glass);
   color: var(--muted);
 }
 
-.notice-pic {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  object-fit: cover;
-  background: var(--glass);
+/* What it is about, as a small mark on the face's corner. */
+.notice-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2a3348;
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--sheet-bg, #121722);
+}
+
+.notice-badge.is-new_post {
+  background: linear-gradient(135deg, #f7c95a, #e39a2d);
+  color: #2a1a00;
+}
+
+.notice-badge.is-new_follower,
+.notice-badge.is-new_friend {
+  background: linear-gradient(135deg, #8aa2ff, #6a7cf0);
+}
+
+.notice-badge.is-game_news {
+  background: linear-gradient(135deg, #5fd3c2, #2f9f9a);
+  color: #032421;
 }
 
 .notice-copy {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
 .notice-line {
   display: -webkit-box;
   overflow: hidden;
+  color: var(--text);
   font-size: 0.88rem;
   line-height: 1.35;
   -webkit-box-orient: vertical;
@@ -123,6 +201,14 @@
 
 .notice-line b {
   font-weight: 700;
+}
+
+.notice-detail {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notice-time {
@@ -134,12 +220,9 @@
   white-space: nowrap;
 }
 
-.notice-copy small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.76rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Read ones step back. */
+.notice-row:not(.is-unread) .notice-line {
+  color: rgba(226, 232, 244, 0.72);
 }
 
 .notice-skel {

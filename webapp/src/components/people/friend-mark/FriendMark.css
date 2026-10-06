@@ -4,15 +4,15 @@
   flex: none;
 }
 
-/* The mirror of the presence mark on the right: a bare heart, the same size,
- * with the same shadow. */
+/* A friend (owner, 2026-10-06): a bare red handshake at the lower left,
+ * the mirror of the platform mark on the right — its size, its shadow. */
 .friend-mark {
   position: absolute;
   bottom: 0;
   left: 0;
   display: grid;
   place-items: center;
-  color: #e0677a;
+  color: #ff5a6e;
   filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.75));
   pointer-events: none;
 }
