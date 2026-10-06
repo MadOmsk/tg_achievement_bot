@@ -381,23 +381,18 @@ class _FollowsRepo:
             return False
         return relation.following or await self._share_chat(viewer, target)
 
-    async def post_notice_recipients(self, author: int) -> list[int]:
-        """Who is told about `author`'s new post: their followers whose own choice
-        (`user_settings.notify_posts`) covers them — everybody they follow, or
-        friends only (the author follows them back). Privacy is the caller's
-        check (`can_view_activity`), as everywhere."""
+    async def post_notice_recipients(self, author: int) -> list[tuple[int, bool]]:
+        """Who is told about `author`'s new post: every follower, and whether
+        they are friends (the author follows them back) — each channel decides
+        by its own choice. Privacy is the caller's check (`can_view_activity`)."""
         cursor = await self._conn.execute(
-            "SELECT f.follower_id FROM follows f "
-            "LEFT JOIN user_settings s ON s.person_id = f.follower_id "
-            "WHERE f.followee_id = :author AND COALESCE(s.notify_new_posts, 1) = 1 "
-            "  AND (COALESCE(s.notify_posts, 'friends') = 'following' "
-            "    OR (COALESCE(s.notify_posts, 'friends') = 'friends' AND EXISTS ("
-            "      SELECT 1 FROM follows b"
-            "      WHERE b.follower_id = :author AND b.followee_id = f.follower_id))) "
-            "ORDER BY f.follower_id",
+            "SELECT f.follower_id, EXISTS ("
+            "  SELECT 1 FROM follows b"
+            "  WHERE b.follower_id = :author AND b.followee_id = f.follower_id) AS friend "
+            "FROM follows f WHERE f.followee_id = :author ORDER BY f.follower_id",
             {"author": author},
         )
-        return [row[0] for row in await cursor.fetchall()]
+        return [(int(row[0]), bool(row[1])) for row in await cursor.fetchall()]
 
     async def _share_chat(self, a: int, b: int) -> bool:
         """An active chat both people are subscribed to or were seen writing in —

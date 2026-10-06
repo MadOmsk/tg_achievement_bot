@@ -106,17 +106,12 @@ async def build_me_payload(
             "show_secrets": show_secrets,
             # Which achievements go out, in every chat (#126).
             "rarity_mode": settings_row.rarity_mode if settings_row else "all",
-            "notify_followers": bool(settings_row.notify_followers) if settings_row else True,
             # Where notifications go (#164); Telegram only matters with Telegram.
             "notify_push": bool(settings_row.notify_push) if settings_row else True,
             "notify_telegram": bool(settings_row.notify_telegram) if settings_row else True,
-            # Whose new posts are told about: friends / following / none.
-            "notify_posts": settings_row.notify_posts if settings_row else "friends",
-            # A switch per kind of notice.
-            "notify_new_posts": bool(settings_row.notify_new_posts) if settings_row else True,
-            "notify_friends": bool(settings_row.notify_friends) if settings_row else True,
-            "notify_account": bool(settings_row.notify_account) if settings_row else True,
-            "notify_game_news": settings_row.notify_game_news if settings_row else "all",
+            # The kinds each channel carries (none by default).
+            "notify_push_on": sorted(settings_row.notify_push_on) if settings_row else [],
+            "notify_telegram_on": sorted(settings_row.notify_telegram_on) if settings_row else [],
             # Who sees this person's activity in the app (#157).
             "activity_visible": await repo.activity_visible(person_id),
         },

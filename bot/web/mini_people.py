@@ -290,9 +290,6 @@ async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: i
     follower = await repo.person_row(me)
     if follower is None:
         return
-    settings = await repo.get_user_settings(other)
-    if settings is not None and not settings.notify_followers:
-        return
     if not await repo.claim_follow_notice(me, other):
         return
     relation = await repo.relation(other, me)

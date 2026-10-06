@@ -66,6 +66,9 @@ async def test_a_notice_reaches_every_channel_that_is_on(repo: Repo) -> None:
     )
     service, sent = _PushService(gone={"https://push.example/gone"}), []
     notifier = _notifier(repo, service, sent)
+    await repo.update_user_settings(
+        ada, notify_push_on="new_follower", notify_telegram_on="new_follower"
+    )
 
     await notifier.notify(ada, "new_follower", person_id=bob, name="bob")
 
@@ -156,11 +159,13 @@ async def test_the_list_and_the_subscription_routes(repo: Repo, settings) -> Non
 
         patched = await client.patch("/api/mini/settings", json={"notify_telegram": False})
         assert (await patched.json())["settings"]["notify_telegram"] is False
-        assert me["settings"]["notify_posts"] == "friends"
-        posts = await client.patch("/api/mini/settings", json={"notify_posts": "following"})
-        assert (await posts.json())["settings"]["notify_posts"] == "following"
-        bad_posts = await client.patch("/api/mini/settings", json={"notify_posts": "all"})
-        assert bad_posts.status == 400
+        assert me["settings"]["notify_push_on"] == []
+        kinds = ["new_post:following", "game_news:patch", "new_follower"]
+        posts = await client.patch("/api/mini/settings", json={"notify_push_on": kinds})
+        assert (await posts.json())["settings"]["notify_push_on"] == sorted(kinds)
+        for bad in (["new_post:all"], ["nothing"], "new_post"):
+            refused = await client.patch("/api/mini/settings", json={"notify_push_on": bad})
+            assert refused.status == 400
 
         gone = await client.delete("/api/mini/push/subscription", data=json.dumps(sub))
         assert gone.status == 200
@@ -176,6 +181,9 @@ async def test_a_dead_xbox_login_is_told_but_leaves_the_dm_to_the_reminder(repo:
         ada, "https://fcm.googleapis.com/fcm/send/a", **_browser(), user_agent=None
     )
     service, sent = _PushService(), []
+    await repo.update_user_settings(
+        ada, notify_push_on="xbox_login_dead", notify_telegram_on="xbox_login_dead"
+    )
 
     await _notifier(repo, service, sent).notify(ada, "xbox_login_dead")
 
@@ -198,27 +206,31 @@ async def _people(repo: Repo) -> tuple[int, int, int]:
     return ada, bob, cat
 
 
-async def test_a_new_post_reaches_friends_by_default(repo: Repo) -> None:
-    ada, bob, cat = await _people(repo)
+async def test_a_new_post_is_in_every_followers_list_and_a_channel_picks_whose(
+    repo: Repo,
+) -> None:
+    ada, bob, cat = await _people(repo)  # bob is ada's friend, cat only follows her
     sent: list[tuple[int, str]] = []
+    for person in (bob, cat):
+        await repo.update_user_settings(person, notify_telegram_on="new_post:friends")
 
     await _notifier(repo, _PushService(), sent).tell_about_post(ada, "xbox_modern", "42", "Halo", 3)
 
     [row] = await repo.notifications_of(bob)
     assert (row.kind, row.data["person_id"], row.data["game"]) == ("new_post", ada, "Halo")
-    assert await repo.notifications_of(cat) == []
+    assert [r.kind for r in await repo.notifications_of(cat)] == ["new_post"]
     assert sent == [(2, "ada получает 3 достижения в Halo")]
 
 
 async def test_whose_posts_is_each_followers_own_choice(repo: Repo) -> None:
     ada, bob, cat = await _people(repo)
-    await repo.update_user_settings(bob, notify_posts="none")
-    await repo.update_user_settings(cat, notify_posts="following", locale="en")
+    await repo.update_user_settings(cat, locale="en", notify_telegram_on="new_post:following")
     sent: list[tuple[int, str]] = []
 
     await _notifier(repo, _PushService(), sent).tell_about_post(ada, "psn", "NPWR1", "GoW", 1)
 
-    assert await repo.notifications_of(bob) == []
+    # bob switched nothing on: the list only.
+    assert len(await repo.notifications_of(bob)) == 1
     assert sent == [(3, "ada earned 1 trophy in GoW")]
 
 
@@ -365,15 +377,26 @@ async def test_the_list_names_the_achievement_and_never_a_secret_one(
     assert listed("xbox_login_dead", {}, "en")["detail"] is None
 
 
-async def test_a_kind_switched_off_is_neither_kept_nor_sent(repo: Repo) -> None:
+async def test_each_channel_carries_only_the_kinds_switched_on_there(repo: Repo) -> None:
     ada, bob, _ = await _people(repo)
     sent: list = []
-    notifier = _notifier(repo, _PushService(), sent)
-    await repo.update_user_settings(bob, notify_friends=0)
+    service = _PushService()
+    notifier = _notifier(repo, service, sent)
+    await repo.save_push_subscription(
+        bob, "https://fcm.googleapis.com/fcm/send/b", **_browser(), user_agent=None
+    )
+    # Nothing switched on: kept in the list, sent nowhere.
     await notifier.notify(bob, "new_friend", person_id=ada, name="ada")
-    assert await repo.notifications_of(bob) == []
+    assert [row.kind for row in await repo.notifications_of(bob)] == ["new_friend"]
+    assert service.got == [] and sent == []
+
+    await repo.update_user_settings(
+        bob, notify_push_on="new_follower", notify_telegram_on="new_friend"
+    )
     await notifier.notify(bob, "new_follower", person_id=ada, name="ada")
-    assert [row.kind for row in await repo.notifications_of(bob)] == ["new_follower"]
+    await notifier.notify(bob, "new_friend", person_id=ada, name="ada")
+    assert service.got == ["https://fcm.googleapis.com/fcm/send/b"]
+    assert [text for _, text in sent] == ["Вы с ada теперь друзья"]
 
 
 async def test_a_games_new_post_is_told_to_its_players_only_once_and_never_its_history(
@@ -420,12 +443,13 @@ async def test_a_games_new_post_is_told_to_its_players_only_once_and_never_its_h
     ]
 
 
-async def test_game_news_follow_the_persons_choice_of_kind(repo: Repo, monkeypatch) -> None:
+async def test_game_news_follow_each_channels_choice_of_kind(repo: Repo, monkeypatch) -> None:
     from bot.db.repo import StoredPatch
     from bot.util import utcnow
 
     _ada, bob, _ = await _people(repo)
-    notifier = _notifier(repo, _PushService(), [])
+    sent: list[tuple[int, str]] = []
+    notifier = _notifier(repo, _PushService(), sent)
 
     async def readers(appid, *, played_since):
         return [(bob, "steam", "620", None, "Portal 2", "Portal 2")]
@@ -436,10 +460,8 @@ async def test_game_news_follow_the_persons_choice_of_kind(repo: Repo, monkeypat
         StoredPatch("n1", "Sale", today, None, None, None, kind="news"),
         StoredPatch("p1", "Update", today, None, None, None, kind="patch"),
     ]
-    await repo.update_user_settings(bob, notify_game_news="patch")
+    await repo.update_user_settings(bob, notify_telegram_on="game_news:patch")
     await notifier.tell_about_game_news(620, posts)
-    assert [row.data["title"] for row in await repo.notifications_of(bob)] == ["Update"]
-
-    await repo.update_user_settings(bob, notify_game_news="none")
-    await notifier.tell_about_game_news(620, posts)
-    assert len(await repo.notifications_of(bob)) == 1
+    # Both in the list; Telegram carries the patch only.
+    assert len(await repo.notifications_of(bob)) == 2
+    assert [text for _, text in sent] == ["Новый патч в Portal 2: Update"]
