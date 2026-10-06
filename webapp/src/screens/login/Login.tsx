@@ -78,7 +78,7 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
   if (signup) {
     return (
       <div className="login">
-        <img className="login-mark" src="/logo.svg" alt="" width={96} height={96} />
+        <img className="login-mark" src={`${import.meta.env.BASE_URL}logo.svg`} alt="" width={96} height={96} />
         <h1>{t(locale, "inviteTitle")}</h1>
         <InviteCodeForm
           locale={locale}
@@ -95,7 +95,7 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
 
   return (
     <div className="login">
-      <img className="login-mark" src="/logo.svg" alt="" width={96} height={96} />
+      <img className="login-mark" src={`${import.meta.env.BASE_URL}logo.svg`} alt="" width={96} height={96} />
       {codeFor ? (
         <h1>{t(locale, "emailCheckTitle")}</h1>
       ) : (
