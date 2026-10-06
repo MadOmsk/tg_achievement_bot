@@ -38,6 +38,21 @@ DEFAULT_APP_SETTINGS: dict[str, str] = {
 }
 
 
+# Indexes on columns a migration added (#167). schema.sql cannot name such a
+# column — it runs before the migrations, and an old file does not have it
+# yet — and a new database is baselined, so its migrations never ran either:
+# these were missing on every database made from scratch. Created after the
+# migrations, on every start; IF NOT EXISTS makes that free.
+INDEXES_AFTER_MIGRATIONS = (
+    "CREATE INDEX IF NOT EXISTS idx_seen_unlocked ON seen_achievements(xuid, unlocked_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_seen_account ON seen_achievements(account_platform, xuid)",
+    # poller/message_cleanup.py sweeps every chat's system messages each minute.
+    "CREATE INDEX IF NOT EXISTS idx_bot_messages_system ON bot_messages(is_system, sent_at)",
+    # The primary key (platform, title_id, achievement_id) already serves it.
+    "DROP INDEX IF EXISTS idx_title_achievements_title",
+)
+
+
 class SchemaTooNewError(RuntimeError):
     """The database has migrations this code does not ship (#56)."""
 
@@ -64,6 +79,9 @@ class Database:
         await self._conn.execute("PRAGMA journal_mode = WAL")
         await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._conn.execute("PRAGMA busy_timeout = 30000")
+        # Safe with WAL (a power cut may lose the last commits, never corrupt
+        # the file) and spares an fsync on every one of the pollers' commits.
+        await self._conn.execute("PRAGMA synchronous = NORMAL")
         try:
             # Whether this file had anything in it *before* schema.sql ran —
             # see _apply_migrations for why that one bit matters.
@@ -71,6 +89,8 @@ class Database:
             await self._refuse_a_newer_database()
             await self._apply_schema()
             await self._apply_migrations(fresh=fresh)
+            for statement in INDEXES_AFTER_MIGRATIONS:
+                await self._conn.execute(statement)
             await self._seed_app_settings()
             await self._conn.commit()
         except BaseException:

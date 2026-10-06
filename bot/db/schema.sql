@@ -265,7 +265,8 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
 
 CREATE INDEX IF NOT EXISTS idx_seen_achievements_title_id ON seen_achievements(title_id);
 -- The indexes on migrated columns (unlocked_at, account_platform) are NOT created here,
--- on purpose — see migration 037 and the note below: this file runs before any migration,
+-- on purpose — they are `_database.py::INDEXES_AFTER_MIGRATIONS`, made after the
+-- migrations on every start. See migration 037 and the note below: this file runs before any migration,
 -- so naming a column that only a migration adds crashes startup for every existing database.
 -- idx_seen_tg_unlocked is gone with `tg_id` itself (#52): who a row belongs
 -- to is account_links' answer now, and the two indexes above are what the
@@ -693,9 +694,6 @@ CREATE TABLE IF NOT EXISTS title_achievements (
     tip_translation TEXT CHECK (tip_translation IN ('llm')),
     PRIMARY KEY (platform, title_id, achievement_id)
 );
-
-CREATE INDEX IF NOT EXISTS idx_title_achievements_title
-    ON title_achievements(platform, title_id);
 
 -- One Steam app's guides and patch notes (migration 069) — an Xbox, a
 -- PlayStation and a Steam version of one game share them, so they are read

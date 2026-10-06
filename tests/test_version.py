@@ -303,3 +303,18 @@ def test_a_documentation_only_commit_does_not_advance_the_version(tmp_path, monk
     finally:
         version_module.revision.cache_clear()
         version_module.line.cache_clear()
+
+
+async def test_a_new_database_gets_the_indexes_its_baselined_migrations_carried(
+    tmp_path,
+) -> None:
+    """#167: a database made from scratch is baselined, so the indexes that
+    only migrations created were missing; they are made after the migrations."""
+    db = await Database(tmp_path / "fresh.db").connect()
+    try:
+        cursor = await db.conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+        names = {row[0] for row in await cursor.fetchall()}
+    finally:
+        await db.close()
+    assert {"idx_seen_unlocked", "idx_seen_account", "idx_bot_messages_system"} <= names
+    assert "idx_title_achievements_title" not in names
