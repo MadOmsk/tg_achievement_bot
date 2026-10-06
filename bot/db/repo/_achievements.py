@@ -371,8 +371,10 @@ class _AchievementsRepo:
         )
         return await cursor.fetchone() is not None
 
-    async def unpublished_achievements(self, person_id: int, chat_id: int) -> list[AchievementRow]:
-        """Every one of this person's achievements — any platform, `xuid`
+    async def unpublished_achievements(
+        self, person_id: int, chat_id: int, *, seen_since: str
+    ) -> list[AchievementRow]:
+        """This person's achievements — any platform, `xuid`
         populated on each row since they don't all share one — that never
         made it into `publications` for this specific chat (2026-09-09,
         anti-flood filter, poller/flood_flush.py): an achievement the flood
@@ -388,6 +390,12 @@ class _AchievementsRepo:
         caller re-runs `passes_filters` before using any of these, so a
         correctly-excluded achievement is excluded again, forever, exactly
         as it is today outside the flood filter entirely.
+
+        Only rows the bot stored at `seen_since` or later (#167): what the
+        flood filter held back arrived inside its window, and everything else
+        never posted here — history older than a catch-up's publish window,
+        unlocks from before the person joined this chat — must not ride out
+        in the digest.
         """
         cursor = await self._conn.execute(
             "SELECT s.title_id, s.achievement_id, s.name, s.description, s.icon_url,"
@@ -409,8 +417,9 @@ class _AchievementsRepo:
             # A muted account (#20) holds nothing back to flush: it never
             # posts at all, so the flood filter's backlog excludes it too.
             "WHERE alu.id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL AND al.publishes = 1 "
+            "  AND s.created_at >= ? "
             "ORDER BY COALESCE(s.unlocked_at, s.created_at) ASC",
-            (chat_id, person_id),
+            (chat_id, person_id, seen_since),
         )
         return [
             AchievementRow(

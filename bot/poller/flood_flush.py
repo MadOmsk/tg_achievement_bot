@@ -21,6 +21,11 @@ from bot.util import utcnow
 
 log = logging.getLogger(__name__)
 
+#: How long before its window started a held-back row may have been stored:
+#: the call that flips a window into throttled mode holds back the rest of
+#: its own batch, stored a moment before the flip.
+HELD_SLACK = timedelta(minutes=5)
+
 
 class FloodFlush:
     def __init__(self, repo: Repo, publisher: Publisher) -> None:
@@ -58,7 +63,12 @@ class FloodFlush:
             targets = await self._repo.publication_targets(state.person_id)
             chat = next((t for t in targets if t.chat_id == state.chat_id), None)
             if chat is not None:
-                pending = await self._repo.unpublished_achievements(state.person_id, state.chat_id)
+                since = state.window_started_at - HELD_SLACK
+                pending = await self._repo.unpublished_achievements(
+                    state.person_id,
+                    state.chat_id,
+                    seen_since=since.isoformat(timespec="seconds"),
+                )
                 allowed = [
                     item
                     for item in pending

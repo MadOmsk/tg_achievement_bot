@@ -70,7 +70,9 @@ async def test_flood_filter_allows_the_limit_then_buffers_the_rest(repo: Repo) -
     assert state.throttled is True
     assert state.count_in_window == 3
 
-    pending = await repo.unpublished_achievements(await repo.person_id(TG_ID), CHAT_ID)
+    pending = await repo.unpublished_achievements(
+        await repo.person_id(TG_ID), CHAT_ID, seen_since="2000-01-01"
+    )
     assert {a.achievement_id for a in pending} == {"a3", "a4"}
 
 
@@ -331,9 +333,44 @@ async def test_a_muted_account_posts_nothing_and_holds_nothing_back(repo: Repo) 
     await publisher.publish(await repo.person_id(TG_ID), XUID, "Gamer", [item])
 
     assert publisher._queue.qsize() == 0
-    assert await repo.unpublished_achievements(await repo.person_id(TG_ID), CHAT_ID) == []
+    assert (
+        await repo.unpublished_achievements(
+            await repo.person_id(TG_ID), CHAT_ID, seen_since="2000-01-01"
+        )
+        == []
+    )
     assert await repo.has_any_achievements(XUID)
 
     await repo.set_account_publishes(await repo.person_id(TG_ID), "xbox", XUID, True)
     await publisher.publish(await repo.person_id(TG_ID), XUID, "Gamer", [item])
     assert publisher._queue.qsize() == 1
+
+
+async def test_a_flush_sends_only_what_arrived_inside_its_window(repo: Repo) -> None:
+    """History the chat was never told about — a catch-up row past the publish
+    window, an unlock from before joining the chat — stays out of the digest
+    (#167): only rows stored while the window was throttled were held back."""
+    await _setup_chat(repo, flood_limit=1)
+    person = await repo.person_id(TG_ID)
+    old, held = achievement("old"), achievement("held")
+    await repo.insert_new_achievements(XUID, [old, held], is_backfill=False)
+    stored_long_ago = (utcnow() - timedelta(days=3)).isoformat(timespec="seconds")
+    await repo._conn.execute(
+        "UPDATE seen_achievements SET created_at = ? WHERE achievement_id = 'old'",
+        (stored_long_ago,),
+    )
+    await repo._conn.commit()
+    await repo.set_flood_state(
+        person,
+        CHAT_ID,
+        window_started_at=utcnow() - timedelta(minutes=61),
+        count_in_window=1,
+        throttled=True,
+    )
+
+    publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+    await FloodFlush(repo, publisher).tick()
+
+    assert publisher._queue.qsize() == 1
+    job = publisher._queue.get_nowait()
+    assert "held" in job.text and "old" not in job.text

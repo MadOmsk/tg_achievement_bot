@@ -320,6 +320,8 @@ async def test_unpublished_achievements_reads_rarity_cache(repo: Repo) -> None:
     await repo.insert_new_achievements(XUID, [row_360], is_backfill=False)
     await repo.cache_rarity(Platform.XBOX_360, "t-360", {"ach-2": 4.2})
 
-    pending = await repo.unpublished_achievements(await repo.person_id(TG_ID), CHAT_ID)
+    pending = await repo.unpublished_achievements(
+        await repo.person_id(TG_ID), CHAT_ID, seen_since="2000-01-01"
+    )
     assert len(pending) == 1
     assert pending[0].rarity_percent == 4.2
