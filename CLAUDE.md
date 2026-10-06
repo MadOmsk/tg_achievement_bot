@@ -857,7 +857,9 @@ elsewhere in this file still describe the bot.
     cannot share one count; a code marks itself used only once. Per client
     (nginx's `X-Real-IP`, in memory, `mini_logins`): ten codes sent an hour and
     twenty checked in ten minutes, and a hundred sent an hour by the whole app —
-    the mail server's reputation is everybody's. The answer never says whether an
+    the mail server's reputation is everybody's. All three are the admin's global
+    settings (`email_codes_per_client_hour`, `email_checks_per_client_10min`,
+    `email_codes_total_hour`), read on every request. The answer never says whether an
     address is known. Errors are codes the Mini App words: `invalid`, `too_soon`,
     `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
     `last_login`, `admin`, `in_telegram`, `not_linked`; a `taken` that a merge can

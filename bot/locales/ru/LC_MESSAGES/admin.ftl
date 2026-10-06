@@ -24,6 +24,9 @@ admin-setting-online-ttl = Автообновление /online, часов
 admin-setting-key-check = Проверка ключей / автообновление /admin (мин)
 admin-setting-monthly-delay = Задержка итогов месяца (мин)
 admin-setting-account-reset-cooldown = Кулдаун после сброса (часы)
+admin-setting-email-sends-client = Кодов на почту с одного IP в час
+admin-setting-email-sends-total = Кодов на почту всего в час
+admin-setting-email-checks-client = Проверок кода с одного IP за 10 минут
 admin-setting-patch-refresh = Обновление патчей игр (часы)
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description

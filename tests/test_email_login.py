@@ -622,20 +622,23 @@ async def test_parallel_guesses_cannot_go_past_the_limit(repo: Repo) -> None:
 
 
 async def test_one_client_cannot_go_through_many_addresses(repo: Repo, settings) -> None:
-    from bot.web import mini_logins
+    from bot.services.admin_settings import EMAIL_SENDS_PER_CLIENT_KEY
 
+    # The admin's own limit, read on every request.
+    await repo.set_app_setting(EMAIL_SENDS_PER_CLIENT_KEY, "3", None)
+    limit = 3
     sender = FakeSender()
     client = await _client(repo, settings, sender)
     try:
         statuses = []
-        for i in range(mini_logins.SENDS_PER_CLIENT[0] + 1):
+        for i in range(limit):
             response = await client.post(
                 "/api/mini/auth/email/start", json={"email": f"p{i}@example.com"}
             )
             statuses.append(response.status)
-        assert statuses[:-1] == [200] * mini_logins.SENDS_PER_CLIENT[0]
+        assert statuses == [200] * limit
         last = await client.post("/api/mini/auth/email/start", json={"email": "z@example.com"})
         assert (last.status, (await last.json())["error"]) == (429, "too_soon")
-        assert len(sender.sent) == mini_logins.SENDS_PER_CLIENT[0]
+        assert len(sender.sent) == limit
     finally:
         await client.close()
