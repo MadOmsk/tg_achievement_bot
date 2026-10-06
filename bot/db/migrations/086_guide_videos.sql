@@ -9,7 +9,10 @@ CREATE TABLE IF NOT EXISTS guide_channels (
     -- Where the first pass through the channel's history stopped.
     backfill_token  TEXT,
     backfill_done   INTEGER NOT NULL DEFAULT 0,
-    checked_at      TEXT
+    checked_at      TEXT,
+    -- When the last pass through the whole history ended: it is made again
+    -- weekly, since a timeline is often added to a video long after upload.
+    read_through_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS guide_videos (

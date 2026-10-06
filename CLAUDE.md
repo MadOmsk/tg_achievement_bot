@@ -185,7 +185,7 @@ name, or when the tree goes stale.
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
 │   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
 │   │   ├── patch_refresh.py      played games' patch notes, re-read every few hours
-│   │   ├── guide_videos.py       guide channels' YouTube videos: history once, then the newest page
+│   │   ├── guide_videos.py       guide channels' YouTube videos: the newest page, the whole history weekly
 │   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
@@ -1596,11 +1596,13 @@ Guide videos for an achievement, shown on its page in «Как получить�
 2026-10-06). Today one channel, TrophyTom (`services/youtube/guides.py::CHANNELS`).
 
 - **Read by `poller/guide_videos.py`** with the YouTube Data API key: a channel's
-  whole history once, eight pages of 50 a tick, the place kept
+  whole history, eight pages of 50 a tick, the place kept
   (`guide_channels.backfill_token`) so a failure resumes; then its newest page every
-  6 hours, which also catches a description edited since — a timeline is often
-  added after upload. A page is one unit of the key's 10 000 a day. Nothing is
-  downloaded: a card links to YouTube at the moment.
+  6 hours, and the whole history again every week (`read_through_at`) — a timeline
+  is often added to a video long after upload, and only a full pass sees it on an
+  old one. A page is one unit of the key's 10 000 a day (~220 a week for the
+  re-read). A refused call rests the channel an hour. A page lands in one
+  transaction. Nothing is downloaded: a card links to YouTube at the moment.
 - **What a video names** (`guide_videos`, `guide_marks`, migration 086): a title
   with 🏆 names one achievement right before it ("House Flipper Remastered - Beach
   please 🏆 Trophy / Achievement Guide"); a description's timeline names moments

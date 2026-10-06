@@ -271,6 +271,8 @@ class _SteamRepo:
             " FROM seen_achievements s"
             " JOIN account_links al ON al.platform = s.account_platform"
             "  AND al.external_id = s.xuid AND al.is_active = 1"
+            # An excluded person is told nothing (CLAUDE.md, Statistics rules).
+            " JOIN users u ON u.id = al.person_id AND u.is_excluded = 0"
             " JOIN titles t ON t.title_id = s.title_id"
             " WHERE (CASE WHEN s.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
             "        ELSE t.steam_appid END) = ?"

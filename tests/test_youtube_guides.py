@@ -179,6 +179,32 @@ async def test_a_channel_is_read_through_once_then_only_its_newest_page(
     await job.tick()
     assert asked == [None, "t2", "t3", None]
 
+    # A week on, the whole history again: a timeline added to an old video.
+    state = await repo.guide_channel(CHANNEL)
+    week_ago = (utcnow() - timedelta(days=poller.REREAD_DAYS)).isoformat(timespec="seconds")
+    await repo.save_guide_channel(replace(state, read_through_at=week_ago))
+    await job.tick()  # starts the pass over
+    await job.tick()
+    await job.tick()
+    assert asked == [None, "t2", "t3", None, None, "t2", "t3"]
+    assert (await repo.guide_channel(CHANNEL)).read_through_at > week_ago
+
+
+async def test_a_refusal_rests_the_channel_for_an_hour(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    async def refused(key, channel_id):
+        calls.append(channel_id)
+        raise youtube.YouTubeError("channels: HTTP 403 quotaExceeded")
+
+    monkeypatch.setattr(poller.youtube, "uploads_playlist", refused)
+    job = poller.GuideVideos(repo, _Key(), channels={CHANNEL: "TrophyTom"})
+    await job.tick()
+    await job.tick()
+    assert calls == [CHANNEL]
+
 
 async def test_no_key_reads_nothing(repo: Repo, monkeypatch: pytest.MonkeyPatch) -> None:
     async def boom(*args, **kwargs):

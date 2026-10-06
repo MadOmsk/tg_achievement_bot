@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import aiosqlite
-
 from bot.util import utcnow_iso
 
 
@@ -17,6 +15,7 @@ class GuideChannel:
     backfill_token: str | None
     backfill_done: bool
     checked_at: str | None
+    read_through_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,12 +41,10 @@ class GuideMoment:
 
 
 class _GuidesRepo:
-    _conn: aiosqlite.Connection
-
     async def guide_channel(self, channel_id: str) -> GuideChannel | None:
         cursor = await self._conn.execute(
-            "SELECT channel_id, uploads_id, backfill_token, backfill_done, checked_at"
-            " FROM guide_channels WHERE channel_id = ?",
+            "SELECT channel_id, uploads_id, backfill_token, backfill_done, checked_at,"
+            " read_through_at FROM guide_channels WHERE channel_id = ?",
             (channel_id,),
         )
         row = await cursor.fetchone()
@@ -59,22 +56,26 @@ class _GuidesRepo:
             backfill_token=row["backfill_token"],
             backfill_done=bool(row["backfill_done"]),
             checked_at=row["checked_at"],
+            read_through_at=row["read_through_at"],
         )
 
     async def save_guide_channel(self, channel: GuideChannel) -> None:
         await self._conn.execute(
             "INSERT INTO guide_channels"
-            " (channel_id, uploads_id, backfill_token, backfill_done, checked_at)"
-            " VALUES (?, ?, ?, ?, ?)"
+            " (channel_id, uploads_id, backfill_token, backfill_done, checked_at,"
+            "  read_through_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (channel_id) DO UPDATE SET uploads_id = excluded.uploads_id,"
             " backfill_token = excluded.backfill_token,"
-            " backfill_done = excluded.backfill_done, checked_at = excluded.checked_at",
+            " backfill_done = excluded.backfill_done, checked_at = excluded.checked_at,"
+            " read_through_at = excluded.read_through_at",
             (
                 channel.channel_id,
                 channel.uploads_id,
                 channel.backfill_token,
                 int(channel.backfill_done),
                 channel.checked_at,
+                channel.read_through_at,
             ),
         )
         await self._conn.commit()
@@ -83,31 +84,34 @@ class _GuidesRepo:
         """A page of a channel's videos: each one's title and marks as they are
         now — a description edited since (a timeline added) replaces them."""
         now = utcnow_iso()
-        for video in videos:
-            await self._conn.execute(
-                "INSERT INTO guide_videos"
-                " (video_id, channel_id, title, title_key, published_at, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT (video_id) DO UPDATE SET title = excluded.title,"
-                " title_key = excluded.title_key, published_at = excluded.published_at",
-                (
-                    video.video_id,
-                    video.channel_id,
-                    video.title,
-                    video.title_key,
-                    video.published_at,
-                    now,
-                ),
-            )
-            await self._conn.execute(
-                "DELETE FROM guide_marks WHERE video_id = ?", (video.video_id,)
-            )
-            await self._conn.executemany(
-                "INSERT OR IGNORE INTO guide_marks (video_id, label, start_seconds, part)"
-                " VALUES (?, ?, ?, ?)",
-                [(video.video_id, label, start, part) for label, start, part in video.marks],
-            )
-        await self._conn.commit()
+        # One page is one transaction (#167's rule): a video's old marks are
+        # deleted before its new ones go in, and a page cut short must not
+        # leave videos with none until the next pass reaches them.
+        async with self.transaction():  # type: ignore[attr-defined]
+            for video in videos:
+                await self._conn.execute(
+                    "INSERT INTO guide_videos"
+                    " (video_id, channel_id, title, title_key, published_at, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?)"
+                    " ON CONFLICT (video_id) DO UPDATE SET title = excluded.title,"
+                    " title_key = excluded.title_key, published_at = excluded.published_at",
+                    (
+                        video.video_id,
+                        video.channel_id,
+                        video.title,
+                        video.title_key,
+                        video.published_at,
+                        now,
+                    ),
+                )
+                await self._conn.execute(
+                    "DELETE FROM guide_marks WHERE video_id = ?", (video.video_id,)
+                )
+                await self._conn.executemany(
+                    "INSERT OR IGNORE INTO guide_marks (video_id, label, start_seconds, part)"
+                    " VALUES (?, ?, ?, ?)",
+                    [(video.video_id, label, start, part) for label, start, part in video.marks],
+                )
 
     async def guide_moments(self, game_keys: list[str], labels: list[str]) -> list[GuideMoment]:
         """The moments named `labels` in videos of a game: a video whose title
