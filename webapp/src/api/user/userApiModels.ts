@@ -1,6 +1,4 @@
 /** Whose new posts a person is told about: friends, everybody followed, nobody. */
-export type NotifyPosts = "friends" | "following" | "none";
-export type GameNewsChoice = "all" | "patch" | "news" | "none";
 
 export type PresenceInfo = {
   state: string | null;
@@ -120,19 +118,12 @@ export type MeResponse = {
     rarity_mode: string;
     /** Who sees this person's activity in the app (#157). */
     activity_visible?: "all" | "friends" | "nobody";
-    /** Whether to be told when someone follows this person (#157). */
-    notify_followers?: boolean;
     /** Where the app's notices go (#164): pushed to devices, and as a DM. */
     notify_push?: boolean;
     notify_telegram?: boolean;
-    /** Whose activity this person is told about. */
-    notify_posts?: NotifyPosts;
-    /** A switch per kind of notice. */
-    notify_new_posts?: boolean;
-    notify_friends?: boolean;
-    notify_account?: boolean;
-    /** Which of a game's posts: all, patches, news, none. */
-    notify_game_news?: GameNewsChoice;
+    /** The kinds of notice push and Telegram each carry (none by default). */
+    notify_push_on?: string[];
+    notify_telegram_on?: string[];
   };
   xbox: {
     linked: boolean;
@@ -205,14 +196,10 @@ export type UserSettingsPatch = Partial<{
   show_profile_links: boolean;
   show_secrets: boolean;
   rarity_mode: string;
-  notify_followers: boolean;
   notify_push: boolean;
   notify_telegram: boolean;
-  notify_posts: NotifyPosts;
-  notify_new_posts: boolean;
-  notify_friends: boolean;
-  notify_account: boolean;
-  notify_game_news: GameNewsChoice;
+  notify_push_on: string[];
+  notify_telegram_on: string[];
 }>;
 
 // A chat only says whether a person publishes there (#126): the rarity

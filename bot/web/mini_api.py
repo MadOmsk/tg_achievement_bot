@@ -33,7 +33,7 @@ from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
 from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
-from bot.services.notifier import GAME_NEWS_CHOICES, POST_NOTICE_CHOICES, Notifier
+from bot.services.notifier import Notifier, channel_token_valid
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -277,26 +277,17 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
-    for switch in (
-        "notify_followers",
-        "notify_push",
-        "notify_telegram",
-        "notify_new_posts",
-        "notify_friends",
-        "notify_account",
-    ):
+    for switch in ("notify_push", "notify_telegram"):
         if switch in body:
             fields[switch] = 1 if body[switch] else 0
-    if "notify_game_news" in body:
-        which = str(body["notify_game_news"])
-        if which not in GAME_NEWS_CHOICES:
-            raise web.HTTPBadRequest(text="bad notify_game_news")
-        fields["notify_game_news"] = which
-    if "notify_posts" in body:
-        posts = str(body["notify_posts"])
-        if posts not in POST_NOTICE_CHOICES:
-            raise web.HTTPBadRequest(text="bad notify_posts")
-        fields["notify_posts"] = posts
+    # The kinds a channel carries: KINDS keys, a choice after a colon where the
+    # kind has one (`new_post:friends`, `game_news:patch`); all others off.
+    for channel in ("notify_push_on", "notify_telegram_on"):
+        if channel in body:
+            kinds = body[channel]
+            if not isinstance(kinds, list) or not all(channel_token_valid(str(k)) for k in kinds):
+                raise web.HTTPBadRequest(text=f"bad {channel}")
+            fields[channel] = ",".join(sorted({str(k) for k in kinds}))
     if "rarity_mode" in body:
         mode = str(body["rarity_mode"])
         if mode not in {RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN}:

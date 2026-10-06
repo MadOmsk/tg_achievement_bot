@@ -1,9 +1,10 @@
--- Each kind of notice has its own switch (owner, 2026-10-06); `notify_posts`
--- stays whose activity one hears of (friends, everybody followed, nobody).
-ALTER TABLE user_settings ADD COLUMN notify_new_posts INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE user_settings ADD COLUMN notify_friends INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE user_settings ADD COLUMN notify_account INTEGER NOT NULL DEFAULT 1;
--- A new post of a game's developer, for the people who play it: every post,
--- patches only, news only, or none.
-ALTER TABLE user_settings ADD COLUMN notify_game_news TEXT NOT NULL DEFAULT 'all'
-    CHECK (notify_game_news IN ('all', 'patch', 'news', 'none'));
+-- Where each kind of notice goes (owner, 2026-10-06): every notice is kept in
+-- the app's list; push and Telegram each carry only the kinds switched on there
+-- (comma-separated keys of services/notifier.py::KINDS, a choice after a colon
+-- where the kind has one: `new_post:friends`, `game_news:patch`) — none by
+-- default. `notify_posts` (081) is no longer read: each channel says whose posts.
+ALTER TABLE user_settings ADD COLUMN notify_push_on TEXT NOT NULL DEFAULT '';
+ALTER TABLE user_settings ADD COLUMN notify_telegram_on TEXT NOT NULL DEFAULT '';
+-- Who was told of new followers by a Telegram message before (075) keeps them
+-- there; the old switch is no longer read.
+UPDATE user_settings SET notify_telegram_on = 'new_follower,new_friend' WHERE notify_followers = 1;

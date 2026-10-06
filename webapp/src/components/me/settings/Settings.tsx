@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AccountPlatform, MeResponse, GameNewsChoice, NotifyPosts } from "../../../api";
+import type { AccountPlatform, MeResponse } from "../../../api";
 import { t, timezoneLabel, type Locale } from "../../../i18n";
 import {
   Avatar,
@@ -72,14 +72,10 @@ export function Settings({
     tz_offset_min?: number | null;
     show_secrets?: boolean;
     rarity_mode?: string;
-    notify_followers?: boolean;
     notify_push?: boolean;
     notify_telegram?: boolean;
-    notify_posts?: NotifyPosts;
-    notify_new_posts?: boolean;
-    notify_friends?: boolean;
-    notify_account?: boolean;
-    notify_game_news?: GameNewsChoice;
+    notify_push_on?: string[];
+    notify_telegram_on?: string[];
   }) => void;
   onChatPatch: (chatId: number, body: Record<string, unknown>) => void;
   onNickname: (handle: string) => Promise<void>;
@@ -202,7 +198,6 @@ export function Settings({
         onBack={back}
         onPatch={onPatch}
         onFlash={onFlash}
-        onAddTelegram={() => setPane(SETTINGS_PANES.LOGINS)}
       />
     );
   }

@@ -159,13 +159,21 @@ function NoticeRow({
   // A list item from before the short form came has no lead: its whole line.
   const lead = item.lead ?? item.text;
   const badge = BADGE[item.kind];
+  // A cover that does not load leaves the plain mark, never a broken picture.
+  const [coverFailed, setCoverFailed] = useState(false);
   return (
     <button type="button" className={item.read ? "notice-row" : "notice-row is-unread"} onClick={onOpen}>
       <span className="notice-face">
         {item.person_id != null ? (
           <Avatar name={item.name ?? "?"} personId={item.person_id} size={44} />
-        ) : item.cover ? (
-          <img className="notice-cover" src={item.cover} alt="" loading="lazy" />
+        ) : item.cover && !coverFailed ? (
+          <img
+            className="notice-cover"
+            src={item.cover}
+            alt=""
+            loading="lazy"
+            onError={() => setCoverFailed(true)}
+          />
         ) : (
           <span className="notice-mark">
             <Icon name="bell" size={18} />

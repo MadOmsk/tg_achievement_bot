@@ -211,6 +211,8 @@ async def test_mini_api_people_flow(repo: Repo, settings) -> None:
     mine = {"X-Telegram-Init-Data": _signed_init_data(token, 42)}
     await repo.ensure_user(7, "friend7")
     other = await repo.person_id(7)
+    # Telegram carries a new follower only when switched on (none by default).
+    await repo.update_user_settings(other, notify_telegram_on="new_follower,new_friend")
 
     client = TestClient(TestServer(app))
     await client.start_server()

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { MeResponse, GameNewsChoice, NotifyPosts } from "../../../api";
+import type { MeResponse } from "../../../api";
 import { t, type Locale, type TranslationKey } from "../../../i18n";
 import { BackHead, Group, InfoRow, SelectRow, ToggleRow } from "../../shared/lib";
 import { disablePush, enablePush, pushState, quickPushState, type PushState } from "./push";
@@ -14,8 +14,28 @@ const DEVICE_HINT: Partial<Record<PushState, TranslationKey>> = {
   denied: "pushDenied",
 };
 
-/** Settings → «Уведомления» (#164): where the app's notices go — pushed to this
- * device, and as a Telegram message — and what they are about. */
+type Channel = "notify_push_on" | "notify_telegram_on";
+
+/** A channel's tokens: a kind's key, with its choice after a colon where it has
+ * one (`new_post:friends`, `game_news:patch`). */
+function choiceOf(tokens: string[], kind: string): string | null {
+  for (const token of tokens) {
+    const [key, choice = ""] = token.split(":");
+    if (key === kind) return choice;
+  }
+  return null;
+}
+
+function withChoice(tokens: string[], kind: string, choice: string | null): string[] {
+  const rest = tokens.filter((token) => token.split(":")[0] !== kind);
+  return choice === null ? rest : [...rest, choice ? `${kind}:${choice}` : kind];
+}
+
+/** Settings → «Уведомления» (#164; owner, 2026-10-06): every notice is kept in
+ * the bell's list; push and Telegram are two blocks with the same rows — whose
+ * posts, followers, friends, which game news (and, for push, the Xbox sign-in;
+ * its Telegram message is the reminder's own) —, none on by default, shown
+ * under the channel's own switch while it is on. */
 export function NotificationsPane({
   me,
   locale,
@@ -23,7 +43,6 @@ export function NotificationsPane({
   onBack,
   onPatch,
   onFlash,
-  onAddTelegram,
 }: {
   me: MeResponse;
   locale: Locale;
@@ -32,16 +51,10 @@ export function NotificationsPane({
   onPatch: (body: {
     notify_push?: boolean;
     notify_telegram?: boolean;
-    notify_followers?: boolean;
-    notify_posts?: NotifyPosts;
-    notify_new_posts?: boolean;
-    notify_friends?: boolean;
-    notify_account?: boolean;
-    notify_game_news?: GameNewsChoice;
+    notify_push_on?: string[];
+    notify_telegram_on?: string[];
   }) => void;
   onFlash: (message: string) => void;
-  /** Opens Settings → «Вход», for somebody with no Telegram yet. */
-  onAddTelegram: () => void;
 }) {
   // Drawn at once from what is known now; the real answer replaces it.
   const [device, setDevice] = useState<PushState>(quickPushState);
@@ -75,107 +88,77 @@ export function NotificationsPane({
   };
 
   const hint = device ? DEVICE_HINT[device] : undefined;
-  // With nothing to deliver them (no push here, no Telegram messages) the
-  // kinds below would choose nothing: they are hidden (owner, 2026-10-06).
-  const delivering =
-    (device === "on" && pushOn) || (hasTelegram && me.settings.notify_telegram !== false);
+  const pushReady = device === "on" && pushOn;
+  const telegramReady = hasTelegram && me.settings.notify_telegram !== false;
+  const channelRows = (channel: Channel, withAccount: boolean) => {
+    const tokens = me.settings[channel] ?? [];
+    const set = (kind: string, choice: string | null) => onPatch({ [channel]: withChoice(tokens, kind, choice) });
+    const toggle = (kind: string, label: TranslationKey) => (
+      <ToggleRow
+        label={t(locale, label)}
+        on={choiceOf(tokens, kind) !== null}
+        onChange={(on) => set(kind, on ? "" : null)}
+      />
+    );
+    return (
+      <>
+        <SelectRow<string>
+          label={t(locale, "notifyPosts")}
+          value={choiceOf(tokens, "new_post") ?? "off"}
+          options={[
+            { value: "off", label: t(locale, "notifyOff") },
+            { value: "friends", label: t(locale, "notifyPostsFriends") },
+            { value: "following", label: t(locale, "notifyPostsFollowing") },
+          ]}
+          onChange={(value) => set("new_post", value === "off" ? null : value)}
+        />
+        {toggle("new_follower", "notifyFollowers")}
+        {toggle("new_friend", "notifyFriends")}
+        <SelectRow<string>
+          label={t(locale, "notifyGameNews")}
+          value={choiceOf(tokens, "game_news") ?? "off"}
+          options={[
+            { value: "off", label: t(locale, "notifyOff") },
+            { value: "all", label: t(locale, "postsAll") },
+            { value: "patch", label: t(locale, "notifyGameNewsPatch") },
+            { value: "news", label: t(locale, "notifyGameNewsNews") },
+          ]}
+          onChange={(value) => set("game_news", value === "off" ? null : value)}
+        />
+        {withAccount && toggle("xbox_login_dead", "notifyAccount")}
+      </>
+    );
+  };
 
   return (
     <>
       <BackHead title={t(locale, "notifications")} backLabel={t(locale, "back")} onBack={onBack} />
-      <Group title={t(locale, "notifyWhere")}>
-        {hasTelegram ? (
-          <ToggleRow
-            label={t(locale, "notifyTelegram")}
-            sub={t(locale, "notifyTelegramHint")}
-            on={me.settings.notify_telegram !== false}
-            onChange={(on) => onPatch({ notify_telegram: on })}
-          />
-        ) : (
-          <InfoRow label={t(locale, "notifyTelegram")} sub={t(locale, "notifyTelegramNeeds")}>
-            <button type="button" className="btn sm is-quiet" onClick={onAddTelegram}>
-              {t(locale, "notifyTelegramAdd")}
-            </button>
-          </InfoRow>
-        )}
-        {/* One row for push (owner, 2026-10-05): on is this device subscribed;
-            a device that cannot get pushes says why instead of a switch. */}
+      {/* Push on this device: its switch, then the kinds it carries. A device
+          that cannot get pushes says why instead of a switch. */}
+      <Group title={t(locale, "notifyPushGroup")}>
         {device === "on" || device === "off" ? (
           <ToggleRow
             label={t(locale, "notifyPush")}
             sub={t(locale, "notifyPushHint")}
-            on={device === "on" && pushOn}
+            on={pushReady}
             onChange={(on) => void toggleDevice(on)}
           />
         ) : (
           <InfoRow label={t(locale, "notifyPush")} sub={hint ? t(locale, hint) : t(locale, "notifyPushHint")} />
         )}
+        {pushReady && channelRows("notify_push_on", true)}
       </Group>
-      {delivering && (
-        <>
-          {/* By what they are about (owner, 2026-10-06): people, games, accounts;
-              whose activity first, then a switch per kind. */}
-          <Group title={t(locale, "notifyPeople")}>
-            <SelectRow<NotifyPosts>
-              label={t(locale, "notifyFrom")}
-              sub={t(locale, "notifyFromHint")}
-              value={me.settings.notify_posts ?? "friends"}
-              options={[
-                { value: "friends", label: t(locale, "notifyPostsFriends") },
-                { value: "following", label: t(locale, "notifyPostsFollowing") },
-                { value: "none", label: t(locale, "notifyPostsNone") },
-              ]}
-              onChange={(value) => onPatch({ notify_posts: value })}
-            />
-            <ToggleRow
-              label={t(locale, "notifyPosts")}
-              sub={t(locale, "notifyPostsHint")}
-              on={me.settings.notify_new_posts !== false && me.settings.notify_posts !== "none"}
-              // "Nobody" switched them off too: turning them on brings friends back.
-              onChange={(on) =>
-                onPatch(
-                  on && me.settings.notify_posts === "none"
-                    ? { notify_new_posts: true, notify_posts: "friends" }
-                    : { notify_new_posts: on },
-                )
-              }
-            />
-            <ToggleRow
-              label={t(locale, "notifyFollowers")}
-              sub={t(locale, "notifyFollowersHint")}
-              on={me.settings.notify_followers !== false}
-              onChange={(on) => onPatch({ notify_followers: on })}
-            />
-            <ToggleRow
-              label={t(locale, "notifyFriends")}
-              sub={t(locale, "notifyFriendsHint")}
-              on={me.settings.notify_friends !== false}
-              onChange={(on) => onPatch({ notify_friends: on })}
-            />
-          </Group>
-          <Group title={t(locale, "notifyGames")}>
-            <SelectRow<GameNewsChoice>
-              label={t(locale, "notifyGameNews")}
-              sub={t(locale, "notifyGameNewsHint")}
-              value={me.settings.notify_game_news ?? "all"}
-              options={[
-                { value: "all", label: t(locale, "postsAll") },
-                { value: "patch", label: t(locale, "notifyGameNewsPatch") },
-                { value: "news", label: t(locale, "notifyGameNewsNews") },
-                { value: "none", label: t(locale, "notifyGameNewsNone") },
-              ]}
-              onChange={(value) => onPatch({ notify_game_news: value })}
-            />
-          </Group>
-          <Group title={t(locale, "notifyAccounts")}>
-            <ToggleRow
-              label={t(locale, "notifyAccount")}
-              sub={t(locale, "notifyAccountHint")}
-              on={me.settings.notify_account !== false}
-              onChange={(on) => onPatch({ notify_account: on })}
-            />
-          </Group>
-        </>
+      {/* Only with Telegram linked (Settings → «Вход» links it). */}
+      {hasTelegram && (
+        <Group title={t(locale, "notifyTelegramGroup")}>
+          <ToggleRow
+            label={t(locale, "notifyTelegram")}
+            sub={t(locale, "notifyTelegramHint")}
+            on={telegramReady}
+            onChange={(on) => onPatch({ notify_telegram: on })}
+          />
+          {telegramReady && channelRows("notify_telegram_on", false)}
+        </Group>
       )}
     </>
   );

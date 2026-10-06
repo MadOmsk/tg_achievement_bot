@@ -810,8 +810,8 @@ elsewhere in this file still describe the bot.
   the other's search and lists; the blocked one cannot follow). Search is by
   nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
   People from a shared chat (subscribed or seen writing) are suggested, and friends of friends above them — «Вы можете знать», people followed by those you follow, the most shared first (`repo.people_you_may_know`, `/api/mini/people/may-know`). A new
-  follower is told through the app's own notifications (below), unless they turned
-  it off in Settings → Уведомления (`user_settings.notify_followers`, migration 075).
+  follower is told through the app's own notifications (below); push and Telegram
+  carry it only when switched on there (075's `notify_followers` is no longer read).
   New posts are told as well, by the follower's own choice (below). **Following is not a way to ping somebody**
   (owner, 2026-10-03; `follow_log`, migration 076): one such DM per pair a day, and
   following a person again within ten minutes of unfollowing them is refused
@@ -946,18 +946,22 @@ elsewhere in this file still describe the bot.
   told goes through `services/notifier.py::Notifier.notify(recipient, kind, **data)`,
   which keeps it in their list (`notifications`, the latest 200, worded on reading in
   the reader's language from `notifications.ftl`), pushes it to every browser that
-  allowed it, and sends it as a Telegram DM. Push is the app's own channel and on by
-  default (`user_settings.notify_push`); the DM needs Telegram and the person's
-  switch (`notify_telegram`, on by default so nobody lost the DMs they had; migration
-  080). One channel failing never stops the others, nor what caused the notice.
+  allowed it, and sends it as a Telegram DM. **Every notice is kept in the list; push
+  and Telegram each carry only the kinds switched on there — none by default**
+  (owner, 2026-10-06; `user_settings.notify_push_on` / `notify_telegram_on`, comma-
+  separated `KINDS` keys with a choice after a colon where the kind has one,
+  migration 087, which keeps the follower DMs of whoever had them). Beside that, each channel has its own switch (`notify_push`, `notify_telegram`;
+  migration 080), and the DM needs Telegram. One channel failing never stops the
+  others, nor what caused the notice.
   Each kind (`notifier.KINDS`) says which channels it takes. Today: a new follower,
   a new friend, a dead Xbox login (`xbox_login_dead`, from
   `XboxAuthService.on_token_dead`) — that one in the list and as a push only: its
   DM is `poller/reminders.py`'s, which carries the relogin button — and a new post.
   - **A new post** (`new_post`; owner, 2026-10-05): somebody followed earned new
-    achievements in one game. Each follower picks whose (`user_settings.notify_posts`,
-    migration 081: `friends` — the default —, `following`, `none`; Settings →
-    Уведомления → «От кого», a dropdown), and `repo.can_view_activity` still gates it.
+    achievements in one game. Every follower's list has it; each channel picks
+    whose (friends or everyone followed, `new_post:friends` / `new_post:following`;
+    `repo.post_notice_recipients` says who is a friend), and
+    `repo.can_view_activity` still gates it.
     It names the first achievement that is not secret, and carries its picture.
     `Publisher.publish` fires it once per call, before any chat filter and after
     the account's own posting switch (#20), in a background task
@@ -967,9 +971,8 @@ elsewhere in this file still describe the bot.
   - **A game's news** (`game_news`; owner, 2026-10-06): a developer's post read
     for the first time (`SteamExtras.refresh_patches` → `on_new_posts` →
     `Notifier.tell_about_game_news`) is told to everybody who earned something in
-    that game in the last 60 days (`repo.game_news_readers`), in the list and as
-    a push, never as a DM, of the kinds each picks (`user_settings.notify_game_news`:
-    all, patches, news, none). Only posts of the last two days, two at most a
+    that game in the last 60 days (`repo.game_news_readers`): in the list always,
+    on a channel by its choice (all, patches, news). Only posts of the last two days, two at most a
     read, and none from an app's first read (its history). A tap opens the game.
   - **Web Push without a new dependency**: `services/webpush.py` seals a message
     (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
@@ -997,14 +1000,14 @@ elsewhere in this file still describe the bot.
     accent dot left of the face; read ones step back. The list scrolls inside the
     sheet. A friend's face everywhere carries the same handshake mark
     (`people/friend-mark`).
-    Settings → «Уведомления»: where (Telegram messages — or «Привязать» without
-    Telegram — then one push switch: this device subscribed or not; owner,
-    2026-10-05), then by what they are about (owner, 2026-10-06; migration 087):
-    «Люди» — «От кого» (friends / following / nobody), new posts, new
-    followers, new friends; «Игры» — which game posts (all / patches / news / none); «Аккаунты» — the Xbox sign-in. `Kind.switch` names the setting; `Notifier.notify` keeps
-    With no channel delivering here — this device not subscribed to push and no
-    Telegram messages — the groups of kinds are hidden: they would choose nothing.
-    and sends nothing of a kind switched off. A hint under a setting
+    Settings → «Уведомления» (owner, 2026-10-06): two blocks with the same rows,
+    «Пуши» (this device's switch: subscribed or not) and «Telegram» (its switch;
+    the block is there only with Telegram linked); under a switch that is on —
+    «Новые посты» (off / friends / everyone followed), new followers, new
+    friends, «Новости игр» (off / all / patches / news), and for push the Xbox
+    sign-in (its Telegram message is `poller/reminders.py`'s, with the button).
+    Stored as tokens, `new_post:friends`, `game_news:patch`
+    (`notifier.carries`); 081's `notify_posts` is no longer read. A hint under a setting
     is its row's second line, never a note under the group, unless it is about a
     choice among the group's rows. `components/me/notifications/push.ts` says why a
     device cannot get pushes, each worded: inside Telegram (the bot's DMs are the

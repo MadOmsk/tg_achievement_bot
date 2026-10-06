@@ -88,12 +88,9 @@ class UserSettings:
     notify_telegram: bool = True
     # Whose activity this person is told about: friends / following / none.
     notify_posts: str = "friends"
-    # A switch per kind of notice (migration 087).
-    notify_new_posts: bool = True
-    notify_friends: bool = True
-    notify_account: bool = True
-    # Which of a game's posts: all / patch / news / none.
-    notify_game_news: str = "all"
+    # The kinds of notice switched on for push and for Telegram (087), none by default.
+    notify_push_on: frozenset[str] = frozenset()
+    notify_telegram_on: frozenset[str] = frozenset()
 
 
 @dataclass(slots=True)
@@ -793,11 +790,15 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         notify_push=bool(row["notify_push"]) if "notify_push" in keys else True,
         notify_telegram=bool(row["notify_telegram"]) if "notify_telegram" in keys else True,
         notify_posts=row["notify_posts"] if "notify_posts" in keys else "friends",
-        notify_new_posts=bool(row["notify_new_posts"]) if "notify_new_posts" in keys else True,
-        notify_friends=bool(row["notify_friends"]) if "notify_friends" in keys else True,
-        notify_account=bool(row["notify_account"]) if "notify_account" in keys else True,
-        notify_game_news=row["notify_game_news"] if "notify_game_news" in keys else "all",
+        notify_push_on=_kinds(row["notify_push_on"]) if "notify_push_on" in keys else frozenset(),
+        notify_telegram_on=(
+            _kinds(row["notify_telegram_on"]) if "notify_telegram_on" in keys else frozenset()
+        ),
     )
+
+
+def _kinds(stored: str | None) -> frozenset[str]:
+    return frozenset(kind for kind in (stored or "").split(",") if kind)
 
 
 def _iso(moment: datetime) -> str:

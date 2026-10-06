@@ -38,13 +38,39 @@ log = logging.getLogger(__name__)
 
 VAPID_KEY_SETTING = "vapid_private_key"
 
-# Whose new posts a person is told about (`user_settings.notify_posts`).
-POST_NOTICE_CHOICES = ("friends", "following", "none")
+# A channel's own choice for a kind (`notify_push_on` / `notify_telegram_on`,
+# a key with its qualifier, `new_post:friends`): whose posts, which game news.
+POST_NOTICE_CHOICES = ("friends", "following")
 # One game's evening is one post: a person hears of it once in this long,
 # however many polls bring its achievements in.
 POST_NOTICE_INTERVAL = timedelta(hours=3)
-# Which of a game's posts a person is told about (`user_settings.notify_game_news`).
-GAME_NEWS_CHOICES = ("all", "patch", "news", "none")
+GAME_NEWS_CHOICES = ("all", "patch", "news")
+QUALIFIERS = {"new_post": POST_NOTICE_CHOICES, "game_news": GAME_NEWS_CHOICES}
+
+
+def channel_token_valid(token: str) -> bool:
+    kind, _, qualifier = token.partition(":")
+    if kind not in KINDS:
+        return False
+    return not qualifier or qualifier in QUALIFIERS.get(kind, ())
+
+
+def carries(tokens: frozenset[str], kind: str, data: dict[str, Any], *, friend: bool) -> bool:
+    """Whether a channel set to `tokens` carries this notice: its kind is on,
+    and its qualifier lets it through — a post of a friend only for
+    `new_post:friends`, a game's patch only for `game_news:patch`."""
+    for token in tokens:
+        key, _, qualifier = token.partition(":")
+        if key != kind:
+            continue
+        if kind == "new_post":
+            return qualifier != "friends" or friend
+        if kind == "game_news":
+            return qualifier in ("", "all") or qualifier == data.get("post")
+        return True
+    return False
+
+
 # A game's news is told to those who earned something in it this recently,
 # for posts no older than this, and at most this many from one read.
 GAME_NEWS_PLAYED = timedelta(days=60)
@@ -68,8 +94,6 @@ class Kind:
     game: bool = False
     # The list's line after the name in bold; None: the whole line, no name.
     lead: str | None = None
-    # The person's own switch for this kind (a `UserSettings` field).
-    switch: str | None = None
 
 
 KINDS: dict[str, Kind] = {
@@ -77,13 +101,11 @@ KINDS: dict[str, Kind] = {
         "notification-new-follower",
         "person_id",
         lead="notification-new-follower-lead",
-        switch="notify_followers",
     ),
     "new_friend": Kind(
         "notification-new-friend",
         "person_id",
         lead="notification-new-friend-lead",
-        switch="notify_friends",
     ),
     # Somebody followed earned something new (owner, 2026-10-05).
     "new_post": Kind(
@@ -91,16 +113,12 @@ KINDS: dict[str, Kind] = {
         "person_id",
         game=True,
         lead="notification-new-post-lead",
-        switch="notify_new_posts",
     ),
     # The person's Xbox login stopped working (#164): in the list and as a push;
     # the DM is poller/reminders.py's, which carries the relogin button.
-    # A new post of the developer of a game the person plays (owner, 2026-10-06):
-    # in the list and as a push — a DM for every patch would be too many.
-    "game_news": Kind("notification-game-news", game=True, telegram=False),
-    "xbox_login_dead": Kind(
-        "notification-xbox-login-dead", telegram=False, switch="notify_account"
-    ),
+    # A new post of the developer of a game the person plays (owner, 2026-10-06).
+    "game_news": Kind("notification-game-news", game=True),
+    "xbox_login_dead": Kind("notification-xbox-login-dead", telegram=False),
 }
 UNKNOWN = Kind("notification-unknown")
 
@@ -193,18 +211,21 @@ class Notifier:
             )
         return self._keys
 
-    async def notify(self, recipient: int, kind: str, **data: Any) -> None:
+    async def notify(self, recipient: int, kind: str, *, friend: bool = False, **data: Any) -> None:
+        """Kept in the person's list always; pushed and sent to Telegram only for
+        the kinds the person switched on there (none by default)."""
         settings = await self._repo.get_user_settings(recipient)
-        switch = KINDS.get(kind, UNKNOWN).switch
-        # Switched off: not kept, not sent.
-        if switch and settings is not None and not getattr(settings, switch):
-            return
         await self._repo.add_notification(recipient, kind, data)
-        locale = settings.locale if settings else "ru"
-        text = wording(kind, data, locale)
-        if settings is None or settings.notify_push:
+        if settings is None:
+            return
+        text = wording(kind, data, settings.locale)
+        if settings.notify_push and carries(settings.notify_push_on, kind, data, friend=friend):
             await self._push(recipient, kind, data, text)
-        if KINDS.get(kind, UNKNOWN).telegram and (settings is None or settings.notify_telegram):
+        if (
+            KINDS.get(kind, UNKNOWN).telegram
+            and settings.notify_telegram
+            and carries(settings.notify_telegram_on, kind, data, friend=friend)
+        ):
             await self._telegram(recipient, text)
 
     async def tell_about_post(
@@ -218,9 +239,9 @@ class Notifier:
         icon: str | None = None,
     ) -> None:
         """Tell the people following `author` about new achievements in one game,
-        each by their own choice (friends, everybody followed, nobody) and only
-        if they may see the author's activity. One recipient failing never stops
-        the rest."""
+        if they may see the author's activity: kept in each one's list, sent on
+        a channel by its own choice (friends, everybody followed). One recipient
+        failing never stops the rest."""
         recipients = await self._repo.post_notice_recipients(author)
         if not recipients:
             return
@@ -228,7 +249,7 @@ class Notifier:
         if person is None:
             return
         since = (utcnow() - POST_NOTICE_INTERVAL).isoformat(timespec="seconds")
-        for recipient in recipients:
+        for recipient, friend in recipients:
             try:
                 if not await self._repo.can_view_activity(recipient, author):
                     continue
@@ -239,6 +260,7 @@ class Notifier:
                 await self.notify(
                     recipient,
                     "new_post",
+                    friend=friend,
                     person_id=author,
                     name=person.handle,
                     platform=platform,
@@ -281,11 +303,8 @@ class Notifier:
         ) in await self._repo.game_news_readers(appid, played_since=since):
             settings = await self._repo.get_user_settings(person)
             locale = settings.locale if settings else "ru"
-            which = settings.notify_game_news if settings else "all"
             game = (name_ru if locale == "ru" else name_en) or name_en or name_ru or name
             for post in recent:
-                if which == "none" or which not in ("all", post.kind):
-                    continue
                 try:
                     await self.notify(
                         person,

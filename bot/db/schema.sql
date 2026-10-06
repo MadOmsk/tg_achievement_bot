@@ -147,24 +147,23 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- itself in English, and auto-switching them would be a silent
     -- regression rather than a feature. Explicit opt-in, default 'ru'.
     locale           TEXT    NOT NULL DEFAULT 'ru',
-    -- Whether to be told when someone follows this person (#157, migration 075).
+    -- Whether to be told when someone follows this person (#157, migration 075);
+    -- no longer read: 087 moved it onto the channels' lists.
     notify_followers INTEGER NOT NULL DEFAULT 1,
     -- Where the app's notifications go (#164, migration 080): pushed to the
     -- devices that allowed it, and as a Telegram DM (only with Telegram linked).
     notify_push      INTEGER NOT NULL DEFAULT 1,
     notify_telegram  INTEGER NOT NULL DEFAULT 1,
-    -- Whose activity this person is told about (migration 081): friends,
-    -- everybody they follow, or nobody.
+    -- Whose posts this person was told about (migration 081); no longer read:
+    -- each channel says it in notify_push_on / notify_telegram_on (087).
     notify_posts     TEXT    NOT NULL DEFAULT 'friends'
         CHECK (notify_posts IN ('friends', 'following', 'none')),
-    -- A switch per kind of notice (migration 087): new posts, new friends,
-    -- the person's own accounts (a dead Xbox login), and the news of the games
-    -- they play.
-    notify_new_posts INTEGER NOT NULL DEFAULT 1,
-    notify_friends   INTEGER NOT NULL DEFAULT 1,
-    notify_account   INTEGER NOT NULL DEFAULT 1,
-    notify_game_news TEXT    NOT NULL DEFAULT 'all'
-        CHECK (notify_game_news IN ('all', 'patch', 'news', 'none'))
+    -- The kinds of notice switched on for each channel (migration 087), none
+    -- by default; comma-separated keys of services/notifier.py::KINDS, a choice
+    -- after a colon where the kind has one (new_post:friends, game_news:patch).
+    -- The app's own list keeps every notice.
+    notify_push_on      TEXT NOT NULL DEFAULT '',
+    notify_telegram_on  TEXT NOT NULL DEFAULT ''
 );
 
 -- Rare-achievement threshold, daily-summary time and its timezone are always
