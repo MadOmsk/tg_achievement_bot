@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from bot.db.repo._sql import CHAT_MEMBERS
 from bot.services import handles
 from bot.services.people import (
     ACTIVITY_CHOICES,
@@ -286,21 +287,14 @@ class _FollowsRepo:
         """People who share a chat with `me` (subscribed or seen writing there) and
         whom `me` does not follow yet, those sharing the most chats first."""
         cursor = await self._conn.execute(
-            "WITH mine AS ("
-            "  SELECT chat_id FROM subscriptions WHERE person_id = :me"
-            "  UNION"
-            "  SELECT chat_id FROM chat_seen"
-            "  WHERE tg_id = (SELECT tg_id FROM users WHERE id = :me)"
-            "), others AS ("
-            "  SELECT su.tg_id, sb.chat_id FROM subscriptions sb"
-            "  JOIN users su ON su.id = sb.person_id"
-            "  UNION SELECT tg_id, chat_id FROM chat_seen"
-            "), shared AS ("
-            "  SELECT o.tg_id, COUNT(*) AS n FROM others o JOIN mine m ON m.chat_id = o.chat_id"
-            "  GROUP BY o.tg_id"
+            "WITH member AS " + CHAT_MEMBERS + ", "
+            "mine AS (SELECT chat_id FROM member WHERE person_id = :me), "
+            "shared AS ("
+            "  SELECT o.person_id, COUNT(*) AS n FROM member o"
+            "  JOIN mine m ON m.chat_id = o.chat_id GROUP BY o.person_id"
             ") "
             "SELECT p.id, p.tg_id, " + _SHOWN + " AS shown, " + _RELATION + " "
-            "FROM shared s JOIN users p ON p.tg_id = s.tg_id "
+            "FROM shared s JOIN users p ON p.id = s.person_id "
             "WHERE p.id != :me AND p.handle IS NOT NULL AND p.is_excluded = 0"
             "  AND NOT EXISTS (SELECT 1 FROM follows f"
             "    WHERE f.follower_id = :me AND f.followee_id = p.id)" + _NOT_BLOCKED + " "
@@ -409,16 +403,11 @@ class _FollowsRepo:
         """An active chat both people are subscribed to or were seen writing in —
         the membership `/online` and "Мои чаты" use."""
         cursor = await self._conn.execute(
-            "WITH member AS ("
-            "  SELECT sb.chat_id, su.tg_id FROM subscriptions sb"
-            "  JOIN users su ON su.id = sb.person_id"
-            "  UNION SELECT chat_id, tg_id FROM chat_seen"
-            ") "
+            "WITH member AS " + CHAT_MEMBERS + " "
             "SELECT 1 FROM member ma "
             "JOIN member mb ON mb.chat_id = ma.chat_id "
             "JOIN chats c ON c.chat_id = ma.chat_id AND c.is_active = 1 "
-            "WHERE ma.tg_id = (SELECT tg_id FROM users WHERE id = :a)"
-            "  AND mb.tg_id = (SELECT tg_id FROM users WHERE id = :b) "
+            "WHERE ma.person_id = :a AND mb.person_id = :b "
             "LIMIT 1",
             {"a": a, "b": b},
         )

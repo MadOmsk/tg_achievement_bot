@@ -21,6 +21,7 @@ from bot.db.repo._models import (
     _iso,
 )
 from bot.db.repo._sql import (
+    CHAT_MEMBERS,
     HANDLE_SHOWN,
     LOCALIZED_NAME_COLUMNS,
     LOCALIZED_TITLE_COLUMNS,
@@ -368,16 +369,13 @@ class _MessagesRepo:
             "WHERE th.xuid IN ("
             "  SELECT xb.external_id FROM users u "
             + XBOX_ACCOUNT
-            + "  WHERE xb.external_id IS NOT NULL AND u.tg_id IN ("
-            "    SELECT sbu.tg_id FROM subscriptions sb"
-            "    JOIN users sbu ON sbu.id = sb.person_id WHERE sb.chat_id = ? "
-            "    UNION "
-            "    SELECT tg_id FROM chat_seen WHERE chat_id = ?"
+            + "  WHERE xb.external_id IS NOT NULL AND u.id IN ("
+            "    SELECT person_id FROM " + CHAT_MEMBERS + " WHERE chat_id = ?"
             "  )"
             ") AND th.last_played_at IS NOT NULL "
             "GROUP BY t.name "
             "ORDER BY last_played DESC LIMIT ?",
-            (chat_id, chat_id, limit),
+            (chat_id, limit),
         )
         return [row["name"] for row in await cursor.fetchall() if row["name"]]
 

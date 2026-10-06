@@ -16,6 +16,7 @@ from bot.db.repo._models import (
     _iso,
 )
 from bot.db.repo._sql import (
+    CHAT_MEMBERS,
     HANDLE_SHOWN,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
@@ -199,13 +200,8 @@ class _ChatStatsRepo:
         # A hand-picked list of people (the Mini App's "following" scope, #157)
         # stands in for the chat's membership; ids are integers formatted here.
         if members is None:
-            member_sql = (
-                "  SELECT sb.person_id FROM subscriptions sb WHERE sb.chat_id = ? "
-                "  UNION "
-                "  SELECT su.id FROM chat_seen cs JOIN users su ON su.tg_id = cs.tg_id"
-                "  WHERE cs.chat_id = ?"
-            )
-            member_params: tuple[int, ...] = (chat_id, chat_id)
+            member_sql = f"  SELECT person_id FROM {CHAT_MEMBERS} WHERE chat_id = ?"
+            member_params: tuple[int, ...] = (chat_id,)
         else:
             ids = ",".join(str(int(m)) for m in members) or "NULL"
             member_sql = f"  SELECT id AS person_id FROM users WHERE id IN ({ids})"

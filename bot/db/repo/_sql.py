@@ -117,6 +117,16 @@ XBOX_ACCOUNT = (
 MEMBERS_CHAT = 0
 
 
+# A chat's members as `(chat_id, person_id)`: who is subscribed there, and who
+# was seen writing there (`chat_seen`, by Telegram id) — the membership
+# `/online`, `/who`, «Мои чаты», shared-chat suggestions and the "everyone who
+# knows you" privacy rule all mean. One copy (#167); five had been written out.
+CHAT_MEMBERS = (
+    "(SELECT sb.chat_id, sb.person_id FROM subscriptions sb"
+    " UNION SELECT cs.chat_id, su.id FROM chat_seen cs JOIN users su ON su.tg_id = cs.tg_id)"
+)
+
+
 def member_source(members: Sequence[int] | None) -> str:
     """What `FROM ... sub` reads in the chat queries: a chat's subscribers, or —
     for a given list of person ids — a stand-in with the same shape. Both read

@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from bot.db.repo._models import ChatDailySettings, ChatTarget, UserChatRow
-from bot.db.repo._sql import GLOBAL_RARE_THRESHOLD, PERSON_BY_TG
+from bot.db.repo._sql import CHAT_MEMBERS, GLOBAL_RARE_THRESHOLD, PERSON_BY_TG
 from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.util import utcnow_iso
 
@@ -88,14 +88,12 @@ class _ChatsRepo:
             + PERSON_BY_TG
             + " "
             "WHERE c.is_active = 1 AND c.chat_id IN ("
-            "  SELECT chat_id FROM subscriptions WHERE person_id = " + PERSON_BY_TG + "  UNION "
-            "  SELECT chat_id FROM chat_seen WHERE tg_id = ?"
-            ") "
+            "  SELECT chat_id FROM " + CHAT_MEMBERS + " WHERE person_id = " + PERSON_BY_TG + ") "
             "ORDER BY CASE WHEN s.chat_id IS NOT NULL THEN 0 ELSE 1 END,"
             "  (SELECT MAX(cs.last_seen_at) FROM chat_seen cs"
             "    WHERE cs.chat_id = c.chat_id AND cs.tg_id = ?) DESC,"
             "  c.title",
-            (tg_id, tg_id, tg_id, tg_id),
+            (tg_id, tg_id, tg_id),
         )
         return [
             UserChatRow(
