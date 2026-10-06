@@ -674,6 +674,8 @@ class HltbCacheRow:
     description_en: str | None = None
     description_ru: str | None = None
     details: dict | None = None
+    # When it was read from HLTB (set on reading; ignored on writing).
+    cached_at: str | None = None
 
 
 @dataclass(slots=True)

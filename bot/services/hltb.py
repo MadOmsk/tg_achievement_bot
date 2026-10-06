@@ -12,6 +12,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from howlongtobeatpy import HowLongToBeat
@@ -19,6 +20,7 @@ from howlongtobeatpy import HowLongToBeat
 from bot.db.repo import HltbCacheRow, Repo
 from bot.services.translate.auth import AnthropicAuth, AnthropicNotConfiguredError
 from bot.services.translate.client import translate_game_description
+from bot.util import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -284,24 +286,31 @@ def _pick_fallback_word(cleaned_query: str) -> str | None:
 async def resolve(
     repo: Repo, hltb_id: int, *, anthropic_auth: AnthropicAuth | None = None
 ) -> HltbResult:
-    """Cached forever once a person actually picks a result — a completion
-    time does not meaningfully change day to day, and HLTB's search is the
-    fragile part here, not this number (SPEC 6.6).
+    """Cached once a person picks a result (or the game is matched), and read
+    again only when stale (`is_stale`): a new game's times fill in over its
+    first weeks — Gears of War: E-Day was cached on its release week with
+    multiplayer hours only and never asked again. A failed re-read keeps
+    what is stored.
 
     `anthropic_auth`, when given, also lets a freshly-fetched (or an
     older, description-less) entry pick up its Russian summary (#2) — one
     Haiku call per game, ever, the first time somebody looks it up.
     """
     cached = await repo.hltb_get_cached(hltb_id)
-    if cached is not None:
+    if cached is not None and not is_stale(cached):
         result = await _top_up_details(repo, _from_cache_row(cached))
         return await _top_up_translation(repo, result, anthropic_auth)
 
     try:
         entry = await HowLongToBeat().async_search_from_id(hltb_id)
     except Exception as exc:
+        if cached is not None:
+            log.info("HLTB re-read for id=%s failed, keeping the stored one: %r", hltb_id, exc)
+            return await _top_up_translation(repo, _from_cache_row(cached), anthropic_auth)
         raise HltbError(f"HLTB lookup failed for id={hltb_id}: {exc}") from None
     if entry is None:
+        if cached is not None:
+            return await _top_up_translation(repo, _from_cache_row(cached), anthropic_auth)
         raise HltbError(f"HLTB has no entry for id={hltb_id}")
 
     result = _as_result(entry)
@@ -314,9 +323,39 @@ async def resolve(
         if game is not None:
             result.genre, result.description_en = _details_of(game)
             result.details = _extras_of(game)
-    result.description_ru = await _translate(result.description_en, anthropic_auth)
+    if (
+        cached is not None
+        and cached.description_ru
+        and cached.description_en == result.description_en
+    ):
+        # The same summary: its translation is kept, not paid for again.
+        result.description_ru = cached.description_ru
+    else:
+        result.description_ru = await _translate(result.description_en, anthropic_auth)
     await _cache(repo, result)
     return result
+
+
+# How long a stored HLTB entry is trusted: a game of this year or last, or one
+# HLTB has no main story time for yet, is still being timed by its players.
+FRESH_GAME_DAYS = 3
+SETTLED_GAME_DAYS = 90
+
+
+def is_stale(row: HltbCacheRow) -> bool:
+    if not row.cached_at:
+        return True
+    try:
+        cached = datetime.fromisoformat(row.cached_at)
+    except ValueError:
+        return True
+    if cached.tzinfo is None:
+        cached = cached.replace(tzinfo=UTC)
+    young = row.main_hours is None or (
+        row.release_year is not None and row.release_year >= utcnow().year - 1
+    )
+    days = FRESH_GAME_DAYS if young else SETTLED_GAME_DAYS
+    return utcnow() - cached > timedelta(days=days)
 
 
 async def _top_up_details(repo: Repo, result: HltbResult) -> HltbResult:

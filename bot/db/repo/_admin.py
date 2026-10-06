@@ -632,7 +632,7 @@ class _AdminRepo:
         cursor = await self._conn.execute(
             "SELECT hltb_id, name, release_year, main_hours, extra_hours,"
             " completionist_hours, platforms, game_url, image_url, genre,"
-            " description_en, description_ru, details "
+            " description_en, description_ru, details, cached_at "
             "FROM hltb_cache WHERE hltb_id = ?",
             (hltb_id,),
         )
@@ -653,11 +653,13 @@ class _AdminRepo:
             description_en=row["description_en"],
             description_ru=row["description_ru"],
             details=json.loads(row["details"]) if row["details"] else None,
+            cached_at=row["cached_at"],
         )
 
     async def hltb_cache_result(self, entry: HltbCacheRow) -> None:
-        """Cached forever (SPEC 6.6) — only called once someone actually
-        picks a search result, never for the rest of the candidate list."""
+        """Stored once someone picks a search result (or a game is matched),
+        never for the rest of the candidate list; read again when it goes stale
+        (services/hltb.py::is_stale)."""
         await self._conn.execute(
             "INSERT OR REPLACE INTO hltb_cache "
             "(hltb_id, name, release_year, main_hours, extra_hours, completionist_hours,"

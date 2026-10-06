@@ -1422,7 +1422,12 @@ History: #112.
 - `/hltb` works in DMs and groups: asks for a game (a reply to the prompt works in
   groups), suggests recent games of known members, cleans platform-noisy titles,
   shows candidates instead of trusting the first result, and caches the chosen result
-  by HLTB id forever. An HLTB outage is an expected failure.
+  by HLTB id. An HLTB outage is an expected failure.
+- **A cached entry is read again when stale** (owner, 2026-10-06;
+  `services/hltb.py::is_stale`): every 3 days for a game of this year or last, or
+  one with no main-story time yet — its players are still timing it —, else every
+  90 days. On the next lookup, never by a walker; a failed re-read keeps what is
+  stored, and an unchanged summary keeps its translation.
 - **Game descriptions come from HLTB itself** (#2): no id-matching between services,
   and console exclusives are covered. Read from the page's `__NEXT_DATA__`
   (`profile_summary`, beside `genre`), never from rendered HTML whose class names
