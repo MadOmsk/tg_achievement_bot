@@ -1359,9 +1359,10 @@ History: #111.
   hand the stand-in to the publisher so its age cap agrees with the stats.
 - `/recent` has no window, so the rule applies as an exclusion: an undated import
   never tops the list.
-- **Three readers keep plain `COALESCE(unlocked_at, created_at)` on purpose** and say
+- **Four readers keep plain `COALESCE(unlocked_at, created_at)` on purpose** and say
   so in place: `unpublished_achievements` (it already excludes imports),
-  `account_latest_unlock` (it asks when data starts), `recent_achievements`.
+  `account_latest_unlock` (it asks when data starts), `recent_achievements`, and
+  `psn_titles_missing_groups` (it only orders a queue).
 - **Lifetime counts** count `seen_achievements` rows, never sum `title_history`; the
   x360 title-by-title backfill is the soft spot (#91). **Gamerscore** comes from the
   Xbox profile, never a sum.

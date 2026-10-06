@@ -442,6 +442,8 @@ class _PlatformLinksRepo:
           no rows" cannot be a scan still in flight.
         """
         cursor = await self._conn.execute(
+            # Plain COALESCE on purpose: `latest` only orders the queue,
+            # most recently played first, and decides nothing.
             "SELECT al.person_id, s.xuid AS account_id, s.title_id, t.platforms,"
             "       MAX(COALESCE(s.unlocked_at, s.created_at)) AS latest "
             "FROM seen_achievements s "

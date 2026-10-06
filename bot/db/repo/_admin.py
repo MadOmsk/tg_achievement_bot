@@ -24,6 +24,8 @@ from bot.db.repo._sql import (
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
+    earned_at,
+    earned_date_is_real,
 )
 from bot.util import utcnow_iso
 
@@ -403,8 +405,11 @@ class _AdminRepo:
         match yet) skips the attempt entirely on `None`."""
         cursor = await self._conn.execute(
             "SELECT t.title_id, t.platform, t.name, t.name_en, t.name_ru, t.platforms,"
-            "  (SELECT MIN(CAST(substr(COALESCE(s.unlocked_at, s.created_at), 1, 4) AS INTEGER))"
-            "   FROM seen_achievements s WHERE s.title_id = t.title_id) AS first_played_year "
+            # Only dates worth believing (#69): an undated import's created_at
+            # is the day it was imported, not a year anybody played it.
+            f"  (SELECT MIN(CAST(substr({earned_at()}, 1, 4) AS INTEGER))"
+            "   FROM seen_achievements s WHERE s.title_id = t.title_id"
+            f"   AND {earned_date_is_real()}) AS first_played_year "
             f"FROM titles t WHERE t.title_id = ? AND {self._HLTB_MATCH_DUE}",
             (title_id,),
         )
