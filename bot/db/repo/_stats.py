@@ -86,15 +86,7 @@ class _StatsRepo:
                 (entry.title_id, entry.name, effective_entry_plat, platforms_json, now),
             )
             if effective_entry_plat == "xbox_360":
-                await self._conn.execute(
-                    "UPDATE OR IGNORE seen_achievements SET platform = 'xbox_360' "
-                    "WHERE title_id = ? AND platform = 'xbox_modern'",
-                    (entry.title_id,),
-                )
-                await self._conn.execute(
-                    "DELETE FROM seen_achievements WHERE title_id = ? AND platform = 'xbox_modern'",
-                    (entry.title_id,),
-                )
+                await self._move_title_rows(entry.title_id, "xbox_modern", "xbox_360")
         await self._conn.commit()
 
     async def update_gamerscore(self, person_id: int, gamerscore: int) -> None:

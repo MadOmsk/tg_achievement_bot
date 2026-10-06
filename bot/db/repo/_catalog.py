@@ -316,8 +316,13 @@ class _CatalogRepo:
             )
         else:
             return
+        await self._move_title_rows(title_id, old_plat, new_plat)
+        await self._conn.commit()
 
-        # Migrate seen_achievements
+    async def _move_title_rows(self, title_id: str, old_plat: str, new_plat: str) -> None:
+        """A game's earned rows and its catalog move to another Xbox platform
+        together (#167): moving only `seen_achievements` left the names,
+        descriptions, rarity and listed size behind. No commit — the caller's."""
         await self._conn.execute(
             "UPDATE OR IGNORE seen_achievements SET platform = ? "
             "WHERE title_id = ? AND platform = ?",
@@ -327,8 +332,6 @@ class _CatalogRepo:
             "DELETE FROM seen_achievements WHERE title_id = ? AND platform = ?",
             (title_id, old_plat),
         )
-
-        # Migrate title_achievements
         await self._conn.execute(
             "UPDATE OR IGNORE title_achievements SET platform = ? "
             "WHERE title_id = ? AND platform = ?",
@@ -338,4 +341,3 @@ class _CatalogRepo:
             "DELETE FROM title_achievements WHERE title_id = ? AND platform = ?",
             (title_id, old_plat),
         )
-        await self._conn.commit()

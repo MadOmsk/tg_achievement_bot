@@ -308,6 +308,34 @@ async def test_save_title_history_writes_the_game_platforms(repo: Repo) -> None:
     assert title_row_360["t-360-dev"] == '["Xbox360"]'
 
 
+async def test_a_game_moved_to_360_takes_its_catalog_along(repo: Repo) -> None:
+    """#167: history that turns out to be a 360 game moves its earned rows and
+    its catalog (names, descriptions, rarity, listed size) together."""
+    from bot.db.repo import TitleAchievementRow, TitleHistoryRow
+
+    await repo.upsert_title("t-moved", "Fable II", Platform.XBOX_MODERN)
+    await repo.upsert_title_achievements(
+        [TitleAchievementRow("xbox_modern", "t-moved", "a1", name_en="Hero")], complete=True
+    )
+    await repo.save_title_history(
+        "xuid-1",
+        [
+            TitleHistoryRow(
+                title_id="t-moved",
+                name="Fable II",
+                platform=Platform.XBOX_360,
+                current_gamerscore=10,
+                max_gamerscore=1000,
+                achievements_unlocked=1,
+                achievements_total=10,
+                last_played_at="2026-09-20T12:00:00+00:00",
+            )
+        ],
+    )
+    assert await repo.title_achievements_count("xbox_360", "t-moved") == 1
+    assert await repo.title_achievements_count("xbox_modern", "t-moved") == 0
+
+
 # The device an achievement was earned on is a fact or nothing (owner, 2026-09-24).
 
 
