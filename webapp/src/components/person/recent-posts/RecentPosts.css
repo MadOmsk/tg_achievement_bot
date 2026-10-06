@@ -55,3 +55,13 @@
   line-height: 1.2;
   letter-spacing: -0.02em;
 }
+
+/* The dots lie at the foot of the text's block, as a feed post's do: room under
+ * the name and the game for them. */
+.unlock-slider.is-gallery .unlock-dots {
+  bottom: 14px;
+}
+
+.unlock-slider.is-gallery .unlock-card-copy.is-minimal {
+  padding-bottom: 33px;
+}

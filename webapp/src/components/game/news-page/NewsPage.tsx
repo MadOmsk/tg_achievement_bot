@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { t, type Locale } from "../../../i18n";
 import { BackHead, CoverImg, FitImg, Icon, useImageRatio, openImage } from "../../shared/lib";
-import { paragraphsOf } from "../patch-notes/PatchNotes";
+import { clockOf, paragraphsOf } from "../patch-notes/PatchNotes";
 import { RichLines, openUrl } from "../rich-text/RichText";
 import "../post-page/PostPage.css";
 
@@ -19,13 +19,15 @@ export type NewsPost = {
 };
 
 function dayOf(iso: string, locale: Locale): string {
-  const date = new Date(`${iso}T12:00:00`);
+  const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString(locale === "en" ? "en-GB" : "ru-RU", {
+  const day = date.toLocaleDateString(locale === "en" ? "en-GB" : "ru-RU", {
     day: "numeric",
     month: "long",
     year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
   });
+  const clock = clockOf(iso, locale);
+  return clock ? `${day}, ${clock}` : day;
 }
 
 /** A developer's post, whole, on a page of its own (owner, 2026-10-05): a post
@@ -75,7 +77,6 @@ export function NewsPage({
         title={game?.name ?? t(locale, post.kind === "patch" ? "newsPatch" : "newsPost")}
         backLabel={t(locale, "back")}
         onBack={onClose}
-        aside={game ? t(locale, post.kind === "patch" ? "newsPatch" : "newsPost") : undefined}
       />
       {post.image && (
         <div className="post-page-pic" style={{ aspectRatio: ratio }} onClick={() => post.image && openImage(post.image)}>
@@ -84,9 +85,15 @@ export function NewsPage({
         </div>
       )}
       <article className="post-page-body">
-        {/* The game and the kind are in the head: here only when. */}
+        {/* The game is in the head; when on the left, the kind on the right, as
+            the list of updates has them. */}
         <div className="post-page-meta">
           <span className="post-page-date">{dayOf(post.date, locale)}</span>
+          {post.kind && (
+            <span className="post-page-kind">
+              {t(locale, post.kind === "patch" ? "newsPatch" : "newsPost")}
+            </span>
+          )}
         </div>
         <h1 className="post-page-title" lang="en">
           {post.title}

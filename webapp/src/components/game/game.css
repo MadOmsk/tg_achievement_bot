@@ -215,6 +215,12 @@
   padding-top: 0;
 }
 
+.dd-trigger.posts-filter {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
 .game-tab-actions {
   display: flex;
   align-items: center;
@@ -467,27 +473,22 @@
   color: #fff;
 }
 
-/* The updates tab: one soft card per patch, the newest first. */
+/* The updates tab: a plain row per post with a hairline between, as every list. */
 .patch-list {
   display: flex;
   flex-direction: column;
-  gap: var(--day-gap, 14px);
-}
-
-/* One day's patches under its label, the feed's own day rhythm. */
-.patch-day {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
 .patch-card {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   width: 100%;
-  padding: 14px 16px;
+  box-sizing: border-box;
+  padding: 18px 0;
   border: 0;
-  border-radius: 18px;
-  background: var(--glass);
+  background: none;
   color: inherit;
   font: inherit;
   text-align: left;
@@ -495,33 +496,78 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.patch-card-head {
+.patch-card + .patch-card {
+  border-top: 1px solid var(--hair);
+}
+
+.patch-card:first-child {
+  padding-top: 4px;
+}
+
+.patch-card-row {
   display: flex;
   align-items: flex-start;
+  gap: 14px;
+}
+
+.patch-card-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* The kind and the time above the title, small and quiet. */
+.patch-card-meta {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-height: 20px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The kind as a feed post marks it: quiet capitals at the line's right. */
+.patch-card-kind {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-left: auto;
 }
 
 .patch-card-name {
-  flex: 1 1 auto;
   min-width: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 750;
   line-height: 1.3;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.patch-card-pic {
+  flex: none;
+  width: 76px;
+  height: 76px;
+  margin-top: 2px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .patch-card-new {
-  display: inline-block;
-  flex: none;
-  margin-top: 2px;
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--mint-dim);
   color: var(--mint);
-  font-size: 0.66rem;
+  font-size: 0.64rem;
   font-weight: 750;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  vertical-align: 2px;
 }
 
 /* The post, in paragraphs — the same when closed and open, so opening it
@@ -529,10 +575,9 @@
  * after a few lines and fades out. */
 .patch-card-body {
   display: block;
-  margin-top: 10px;
-  color: rgba(232, 236, 245, 0.9);
-  font-size: 0.9rem;
-  line-height: 1.55;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
 }
 
 /* Closed: the post run together, three lines, the rest cut off. The type is
@@ -542,7 +587,7 @@
   overflow: hidden;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 }
 
 .patch-card-p {

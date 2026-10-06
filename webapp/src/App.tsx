@@ -38,7 +38,7 @@ import { FOLLOWS_CHANGED } from "./components/people/follow-button/FollowButton"
 import { Login } from "./screens/login";
 import { AddEmailScreen } from "./components/me/logins/AddEmailScreen";
 import { peopleApi } from "./api/people/peopleApi";
-import { AppSkel, GameSkel, Icon, ImageViewerHost, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
+import { AppSkel, GameSkel, Icon, ImageViewerHost, tick, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 // Settings and the connect forms are a few kilobytes and sit behind the dock like
@@ -394,6 +394,7 @@ export function App() {
         ? SCREEN_NAMES.NEWS
         : SCREEN_NAMES.HOME;
   const goHome = () => {
+    tick();
     if (isHome && !personOpen) {
       window.scrollTo(0, 0);
       return;
@@ -403,6 +404,7 @@ export function App() {
   };
 
   const goTab = (tab: DockTab) => {
+    tick();
     const already =
       tab === SCREEN_NAMES.SETTINGS
         ? isSettingsOrAdmin

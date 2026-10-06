@@ -106,3 +106,8 @@ def test_a_picture_wrapped_in_a_link_stays_a_picture() -> None:
         "[img]https://clan.fastly.steamstatic.com/images/1/a.jpg[/img][/url]As the leaves turn"
     )
     assert text == "https://clan.fastly.steamstatic.com/images/1/a.jpg\nAs the leaves turn"
+
+
+def test_a_post_keeps_its_time_not_only_its_day() -> None:
+    posts = n.parse_patches({"appnews": {"newsitems": [_item("Update 1.0")]}})
+    assert posts[0].date == "2026-09-21T14:13:20Z"
