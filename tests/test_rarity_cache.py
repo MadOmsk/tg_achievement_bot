@@ -321,3 +321,20 @@ async def test_unpublished_achievements_reads_rarity_cache(repo: Repo) -> None:
     )
     assert len(pending) == 1
     assert pending[0].rarity_percent == 4.2
+
+
+async def test_an_empty_catalogue_search_is_not_repeated_every_minute(repo: Repo) -> None:
+    """#167: the search for games with no `titles` row walks every stored
+    achievement; after an empty answer it waits an hour."""
+    calls: list[int] = []
+    original = repo.titles_missing_from_catalogue
+
+    async def counted(limit: int):
+        calls.append(limit)
+        return await original(limit)
+
+    repo.titles_missing_from_catalogue = counted  # type: ignore[method-assign]
+    walker = RarityBackfill(repo, FakeClient())  # type: ignore[arg-type]
+    await walker.tick()
+    await walker.tick()
+    assert len(calls) == 1
