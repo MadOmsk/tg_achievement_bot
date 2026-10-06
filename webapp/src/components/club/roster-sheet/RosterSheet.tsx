@@ -13,7 +13,7 @@ export function RosterSheet({
   members: OnlineMember[];
   locale: Locale;
   onClose: () => void;
-  onOpen: (tgId: number) => void;
+  onOpen: (personId: number) => void;
 }) {
   const rows = rankPeople(members);
   return (
@@ -26,14 +26,14 @@ export function RosterSheet({
           <div className="picker-list">
             {rows.map((m) => (
               <button
-                key={m.tg_id}
+                key={m.person_id}
                 type="button"
                 className="picker-row is-person"
-                onClick={() => onOpen(m.tg_id)}
+                onClick={() => onOpen(m.person_id)}
               >
                 <Avatar
                   name={m.name}
-                  tgId={m.tg_id}
+                  personId={m.person_id}
                   online={isOnline(m)}
                   platform={m.platform}
                   size={40}

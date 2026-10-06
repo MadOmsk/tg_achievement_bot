@@ -31,7 +31,7 @@ from bot.handlers import hltb as hltb_handlers
 from bot.handlers import panel as panel_handlers
 from bot.handlers import psn as psn_handlers
 from bot.handlers import steam as steam_handlers
-from bot.handlers.chat import UsernameMiddleware
+from bot.handlers.chat import PersonMiddleware, UsernameMiddleware
 from bot.i18n import (
     AVAILABLE_LOCALES,
     DEFAULT_LOCALE,
@@ -68,8 +68,10 @@ from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
+from bot.services.merge import PeopleMerge
 from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
+from bot.services.notifier import Notifier
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.release_notify import announce_release_if_needed
@@ -80,6 +82,7 @@ from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.version import is_test, version
 from bot.views.keyboards import timezone_keyboard
+from bot.web.mini_logins import forget_file
 from bot.web.oauth import OAuthServer
 
 log = logging.getLogger(__name__)
@@ -153,7 +156,6 @@ async def run(settings: Settings) -> None:
     bot.session.middleware(MessageLogMiddleware(repo))
 
     notifier = AdminNotifier(bot, repo, settings.admin_tg_ids)
-    auth.on_token_dead = notifier.token_dead
 
     # One service-wide PSN client, not per-user OAuth (SPEC 9, M-PSN-1) —
     # on_dead mirrors XboxAuthService.on_token_dead above, just for the one
@@ -247,25 +249,33 @@ async def run(settings: Settings) -> None:
         PatchRefresh(repo, steam_extras),
     )
 
-    async def on_linked(tg_id: int, identity: XboxIdentity, origin_chat_id: int | None) -> None:
+    async def on_linked(
+        person: int, tg_id: int | None, identity: XboxIdentity, origin_chat_id: int | None
+    ) -> None:
         """Runs in the web callback, right after the account is stored."""
         # No achievements yet means this account is new to the bot, not someone
         # signing in again after his token expired.
         is_new = not await repo.has_any_achievements(identity.xuid)
-        locale = await repo.user_locale(tg_id)
+        await notifier.user_connected(person, identity.gamertag, is_new=is_new)
+        if tg_id is None:
+            # Started in the browser with no Telegram (#162): nobody to message,
+            # no chat to join. The history is read all the same; the Mini App
+            # shows the account filling up.
+            asyncio.create_task(_quiet_xbox_backfill(person, identity.xuid))  # noqa: RUF006
+            return
+        locale = await repo.user_locale(person)
         _ = translator("main", locale)
         await bot.send_message(tg_id, _("main-linked", gamertag=identity.gamertag))
-        await notifier.user_connected(tg_id, identity.gamertag, is_new=is_new)
 
         # Pressed «Подключить XBOX» from inside a specific group: finish the
         # job and subscribe him there too, instead of making him find
         # /subscribe on his own right after he just did the hard part (6.3).
         if origin_chat_id is not None and await repo.chat_exists(origin_chat_id):
-            await repo.subscribe(origin_chat_id, tg_id)
+            await repo.subscribe(origin_chat_id, person)
             with contextlib.suppress(Exception):
                 await bot.send_message(tg_id, _("main-linked-subscribed-origin-chat"))
 
-        settings_row = await repo.get_user_settings(tg_id)
+        settings_row = await repo.get_user_settings(person)
         if settings_row is None or settings_row.tz_offset_min is None:
             link_i18n = await build_i18n_context(locale)
             await bot.send_message(
@@ -283,6 +293,44 @@ async def run(settings: Settings) -> None:
             backfill_handlers.run_xbox(bot, fetcher, repo, tg_id, identity.xuid)
         )
 
+    async def _quiet_xbox_backfill(person: int, xuid: str) -> None:
+        try:
+            await fetcher.backfill(person, xuid)
+        except Exception:
+            log.exception("xbox backfill for person_id=%s failed", person)
+
+    async def send_dm(tg_id: int, text: str) -> None:
+        await bot.send_message(tg_id, text)
+
+    # The app's own notifications (#164): the list, push, and the DM above.
+    notifications = Notifier(
+        repo,
+        cipher,
+        send_dm=send_dm,
+        app_url=settings.mini_app_url,
+        contact=f"mailto:{settings.smtp_from}" if settings.smtp_from else None,
+    )
+
+    # Followers hear of a new post by their own choice (owner, 2026-10-05).
+    publisher.on_new_post = notifications.tell_about_post
+
+    async def on_xbox_login_dead(person: int) -> None:
+        # The admin hears of it, and the person in their own list and on their
+        # devices (#164); the Telegram reminder is poller/reminders.py's.
+        await notifier.token_dead(person)
+        await notifications.notify(person, "xbox_login_dead")
+
+    auth.on_token_dead = on_xbox_login_dead
+
+    async def on_people_merged(keep: int, absorb: int) -> None:
+        # The Xbox account and its token may have changed hands (#162).
+        auth.forget(keep)
+        auth.forget(absorb)
+
+    merge = PeopleMerge(
+        repo, settings.is_admin, on_merged=on_people_merged, forget_picture=forget_file
+    )
+
     web_server = OAuthServer(
         settings,
         connect_service,
@@ -297,6 +345,8 @@ async def run(settings: Settings) -> None:
         anthropic_auth=anthropic_auth,
         bot=bot,
         steam_extras=steam_extras,
+        notifications=notifications,
+        merge=merge,
     )
     await web_server.start()
 
@@ -307,11 +357,15 @@ async def run(settings: Settings) -> None:
     dispatcher["steam_fetcher"] = steam_fetcher
     dispatcher["settings"] = settings
     dispatcher["notifier"] = notifier
+    dispatcher["merge"] = merge
     dispatcher["psn_auth"] = psn_auth
     dispatcher["psn_fetcher"] = psn_fetcher
     dispatcher["steam_auth"] = steam_auth
     dispatcher["anthropic_auth"] = anthropic_auth
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
+    # After the username one, so a person it just refreshed is found.
+    dispatcher.message.outer_middleware(PersonMiddleware(repo))
+    dispatcher.callback_query.outer_middleware(PersonMiddleware(repo))
     build_i18n_middleware().setup(dispatcher=dispatcher)
     dispatcher.include_router(admin_handlers.router)
     dispatcher.include_router(connect_handlers.router)
@@ -339,11 +393,11 @@ async def run(settings: Settings) -> None:
         of title_history()'s own asyncio.wait_for, not instead of it.
         """
         for target in await repo.pollable_users():
-            user = await repo.get_user(target.tg_id)
+            user = await repo.get_user(target.person_id)
             try:
                 await asyncio.wait_for(
                     fetcher.catch_up(
-                        target.tg_id,
+                        target.person_id,
                         target.xuid,
                         (user.gamertag if user else None)
                         or gettext("main", "main-default-player-name", locale=DEFAULT_LOCALE),
@@ -357,15 +411,15 @@ async def run(settings: Settings) -> None:
                 )
             except TimeoutError:
                 log.error(
-                    "catch-up for tg_id=%s exceeded %.0fs overall, moving on",
-                    target.tg_id,
+                    "catch-up for person_id=%s exceeded %.0fs overall, moving on",
+                    target.person_id,
                     STARTUP_CATCH_UP_DEADLINE_SECONDS,
                 )
             except Exception:
-                log.exception("catch-up for tg_id=%s failed", target.tg_id)
+                log.exception("catch-up for person_id=%s failed", target.person_id)
         # Once per database: 360 games titlehub forgot, and their totals (#91, #92).
         await fetcher.fill_x360_gaps_once(
-            [(target.tg_id, target.xuid) for target in await repo.pollable_users()]
+            [(target.person_id, target.xuid) for target in await repo.pollable_users()]
         )
 
         if await steam_auth.get_key() is not None:
@@ -377,14 +431,14 @@ async def run(settings: Settings) -> None:
                     )
                 except TimeoutError:
                     log.error(
-                        "steam catch-up for tg_id=%s exceeded %.0fs overall, moving on",
-                        steam_target.tg_id,
+                        "steam catch-up for person_id=%s exceeded %.0fs overall, moving on",
+                        steam_target.person_id,
                         STARTUP_CATCH_UP_DEADLINE_SECONDS,
                     )
                 except Exception:
-                    log.exception("steam catch-up for tg_id=%s failed", steam_target.tg_id)
+                    log.exception("steam catch-up for person_id=%s failed", steam_target.person_id)
             await steam_fetcher.fill_library_gaps_once(
-                [(t.tg_id, t.steam_id) for t in await repo.steam_pollable_users()]
+                [(t.person_id, t.steam_id) for t in await repo.steam_pollable_users()]
             )
 
     await publisher.start()

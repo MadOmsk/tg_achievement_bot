@@ -36,7 +36,9 @@ export type AdminDefaults = {
 };
 
 export type AdminUserRow = {
-  tg_id: number;
+  person_id: number;
+  /** None for somebody who signed in by email (#162). */
+  tg_id: number | null;
   name: string;
   username: string | null;
   first_name: string | null;
@@ -52,7 +54,9 @@ export type AdminUserRow = {
 };
 
 export type AdminUserCard = {
-  tg_id: number;
+  person_id: number;
+  tg_id: number | null;
+  email: string | null;
   name: string;
   username: string | null;
   first_name: string | null;

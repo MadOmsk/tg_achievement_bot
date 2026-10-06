@@ -17,8 +17,10 @@ def _callbacks(screen) -> list[str | None]:
 
 async def test_hidden_steam_explains_itself_with_the_way_out_on_top(repo: Repo) -> None:
     await repo.ensure_user(TG, "igor")
-    await repo.link_platform_account(TG, "steam", "76561197981065056", "Mad Omsk")
-    await repo.set_achievements_visible(TG, "steam", False)
+    await repo.link_platform_account(
+        await repo.person_id(TG), "steam", "76561197981065056", "Mad Omsk"
+    )
+    await repo.set_achievements_visible(await repo.person_id(TG), "steam", False)
 
     screen = await render_account_menu(repo, TG, "steam", locale="ru")
 
@@ -29,8 +31,10 @@ async def test_hidden_steam_explains_itself_with_the_way_out_on_top(repo: Repo) 
 
 async def test_visible_steam_has_no_howto(repo: Repo) -> None:
     await repo.ensure_user(TG, "igor")
-    await repo.link_platform_account(TG, "steam", "76561197981065056", "Mad Omsk")
-    await repo.set_achievements_visible(TG, "steam", True)
+    await repo.link_platform_account(
+        await repo.person_id(TG), "steam", "76561197981065056", "Mad Omsk"
+    )
+    await repo.set_achievements_visible(await repo.person_id(TG), "steam", True)
 
     screen = await render_account_menu(repo, TG, "steam", locale="ru")
 
@@ -41,10 +45,10 @@ async def test_visible_steam_has_no_howto(repo: Repo) -> None:
 
 async def test_only_the_hidden_psn_account_gets_a_howto(repo: Repo) -> None:
     await repo.ensure_user(TG, "igor")
-    await repo.link_platform_account(TG, "psn", "acc-1", "SuperOmsk")
-    await repo.link_platform_account(TG, "psn", "acc-2", "greyjedi2")
-    await repo.set_achievements_visible(TG, "psn", True, external_id="acc-1")
-    await repo.set_achievements_visible(TG, "psn", False, external_id="acc-2")
+    await repo.link_platform_account(await repo.person_id(TG), "psn", "acc-1", "SuperOmsk")
+    await repo.link_platform_account(await repo.person_id(TG), "psn", "acc-2", "greyjedi2")
+    await repo.set_achievements_visible(await repo.person_id(TG), "psn", True, external_id="acc-1")
+    await repo.set_achievements_visible(await repo.person_id(TG), "psn", False, external_id="acc-2")
 
     screen = await render_account_menu(repo, TG, "psn", locale="ru")
 
@@ -57,8 +61,10 @@ async def test_only_the_hidden_psn_account_gets_a_howto(repo: Repo) -> None:
 
 async def test_the_howto_screens_check_again_and_go_back(repo: Repo) -> None:
     await repo.ensure_user(TG, "igor")
-    await repo.link_platform_account(TG, "steam", "76561197981065056", "Mad Omsk")
-    await repo.link_platform_account(TG, "psn", "acc-2", "greyjedi2")
+    await repo.link_platform_account(
+        await repo.person_id(TG), "steam", "76561197981065056", "Mad Omsk"
+    )
+    await repo.link_platform_account(await repo.person_id(TG), "psn", "acc-2", "greyjedi2")
 
     steam = await render_privacy_howto(repo, TG, "steam", None, locale="ru")
     psn = await render_privacy_howto(repo, TG, "psn", "acc-2", locale="en")

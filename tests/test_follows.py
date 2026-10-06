@@ -132,8 +132,8 @@ async def test_search_finds_a_numbered_nickname_by_its_digits(repo: Repo) -> Non
 async def test_suggestions_are_people_from_shared_chats_not_yet_followed(repo: Repo) -> None:
     alice, bobby, carol = await _people(repo)
     await repo.upsert_chat(-100, "Chat", 1)
-    await repo.subscribe(-100, 1)
-    await repo.subscribe(-100, 2)
+    await repo.subscribe(-100, await repo.person_id(1))
+    await repo.subscribe(-100, await repo.person_id(2))
     assert [p.handle for p in await repo.suggested_people(alice)] == ["bobby"]
     await repo.follow(alice, bobby)
     assert await repo.suggested_people(alice) == []
@@ -143,8 +143,8 @@ async def test_suggestions_are_people_from_shared_chats_not_yet_followed(repo: R
 async def test_the_activity_setting_decides_who_sees(repo: Repo) -> None:
     alice, bobby, _ = await _people(repo)
     await repo.upsert_chat(-100, "Chat", 1)
-    await repo.subscribe(-100, 1)
-    await repo.subscribe(-100, 2)
+    await repo.subscribe(-100, await repo.person_id(1))
+    await repo.subscribe(-100, await repo.person_id(2))
     assert await repo.can_view_activity(bobby, alice)
     await repo.set_activity_visible(alice, ACTIVITY_FRIENDS)
     assert not await repo.can_view_activity(bobby, alice)
@@ -164,8 +164,8 @@ async def test_everyone_means_people_who_know_you_not_any_stranger(repo: Repo) -
     await repo.follow(carol, alice)
     assert await repo.can_view_activity(carol, alice)
     await repo.upsert_chat(-100, "Chat", 1)
-    await repo.subscribe(-100, 1)
-    await repo.subscribe(-100, 2)
+    await repo.subscribe(-100, await repo.person_id(1))
+    await repo.subscribe(-100, await repo.person_id(2))
     assert await repo.can_view_activity(bobby, alice)
     await repo.deactivate_chat(-100)
     assert not await repo.can_view_activity(bobby, alice)
@@ -273,7 +273,7 @@ async def test_the_following_scope_feeds_and_ranks_only_followed_people(
 
     for tg_id, xuid in ((42, "x42"), (7, "x7"), (8, "x8")):
         await repo.ensure_user(tg_id, f"user{tg_id}")
-        await repo.link_xbox_account(tg_id, xuid, f"Tag{tg_id}", 0)
+        await repo.link_xbox_account(await repo.person_id(tg_id), xuid, f"Tag{tg_id}", 0)
         await repo.insert_new_achievements(xuid, [row(f"a{tg_id}")], is_backfill=False)
     me = await repo.person_id(42)
     followed = await repo.person_id(7)
@@ -311,8 +311,8 @@ async def test_a_private_profile_shows_only_the_name(repo: Repo, settings) -> No
     await repo.ensure_user(42, "viewer")
     await repo.ensure_user(7, "secretive")
     await repo.upsert_chat(-100, "Chat", 42)
-    await repo.subscribe(-100, 42)
-    await repo.subscribe(-100, 7)
+    await repo.subscribe(-100, await repo.person_id(42))
+    await repo.subscribe(-100, await repo.person_id(7))
     target = await repo.person_id(7)
 
     app = web.Application(middlewares=[cors_middleware()])
@@ -338,7 +338,7 @@ async def test_online_in_the_following_scope_lists_only_followed_people(
 ) -> None:
     for tg_id in (42, 7, 8):
         await repo.ensure_user(tg_id, f"user{tg_id}")
-        await repo.link_xbox_account(tg_id, f"x{tg_id}", f"Tag{tg_id}", 0)
+        await repo.link_xbox_account(await repo.person_id(tg_id), f"x{tg_id}", f"Tag{tg_id}", 0)
     await repo.follow(await repo.person_id(42), await repo.person_id(7))
 
     app = web.Application(middlewares=[cors_middleware()])
@@ -358,11 +358,11 @@ async def test_online_in_the_following_scope_lists_only_followed_people(
 async def test_the_person_card_carries_their_play_when_visible(repo: Repo, settings) -> None:
     await repo.ensure_user(42, "viewer")
     await repo.ensure_user(7, "player7")
-    await repo.link_xbox_account(7, "x7", "Tag7", 1500)
+    await repo.link_xbox_account(await repo.person_id(7), "x7", "Tag7", 1500)
     other = await repo.person_id(7)
     await repo.upsert_chat(-100, "Chat", 42)
-    await repo.subscribe(-100, 42)
-    await repo.subscribe(-100, 7)
+    await repo.subscribe(-100, await repo.person_id(42))
+    await repo.subscribe(-100, await repo.person_id(7))
     app = web.Application(middlewares=[cors_middleware()])
     setup_mini_api(app, settings, repo)
     headers = {"X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), 42)}
@@ -391,11 +391,11 @@ async def test_the_card_sums_several_psn_accounts_into_one_row(repo: Repo) -> No
     from bot.web.mini_chat import build_person_payload
 
     await repo.ensure_user(7, "player7")
-    await repo.link_platform_account(7, Platform.PSN, "psn-a", "First")
-    await repo.link_platform_account(7, Platform.PSN, "psn-b", "Second")
-    await repo.set_psn_trophy_level(7, 120, account_id="psn-a")
-    await repo.set_psn_trophy_level(7, 450, account_id="psn-b")
-    target = await repo.get_user(7)
+    await repo.link_platform_account(await repo.person_id(7), Platform.PSN, "psn-a", "First")
+    await repo.link_platform_account(await repo.person_id(7), Platform.PSN, "psn-b", "Second")
+    await repo.set_psn_trophy_level(await repo.person_id(7), 120, account_id="psn-a")
+    await repo.set_psn_trophy_level(await repo.person_id(7), 450, account_id="psn-b")
+    target = await repo.get_user(await repo.person_id(7))
     payload = await build_person_payload(repo, target, locale="ru")
     (psn,) = [p for p in payload["platforms"] if p["platform"] == Platform.PSN]
     assert psn["name"] == "First, Second"

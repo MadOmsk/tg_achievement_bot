@@ -244,12 +244,12 @@ async def render_user_list(
     # By tg_id, not xuid (2026-09-05 follow-up) — the old xuid-keyed lookup
     # showed 0 for a Steam-only person's achievements, and only the Xbox
     # half of the count for someone with both platforms.
-    today = await repo.achievement_counts_by_tg_id(today_cutoff_utc())
+    today = await repo.achievement_counts_by_person(today_cutoff_utc())
     # This aggregate spans every user, with no single person's timezone to
     # key the calendar-month boundary off (#14) — the project default
     # (Europe/Moscow, +180) is the reference, same as admin_view.py's own
     # "updated HH:MM".
-    month = await repo.achievement_counts_by_tg_id(month_cutoff_utc(180))
+    month = await repo.achievement_counts_by_person(month_cutoff_utc(180))
 
     shown = paginate(users, page, PAGE_SIZE)
 
@@ -274,13 +274,17 @@ async def render_user_list(
                 icon=_icon(user),
                 name=truncate_name(name, 14),
                 ago=humanize_ago(user.last_online_at, locale),
-                today=today.get(user.tg_id, (0, 0))[0],
-                month=month.get(user.tg_id, (0, 0))[0],
+                today=today.get(user.person_id, (0, 0))[0],
+                month=month.get(user.person_id, (0, 0))[0],
                 note=_note(user, locale=locale),
             )
         )
         buttons.append(
-            [InlineKeyboardButton(text=f"{_icon(user)} {name}", callback_data=f"a:u:{user.tg_id}")]
+            [
+                InlineKeyboardButton(
+                    text=f"{_icon(user)} {name}", callback_data=f"a:u:p{user.person_id}"
+                )
+            ]
         )
 
     # The one screen that is both kinds of list at once, which is why the loop
@@ -323,7 +327,11 @@ def _admin_tg_header(user: User, *, locale: str) -> str:
     # As a string, not an int: Fluent formats a number for the locale, and
     # this one came out as "tg_id 127 383 366" — an identifier is not a
     # quantity, and that form is not even searchable.
-    bits.append(_("admin-user-tgid", tg_id=str(user.tg_id)))
+    # Somebody who signed in by email has none (#162): the address instead.
+    if user.tg_id is not None:
+        bits.append(_("admin-user-tgid", tg_id=str(user.tg_id)))
+    if user.email:
+        bits.append(user.email)
     return _("admin-user-header", identity=", ".join(bits))
 
 
@@ -333,7 +341,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
     each its own line instead of the old single achievements-and-all header
     line, so a long line no longer buries the id next to the nickname."""
     _ = translator("admin", locale)
-    count = await repo.xbox_achievement_count(user.tg_id)
+    count = await repo.xbox_achievement_count(user.id)
     completed = await repo.xbox_completed_games_count(user.xuid)
     parts = [plural_achievements(count, locale)]
     if completed:
@@ -341,7 +349,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
     parts.append(_("admin-today-tag", count=today_count))
     parts.append(_("admin-gamerscore-tag", score=user.gamerscore or 0))
 
-    token = await repo.get_token(user.tg_id)
+    token = await repo.get_token(user.id)
     presence = await repo.presence_of(user.xuid)
     login = _("admin-login-not-connected")
     if token is not None:
@@ -381,7 +389,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
         _("admin-login-row", login=login),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
-        *_muted_line(await repo.get_platform_link(user.tg_id, AccountPlatform.XBOX), _),
+        *_muted_line(await repo.get_platform_link(user.id, AccountPlatform.XBOX), _),
     ]
 
 
@@ -399,8 +407,8 @@ async def _steam_admin_block(
     to be active or dead), worded exactly like /panel's own status
     (`visibility_status_text`, shared so the two never drift)."""
     _ = translator("admin", locale)
-    count = await repo.platform_achievement_count(link.tg_id, Platform.STEAM)
-    completed = await repo.steam_completed_games_count(link.tg_id)
+    count = await repo.platform_achievement_count(link.person_id, Platform.STEAM)
+    completed = await repo.steam_completed_games_count(link.person_id)
     parts = [plural_achievements(count, locale)]
     if completed:
         parts.append(f"{completed} {COMPLETED_BADGE_STEAM}")
@@ -499,12 +507,15 @@ async def _psn_admin_block(
 
 
 async def render_user_card(
-    repo: Repo, tg_id: int, *, locale: str
+    repo: Repo, person: int, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
+    # The buttons name the person by their own id (#156): somebody who signed
+    # in by email has no Telegram id to name them by.
+    ref = f"p{person}"
     _ = translator("admin", locale)
-    user = await repo.get_user(tg_id)
-    steam_link = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    user = await repo.get_user(person)
+    steam_link = await repo.get_platform_link(person, Platform.STEAM)
+    psn_links = await repo.platform_links_for(person, Platform.PSN)
     # Used to bail out on `not user.xuid` alone (2026-09-05 follow-up) — a
     # A Steam-only person got a "user not found" result in the admin panel,
     # same class of gap /stats had before it learned to work without Xbox.
@@ -512,8 +523,8 @@ async def render_user_card(
         return _("admin-user-not-found"), _back_home(locale=locale)
 
     today = today_cutoff_utc()
-    today_xbox, today_steam, _today_psn = await repo.achievement_platform_breakdown(tg_id, today)
-    chats = await repo.chats_of_user(tg_id)
+    today_xbox, today_steam, _today_psn = await repo.achievement_platform_breakdown(person, today)
+    chats = await repo.chats_of_user(person)
 
     # Telegram identity first (2026-09-08 user request), then one block per
     # connected platform in the one display order — Xbox, PlayStation, Steam
@@ -552,20 +563,18 @@ async def render_user_card(
     builder.row(
         InlineKeyboardButton(
             text=_("admin-restore") if user.is_excluded else _("admin-exclude"),
-            callback_data=f"a:excl:{tg_id}:{0 if user.is_excluded else 1}",
+            callback_data=f"a:excl:{ref}:{0 if user.is_excluded else 1}",
         )
     )
     if user.xuid:
         builder.row(
-            InlineKeyboardButton(
-                text=_("admin-refresh-xbox"), callback_data=f"a:sync:xbox:{tg_id}"
-            ),
-            InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{tg_id}"),
+            InlineKeyboardButton(text=_("admin-refresh-xbox"), callback_data=f"a:sync:xbox:{ref}"),
+            InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{ref}"),
         )
     for link in psn_links:
         # Each account has its own pair (#10), named when there are several
         # — "PSN: nick", never a bare nickname (owner).
-        account = f"{tg_id}:{link.external_id}"
+        account = f"{ref}:{link.external_id}"
         if len(psn_links) > 1:
             name = link_nickname(link)
             refresh = _("admin-refresh-psn-account", name=name)
@@ -579,19 +588,17 @@ async def render_user_card(
     if steam_link is not None:
         builder.row(
             InlineKeyboardButton(
-                text=_("admin-refresh-steam"), callback_data=f"a:sync:steam:{tg_id}"
+                text=_("admin-refresh-steam"), callback_data=f"a:sync:steam:{ref}"
             ),
-            InlineKeyboardButton(
-                text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{tg_id}"
-            ),
+            InlineKeyboardButton(text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{ref}"),
         )
-    if await repo.custom_avatar_path(tg_id):
+    if await repo.custom_avatar_path(person):
         # A picture chosen in the Mini App is seen by everybody (#157): the
         # super-admin can take it down, back to the Telegram photo.
         builder.row(
-            InlineKeyboardButton(text=_("admin-reset-avatar"), callback_data=f"a:avclr:{tg_id}")
+            InlineKeyboardButton(text=_("admin-reset-avatar"), callback_data=f"a:avclr:{ref}")
         )
-    builder.row(InlineKeyboardButton(text=_("admin-delete-user"), callback_data=f"a:udel:{tg_id}"))
+    builder.row(InlineKeyboardButton(text=_("admin-delete-user"), callback_data=f"a:udel:{ref}"))
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
 
@@ -1005,7 +1012,7 @@ RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
 
 def render_reset_confirm(
     platform: str,
-    tg_id: str,
+    ref: str,
     *,
     locale: str,
     account_id: str | None = None,
@@ -1016,13 +1023,13 @@ def render_reset_confirm(
     prompt, not an instant action behind a single tap. `account_id` picks
     one of several PSN accounts (#10)."""
     _ = translator("admin", locale)
-    target = f"{tg_id}:{account_id}" if account_id else tg_id
+    target = f"{ref}:{account_id}" if account_id else ref
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
             text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{target}"
         ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{ref}"),
     )
     name = RESET_PLATFORM_NAMES[platform]
     if account_name:
@@ -1049,31 +1056,35 @@ def render_system_wipe_prompt(
     )
 
 
-def render_admin_user_delete_confirm_1(name: str, tg_id: int, *, locale: str) -> Screen:
+def render_admin_user_delete_confirm_1(
+    name: str, person: int, tg_id: int | None, *, locale: str
+) -> Screen:
     _ = translator("admin", locale)
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text=_("admin-delete-confirm-1-yes"), callback_data=f"a:udel1:{tg_id}"
+            text=_("admin-delete-confirm-1-yes"), callback_data=f"a:udel1:p{person}"
         ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:p{person}"),
     )
     return Screen(
-        _("admin-delete-confirm-1", name=name, tg_id=str(tg_id)),
+        _("admin-delete-confirm-1", name=name, tg_id=str(tg_id) if tg_id else "—"),
         builder.as_markup(),
     )
 
 
-def render_admin_user_delete_confirm_2(name: str, tg_id: int, *, locale: str) -> Screen:
+def render_admin_user_delete_confirm_2(
+    name: str, person: int, tg_id: int | None, *, locale: str
+) -> Screen:
     _ = translator("admin", locale)
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text=_("admin-delete-confirm-2-yes"), callback_data=f"a:udel2:{tg_id}"
+            text=_("admin-delete-confirm-2-yes"), callback_data=f"a:udel2:p{person}"
         ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{tg_id}"),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:p{person}"),
     )
     return Screen(
-        _("admin-delete-confirm-2", name=name, tg_id=str(tg_id)),
+        _("admin-delete-confirm-2", name=name, tg_id=str(tg_id) if tg_id else "—"),
         builder.as_markup(),
     )

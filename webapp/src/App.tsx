@@ -36,7 +36,9 @@ import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/m
 import { People } from "./screens/people";
 import { FOLLOWS_CHANGED } from "./components/people/follow-button/FollowButton";
 import { Login } from "./screens/login";
-import { AppSkel, GameSkel, Icon, SettingsSkel, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
+import { AddEmailScreen } from "./components/me/logins/AddEmailScreen";
+import { peopleApi } from "./api/people/peopleApi";
+import { AppSkel, GameSkel, Icon, ImageViewerHost, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 // Settings and the connect forms are a few kilobytes and sit behind the dock like
@@ -92,13 +94,16 @@ function decodeGameToken(token: string): string | null {
 function launchContext(): {
   chatId: number | null;
   personId: number | null;
+  /** A post's button from before person ids (#156) names a Telegram id. */
+  legacyTgId: number | null;
   tab: LaunchTab;
   game: GameRef | null;
 } {
   const q = new URLSearchParams(window.location.search);
   const start = window.Telegram?.WebApp?.initDataUnsafe?.start_param ?? "";
   let chatId = q.get("c");
-  let personId = q.get("u");
+  let personId = q.get("p");
+  let legacyTg = q.get("u");
   let tab = q.get("t");
   // From the query string (a DM's own https URL): plain "platform:titleId",
   // already percent-decoded by URLSearchParams.
@@ -108,12 +113,13 @@ function launchContext(): {
   // outside of (found live, 2026-09-30 review of #145: every group deep
   // link to a game was silently broken). See bot/services/mini_app.py's
   // `_encode_game`, which this must stay in sync with.
-  const parsed = /^c(-?\d+)(?:u(\d+))?(?:t([a-z]+))?(?:g([A-Za-z0-9_-]+))?$/.exec(start);
+  const parsed = /^c(-?\d+)(?:([pu])(\d+))?(?:t([a-z]+))?(?:g([A-Za-z0-9_-]+))?$/.exec(start);
   if (parsed) {
     chatId ??= parsed[1];
-    personId ??= parsed[2] ?? null;
-    tab ??= parsed[3] ?? null;
-    game ??= parsed[4] ? decodeGameToken(parsed[4]) : null;
+    if (parsed[2] === "p") personId ??= parsed[3] ?? null;
+    else legacyTg ??= parsed[3] ?? null;
+    tab ??= parsed[4] ?? null;
+    game ??= parsed[5] ? decodeGameToken(parsed[5]) : null;
   }
   // Split on the first ":" only — a title_id is never expected to hold one,
   // but nothing stops it from someday.
@@ -122,6 +128,7 @@ function launchContext(): {
   return {
     chatId: chatId ? Number(chatId) : null,
     personId: personNum,
+    legacyTgId: legacyTg ? Number(legacyTg) : null,
     tab: asLaunchTab(tab),
     // Whose progress the game page opens on: the achievement's own owner,
     // not necessarily whoever tapped the link — the name is filled in once
@@ -131,7 +138,13 @@ function launchContext(): {
         ? {
             platform: game.slice(0, colon),
             title_id: game.slice(colon + 1),
-            person: personNum ? { tg_id: personNum, name: "" } : null,
+            // A post's button from before person ids names a Telegram id: the
+            // game page asks by it and learns the person from the answer.
+            person: personNum
+              ? { person_id: personNum, name: "" }
+              : legacyTg
+                ? { tg_id: Number(legacyTg), name: "" }
+                : null,
           }
         : null,
   };
@@ -215,6 +228,24 @@ export function App() {
     };
   }, [reload]);
 
+  // A post's button from before person ids (#156) names a Telegram id: find whose
+  // it is once signed in, then open their profile as a new button would.
+  const signedIn = state.status === "ok";
+  useEffect(() => {
+    if (!signedIn || launch.legacyTgId == null || launch.personId != null) return;
+    let cancelled = false;
+    peopleApi
+      .profileByTg(initData() || WEB_SESSION, launch.legacyTgId)
+      .then((card) => {
+        if (!cancelled) setPersonId((current) => current ?? card.id);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // Once, for the link the app was opened with.
+  }, [signedIn]);
+
   const isAdminUser = state.status === "ok" && state.me.is_admin;
   useEffect(() => {
     if (!isAdminUser) return;
@@ -232,6 +263,15 @@ export function App() {
     await reload();
     setRefreshKey((n) => n + 1);
   });
+
+  // The phone's "back": from another tab to Home, and out of a person's page
+  // (opened later, so it closes first). Screens, sheets and the game page
+  // register their own.
+  useBackHandler(screen.name !== SCREEN_NAMES.HOME, () => {
+    setPersonId(null);
+    setScreen(SCREENS.home);
+  });
+  useBackHandler(personId != null, () => setPersonId(null));
 
   if (state.status === "loading") {
     return launch.game ? <GameSkel /> : <AppSkel />;
@@ -298,18 +338,18 @@ export function App() {
         first
         locale={locale}
         handle={me.handle}
-        tgId={me.tg_id}
+        personId={me.person_id ?? undefined}
         avatarCustom={me.avatar_custom}
         onAvatar={async (image) => {
           await putAvatar(data, image);
           setOwnAvatarCustom(true);
-          forgetAvatar(me.tg_id);
+          if (me.person_id) forgetAvatar(me.person_id);
           await reload();
         }}
         onAvatarReset={async () => {
           await deleteAvatar(data);
           setOwnAvatarCustom(false);
-          forgetAvatar(me.tg_id);
+          if (me.person_id) forgetAvatar(me.person_id);
           await reload();
         }}
         onSubmit={async (value) => {
@@ -324,18 +364,25 @@ export function App() {
     );
   }
 
+  // Then, once, an email for whoever has none (owner, 2026-10-05): the main way
+  // in, without Telegram.
+  if (me.email_prompt) {
+    return <AddEmailScreen locale={locale} data={data} onDone={reload} />;
+  }
+
   // Every screen.name comparison the render below needs, computed once —
   // never a bare string literal re-typed at each call site.
   const isHome = screen.name === SCREEN_NAMES.HOME;
   const isFeed = screen.name === SCREEN_NAMES.FEED;
   const isSummary = screen.name === SCREEN_NAMES.SUMMARY;
+  const isNews = screen.name === SCREEN_NAMES.NEWS;
   const isPeople = screen.name === SCREEN_NAMES.PEOPLE;
   const isSettings = screen.name === SCREEN_NAMES.SETTINGS;
   const isAdmin = screen.name === SCREEN_NAMES.ADMIN;
   const isConnectSteam = screen.name === SCREEN_NAMES.CONNECT_STEAM;
   const isConnectPsn = screen.name === SCREEN_NAMES.CONNECT_PSN;
   const isSettingsOrAdmin = isSettings || isAdmin;
-  const isClubPane = isHome || isFeed || isSummary;
+  const isClubPane = isHome || isFeed || isSummary || isNews;
   const isConnectScreen = isConnectSteam || isConnectPsn;
 
   const showChrome = !personOpen && isHome;
@@ -343,7 +390,9 @@ export function App() {
     ? SCREEN_NAMES.FEED
     : isSummary
       ? SCREEN_NAMES.SUMMARY
-      : SCREEN_NAMES.HOME;
+      : isNews
+        ? SCREEN_NAMES.NEWS
+        : SCREEN_NAMES.HOME;
   const goHome = () => {
     if (isHome && !personOpen) {
       window.scrollTo(0, 0);
@@ -358,7 +407,7 @@ export function App() {
       tab === SCREEN_NAMES.SETTINGS
         ? isSettingsOrAdmin
         : tab === SCREEN_NAMES.FEED
-          ? (isFeed || isSummary) && !personOpen
+          ? (isFeed || isSummary || isNews) && !personOpen
           : screen.name === tab && !personOpen;
     if (already) {
       window.scrollTo(0, 0);
@@ -374,7 +423,8 @@ export function App() {
       data={data}
       locale={locale}
       showSecrets={me.settings.show_secrets}
-      meId={me.tg_id}
+      // 0 matches nobody: a person without Telegram is not in a chat's lists.
+      meId={me.person_id ?? 0}
       initialGame={launch.game}
       onGameChange={onGameChange}
     >
@@ -390,6 +440,7 @@ export function App() {
       {pullIndicator}
       {busy && <div className="busy-bar" />}
       <Toaster />
+      <ImageViewerHost closeLabel={t(locale, "close")} />
 
       {/* Kept mounted (just hidden) off the club pane, not unmounted:
           leaving it and coming back — e.g. through Settings — used to reset
@@ -407,7 +458,7 @@ export function App() {
           onChat={setChatId}
           onFlash={setFlash}
           onOpenPerson={(id) => {
-            if (id === me.tg_id) {
+            if (id === me.person_id) {
               setPersonId(null);
               setScreen(SCREENS.home);
               return;
@@ -483,13 +534,13 @@ export function App() {
           onAvatar={async (image) => {
             await putAvatar(data, image);
             setOwnAvatarCustom(true);
-            forgetAvatar(me.tg_id);
+            if (me.person_id) forgetAvatar(me.person_id);
             await reload();
           }}
           onAvatarReset={async () => {
             await deleteAvatar(data);
             setOwnAvatarCustom(false);
-            forgetAvatar(me.tg_id);
+            if (me.person_id) forgetAvatar(me.person_id);
             await reload();
           }}
           onNickname={async (value) => {
@@ -533,6 +584,7 @@ export function App() {
           onDeleteAccount={async () => {
             await deleteAccount(data);
           }}
+          onLoginsChanged={() => void reload().catch(() => undefined)}
         />
       )}
 
@@ -584,13 +636,14 @@ export function App() {
         />
       )}
 
+      {!isConnectScreen && <InstallPrompt locale={locale} />}
       {!isConnectScreen && (
         <nav className="dock">
           <span
             className="dock-pill"
             style={{
               transform: `translateX(${
-                (isSettingsOrAdmin ? 3 : isPeople ? 2 : isFeed || isSummary ? 1 : 0) * 100
+                (isSettingsOrAdmin ? 3 : isPeople ? 2 : isFeed || isSummary || isNews ? 1 : 0) * 100
               }%)`,
             }}
             aria-hidden
@@ -605,11 +658,11 @@ export function App() {
           </button>
           <button
             type="button"
-            className={(isFeed || isSummary) && !personOpen ? "is-on" : undefined}
+            className={(isFeed || isSummary || isNews) && !personOpen ? "is-on" : undefined}
             onClick={() => goTab(SCREEN_NAMES.FEED)}
             aria-label={t(locale, "feed")}
           >
-            <Icon name="feed" filled={(isFeed || isSummary) && !personOpen} />
+            <Icon name="feed" filled={(isFeed || isSummary || isNews) && !personOpen} />
           </button>
           <button
             type="button"

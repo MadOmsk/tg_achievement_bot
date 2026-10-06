@@ -16,7 +16,7 @@ def _item(title: str, *, feed: str = "steam_community_announcements", tags=None)
     }
 
 
-def test_only_the_developers_patches_are_kept() -> None:
+def test_the_developers_posts_are_kept_patches_marked() -> None:
     payload = {
         "appnews": {
             "newsitems": [
@@ -29,8 +29,17 @@ def test_only_the_developers_patches_are_kept() -> None:
             ]
         }
     }
-    titles = {p.title for p in n.parse_patches(payload)}
-    assert titles == {"Update 11.10.0", "See what's new in the Remastered!"}
+    posts = n.parse_patches(payload)
+    # Other sites' articles go; every post of the developer's stays, marked.
+    assert {p.title for p in posts if p.kind == "patch"} == {
+        "Update 11.10.0",
+        "See what's new in the Remastered!",
+    }
+    assert {p.title for p in posts if p.kind == "news"} == {
+        "Behind the scenes",
+        "Cairn's demo update - live now!",
+        "The Sinister Pack drops 9.18",
+    }
 
 
 def test_a_patch_carries_its_steam_id_and_plain_text() -> None:
@@ -70,3 +79,30 @@ def test_a_table_in_a_post_becomes_rows_of_cells() -> None:
         "[tr][td]HP[/td][td]100[/td][/tr][/table][p]After[/p]"
     )
     assert "Name \u00a6 Value\nHP \u00a6 100" in text
+
+
+def test_a_post_keeps_its_first_picture() -> None:
+    assert n.first_image("[p]Hi[/p][img]{STEAM_CLAN_IMAGE}/42/a.png[/img][img]b[/img]") == (
+        "https://clan.akamai.steamstatic.com/images/42/a.png"
+    )
+    assert n.first_image("[img]http://old.example/x.png[/img]") is None
+    assert n.first_image("no pictures") is None
+    # What Steam writes now.
+    assert n.first_image('[p][/p][img src="{STEAM_CLAN_IMAGE}/6126332/abc.jpg"][/img]') == (
+        "https://clan.akamai.steamstatic.com/images/6126332/abc.jpg"
+    )
+
+
+def test_a_posts_pictures_stay_as_lines_of_their_own() -> None:
+    text = n.plain_text(
+        '[p]Before[/p][img src="{STEAM_CLAN_IMAGE}/1/a.jpg"][/img][p]After[/p][img]x[/img]'
+    )
+    assert text == "Before\n\nhttps://clan.akamai.steamstatic.com/images/1/a.jpg\nAfter"
+
+
+def test_a_picture_wrapped_in_a_link_stays_a_picture() -> None:
+    text = n.plain_text(
+        "[url=https://store.steampowered.com/publisher/2K/]"
+        "[img]https://clan.fastly.steamstatic.com/images/1/a.jpg[/img][/url]As the leaves turn"
+    )
+    assert text == "https://clan.fastly.steamstatic.com/images/1/a.jpg\nAs the leaves turn"

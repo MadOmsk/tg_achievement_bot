@@ -206,6 +206,8 @@ class SteamExtras:
                     text_en=p.text,
                     title_ru=None,
                     text_ru=None,
+                    kind=p.kind,
+                    image_url=p.image,
                 )
                 for p in patches
             ],

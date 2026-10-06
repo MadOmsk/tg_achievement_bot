@@ -35,9 +35,9 @@ def test_reminder_keyboard_follows_the_recipients_language() -> None:
 
 async def test_a_reminder_is_sent_in_the_persons_own_language(repo: Repo, cipher) -> None:
     await repo.ensure_user(USER_ID)
-    await repo.update_user_settings(USER_ID, locale="en")
-    await repo.save_refresh_token(USER_ID, cipher.encrypt("refresh"))
-    await repo.set_token_status(USER_ID, "invalid")
+    await repo.update_user_settings(await repo.person_id(USER_ID), locale="en")
+    await repo.save_refresh_token(await repo.person_id(USER_ID), cipher.encrypt("refresh"))
+    await repo.set_token_status(await repo.person_id(USER_ID), "invalid")
 
     bot = _FakeBot()
     await ReminderJob(bot, repo).run()  # type: ignore[arg-type]
@@ -49,8 +49,8 @@ async def test_a_reminder_is_sent_in_the_persons_own_language(repo: Repo, cipher
 
 async def test_the_same_reminder_stays_russian_by_default(repo: Repo, cipher) -> None:
     await repo.ensure_user(USER_ID)
-    await repo.save_refresh_token(USER_ID, cipher.encrypt("refresh"))
-    await repo.set_token_status(USER_ID, "invalid")
+    await repo.save_refresh_token(await repo.person_id(USER_ID), cipher.encrypt("refresh"))
+    await repo.set_token_status(await repo.person_id(USER_ID), "invalid")
 
     bot = _FakeBot()
     await ReminderJob(bot, repo).run()  # type: ignore[arg-type]
@@ -61,12 +61,12 @@ async def test_the_same_reminder_stays_russian_by_default(repo: Repo, cipher) ->
 
 async def test_admin_notifications_follow_the_admins_own_language(repo: Repo) -> None:
     await repo.ensure_user(ADMIN_ID)
-    await repo.update_user_settings(ADMIN_ID, locale="en")
+    await repo.update_user_settings(await repo.person_id(ADMIN_ID), locale="en")
     await repo.ensure_user(USER_ID, username="igor")
 
     bot = _FakeBot()
     await AdminNotifier(bot, repo, [ADMIN_ID]).user_connected(  # type: ignore[arg-type]
-        USER_ID, "MadOmsk", is_new=True
+        await repo.person_id(USER_ID), "MadOmsk", is_new=True
     )
 
     assert bot.sent == [(ADMIN_ID, "➕ User added: MadOmsk\ntg_id 501 · @igor")]
@@ -79,8 +79,8 @@ async def test_two_admins_each_get_their_own_language(repo: Repo) -> None:
     await repo.ensure_user(ADMIN_ID)
     await repo.ensure_user(second_admin)
     await repo.ensure_user(USER_ID, username="igor")
-    await repo.update_user_settings(ADMIN_ID, locale="en")
-    await repo.update_user_settings(second_admin, locale="ru")
+    await repo.update_user_settings(await repo.person_id(ADMIN_ID), locale="en")
+    await repo.update_user_settings(await repo.person_id(second_admin), locale="ru")
 
     bot = _FakeBot()
     notifier = AdminNotifier(bot, repo, [ADMIN_ID, second_admin])  # type: ignore[arg-type]

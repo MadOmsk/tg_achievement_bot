@@ -102,10 +102,10 @@ def test_online_table_renders_in_english() -> None:
 async def test_publication_targets_carry_the_chats_locale(repo: Repo) -> None:
     await repo.ensure_user(TG_ID)
     await repo.upsert_chat(CHAT_ID, "Gaming chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
     await repo.update_chat_settings(CHAT_ID, locale="en")
 
-    targets = await repo.publication_targets(TG_ID)
+    targets = await repo.publication_targets(await repo.person_id(TG_ID))
     assert [target.locale for target in targets] == ["en"]
 
 
@@ -133,7 +133,7 @@ async def test_chat_daily_settings_carry_the_chats_locale(repo: Repo) -> None:
 async def test_daily_summary_renders_in_the_chats_language(repo: Repo) -> None:
     await repo.ensure_user(TG_ID)
     await repo.upsert_chat(CHAT_ID, "Gaming chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
 
     built = await build_summary(repo, CHAT_ID, 10.0, date(2026, 6, 12), locale="en", window=DAY)
     assert built is not None
@@ -149,7 +149,7 @@ async def test_the_same_summary_in_russian(repo: Repo) -> None:
     left to check is that every label follows the chat's language."""
     await repo.ensure_user(TG_ID)
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
 
     built = await build_summary(repo, CHAT_ID, 10.0, date(2026, 6, 12), locale="ru", window=DAY)
     assert built is not None

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Chevron } from "../rows/Rows";
 import { Dropdown, DropdownArrow } from "../dropdown/Dropdown";
 import { Toggle } from "../toggle/Toggle";
+import { Icon } from "../icon";
 import "./FormRows.css";
 
 /**
@@ -23,7 +24,7 @@ export function Group({
   children: ReactNode;
 }) {
   return (
-    <section className="fr-group">
+    <section className={title || aside ? "fr-group" : "fr-group is-bare"}>
       {(title || aside) && (
         <div className="fr-head">
           {title && <p className="fr-title">{title}</p>}
@@ -48,6 +49,16 @@ function Label({ label, sub, lead }: { label: ReactNode; sub?: ReactNode; lead?:
   );
 }
 
+/** A row's glyph: a list of rows that open screens reads as one when each
+ * starts the same way. */
+export function RowGlyph({ name }: { name: Parameters<typeof Icon>[0]["name"] }) {
+  return (
+    <span className="fr-glyph">
+      <Icon name={name} size={26} />
+    </span>
+  );
+}
+
 /** Opens something: a screen, a picker, a link. */
 export function NavRow({
   label,
@@ -57,6 +68,7 @@ export function NavRow({
   onClick,
   danger,
   disabled,
+  className,
 }: {
   label: ReactNode;
   sub?: ReactNode;
@@ -65,11 +77,12 @@ export function NavRow({
   onClick: () => void;
   danger?: boolean;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
     <button
       type="button"
-      className={danger ? "fr-row is-danger" : "fr-row"}
+      className={["fr-row", danger ? "is-danger" : "", className ?? ""].filter(Boolean).join(" ")}
       onClick={onClick}
       disabled={disabled}
     >

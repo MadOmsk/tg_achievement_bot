@@ -72,11 +72,13 @@ async def main() -> None:
             unchanged += 1
             continue
 
-        await repo.set_platform_secondary_name(link.tg_id, Platform.PSN, previous)
+        await repo.set_platform_secondary_name(
+            await repo.person_id(link.tg_id), Platform.PSN, previous
+        )
         # The stored nickname can be the pre-rename one too, if the account
         # was renamed after it was linked but before the poller learned to
         # notice — take Sony's word for which is current.
-        await repo.update_platform_names(link.tg_id, Platform.PSN, current)
+        await repo.update_platform_names(await repo.person_id(link.tg_id), Platform.PSN, current)
         renamed += 1
         log.info("%s: previously known as %s", current, previous)
 

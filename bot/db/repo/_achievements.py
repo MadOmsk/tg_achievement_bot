@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 class _AchievementsRepo:
     # --------------------------------------------- admin "reset & resync"
 
-    async def reset_xbox_data(self, tg_id: int, xuid: str) -> int:
+    async def reset_xbox_data(self, person_id: int, xuid: str) -> int:
         """Wipe everything stored *about this Xbox account* — the admin card's
         "🗑 Сброс" (user request 2026-09-08, restated 2026-09-13: "wipe the
         platform account completely and start reading it as if it had only
@@ -67,7 +67,7 @@ class _AchievementsRepo:
         await self._conn.commit()
         return deleted
 
-    async def reset_psn_data(self, tg_id: int, account_id: str) -> int:
+    async def reset_psn_data(self, person_id: int, account_id: str) -> int:
         """PSN's counterpart of `reset_xbox_data` — also clears the per-game
         progress cache (same table `clear_psn_title_progress` clears for
         #27's stuck-account recovery) and flips `backfill_done` back off, so
@@ -157,7 +157,7 @@ class _AchievementsRepo:
 
     async def insert_new_achievements_steam(
         self,
-        tg_id: int,
+        person_id: int,
         steam_id: str,
         achievements: Sequence[AchievementRow],
         *,
@@ -219,7 +219,7 @@ class _AchievementsRepo:
 
     async def insert_new_achievements_psn(
         self,
-        tg_id: int,
+        person_id: int,
         account_id: str,
         achievements: Sequence[AchievementRow],
         *,
@@ -371,7 +371,7 @@ class _AchievementsRepo:
         )
         return await cursor.fetchone() is not None
 
-    async def unpublished_achievements(self, tg_id: int, chat_id: int) -> list[AchievementRow]:
+    async def unpublished_achievements(self, person_id: int, chat_id: int) -> list[AchievementRow]:
         """Every one of this person's achievements — any platform, `xuid`
         populated on each row since they don't all share one — that never
         made it into `publications` for this specific chat (2026-09-09,
@@ -408,9 +408,9 @@ class _AchievementsRepo:
             "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "
             # A muted account (#20) holds nothing back to flush: it never
             # posts at all, so the flood filter's backlog excludes it too.
-            "WHERE al.tg_id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL AND al.publishes = 1 "
+            "WHERE alu.id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL AND al.publishes = 1 "
             "ORDER BY COALESCE(s.unlocked_at, s.created_at) ASC",
-            (chat_id, tg_id),
+            (chat_id, person_id),
         )
         return [
             AchievementRow(

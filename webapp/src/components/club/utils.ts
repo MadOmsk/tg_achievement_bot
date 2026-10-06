@@ -19,6 +19,12 @@ export function formatMonth(
     .replace(" г.", "");
 }
 
+/** This month as "YYYY-MM", in the device's own time — the month a page opens on. */
+export function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function rankPeople(members: OnlineMember[]): OnlineMember[] {
   return [...members].sort(
     (a, b) =>
@@ -37,13 +43,13 @@ export function countByPerson(
       const t = Date.parse(row.unlocked_at);
       if (!Number.isNaN(t) && t < sinceMs) continue;
     }
-    map.set(row.tg_id, (map.get(row.tg_id) ?? 0) + 1);
+    map.set(row.person_id, (map.get(row.person_id) ?? 0) + 1);
   }
   return map;
 }
 
 export interface RareFinder {
-  tgId: number;
+  personId: number;
   name: string;
   /** Rarest first. */
   items: FeedItem[];
@@ -54,13 +60,13 @@ export function rareFinders(items: FeedItem[], maxPercent: number): RareFinder[]
   const byPerson = new Map<number, RareFinder>();
   for (const row of items) {
     if (row.rarity_percent == null || row.rarity_percent >= maxPercent) continue;
-    const cur = byPerson.get(row.tg_id) ?? {
-      tgId: row.tg_id,
+    const cur = byPerson.get(row.person_id) ?? {
+      personId: row.person_id,
       name: row.person,
       items: [],
     };
     cur.items.push(row);
-    byPerson.set(row.tg_id, cur);
+    byPerson.set(row.person_id, cur);
   }
   for (const finder of byPerson.values()) {
     finder.items.sort(
@@ -85,7 +91,7 @@ export function pickCount(
   meId: number,
   fallback: Map<number, number>,
 ): number {
-  const row = rows.find((r) => r.tg_id === meId);
+  const row = rows.find((r) => r.person_id === meId);
   return row ? row.count : fallback.get(meId) ?? 0;
 }
 

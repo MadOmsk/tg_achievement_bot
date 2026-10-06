@@ -137,7 +137,7 @@ async def _replace_admin_home(
     does the latter, so it never needs this)."""
     # This one knows whose panel it is rebuilding, so it reads the locale
     # itself rather than making every caller carry it (#48).
-    locale = await repo.user_locale(admin_id)
+    locale = await repo.user_locale(await repo.person_id(admin_id))
     text, markup = await render_admin_home(
         repo, fetcher, steam_fetcher, psn_auth, steam_auth, locale=locale
     )
@@ -784,11 +784,27 @@ async def users_page(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> 
     await _redraw(callback, *await render_user_list(repo, page, locale=i18n.locale))
 
 
+async def _subject(repo: Repo, raw: str) -> int | None:
+    """The person a user-card button is about: `p<person id>` (#156) — somebody
+    who signed in by email has no Telegram id. A button drawn before that carries
+    a bare Telegram id, and still works."""
+    if raw.startswith("p"):
+        return int(raw[1:])
+    return await repo.person_id(int(raw))
+
+
+async def _not_found(callback: CallbackQuery, locale: str) -> None:
+    await callback.answer(translator("admin", locale)("admin-user-not-found"), show_alert=True)
+
+
 @router.callback_query(F.data.startswith("a:u:"))
 async def user_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
-    tg_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await render_user_card(repo, tg_id, locale=i18n.locale))
+    person = await _subject(repo, callback.data.rsplit(":", 1)[1])
+    if person is None:
+        await _not_found(callback, i18n.locale)
+        return
+    await _redraw(callback, *await render_user_card(repo, person, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:excl:"))
@@ -796,10 +812,13 @@ async def user_exclude(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
     _, _, raw_id, raw_flag = callback.data.split(":")
-    tg_id, excluded = int(raw_id), raw_flag == "1"
-    await repo.set_excluded(tg_id, excluded, callback.from_user.id)
+    person, excluded = await _subject(repo, raw_id), raw_flag == "1"
+    if person is None:
+        await _not_found(callback, i18n.locale)
+        return
+    await repo.set_excluded(person, excluded, callback.from_user.id)
     await callback.answer(_("admin-user-excluded") if excluded else _("admin-user-restored"))
-    await _redraw(callback, *await render_user_card(repo, tg_id, locale=i18n.locale))
+    await _redraw(callback, *await render_user_card(repo, person, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:avclr:"))
@@ -807,10 +826,13 @@ async def user_avatar_reset(callback: CallbackQuery, repo: Repo, i18n: I18nConte
     """Take down a picture somebody chose in the Mini App (#157)."""
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
-    tg_id = int(callback.data.rsplit(":", 1)[1])
-    await custom_avatars.clear(repo, tg_id)
+    person = await _subject(repo, callback.data.rsplit(":", 1)[1])
+    if person is None:
+        await _not_found(callback, i18n.locale)
+        return
+    await custom_avatars.clear(repo, person)
     await callback.answer(_("admin-avatar-reset"))
-    await _redraw(callback, *await render_user_card(repo, tg_id, locale=i18n.locale))
+    await _redraw(callback, *await render_user_card(repo, person, locale=i18n.locale))
 
 
 _SYNC_NOT_CONNECTED_KEY = {
@@ -821,25 +843,26 @@ _SYNC_NOT_CONNECTED_KEY = {
 
 
 async def _account_link(
-    repo: Repo, platform: str, tg_id: int, account_id: str | None
+    repo: Repo, platform: str, person: int, account_id: str | None
 ) -> PlatformLink | None:
     """The Steam/PSN link a button is about: the one named by `account_id`
     (a PSN account among several, #10), else the person's only one."""
     platform_value = Platform.STEAM if platform == "steam" else Platform.PSN
     if account_id is None:
-        return await repo.get_platform_link(tg_id, platform_value)
-    links = await repo.platform_links_for(tg_id, platform_value)
+        return await repo.get_platform_link(person, platform_value)
+    links = await repo.platform_links_for(person, platform_value)
     return next((link for link in links if link.external_id == account_id), None)
 
 
-def _parse_account(data: str) -> tuple[str, int, str | None]:
-    """`a:<action>:<platform>:<tg_id>[:<account_id>]` → its three values."""
+async def _parse_account(repo: Repo, data: str) -> tuple[str, int | None, str | None]:
+    """`a:<action>:<platform>:<person>[:<account_id>]` → the platform, the person
+    (`_subject`) and the account."""
     parts = data.split(":")
-    return parts[2], int(parts[3]), parts[4] if len(parts) > 4 else None
+    return parts[2], await _subject(repo, parts[3]), parts[4] if len(parts) > 4 else None
 
 
 async def _sync_target(
-    repo: Repo, platform: str, tg_id: int, *, locale: str, account_id: str | None = None
+    repo: Repo, platform: str, person: int, *, locale: str, account_id: str | None = None
 ) -> tuple[str, str] | None:
     """(external_id, display_name) for user_refresh below, or None if this
     platform isn't connected for this person — Xbox resolves through
@@ -847,11 +870,11 @@ async def _sync_target(
     per-platform lookup in this file already has."""
     _ = translator("admin", locale)
     if platform == "xbox":
-        user = await repo.get_user(tg_id)
+        user = await repo.get_user(person)
         if user is None or not user.xuid:
             return None
         return user.xuid, user.gamertag or _("admin-default-player")
-    link = await _account_link(repo, platform, tg_id, account_id)
+    link = await _account_link(repo, platform, person, account_id)
     if link is None:
         return None
     return link.external_id, link_nickname(link)
@@ -878,9 +901,12 @@ async def user_refresh(
     # two lines up — to the string "a", so the next `_("key")` raised
     # TypeError and this button had never once worked (found 2026-09-13 by
     # capturing the real screens; the same slip killed "🗑 Сброс" below).
-    platform, tg_id, account_id = _parse_account(callback.data)
+    platform, person, account_id = await _parse_account(repo, callback.data)
+    if person is None:
+        await _not_found(callback, i18n.locale)
+        return
 
-    target = await _sync_target(repo, platform, tg_id, locale=i18n.locale, account_id=account_id)
+    target = await _sync_target(repo, platform, person, locale=i18n.locale, account_id=account_id)
     if target is None:
         await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
         return
@@ -894,7 +920,7 @@ async def user_refresh(
     }
     try:
         summary = await fetcher_by_platform[platform].refresh_user(
-            tg_id, external_id, name, i18n.locale
+            person, external_id, name, i18n.locale
         )
         delta = await _sync_delta(
             repo,
@@ -902,16 +928,16 @@ async def user_refresh(
             steam_fetcher,
             settings,
             platform=platform,
-            tg_id=tg_id,
+            person_id=person,
             external_id=external_id,
             name=name,
             locale=i18n.locale,
         )
     except Exception:
-        log.exception("admin %s refresh of tg_id=%s failed", platform, tg_id)
+        log.exception("admin %s refresh of person_id=%s failed", platform, person)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
         return
-    text, markup = await render_user_card(repo, tg_id, locale=i18n.locale)
+    text, markup = await render_user_card(repo, person, locale=i18n.locale)
     if delta:
         summary = f"{summary}\n{delta}"
     await _redraw(callback, f"{text}\n\n{summary}", markup)
@@ -924,7 +950,7 @@ async def _sync_delta(
     settings: Settings,
     *,
     platform: str,
-    tg_id: int,
+    person_id: int,
     external_id: str,
     name: str,
     locale: str,
@@ -948,7 +974,7 @@ async def _sync_delta(
     window = settings.catchup_publish_window_hours
     if platform == "xbox":
         titles, published = await fetcher.catch_up(
-            tg_id,
+            person_id,
             external_id,
             name,
             parse_iso(since) if since else None,
@@ -957,7 +983,7 @@ async def _sync_delta(
         )
         return _("admin-sync-delta", titles=titles, published=published)
     if platform == "steam" and since is not None:
-        published = await steam_fetcher.catch_up(tg_id, external_id, name, since, window)
+        published = await steam_fetcher.catch_up(person_id, external_id, name, since, window)
         return _("admin-sync-delta-steam", published=published)
     return ""
 
@@ -1225,14 +1251,17 @@ async def reset_platform_confirm(callback: CallbackQuery, repo: Repo, i18n: I18n
     — same one-tap-confirm shape as /disconnect_steam's own prompt, not an
     instant action behind a single tap."""
     assert callback.data is not None
-    platform, tg_id, account_id = _parse_account(callback.data)
+    platform, person, account_id = await _parse_account(repo, callback.data)
+    if person is None:
+        await _not_found(callback, i18n.locale)
+        return
     account_name = None
     if account_id is not None:
-        link = await _account_link(repo, platform, tg_id, account_id)
+        link = await _account_link(repo, platform, person, account_id)
         account_name = link_nickname(link) if link else account_id
     screen = render_reset_confirm(
         platform,
-        str(tg_id),
+        f"p{person}",
         locale=i18n.locale,
         account_id=account_id,
         account_name=account_name,
@@ -1253,43 +1282,47 @@ async def reset_platform_confirmed(
     assert callback.data is not None
     # Four parts here too, and `_` stays the translator (see user_refresh):
     # this one unpacked four into three and raised ValueError instead.
-    platform, tg_id, account_id = _parse_account(callback.data)
+    platform, person, account_id = await _parse_account(repo, callback.data)
+    if person is None:
+        await _not_found(callback, i18n.locale)
+        return
     await callback.answer(_("admin-refreshing"))
 
     try:
+        assert person is not None
         if platform == "xbox":
-            user = await repo.get_user(tg_id)
+            user = await repo.get_user(person)
             assert user is not None and user.xuid is not None
-            await repo.reset_xbox_data(tg_id, user.xuid)
-            await fetcher.backfill(tg_id, user.xuid)
+            await repo.reset_xbox_data(person, user.xuid)
+            await fetcher.backfill(person, user.xuid)
         elif platform == "steam":
-            link = await _account_link(repo, platform, tg_id, account_id)
+            link = await _account_link(repo, platform, person, account_id)
             assert link is not None
             # The account's own id, not the person's: since #52 the history
             # belongs to the account, and this call used to be handed `tg_id`,
             # which matches no row — so it deleted nothing and "reset" re-ran
             # backfill over data that was still there.
             await repo.reset_steam_data(link.external_id)
-            await steam_fetcher.backfill(tg_id, link.external_id)
+            await steam_fetcher.backfill(person, link.external_id)
         else:
-            link = await _account_link(repo, platform, tg_id, account_id)
+            link = await _account_link(repo, platform, person, account_id)
             assert link is not None
-            await repo.reset_psn_data(tg_id, link.external_id)
-            await psn_fetcher.backfill(tg_id, link.external_id)
+            await repo.reset_psn_data(person, link.external_id)
+            await psn_fetcher.backfill(person, link.external_id)
     except Exception:
-        log.exception("admin reset+resync of tg_id=%s platform=%s failed", tg_id, platform)
+        log.exception("admin reset+resync of person_id=%s platform=%s failed", person, platform)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
 
-    text, markup = await render_user_card(repo, tg_id, locale=i18n.locale)
+    text, markup = await render_user_card(repo, person, locale=i18n.locale)
     await _redraw(callback, text, markup)
 
 
 @router.callback_query(F.data.startswith("a:udel:"))
 async def admin_delete_user_step1(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _prefix, _action, tg_id_s = callback.data.split(":")
-    tg_id = int(tg_id_s)
-    user = await repo.get_user(tg_id)
-    if user is None:
+    _prefix, _action, raw = callback.data.split(":")
+    person = await _subject(repo, raw)
+    user = await repo.get_user(person) if person is not None else None
+    if person is None or user is None:
         _ = translator("admin", i18n.locale)
         await callback.answer(_("admin-user-not-found"), show_alert=True)
         return
@@ -1299,16 +1332,16 @@ async def admin_delete_user_step1(callback: CallbackQuery, repo: Repo, i18n: I18
         username=user.username,
         xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
     )
-    screen = render_admin_user_delete_confirm_1(name, tg_id, locale=i18n.locale)
+    screen = render_admin_user_delete_confirm_1(name, person, user.tg_id, locale=i18n.locale)
     await _redraw(callback, *screen.as_pair())
 
 
 @router.callback_query(F.data.startswith("a:udel1:"))
 async def admin_delete_user_step2(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _prefix, _action, tg_id_s = callback.data.split(":")
-    tg_id = int(tg_id_s)
-    user = await repo.get_user(tg_id)
-    if user is None:
+    _prefix, _action, raw = callback.data.split(":")
+    person = await _subject(repo, raw)
+    user = await repo.get_user(person) if person is not None else None
+    if person is None or user is None:
         _ = translator("admin", i18n.locale)
         await callback.answer(_("admin-user-not-found"), show_alert=True)
         return
@@ -1318,7 +1351,7 @@ async def admin_delete_user_step2(callback: CallbackQuery, repo: Repo, i18n: I18
         username=user.username,
         xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
     )
-    screen = render_admin_user_delete_confirm_2(name, tg_id, locale=i18n.locale)
+    screen = render_admin_user_delete_confirm_2(name, person, user.tg_id, locale=i18n.locale)
     await _redraw(callback, *screen.as_pair())
 
 
@@ -1327,9 +1360,9 @@ async def admin_delete_user_confirmed(
     callback: CallbackQuery, repo: Repo, i18n: I18nContext
 ) -> None:
     _ = translator("admin", i18n.locale)
-    _prefix, _action, tg_id_s = callback.data.split(":")
-    tg_id = int(tg_id_s)
-    deleted = await repo.delete_user(tg_id, is_admin=True)
+    _prefix, _action, raw = callback.data.split(":")
+    person = await _subject(repo, raw)
+    deleted = person is not None and await repo.delete_person(person, is_admin=True)
     if deleted:
         await callback.answer(_("admin-delete-toast"))
     else:

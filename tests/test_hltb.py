@@ -489,15 +489,15 @@ async def test_chat_recent_games_orders_by_recency_and_dedupes(repo: Repo) -> No
     await repo.upsert_chat(CHAT_ID, "Игровой чат", 1)
 
     await repo.ensure_user(1, "publisher")
-    await repo.link_xbox_account(1, "xuid-a", "Publisher", 0)
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), "xuid-a", "Publisher", 0)
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
     await repo.ensure_user(2, "lurker")
-    await repo.link_xbox_account(2, "xuid-b", "Lurker", 0)
+    await repo.link_xbox_account(await repo.person_id(2), "xuid-b", "Lurker", 0)
     await repo.record_chat_seen(CHAT_ID, 2)  # in the chat, never subscribed
 
     await repo.ensure_user(3, "stranger")
-    await repo.link_xbox_account(3, "xuid-c", "Stranger", 0)
+    await repo.link_xbox_account(await repo.person_id(3), "xuid-c", "Stranger", 0)
     # tg_id 3 is connected but never seen or subscribed in this chat — must
     # not contribute games to it.
 

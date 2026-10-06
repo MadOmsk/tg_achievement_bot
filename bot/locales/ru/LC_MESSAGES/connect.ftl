@@ -67,3 +67,17 @@ connect-greeting-multi =
 connect-pick-platform = С чего начнём?
 connect-open-app-hint = Или открой приложение:
 connect-open-app-button = Открыть приложение
+
+# Adding Telegram to an app account by a t.me link (#162)
+connect-link-done = Готово — Telegram привязан к твоему аккаунту в приложении.
+connect-link-already = Этот Telegram уже привязан к этому аккаунту.
+connect-link-expired = Ссылка устарела. Возьми новую в приложении: Настройки → Вход.
+connect-link-other-telegram = К этому аккаунту уже привязан другой Telegram.
+connect-link-merge-confirm =
+    Этот Telegram уже привязан к аккаунту { $current }. Объединить его с аккаунтом { $other }?
+
+    Аккаунты Xbox, Steam и PSN, история и подписки перейдут в { $other }, а { $current } исчезнет. Если ссылку прислал кто-то другой, нажми «Отмена».
+connect-link-merge-yes = Объединить
+connect-link-merge-no = Отмена
+connect-link-merge-cancelled = Отменено — ничего не изменилось.
+connect-link-merge-in-app = Этот Telegram уже связан с другим аккаунтом. Открой приложение: Настройки → Вход — там можно объединить их в один.

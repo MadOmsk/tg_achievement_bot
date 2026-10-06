@@ -58,26 +58,26 @@ def normalize(body: bytes) -> bytes | None:
         return None
 
 
-async def store(repo: Repo, tg_id: int, body: bytes) -> bool:
+async def store(repo: Repo, person_id: int, body: bytes) -> bool:
     """Make `body` this person's picture. False when it is not an image."""
     picture = await asyncio.to_thread(normalize, body)
     if picture is None:
         return False
-    name = f"custom-{tg_id}-{hashlib.sha256(picture).hexdigest()[:12]}.jpg"
+    name = f"custom-p{person_id}-{hashlib.sha256(picture).hexdigest()[:12]}.jpg"
     path, _digest = avatars.write(picture, name)
-    previous = await repo.custom_avatar_path(tg_id)
-    await repo.set_custom_avatar_path(tg_id, path)
+    previous = await repo.custom_avatar_path(person_id)
+    await repo.set_custom_avatar_path(person_id, path)
     if previous and previous != path:
         _remove(previous)
     return True
 
 
-async def clear(repo: Repo, tg_id: int) -> bool:
+async def clear(repo: Repo, person_id: int) -> bool:
     """Back to the Telegram photo. False when there was no chosen picture."""
-    previous = await repo.custom_avatar_path(tg_id)
+    previous = await repo.custom_avatar_path(person_id)
     if not previous:
         return False
-    await repo.set_custom_avatar_path(tg_id, None)
+    await repo.set_custom_avatar_path(person_id, None)
     _remove(previous)
     return True
 

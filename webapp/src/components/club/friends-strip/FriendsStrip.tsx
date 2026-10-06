@@ -18,7 +18,7 @@ export function FriendsStrip({
   members: OnlineMember[];
   locale: Locale;
   limit: number;
-  onOpen: (tgId: number) => void;
+  onOpen: (personId: number) => void;
   onSeeAll: () => void;
   /** Your own strip offers a search when empty; somebody else's only says so. */
   onFind?: () => void;
@@ -28,7 +28,7 @@ export function FriendsStrip({
 }) {
   // Friends first, then as everywhere: playing, online, the rest.
   const pool = rankPeople(members).sort(
-    (a, b) => Number(Boolean(friendIds?.has(b.tg_id))) - Number(Boolean(friendIds?.has(a.tg_id))),
+    (a, b) => Number(Boolean(friendIds?.has(b.person_id))) - Number(Boolean(friendIds?.has(a.person_id))),
   );
   if (pool.length === 0) {
     return (
@@ -66,15 +66,15 @@ export function FriendsStrip({
       <div className="friends">
         {shown.map((m) => (
           <button
-            key={m.tg_id}
+            key={m.person_id}
             type="button"
             className="friend"
-            onClick={() => onOpen(m.tg_id)}
+            onClick={() => onOpen(m.person_id)}
           >
-            <FriendMark friend={Boolean(friendIds?.has(m.tg_id))} label={t(locale, "friends")} big>
+            <FriendMark friend={Boolean(friendIds?.has(m.person_id))} label={t(locale, "friends")} big>
               <Avatar
                 name={m.name}
-                tgId={m.tg_id}
+                personId={m.person_id}
                 online={isOnline(m)}
                 platform={m.platform}
                 size={80}

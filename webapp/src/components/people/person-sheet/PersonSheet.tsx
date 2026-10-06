@@ -25,8 +25,8 @@ import { HandleName } from "../../shared/lib/handle-name/HandleName";
 const EMPTY: Relation = { following: false, followed_by: false, friends: false, blocked: false };
 
 export type SheetPerson = {
-  id?: number | null;
-  tg_id: number | null;
+  /** The person's own id (#156). */
+  id: number;
   handle: string;
   relation?: Relation;
 };
@@ -49,7 +49,7 @@ export function PersonSheet({
   onChange?: (relation: Relation) => void;
   onFlash: (message: string) => void;
   /** Tapping the avatar or the nickname opens the full profile. */
-  onOpenProfile?: (tgId: number) => void;
+  onOpenProfile?: (personId: number) => void;
   /** The viewer's own card. */
   self?: boolean;
 }) {
@@ -60,27 +60,21 @@ export function PersonSheet({
   const [own, setOwn] = useState<Relation | null>(person.relation ?? null);
   const openGame = useOpenGame();
   const relation = own ?? profile?.relation ?? EMPTY;
-  const personId = person.id ?? profile?.id ?? null;
-  const tgId = person.tg_id ?? profile?.tg_id ?? null;
+  const personId = person.id;
   const handle = profile?.handle ?? person.handle;
 
   useEffect(() => {
     let cancelled = false;
-    const call =
-      person.id != null
-        ? peopleApi.profile(data, person.id)
-        : person.tg_id != null
-          ? peopleApi.profileByTg(data, person.tg_id)
-          : null;
-    call
-      ?.then((res) => {
+    peopleApi
+      .profile(data, person.id)
+      .then((res) => {
         if (!cancelled) setProfile(res);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [data, person.id, person.tg_id, own?.following, own?.blocked, own?.followed_by]);
+  }, [data, person.id, own?.following, own?.blocked, own?.followed_by]);
 
   const changed = (next: Relation) => {
     setOwn(next);
@@ -102,7 +96,7 @@ export function PersonSheet({
   const loading = profile === null;
   const games = activity?.games ?? [];
 
-  const toProfile = tgId != null && onOpenProfile ? () => onOpenProfile(tgId) : undefined;
+  const toProfile = personId != null && onOpenProfile ? () => onOpenProfile(personId) : undefined;
 
   // The lists take the card's place; closing them brings the card back as it was.
   if (follows && personId != null) {
@@ -128,7 +122,7 @@ export function PersonSheet({
           <FriendMark friend={relation.friends && !self} label={t(locale, "friends")}>
             <Avatar
               name={handle}
-              tgId={tgId ?? undefined}
+              personId={personId ?? undefined}
               online={online}
               playing={Boolean(presence?.playing)}
               platform={presence?.platform}
@@ -267,7 +261,7 @@ export function PersonSheet({
                           name: game.name,
                           icon_url: game.cover,
                           person:
-                            tgId != null ? { tg_id: tgId, name: handle } : null,
+                            personId != null ? { person_id: personId, name: handle } : null,
                         })
                       }
                     >

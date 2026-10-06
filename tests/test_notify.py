@@ -24,7 +24,7 @@ async def test_every_admin_is_told(repo: Repo) -> None:
     bot = FakeBot()
     notifier = AdminNotifier(bot, repo, [1, 2])  # type: ignore[arg-type]
 
-    await notifier.user_connected(TG_ID, "Mad Omsk", is_new=True)
+    await notifier.user_connected(await repo.person_id(TG_ID), "Mad Omsk", is_new=True)
 
     assert [chat_id for chat_id, _ in bot.sent] == [1, 2]
     assert "Добавлен пользователь: Mad Omsk" in bot.sent[0][1]
@@ -36,7 +36,7 @@ async def test_reconnect_is_worded_differently(repo: Repo) -> None:
     bot = FakeBot()
     notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
 
-    await notifier.user_connected(TG_ID, "Mad Omsk", is_new=False)
+    await notifier.user_connected(await repo.person_id(TG_ID), "Mad Omsk", is_new=False)
 
     assert "Переподключился" in bot.sent[0][1]
     assert "без username" in bot.sent[0][1]
@@ -48,7 +48,7 @@ async def test_one_blocked_admin_does_not_stop_the_rest(repo: Repo) -> None:
     bot = FakeBot(failing={1})
     notifier = AdminNotifier(bot, repo, [1, 2])  # type: ignore[arg-type]
 
-    await notifier.token_dead(TG_ID)
+    await notifier.token_dead(await repo.person_id(TG_ID))
 
     assert [chat_id for chat_id, _ in bot.sent] == [2]
     assert "слетел вход" in bot.sent[0][1]

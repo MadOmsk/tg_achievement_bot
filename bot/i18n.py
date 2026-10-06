@@ -123,7 +123,9 @@ class LocaleManager(BaseManager):
         if event_chat is not None and event_chat.type != "private":
             return normalize_locale(await repo.chat_locale(event_chat.id))
         if event_from_user is not None:
-            return normalize_locale(await repo.user_locale(event_from_user.id))
+            return normalize_locale(
+                await repo.user_locale(await repo.person_id(event_from_user.id))
+            )
         return DEFAULT_LOCALE
 
     async def set_locale(self, locale: str, **kwargs: Any) -> None:

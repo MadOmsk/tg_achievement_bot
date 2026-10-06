@@ -1,0 +1,119 @@
+.bell-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text);
+}
+
+.bell-button + .month-chip,
+.bell-button + .month-chip-skel,
+.bell-skel + .month-chip-skel {
+  margin-left: 4px;
+}
+
+/* The bell's own box, empty, while the app loads. */
+.bell-skel {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+}
+
+.bell-count {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff5a6e;
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 750;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.notices-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notices-head h2 {
+  margin: 0;
+}
+
+.notices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.notice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 4px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.notice-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--glass);
+  color: var(--muted);
+}
+
+.notice-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.notice-row.is-unread .notice-copy > span {
+  font-weight: 600;
+}
+
+.notice-copy small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.notice-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4f9cff;
+}
+
+.notice-skel {
+  height: 52px;
+  border-radius: 14px;
+}

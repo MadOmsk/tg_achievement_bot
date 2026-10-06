@@ -98,7 +98,7 @@ class PsnPresencePoller:
             changed=changed,
         )
         if snapshot.state == "Online":
-            await self._repo.touch_last_online(target.tg_id)
+            await self._repo.touch_last_online(target.person_id)
         await self._refresh_nickname(target, snapshot.online_id)
 
         # Final trophy check of the session (#90):
@@ -111,7 +111,7 @@ class PsnPresencePoller:
         try:
             assert self._psn_fetcher is not None
             await self._psn_fetcher.poll_account(  # type: ignore[union-attr]
-                target.tg_id, target.account_id, target.online_id or target.account_id
+                target.person_id, target.account_id, target.online_id or target.account_id
             )
         except Exception:
             log.exception("psn exit trophy poll failed for account_id=%s", target.account_id)
@@ -131,11 +131,17 @@ class PsnPresencePoller:
             return
         previous = target.online_id
         await self._repo.update_platform_names(
-            target.tg_id, Platform.PSN, online_id, external_id=target.account_id
+            target.person_id,
+            Platform.PSN,
+            online_id,
+            external_id=target.account_id,
         )
         if previous:
             await self._repo.set_platform_secondary_name(
-                target.tg_id, Platform.PSN, previous, external_id=target.account_id
+                target.person_id,
+                Platform.PSN,
+                previous,
+                external_id=target.account_id,
             )
             log.info("psn account %s renamed: %s -> %s", target.account_id, previous, online_id)
 

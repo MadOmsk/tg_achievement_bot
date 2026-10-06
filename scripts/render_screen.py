@@ -131,7 +131,7 @@ async def _panel_chat_card(ctx: Context) -> Screen | None:
 
 @screen("stats")
 async def _stats(ctx: Context) -> Screen | None:
-    user = await ctx.repo.get_user(ctx.tg_id)
+    user = await ctx.repo.get_user(await ctx.repo.person_id(ctx.tg_id))
     if user is None:
         return None
     text = await build_stats_text(ctx.repo, user, ctx.chat_id, await i18n_for(ctx.locale))

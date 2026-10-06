@@ -41,7 +41,7 @@ async def test_mini_me_delete_removes_account(repo: Repo, settings: Settings) ->
     bot_token = settings.bot_token.get_secret_value()
     user_id = 42
     await repo.ensure_user(user_id, "testuser")
-    assert await repo.get_user(user_id) is not None
+    assert await repo.get_user(await repo.person_id(user_id)) is not None
 
     init_data = _signed_init_data(bot_token, user_id)
     headers = {"X-Telegram-Init-Data": init_data}
@@ -53,7 +53,7 @@ async def test_mini_me_delete_removes_account(repo: Repo, settings: Settings) ->
         assert resp.status == 200
         body = await resp.json()
         assert body == {"ok": True}
-        assert await repo.get_user(user_id) is None
+        assert await repo.get_user(await repo.person_id(user_id)) is None
     finally:
         await client.close()
 
@@ -65,7 +65,7 @@ async def test_mini_me_post_delete_endpoint(repo: Repo, settings: Settings) -> N
     bot_token = settings.bot_token.get_secret_value()
     user_id = 43
     await repo.ensure_user(user_id, "testuser2")
-    assert await repo.get_user(user_id) is not None
+    assert await repo.get_user(await repo.person_id(user_id)) is not None
 
     init_data = _signed_init_data(bot_token, user_id)
     headers = {"X-Telegram-Init-Data": init_data}
@@ -77,7 +77,7 @@ async def test_mini_me_post_delete_endpoint(repo: Repo, settings: Settings) -> N
         assert resp.status == 200
         body = await resp.json()
         assert body == {"ok": True}
-        assert await repo.get_user(user_id) is None
+        assert await repo.get_user(await repo.person_id(user_id)) is None
     finally:
         await client.close()
 
@@ -106,7 +106,7 @@ async def test_mini_admin_delete_user(repo: Repo, settings: Settings) -> None:
             f"/api/mini/admin/users/{target_id}", headers=non_admin_headers
         )
         assert resp_forbidden.status == 403
-        assert await repo.get_user(target_id) is not None
+        assert await repo.get_user(await repo.person_id(target_id)) is not None
 
         # 2. Admin deletes non-existent -> 404
         resp_not_found = await client.delete("/api/mini/admin/users/99999", headers=admin_headers)
@@ -116,6 +116,6 @@ async def test_mini_admin_delete_user(repo: Repo, settings: Settings) -> None:
         resp_ok = await client.delete(f"/api/mini/admin/users/{target_id}", headers=admin_headers)
         assert resp_ok.status == 200
         assert await resp_ok.json() == {"ok": True}
-        assert await repo.get_user(target_id) is None
+        assert await repo.get_user(await repo.person_id(target_id)) is None
     finally:
         await client.close()

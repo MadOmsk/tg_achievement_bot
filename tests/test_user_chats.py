@@ -23,7 +23,7 @@ async def render_chat_card(repo: Repo, chat_id: int, title: str) -> None:
 async def test_subscribed_chat_is_listed_as_subscribed(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Гейминг-чат")
-    await repo.subscribe(CHAT_A, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
 
     chats = await repo.user_chats(TG_ID)
 
@@ -56,7 +56,7 @@ async def test_inactive_chat_is_excluded(repo: Repo) -> None:
     """A chat the bot got kicked from — nothing left to manage there."""
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Гейминг-чат")
-    await repo.subscribe(CHAT_A, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
     await repo.set_chat_active(CHAT_A, False)
 
     assert await repo.user_chats(TG_ID) == []
@@ -67,10 +67,10 @@ async def test_unsubscribe_keeps_the_chat_listed(repo: Repo) -> None:
     chat's place in this list) stays, one tap away from re-subscribing."""
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Гейминг-чат")
-    await repo.subscribe(CHAT_A, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
     await repo.record_chat_seen(CHAT_A, TG_ID)
 
-    await repo.unsubscribe(CHAT_A, TG_ID)
+    await repo.unsubscribe(CHAT_A, await repo.person_id(TG_ID))
 
     chats = await repo.user_chats(TG_ID)
     assert len(chats) == 1
@@ -82,13 +82,13 @@ async def test_forget_chat_membership_removes_it_from_the_list(repo: Repo) -> No
     chat vanishes from the list entirely, as if never touched."""
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Гейминг-чат")
-    await repo.subscribe(CHAT_A, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
     await repo.record_chat_seen(CHAT_A, TG_ID)
 
     await repo.forget_chat_membership(CHAT_A, TG_ID)
 
     assert await repo.user_chats(TG_ID) == []
-    assert await repo.is_subscribed(CHAT_A, TG_ID) is False
+    assert await repo.is_subscribed(CHAT_A, await repo.person_id(TG_ID)) is False
 
 
 async def test_forget_chat_membership_is_not_a_ban(repo: Repo) -> None:
@@ -96,10 +96,10 @@ async def test_forget_chat_membership_is_not_a_ban(repo: Repo) -> None:
     chat right back — no third, blocked state (SPEC 6.2: "банов тут нету")."""
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Гейминг-чат")
-    await repo.subscribe(CHAT_A, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
     await repo.forget_chat_membership(CHAT_A, TG_ID)
 
-    await repo.subscribe(CHAT_A, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
 
     chats = await repo.user_chats(TG_ID)
     assert len(chats) == 1
@@ -112,7 +112,7 @@ async def test_a_new_person_starts_from_the_admin_default_mode(repo: Repo) -> No
     await repo.set_app_setting("default_rarity_mode", "rare")
     await repo.ensure_user(TG_ID, "igor")
 
-    settings_row = await repo.get_user_settings(TG_ID)
+    settings_row = await repo.get_user_settings(await repo.person_id(TG_ID))
 
     assert settings_row is not None and settings_row.rarity_mode == "rare"
 
@@ -122,12 +122,15 @@ async def test_the_mode_is_one_for_every_chat(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Чат А")
     await render_chat_card(repo, CHAT_B, "Чат Б")
-    await repo.subscribe(CHAT_A, TG_ID)
-    await repo.subscribe(CHAT_B, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
+    await repo.subscribe(CHAT_B, await repo.person_id(TG_ID))
 
-    await repo.update_user_settings(TG_ID, rarity_mode="rare")
+    await repo.update_user_settings(await repo.person_id(TG_ID), rarity_mode="rare")
 
-    targets = {t.chat_id: t.rarity_mode for t in await repo.publication_targets(TG_ID)}
+    targets = {
+        t.chat_id: t.rarity_mode
+        for t in await repo.publication_targets(await repo.person_id(TG_ID))
+    }
     assert targets == {CHAT_A: "rare", CHAT_B: "rare"}
 
 
@@ -136,12 +139,15 @@ async def test_the_digest_size_is_the_chats(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Чат А")
     await render_chat_card(repo, CHAT_B, "Чат Б")
-    await repo.subscribe(CHAT_A, TG_ID)
-    await repo.subscribe(CHAT_B, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
+    await repo.subscribe(CHAT_B, await repo.person_id(TG_ID))
 
     await repo.update_chat_settings(CHAT_A, digest_threshold=5)
 
-    targets = {t.chat_id: t.digest_threshold for t in await repo.publication_targets(TG_ID)}
+    targets = {
+        t.chat_id: t.digest_threshold
+        for t in await repo.publication_targets(await repo.person_id(TG_ID))
+    }
     assert targets == {CHAT_A: 5, CHAT_B: 3}
 
 
@@ -191,7 +197,7 @@ async def test_multiple_chats_are_all_listed(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Чат А")
     await render_chat_card(repo, CHAT_B, "Чат Б")
-    await repo.subscribe(CHAT_A, TG_ID)
+    await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
     await repo.record_chat_seen(CHAT_B, TG_ID)
 
     chats = {c.chat_id: c.is_subscribed for c in await repo.user_chats(TG_ID)}

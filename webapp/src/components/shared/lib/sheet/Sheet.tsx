@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CoverImg } from "../cover-img/CoverImg";
+import { useBackHandler } from "../back-stack/backStack";
 import "./Sheet.css";
 
 export function Sheet({
@@ -27,6 +28,8 @@ export function Sheet({
     onClose();
   };
   const close = () => setLeaving(true);
+  // The phone's "back" closes the sheet, as a tap outside it does.
+  useBackHandler(true, close);
   useEffect(() => {
     armed.current = false;
     const id = window.setTimeout(() => {

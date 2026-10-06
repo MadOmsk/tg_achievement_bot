@@ -6,7 +6,7 @@ import "swiper/css";
 import "swiper/css/effect-creative";
 import type { FeedItem } from "../../../api";
 import { t, timeAgo, type Locale } from "../../../i18n";
-import { Avatar, CoverImg, FitImg, TierDisc, asTier, gameRefOf, useOpenGame } from "../../shared/lib";
+import { Avatar, CoverImg, FitImg, TierDisc, asTier, gameRefOf, useOpenGame, FEED_RATIO_MAX, isWide, useImageRatio } from "../../shared/lib";
 import { HandleName } from "../../shared/lib/handle-name/HandleName";
 import { feedKey, veiled } from "../utils";
 import "./FeedPost.css";
@@ -40,7 +40,7 @@ export function FeedPost({
   revealed: Set<string>;
   showSecrets?: boolean;
   onReveal: (key: string) => void;
-  onOpenPerson: (tgId: number) => void;
+  onOpenPerson: (personId: number) => void;
 }) {
   const head = items[0];
   const openGame = useOpenGame();
@@ -55,10 +55,15 @@ export function FeedPost({
     if (copy) setTextHeight(copy.offsetHeight);
   };
   const canOpenGame = Boolean(openGame && head.title_id);
+  // The frame takes the first picture's proportions, and every slide shares
+  // it: a post does not change height as it is swiped. A wide one has its
+  // text under the picture rather than over it.
+  const ratio = useImageRatio(head.icon_url, { max: FEED_RATIO_MAX });
+  const wide = isWide(ratio);
 
   return (
     <article
-      className={canOpenGame ? "post is-link" : "post"}
+      className={["post", canOpenGame ? "is-link" : "", wide ? "is-wide" : ""].filter(Boolean).join(" ")}
       // The whole post opens the game on this person's progress; the author, the
       // game line and "Открыть" keep their own taps.
       onClick={
@@ -74,11 +79,11 @@ export function FeedPost({
       <div className="post-stage">
         {/* Who and when, and in which game: over the picture's top. */}
         <header className="post-head">
-          <button type="button" className="post-avatar" onClick={() => onOpenPerson(head.tg_id)}>
-            <Avatar name={head.person} tgId={head.tg_id} size={42} />
+          <button type="button" className="post-avatar" onClick={() => onOpenPerson(head.person_id)}>
+            <Avatar name={head.person} personId={head.person_id} size={42} />
           </button>
           <span className="post-head-copy">
-            <button type="button" className="post-name" onClick={() => onOpenPerson(head.tg_id)}>
+            <button type="button" className="post-name" onClick={() => onOpenPerson(head.person_id)}>
               <HandleName text={head.person} />
             </button>
             <span className="post-time">{timeAgo(head.unlocked_at, locale)}</span>
@@ -112,10 +117,12 @@ export function FeedPost({
             ].filter(Boolean);
             return (
               <SwiperSlide key={key} className="post-slide">
-                <div className="post-media">
+                <div className="post-media" style={{ aspectRatio: ratio }}>
                   <CoverImg src={item.icon_url} kind="achievement" className="post-media-back" />
-                  {/* The full height of the frame; the sides show what fits. */}
-                  <FitImg src={item.icon_url} />
+                  {/* All of the picture; the frame is its shape, within reason. */}
+                  {/* A wide one fills its frame, its sides trimmed if it is wider still;
+                      a square or tall one is all seen, against the top. */}
+                  <FitImg src={item.icon_url} mode={wide ? "height" : "contain"} top />
                   {secret && (
                     <span className="post-veil">
                       <button type="button" className="btn post-veil-open" onClick={() => onReveal(key)}>
@@ -131,8 +138,10 @@ export function FeedPost({
                     </h2>
                     {(marks.length > 0 || tier) && (
                       <span className="post-marks">
-                        {tier && <TierDisc tier={tier} size={14} />}
+                        {/* Rarity first, then the trophy's tier — as on every card. */}
                         {marks.join(" · ")}
+                        {tier && marks.length > 0 && " · "}
+                        {tier && <TierDisc tier={tier} size={14} />}
                       </span>
                     )}
                   </div>
@@ -157,7 +166,9 @@ export function FeedPost({
           <span className="post-dots-frame" aria-hidden>
             <span
               className="post-dots"
-              style={textHeight != null ? { bottom: textHeight - 12 } : undefined}
+              // Over the picture's foot: a wide one has its text under it, so the
+              // dots sit just above the text; otherwise in the text's fade.
+              style={textHeight != null ? { bottom: wide ? textHeight + 12 : textHeight - 12 } : undefined}
             >
               {items.map((item, i) => (
                 <span key={feedKey(item)} className={i === active ? "is-on" : undefined} />

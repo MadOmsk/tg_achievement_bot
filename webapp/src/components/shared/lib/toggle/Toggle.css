@@ -31,6 +31,7 @@
   background: rgba(120, 140, 132, 0.35);
   cursor: pointer;
   flex: 0 0 auto;
+  transition: background 0.2s ease;
 }
 
 .toggle::after {
@@ -47,7 +48,7 @@
 }
 
 .toggle.is-on {
-  background: rgba(255, 255, 255, 0.28);
+  background: #34c87a;
 }
 
 .toggle.is-on::after {

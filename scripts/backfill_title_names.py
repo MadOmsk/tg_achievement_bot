@@ -86,9 +86,9 @@ async def run() -> int:
     client = XboxClient(auth)
 
     named = unanswered = failed = 0
-    for index, (title_id, tg_id) in enumerate(missing, start=1):
+    for index, (title_id, person_id) in enumerate(missing, start=1):
         try:
-            entry = await client.resolve_title(tg_id, title_id)
+            entry = await client.resolve_title(person_id, title_id)
         except XboxApiError as exc:
             # A delisted game, a bad afternoon at Microsoft. One title must
             # never end the run.

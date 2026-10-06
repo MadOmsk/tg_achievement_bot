@@ -38,16 +38,15 @@ class _SessionsRepo:
         await self._conn.commit()
         return token
 
-    async def session_tg_id(self, token: str) -> int | None:
-        """The Telegram id behind a live session, or None (unknown, expired, or a
-        person with no Telegram id, which this build cannot serve yet)."""
+    async def session_person(self, token: str) -> int | None:
+        """The person behind a live session, or None (unknown or expired)."""
         cursor = await self._conn.execute(
-            "SELECT s.token_hash, s.expires_at, s.last_seen_at, u.tg_id "
-            "FROM web_sessions s JOIN users u ON u.id = s.person_id WHERE s.token_hash = ?",
+            "SELECT token_hash, expires_at, last_seen_at, person_id "
+            "FROM web_sessions WHERE token_hash = ?",
             (_hash(token),),
         )
         row = await cursor.fetchone()
-        if row is None or row["tg_id"] is None:
+        if row is None:
             return None
         expires = parse_iso(row["expires_at"])
         if expires is None or expires <= utcnow():
@@ -60,7 +59,7 @@ class _SessionsRepo:
                 (utcnow_iso(), row["token_hash"]),
             )
             await self._conn.commit()
-        return row["tg_id"]
+        return row["person_id"]
 
     async def end_session(self, token: str) -> None:
         await self._conn.execute("DELETE FROM web_sessions WHERE token_hash = ?", (_hash(token),))

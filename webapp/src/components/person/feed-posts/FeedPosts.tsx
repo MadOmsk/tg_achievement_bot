@@ -24,7 +24,7 @@ export function FeedPosts({
   revealed: Set<string>;
   showSecrets?: boolean;
   onReveal: (key: string) => void;
-  onOpenPerson: (tgId: number) => void;
+  onOpenPerson: (personId: number) => void;
 }) {
   const jump = useDayJump(items, locale);
   const [built, setBuilt] = useState(FIRST_POSTS);
@@ -47,7 +47,7 @@ export function FeedPosts({
     const head = last?.[0];
     if (
       head &&
-      head.tg_id === row.tg_id &&
+      head.person_id === row.person_id &&
       head.platform === row.platform &&
       head.title_id === row.title_id
     ) {

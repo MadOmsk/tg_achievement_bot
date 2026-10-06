@@ -16,7 +16,6 @@ from aiohttp import web
 
 from bot.db.repo import Repo
 from bot.db.repo._follows import FollowTooSoon, PersonRow
-from bot.i18n import gettext
 from bot.services.people import ACTIVITY_CHOICES, Relation
 
 log = logging.getLogger(__name__)
@@ -51,8 +50,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     async def me_id(request: web.Request) -> tuple[Repo, int]:
         user = await require_user(request)
         repo: Repo = request.app["mini_repo"]
-        await repo.ensure_user(user.tg_id, user.username)
-        person = await repo.person_id(user.tg_id)
+        person = user.person_id
         if person is None:
             raise web.HTTPNotFound(text="no person")
         return repo, person
@@ -246,14 +244,8 @@ async def _activity(request: web.Request, repo: Repo, me: int, other: int) -> di
     check has passed."""
     from bot.web.mini_chat import build_person_payload
 
-    target_row = await repo.person_row(other)
-    if target_row is None or target_row.tg_id is None:
-        return None
-    target = await repo.get_user(target_row.tg_id)
-    viewer_row = await repo.person_row(me)
-    settings = (
-        await repo.get_user_settings(viewer_row.tg_id) if viewer_row and viewer_row.tg_id else None
-    )
+    target = await repo.get_user(other)
+    settings = await repo.get_user_settings(me)
     if target is None:
         return None
     payload = await build_person_payload(repo, target, locale=settings.locale if settings else "ru")
@@ -288,28 +280,25 @@ def _month_games(feed: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: int) -> None:
-    """A direct message to the person just followed. Best-effort: they may not
-    have Telegram at all, or have blocked the bot, and neither may undo a follow.
-    Friends' achievements are never sent this way, only this one notice."""
-    bot = request.app.get("mini_bot")
-    if bot is None:
+    """Tell the person just followed (#157), through the app's own notifications
+    (#164): their list, their devices, and a DM if they keep that on. Once per
+    pair a day — following is not a way to ping somebody. Friends' achievements
+    are never sent this way, only this one notice."""
+    notifier = request.app.get("mini_notifications")
+    if notifier is None:
         return
-    target = await repo.person_row(other)
     follower = await repo.person_row(me)
-    if target is None or follower is None or target.tg_id is None:
+    if follower is None:
         return
-    relation = await repo.relation(other, me)
-    settings = await repo.get_user_settings(target.tg_id)
+    settings = await repo.get_user_settings(other)
     if settings is not None and not settings.notify_followers:
         return
     if not await repo.claim_follow_notice(me, other):
         return
-    locale = settings.locale if settings else "ru"
-    key = "people-new-friend" if relation.friends else "people-new-follower"
+    relation = await repo.relation(other, me)
+    kind = "new_friend" if relation.friends else "new_follower"
     try:
-        await bot.send_message(
-            target.tg_id, gettext("people", key, locale=locale, name=follower.handle)
-        )
-    except Exception as exc:
-        # They may have blocked the bot or never started it; the follow stands.
-        log.info("new-follower notice to tg_id=%s not sent: %r", target.tg_id, exc)
+        await notifier.notify(other, kind, person_id=me, name=follower.handle)
+    except Exception:
+        # A notice must never undo the follow that caused it.
+        log.exception("new-follower notice to person_id=%s failed", other)

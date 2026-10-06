@@ -52,7 +52,7 @@ async def catch_up_steam_account(
     repo: Repo,
     fetcher: SteamFetcher,
     steam_auth: SteamAuth,
-    tg_id: int,
+    person_id: int,
     steam_id: str,
     persona_name: str,
     *,
@@ -73,7 +73,7 @@ async def catch_up_steam_account(
     try:
         games = await steam_client.get_recently_played_games(api_key, steam_id)
     except SteamApiError as exc:
-        log.info("recently played games for tg_id=%s skipped: %s", tg_id, exc)
+        log.info("recently played games for person_id=%s skipped: %s", person_id, exc)
         return (0, 0)
 
     candidates = [g for g in games if g.last_played > cutoff]
@@ -84,7 +84,7 @@ async def catch_up_steam_account(
     for game in candidates:
         try:
             published += await fetcher.poll_title(
-                tg_id,
+                person_id,
                 steam_id,
                 persona_name,
                 game.appid,
@@ -129,19 +129,19 @@ class SteamCatchUpPoller:
             )
         except TimeoutError:
             log.error(
-                "hourly steam catch-up for tg_id=%s exceeded %.0fs",
-                target.tg_id,
+                "hourly steam catch-up for person_id=%s exceeded %.0fs",
+                target.person_id,
                 DEADLINE_SECONDS,
             )
             return
         except Exception:
-            log.exception("hourly steam catch-up for tg_id=%s failed", target.tg_id)
+            log.exception("hourly steam catch-up for person_id=%s failed", target.person_id)
             return
 
         if titles or published:
             log.info(
-                "hourly steam catch-up for tg_id=%s: %s titles, %s published",
-                target.tg_id,
+                "hourly steam catch-up for person_id=%s: %s titles, %s published",
+                target.person_id,
                 titles,
                 published,
             )
@@ -158,7 +158,7 @@ class SteamCatchUpPoller:
             self._repo,
             self._fetcher,
             self._steam_auth,
-            target.tg_id,
+            target.person_id,
             target.steam_id,
             target.persona_name or target.steam_id,
             api_key=api_key,

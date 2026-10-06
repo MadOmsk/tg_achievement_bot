@@ -44,6 +44,20 @@
   min-width: 0;
 }
 
+.page-head-aside {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .page-head h1 {
   margin: 0;
   min-width: 0;

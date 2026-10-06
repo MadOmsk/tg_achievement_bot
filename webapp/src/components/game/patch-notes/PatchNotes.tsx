@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import type { GamePatch } from "../../../api";
 import { dayKey, dayLabel, t, type Locale } from "../../../i18n";
-import { Icon } from "../../shared/lib";
-import { RichLines, withoutLinks } from "../rich-text/RichText";
+import { NewsPage } from "../news-page/NewsPage";
+import { withoutLinks } from "../rich-text/RichText";
 
 const FRESH_DAYS = 14;
 /** The post as paragraphs, list lines kept together: Steam posts put a blank
  * line between nearly every line, which is far too airy to read. */
-function paragraphsOf(text: string): string[] {
+export function paragraphsOf(text: string): string[] {
   const out: string[] = [];
   for (const paragraph of text.split(/\n{2,}/)) {
     const isItem = paragraph.startsWith("- ");
@@ -40,7 +40,7 @@ function localDay(date: string): string {
 
 /** The "Обновления" tab: a game's latest patches from Steam, grouped by day
  * under the same labels the feed uses, one soft card each. A card shows the
- * start of the post and opens in place to all of it. */
+ * start of the post and opens it whole on its own page (NewsPage). */
 /** Patches in runs of one day, newest first (they arrive so). */
 function daysOf(
   patches: GamePatch[],
@@ -60,6 +60,7 @@ export function PatchNotes({
   locale,
   collapseKey,
   onLayout,
+  game,
 }: {
   /** undefined: still being asked. */
   patches: GamePatch[] | undefined;
@@ -68,16 +69,20 @@ export function PatchNotes({
   collapseKey?: number;
   /** Called after the content changed height (loaded, or a card opened). */
   onLayout?: () => void;
+  /** The game these are of: a patch's own page names it, as a post from
+   * «Новости» does (already on its page, it opens nothing). */
+  game?: { name: string; icon_url: string | null };
 }) {
-  const [openDate, setOpenDate] = useState<string | null>(null);
+  // A patch opens whole on a page of its own, as a post in «Новости» does.
+  const [open, setOpen] = useState<GamePatch | null>(null);
 
   useEffect(() => {
-    setOpenDate(null);
+    setOpen(null);
   }, [collapseKey]);
 
   useEffect(() => {
     onLayout?.();
-  }, [patches, openDate, onLayout]);
+  }, [patches, onLayout]);
 
   if (patches === undefined) {
     return (
@@ -111,52 +116,50 @@ export function PatchNotes({
           </p>
           {day.patches.map((patch) => {
             const key = `${patch.date}|${patch.title}`;
-            const open = openDate === key;
             return (
               <div
                 key={key}
                 role="button"
                 tabIndex={0}
-                className={open ? "patch-card is-open" : "patch-card"}
-                aria-expanded={open}
-                onClick={() => setOpenDate(open ? null : key)}
+                className="patch-card"
+                onClick={() => setOpen(patch)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ")
-                    setOpenDate(open ? null : key);
+                  if (event.key === "Enter" || event.key === " ") setOpen(patch);
                 }}
               >
                 <span className="patch-card-head">
-                  <span className="patch-card-name">
-                    {patch.title}
-                    {isFresh(patch.date) && (
-                      <span className="patch-card-new">
-                        {t(locale, "patchesNew")}
-                      </span>
-                    )}
-                  </span>
-                  <span className="patch-card-chevron">
-                    <Icon name="forward" size={16} />
-                  </span>
+                  <span className="patch-card-name">{patch.title}</span>
+                  {/* At the top right, not after the title: there it hung on a
+                      line of its own whenever the title wrapped. */}
+                  {isFresh(patch.date) && (
+                    <span className="patch-card-new">{t(locale, "patchesNew")}</span>
+                  )}
                 </span>
-                {patch.text &&
-                  (open ? (
-                    <span className="patch-card-body">
-                      {paragraphsOf(patch.text).map((paragraph, i) => (
-                        <span key={i} className="patch-card-p">
-                          <RichLines text={paragraph} className="rich-line" />
-                        </span>
-                      ))}
-                    </span>
-                  ) : (
-                    <span className="patch-card-body is-preview">
-                      {previewOf(patch.text)}
-                    </span>
-                  ))}
+                {patch.text && (
+                  <span className="patch-card-body is-preview">
+                    {previewOf(patch.text)}
+                  </span>
+                )}
               </div>
             );
           })}
         </section>
       ))}
+      {open && (
+        <NewsPage
+          post={{
+            title: open.title,
+            date: open.date,
+            text: open.text,
+            image: open.image ?? null,
+            url: open.url ?? "",
+            kind: "patch",
+          }}
+          locale={locale}
+          game={game}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </div>
   );
 }

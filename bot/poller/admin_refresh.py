@@ -73,7 +73,7 @@ class AdminPanelRefresh:
             self._steam_fetcher,
             self._psn_auth,
             self._steam_auth,
-            locale=await self._repo.user_locale(row.admin_id),
+            locale=await self._repo.user_locale(await self._repo.person_id(row.admin_id)),
         )
         try:
             await self._bot.edit_message_text(

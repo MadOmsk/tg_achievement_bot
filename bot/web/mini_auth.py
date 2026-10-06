@@ -32,12 +32,16 @@ class InitDataError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class MiniAppUser:
-    tg_id: int
+    # None for a person who signed in another way (#162): their Telegram-only
+    # corners (chats, publishing, the Xbox login's DM) are simply empty.
+    tg_id: int | None
     username: str | None
     first_name: str | None
     last_name: str | None
     language_code: str | None
     is_premium: bool
+    # The person's own id (#156), filled in once the request is authenticated.
+    person_id: int | None = None
 
 
 def validate_init_data(

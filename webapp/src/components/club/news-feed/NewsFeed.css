@@ -1,0 +1,26 @@
+/* A news post is an achievement post (FeedPost.css): the same head, picture
+ * and frosted text. Only what differs is here. */
+
+/* Edge to edge, as the achievements' Swiper track is. */
+.post .news-track {
+  margin: 0 -18px;
+}
+
+/* The game's face where a post has its author's. */
+.post-avatar .cover-ph.news-game-face {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+}
+
+.post-avatar .cover-ph.news-game-face > img {
+  border-radius: 50%;
+}
+
+/* A post's text, cut after three lines: the rest is on Steam. */
+.news-track .post-copy p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}

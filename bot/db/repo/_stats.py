@@ -97,20 +97,20 @@ class _StatsRepo:
                 )
         await self._conn.commit()
 
-    async def update_gamerscore(self, tg_id: int, gamerscore: int) -> None:
+    async def update_gamerscore(self, person_id: int, gamerscore: int) -> None:
         """On the account, not the person (#52) — a gamerscore is a fact
         about an Xbox account and travels with it."""
         await self._conn.execute(
             "UPDATE accounts SET gamerscore = ?, updated_at = ? "
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
-            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)",
-            (gamerscore, utcnow_iso(), tg_id),
+            "  WHERE person_id = ? AND platform = 'xbox' AND is_active = 1)",
+            (gamerscore, utcnow_iso(), person_id),
         )
         await self._conn.commit()
 
     async def update_xbox_names(
-        self, tg_id: int, *, gamertag: str | None, gamertag_modern: str | None
+        self, person_id: int, *, gamertag: str | None, gamertag_modern: str | None
     ) -> bool:
         """Refresh the Xbox naming chain from the profile response the
         poller already made for gamerscore (#51). Writes only when something
@@ -127,14 +127,14 @@ class _StatsRepo:
             "                    updated_at = ? "
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
-            "  WHERE tg_id = ? AND platform = 'xbox' AND is_active = 1)"
+            "  WHERE person_id = ? AND platform = 'xbox' AND is_active = 1)"
             "  AND ((? IS NOT NULL AND secondary_name IS NOT ?)"
             "    OR (? IS NOT NULL AND display_name IS NOT ?))",
             (
                 gamertag,
                 gamertag_modern,
                 utcnow_iso(),
-                tg_id,
+                person_id,
                 gamertag,
                 gamertag,
                 gamertag_modern,
@@ -183,7 +183,7 @@ class _StatsRepo:
         return await self._counts("xuid = ?", [xuid], since)
 
     async def achievement_counts_for_person(
-        self, tg_id: int, since: datetime | None, until: datetime | None = None
+        self, person_id: int, since: datetime | None, until: datetime | None = None
     ) -> tuple[int, int]:
         """Same as `achievement_counts`, but summed across every platform a
         person has connected (SPEC 9, M-Steam-2e) — `/stats`/`/summary`'s
@@ -195,10 +195,10 @@ class _StatsRepo:
         Steam row's gamerscore is always 0 (services/steam/achievements.py),
         so it never contributes to the sum, by construction, not by a check
         here."""
-        return await self._counts(OWNED_BY_PERSON_EXISTS, [tg_id], since, until)
+        return await self._counts(OWNED_BY_PERSON_EXISTS, [person_id], since, until)
 
     async def achievement_platform_breakdown(
-        self, tg_id: int, since: datetime | None, until: datetime | None = None
+        self, person_id: int, since: datetime | None, until: datetime | None = None
     ) -> tuple[int, int, int]:
         """The (xbox, steam, psn) counts behind `achievement_counts_for_person`'s
         single combined total (2026-09-05 follow-up, reversal of "one number
@@ -220,7 +220,7 @@ class _StatsRepo:
             "       SUM(CASE WHEN platform = 'psn' THEN 1 ELSE 0 END) "
             "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS
         )
-        params: list[object] = [tg_id]
+        params: list[object] = [person_id]
         if since is not None:
             # The window rule, written once in _sql.py (#69) — a dated row by
             # its date, an undated live one by when the bot saw it, an undated
@@ -236,7 +236,7 @@ class _StatsRepo:
 
     async def achievement_value_breakdown(
         self,
-        tg_id: int,
+        person_id: int,
         since: datetime | None,
         rare_threshold: float,
         until: datetime | None = None,
@@ -265,7 +265,7 @@ class _StatsRepo:
             f"       SUM(CASE WHEN {table}trophy_type = 'bronze' THEN 1 ELSE 0 END) "
             "FROM seen_achievements " + rarity_cache_join(table) + "WHERE " + OWNED_BY_PERSON_EXISTS
         )
-        params: list[object] = [rare_threshold, tg_id]
+        params: list[object] = [rare_threshold, person_id]
         if since is not None:
             query += f" AND {earned_since(table)}"
             params.append(_iso(since))
@@ -283,7 +283,7 @@ class _StatsRepo:
             int(row[4] or 0),
         )
 
-    async def psn_trophy_tier_counts(self, tg_id: int) -> tuple[int, int, int, int]:
+    async def psn_trophy_tier_counts(self, person_id: int) -> tuple[int, int, int, int]:
         """This person's PSN trophies by tier, over their whole history —
         `(bronze, silver, gold, platinum)`, the order both callers unpack.
 
@@ -300,14 +300,14 @@ class _StatsRepo:
             "       SUM(CASE WHEN trophy_type = 'gold' THEN 1 ELSE 0 END),"
             "       SUM(CASE WHEN trophy_type = 'platinum' THEN 1 ELSE 0 END) "
             "FROM seen_achievements WHERE " + OWNED_BY_PERSON_EXISTS,
-            (tg_id,),
+            (person_id,),
         )
         row = await cursor.fetchone()
         if row is None:
             return 0, 0, 0, 0
         return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0), int(row[3] or 0)
 
-    async def account_facts(self, tg_id: int, account_platform: str) -> dict[str, object]:
+    async def account_facts(self, person_id: int, account_platform: str) -> dict[str, object]:
         """What the person card's account table shows besides the counts it
         already has (#157): how many games, how many rare by the one rarity
         threshold, and when the newest dated unlock came — for the account of
@@ -320,8 +320,8 @@ class _StatsRepo:
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + rarity_cache_join()
-            + "WHERE al.tg_id = ? AND s.account_platform = ?",
-            (tg_id, account_platform),
+            + "WHERE alu.id = ? AND s.account_platform = ?",
+            (person_id, account_platform),
         )
         row = await cursor.fetchone()
         return {
@@ -330,7 +330,7 @@ class _StatsRepo:
             "last_at": row["last_at"] if row else None,
         }
 
-    async def platform_achievement_count(self, tg_id: int, platform: str) -> int:
+    async def platform_achievement_count(self, person_id: int, platform: str) -> int:
         """Lifetime count for one platform (SPEC 9, M-Steam-2e's /stats line
         next to each connected platform) — deliberately not offered for
         Xbox (`achievement_counts` never exposes a since=None total either,
@@ -340,12 +340,12 @@ class _StatsRepo:
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM seen_achievements "
             "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = ?",
-            (tg_id, platform),
+            (person_id, platform),
         )
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
-    async def xbox_achievement_count(self, tg_id: int) -> int:
+    async def xbox_achievement_count(self, person_id: int) -> int:
         """A lifetime Xbox count, added to /stats' XBOX line (2026-09-08,
         user request, confirmed against the previous "never shown, could
         quietly undercount" call — see CLAUDE.md's Statistics rules for the
@@ -359,7 +359,7 @@ class _StatsRepo:
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM seen_achievements "
             "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform IN ('xbox_modern', 'xbox_360')",
-            (tg_id,),
+            (person_id,),
         )
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
@@ -416,14 +416,14 @@ class _StatsRepo:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
-    async def psn_platinum_count(self, tg_id: int) -> int:
+    async def psn_platinum_count(self, person_id: int) -> int:
         """PSN's own equivalent of "completed" (#19) — Sony only awards a
         platinum once every other trophy in that game is earned, so this
         already *is* a 100%-completed-games count, no extra tracking."""
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM seen_achievements "
             "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = 'psn' AND trophy_type = 'platinum'",
-            (tg_id,),
+            (person_id,),
         )
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
@@ -450,7 +450,7 @@ class _StatsRepo:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
-    async def steam_completed_games_count(self, tg_id: int) -> int:
+    async def steam_completed_games_count(self, person_id: int) -> int:
         """Steam's own equivalent (#19) — harder than Xbox/PSN: there's no
         per-user, per-game "total achievements" cached directly. Joins a
         per-app achieved count (`seen_achievements`) against
@@ -461,7 +461,7 @@ class _StatsRepo:
         cursor = await self._conn.execute(
             "SELECT title_id, COUNT(*) FROM seen_achievements "
             "WHERE " + OWNED_BY_PERSON_EXISTS + "AND platform = 'steam' GROUP BY title_id",
-            (tg_id,),
+            (person_id,),
         )
         achieved_by_app = {row[0]: row[1] for row in await cursor.fetchall()}
         if not achieved_by_app:
@@ -490,21 +490,21 @@ class _StatsRepo:
         cursor = await self._conn.execute(query + " GROUP BY xuid", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
 
-    async def achievement_counts_by_tg_id(
+    async def achievement_counts_by_person(
         self, since: datetime | None
     ) -> dict[int, tuple[int, int]]:
         """Same as `achievement_counts_by_xuid`, but summed across every
         platform a person has connected (SPEC 9, M-Steam-2e) — the admin
         users list's own combined counters (2026-09-05 follow-up): the list
         used to show `achievement_counts_by_xuid`'s Xbox-only numbers even
-        for someone with Steam achievements too."""
+        for someone with Steam achievements too. Keyed by person id (#156)."""
         query = (
-            "SELECT al.tg_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
+            "SELECT al.person_id, COUNT(*), COALESCE(SUM(s.gamerscore), 0) "
             "FROM seen_achievements s " + OWNED_BY_PERSON
         )
         params: list[object] = []
         if since is not None:
             query += f"WHERE {earned_since()}"
             params.append(_iso(since))
-        cursor = await self._conn.execute(query + " GROUP BY al.tg_id", params)
+        cursor = await self._conn.execute(query + " GROUP BY al.person_id", params)
         return {row[0]: (int(row[1]), int(row[2])) for row in await cursor.fetchall()}

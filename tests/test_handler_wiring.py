@@ -35,6 +35,10 @@ INJECTABLE = {
     "psn_fetcher",
     "steam_auth",
     "anthropic_auth",
+    # PersonMiddleware (handlers/chat.py, #156)
+    "person_id",
+    # merging two people, shared with the Mini App (#162)
+    "merge",
     # aiogram's own
     "bot",
     "bots",

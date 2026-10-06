@@ -52,7 +52,7 @@ export function ConnectForm({
           <p>{label}</p>
         </div>
 
-        <label className="nick-field connect-field">
+        <label className={note ? "field is-error" : "field"}>
           <input
             value={value}
             placeholder={steam ? "steamcommunity.com/id/…" : "Online ID"}
@@ -65,14 +65,14 @@ export function ConnectForm({
             aria-label={label}
           />
         </label>
-        {note && <p className="connect-note is-error">{note}</p>}
+        {note && <p className="field-note is-error">{note}</p>}
 
         <ul className="connect-tips">
           <li>{t(locale, steam ? "connectSteamTip" : "connectPsnTip")}</li>
           <li>{t(locale, "connectHistoryTip")}</li>
         </ul>
 
-        <button type="submit" className="btn connect-save" disabled={!value.trim() || busy}>
+        <button type="submit" className="btn is-wide" disabled={!value.trim() || busy}>
           {busy ? <span className="connect-spin" aria-hidden /> : t(locale, "submit")}
         </button>
       </form>

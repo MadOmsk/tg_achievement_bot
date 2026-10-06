@@ -17,6 +17,7 @@ from datetime import timedelta
 
 from bot.config import Settings
 from bot.db.repo import AchievementRow, Repo
+from bot.db.repo._sql import PERSON_BY_TG
 from bot.poller.catch_up import CatchUpPoller
 from bot.poller.fetcher import catch_up_since
 from bot.util import utcnow
@@ -43,8 +44,8 @@ def _row(achievement_id: str, unlocked_at: str | None) -> AchievementRow:
 
 async def _connected(repo: Repo, cipher) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.save_refresh_token(TG_ID, cipher.encrypt("refresh"))
-    await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(await repo.person_id(TG_ID), cipher.encrypt("refresh"))
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Mad Omsk", None)
 
 
 async def test_the_window_starts_at_the_newest_stored_unlock(repo: Repo, cipher) -> None:
@@ -137,8 +138,8 @@ async def test_the_hourly_sweep_waits_out_its_interval(repo: Repo, cipher) -> No
 async def test_the_hourly_sweep_takes_one_account_per_tick(repo: Repo, cipher) -> None:
     await _connected(repo, cipher)
     await repo.ensure_user(43, "second")
-    await repo.save_refresh_token(43, cipher.encrypt("refresh"))
-    await repo.link_xbox_account(43, "xuid-second", "Second", None)
+    await repo.save_refresh_token(await repo.person_id(43), cipher.encrypt("refresh"))
+    await repo.link_xbox_account(await repo.person_id(43), "xuid-second", "Second", None)
 
     fetcher = _FakeFetcher()
     poller = CatchUpPoller(_settings(catchup_interval_minutes=0), repo, fetcher)  # type: ignore[arg-type]
@@ -187,7 +188,8 @@ async def test_dormant_xbox_account_uses_idle_interval(repo: Repo, cipher) -> No
         "UPDATE users SET last_online_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
     )
     await repo._conn.execute(
-        "UPDATE account_links SET linked_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+        "UPDATE account_links SET linked_at = ? WHERE person_id = " + PERSON_BY_TG,
+        (twenty_days_ago, TG_ID),
     )
     await repo._conn.commit()
 

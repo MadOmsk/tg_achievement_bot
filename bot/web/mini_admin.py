@@ -131,14 +131,15 @@ async def build_admin_defaults(repo: Repo) -> dict[str, Any]:
 
 async def build_admin_users(repo: Repo) -> dict[str, Any]:
     users = await repo.admin_users()
-    today = await repo.achievement_counts_by_tg_id(today_cutoff_utc())
-    month = await repo.achievement_counts_by_tg_id(month_cutoff_utc(180))
+    today = await repo.achievement_counts_by_person(today_cutoff_utc())
+    month = await repo.achievement_counts_by_person(month_cutoff_utc(180))
     chats = await repo.admin_chats()
     by_chat = await repo.admin_user_chat_ids()
     rows = []
     for user in users:
         rows.append(
             {
+                "person_id": user.person_id,
                 "tg_id": user.tg_id,
                 "name": person_name(
                     tg_id=user.tg_id,
@@ -155,8 +156,8 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
                 "last_name": user.last_name,
                 "is_excluded": user.is_excluded,
                 "last_online_at": user.last_online_at,
-                "today": today.get(user.tg_id, (0, 0))[0],
-                "month": month.get(user.tg_id, (0, 0))[0],
+                "today": today.get(user.person_id, (0, 0))[0],
+                "month": month.get(user.person_id, (0, 0))[0],
                 "xbox": bool(user.xuid),
                 "steam": bool(user.steam_id),
                 "psn": bool(user.psn_account_id),
@@ -169,24 +170,26 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
     }
 
 
-async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
-    user = await repo.get_user(tg_id)
-    steam = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+async def build_admin_user(repo: Repo, person: int) -> dict[str, Any] | None:
+    user = await repo.get_user(person)
+    if user is None:
+        return None
+    steam = await repo.get_platform_link(person, Platform.STEAM)
+    psn_links = await repo.platform_links_for(person, Platform.PSN)
     psn = psn_links[0] if psn_links else None
     if user is None or (not user.xuid and steam is None and psn is None):
         return None
-    chats = await repo.chats_of_user(tg_id)
+    chats = await repo.chats_of_user(person)
     xbox_block = None
     if user.xuid:
         xbox_block = {
             "name": xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
             "xuid": user.xuid,
             "gamerscore": user.gamerscore,
-            "achievement_count": await repo.xbox_achievement_count(tg_id),
+            "achievement_count": await repo.xbox_achievement_count(person),
             "token_status": None,
         }
-        token = await repo.get_token(tg_id)
+        token = await repo.get_token(person)
         if token is not None:
             xbox_block["token_status"] = token.status
     steam_block = None
@@ -194,7 +197,7 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
         steam_block = {
             "name": steam.display_name,
             "external_id": steam.external_id,
-            "achievement_count": await repo.platform_achievement_count(tg_id, Platform.STEAM),
+            "achievement_count": await repo.platform_achievement_count(person, Platform.STEAM),
         }
     psn_block = None
     if psn is not None:
@@ -203,7 +206,7 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
         psn_block = {
             "name": psn.display_name,
             "external_id": psn.external_id,
-            "trophy_count": await repo.platform_achievement_count(tg_id, Platform.PSN),
+            "trophy_count": await repo.platform_achievement_count(person, Platform.PSN),
             "trophy_level": psn.psn_trophy_level,
             "accounts": [
                 {
@@ -219,9 +222,11 @@ async def build_admin_user(repo: Repo, tg_id: int) -> dict[str, Any] | None:
             ],
         }
     return {
-        "tg_id": tg_id,
+        "person_id": person,
+        "tg_id": user.tg_id,
+        "email": user.email,
         "name": person_name(
-            tg_id=tg_id,
+            tg_id=user.tg_id,
             handle=user.handle,
             username=user.username,
             xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
@@ -278,10 +283,10 @@ def setup_admin_routes(app: web.Application) -> None:
     app.router.add_get("/api/mini/admin/defaults", handle_admin_defaults)
     app.router.add_patch("/api/mini/admin/defaults", handle_admin_defaults_patch)
     app.router.add_get("/api/mini/admin/users", handle_admin_users)
-    app.router.add_get("/api/mini/admin/users/{tg_id}", handle_admin_user)
-    app.router.add_patch("/api/mini/admin/users/{tg_id}", handle_admin_user_patch)
-    app.router.add_delete("/api/mini/admin/users/{tg_id}", handle_admin_user_delete)
-    app.router.add_post("/api/mini/admin/users/{tg_id}/delete", handle_admin_user_delete)
+    app.router.add_get("/api/mini/admin/users/{ref}", handle_admin_user)
+    app.router.add_patch("/api/mini/admin/users/{ref}", handle_admin_user_patch)
+    app.router.add_delete("/api/mini/admin/users/{ref}", handle_admin_user_delete)
+    app.router.add_post("/api/mini/admin/users/{ref}/delete", handle_admin_user_delete)
     app.router.add_get("/api/mini/admin/chats", handle_admin_chats)
     app.router.add_patch("/api/mini/admin/chats/{chat_id}", handle_admin_chat_patch)
     app.router.add_post("/api/mini/admin/chats/{chat_id}/actions", handle_admin_chat_action)
@@ -361,7 +366,7 @@ async def handle_admin_key_delete(request: web.Request) -> web.Response:
 async def handle_admin_limits(request: web.Request) -> web.Response:
     admin = await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
-    locale = await repo.user_locale(admin.tg_id)
+    locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_limits(repo, locale=locale))
 
 
@@ -380,7 +385,7 @@ async def handle_admin_limits_patch(request: web.Request) -> web.Response:
     if not (spec.min <= value <= spec.max):
         raise web.HTTPBadRequest(text="out of range")
     await repo.set_app_setting(key, str(value), admin.tg_id)
-    locale = await repo.user_locale(admin.tg_id)
+    locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_limits(repo, locale=locale))
 
 
@@ -425,10 +430,24 @@ async def handle_admin_users(request: web.Request) -> web.Response:
     return web.json_response(await build_admin_users(repo))
 
 
+async def _person_of(request: web.Request) -> int:
+    """The person a user route is about: `p<person id>` (#156), or the bare
+    Telegram id older screens sent."""
+    repo: Repo = request.app["mini_repo"]
+    raw = request.match_info["ref"]
+    try:
+        person = int(raw[1:]) if raw.startswith("p") else await repo.person_id(int(raw))
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad person") from exc
+    if person is None:
+        raise web.HTTPNotFound()
+    return person
+
+
 async def handle_admin_user(request: web.Request) -> web.Response:
     await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
-    payload = await build_admin_user(repo, int(request.match_info["tg_id"]))
+    payload = await build_admin_user(repo, await _person_of(request))
     if payload is None:
         raise web.HTTPNotFound()
     return web.json_response(payload)
@@ -437,16 +456,16 @@ async def handle_admin_user(request: web.Request) -> web.Response:
 async def handle_admin_user_patch(request: web.Request) -> web.Response:
     admin = await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
-    tg_id = int(request.match_info["tg_id"])
+    person = await _person_of(request)
     body = await request.json()
     if "excluded" in body:
-        await repo.set_excluded(tg_id, bool(body["excluded"]), admin.tg_id)
+        await repo.set_excluded(person, bool(body["excluded"]), admin.tg_id)
     action = body.get("action")
     platform = str(body.get("platform") or "")
     if action in ("sync", "reset") and platform in ("xbox", "steam", "psn"):
         account_id = str(body.get("account_id") or "").strip() or None
-        await _admin_platform_action(request, tg_id, platform, action, account_id)
-    payload = await build_admin_user(repo, tg_id)
+        await _admin_platform_action(request, person, platform, action, account_id)
+    payload = await build_admin_user(repo, person)
     if payload is None:
         raise web.HTTPNotFound()
     return web.json_response(payload)
@@ -455,8 +474,7 @@ async def handle_admin_user_patch(request: web.Request) -> web.Response:
 async def handle_admin_user_delete(request: web.Request) -> web.Response:
     await _require_admin(request)
     repo: Repo = request.app["mini_repo"]
-    tg_id = int(request.match_info["tg_id"])
-    deleted = await repo.delete_user(tg_id, is_admin=True)
+    deleted = await repo.delete_person(await _person_of(request), is_admin=True)
     if not deleted:
         raise web.HTTPNotFound()
     return web.json_response({"ok": True})
@@ -553,47 +571,47 @@ async def handle_admin_chat_action(request: web.Request) -> web.Response:
 
 
 async def _admin_platform_action(
-    request: web.Request, tg_id: int, platform: str, action: str, account_id: str | None = None
+    request: web.Request, person: int, platform: str, action: str, account_id: str | None = None
 ) -> None:
     repo: Repo = request.app["mini_repo"]
     xbox = request.app.get("mini_xbox_fetcher")
     steam_fetcher = request.app.get("mini_steam_fetcher")
     psn_fetcher = request.app.get("mini_psn_fetcher")
-    locale = await repo.user_locale(tg_id)
+    locale = await repo.user_locale(person)
     if platform == "xbox":
-        user = await repo.get_user(tg_id)
+        user = await repo.get_user(person)
         if user is None or not user.xuid or xbox is None:
             raise web.HTTPBadRequest(text="xbox not linked")
         if action == "reset":
-            await repo.reset_xbox_data(tg_id, user.xuid)
-            await xbox.backfill(tg_id, user.xuid)
+            await repo.reset_xbox_data(person, user.xuid)
+            await xbox.backfill(person, user.xuid)
         else:
-            await xbox.refresh_user(tg_id, user.xuid, user.gamertag or f"id{tg_id}", locale)
+            await xbox.refresh_user(person, user.xuid, user.gamertag or f"id{person}", locale)
         return
     if platform == "steam":
-        link = await repo.get_platform_link(tg_id, Platform.STEAM)
+        link = await repo.get_platform_link(person, Platform.STEAM)
         if link is None or steam_fetcher is None:
             raise web.HTTPBadRequest(text="steam not linked")
         if action == "reset":
             await repo.reset_steam_data(link.external_id)
-            await steam_fetcher.backfill(tg_id, link.external_id)
+            await steam_fetcher.backfill(person, link.external_id)
         else:
             await steam_fetcher.refresh_user(
-                tg_id, link.external_id, link.display_name or link.external_id, locale
+                person, link.external_id, link.display_name or link.external_id, locale
             )
         return
-    links = await repo.platform_links_for(tg_id, Platform.PSN)
+    links = await repo.platform_links_for(person, Platform.PSN)
     if account_id is not None:
         links = [item for item in links if item.external_id == account_id]
     link = links[0] if links else None
     if link is None or psn_fetcher is None:
         raise web.HTTPBadRequest(text="psn not linked")
     if action == "reset":
-        await repo.reset_psn_data(tg_id, link.external_id)
-        await psn_fetcher.backfill(tg_id, link.external_id)
+        await repo.reset_psn_data(person, link.external_id)
+        await psn_fetcher.backfill(person, link.external_id)
     else:
         await psn_fetcher.refresh_user(
-            tg_id, link.external_id, link.display_name or link.external_id, locale
+            person, link.external_id, link.display_name or link.external_id, locale
         )
 
 

@@ -48,6 +48,11 @@ class User:
     # mini-app (2026-09-13) — see users.photo_file_id in schema.sql. Only
     # usable with the bot token, so it is not a secret on its own.
     photo_file_id: str | None = None
+    # The person's own id (`users.id`, #156) — what every table about a person
+    # points at. Defaulted for the call sites that build a User by hand.
+    id: int | None = None
+    # The address this person signs in with, if any (#162).
+    email: str | None = None
 
 
 @dataclass(slots=True)
@@ -76,8 +81,13 @@ class UserSettings:
     locale: str = "ru"
     # Which achievements this person publishes, in every chat (#126).
     rarity_mode: str = RarityMode.ALL
-    # A DM when someone follows this person (#157).
+    # Whether to be told when someone follows this person (#157).
     notify_followers: bool = True
+    # Where notifications go (#164): pushed to devices, and as a Telegram DM.
+    notify_push: bool = True
+    notify_telegram: bool = True
+    # Whose new posts this person is told about: friends / following / none.
+    notify_posts: str = "friends"
 
 
 @dataclass(slots=True)
@@ -97,6 +107,9 @@ class PollTarget:
     # The device presence last reported — what the exit poll of the game just
     # left was played on.
     device: str | None = None
+    # The person's own id (`users.id`, #156) — what the tables about a person
+    # point at; `tg_id` above is only how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -121,6 +134,9 @@ class SteamPollTarget:
     persona_name: str | None = None
     last_online_at: str | None = None
     linked_at: str | None = None
+    # The person's own id (`users.id`, #156) — what the tables about a person
+    # point at; `tg_id` above is only how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -142,6 +158,9 @@ class PsnPollTarget:
     presence_state: str | None = None
     last_online_at: str | None = None
     linked_at: str | None = None
+    # The person's own id (`users.id`, #156) — what the tables about a person
+    # point at; `tg_id` above is only how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -163,6 +182,9 @@ class PsnPresenceTarget:
     # without a second query (#51) — the value it replaces is this
     # platform's own "previous online ID" step.
     online_id: str | None = None
+    # The person's own id (`users.id`, #156) — what the tables about a person
+    # point at; `tg_id` above is only how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -282,7 +304,7 @@ class FloodState:
     ever read the `throttled = 1` rows (poller/flood_flush.py's own sweep),
     but cost nothing to carry along either."""
 
-    tg_id: int
+    person_id: int
     chat_id: int
     window_started_at: datetime
     count_in_window: int
@@ -352,6 +374,8 @@ class AdminUserRow:
     gamertag_modern: str | None = None
     steam_achievements_visible: bool | None = None
     psn_achievements_visible: bool | None = None
+    # The person's own id (#156): the admin's buttons name them by it.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -427,6 +451,8 @@ class ChatPresenceRow:
     handle: str | None = None
     last_name: str | None = None
     device: str | None = None
+    # The person's own id (#156): what the Mini App names people by.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -480,6 +506,8 @@ class ChatMemberStat:
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
+    # The person's own id (#156): what the Mini App names people by.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -497,6 +525,8 @@ class ChatSubscriber:
     last_name: str | None = None
     steam_name: str | None = None
     psn_name: str | None = None
+    # The person's own id (#156): what the Mini App names people by.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -536,6 +566,8 @@ class RecentAchievement:
     device: str | None = None
     # Available platforms for the game (JSON / comma list)
     game_platforms: str | None = None
+    # The person's own id (#156): what the Mini App names people by.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -602,7 +634,7 @@ class TitleCoverRow:
     #: Somebody who has earned something here, for the platforms that answer
     #: only through a person's own token. None when nobody holds this game
     #: any more.
-    owner_tg_id: int | None = None
+    owner: int | None = None
 
 
 @dataclass(slots=True)
@@ -660,6 +692,8 @@ class PlatformLink:
     achievements_visible_checked_at: str | None = None
     # Whether this account's achievements are announced (#20).
     publishes: bool = True
+    # Who holds it (#156); `tg_id` above is how Telegram knows them.
+    person_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -720,6 +754,8 @@ def _as_user(row: aiosqlite.Row) -> User:
         last_name=row["last_name"],
         gamertag_modern=row["gamertag_modern"],
         photo_file_id=row["photo_file_id"],
+        id=row["id"],
+        email=row["email"] if "email" in row.keys() else None,
     )
 
 
@@ -746,6 +782,9 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
         locale=row["locale"],
         rarity_mode=row["rarity_mode"] if "rarity_mode" in keys else RarityMode.ALL,
         notify_followers=bool(row["notify_followers"]) if "notify_followers" in keys else True,
+        notify_push=bool(row["notify_push"]) if "notify_push" in keys else True,
+        notify_telegram=bool(row["notify_telegram"]) if "notify_telegram" in keys else True,
+        notify_posts=row["notify_posts"] if "notify_posts" in keys else "friends",
     )
 
 

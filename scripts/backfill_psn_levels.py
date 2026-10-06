@@ -63,7 +63,7 @@ async def main() -> None:
         except PsnApiError as exc:
             log.warning("%s: skipped, %s", name, exc)
             continue
-        await repo.set_psn_trophy_level(link.tg_id, level)
+        await repo.set_psn_trophy_level(await repo.person_id(link.tg_id), level)
         log.info("%s: level %s", name, level)
         updated += 1
 

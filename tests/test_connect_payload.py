@@ -11,7 +11,7 @@ from aiogram_i18n import I18nContext
 from bot.config import Settings
 from bot.db.repo import Repo
 from bot.handlers import awaiting
-from bot.handlers.connect import _parse_connect_payload, _person_id, start_with_payload
+from bot.handlers.connect import _parse_connect_payload, _sender_tg_id, start_with_payload
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
@@ -35,16 +35,16 @@ def test_garbage_after_connect_does_not_crash() -> None:
     assert _parse_connect_payload("connectnonsense") == (False, None)
 
 
-def test_person_id_returns_from_user_id() -> None:
+def test_sender_tg_id_returns_from_user_id() -> None:
     msg = SimpleNamespace(
         from_user=SimpleNamespace(id=123, username="user"), chat=SimpleNamespace(id=-100555)
     )
-    assert _person_id(msg) == 123  # type: ignore[arg-type]
+    assert _sender_tg_id(msg) == 123  # type: ignore[arg-type]
 
 
-def test_person_id_returns_none_when_no_from_user() -> None:
+def test_sender_tg_id_returns_none_when_no_from_user() -> None:
     msg = SimpleNamespace(from_user=None, chat=SimpleNamespace(id=-100555))
-    assert _person_id(msg) is None  # type: ignore[arg-type]
+    assert _sender_tg_id(msg) is None  # type: ignore[arg-type]
 
 
 class FakeBot:
@@ -78,6 +78,7 @@ async def test_start_with_payload_connectsteam_arms_waiting_and_prompts(
         steam_auth=steam_auth,
         bot=bot,  # type: ignore[arg-type]
         i18n=i18n,
+        merge=None,  # type: ignore[arg-type]
     )
 
     try:
@@ -114,6 +115,7 @@ async def test_start_with_payload_connectpsn_arms_waiting_and_prompts(
         steam_auth=steam_auth,
         bot=bot,  # type: ignore[arg-type]
         i18n=i18n,
+        merge=None,  # type: ignore[arg-type]
     )
 
     try:

@@ -12,9 +12,9 @@ XUID = "xuid-ultra"
 
 async def test_chat_ultra_rares_takes_all_under_half_percent_for_the_month(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "hunter")
-    await repo.link_xbox_account(TG_ID, XUID, "Hunter", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Hunter", 0)
     await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
     now = utcnow()
     await repo.insert_new_achievements(
         XUID,

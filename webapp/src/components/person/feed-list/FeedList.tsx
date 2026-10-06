@@ -20,7 +20,7 @@ export function FeedList({
   revealed: Set<string>;
   showSecrets?: boolean;
   onReveal: (key: string) => void;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
 }) {
   const [item, setItem] = useState<FeedItem | null>(null);
   const jump = useDayJump(items, locale);

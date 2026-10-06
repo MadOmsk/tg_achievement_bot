@@ -83,10 +83,22 @@ def _person(row) -> PersonRow:
 
 
 class _FollowsRepo:
-    async def person_id(self, tg_id: int) -> int | None:
+    async def person_id(self, tg_id: int | None) -> int | None:
+        """The person a Telegram id belongs to (#156), None if nobody yet."""
+        if tg_id is None:
+            return None
         cursor = await self._conn.execute("SELECT id FROM users WHERE tg_id = ?", (tg_id,))
         row = await cursor.fetchone()
         return row["id"] if row else None
+
+    async def tg_id_of(self, person_id: int | None) -> int | None:
+        """The other way round: the Telegram id a person signed in with, if any —
+        for what is Telegram's by nature (a DM, a group, the reset cooldowns)."""
+        if person_id is None:
+            return None
+        cursor = await self._conn.execute("SELECT tg_id FROM users WHERE id = ?", (person_id,))
+        row = await cursor.fetchone()
+        return row["tg_id"] if row else None
 
     async def relation(self, me: int, other: int) -> Relation:
         cursor = await self._conn.execute(
@@ -273,13 +285,13 @@ class _FollowsRepo:
         whom `me` does not follow yet, those sharing the most chats first."""
         cursor = await self._conn.execute(
             "WITH mine AS ("
-            "  SELECT chat_id FROM subscriptions"
-            "  WHERE tg_id = (SELECT tg_id FROM users WHERE id = :me)"
+            "  SELECT chat_id FROM subscriptions WHERE person_id = :me"
             "  UNION"
             "  SELECT chat_id FROM chat_seen"
             "  WHERE tg_id = (SELECT tg_id FROM users WHERE id = :me)"
             "), others AS ("
-            "  SELECT tg_id, chat_id FROM subscriptions"
+            "  SELECT su.tg_id, sb.chat_id FROM subscriptions sb"
+            "  JOIN users su ON su.id = sb.person_id"
             "  UNION SELECT tg_id, chat_id FROM chat_seen"
             "), shared AS ("
             "  SELECT o.tg_id, COUNT(*) AS n FROM others o JOIN mine m ON m.chat_id = o.chat_id"
@@ -324,13 +336,12 @@ class _FollowsRepo:
         return [(_person(row), int(row["mutual"])) for row in await cursor.fetchall()]
 
     async def following_members(self, me: int) -> list[int]:
-        """The Telegram ids behind the "following" scope: oneself, and every person
-        followed whose activity the viewer may see (their privacy setting).
-        People with no Telegram id are not here yet — achievements are still
-        reached through `tg_id`."""
+        """The people behind the "following" scope, by person id: oneself, and
+        every person followed whose activity the viewer may see (their privacy
+        setting) — with or without Telegram (#156)."""
         cursor = await self._conn.execute(
-            "SELECT p.id, p.tg_id, p.activity_visible, " + _RELATION + " FROM users p "
-            "WHERE p.tg_id IS NOT NULL AND p.is_excluded = 0"
+            "SELECT p.id, p.activity_visible, " + _RELATION + " FROM users p "
+            "WHERE p.is_excluded = 0"
             "  AND (p.id = :me OR p.id IN (SELECT followee_id FROM follows"
             "                              WHERE follower_id = :me))",
             {"me": me},
@@ -344,7 +355,7 @@ class _FollowsRepo:
                 blocked_by=bool(row["blocked_by"]),
             )
             if can_view(row["activity_visible"], relation, self_view=row["id"] == me):
-                members.append(row["tg_id"])
+                members.append(row["id"])
         return members
 
     async def activity_visible(self, person: int) -> str:
@@ -374,12 +385,31 @@ class _FollowsRepo:
             return False
         return relation.following or await self._share_chat(viewer, target)
 
+    async def post_notice_recipients(self, author: int) -> list[int]:
+        """Who is told about `author`'s new post: their followers whose own choice
+        (`user_settings.notify_posts`) covers them — everybody they follow, or
+        friends only (the author follows them back). Privacy is the caller's
+        check (`can_view_activity`), as everywhere."""
+        cursor = await self._conn.execute(
+            "SELECT f.follower_id FROM follows f "
+            "LEFT JOIN user_settings s ON s.person_id = f.follower_id "
+            "WHERE f.followee_id = :author "
+            "  AND (COALESCE(s.notify_posts, 'friends') = 'following' "
+            "    OR (COALESCE(s.notify_posts, 'friends') = 'friends' AND EXISTS ("
+            "      SELECT 1 FROM follows b"
+            "      WHERE b.follower_id = :author AND b.followee_id = f.follower_id))) "
+            "ORDER BY f.follower_id",
+            {"author": author},
+        )
+        return [row[0] for row in await cursor.fetchall()]
+
     async def _share_chat(self, a: int, b: int) -> bool:
         """An active chat both people are subscribed to or were seen writing in —
         the membership `/online` and "Мои чаты" use."""
         cursor = await self._conn.execute(
             "WITH member AS ("
-            "  SELECT chat_id, tg_id FROM subscriptions"
+            "  SELECT sb.chat_id, su.tg_id FROM subscriptions sb"
+            "  JOIN users su ON su.id = sb.person_id"
             "  UNION SELECT chat_id, tg_id FROM chat_seen"
             ") "
             "SELECT 1 FROM member ma "

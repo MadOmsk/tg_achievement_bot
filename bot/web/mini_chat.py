@@ -17,6 +17,7 @@ from bot.db.repo import (
     User,
     UserChatRow,
 )
+from bot.db.repo._sql import MEMBERS_CHAT, pick_name
 from bot.i18n import translator
 from bot.services.achievement_icons import format_achievement_icon_url
 from bot.services.naming import person_name, xbox_nickname
@@ -122,10 +123,10 @@ async def _month_choices(
 
 
 async def _person_month(
-    repo: Repo, tg_id: int, month: str | None
+    repo: Repo, person_id: int, month: str | None
 ) -> tuple[str, datetime, datetime, str, int]:
     """Calendar month in this person's timezone (not a chat's)."""
-    settings_row = await repo.get_user_settings(tg_id)
+    settings_row = await repo.get_user_settings(person_id)
     tz = settings_row.tz_offset_min if settings_row else None
     current = _calendar_month_key(tz)
     parsed = parse_month_key(month or current)
@@ -136,8 +137,8 @@ async def _person_month(
     return key, since, until, current, parsed[1]
 
 
-async def _person_month_choices(repo: Repo, tg_id: int, *extra: str) -> list[str]:
-    months = await repo.person_unlock_months(tg_id)
+async def _person_month_choices(repo: Repo, person_id: int, *extra: str) -> list[str]:
+    months = await repo.person_unlock_months(person_id)
     ordered: list[str] = []
     for ym in [*extra, *months]:
         if ym and ym not in ordered:
@@ -209,7 +210,7 @@ async def build_summary_payload(
     )
     if members is None:
         subscribers = await repo.chat_subscribers(chat_id)
-        people = [s.tg_id for s in subscribers]
+        people = [s.person_id for s in subscribers]
     else:
         people = members
     games = await repo.users_games_achievements(
@@ -267,22 +268,22 @@ async def build_person_payload(
     chat_id: int | None = None,
     month: str | None = None,
 ) -> dict[str, Any]:
-    links = await repo.platform_links_of(target.tg_id)
-    counters = await counters_for(repo, target.tg_id)
+    links = await repo.platform_links_of(target.id)
+    counters = await counters_for(repo, target.id)
     week_xbox, week_steam, week_psn = await repo.achievement_platform_breakdown(
-        target.tg_id, week_cutoff_utc()
+        target.id, week_cutoff_utc()
     )
-    key, month_since, month_until, current, _n = await _person_month(repo, target.tg_id, month)
-    months = await _person_month_choices(repo, target.tg_id, current, key)
+    key, month_since, month_until, current, _n = await _person_month(repo, target.id, month)
+    months = await _person_month_choices(repo, target.id, current, key)
     month_count, month_score = await repo.achievement_counts_for_person(
-        target.tg_id, month_since, month_until
+        target.id, month_since, month_until
     )
     month_xbox, month_steam, month_psn = await repo.achievement_platform_breakdown(
-        target.tg_id, month_since, until=month_until
+        target.id, month_since, until=month_until
     )
     platforms: list[dict[str, Any]] = []
     if target.xuid:
-        xbox_count = await repo.xbox_achievement_count(target.tg_id)
+        xbox_count = await repo.xbox_achievement_count(target.id)
         xbox_completed = await repo.xbox_completed_games_count(target.xuid)
         platforms.append(
             {
@@ -294,20 +295,20 @@ async def build_person_payload(
                 "completed_games": xbox_completed,
                 "gamerscore": target.gamerscore or 0,
                 "month_count": month_xbox,
-                **await repo.account_facts(target.tg_id, "xbox"),
+                **await repo.account_facts(target.id, "xbox"),
             }
         )
     steam = next((link for link in links if link.platform == Platform.STEAM), None)
     psn_links = [link for link in links if link.platform == Platform.PSN]
     psn = psn_links[0] if psn_links else None
     if psn_links:
-        bronze, silver, gold, platinum = await repo.psn_trophy_tier_counts(target.tg_id)
+        bronze, silver, gold, platinum = await repo.psn_trophy_tier_counts(target.id)
         platforms.append(
             {
                 "platform": Platform.PSN,
                 # Several accounts (#10): one summed row, every nickname on it.
                 "name": ", ".join(link.display_name or link.external_id for link in psn_links),
-                "trophy_count": await repo.platform_achievement_count(target.tg_id, Platform.PSN),
+                "trophy_count": await repo.platform_achievement_count(target.id, Platform.PSN),
                 "bronze": bronze,
                 "silver": silver,
                 "gold": gold,
@@ -322,7 +323,7 @@ async def build_person_payload(
                 "linked_at": min(
                     (link.linked_at for link in psn_links if link.linked_at), default=None
                 ),
-                **await repo.account_facts(target.tg_id, Platform.PSN),
+                **await repo.account_facts(target.id, Platform.PSN),
             }
         )
     if steam is not None:
@@ -331,12 +332,12 @@ async def build_person_payload(
                 "platform": Platform.STEAM,
                 "name": steam.display_name,
                 "achievement_count": await repo.platform_achievement_count(
-                    target.tg_id, Platform.STEAM
+                    target.id, Platform.STEAM
                 ),
-                "completed_games": await repo.steam_completed_games_count(target.tg_id),
+                "completed_games": await repo.steam_completed_games_count(target.id),
                 "month_count": month_steam,
                 "linked_at": steam.linked_at,
-                **await repo.account_facts(target.tg_id, Platform.STEAM),
+                **await repo.account_facts(target.id, Platform.STEAM),
             }
         )
 
@@ -349,7 +350,7 @@ async def build_person_payload(
     settings = await repo.get_chat_daily_settings(chat_id) if chat_id is not None else None
     rare_threshold = settings.rare_threshold_percent if settings else 10.0
     game_rows = await repo.users_games_achievements(
-        [target.tg_id],
+        [target.id],
         month_since,
         rare_threshold=rare_threshold,
         limit=games_limit,
@@ -368,7 +369,11 @@ async def build_person_payload(
     ]
 
     feed_rows = await repo.person_recent(
-        target.tg_id, FEED_DEFAULT, locale=locale, since=month_since, until=month_until
+        target.id,
+        FEED_DEFAULT,
+        locale=locale,
+        since=month_since,
+        until=month_until,
     )
     descriptions = await _localized_feed_descriptions(repo, feed_rows, locale)
     progress = await _feed_progress(repo, feed_rows)
@@ -388,6 +393,7 @@ async def build_person_payload(
         }
 
     return {
+        "person_id": target.id,
         "tg_id": target.tg_id,
         "name": person_label(
             tg_id=target.tg_id,
@@ -440,6 +446,7 @@ def _feed_item_json(
 ) -> dict[str, Any]:
     prog = progress.get((row.platform, row.xuid, row.title_id, row.trophy_group_id))
     return {
+        "person_id": row.person_id,
         "tg_id": row.tg_id,
         "person": person_label(
             tg_id=row.tg_id,
@@ -545,6 +552,7 @@ def _presence_json(row: ChatPresenceRow, locale: str) -> dict[str, Any]:
     else:
         icon = PLATFORM_ICON_UNKNOWN
     return {
+        "person_id": row.person_id,
         "tg_id": row.tg_id,
         "name": presence_display_name(row),
         "state": row.state,
@@ -558,6 +566,7 @@ def _presence_json(row: ChatPresenceRow, locale: str) -> dict[str, Any]:
 
 def _stat_json(row: ChatMemberStat) -> dict[str, Any]:
     return {
+        "person_id": row.person_id,
         "tg_id": row.tg_id,
         "name": person_label(
             tg_id=row.tg_id,
@@ -574,4 +583,75 @@ def _stat_json(row: ChatMemberStat) -> dict[str, Any]:
         "xbox": row.xbox_count,
         "steam": row.steam_count,
         "psn": row.psn_count,
+    }
+
+
+# Game news (owner, 2026-10-05): what the developers of the games one's circle
+# plays posted on Steam that month. A game counts if somebody earned something
+# in it within this long before the month ended — a patch for last month's game
+# is news too.
+NEWS_PLAYED_DAYS = 60
+NEWS_MAX = 200
+NEWS_EXCERPT = 220
+_MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_BARE_URL = re.compile(r"^https?://\S+$")
+
+
+def _news_excerpt(text: str | None) -> str:
+    """The start of a post as plain words: links keep their label, a line that
+    is only an address (a video, a picture) goes."""
+    if not text:
+        return ""
+    lines = [
+        _MD_LINK.sub(r"\1", line).strip()
+        for line in text.splitlines()
+        if not _BARE_URL.match(line.strip())
+    ]
+    words = " ".join(line.lstrip("- ").strip() for line in lines if line.strip())
+    if len(words) <= NEWS_EXCERPT:
+        return words
+    return words[:NEWS_EXCERPT].rsplit(" ", 1)[0].rstrip(",;:-") + "…"
+
+
+async def build_news_payload(
+    repo: Repo, *, members: list[int], month: str | None, tz_of: int | None, locale: str
+) -> dict[str, Any]:
+    key, _since, until, current, _month_num = await _club_month(
+        repo, MEMBERS_CHAT, month, tz_of=tz_of, scoped=True
+    )
+    year, month_num = (int(part) for part in key.split("-"))
+    first = f"{key}-01"
+    after = f"{year + month_num // 12:04d}-{month_num % 12 + 1:02d}-01"
+    rows = await repo.games_news(
+        members,
+        played_since=(until - timedelta(days=NEWS_PLAYED_DAYS)).isoformat(timespec="seconds"),
+        since=first,
+        until=after,
+        limit=NEWS_MAX,
+    )
+    return {
+        "items": [
+            {
+                "gid": row.gid,
+                "appid": row.steam_appid,
+                "kind": row.kind,
+                "title": row.title,
+                "date": row.published_at,
+                "excerpt": _news_excerpt(row.text_en),
+                # The whole post, pictures and videos as their own lines.
+                "text": row.text_en or "",
+                "image": _https_url(row.image_url),
+                "url": f"https://store.steampowered.com/news/app/{row.steam_appid}/view/{row.gid}",
+                "game": {
+                    "platform": row.platform,
+                    "title_id": row.title_id,
+                    "name": pick_name(locale, row.game_ru, row.game_en, row.game),
+                    "icon_url": _https_url(row.game_icon_url),
+                },
+            }
+            for row in rows
+        ],
+        "month": key,
+        "current_month": current,
+        "months": await _month_choices(repo, MEMBERS_CHAT, current, key, members=members),
     }

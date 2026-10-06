@@ -5,10 +5,6 @@
   letter-spacing: inherit;
 }
 
-.follows-switch .dd-arrow {
-  color: var(--text);
-}
-
 .follows-line {
   display: flex;
   align-items: center;

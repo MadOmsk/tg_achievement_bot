@@ -1,0 +1,164 @@
+/* A page of its own over everything, the game page too (z-index 40): its own
+ * scroll, the app's own background under it. */
+.post-page {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 18px calc(28px + var(--safe-bottom));
+  background-color: var(--bg);
+  background-image: var(--app-bg);
+  isolation: isolate;
+  transform: translateZ(0);
+}
+
+/* The bar starts flush with the layer's top: there is no page padding above it. */
+.post-page > .page-head {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* The game page's own bar: its height, its title's size, its score's. */
+.post-page > .page-head {
+  min-height: calc(72px + var(--safe-top));
+}
+
+.post-page > .page-head h1 {
+  overflow: hidden;
+  font-size: 1.1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-page > .page-head .page-head-aside {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+/* Edge to edge, all of the picture, over a blurred copy of itself. */
+.post-page-pic {
+  position: relative;
+  cursor: zoom-in;
+  overflow: hidden;
+  max-height: 60vh;
+  margin: 0 -18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.post-page-pic .cover-ph.post-page-back {
+  position: absolute;
+  inset: -12%;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  filter: blur(30px) saturate(1.1);
+  opacity: 0.32;
+}
+
+.post-page-pic .cover-ph.post-page-back > img {
+  border-radius: 0;
+}
+
+.post-page-pic .fit-layer {
+  z-index: 1;
+}
+
+.post-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 40rem;
+  margin: 18px auto 0;
+}
+
+.post-page-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.post-page-date {
+  flex: none;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.post-page-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.22;
+  text-wrap: balance;
+}
+
+.post-page-text {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: rgba(226, 232, 244, 0.88);
+  font-size: 0.97rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.post-page-text p {
+  margin: 0;
+}
+
+.post-page-steam {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--mint-2);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* The line under a name: what the achievement asks. */
+.post-page-lead {
+  margin: 0;
+  color: rgba(226, 232, 244, 0.78);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.post-page-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hair);
+}
+
+.post-page-section h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.post-page-source {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}

@@ -11,6 +11,8 @@
   cursor: pointer;
 }
 
+/* Grey everywhere (owner, 2026-10-05): what is picked reads first, the arrow
+ * only says it can be changed. */
 .dd-arrow {
   flex: none;
   color: var(--muted);

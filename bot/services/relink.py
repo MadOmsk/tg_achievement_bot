@@ -74,13 +74,13 @@ async def preview(repo: Repo, tg_id: int, platform: str, external_id: str) -> Li
         current = next(
             (
                 link
-                for link in await repo.platform_links_for(tg_id, platform)
+                for link in await repo.platform_links_for(await repo.person_id(tg_id), platform)
                 if link.external_id == external_id
             ),
             None,
         )
     else:
-        current = await repo.get_platform_link(tg_id, platform)
+        current = await repo.get_platform_link(await repo.person_id(tg_id), platform)
     owner = await repo.account_owner(platform, external_id)
     return LinkPreview(
         current=current,
@@ -103,7 +103,9 @@ async def perform(
     leaving it would keep the bot polling an account on behalf of someone who
     does not hold it.
     """
-    taken_from = await repo.link_platform_account(tg_id, platform, external_id, display_name)
+    taken_from = await repo.link_platform_account(
+        await repo.person_id(tg_id), platform, external_id, display_name
+    )
     if taken_from is not None and platform == AccountPlatform.XBOX:
-        await repo.delete_token(taken_from)
+        await repo.delete_token(await repo.person_id(taken_from))
     return taken_from

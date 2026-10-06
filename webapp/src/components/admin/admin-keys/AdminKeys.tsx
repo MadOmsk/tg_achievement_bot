@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
-import { deleteAdminKey, fetchAdminKeys, putAdminKey, type AdminKeys as AdminKeysType } from "../../../api";
+import {
+  deleteAdminKey,
+  fetchAdminHome,
+  fetchAdminKeys,
+  putAdminKey,
+  type AdminHome,
+  type AdminKeys as AdminKeysType,
+} from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import { BackHead, Group, NavRow, SettingsSkel } from "../../shared/lib";
+import { BackHead, Group, InfoRow, NavRow, SettingsSkel } from "../../shared/lib";
 import { ADMIN_KEY_NAMES, type AdminKeyName } from "../../shared/constants";
+import "./AdminKeys.css";
 
 const LABELS: Record<AdminKeyName, "keySteam" | "keyPsn" | "keyAnthropic"> = {
   steam: "keySteam",
@@ -25,6 +33,12 @@ export function AdminKeys({
   const [keys, setKeys] = useState<AdminKeysType | null>(null);
   const [editing, setEditing] = useState<AdminKeyName | null>(null);
   const [secret, setSecret] = useState("");
+  // How hard the bot leans on each platform, beside the keys it uses.
+  const [usage, setUsage] = useState<AdminHome | null>(null);
+
+  useEffect(() => {
+    void fetchAdminHome(data).then(setUsage).catch(onFail);
+  }, [data, onFail]);
 
   useEffect(() => {
     void fetchAdminKeys(data).then(setKeys).catch(onFail);
@@ -48,32 +62,37 @@ export function AdminKeys({
     return (
       <>
         <BackHead title={t(locale, LABELS[editing])} backLabel={t(locale, "back")} onBack={close} />
-        <Group title={t(locale, "keyNew")} hint={t(locale, "pasteKey")}>
-          <label className="fr-row is-static">
+        <form
+          className="form-stack admin-key-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!secret.trim()) return;
+            void putAdminKey(data, editing, secret.trim())
+              .then((next) => {
+                setKeys(next);
+                close();
+              })
+              .catch(onFail);
+          }}
+        >
+          <label className="field">
             <input
-              className="fr-input"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
+              placeholder={t(locale, "keyNew")}
               autoComplete="off"
+              spellCheck={false}
               autoFocus
               aria-label={t(locale, "keyNew")}
             />
           </label>
-        </Group>
-        <Group>
-          <NavRow
-            label={t(locale, "save")}
-            disabled={!secret.trim()}
-            onClick={() =>
-              void putAdminKey(data, editing, secret.trim())
-                .then((next) => {
-                  setKeys(next);
-                  close();
-                })
-                .catch(onFail)
-            }
-          />
-          {keys[editing] && (
+          <p className="field-note">{t(locale, "pasteKey")}</p>
+          <button type="submit" className="btn is-wide" disabled={!secret.trim()}>
+            {t(locale, "save")}
+          </button>
+        </form>
+        {keys[editing] && (
+          <Group>
             <NavRow
               danger
               label={t(locale, "clearKey")}
@@ -87,8 +106,8 @@ export function AdminKeys({
                   .catch(onFail);
               }}
             />
-          )}
-        </Group>
+          </Group>
+        )}
       </>
     );
   }
@@ -108,6 +127,11 @@ export function AdminKeys({
             }}
           />
         ))}
+      </Group>
+      <Group title={t(locale, "groupApi")}>
+        <InfoRow label={t(locale, "xboxUsage")} value={usage?.xbox_usage ?? "…"} />
+        <InfoRow label={t(locale, "steamUsage")} value={usage?.steam_usage ?? "…"} />
+        <InfoRow label={t(locale, "psnToday")} value={usage?.psn_requests ?? "…"} />
       </Group>
     </>
   );

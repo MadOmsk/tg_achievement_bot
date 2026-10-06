@@ -8,6 +8,7 @@ tma …``).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import logging
 import time
@@ -26,9 +27,13 @@ from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import achievement_icons, avatars, custom_avatars
 from bot.services.connect import ConnectService
+from bot.services.crypto import TokenCipher
+from bot.services.email_login import EmailLogin
 from bot.services.hltb import HltbError, ensure_title_match
 from bot.services.hltb import resolve as hltb_resolve
+from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
+from bot.services.notifier import POST_NOTICE_CHOICES, Notifier
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
@@ -48,13 +53,14 @@ from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
 from bot.services.title_catalog import TitleCatalogService
 from bot.util import parse_iso
-from bot.web import mini_people, mini_session
+from bot.web import mini_invites, mini_logins, mini_notifications, mini_people, mini_session
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
 from bot.web.mini_chat import (
     _https_url,
     build_feed_payload,
+    build_news_payload,
     build_online_payload,
     build_person_payload,
     build_summary_payload,
@@ -88,6 +94,9 @@ def setup_mini_api(
     bot: Any = None,
     title_catalog: TitleCatalogService | None = None,
     steam_extras: SteamExtras | None = None,
+    email_login: EmailLogin | None = None,
+    notifications: Notifier | None = None,
+    merge: PeopleMerge | None = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -111,10 +120,18 @@ def setup_mini_api(
             anthropic_auth=anthropic_auth,
         )
     app["mini_title_catalog"] = title_catalog
+    app["mini_email_login"] = email_login or mini_logins.build_email_login(settings, repo)
+    # The app's own notifications (#164); AdminNotifier above is the operator's.
+    app["mini_notifications"] = notifications or _default_notifier(settings, repo, bot)
+    # Merging two people (#162): main.py's, shared with the bot's /start link_….
+    app["mini_merge"] = merge or PeopleMerge(repo, settings.is_admin)
 
     app.router.add_get("/api/mini/health", handle_health)
     mini_people.register(app, _require_user)
     mini_session.register(app)
+    mini_logins.register(app, _require_user)
+    mini_notifications.register(app, _require_user)
+    mini_invites.register(app, _require_user)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
@@ -140,10 +157,12 @@ def setup_mini_api(
     # Query-string twins: Telegram group ids are negative, and a path
     # segment starting with `-` 404s on some aiohttp/proxy stacks.
     app.router.add_get("/api/mini/club/feed", handle_chat_feed)
+    app.router.add_get("/api/mini/club/news", handle_club_news)
     app.router.add_get("/api/mini/club/online", handle_chat_online)
     app.router.add_get("/api/mini/club/summary", handle_chat_summary)
     app.router.add_get("/api/mini/club/people", handle_chat_person)
     app.router.add_patch("/api/mini/club", handle_patch_chat)
+    app.router.add_get("/api/mini/avatar/p/{person_id}", handle_person_avatar)
     app.router.add_get("/api/mini/avatar/{tg_id}", handle_avatar)
     app.router.add_get("/api/mini/x360-icon/{title_hex}/{image_hex}", handle_x360_icon)
     app.router.add_get(
@@ -159,6 +178,22 @@ def setup_mini_api(
     setup_hltb_routes(app)
 
 
+def _default_notifier(settings: Settings, repo: Repo, bot: Any) -> Notifier:
+    """The notifier main.py would build: the bot's own DM as the Telegram channel."""
+
+    async def send_dm(tg_id: int, text: str) -> None:
+        if bot is not None:
+            await bot.send_message(tg_id, text)
+
+    return Notifier(
+        repo,
+        TokenCipher(settings.fernet_key.get_secret_value()),
+        send_dm=send_dm,
+        app_url=settings.mini_app_url,
+        contact=f"mailto:{settings.smtp_from}" if settings.smtp_from else None,
+    )
+
+
 async def handle_health(_request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
@@ -169,11 +204,17 @@ async def handle_me(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     payload = await build_me_payload(
         repo,
+        person_id=user.person_id,
         tg_id=user.tg_id,
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name,
         is_admin=settings.is_admin(user.tg_id),
+    )
+    # Ask once for an email, the main way in (owner, 2026-10-05) — only where
+    # one can be added at all.
+    payload["email_prompt"] = request.app.get("mini_email_login") is not None and (
+        await repo.email_prompt_due(user.person_id)
     )
     return web.json_response(payload)
 
@@ -181,7 +222,7 @@ async def handle_me(request: web.Request) -> web.Response:
 async def handle_delete_me(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    await repo.delete_user(user.tg_id)
+    await repo.delete_person(user.person_id)
     return web.json_response({"ok": True})
 
 
@@ -191,9 +232,8 @@ async def handle_put_handle(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
     body = await _json_body(request)
-    await repo.ensure_user(user.tg_id, user.username)
     try:
-        await repo.change_handle(user.tg_id, str(body.get("handle", "")))
+        await repo.change_handle(user.person_id, str(body.get("handle", "")))
     except HandleInvalid:
         return web.json_response({"error": "invalid"}, status=400)
     except HandleTooSoon as exc:
@@ -207,8 +247,7 @@ async def handle_confirm_handle(request: web.Request) -> web.Response:
     """ "Keep it" on the first-visit nickname screen."""
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    await repo.ensure_user(user.tg_id, user.username)
-    await repo.confirm_handle(user.tg_id)
+    await repo.confirm_handle(user.person_id)
     return await handle_me(request)
 
 
@@ -234,8 +273,14 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
-    if "notify_followers" in body:
-        fields["notify_followers"] = 1 if body["notify_followers"] else 0
+    for switch in ("notify_followers", "notify_push", "notify_telegram"):
+        if switch in body:
+            fields[switch] = 1 if body[switch] else 0
+    if "notify_posts" in body:
+        posts = str(body["notify_posts"])
+        if posts not in POST_NOTICE_CHOICES:
+            raise web.HTTPBadRequest(text="bad notify_posts")
+        fields["notify_posts"] = posts
     if "rarity_mode" in body:
         mode = str(body["rarity_mode"])
         if mode not in {RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN}:
@@ -245,8 +290,7 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
     if not fields:
         raise web.HTTPBadRequest(text="no settings")
 
-    await repo.ensure_user(user.tg_id, user.username)
-    await repo.update_user_settings(user.tg_id, **fields)
+    await repo.update_user_settings(user.person_id, **fields)
     return await handle_me(request)
 
 
@@ -255,7 +299,7 @@ async def handle_connect_xbox(request: web.Request) -> web.Response:
     connect: ConnectService | None = request.app["mini_connect"]
     if connect is None:
         raise web.HTTPServiceUnavailable(text="connect unavailable")
-    url = connect.start_login(user.tg_id)
+    url = connect.start_login(user.person_id, tg_id=user.tg_id)
     return web.json_response({"authorize_url": url})
 
 
@@ -263,16 +307,16 @@ async def handle_disconnect_xbox(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
     notifier: AdminNotifier | None = request.app["mini_notifier"]
-    db_user = await repo.get_user(user.tg_id)
+    db_user = await repo.get_user(user.person_id)
     if db_user is None or not db_user.xuid:
         return web.json_response({"ok": True, "already": True, "revoke_url": REVOKE_URL})
     gamertag = db_user.gamertag or f"id{user.tg_id}"
     await repo.delete_presence_state(db_user.xuid)
-    await repo.delete_token(user.tg_id)
-    await repo.delete_subscriptions_of_user(user.tg_id)
-    await repo.unlink_xbox_account(user.tg_id)
+    await repo.delete_token(user.person_id)
+    await repo.delete_subscriptions_of_user(user.person_id)
+    await repo.unlink_xbox_account(user.person_id)
     if notifier is not None:
-        await notifier.user_disconnected(user.tg_id, gamertag, "mini-app")
+        await notifier.user_disconnected(user.person_id, gamertag, "mini-app")
     return web.json_response({"ok": True, "revoke_url": REVOKE_URL})
 
 
@@ -291,7 +335,7 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
     if not raw:
         return web.json_response({"ok": False, "error": "missing_identity"}, status=400)
 
-    existing = await repo.get_platform_link(user.tg_id, Platform.STEAM)
+    existing = await repo.get_platform_link(user.person_id, Platform.STEAM)
     if existing is not None:
         return web.json_response(
             {"ok": False, "error": "already_linked", "display_name": existing.display_name},
@@ -309,7 +353,6 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
     if not profile.is_public:
         return web.json_response({"ok": False, "error": "private"}, status=400)
 
-    await repo.ensure_user(user.tg_id, user.username)
     cooldown = await repo.check_platform_cooldown(user.tg_id, Platform.STEAM, profile.steam_id)
     if cooldown.is_blocked:
         return web.json_response(
@@ -322,11 +365,11 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
         )
 
     await repo.link_platform_account(
-        user.tg_id, Platform.STEAM, profile.steam_id, profile.persona_name
+        user.person_id, Platform.STEAM, profile.steam_id, profile.persona_name
     )
     log.info("mini connect_steam: tg_id=%s steam_id=%s", user.tg_id, profile.steam_id)
     asyncio.create_task(  # noqa: RUF006
-        _steam_backfill(steam_fetcher, user.tg_id, profile.steam_id)
+        _steam_backfill(steam_fetcher, user.person_id, profile.steam_id)
     )
     return web.json_response(
         {
@@ -341,8 +384,8 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
 async def handle_disconnect_steam(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    link = await repo.get_platform_link(user.tg_id, Platform.STEAM)
-    await repo.unlink_platform_account(user.tg_id, Platform.STEAM)
+    link = await repo.get_platform_link(user.person_id, Platform.STEAM)
+    await repo.unlink_platform_account(user.person_id, Platform.STEAM)
     if link is not None:
         await repo.delete_steam_presence_state(link.external_id)
     return web.json_response({"ok": True, "already": link is None})
@@ -366,7 +409,7 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
     # Up to MAX_PSN_ACCOUNTS accounts (#10); the limit is checked again
     # below once the Online ID is resolved, since relinking one already held
     # is not an addition.
-    held = await repo.platform_links_for(user.tg_id, Platform.PSN)
+    held = await repo.platform_links_for(user.person_id, Platform.PSN)
 
     try:
         client = await psn_auth.get_client()
@@ -389,7 +432,6 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
             {"ok": False, "error": "limit", "max": MAX_PSN_ACCOUNTS}, status=409
         )
 
-    await repo.ensure_user(user.tg_id, user.username)
     cooldown = await repo.check_platform_cooldown(user.tg_id, Platform.PSN, profile.account_id)
     if cooldown.is_blocked:
         return web.json_response(
@@ -402,14 +444,14 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
         )
 
     await repo.link_platform_account(
-        user.tg_id, Platform.PSN, profile.account_id, profile.online_id
+        user.person_id, Platform.PSN, profile.account_id, profile.online_id
     )
     await repo.set_achievements_visible(
-        user.tg_id, Platform.PSN, True, external_id=profile.account_id
+        user.person_id, Platform.PSN, True, external_id=profile.account_id
     )
     log.info("mini connect_psn: tg_id=%s account_id=%s", user.tg_id, profile.account_id)
     asyncio.create_task(  # noqa: RUF006
-        _psn_backfill(psn_fetcher, user.tg_id, profile.account_id)
+        _psn_backfill(psn_fetcher, user.person_id, profile.account_id)
     )
     return web.json_response(
         {
@@ -427,13 +469,13 @@ async def handle_disconnect_psn(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     body = await _json_body(request) if request.can_read_body else {}
     account_id = str(body.get("account_id") or "").strip() or None
-    links = await repo.platform_links_for(user.tg_id, Platform.PSN)
+    links = await repo.platform_links_for(user.person_id, Platform.PSN)
     if account_id is not None:
         links = [link for link in links if link.external_id == account_id]
     for link in links:
         # `psn_poll_state` stays: it is #21's gate, and a relink through the
         # bot skips backfill (see handlers/psn.py::disconnect_psn_confirm).
-        await repo.unlink_account(user.tg_id, Platform.PSN, link.external_id)
+        await repo.unlink_account(user.person_id, Platform.PSN, link.external_id)
     return web.json_response({"ok": True, "already": not links})
 
 
@@ -445,12 +487,12 @@ async def handle_sync(request: web.Request) -> web.Response:
     if fetcher is None:
         raise web.HTTPServiceUnavailable(text="sync unavailable")
 
-    db_user = await repo.get_user(user.tg_id)
+    db_user = await repo.get_user(user.person_id)
     if db_user is None or not db_user.xuid:
         return web.json_response({"ok": False, "error": "xbox_not_linked"}, status=400)
 
     now = time.monotonic()
-    last = _last_sync.get(user.tg_id)
+    last = _last_sync.get(user.person_id)
     if last is not None:
         left = SYNC_COOLDOWN_SECONDS - (now - last)
         if left > 0:
@@ -459,11 +501,11 @@ async def handle_sync(request: web.Request) -> web.Response:
                 status=429,
             )
 
-    _last_sync[user.tg_id] = now
-    target = next((t for t in await repo.pollable_users() if t.tg_id == user.tg_id), None)
+    _last_sync[user.person_id] = now
+    target = next((t for t in await repo.pollable_users() if t.person_id == user.person_id), None)
     try:
         titles, published = await fetcher.catch_up(
-            user.tg_id,
+            user.person_id,
             db_user.xuid,
             db_user.gamertag or f"id{user.tg_id}",
             parse_iso(target.updated_at) if target and target.updated_at else None,
@@ -471,7 +513,7 @@ async def handle_sync(request: web.Request) -> web.Response:
             settings.catchup_max_titles,
         )
     except Exception:
-        log.exception("mini sync failed tg_id=%s", user.tg_id)
+        log.exception("mini sync failed person_id=%s", user.person_id)
         return web.json_response({"ok": False, "error": "sync_failed"}, status=502)
 
     return web.json_response({"ok": True, "titles": titles, "published": published})
@@ -491,14 +533,14 @@ async def handle_patch_account(request: web.Request) -> web.Response:
     account_id = str(body.get("account_id") or "").strip() or None
     if account_id is None:
         # The whole platform — every PSN account at once (#10).
-        if await repo.get_platform_link(user.tg_id, platform) is None:
+        if await repo.get_platform_link(user.person_id, platform) is None:
             raise web.HTTPNotFound(text="not linked")
-        await repo.set_platform_publishes(user.tg_id, platform, publishes)
+        await repo.set_platform_publishes(user.person_id, platform, publishes)
         return await handle_me(request)
-    links = await repo.platform_links_for(user.tg_id, platform)
+    links = await repo.platform_links_for(user.person_id, platform)
     if all(link.external_id != account_id for link in links):
         raise web.HTTPNotFound(text="not linked")
-    await repo.set_account_publishes(user.tg_id, platform, account_id, publishes)
+    await repo.set_account_publishes(user.person_id, platform, account_id, publishes)
     return await handle_me(request)
 
 
@@ -540,15 +582,15 @@ async def handle_patch_chat(request: web.Request) -> web.Response:
     # #126 — settings (`PATCH /settings`) and the admin's chat card own them.
     if action == "subscribe":
         # Needs at least one linked platform — same rule as /subscribe.
-        db_user = await repo.get_user(user.tg_id)
-        steam = await repo.get_platform_link(user.tg_id, Platform.STEAM)
-        psn = await repo.get_platform_link(user.tg_id, Platform.PSN)
+        db_user = await repo.get_user(user.person_id)
+        steam = await repo.get_platform_link(user.person_id, Platform.STEAM)
+        psn = await repo.get_platform_link(user.person_id, Platform.PSN)
         has_platform = bool((db_user and db_user.xuid) or steam or psn)
         if not has_platform:
             return web.json_response({"ok": False, "error": "no_platform"}, status=400)
-        await repo.subscribe(chat_id, user.tg_id)
+        await repo.subscribe(chat_id, user.person_id)
     elif action == "unsubscribe":
-        await repo.unsubscribe(chat_id, user.tg_id)
+        await repo.unsubscribe(chat_id, user.person_id)
     elif action == "forget":
         await repo.forget_chat_membership(chat_id, user.tg_id)
         return web.json_response({"ok": True, "forgotten": True})
@@ -578,11 +620,10 @@ async def _following_scope(request: web.Request) -> tuple[Any, Repo, list[int], 
         return None
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    await repo.ensure_user(user.tg_id, user.username)
-    person = await repo.person_id(user.tg_id)
+    person = user.person_id
     if person is None:
         raise web.HTTPNotFound(text="no person")
-    settings_row = await repo.get_user_settings(user.tg_id)
+    settings_row = await repo.get_user_settings(user.person_id)
     tz = settings_row.tz_offset_min if settings_row else None
     return user, repo, await repo.following_members(person), tz
 
@@ -596,7 +637,7 @@ async def handle_chat_feed(request: web.Request) -> web.Response:
             payload = await build_feed_payload(
                 repo,
                 MEMBERS_CHAT,
-                locale=await _user_locale(repo, user.tg_id),
+                locale=await _user_locale(repo, user.person_id),
                 limit=int(request.query.get("limit") or 500),
                 month=month,
                 members=members,
@@ -606,7 +647,7 @@ async def handle_chat_feed(request: web.Request) -> web.Response:
             raise web.HTTPBadRequest(text="bad month or limit") from exc
         return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
-    locale = await _user_locale(repo, user.tg_id)
+    locale = await _user_locale(repo, user.person_id)
     try:
         limit = int(request.query.get("limit") or 500)
     except ValueError as exc:
@@ -619,15 +660,36 @@ async def handle_chat_feed(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
+async def handle_club_news(request: web.Request) -> web.Response:
+    """Game news (owner, 2026-10-05): what the developers of the games the
+    viewer and the people they follow play posted on Steam that month. Only the
+    viewer's own circle — no chat has news of its own."""
+    scoped = await _following_scope(request)
+    if scoped is None:
+        raise web.HTTPBadRequest(text="news is scope=following only")
+    user, repo, members, tz = scoped
+    try:
+        payload = await build_news_payload(
+            repo,
+            members=members,
+            month=request.query.get("month") or None,
+            tz_of=tz,
+            locale=await _user_locale(repo, user.person_id),
+        )
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad month") from exc
+    return web.json_response(payload)
+
+
 async def handle_chat_online(request: web.Request) -> web.Response:
     scoped = await _following_scope(request)
     if scoped is not None:
         user, repo, members, _tz = scoped
-        locale = await _user_locale(repo, user.tg_id)
+        locale = await _user_locale(repo, user.person_id)
         payload = await build_online_payload(repo, MEMBERS_CHAT, locale=locale, members=members)
         return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
-    locale = await _user_locale(repo, user.tg_id)
+    locale = await _user_locale(repo, user.person_id)
     payload = await build_online_payload(repo, chat_id, locale=locale)
     return web.json_response(payload)
 
@@ -640,7 +702,7 @@ async def handle_chat_summary(request: web.Request) -> web.Response:
             payload = await build_summary_payload(
                 repo,
                 MEMBERS_CHAT,
-                locale=await _user_locale(repo, user.tg_id),
+                locale=await _user_locale(repo, user.person_id),
                 month=request.query.get("month") or None,
                 members=members,
                 tz_of=tz,
@@ -649,7 +711,7 @@ async def handle_chat_summary(request: web.Request) -> web.Response:
             raise web.HTTPBadRequest(text="bad month") from exc
         return web.json_response(payload)
     user, chat_id, repo = await _require_chat_member(request)
-    locale = await _user_locale(repo, user.tg_id)
+    locale = await _user_locale(repo, user.person_id)
     month = request.query.get("month") or None
     try:
         payload = await build_summary_payload(repo, chat_id, locale=locale, month=month)
@@ -680,8 +742,7 @@ async def handle_put_avatar(request: web.Request) -> web.Response:
     body = await _read_capped(request, custom_avatars.MAX_UPLOAD_BYTES)
     if not body:
         return web.json_response({"error": "invalid"}, status=400)
-    await repo.ensure_user(user.tg_id, user.username)
-    if not await custom_avatars.store(repo, user.tg_id, body):
+    if not await custom_avatars.store(repo, user.person_id, body):
         return web.json_response({"error": "invalid"}, status=400)
     forget_avatar(user.tg_id)
     return await handle_me(request)
@@ -691,7 +752,7 @@ async def handle_delete_avatar(request: web.Request) -> web.Response:
     """Back to the Telegram photo."""
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    await custom_avatars.clear(repo, user.tg_id)
+    await custom_avatars.clear(repo, user.person_id)
     forget_avatar(user.tg_id)
     return await handle_me(request)
 
@@ -705,17 +766,38 @@ async def handle_avatar(request: web.Request) -> web.Response:
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad tg_id") from exc
     repo: Repo = request.app["mini_repo"]
-    target = await repo.get_user(tg_id)
+    target = await repo.get_user_by_tg(tg_id)
     if tg_id != user.tg_id and target is None:
         raise web.HTTPNotFound(text="no photo")
-    custom = await repo.custom_avatar_path(tg_id)
+    return await _avatar_of(request, target, tg_id)
+
+
+async def handle_person_avatar(request: web.Request) -> web.Response:
+    """The same face by person id (#156) — the only way to ask for somebody who
+    has no Telegram. A face is not activity: anyone with the app may see it."""
+    await _require_user(request)
+    try:
+        person = int(request.match_info["person_id"])
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad person_id") from exc
+    repo: Repo = request.app["mini_repo"]
+    target = await repo.get_user(person)
+    if target is None:
+        raise web.HTTPNotFound(text="no photo")
+    return await _avatar_of(request, target, target.tg_id)
+
+
+async def _avatar_of(request: web.Request, target: User | None, tg_id: int | None) -> web.Response:
+    """The picture the person chose (#157), else their Telegram photo."""
+    repo: Repo = request.app["mini_repo"]
+    custom = await repo.custom_avatar_path(target.id) if target and target.id else None
     if custom:
         file = avatars.avatar_dir() / custom
         if file.is_file():
             body = file.read_bytes()
             return _picture(request, body, image_mime(body))
     bot = request.app.get("mini_bot")
-    if bot is None:
+    if bot is None or tg_id is None:
         raise web.HTTPNotFound(text="no photo")
     result = await load_avatar_bytes(bot, tg_id, file_id=target.photo_file_id if target else None)
     if result is None:
@@ -790,20 +872,33 @@ async def handle_achievement_icon(request: web.Request) -> web.Response:
 
 
 async def handle_chat_person(request: web.Request) -> web.Response:
-    user, chat_id, repo = await _require_chat_member(request)
+    # A chat is optional (#156): it only says which chat the page was opened
+    # from. Without one — somebody who has no chat at all — the privacy check
+    # below is the whole gate, as on a person's card.
+    chat_id: int | None
+    if request.query.get("chat_id") or request.match_info.get("chat_id"):
+        user, chat_id, repo = await _require_chat_member(request)
+    else:
+        user, chat_id = await _require_user(request), None
+        repo = request.app["mini_repo"]
+    # By person id (#156), or by the Telegram id older links carry.
+    raw_person = request.query.get("person")
     raw_target = request.match_info.get("tg_id") or request.query.get("tg_id") or ""
     try:
-        target_id = int(raw_target)
+        if raw_person:
+            target = await repo.get_user(int(raw_person))
+        else:
+            target = await repo.get_user_by_tg(int(raw_target))
     except ValueError as exc:
-        raise web.HTTPBadRequest(text="bad tg_id") from exc
-    target = await repo.get_user(target_id)
-    if target is None:
+        raise web.HTTPBadRequest(text="bad person") from exc
+    if target is None or target.id is None:
         raise web.HTTPNotFound(text="person not found")
-    locale = await _user_locale(repo, user.tg_id)
-    if not await _may_see_activity(repo, user.tg_id, target_id):
+    locale = await _user_locale(repo, user.person_id)
+    if not await _may_see_activity(repo, user.person_id, target.id):
         # The nickname and avatar are public; what they did is not (#157).
         return web.json_response(
             {
+                "person_id": target.id,
                 "tg_id": target.tg_id,
                 "name": await _public_name(repo, target),
                 "hidden": True,
@@ -825,17 +920,15 @@ async def handle_chat_person(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
-async def _may_see_activity(repo: Repo, viewer_tg: int, target_tg: int) -> bool:
-    """The one privacy check for a person's page (#157), by Telegram id."""
-    viewer = await repo.person_id(viewer_tg)
-    target = await repo.person_id(target_tg)
-    if viewer is None or target is None:
+async def _may_see_activity(repo: Repo, viewer: int | None, target: int) -> bool:
+    """The one privacy check for a person's page (#157)."""
+    if viewer is None:
         return True
     return await repo.can_view_activity(viewer, target)
 
 
 async def _public_name(repo: Repo, target: User) -> str:
-    return person_name_of(target, await repo.platform_links_of(target.tg_id))
+    return person_name_of(target, await repo.platform_links_of(target.id))
 
 
 async def _require_chat_member(request: web.Request) -> tuple[MiniAppUser, int, Repo]:
@@ -851,25 +944,27 @@ async def _require_chat_member(request: web.Request) -> tuple[MiniAppUser, int, 
     return user, chat_id, repo
 
 
-async def _user_locale(repo: Repo, tg_id: int) -> str:
-    settings_row = await repo.get_user_settings(tg_id)
+async def _user_locale(repo: Repo, person_id: int | None) -> str:
+    if person_id is None:
+        return "ru"
+    settings_row = await repo.get_user_settings(person_id)
     return (settings_row.locale if settings_row else None) or "ru"
 
 
-async def _steam_backfill(fetcher: SteamFetcher, tg_id: int, steam_id: str) -> None:
+async def _steam_backfill(fetcher: SteamFetcher, person_id: int, steam_id: str) -> None:
     try:
-        await fetcher.backfill(tg_id, steam_id)
+        await fetcher.backfill(person_id, steam_id)
     except SteamGameDetailsPrivateError:
-        log.info("mini steam backfill: game details private tg_id=%s", tg_id)
+        log.info("mini steam backfill: game details private person_id=%s", person_id)
     except Exception:
-        log.exception("mini steam backfill failed tg_id=%s", tg_id)
+        log.exception("mini steam backfill failed person_id=%s", person_id)
 
 
-async def _psn_backfill(fetcher: PsnFetcher, tg_id: int, account_id: str) -> None:
+async def _psn_backfill(fetcher: PsnFetcher, person_id: int, account_id: str) -> None:
     try:
-        await fetcher.backfill(tg_id, account_id)
+        await fetcher.backfill(person_id, account_id)
     except Exception:
-        log.exception("mini psn backfill failed tg_id=%s", tg_id)
+        log.exception("mini psn backfill failed person_id=%s", person_id)
 
 
 async def handle_game_details(request: web.Request) -> web.Response:
@@ -884,21 +979,32 @@ async def handle_game_details(request: web.Request) -> web.Response:
     # Whose progress: the caller's own unless somebody else is named — anybody
     # whose privacy setting lets the caller see their activity (#157), not only
     # people from a shared chat.
-    viewed_id = user.tg_id
+    viewed = user.person_id
+    viewed_json = None
+    raw_person = request.query.get("person")
     raw_viewed = request.query.get("tg_id")
-    if raw_viewed:
+    if raw_person or raw_viewed:
+        # By person id (#156), or by the Telegram id older links carry.
         try:
-            viewed_id = int(raw_viewed)
+            other = (
+                await repo.get_user(int(raw_person))
+                if raw_person
+                else await repo.get_user_by_tg(int(raw_viewed or ""))
+            )
         except ValueError as exc:
-            raise web.HTTPBadRequest(text="bad tg_id") from exc
-    if viewed_id != user.tg_id:
-        if await repo.get_user(viewed_id) is None:
+            raise web.HTTPBadRequest(text="bad person") from exc
+        if other is None or other.id is None:
             raise web.HTTPNotFound(text="person not found")
-        if not await _may_see_activity(repo, user.tg_id, viewed_id):
-            raise web.HTTPForbidden(text="activity hidden")
+        if other.id != user.person_id:
+            if not await _may_see_activity(repo, user.person_id, other.id):
+                raise web.HTTPForbidden(text="activity hidden")
+            viewed = other.id
+            # Whose progress this is: an old link names them only by Telegram
+            # id, so the page learns the person and their nickname from here.
+            viewed_json = {"person_id": other.id, "name": await _public_name(repo, other)}
 
     checklist = await catalog_service.get_title_checklist_for_user(
-        platform, title_id, tg_id=viewed_id, force=force
+        platform, title_id, person_id=viewed, force=force
     )
     title_info = await repo.title_record(title_id) or {}
 
@@ -917,6 +1023,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
     return web.json_response(
         {
             "ok": True,
+            "viewed": viewed_json,
             "platform": platform,
             "title_id": title_id,
             "name": title_info.get("name"),
@@ -978,7 +1085,7 @@ async def handle_game_hltb(request: web.Request) -> web.Response:
             hltb_id, _score = match
             anthropic = request.app.get("mini_anthropic_auth")
             result = await hltb_resolve(repo, hltb_id, anthropic_auth=anthropic)
-            hltb_block = hltb_payload(result, locale=await _user_locale(repo, user.tg_id))
+            hltb_block = hltb_payload(result, locale=await _user_locale(repo, user.person_id))
     except HltbError as exc:
         log.info("could not resolve HLTB for title %s: %s", title_id, exc)
     except Exception:
@@ -1024,7 +1131,7 @@ async def handle_game_guides(request: web.Request) -> web.Response:
     if await extras.tips_due(title_id):
         extras.ensure_title(title_id)
         complete = False
-    locale = await _user_locale(repo, user.tg_id)
+    locale = await _user_locale(repo, user.person_id)
     tips: dict[str, dict[str, str]] = {}
     for achievement_id, (tip_en, tip_ru) in (await repo.title_tips(platform, title_id)).items():
         text = (tip_ru or tip_en) if locale == "ru" else (tip_en or tip_ru)
@@ -1052,7 +1159,7 @@ async def handle_game_patches(request: web.Request) -> web.Response:
             patches = await repo.game_patches(appid, PATCHES_SHOWN)
     except Exception:
         log.exception("steam patches failed for title %s", title_id)
-    ru = await _user_locale(repo, user.tg_id) == "ru"
+    ru = await _user_locale(repo, user.person_id) == "ru"
     return web.json_response(
         {
             "ok": True,
@@ -1061,6 +1168,9 @@ async def handle_game_patches(request: web.Request) -> web.Response:
                     "title": (p.title_ru if ru and p.title_ru else p.title),
                     "date": p.published_at,
                     "text": (p.text_ru if ru and p.text_ru else p.text_en) or "",
+                    "image": p.image_url,
+                    # The post on Steam, for its own page's last button.
+                    "url": f"https://store.steampowered.com/news/app/{appid}/view/{p.gid}",
                 }
                 for p in patches
             ],
@@ -1079,10 +1189,24 @@ async def _require_user(request: web.Request) -> MiniAppUser:
         raise
     settings: Settings = request.app["mini_settings"]
     try:
-        return validate_init_data(init_data, settings.bot_token.get_secret_value())
+        user = validate_init_data(init_data, settings.bot_token.get_secret_value())
     except InitDataError as exc:
         log.info("mini initData rejected: %s (len=%s)", exc, len(init_data))
         raise web.HTTPUnauthorized(text="invalid initData") from exc
+    return await _with_person(request, user)
+
+
+async def _with_person(request: web.Request, user: MiniAppUser) -> MiniAppUser:
+    """The request's person (#156): everything about a person is keyed by their
+    own id. A first visit creates them, once; later visits only look them up."""
+    repo: Repo = request.app["mini_repo"]
+    assert user.tg_id is not None  # validated Init Data always names one
+    person = await repo.person_id(user.tg_id)
+    if person is None:
+        person = await repo.ensure_user(user.tg_id, user.username)
+    if person is None:
+        raise web.HTTPUnauthorized(text="not a person")
+    return dataclasses.replace(user, person_id=person)
 
 
 async def _json_body(request: web.Request) -> dict[str, Any]:

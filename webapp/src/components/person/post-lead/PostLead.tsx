@@ -12,7 +12,7 @@ export function PostLead({
 }: {
   item: FeedItem;
   locale: Locale;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
   whoOnly?: boolean;
 }) {
   return (
@@ -22,10 +22,10 @@ export function PostLead({
         className="feed-post-who"
         onClick={(e) => {
           e.stopPropagation();
-          onOpenPerson?.(item.tg_id);
+          onOpenPerson?.(item.person_id);
         }}
       >
-        <Avatar name={item.person} tgId={item.tg_id} size={36} />
+        <Avatar name={item.person} personId={item.person_id} size={36} />
         <span>
           <strong>
             <HandleName text={item.person} />

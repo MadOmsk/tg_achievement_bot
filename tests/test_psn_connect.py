@@ -115,7 +115,7 @@ async def test_prompt_names_the_linked_accounts_and_offers_another(
     (up to three) instead of asking for an Online ID straight away."""
     auth = await _configured_auth(repo, cipher, monkeypatch)
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "SuperOmsk")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "SuperOmsk")
     bot = FakeBot()
     awaiting.clear(TG_ID)
 
@@ -132,7 +132,7 @@ async def test_prompt_at_the_limit_says_so(
     auth = await _configured_auth(repo, cipher, monkeypatch)
     await repo.ensure_user(TG_ID, "igor")
     for n in (1, 2, 3):
-        await repo.link_platform_account(TG_ID, "psn", f"acc-{n}", f"Nick{n}")
+        await repo.link_platform_account(await repo.person_id(TG_ID), "psn", f"acc-{n}", f"Nick{n}")
     bot = FakeBot()
     awaiting.clear(TG_ID)
 
@@ -175,7 +175,7 @@ async def test_connect_links_a_visible_profile(
 
     await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
 
-    link = await repo.get_platform_link(TG_ID, "psn")
+    link = await repo.get_platform_link(await repo.person_id(TG_ID), "psn")
     assert link is not None
     assert link.external_id == "acc-1"
     assert link.display_name == "Gamer"
@@ -203,7 +203,7 @@ async def test_connect_refuses_a_closed_profile_without_linking(
 
     await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
 
-    assert await repo.get_platform_link(TG_ID, "psn") is None
+    assert await repo.get_platform_link(await repo.person_id(TG_ID), "psn") is None
     assert "скрыты" in bot.sent[-1][1]
 
 
@@ -220,7 +220,7 @@ async def test_connect_reports_unresolvable_online_id(
 
     await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "nobody")  # type: ignore[arg-type]
 
-    assert await repo.get_platform_link(TG_ID, "psn") is None
+    assert await repo.get_platform_link(await repo.person_id(TG_ID), "psn") is None
     assert "Не нашёл" in bot.sent[-1][1]
 
 
@@ -237,17 +237,17 @@ async def test_connect_reports_a_dead_service_token(
 
     await _connect(bot, repo, auth, FakeFetcher(), TG_ID, "igor", "Gamer")  # type: ignore[arg-type]
 
-    assert await repo.get_platform_link(TG_ID, "psn") is None
+    assert await repo.get_platform_link(await repo.person_id(TG_ID), "psn") is None
     assert "недоступен" in bot.sent[-1][1]
 
 
 async def test_disconnect_removes_the_link(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "Gamer")
 
-    await repo.unlink_platform_account(TG_ID, "psn")
+    await repo.unlink_platform_account(await repo.person_id(TG_ID), "psn")
 
-    assert await repo.get_platform_link(TG_ID, "psn") is None
+    assert await repo.get_platform_link(await repo.person_id(TG_ID), "psn") is None
 
 
 async def test_disconnecting_keeps_the_backfill_gate(repo: Repo) -> None:
@@ -264,7 +264,7 @@ async def test_disconnecting_keeps_the_backfill_gate(repo: Repo) -> None:
     from bot.handlers.psn import disconnect_psn_confirm
 
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, Platform.PSN, ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), Platform.PSN, ACCOUNT_ID, "Gamer")
     await repo.mark_psn_backfill_done(ACCOUNT_ID)
 
     callback = SimpleNamespace(

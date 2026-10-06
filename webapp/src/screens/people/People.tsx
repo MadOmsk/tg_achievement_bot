@@ -37,7 +37,7 @@ export function People({
   focusSearch?: boolean;
   onFlash: (message: string) => void;
   /** Open someone's full profile page. */
-  onOpenProfile?: (tgId: number) => void;
+  onOpenProfile?: (personId: number) => void;
 }) {
   const [query, setQuery] = useState("");
   const [lists, setLists] = useState<Lists | null>(null);
@@ -137,7 +137,7 @@ export function People({
     <div key={row.id} className={leaving.has(row.id) ? "people-line is-leaving" : "people-line"}>
       <button type="button" className="picker-row is-person" onClick={() => setOpen(row)}>
         <FriendMark friend={row.relation.friends} label={t(locale, "friends")}>
-          <Avatar name={row.handle} tgId={row.tg_id ?? undefined} size={40} />
+          <Avatar name={row.handle} personId={row.id} size={40} />
         </FriendMark>
         <span className="picker-row-copy">
           <strong>

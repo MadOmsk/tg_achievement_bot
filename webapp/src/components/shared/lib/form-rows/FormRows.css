@@ -2,6 +2,12 @@
   margin: 0 0 26px;
 }
 
+/* A group with no title starts with a row, whose own padding already sits above
+ * its text: without this, the gap before it read wider than before a title. */
+.fr-group + .fr-group.is-bare {
+  margin-top: -10px;
+}
+
 .fr-head {
   display: flex;
   align-items: center;
@@ -83,7 +89,7 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 28px;
+  min-width: 28px;
 }
 
 .fr-label {
@@ -127,11 +133,15 @@
 .fr-number {
   flex: none;
   width: 4.5rem;
-  margin: 0;
-  padding: 4px 0;
-  border: 0;
-  border-bottom: 1px solid transparent;
+  margin: -4px -8px -4px 0;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: none;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
   color: var(--muted);
   font: inherit;
   font-size: 0.95rem;
@@ -140,10 +150,13 @@
   text-align: right;
 }
 
+/* The same focus as every other field (base.css .field), small. */
 .fr-number:focus {
   outline: none;
   color: var(--text);
-  border-bottom-color: rgba(155, 182, 255, 0.45);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(155, 182, 255, 0.42);
+  box-shadow: 0 0 0 3px rgba(155, 182, 255, 0.12);
 }
 
 .fr-skel-title {
@@ -167,22 +180,6 @@
   align-items: center;
   gap: 8px;
   color: var(--text);
-}
-
-.fr-input {
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.95rem;
-}
-
-.fr-input:focus {
-  outline: none;
 }
 
 .fr-check {
@@ -250,4 +247,12 @@
 
 .fr-icons .is-disabled {
   opacity: 0.35;
+}
+
+.fr-glyph {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--text);
 }

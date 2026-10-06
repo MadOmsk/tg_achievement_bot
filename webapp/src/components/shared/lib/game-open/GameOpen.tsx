@@ -20,6 +20,6 @@ export function gameRefOf(item: FeedItem): GameRef {
     title_id: item.title_id,
     name: item.game,
     icon_url: item.game_icon_url,
-    person: item.tg_id ? { tg_id: item.tg_id, name: item.person } : null,
+    person: item.person_id ? { person_id: item.person_id, name: item.person } : null,
   };
 }

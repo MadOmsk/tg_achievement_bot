@@ -29,7 +29,7 @@ async def _link(repo: Repo, tg_id: int, xuid: str) -> None:
     """insert_new_achievements now resolves tg_id from xuid (SPEC 9,
     M-Steam-2) — a row needs a real linked user behind its xuid."""
     await repo.ensure_user(tg_id, f"user{tg_id}")
-    await repo.link_xbox_account(tg_id, xuid, f"Player{tg_id}", 0)
+    await repo.link_xbox_account(await repo.person_id(tg_id), xuid, f"Player{tg_id}", 0)
 
 
 def test_today_is_a_rolling_24_hours_not_a_calendar_day() -> None:
@@ -69,7 +69,7 @@ async def test_counters_include_backfilled_rows(repo: Repo) -> None:
         is_backfill=False,
     )
 
-    counters = await counters_for(repo, 1, now)
+    counters = await counters_for(repo, await repo.person_id(1), now)
 
     assert (counters.today, counters.today_score) == (1, 15)
     assert (counters.month, counters.month_score) == (3, 40)
@@ -92,7 +92,7 @@ async def test_an_undated_row_counts_from_when_it_was_stored(repo: Repo) -> None
     await repo.insert_new_achievements(XUID, [row("undated", None, 50)], is_backfill=False)
 
     # `created_at` is "now", so the row lands in any window that includes now.
-    counters = await counters_for(repo, 1, utcnow())
+    counters = await counters_for(repo, await repo.person_id(1), utcnow())
 
     assert (counters.today, counters.today_score) == (1, 50)
     assert (counters.month, counters.month_score) == (1, 50)
@@ -112,7 +112,7 @@ async def test_counters_today_crosses_midnight_correctly(repo: Repo) -> None:
         is_backfill=False,
     )
 
-    counters = await counters_for(repo, 1, now)
+    counters = await counters_for(repo, await repo.person_id(1), now)
 
     assert counters.today == 2
     assert counters.today_score == 30
@@ -173,8 +173,8 @@ async def test_insert_for_an_unlinked_account_is_stored_but_invisible(repo: Repo
         "no-such-xuid", [row("a", "2026-09-02T09:00:00+00:00")], is_backfill=False
     )
     assert len(new_rows) == 1
-    assert await repo.achievement_counts_for_person(1, None) == (0, 0)
+    assert await repo.achievement_counts_for_person(await repo.person_id(1), None) == (0, 0)
 
     # Link it, and the same rows are suddenly theirs — nothing was re-fetched.
-    await repo.link_xbox_account(1, "no-such-xuid", "Someone", 0)
-    assert await repo.achievement_counts_for_person(1, None) == (1, 10)
+    await repo.link_xbox_account(await repo.person_id(1), "no-such-xuid", "Someone", 0)
+    assert await repo.achievement_counts_for_person(await repo.person_id(1), None) == (1, 10)

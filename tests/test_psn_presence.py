@@ -20,7 +20,7 @@ ACCOUNT_ID = "acc-1"
 
 async def _linked_user(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, "Gamer")
 
 
 async def _configured_auth(repo: Repo, cipher: TokenCipher, monkeypatch) -> PsnAuth:
@@ -71,7 +71,7 @@ async def test_tick_saves_online_presence_and_touches_last_online(
     assert saved.state == "Online"
     assert saved.title_id == "CUSA14296_00"
     assert saved.title_name == "Rust"
-    user = await repo.get_user(TG_ID)
+    user = await repo.get_user(await repo.person_id(TG_ID))
     assert user is not None and user.last_online_at is not None
 
 
@@ -90,7 +90,7 @@ async def test_tick_saves_offline_presence_without_touching_last_online(
     saved = await repo.psn_presence_of(ACCOUNT_ID)
     assert saved is not None
     assert saved.state == "Offline"
-    user = await repo.get_user(TG_ID)
+    user = await repo.get_user(await repo.person_id(TG_ID))
     assert user is not None and user.last_online_at is None
 
 
@@ -116,7 +116,7 @@ async def test_tick_isolates_one_accounts_failure_from_the_rest(
     presence.py/steam_presence.py already follow."""
     await _linked_user(repo)
     await repo.ensure_user(43, "other")
-    await repo.link_platform_account(43, "psn", "acc-2", "OtherGamer")
+    await repo.link_platform_account(await repo.person_id(43), "psn", "acc-2", "OtherGamer")
     auth = await _configured_auth(repo, cipher, monkeypatch)
     calls = _fake_presence(
         monkeypatch,

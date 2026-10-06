@@ -54,6 +54,23 @@ class Settings(BaseSettings):
     # every other secret here.
     anthropic_api_key: SecretStr | None = None
 
+    # Email sign-in (#162) — optional: without a mail server the Mini App
+    # simply does not offer it. `smtp_security` is "starttls" (port 587),
+    # "ssl" (port 465) or "none" (a relay on the same machine).
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_security: str = "starttls"
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    # Development only: write sign-in codes to the log instead of sending mail.
+    # Never on a server — a log is not a mailbox.
+    email_log_codes: bool = False
+    # Development only: an address typed in is taken as proved, no code at all —
+    # anybody could sign in as anybody. Ignored whenever SMTP_HOST is set, so a
+    # server that sends mail can never run this way by mistake.
+    email_skip_code: bool = False
+
     # Poller intervals, seconds (SPEC 5.2, 5.3)
     presence_interval_in_game: int = 60
     presence_interval_online: int = 120
@@ -94,8 +111,8 @@ class Settings(BaseSettings):
             return [int(part) for part in value.split(",") if part.strip()]
         return value
 
-    def is_admin(self, tg_id: int) -> bool:
-        return tg_id in self.admin_tg_ids
+    def is_admin(self, tg_id: int | None) -> bool:
+        return tg_id is not None and tg_id in self.admin_tg_ids
 
 
 @lru_cache

@@ -131,7 +131,7 @@ async def test_start_in_a_group_gets_no_web_app_button(i18n, repo) -> None:
         async def answer(self, text: str, reply_markup=None, **kwargs) -> None:
             self.markups.append(reply_markup)
 
-    connect = SimpleNamespace(start_login=lambda tg_id: "https://login.example")
+    connect = SimpleNamespace(start_login=lambda person, **_kw: "https://login.example")
     settings = SimpleNamespace(mini_app_url=APP_URL)
 
     group = _Msg(ChatType.SUPERGROUP)

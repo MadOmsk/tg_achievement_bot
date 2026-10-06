@@ -68,7 +68,7 @@ class _ChatStatsRepo:
             # (#51): a member with no Xbox account used to have no name here
             # at all and rendered as a bare "id319472587", which is exactly
             # what #38 fixed and a revert took back out.
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name, psn.display_name AS psn_name,"
             "       COUNT(s.achievement_id) AS cnt,"
@@ -84,7 +84,7 @@ class _ChatStatsRepo:
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
             "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze "
             "FROM " + member_source(members) + " sub "
-            "JOIN users u ON u.tg_id = sub.tg_id "
+            "JOIN users u ON u.id = sub.person_id "
             + XBOX_ACCOUNT
             # tg_id, not xuid (SPEC 9, M-Steam-2e) — sums every platform's
             # achievements for this person into one count, since
@@ -94,7 +94,7 @@ class _ChatStatsRepo:
             # Through the accounts this person holds now (#52), not through
             # a tg_id on the row: an account they no longer hold contributes
             # nothing, and one they just linked contributes everything.
-            + "LEFT JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            + "LEFT JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "LEFT JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             + date_bound
@@ -103,11 +103,12 @@ class _ChatStatsRepo:
             + active_account("steam", "steam")
             + active_account("psn", "psn")
             + "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
-            "GROUP BY u.tg_id ORDER BY cnt DESC, score DESC",
+            "GROUP BY u.id ORDER BY cnt DESC, score DESC",
             [rare_threshold, *date_params, chat_id],
         )
         return [
             ChatMemberStat(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 xuid=row["xuid"],
@@ -199,18 +200,19 @@ class _ChatStatsRepo:
         # stands in for the chat's membership; ids are integers formatted here.
         if members is None:
             member_sql = (
-                "  SELECT tg_id FROM subscriptions WHERE chat_id = ? "
+                "  SELECT sb.person_id FROM subscriptions sb WHERE sb.chat_id = ? "
                 "  UNION "
-                "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
+                "  SELECT su.id FROM chat_seen cs JOIN users su ON su.tg_id = cs.tg_id"
+                "  WHERE cs.chat_id = ?"
             )
             member_params: tuple[int, ...] = (chat_id, chat_id)
         else:
             ids = ",".join(str(int(m)) for m in members) or "NULL"
-            member_sql = f"  SELECT tg_id FROM users WHERE tg_id IN ({ids})"
+            member_sql = f"  SELECT id AS person_id FROM users WHERE id IN ({ids})"
             member_params = ()
         cursor = await self._conn.execute(
             "WITH member AS (" + member_sql + "), presence AS ("
-            "  SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "  SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "         u.last_name, " + XBOX_COLUMNS + ","
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
             "         xp.device AS xbox_device,"
@@ -233,7 +235,7 @@ class _ChatStatsRepo:
             "              WHEN pp.state = 'Online' THEN 1"
             "              ELSE 0 END AS psn_level"
             "  FROM member"
-            "  JOIN users u ON u.tg_id = member.tg_id "
+            "  JOIN users u ON u.id = member.person_id "
             + XBOX_ACCOUNT
             + "  LEFT JOIN presence_state xp ON xp.xuid = xb.external_id "
             + active_account("steam", "steam")
@@ -268,7 +270,8 @@ class _ChatStatsRepo:
             "    END AS winner"
             "  FROM picked"
             ") "
-            "SELECT tg_id, gamertag, gamertag_modern, username, first_name, last_name,"
+            "SELECT tg_id, person_id, gamertag, gamertag_modern, username, first_name,"
+            " last_name,"
             "       handle, xuid,"
             "       CASE winner"
             "         WHEN 'steam' THEN"
@@ -303,6 +306,7 @@ class _ChatStatsRepo:
         )
         return [
             ChatPresenceRow(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 gamertag_modern=row["gamertag_modern"],

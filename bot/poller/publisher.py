@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -46,6 +47,10 @@ SEND_INTERVAL_SECONDS = 3.0  # ~20 messages a minute
 # achievements than this still lists every one of them in the text (SPEC
 # 7.2), the gallery is just illustrative, not required to be exhaustive.
 MEDIA_GROUP_MAX = 10
+
+# Told when a person has new achievements in one game, for the people following
+# them (#164): (person_id, platform, title_id, game, count).
+PostNotice = Callable[[int, str, str, str, int], Awaitable[None]]
 
 
 @dataclass(slots=True)
@@ -109,6 +114,9 @@ class Publisher:
         # the life of the process instead of deactivated, see `_send`.
         self._unreachable: set[int] = set()
         self._worker: asyncio.Task[None] | None = None
+        # Set once the app's notifications exist (bot/main.py).
+        self.on_new_post: PostNotice | None = None
+        self._notices: set[asyncio.Task[None]] = set()
 
     async def _get_bot_username(self) -> str:
         if self._bot_username:
@@ -159,7 +167,7 @@ class Publisher:
 
     async def publish(
         self,
-        tg_id: int,
+        person_id: int,
         xuid: str,
         gamertag: str,
         achievements: list[AchievementRow],
@@ -186,7 +194,7 @@ class Publisher:
         # The person's own switch for this account (#20): muted, it stays
         # stored and counted, and posts nowhere.
         if not await self._repo.account_publishes(
-            tg_id, account_platform_of(achievements[0].platform), xuid
+            person_id, account_platform_of(achievements[0].platform), xuid
         ):
             return
         if window_hours is not None:
@@ -198,8 +206,9 @@ class Publisher:
             ]
             if not achievements:
                 return
+        self._tell_followers(person_id, achievements, title_name)
 
-        for chat in await self._repo.publication_targets(tg_id):
+        for chat in await self._repo.publication_targets(person_id):
             allowed = [
                 item
                 for item in achievements
@@ -217,7 +226,7 @@ class Publisher:
                 continue
 
             if chat.flood_limit > 0:
-                allowed = await self._apply_flood_filter(tg_id, chat, allowed)
+                allowed = await self._apply_flood_filter(person_id, chat, allowed)
                 if not allowed:
                     continue  # every item this call was buffered, not sent
 
@@ -245,7 +254,7 @@ class Publisher:
             # singular above), so every item in `allowed` shares it.
             game_ref = (allowed[0].platform, allowed[0].title_id) if allowed else None
             markup = await self._markup_for(
-                chat.chat_id, chat.locale, person_id=tg_id, game=game_ref
+                chat.chat_id, chat.locale, person_id=person_id, game=game_ref
             )
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
@@ -289,8 +298,30 @@ class Publisher:
                     )
                 )
 
+    def _tell_followers(
+        self, person_id: int, achievements: list[AchievementRow], title_name: str | None
+    ) -> None:
+        """The followers' notice is about the post itself, not any chat: it goes
+        whatever the chats filter, in the background, so pushes to many devices
+        never hold up publishing."""
+        if self.on_new_post is None:
+            return
+        first = achievements[0]
+        game = first.title_name or title_name or first.title_id
+        notice = self.on_new_post
+
+        async def tell() -> None:
+            try:
+                await notice(person_id, first.platform, first.title_id, game, len(achievements))
+            except Exception:
+                log.exception("post notices for person_id=%s failed", person_id)
+
+        task = asyncio.create_task(tell())
+        self._notices.add(task)
+        task.add_done_callback(self._notices.discard)
+
     async def _apply_flood_filter(
-        self, tg_id: int, chat: ChatTarget, allowed: list[AchievementRow]
+        self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]
     ) -> list[AchievementRow]:
         """Anti-flood filter (2026-09-09 user request): up to
         `chat.flood_limit` individually-notified achievements per rolling
@@ -311,7 +342,7 @@ class Publisher:
         into throttled mode, exactly as if it had arrived on its own.
         """
         now = utcnow()
-        state = await self._repo.get_flood_state(tg_id, chat.chat_id)
+        state = await self._repo.get_flood_state(person_id, chat.chat_id)
         if state is not None and now >= state.window_started_at + timedelta(
             minutes=chat.flood_window_minutes
         ):
@@ -336,7 +367,7 @@ class Publisher:
                 window_started_at = now  # restart right here, not at expiry
 
         await self._repo.set_flood_state(
-            tg_id,
+            person_id,
             chat.chat_id,
             window_started_at=window_started_at,
             count_in_window=count,
@@ -394,7 +425,7 @@ class Publisher:
         return result
 
     async def publish_flood_digest(
-        self, tg_id: int, chat_id: int, achievements: list[AchievementRow]
+        self, person_id: int, chat_id: int, achievements: list[AchievementRow]
     ) -> None:
         """The flush side of `_apply_flood_filter` above — called by
         poller/flood_flush.py once a throttled window closes. Unlike every
@@ -413,8 +444,8 @@ class Publisher:
         # subscription walk), and one lookup per flushed window is nothing.
         locale = await self._repo.chat_locale(chat_id)
         achievements = await localize_descriptions(self._repo, achievements, locale)
-        user = await self._repo.get_user(tg_id)
-        links = await self._repo.platform_links_of(tg_id)
+        user = await self._repo.get_user(person_id)
+        links = await self._repo.platform_links_of(person_id)
         platforms = {account_platform_of(item.platform) for item in achievements}
         accounts = {(account_platform_of(item.platform), item.xuid) for item in achievements}
         name: str | None = None
@@ -458,7 +489,7 @@ class Publisher:
                         external_id=link.external_id,
                     )
         if not name or name == NO_NICKNAME:
-            name = person_name_of(user, links) if user else f"id{tg_id}"
+            name = person_name_of(user, links) if user else f"id{person_id}"
 
         missing = [a.title_id for a in achievements if not getattr(a, "game_platforms", None)]
         if missing:
@@ -499,7 +530,7 @@ class Publisher:
             if len(titles) == 1:
                 game_ref = next(iter(titles))
 
-        markup = await self._markup_for(chat_id, locale, person_id=tg_id, game=game_ref)
+        markup = await self._markup_for(chat_id, locale, person_id=person_id, game=game_ref)
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,

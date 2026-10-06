@@ -24,7 +24,16 @@ export function Icon({
     | "sync"
     | "off"
     | "sort"
-    | "guide";
+    | "guide"
+    | "bell"
+    | "send"
+    | "sliders"
+    | "chat"
+    | "shield"
+    | "gauge"
+    | "key"
+    | "gift"
+    | "copy";
   size?: number;
   filled?: boolean;
 }) {
@@ -39,6 +48,80 @@ export function Icon({
     strokeLinejoin: "round" as const,
     "aria-hidden": true,
   };
+  if (name === "copy") {
+    return (
+      <svg {...props}>
+        <rect x="8.5" y="8.5" width="11" height="11" rx="2.2" />
+        <path d="M15.5 8.5V6.2a1.7 1.7 0 0 0-1.7-1.7H6.2a1.7 1.7 0 0 0-1.7 1.7v7.6a1.7 1.7 0 0 0 1.7 1.7h2.3" />
+      </svg>
+    );
+  }
+  if (name === "gift") {
+    return (
+      <svg {...props}>
+        <rect x="4" y="9" width="16" height="4" rx="1" />
+        <path d="M5.5 13v6.3a1.2 1.2 0 0 0 1.2 1.2h10.6a1.2 1.2 0 0 0 1.2-1.2V13M12 9v11.5" />
+        <path d="M12 9c-1.5-3.6-5.6-4-5.6-1.6C6.4 9 9.5 9 12 9zM12 9c1.5-3.6 5.6-4 5.6-1.6C17.6 9 14.5 9 12 9z" />
+      </svg>
+    );
+  }
+  if (name === "send") {
+    return (
+      <svg {...props}>
+        <path d="M20.5 3.5 10.6 13.4" />
+        <path d="M20.5 3.5 14.2 20.4l-3.6-7-7-3.6z" />
+      </svg>
+    );
+  }
+  if (name === "sliders") {
+    return (
+      <svg {...props}>
+        <path d="M4 7.5h9.5M18.5 7.5H20M4 16.5h3.5M12.5 16.5H20" />
+        <circle cx="16" cy="7.5" r="2.5" />
+        <circle cx="10" cy="16.5" r="2.5" />
+      </svg>
+    );
+  }
+  if (name === "chat") {
+    return (
+      <svg {...props}>
+        <path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4.5 19.5l1.3-4.3A7.5 7.5 0 1 1 20 11.5z" />
+      </svg>
+    );
+  }
+  if (name === "shield") {
+    return (
+      <svg {...props}>
+        <path d="M12 3.5 19 6v5.6c0 4.3-2.9 7.7-7 8.9-4.1-1.2-7-4.6-7-8.9V6z" />
+        <path d="m9 12 2.2 2.2L15.2 10" />
+      </svg>
+    );
+  }
+  if (name === "gauge") {
+    return (
+      <svg {...props}>
+        <path d="M4.6 17.5a8.5 8.5 0 1 1 14.8 0" />
+        <path d="m12 13.5 3.6-4.3" />
+        <circle cx="12" cy="14" r="1.2" />
+      </svg>
+    );
+  }
+  if (name === "key") {
+    return (
+      <svg {...props}>
+        <circle cx="8" cy="15.5" r="4" />
+        <path d="m10.9 12.6 8.6-8.6M16.6 6.9l2.4 2.4M14.3 9.2l1.9 1.9" />
+      </svg>
+    );
+  }
+  if (name === "bell") {
+    return (
+      <svg {...props}>
+        <path d="M6 16.4V11a6 6 0 0 1 12 0v5.4l1.6 2.1H4.4z" />
+        <path d="M10 20.6a2 2 0 0 0 4 0" />
+      </svg>
+    );
+  }
   if (name === "home") {
     return (
       <svg {...props}>

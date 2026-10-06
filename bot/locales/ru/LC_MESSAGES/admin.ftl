@@ -65,7 +65,7 @@ admin-keys-anthropic-prompt =
     Пришли Anthropic API key одним сообщением — получить его:
     console.anthropic.com → Settings → API Keys → Create Key
     (нужен привязанный способ оплаты — ключ платный, но перевод коротких
-    описаний ачивок стоит копейки на Haiku).
+    описаний достижений стоит копейки на Haiku).
 admin-keys-anthropic-invalid = Ключ Anthropic не подошёл — проверь и пришли ещё раз.
 admin-keys-anthropic-saved =
     Ключ Anthropic сохранён.
@@ -183,7 +183,7 @@ admin-new-users-screen =
 
     Действует только на подписки, оформленные с этого момента — уже существующие
     не трогает.
-admin-default-rarity = Ачивки по умолчанию: { $rarity } ▸
+admin-default-rarity = Достижения по умолчанию: { $rarity } ▸
 admin-rare-row = 💎 Порог редкости: { $value }% ▸
 admin-show-links = Ссылки на профили в карточках: { $visible } ▸
 admin-users-empty = 👥 Пока никто не подключился.

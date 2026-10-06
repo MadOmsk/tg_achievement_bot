@@ -105,13 +105,15 @@ async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) ->
     tg_id = 9999
     await repo.ensure_user(tg_id)
     await repo.upsert_chat(chat_id, "Test Chat", tg_id)
-    await repo.subscribe(chat_id, tg_id)
+    await repo.subscribe(chat_id, await repo.person_id(tg_id))
 
     settings = SimpleNamespace(mini_app_url="https://app.example.com")
     pub = Publisher(bot=None, repo=repo, settings=settings, bot_username="testbot")
 
     item = achievement("ach1", "icon.png")
-    await pub.publish(tg_id, "xuid1", "Player", [item], title_name="Game Title")
+    await pub.publish(
+        await repo.person_id(tg_id), "xuid1", "Player", [item], title_name="Game Title"
+    )
 
     job = await pub._queue.get()
     assert job.chat_id == chat_id
@@ -121,7 +123,8 @@ async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) ->
     encoded_game = (
         base64.urlsafe_b64encode(f"{item.platform}:{item.title_id}".encode()).decode().rstrip("=")
     )
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{encoded_game}"
+    person = await repo.person_id(tg_id)
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}p{person}g{encoded_game}"
 
 
 async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
@@ -133,14 +136,16 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
     tg_id = 9999
     await repo.ensure_user(tg_id)
     await repo.upsert_chat(chat_id, "Test Chat", tg_id)
-    await repo.subscribe(chat_id, tg_id)
+    await repo.subscribe(chat_id, await repo.person_id(tg_id))
     await repo.update_chat_settings(chat_id, digest_threshold=2)  # the chat's since #126
 
     settings = SimpleNamespace(mini_app_url="https://app.example.com")
     pub = Publisher(bot=None, repo=repo, settings=settings, bot_username="testbot")
 
     items = [achievement("ach1", "icon1.png"), achievement("ach2", "icon2.png")]
-    await pub.publish(tg_id, "xuid1", "Player", items, title_name="Game Title")
+    await pub.publish(
+        await repo.person_id(tg_id), "xuid1", "Player", items, title_name="Game Title"
+    )
 
     job = await pub._queue.get()
     assert job.chat_id == chat_id
@@ -152,7 +157,8 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
         .decode()
         .rstrip("=")
     )
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{encoded_game}"
+    person = await repo.person_id(tg_id)
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}p{person}g{encoded_game}"
 
 
 async def test_publisher_no_markup_when_no_mini_app_url(repo) -> None:
@@ -162,12 +168,14 @@ async def test_publisher_no_markup_when_no_mini_app_url(repo) -> None:
     tg_id = 9999
     await repo.ensure_user(tg_id)
     await repo.upsert_chat(chat_id, "Test Chat", tg_id)
-    await repo.subscribe(chat_id, tg_id)
+    await repo.subscribe(chat_id, await repo.person_id(tg_id))
 
     pub = Publisher(bot=None, repo=repo, settings=None, bot_username="testbot")
 
     item = achievement("ach1", "icon.png")
-    await pub.publish(tg_id, "xuid1", "Player", [item], title_name="Game Title")
+    await pub.publish(
+        await repo.person_id(tg_id), "xuid1", "Player", [item], title_name="Game Title"
+    )
 
     job = await pub._queue.get()
     assert job.reply_markup is None

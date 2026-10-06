@@ -111,7 +111,7 @@ export function PersonProfile({
             <FriendMark friend={friend} label={t(locale, "friends")}>
               <Avatar
                 name={person.name}
-                tgId={person.tg_id}
+                personId={person.person_id}
                 size={48}
                 zoomLabel={t(locale, "close")}
                 online={live}
