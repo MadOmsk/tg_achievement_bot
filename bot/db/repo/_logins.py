@@ -6,6 +6,7 @@ stores."""
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 
 from bot.util import utcnow_iso
@@ -37,18 +38,18 @@ class _LoginsRepo:
         """A new person who arrives by email: no Telegram id, the address as
         their only way in, settings from the admin's defaults like anybody's."""
         now = utcnow_iso()
-        cursor = await self._conn.execute(
-            "INSERT INTO users (email, email_linked_at, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?)",
-            (email, now, now, now),
-        )
-        person = int(cursor.lastrowid)
         default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")  # type: ignore[attr-defined]
-        await self._conn.execute(
-            "INSERT OR IGNORE INTO user_settings (person_id, rarity_mode) VALUES (?, ?)",
-            (person, default_rarity_mode or "all"),
-        )
-        await self._conn.commit()
+        async with self.transaction():  # type: ignore[attr-defined]
+            cursor = await self._conn.execute(
+                "INSERT INTO users (email, email_linked_at, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?)",
+                (email, now, now, now),
+            )
+            person = int(cursor.lastrowid)
+            await self._conn.execute(
+                "INSERT OR IGNORE INTO user_settings (person_id, rarity_mode) VALUES (?, ?)",
+                (person, default_rarity_mode or "all"),
+            )
         return person
 
     async def set_email(self, person_id: int, email: str) -> None:
@@ -59,11 +60,15 @@ class _LoginsRepo:
         if owner is not None and owner != person_id:
             raise LoginTaken(email)
         now = utcnow_iso()
-        await self._conn.execute(
-            "UPDATE users SET email = ?, email_linked_at = ?, updated_at = ? WHERE id = ?",
-            (email, now, now, person_id),
-        )
-        await self._conn.commit()
+        try:
+            async with self.transaction():  # type: ignore[attr-defined]
+                await self._conn.execute(
+                    "UPDATE users SET email = ?, email_linked_at = ?, updated_at = ? WHERE id = ?",
+                    (email, now, now, person_id),
+                )
+        except sqlite3.IntegrityError as exc:
+            # Taken between the check above and this write.
+            raise LoginTaken(email) from exc
 
     async def email_prompt_due(self, person_id: int) -> bool:
         """Whether to ask this person for an email on opening the app: they have
@@ -95,13 +100,16 @@ class _LoginsRepo:
         row = await cursor.fetchone()
         if row is not None and int(row["id"]) != person_id:
             raise LoginTaken(str(tg_id))
-        await self._conn.execute(
-            "UPDATE users SET tg_id = ?, username = ?,"
-            " first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name),"
-            " updated_at = ? WHERE id = ?",
-            (tg_id, username, first_name, last_name, utcnow_iso(), person_id),
-        )
-        await self._conn.commit()
+        try:
+            async with self.transaction():  # type: ignore[attr-defined]
+                await self._conn.execute(
+                    "UPDATE users SET tg_id = ?, username = ?,"
+                    " first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name),"
+                    " updated_at = ? WHERE id = ?",
+                    (tg_id, username, first_name, last_name, utcnow_iso(), person_id),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise LoginTaken(str(tg_id)) from exc
 
     async def remove_telegram(self, person_id: int) -> str | None:
         """Take Telegram away from a person (#162): the id, and what came with
@@ -120,15 +128,15 @@ class _LoginsRepo:
         if row is None or row["tg_id"] is None:
             return None
         tg_id = row["tg_id"]
-        await self._conn.execute("DELETE FROM subscriptions WHERE person_id = ?", (person_id,))
-        await self._conn.execute("DELETE FROM chat_seen WHERE tg_id = ?", (tg_id,))
-        await self._conn.execute(
-            "UPDATE users SET tg_id = NULL, username = NULL, first_name = NULL,"
-            " last_name = NULL, photo_file_id = NULL, photo_unique_id = NULL,"
-            " photo_checked_at = NULL, photo_path = NULL, updated_at = ? WHERE id = ?",
-            (utcnow_iso(), person_id),
-        )
-        await self._conn.commit()
+        async with self.transaction():  # type: ignore[attr-defined]
+            await self._conn.execute("DELETE FROM subscriptions WHERE person_id = ?", (person_id,))
+            await self._conn.execute("DELETE FROM chat_seen WHERE tg_id = ?", (tg_id,))
+            await self._conn.execute(
+                "UPDATE users SET tg_id = NULL, username = NULL, first_name = NULL,"
+                " last_name = NULL, photo_file_id = NULL, photo_unique_id = NULL,"
+                " photo_checked_at = NULL, photo_path = NULL, updated_at = ? WHERE id = ?",
+                (utcnow_iso(), person_id),
+            )
         return row["photo_path"]
 
     # ------------------------------------------------------------------ codes

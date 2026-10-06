@@ -179,6 +179,23 @@ class _MergeRepo:
                 await conn.execute(
                     f"UPDATE {table} SET person_id = :keep WHERE person_id = :absorb", a
                 )
+            # The codes one made and the one one came by (#167): left behind,
+            # deleting the absorbed row took them with it — who came by a code
+            # is kept and shown.
+            await conn.execute(
+                "UPDATE invites SET created_by = :keep WHERE created_by = :absorb", a
+            )
+            await conn.execute("UPDATE invites SET used_by = :keep WHERE used_by = :absorb", a)
+            # When each pair last pinged and unfollowed: the follow limits hold
+            # for the person who stays.
+            for column, other in (("follower_id", "followee_id"), ("followee_id", "follower_id")):
+                await conn.execute(
+                    f"INSERT OR IGNORE INTO follow_log ({column}, {other}, notified_at,"
+                    "  unfollowed_at)"
+                    f" SELECT :keep, {other}, notified_at, unfollowed_at FROM follow_log"
+                    f" WHERE {column} = :absorb AND {other} != :keep",
+                    a,
+                )
 
             # ------------------------------------------------- the person
             cursor = await conn.execute(

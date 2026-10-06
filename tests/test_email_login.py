@@ -539,6 +539,29 @@ async def test_somebody_new_needs_an_invite(repo: Repo, settings) -> None:
         await client.close()
 
 
+async def test_an_invite_spent_meanwhile_leaves_nobody_behind(repo: Repo, settings) -> None:
+    """#167: the person and the spent code land together — a code that went to
+    somebody else between the check and the sign-up rolls the person back."""
+    sender = FakeSender()
+    client = await _client(repo, settings, sender)
+    code = await _invite(repo)
+
+    async def gone(_code: str, _person: int) -> bool:
+        return False
+
+    try:
+        await client.post("/api/mini/auth/email/start", json={"email": "late@example.com"})
+        repo.redeem_invite = gone  # type: ignore[method-assign]
+        late = await client.post(
+            "/api/mini/auth/email/verify",
+            json={"email": "late@example.com", "code": sender.last_code(), "invite": code},
+        )
+        assert (await late.json())["error"] == "invite_invalid"
+        assert await repo.person_by_email("late@example.com") is None
+    finally:
+        await client.close()
+
+
 async def test_a_member_makes_and_takes_back_codes(repo: Repo, settings) -> None:
     member = await repo.ensure_user(5, "ada")
     assert member is not None

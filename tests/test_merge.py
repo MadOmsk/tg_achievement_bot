@@ -85,6 +85,33 @@ async def test_nothing_to_choose_moves_everything(repo: Repo) -> None:
     assert (await cursor.fetchone())[0] == 1
 
 
+async def test_invites_and_the_follow_log_move_too(repo: Repo) -> None:
+    """#167: the absorbed person's codes, the code they came by, and the follow
+    limits' log used to go with the deleted row."""
+    ada = await _email_person(repo)
+    tg = await repo.ensure_user(77, "ada_tg")
+    friend = await repo.ensure_user(88, "friend")
+    assert tg and friend
+    await repo.create_invite(friend, "AAAA-BBBB-CCCC-DDDD")
+    assert await repo.redeem_invite("AAAA-BBBB-CCCC-DDDD", tg)
+    await repo.create_invite(tg, "EEEE-FFFF-GGGG-HHHH")
+    await repo.unfollow(tg, friend)  # nothing to unfollow: no log row
+    await repo.follow(tg, friend)
+    await repo.unfollow(tg, friend)
+
+    await _merge(repo).merge(ada, tg)
+
+    assert [i.code for i in await repo.invites_of(ada)] == ["EEEE-FFFF-GGGG-HHHH"]
+    [came_by] = await repo.invites_of(friend)
+    assert came_by.used_by == ada
+    cursor = await repo._conn.execute(
+        "SELECT unfollowed_at IS NOT NULL FROM follow_log"
+        " WHERE follower_id = ? AND followee_id = ?",
+        (ada, friend),
+    )
+    assert (await cursor.fetchone())[0] == 1
+
+
 async def test_two_xbox_accounts_are_a_choice_and_the_login_follows(repo: Repo) -> None:
     ada = await _email_person(repo)
     await repo.link_xbox_account(ada, "xuid-old", "Old", 1)

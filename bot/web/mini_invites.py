@@ -15,6 +15,7 @@ A member's own codes: `GET /api/mini/me/invites`, `POST` makes one, `DELETE
 from __future__ import annotations
 
 import logging
+import sqlite3
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -32,6 +33,10 @@ log = logging.getLogger(__name__)
 PENDING_KEY = "mini_signups"
 
 RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
+
+
+class _InviteSpent(Exception):
+    """The code went to somebody else between the check and the sign-up."""
 
 
 def _error(code: str, status: int, **extra: Any) -> web.Response:
@@ -72,13 +77,25 @@ async def sign_up(request: web.Request, proof: dict[str, Any], raw_invite: objec
     repo: Repo = request.app["mini_repo"]
     code = invites.normalize(raw_invite)
     if code is not None and await repo.invite_usable(code):
-        person = await _create(repo, proof)
-        if person is None:
-            raise web.HTTPNotFound(text="no person")
-        if not await repo.redeem_invite(code, person):
-            # Spent a moment ago by somebody else: the new person goes again.
-            await repo.delete_person(person, is_admin=True)
+        # The person and the spent code land together or not at all (#167).
+        # This used to create, then delete the person again when the code had
+        # gone a moment before — and a double submit of one proof could delete
+        # the person the first request had just made.
+        try:
+            async with repo.transaction():
+                person = await _create(repo, proof)
+                if person is None:
+                    raise web.HTTPNotFound(text="no person")
+                if not await repo.redeem_invite(code, person):
+                    raise _InviteSpent
+        except _InviteSpent:
             return _error("invite_invalid", 400, signup=_pending(request.app).put(proof))
+        except sqlite3.IntegrityError:
+            # The same proof signed up a moment ago: that is who this is.
+            existing = await _existing(repo, proof)
+            if existing is None:
+                raise
+            return await start_session(request, repo, existing)
         log.info("new person_id=%s signed up (%s) with an invite", person, proof["kind"])
         return await start_session(request, repo, person)
     token = _pending(request.app).put(proof)
