@@ -15,6 +15,7 @@ from bot.db.repo._models import (
     OnlineAutoRefreshRow,
     _iso,
 )
+from bot.db.repo._refresh import ONLINE
 from bot.db.repo._sql import (
     CHAT_MEMBERS,
     HANDLE_SHOWN,
@@ -27,7 +28,6 @@ from bot.db.repo._sql import (
     rarity,
     rarity_cache_join,
 )
-from bot.util import utcnow_iso
 
 
 class _ChatStatsRepo:
@@ -322,64 +322,22 @@ class _ChatStatsRepo:
             for row in await cursor.fetchall()
         ]
 
+    # One chat's live-updating /online (Follow-up 2026-09-05,
+    # poller/online_refresh.py); the statements are `_refresh.py`'s. A fresh
+    # /online supersedes the last: the caller deletes the old copy first
+    # (`get_online_auto_refresh` gives its id), and `created_at` — the 3h
+    # cutoff's clock — starts again.
     async def start_online_auto_refresh(self, chat_id: int, message_id: int) -> None:
-        """A fresh /online supersedes whatever was auto-refreshing in this
-        chat before (Follow-up 2026-09-05, poller/online_refresh.py) — the
-        old message just goes stale, nothing needs to actively stop it.
-        Both timestamps reset: created_at is the 3h cutoff's own clock,
-        independent of whatever the previous table's age was."""
-        now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO online_auto_refresh (chat_id, message_id, created_at, last_updated_at) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(chat_id) DO UPDATE SET"
-            " message_id = excluded.message_id, created_at = excluded.created_at,"
-            " last_updated_at = excluded.last_updated_at",
-            (chat_id, message_id, now, now),
-        )
-        await self._conn.commit()
+        await ONLINE.start(self._conn, chat_id, message_id)
 
     async def touch_online_auto_refresh(self, chat_id: int) -> None:
-        await self._conn.execute(
-            "UPDATE online_auto_refresh SET last_updated_at = ? WHERE chat_id = ?",
-            (utcnow_iso(), chat_id),
-        )
-        await self._conn.commit()
+        await ONLINE.touch(self._conn, chat_id)
 
     async def delete_online_auto_refresh(self, chat_id: int) -> None:
-        await self._conn.execute("DELETE FROM online_auto_refresh WHERE chat_id = ?", (chat_id,))
-        await self._conn.commit()
+        await ONLINE.delete(self._conn, chat_id)
 
     async def all_online_auto_refreshes(self) -> list[OnlineAutoRefreshRow]:
-        cursor = await self._conn.execute(
-            "SELECT chat_id, message_id, created_at, last_updated_at FROM online_auto_refresh"
-        )
-        return [
-            OnlineAutoRefreshRow(
-                chat_id=row["chat_id"],
-                message_id=row["message_id"],
-                created_at=row["created_at"],
-                last_updated_at=row["last_updated_at"],
-            )
-            for row in await cursor.fetchall()
-        ]
+        return await ONLINE.all(self._conn)
 
     async def get_online_auto_refresh(self, chat_id: int) -> OnlineAutoRefreshRow | None:
-        """Follow-up 2026-09-06: /online now deletes its own previous copy
-        before posting a new one (same "don't spam the chat" rule as
-        tracked_messages below) — needs the old message_id before
-        start_online_auto_refresh overwrites the row with the new one."""
-        cursor = await self._conn.execute(
-            "SELECT chat_id, message_id, created_at, last_updated_at "
-            "FROM online_auto_refresh WHERE chat_id = ?",
-            (chat_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return OnlineAutoRefreshRow(
-            chat_id=row["chat_id"],
-            message_id=row["message_id"],
-            created_at=row["created_at"],
-            last_updated_at=row["last_updated_at"],
-        )
+        return await ONLINE.get(self._conn, chat_id)

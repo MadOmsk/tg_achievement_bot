@@ -18,6 +18,7 @@ from bot.db.repo._models import (
     TitleCoverRow,
     TitleHltbRow,
 )
+from bot.db.repo._refresh import ADMIN_PANEL
 from bot.db.repo._sql import (
     GLOBAL_RARE_THRESHOLD,
     HANDLE_SHOWN,
@@ -33,64 +34,25 @@ from bot.util import utcnow_iso
 class _AdminRepo:
     # ----------------------------------------------- admin panel auto-refresh
 
+    # One admin's live-updating /admin (Follow-up 2026-09-06,
+    # poller/admin_refresh.py); the statements are `_refresh.py`'s. A fresh
+    # /admin supersedes the last: the caller deletes the old *message* itself
+    # (`get_admin_panel_refresh` gives it the id), `start_` points the row at
+    # the new one.
     async def get_admin_panel_refresh(self, admin_id: int) -> AdminPanelRefreshRow | None:
-        cursor = await self._conn.execute(
-            "SELECT admin_id, message_id, created_at, last_updated_at "
-            "FROM admin_panel_refresh WHERE admin_id = ?",
-            (admin_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return AdminPanelRefreshRow(
-            admin_id=row["admin_id"],
-            message_id=row["message_id"],
-            created_at=row["created_at"],
-            last_updated_at=row["last_updated_at"],
-        )
+        return await ADMIN_PANEL.get(self._conn, admin_id)
 
     async def start_admin_panel_refresh(self, admin_id: int, message_id: int) -> None:
-        """A fresh /admin supersedes whatever was auto-refreshing for this
-        admin before (Follow-up 2026-09-06, poller/admin_refresh.py) — the
-        caller deletes the old *message* itself (get_admin_panel_refresh
-        above gives it the id to delete); this just points the one row at
-        the new one, same reset-both-timestamps shape as
-        start_online_auto_refresh."""
-        now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO admin_panel_refresh (admin_id, message_id, created_at, last_updated_at) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(admin_id) DO UPDATE SET"
-            " message_id = excluded.message_id, created_at = excluded.created_at,"
-            " last_updated_at = excluded.last_updated_at",
-            (admin_id, message_id, now, now),
-        )
-        await self._conn.commit()
+        await ADMIN_PANEL.start(self._conn, admin_id, message_id)
 
     async def touch_admin_panel_refresh(self, admin_id: int) -> None:
-        await self._conn.execute(
-            "UPDATE admin_panel_refresh SET last_updated_at = ? WHERE admin_id = ?",
-            (utcnow_iso(), admin_id),
-        )
-        await self._conn.commit()
+        await ADMIN_PANEL.touch(self._conn, admin_id)
 
     async def delete_admin_panel_refresh(self, admin_id: int) -> None:
-        await self._conn.execute("DELETE FROM admin_panel_refresh WHERE admin_id = ?", (admin_id,))
-        await self._conn.commit()
+        await ADMIN_PANEL.delete(self._conn, admin_id)
 
     async def all_admin_panel_refreshes(self) -> list[AdminPanelRefreshRow]:
-        cursor = await self._conn.execute(
-            "SELECT admin_id, message_id, created_at, last_updated_at FROM admin_panel_refresh"
-        )
-        return [
-            AdminPanelRefreshRow(
-                admin_id=row["admin_id"],
-                message_id=row["message_id"],
-                created_at=row["created_at"],
-                last_updated_at=row["last_updated_at"],
-            )
-            for row in await cursor.fetchall()
-        ]
+        return await ADMIN_PANEL.all(self._conn)
 
     # ----------------------------------------------------------------- admin
 
