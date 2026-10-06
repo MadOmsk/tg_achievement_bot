@@ -312,7 +312,7 @@ class _SteamRepo:
 
     async def game_patches(self, appid: int, limit: int) -> list[StoredPatch]:
         """The developer's latest posts, patches and news both — the game page's
-        «Новости» tab, filtered there by `kind`."""
+        «Обновления» tab, filtered there by `kind`."""
         cursor = await self._conn.execute(
             "SELECT gid, title, published_at, text_en, title_ru, text_ru, image_url, kind"
             " FROM game_patches"
