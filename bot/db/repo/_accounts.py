@@ -739,6 +739,10 @@ class _AccountsRepo:
             "notify_push",
             "notify_telegram",
             "notify_posts",
+            "notify_new_posts",
+            "notify_friends",
+            "notify_account",
+            "notify_game_news",
         }
         unknown = set(fields) - allowed
         if unknown:

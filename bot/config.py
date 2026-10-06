@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # every other secret here.
     anthropic_api_key: SecretStr | None = None
 
+    # YouTube Data API v3 (optional — video guides for achievements from the
+    # channels in services/youtube/guides.py). Only a first-run seed, as the
+    # two keys above: the admin panel owns it afterwards. Google Cloud →
+    # "YouTube Data API v3" → Credentials → API key.
+    youtube_api_key: SecretStr | None = None
+
     # Email sign-in (#162) — optional: without a mail server the Mini App
     # simply does not offer it. `smtp_security` is "starttls" (port 587),
     # "ssl" (port 465) or "none" (a relay on the same machine).

@@ -49,6 +49,7 @@ from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
+from bot.services.youtube.auth import YouTubeAuth
 from bot.views import Screen
 from bot.views.admin import (
     render_chat_card as render_admin_chat_card,
@@ -312,6 +313,7 @@ async def _admin_keys(ctx: Context) -> Screen:
             ),
             PsnAuth(ctx.repo, cipher),
             AnthropicAuth(ctx.repo, cipher),
+            YouTubeAuth(ctx.repo, cipher),
             locale=ctx.locale,
         )
     )

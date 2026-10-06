@@ -56,6 +56,7 @@ from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURE
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED
 from bot.services.translate.auth import AnthropicAuth
+from bot.services.youtube.auth import YouTubeAuth
 from bot.util import humanize_ago
 from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
@@ -95,17 +96,24 @@ def _cancel_input_keyboard(*, locale: str) -> InlineKeyboardMarkup:
 
 
 async def render_keys(
-    steam_auth: SteamAuth, psn_auth: PsnAuth, anthropic_auth: AnthropicAuth, *, locale: str
+    steam_auth: SteamAuth,
+    psn_auth: PsnAuth,
+    anthropic_auth: AnthropicAuth,
+    youtube_auth: YouTubeAuth,
+    *,
+    locale: str,
 ) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
     steam_configured = await steam_auth.status() != STEAM_NOT_CONFIGURED
     psn_configured = await psn_auth.status() != PSN_NOT_CONFIGURED
     anthropic_configured = await anthropic_auth.status() != ANTHROPIC_NOT_CONFIGURED
+    youtube_configured = await youtube_auth.configured()
     text = _(
         "admin-keys-screen",
         steam=_("admin-keys-set") if steam_configured else _("admin-keys-unset"),
         psn=_("admin-keys-set") if psn_configured else _("admin-keys-unset"),
         anthropic=_("admin-keys-set") if anthropic_configured else _("admin-keys-unset"),
+        youtube=_("admin-keys-set") if youtube_configured else _("admin-keys-unset"),
     )
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -140,6 +148,20 @@ async def render_keys(
         builder.row(
             InlineKeyboardButton(
                 text=_("admin-keys-anthropic-clear"), callback_data="a:keyclr:anthropic"
+            )
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-keys-youtube-change")
+            if youtube_configured
+            else _("admin-keys-youtube-add"),
+            callback_data="a:keyset:youtube",
+        )
+    )
+    if youtube_configured:
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-keys-youtube-clear"), callback_data="a:keyclr:youtube"
             )
         )
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))

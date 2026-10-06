@@ -27,6 +27,8 @@ export function Icon({
     | "guide"
     | "bell"
     | "send"
+    | "play"
+    | "video"
     | "sliders"
     | "chat"
     | "shield"
@@ -62,6 +64,21 @@ export function Icon({
         <rect x="4" y="9" width="16" height="4" rx="1" />
         <path d="M5.5 13v6.3a1.2 1.2 0 0 0 1.2 1.2h10.6a1.2 1.2 0 0 0 1.2-1.2V13M12 9v11.5" />
         <path d="M12 9c-1.5-3.6-5.6-4-5.6-1.6C6.4 9 9.5 9 12 9zM12 9c1.5-3.6 5.6-4 5.6-1.6C17.6 9 14.5 9 12 9z" />
+      </svg>
+    );
+  }
+  if (name === "video") {
+    return (
+      <svg {...props}>
+        <rect x="3" y="5.5" width="18" height="13" rx="3.5" />
+        <path d="M10.2 9.4v5.2l4.4-2.6z" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (name === "play") {
+    return (
+      <svg {...props}>
+        <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="none" />
       </svg>
     );
   }

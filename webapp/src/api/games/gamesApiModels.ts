@@ -116,10 +116,36 @@ export type AchievementTip = {
   text: string;
 };
 
+export type GameGuide = {
+  url: string;
+  channel: string;
+  /** How many of the channel's videos are about the game. */
+  count: number;
+  video_id: string | null;
+  title: string | null;
+};
+
+/** A guide video that names one achievement: where in it to start. */
+export type AchievementVideo = {
+  id: string;
+  title: string;
+  channel: string;
+  /** Seconds into the video. */
+  start: number;
+  /** "PART 2" of a guide in several; 0 when it is one. */
+  part: number;
+  url: string;
+};
+
 /** The tip for every achievement of the game that has one, by achievement id. */
 export type GameGuidesResponse = {
   ok: boolean;
   tips: Record<string, AchievementTip>;
+  /** Guide videos by achievement id. */
+  videos?: Record<string, AchievementVideo[]>;
+  /** The game's guide on a guide channel: a whole-game video, or the
+   * channel's search for the game. */
+  guide?: GameGuide | null;
   /** False while Steam still holds some guides back; asking again later finds more. */
   complete: boolean;
 };

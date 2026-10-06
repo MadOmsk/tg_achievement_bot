@@ -6,6 +6,12 @@ export type NotificationItem = {
   id: number;
   kind: string;
   text: string;
+  /** The list's line: after the name in bold (or the whole line, with no name). */
+  lead: string;
+  /** What it is about — an achievement and its game. */
+  detail: string | null;
+  /** Its picture, at the row's end. */
+  image: string | null;
   created_at: string;
   read: boolean;
   /** Whom a tap opens, when the notice is about somebody. */

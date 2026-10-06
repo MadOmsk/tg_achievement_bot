@@ -112,6 +112,11 @@ async def build_me_payload(
             "notify_telegram": bool(settings_row.notify_telegram) if settings_row else True,
             # Whose new posts are told about: friends / following / none.
             "notify_posts": settings_row.notify_posts if settings_row else "friends",
+            # A switch per kind of notice.
+            "notify_new_posts": bool(settings_row.notify_new_posts) if settings_row else True,
+            "notify_friends": bool(settings_row.notify_friends) if settings_row else True,
+            "notify_account": bool(settings_row.notify_account) if settings_row else True,
+            "notify_game_news": settings_row.notify_game_news if settings_row else "all",
             # Who sees this person's activity in the app (#157).
             "activity_visible": await repo.activity_visible(person_id),
         },

@@ -18,6 +18,7 @@ export type AdminKeys = {
   steam: boolean;
   psn: boolean;
   anthropic: boolean;
+  youtube: boolean;
 };
 
 export type AdminLimit = {

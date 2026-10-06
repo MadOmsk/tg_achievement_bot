@@ -11,6 +11,23 @@
   background: #0a0c12;
 }
 
+/* The game's video guide: a button in the page's head, before the score. */
+.game-guide-btn {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .game-cover .game-cover-back.cover-ph {
   position: absolute;
   inset: 0;
@@ -32,102 +49,6 @@
 /* No glyph on the backdrop: the fitted layer carries it when there is no picture. */
 .game-cover .game-cover-back.cover-ph.is-empty > .cover-ph-mark {
   display: none;
-}
-
-/* Progress: a plate hanging off the picture's lower edge — an achievement icon, a
- * bar and the percentage, so a game in progress is not just a picture. */
-.game-plate {
-  position: relative;
-  z-index: 3;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 14px;
-  margin: -27px 18px 0;
-  padding: 14px 18px;
-  border-radius: 20px;
-  background: rgba(14, 17, 26, 0.9);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 12px 30px rgba(0, 0, 0, 0.4);
-}
-
-.game-plate strong {
-  font-size: 1.6rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  line-height: 1;
-}
-
-.game-plate-bar {
-  --bar-h: 9px;
-}
-
-.game-plate-pct {
-  width: 58px;
-  height: 26px;
-  border-radius: 8px;
-}
-
-.game-plate-icon {
-  display: grid;
-  place-items: center;
-  color: rgba(240, 245, 255, 0.9);
-}
-
-/* The collapsed stand-in for the big glowing medal (see HeroPeek/GameHero's
- * `compact`) — the same plate everything else in this row uses, its bar
- * full and platinum instead of mid-progress: the same colors
- * progress.css already gives a finished game's bar elsewhere (the profile's
- * games list, the hero bar), plus a slow shimmer passing over it so the
- * plate has some life at rest instead of sitting there static. */
-.game-plate.is-platinum .game-plate-icon {
-  color: #bfe9fa;
-  filter: drop-shadow(0 0 8px rgba(140, 220, 245, 0.6));
-}
-
-.game-plate-fill.is-platinum {
-  --fill-a: rgba(80, 182, 218, 0.7);
-  --fill-b: rgba(226, 247, 255, 1);
-  --fill-glow: rgba(120, 214, 245, 0.7);
-  position: relative;
-  overflow: hidden;
-}
-
-.game-plate-fill.is-platinum::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 30%,
-    rgba(255, 255, 255, 0.65) 50%,
-    transparent 70%
-  );
-  transform: translateX(-100%);
-  animation: game-plate-shimmer 3.2s ease-in-out infinite;
-}
-
-@keyframes game-plate-shimmer {
-  0%,
-  25% {
-    transform: translateX(-100%);
-  }
-  75%,
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-.game-plate.is-platinum strong {
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  background: linear-gradient(180deg, #ffffff 10%, #bfe9fa 55%, #86c9e6 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 
 /* Achievements / "Об игре" (#131): one Swiper, endlessly looping, switched
@@ -338,6 +259,10 @@
   padding-right: 24px;
 }
 
+.feed-row.has-both .unlock-game {
+  padding-right: 46px;
+}
+
 /* A small book at the corner of the text column — which never grows, so the
  * book stays where it is when the tip unfolds and only changes colour. */
 .feed-tip-mark {
@@ -345,6 +270,7 @@
   right: 0;
   bottom: 2px;
   display: inline-flex;
+  gap: 6px;
   color: rgba(224, 229, 240, 0.62);
   transition: color 0.2s ease;
 }
@@ -646,121 +572,359 @@
   );
 }
 
-.game-hero.is-done:not(.is-compact) {
-  margin-bottom: 120px;
+.game-hero.has-medal {
+  margin-bottom: 104px;
 }
 
+/* A soft cold glow rising from under the medal into the picture. */
 .game-hero.is-done .game-cover::after {
   content: "";
   position: absolute;
   inset: auto 0 0 0;
-  height: 60%;
+  height: 45%;
   z-index: 2;
   pointer-events: none;
-  background: radial-gradient(75% 90% at 50% 100%, rgba(150, 225, 250, 0.5), transparent 72%);
+  background: radial-gradient(55% 80% at 50% 100%, rgba(150, 225, 250, 0.38), transparent 72%);
 }
 
 .game-medal {
   position: absolute;
   left: 50%;
-  /* The disc's centre sits on the picture's lower edge; the label hangs below. */
+  /* The disc's centre sits on the picture's lower edge; the words hang below. */
   top: 100%;
   z-index: 4;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  transform: translate(-50%, -52px);
+  transform: translate(-50%, -47px);
 }
 
+/* Platinum: a cold metal disc, its cup cut in the same metal, a thin dark
+ * ring to lift it off the picture and a breathing glow. */
 .game-medal-disc {
   position: relative;
   display: grid;
   place-items: center;
-  width: 104px;
-  height: 104px;
+  overflow: hidden;
+  width: 82px;
+  height: 82px;
   border-radius: 50%;
-  color: #12303c;
+  color: #1b4357;
   background:
-    radial-gradient(circle at 30% 24%, #ffffff 0%, transparent 44%),
-    conic-gradient(from 210deg, #cdeaf7, #f6fbff, #9fd3ea, #eaf6fc, #b7ddef, #cdeaf7);
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.95) 0%, transparent 42%),
+    conic-gradient(from 200deg, #d6eef8, #ffffff, #a9d8ec, #eef8fd, #bfe2f1, #d6eef8);
   box-shadow:
-    0 0 0 4px rgba(12, 15, 22, 0.9),
-    0 0 0 7px rgba(180, 232, 250, 0.7),
-    0 0 46px rgba(120, 210, 245, 0.7),
-    0 14px 34px rgba(0, 0, 0, 0.45);
+    0 0 0 3px rgba(12, 15, 22, 0.92),
+    0 10px 28px rgba(0, 0, 0, 0.45);
 }
 
 .game-medal-disc svg {
-  filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.75));
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8));
+}
+
+@keyframes game-medal-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 3px rgba(12, 15, 22, 0.92),
+      0 0 22px rgba(130, 215, 245, 0.35),
+      0 10px 28px rgba(0, 0, 0, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(12, 15, 22, 0.92),
+      0 0 40px rgba(150, 220, 250, 0.65),
+      0 10px 28px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* An iridescent rim round the disc, turning slowly: platinum catching every
+ * colour of the light. */
+.game-medal-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 94px;
+  height: 94px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    #e9f8ff,
+    #b4e3ff,
+    #d9c9ff,
+    #ffe0f0,
+    #fff4d1,
+    #c9f5e6,
+    #b4e3ff,
+    #e9f8ff
+  );
+  animation: game-ring-turn 8s linear infinite;
+}
+
+.game-medal-ring > .game-medal-disc {
+  animation:
+    game-ring-turn 8s linear infinite reverse,
+    game-medal-glow 3.2s ease-in-out infinite;
+}
+
+@keyframes game-ring-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.game-stars {
+  position: absolute;
+  top: 47px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.game-stars i {
+  position: absolute;
+  margin: -4px 0 0 -4px;
+  background: #f2fbff;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  filter: drop-shadow(0 0 4px rgba(170, 230, 255, 0.9));
+  opacity: 0;
+  animation: game-star-twinkle 2.8s ease-in-out infinite;
+}
+
+@keyframes game-star-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
 }
 
 .game-medal-label {
   margin-top: 12px;
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 800;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   white-space: nowrap;
-  /* Platinum lettering: a cool metallic gradient with a soft glow behind it. */
-  background: linear-gradient(180deg, #ffffff 10%, #bfe9fa 55%, #86c9e6 100%);
+  background: linear-gradient(100deg, #9fd6ee 0%, #ffffff 30%, #c6ecfa 45%, #ffffff 60%, #9fd6ee 100%);
+  background-size: 220% 100%;
+  animation: game-label-shimmer 5s ease-in-out 0.8s infinite;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 0 12px rgba(140, 220, 245, 0.55));
 }
 
-/* Light rays fanning out of the medal across the picture, turning slowly. */
-.game-rays {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  z-index: 2;
-  width: 190vw;
-  height: 190vw;
-  max-width: 1400px;
-  max-height: 1400px;
-  pointer-events: none;
-  background: repeating-conic-gradient(
-    from 0deg,
-    rgba(200, 244, 255, 0.3) 0deg 5deg,
-    transparent 5deg 20deg
-  );
-  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.55) 30%, transparent 62%);
-  mask-image: radial-gradient(circle, #000 0%, rgba(0, 0, 0, 0.55) 30%, transparent 62%);
-  mix-blend-mode: screen;
-  transform: translate(-50%, 50%) rotate(0deg);
-  animation: game-rays-turn 60s linear infinite;
+.game-medal-date {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
-@keyframes game-rays-turn {
-  to {
-    transform: translate(-50%, 50%) rotate(360deg);
+/* The first opening of one's own finished game: the medal pops in and a
+ * ring of sparks flies out of it, once. */
+.game-medal.is-party .game-medal-ring {
+  animation:
+    game-medal-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1) both,
+    game-ring-turn 8s linear 0.7s infinite;
+}
+
+.game-medal.is-party .game-medal-label,
+.game-medal.is-party .game-medal-date {
+  animation: game-medal-rise 0.6s ease-out 0.25s both;
+}
+
+@keyframes game-medal-pop {
+  0% {
+    transform: scale(0.3) rotate(-20deg);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
   }
 }
 
-/* A bright band sweeping over the picture now and then. */
-.game-shine {
+@keyframes game-label-shimmer {
+  0%,
+  100% {
+    background-position: 100% 0;
+  }
+  50% {
+    background-position: 0 0;
+  }
+}
+
+@keyframes game-medal-rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.game-sparks {
+  position: absolute;
+  top: 47px;
+  left: 50%;
+  z-index: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.game-sparks i {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e9f9ff;
+  box-shadow: 0 0 8px rgba(160, 230, 255, 0.9);
+  opacity: 0;
+  animation: game-spark 1.1s cubic-bezier(0.15, 0.7, 0.3, 1) calc(0.25s + var(--d) * 0.06s) forwards;
+}
+
+.game-sparks i:nth-child(3n) {
+  width: 4px;
+  height: 4px;
+  background: #ffe9a8;
+  box-shadow: 0 0 8px rgba(255, 220, 140, 0.9);
+}
+
+@keyframes game-spark {
+  0% {
+    transform: rotate(var(--a)) translateY(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--a)) translateY(-92px) scale(0.3);
+    opacity: 0;
+  }
+}
+
+/* --p is a number the browser can animate: the rim fills from nothing when
+ * the page opens. */
+@property --p {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/* Under a medal in progress the picture dims a little round it, so the
+ * medal stands out; a finished one lights it up instead. */
+.game-hero.has-medal:not(.is-done) .game-cover::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 70%;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 75% at 50% 100%, rgba(8, 10, 16, 0.72), transparent 75%),
+    linear-gradient(180deg, transparent 40%, rgba(8, 10, 16, 0.35) 100%);
+}
+
+/* Not finished: the same medal, quieter — a dark disc, a muted cup, and the
+ * rim filled clockwise as far as the person got, the rest a faint track. */
+.game-medal.is-progress .game-medal-ring {
+  background:
+    conic-gradient(
+      rgba(178, 188, 204, 0.5) 0,
+      #ffffff calc(var(--p) * 1%),
+      rgba(255, 255, 255, 0.14) calc(var(--p) * 1%)
+    );
+  animation: game-ring-fill 1.1s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+}
+
+@keyframes game-ring-fill {
+  from {
+    --p: 0;
+  }
+}
+
+/* The arc's end: a small bright point with a halo, riding round as it fills. */
+.game-medal-tip {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 1;
   pointer-events: none;
-  background: linear-gradient(
-    105deg,
-    transparent 38%,
-    rgba(255, 255, 255, 0.34) 50%,
-    transparent 62%
-  );
-  transform: translateX(-130%);
-  animation: game-shine-pass 6s ease-in-out 1s infinite;
+  transform: rotate(calc(var(--p) * 3.6deg));
 }
 
-@keyframes game-shine-pass {
-  0% {
-    transform: translateX(-130%);
-  }
-  35%,
+.game-medal-tip::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin: 0.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: #f4fcff;
+  box-shadow:
+    0 0 4px 1px rgba(170, 230, 255, 0.85),
+    0 0 10px 2px rgba(120, 205, 245, 0.35);
+  animation: game-tip-pulse 2.4s ease-in-out 1.3s infinite;
+}
+
+@keyframes game-tip-pulse {
+  0%,
   100% {
-    transform: translateX(130%);
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.8;
+  }
+}
+
+.game-medal.is-progress .game-medal-ring > .game-medal-disc {
+  color: rgba(225, 233, 245, 0.85);
+  background: radial-gradient(circle at 32% 26%, #2a3142 0%, #141822 70%);
+  box-shadow:
+    0 0 0 3px rgba(12, 15, 22, 0.92),
+    0 10px 28px rgba(0, 0, 0, 0.45);
+  animation: none;
+}
+
+.game-medal.is-progress .game-medal-label {
+  margin-top: 10px;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  background: none;
+  color: var(--text);
+  animation: none;
+}
+
+.game-medal-pct-skel {
+  width: 52px;
+  height: 20px;
+  margin-top: 12px;
+  border-radius: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-medal-ring,
+  .game-medal-ring > .game-medal-disc,
+  .game-medal-label,
+  .game-stars i,
+  .game-medal.is-party .game-medal-ring,
+  .game-sparks i,
+  .game-medal.is-progress .game-medal-ring,
+  .game-medal-tip::before {
+    animation: none;
   }
 }
 

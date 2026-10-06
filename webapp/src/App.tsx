@@ -91,6 +91,30 @@ function decodeGameToken(token: string): string | null {
   }
 }
 
+// Where the app was, kept for this tab's session (owner, 2026-10-06): a reload
+// — a new build, a pull of the browser — comes back to the same screen, the
+// same person and the same game instead of Home. A link that names where to
+// go always wins.
+const PLACE_KEY = "app-place";
+type Place = { screen: string; personId: number | null; game: GameRef | null };
+
+function savedPlace(): Place | null {
+  try {
+    const raw = sessionStorage.getItem(PLACE_KEY);
+    return raw ? (JSON.parse(raw) as Place) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePlace(place: Place): void {
+  try {
+    sessionStorage.setItem(PLACE_KEY, JSON.stringify(place));
+  } catch {
+    // No storage: a reload opens Home.
+  }
+}
+
 function launchContext(): {
   chatId: number | null;
   personId: number | null;
@@ -98,6 +122,8 @@ function launchContext(): {
   legacyTgId: number | null;
   tab: LaunchTab;
   game: GameRef | null;
+  /** The screen a reload comes back to. */
+  screen?: string;
 } {
   const q = new URLSearchParams(window.location.search);
   const start = window.Telegram?.WebApp?.initDataUnsafe?.start_param ?? "";
@@ -114,6 +140,8 @@ function launchContext(): {
   // link to a game was silently broken). See bot/services/mini_app.py's
   // `_encode_game`, which this must stay in sync with.
   const parsed = /^c(-?\d+)(?:([pu])(\d+))?(?:t([a-z]+))?(?:g([A-Za-z0-9_-]+))?$/.exec(start);
+  const linked = Boolean(start) || ["c", "p", "u", "t", "g"].some((key) => q.has(key));
+  const place = linked ? null : savedPlace();
   if (parsed) {
     chatId ??= parsed[1];
     if (parsed[2] === "p") personId ??= parsed[3] ?? null;
@@ -125,6 +153,16 @@ function launchContext(): {
   // but nothing stops it from someday.
   const colon = game?.indexOf(":") ?? -1;
   const personNum = personId ? Number(personId) : null;
+  if (place) {
+    return {
+      chatId: null,
+      personId: place.personId,
+      legacyTgId: null,
+      tab: SCREEN_NAMES.HOME,
+      game: place.game,
+      screen: place.screen,
+    };
+  }
   return {
     chatId: chatId ? Number(chatId) : null,
     personId: personNum,
@@ -153,7 +191,13 @@ function launchContext(): {
 export function App() {
   const launch = launchContext();
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [screen, setScreen] = useState<Screen>(SCREENS[launch.tab]);
+  const [screen, setScreen] = useState<Screen>(() => {
+    const back = launch.screen;
+    // Connecting an account is a flow of its own: a reload starts it over at Home.
+    return back && back in SCREENS && !back.startsWith("connect")
+      ? SCREENS[back as keyof typeof SCREENS]
+      : SCREENS[launch.tab];
+  });
   const [chatId, setChatId] = useState<number | null>(launch.chatId);
   const [personId, setPersonId] = useState<number | null>(launch.personId);
   const [busy, setBusy] = useState(false);
@@ -173,9 +217,14 @@ export function App() {
   // loaded behind it: it would only compete with the game for the network.
   // It is built once the game page is left.
   const [homeWanted, setHomeWanted] = useState(launch.game === null);
-  const onGameChange = useCallback((open: boolean) => {
-    if (!open) setHomeWanted(true);
+  const [openGameRef, setOpenGameRef] = useState<GameRef | null>(launch.game);
+  const onGameChange = useCallback((game: GameRef | null) => {
+    if (!game) setHomeWanted(true);
+    setOpenGameRef(game);
   }, []);
+  useEffect(() => {
+    savePlace({ screen: screen.name, personId, game: openGameRef });
+  }, [screen.name, personId, openGameRef]);
   // Bumped by pull-to-refresh so Club refetches without remounting the tab.
   const [refreshKey, setRefreshKey] = useState(0);
   // After a follow, unfollow or block, the screens built on who is followed

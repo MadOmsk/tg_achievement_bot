@@ -35,6 +35,7 @@ INJECTABLE = {
     "psn_fetcher",
     "steam_auth",
     "anthropic_auth",
+    "youtube_auth",
     # PersonMiddleware (handlers/chat.py, #156)
     "person_id",
     # merging two people, shared with the Mini App (#162)

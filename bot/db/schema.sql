@@ -153,10 +153,18 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- devices that allowed it, and as a Telegram DM (only with Telegram linked).
     notify_push      INTEGER NOT NULL DEFAULT 1,
     notify_telegram  INTEGER NOT NULL DEFAULT 1,
-    -- Whose new posts this person is told about (migration 081): friends,
+    -- Whose activity this person is told about (migration 081): friends,
     -- everybody they follow, or nobody.
     notify_posts     TEXT    NOT NULL DEFAULT 'friends'
-        CHECK (notify_posts IN ('friends', 'following', 'none'))
+        CHECK (notify_posts IN ('friends', 'following', 'none')),
+    -- A switch per kind of notice (migration 087): new posts, new friends,
+    -- the person's own accounts (a dead Xbox login), and the news of the games
+    -- they play.
+    notify_new_posts INTEGER NOT NULL DEFAULT 1,
+    notify_friends   INTEGER NOT NULL DEFAULT 1,
+    notify_account   INTEGER NOT NULL DEFAULT 1,
+    notify_game_news TEXT    NOT NULL DEFAULT 'all'
+        CHECK (notify_game_news IN ('all', 'patch', 'news', 'none'))
 );
 
 -- Rare-achievement threshold, daily-summary time and its timezone are always
@@ -936,3 +944,40 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     failures    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_person ON push_subscriptions (person_id);
+
+-- Video guides from YouTube channels (owner, 2026-10-06; migration 086): every video of a
+-- guide channel, and the moments its description marks — a timeline line,
+-- or the whole video when its title names one achievement. Matched to our
+-- achievements when a page asks, by exact name within the game, so nothing
+-- here points at a game or an achievement of ours.
+CREATE TABLE IF NOT EXISTS guide_channels (
+    channel_id      TEXT PRIMARY KEY,
+    uploads_id      TEXT,
+    -- Where the first pass through the channel's history stopped.
+    backfill_token  TEXT,
+    backfill_done   INTEGER NOT NULL DEFAULT 0,
+    checked_at      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS guide_videos (
+    video_id      TEXT PRIMARY KEY,
+    channel_id    TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    -- The title's parts between " - ", each normalized, joined by " | ":
+    -- a game is found by its name being the first part(s).
+    title_key     TEXT NOT NULL,
+    published_at  TEXT,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_guide_videos_key ON guide_videos (title_key);
+
+CREATE TABLE IF NOT EXISTS guide_marks (
+    video_id       TEXT NOT NULL REFERENCES guide_videos (video_id) ON DELETE CASCADE,
+    -- What the moment is about, normalized as an achievement's name is.
+    label          TEXT NOT NULL,
+    start_seconds  INTEGER NOT NULL,
+    -- "– PART 2" in a timeline; 0 when the line names no part.
+    part           INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (video_id, label, start_seconds)
+);
+CREATE INDEX IF NOT EXISTS idx_guide_marks_label ON guide_marks (label);

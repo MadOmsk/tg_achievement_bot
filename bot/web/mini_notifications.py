@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 from aiohttp import web
 
 from bot.db.repo import Repo
-from bot.services.notifier import KINDS, UNKNOWN, Notifier, wording
+from bot.services.notifier import KINDS, UNKNOWN, Notifier, listed, wording
 from bot.web.mini_auth import MiniAppUser
 
 RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
@@ -87,6 +87,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                     "id": row.id,
                     "kind": row.kind,
                     "text": wording(row.kind, row.data, locale),
+                    **listed(row.kind, row.data, locale),
                     "created_at": row.created_at,
                     "read": row.read_at is not None,
                     # Whom a tap opens, when the notice is about somebody.

@@ -91,15 +91,18 @@ export function HeroPeek({ children }: { children: (open: boolean) => ReactNode 
         h = Math.max(h, medalBottom);
       }
       setNaturalH(h);
-      const marker = el.querySelector<HTMLElement>(".game-plate, .game-medal");
+      const marker = el.querySelector<HTMLElement>(".game-medal");
+      // The medal is positioned outside the flow: its own size changes (the
+      // percentage arriving after the skeleton) never resize the wrapper.
+      if (marker) ro.observe(marker);
       if (marker) {
         setCollapsedH(marker.getBoundingClientRect().height + PLATE_GAP);
       } else {
         setCollapsedH(h * COLLAPSED_RATIO);
       }
     };
+    const ro = new ResizeObserver(() => measure());
     measure();
-    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
     // Also re-measure right when `open` flips: the compact plate and the

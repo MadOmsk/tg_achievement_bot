@@ -55,6 +55,8 @@ export function NotificationsBell({
 
   const openItem = (item: NotificationItem) => {
     if (!item.read) markRead([item.id]);
+    // A notice about nothing to open is only read.
+    if (item.person_id == null && !item.game) return;
     setOpen(false);
     if (item.game && openGame) {
       openGame({
@@ -100,44 +102,57 @@ export function NotificationsBell({
               <p className="empty">{t(locale, "notificationsEmpty")}</p>
             ) : (
               <div className="notices-list">
-                {items.map((item) => {
-                  const body = (
-                    <>
-                      {item.person_id != null ? (
-                        <Avatar name={item.name ?? "?"} personId={item.person_id} size={44} />
-                      ) : (
-                        <span className="notice-mark">
-                          <Icon name="bell" size={20} />
-                        </span>
-                      )}
-                      <span className="notice-copy">
-                        <span>{item.text}</span>
-                        <small>{timeAgo(item.created_at, locale)}</small>
-                      </span>
-                      {!item.read && <span className="notice-dot" aria-hidden />}
-                    </>
-                  );
-                  const rowClass = item.read ? "notice-row" : "notice-row is-unread";
-                  return item.person_id != null || item.game ? (
-                    <button key={item.id} type="button" className={rowClass} onClick={() => openItem(item)}>
-                      {body}
-                    </button>
-                  ) : (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={rowClass}
-                      onClick={() => !item.read && markRead([item.id])}
-                    >
-                      {body}
-                    </button>
-                  );
-                })}
+                {items.map((item) => (
+                  <NoticeRow key={item.id} item={item} locale={locale} onOpen={() => openItem(item)} />
+                ))}
               </div>
             )}
           </div>
         </Sheet>
       )}
     </>
+  );
+}
+
+/** One notice, short (owner, 2026-10-06): a small face, the name in bold and
+ * what happened in one line, the game under it, how long ago at the right. Unread ones
+ * stand on a tint, with no dot. */
+function NoticeRow({
+  item,
+  locale,
+  onOpen,
+}: {
+  item: NotificationItem;
+  locale: Locale;
+  onOpen: () => void;
+}) {
+  // A list item from before the short form came has no lead: its whole line.
+  const lead = item.lead ?? item.text;
+  const named = item.person_id != null && item.name && lead !== item.text;
+  return (
+    <button type="button" className={item.read ? "notice-row" : "notice-row is-unread"} onClick={onOpen}>
+      {item.person_id != null ? (
+        <Avatar name={item.name ?? "?"} personId={item.person_id} size={34} />
+      ) : item.image ? (
+        <img className="notice-pic" src={item.image} alt="" loading="lazy" />
+      ) : (
+        <span className="notice-mark">
+          <Icon name="bell" size={16} />
+        </span>
+      )}
+      <span className="notice-copy">
+        <span className="notice-line">
+          {named ? (
+            <>
+              <b>{item.name}</b> {lead}
+            </>
+          ) : (
+            lead
+          )}
+        </span>
+        {item.detail && <small>{item.detail}</small>}
+      </span>
+      <span className="notice-time">{timeAgo(item.created_at, locale)}</span>
+    </button>
   );
 }

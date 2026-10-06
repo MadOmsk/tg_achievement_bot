@@ -37,6 +37,7 @@ admin-keys-screen =
     PSN: { $psn }
     Steam: { $steam }
     Anthropic: { $anthropic }
+    YouTube: { $youtube }
 admin-keys-set = ✅ configured
 admin-keys-unset = ⚠️ not configured
 admin-keys-steam-add = Set the Steam key
@@ -48,6 +49,9 @@ admin-keys-psn-clear = Remove the NPSSO (PSN)
 admin-keys-anthropic-add = Set the Anthropic key
 admin-keys-anthropic-change = Change the Anthropic key
 admin-keys-anthropic-clear = Remove the Anthropic key
+admin-keys-youtube-add = Set the YouTube key
+admin-keys-youtube-change = Change the YouTube key
+admin-keys-youtube-clear = Remove the YouTube key
 admin-keys-steam-prompt =
     Send the Steam Web API key in a single message — get one here:
     https://steamcommunity.com/dev/apikey
@@ -72,6 +76,15 @@ admin-keys-anthropic-prompt =
 admin-keys-anthropic-invalid = That Anthropic key didn't work — check it and send it again.
 admin-keys-anthropic-saved =
     Anthropic key saved.
+
+    { $text }
+admin-keys-youtube-prompt =
+    Send the YouTube Data API key in a single message — get one here:
+    console.cloud.google.com → enable "YouTube Data API v3" →
+    Credentials → Create credentials → API key (free).
+admin-keys-youtube-invalid = That YouTube key didn't work — check it and send it again.
+admin-keys-youtube-saved =
+    YouTube key saved.
 
     { $text }
 

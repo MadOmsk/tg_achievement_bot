@@ -389,7 +389,7 @@ class _FollowsRepo:
         cursor = await self._conn.execute(
             "SELECT f.follower_id FROM follows f "
             "LEFT JOIN user_settings s ON s.person_id = f.follower_id "
-            "WHERE f.followee_id = :author "
+            "WHERE f.followee_id = :author AND COALESCE(s.notify_new_posts, 1) = 1 "
             "  AND (COALESCE(s.notify_posts, 'friends') = 'following' "
             "    OR (COALESCE(s.notify_posts, 'friends') = 'friends' AND EXISTS ("
             "      SELECT 1 FROM follows b"

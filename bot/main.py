@@ -49,6 +49,7 @@ from bot.poller.daily import DailySummary
 from bot.poller.description_backfill import DescriptionBackfill
 from bot.poller.fetcher import Fetcher, catch_up_since
 from bot.poller.flood_flush import FloodFlush
+from bot.poller.guide_videos import GuideVideos
 from bot.poller.message_cleanup import MessageCleanup
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.patch_refresh import PatchRefresh
@@ -80,6 +81,7 @@ from bot.services.steam_extras import SteamExtras
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
+from bot.services.youtube.auth import YouTubeAuth
 from bot.version import is_test, version
 from bot.views.keyboards import timezone_keyboard
 from bot.web.mini_logins import forget_file
@@ -183,6 +185,13 @@ async def run(settings: Settings) -> None:
     anthropic_auth.on_dead = notifier.translation_key_dead
     anthropic_auth.on_alive = notifier.translation_key_alive
 
+    # YouTube — video guides on an achievement's page; same seed-then-panel shape.
+    youtube_auth = YouTubeAuth(
+        repo,
+        cipher,
+        env_key=settings.youtube_api_key.get_secret_value() if settings.youtube_api_key else None,
+    )
+
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
     steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
@@ -247,6 +256,7 @@ async def run(settings: Settings) -> None:
         TitlePlatformsRefresh(repo, client),
         PsnTrophyGroups(repo, psn_auth),
         PatchRefresh(repo, steam_extras),
+        GuideVideos(repo, youtube_auth),
     )
 
     async def on_linked(
@@ -313,6 +323,7 @@ async def run(settings: Settings) -> None:
 
     # Followers hear of a new post by their own choice (owner, 2026-10-05).
     publisher.on_new_post = notifications.tell_about_post
+    steam_extras.on_new_posts = notifications.tell_about_game_news
 
     async def on_xbox_login_dead(person: int) -> None:
         # The admin hears of it, and the person in their own list and on their
@@ -347,6 +358,7 @@ async def run(settings: Settings) -> None:
         steam_extras=steam_extras,
         notifications=notifications,
         merge=merge,
+        youtube_auth=youtube_auth,
     )
     await web_server.start()
 
@@ -362,6 +374,7 @@ async def run(settings: Settings) -> None:
     dispatcher["psn_fetcher"] = psn_fetcher
     dispatcher["steam_auth"] = steam_auth
     dispatcher["anthropic_auth"] = anthropic_auth
+    dispatcher["youtube_auth"] = youtube_auth
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
     # After the username one, so a person it just refreshed is found.
     dispatcher.message.outer_middleware(PersonMiddleware(repo))

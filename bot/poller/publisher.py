@@ -50,7 +50,7 @@ MEDIA_GROUP_MAX = 10
 
 # Told when a person has new achievements in one game, for the people following
 # them (#164): (person_id, platform, title_id, game, count).
-PostNotice = Callable[[int, str, str, str, int], Awaitable[None]]
+PostNotice = Callable[..., Awaitable[None]]
 
 
 @dataclass(slots=True)
@@ -308,11 +308,21 @@ class Publisher:
             return
         first = achievements[0]
         game = first.title_name or title_name or first.title_id
+        # The notice names an achievement and shows its picture — never a secret one.
+        shown = next((item for item in achievements if not item.is_secret), None)
         notice = self.on_new_post
 
         async def tell() -> None:
             try:
-                await notice(person_id, first.platform, first.title_id, game, len(achievements))
+                await notice(
+                    person_id,
+                    first.platform,
+                    first.title_id,
+                    game,
+                    len(achievements),
+                    achievement=shown.name if shown else None,
+                    icon=shown.icon_url if shown else None,
+                )
             except Exception:
                 log.exception("post notices for person_id=%s failed", person_id)
 
