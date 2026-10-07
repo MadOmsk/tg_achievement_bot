@@ -269,6 +269,14 @@ setting it up: `docs/mail-setup.md`).
   as proved with no code at all (anybody could sign in as anybody, so it is ignored,
   with an error in the log, whenever `SMTP_HOST` is set). Another way to send mail is one more class
   behind `services/email.py::EmailSender`.
+- **The mail server's login is set from /admin** (owner, 2026-10-07;
+  `services/smtp_auth.py`): «🔑 Ключи платформ» → «Почта (SMTP)», "login key" in
+  one message, checked by logging in to the server, kept encrypted, read by the
+  sender on every message (no restart). `SMTP_USERNAME` / `SMTP_PASSWORD` are a
+  first-run seed like the keys below; `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`
+  and `SMTP_FROM` stay in `.env`. The /admin home shows sign-in emails sent in the
+  last hour and day against the app's hourly cap and the mail service's daily one
+  (`email_provider_daily_limit`, 300 — Brevo's free plan).
 
 - **`STEAM_API_KEY`, `ANTHROPIC_API_KEY` and `YOUTUBE_API_KEY` are first-run seeds**
   (#17): the auth wrapper (`SteamAuth` / `AnthropicAuth` / `YouTubeAuth`) imports the env value once into

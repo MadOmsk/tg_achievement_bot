@@ -60,6 +60,7 @@ from bot.services.psn.client import (
     PsnClientSetupError,
     PsnTokenDeadError,
 )
+from bot.services.smtp_auth import SmtpAuth, SmtpLoginInvalidError
 from bot.services.steam.auth import (
     SteamAuth,
     SteamKeyInvalidError,
@@ -220,6 +221,8 @@ PSN_NPSSO_KEY = "psn_npsso"
 ANTHROPIC_KEY_KEY = "anthropic_api_key"
 # YouTube (2026-10-06) — video guides on an achievement's page.
 YOUTUBE_KEY_KEY = "youtube_api_key"
+# The mail server's login (services/smtp_auth.py): "login key" in one message.
+SMTP_LOGIN_KEY = "smtp_login"
 
 
 class AwaitingAdminTextInput(BaseFilter):
@@ -233,6 +236,7 @@ class AwaitingAdminTextInput(BaseFilter):
             PSN_NPSSO_KEY,
             ANTHROPIC_KEY_KEY,
             YOUTUBE_KEY_KEY,
+            SMTP_LOGIN_KEY,
         )
 
 
@@ -243,12 +247,20 @@ async def keys_menu(
     psn_auth: PsnAuth,
     anthropic_auth: AnthropicAuth,
     youtube_auth: YouTubeAuth,
+    smtp_auth: SmtpAuth,
     i18n: I18nContext,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
         callback,
-        *await render_keys(steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale),
+        *await render_keys(
+            steam_auth,
+            psn_auth,
+            anthropic_auth,
+            youtube_auth,
+            smtp_auth=smtp_auth,
+            locale=i18n.locale,
+        ),
     )
 
 
@@ -264,12 +276,14 @@ _KEYSET_APP_SETTING_KEY = {
     "psn": PSN_NPSSO_KEY,
     "anthropic": ANTHROPIC_KEY_KEY,
     "youtube": YOUTUBE_KEY_KEY,
+    "smtp": SMTP_LOGIN_KEY,
 }
 _KEYSET_PROMPT = {
     STEAM_KEY_KEY: "admin-keys-steam-prompt",
     PSN_NPSSO_KEY: "admin-keys-psn-prompt",
     ANTHROPIC_KEY_KEY: "admin-keys-anthropic-prompt",
     YOUTUBE_KEY_KEY: "admin-keys-youtube-prompt",
+    SMTP_LOGIN_KEY: "admin-keys-smtp-prompt",
 }
 
 
@@ -290,21 +304,30 @@ async def keys_clear(
     psn_auth: PsnAuth,
     anthropic_auth: AnthropicAuth,
     youtube_auth: YouTubeAuth,
+    smtp_auth: SmtpAuth,
     i18n: I18nContext,
 ) -> None:
     assert callback.data is not None
     platform = callback.data.rsplit(":", 1)[1]
-    auth: SteamAuth | PsnAuth | AnthropicAuth | YouTubeAuth = {
+    auth: SteamAuth | PsnAuth | AnthropicAuth | YouTubeAuth | SmtpAuth = {
         "steam": steam_auth,
         "psn": psn_auth,
         "anthropic": anthropic_auth,
         "youtube": youtube_auth,
+        "smtp": smtp_auth,
     }[platform]
     await auth.clear(callback.from_user.id)
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
         callback,
-        *await render_keys(steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale),
+        *await render_keys(
+            steam_auth,
+            psn_auth,
+            anthropic_auth,
+            youtube_auth,
+            smtp_auth=smtp_auth,
+            locale=i18n.locale,
+        ),
     )
 
 
@@ -337,6 +360,7 @@ async def admin_text_input(
     steam_auth: SteamAuth,
     anthropic_auth: AnthropicAuth,
     youtube_auth: YouTubeAuth,
+    smtp_auth: SmtpAuth,
     i18n: I18nContext,
 ) -> None:
     _ = translator("admin", i18n.locale)
@@ -359,7 +383,12 @@ async def admin_text_input(
             return
         _awaiting_input.pop(message.from_user.id, None)
         text, markup = await render_keys(
-            steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale
+            steam_auth,
+            psn_auth,
+            anthropic_auth,
+            youtube_auth,
+            smtp_auth=smtp_auth,
+            locale=i18n.locale,
         )
         await message.answer(_("admin-keys-steam-saved", text=text), reply_markup=markup)
         return
@@ -391,7 +420,12 @@ async def admin_text_input(
             return
         _awaiting_input.pop(message.from_user.id, None)
         text, markup = await render_keys(
-            steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale
+            steam_auth,
+            psn_auth,
+            anthropic_auth,
+            youtube_auth,
+            smtp_auth=smtp_auth,
+            locale=i18n.locale,
         )
         await message.answer(_("admin-keys-psn-saved", text=text), reply_markup=markup)
         return
@@ -409,7 +443,12 @@ async def admin_text_input(
             return
         _awaiting_input.pop(message.from_user.id, None)
         text, markup = await render_keys(
-            steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale
+            steam_auth,
+            psn_auth,
+            anthropic_auth,
+            youtube_auth,
+            smtp_auth=smtp_auth,
+            locale=i18n.locale,
         )
         await message.answer(_("admin-keys-anthropic-saved", text=text), reply_markup=markup)
         return
@@ -425,9 +464,35 @@ async def admin_text_input(
             return
         _awaiting_input.pop(message.from_user.id, None)
         text, markup = await render_keys(
-            steam_auth, psn_auth, anthropic_auth, youtube_auth, locale=i18n.locale
+            steam_auth,
+            psn_auth,
+            anthropic_auth,
+            youtube_auth,
+            smtp_auth=smtp_auth,
+            locale=i18n.locale,
         )
         await message.answer(_("admin-keys-youtube-saved", text=text), reply_markup=markup)
+        return
+
+    if key == SMTP_LOGIN_KEY:
+        try:
+            await smtp_auth.set_login(raw, message.from_user.id)
+        except SmtpLoginInvalidError:
+            await message.answer(
+                _("admin-keys-smtp-invalid"),
+                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
+            )
+            return
+        _awaiting_input.pop(message.from_user.id, None)
+        text, markup = await render_keys(
+            steam_auth,
+            psn_auth,
+            anthropic_auth,
+            youtube_auth,
+            smtp_auth=smtp_auth,
+            locale=i18n.locale,
+        )
+        await message.answer(_("admin-keys-smtp-saved", text=text), reply_markup=markup)
         return
 
 

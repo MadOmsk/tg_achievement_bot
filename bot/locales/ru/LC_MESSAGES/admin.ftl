@@ -25,6 +25,7 @@ admin-setting-key-check = Проверка ключей / автообновле
 admin-setting-monthly-delay = Задержка итогов месяца (мин)
 admin-setting-account-reset-cooldown = Кулдаун после сброса (часы)
 admin-setting-email-sends-client = Кодов на почту с одного IP в час
+admin-setting-email-provider-daily = Лимит почтового сервиса в сутки
 admin-setting-email-sends-total = Кодов на почту всего в час
 admin-setting-email-checks-client = Проверок кода с одного IP за 10 минут
 admin-setting-patch-refresh = Обновление патчей игр (часы)
@@ -38,6 +39,7 @@ admin-keys-screen =
     Steam: { $steam }
     Anthropic: { $anthropic }
     YouTube: { $youtube }
+    Почта: { $smtp }
 admin-keys-set = ✅ настроен
 admin-keys-unset = ⚠️ не настроен
 admin-keys-steam-add = Задать ключ Steam
@@ -85,6 +87,21 @@ admin-keys-youtube-prompt =
 admin-keys-youtube-invalid = Ключ YouTube не подошёл — проверь и пришли ещё раз.
 admin-keys-youtube-saved =
     Ключ YouTube сохранён.
+
+    { $text }
+
+admin-keys-smtp-add = Задать вход почты (SMTP)
+admin-keys-smtp-change = Сменить вход почты (SMTP)
+admin-keys-smtp-clear = Убрать вход почты (SMTP)
+admin-keys-smtp-prompt =
+    Пришли логин и ключ почтового сервера одним сообщением, через пробел:
+    логин ключ
+    Для Brevo: SMTP & API → SMTP — логин вида …@smtp-brevo.com и SMTP-ключ
+    (Generate a new SMTP key). Для Gmail: адрес ящика и пароль приложения.
+    Сервер и адрес отправителя берутся из .env (SMTP_HOST, SMTP_FROM).
+admin-keys-smtp-invalid = Почтовый сервер не пустил с этими данными — проверь логин и ключ и пришли ещё раз (два слова через пробел).
+admin-keys-smtp-saved =
+    Вход почты сохранён — коды для входа уходят с ним.
 
     { $text }
 

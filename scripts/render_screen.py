@@ -47,6 +47,7 @@ from bot.i18n import i18n_for
 from bot.services.admin_settings import TOP_LIMIT_KEY
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
+from bot.services.smtp_auth import SmtpAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.youtube.auth import YouTubeAuth
@@ -314,6 +315,7 @@ async def _admin_keys(ctx: Context) -> Screen:
             PsnAuth(ctx.repo, cipher),
             AnthropicAuth(ctx.repo, cipher),
             YouTubeAuth(ctx.repo, cipher),
+            smtp_auth=SmtpAuth(ctx.repo, cipher, ctx.settings),
             locale=ctx.locale,
         )
     )

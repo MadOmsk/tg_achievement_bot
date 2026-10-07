@@ -164,6 +164,15 @@ class _LoginsRepo:
         )
         await self._conn.commit()
 
+    async def email_codes_sent_since(self, since: str) -> int:
+        """How many codes went out to anybody since `since` — the admin's view
+        of the mail service's limits (codes older than a day are forgotten)."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM email_codes WHERE created_at >= ?", (since,)
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
     async def email_codes_since(self, email: str, since: str) -> list[str]:
         """When codes were sent to this address since `since`, newest first —
         what the sending limits count."""

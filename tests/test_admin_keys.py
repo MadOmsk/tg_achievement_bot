@@ -97,7 +97,7 @@ async def test_admin_text_input_saves_a_valid_steam_key(
     msg = _FakeMessage(KEY)
 
     await admin_text_input(
-        msg, psn_auth, steam_auth, anthropic_auth, YouTubeAuth(repo, cipher), i18n
+        msg, psn_auth, steam_auth, anthropic_auth, YouTubeAuth(repo, cipher), None, i18n
     )
 
     assert await steam_auth.get_key() == KEY
@@ -122,6 +122,7 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
         steam_auth,
         AnthropicAuth(repo, cipher),
         YouTubeAuth(repo, cipher),
+        None,
         i18n,
     )
 

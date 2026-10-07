@@ -14,6 +14,7 @@ import asyncio
 import logging
 import smtplib
 import ssl
+from collections.abc import Awaitable, Callable
 from email.message import EmailMessage
 from typing import Protocol
 
@@ -42,6 +43,7 @@ class SmtpSender:
         security: str = "starttls",
         username: str | None = None,
         password: str | None = None,
+        credentials: Callable[[], Awaitable[tuple[str, str] | None]] | None = None,
     ) -> None:
         if security not in ("starttls", "ssl", "none"):
             raise ValueError(f"unknown SMTP security {security!r}")
@@ -51,6 +53,8 @@ class SmtpSender:
         self._security = security
         self._username = username
         self._password = password
+        # The admin's stored login (`services/smtp_auth.py`), read per message.
+        self._credentials = credentials
 
     async def send(self, to: str, subject: str, text: str) -> None:
         message = EmailMessage()
@@ -58,13 +62,17 @@ class SmtpSender:
         message["To"] = to
         message["Subject"] = subject
         message.set_content(text)
+        login = await self._credentials() if self._credentials is not None else None
+        username, password = login or (self._username, self._password)
         try:
-            await asyncio.to_thread(self._send_blocking, message)
+            await asyncio.to_thread(self._send_blocking, message, username, password)
         except (OSError, smtplib.SMTPException) as exc:
             # Never the message itself in the log: it carries the code.
             raise EmailSendError(f"{type(exc).__name__}: {exc}") from None
 
-    def _send_blocking(self, message: EmailMessage) -> None:
+    def _send_blocking(
+        self, message: EmailMessage, username: str | None, password: str | None
+    ) -> None:
         context = ssl.create_default_context()
         if self._security == "ssl":
             server: smtplib.SMTP = smtplib.SMTP_SSL(
@@ -75,8 +83,8 @@ class SmtpSender:
         with server:
             if self._security == "starttls":
                 server.starttls(context=context)
-            if self._username and self._password:
-                server.login(self._username, self._password)
+            if username and password:
+                server.login(username, password)
             server.send_message(message)
 
 
@@ -87,7 +95,12 @@ class LogSender:
         log.warning("EMAIL_LOG_CODES is on — not sent, to=%s subject=%r\n%s", to, subject, text)
 
 
-def build_sender(settings: Settings) -> EmailSender | None:
+def build_sender(
+    settings: Settings,
+    credentials: Callable[[], Awaitable[tuple[str, str] | None]] | None = None,
+) -> EmailSender | None:
+    """`credentials`: the admin's stored login (`SmtpAuth.credentials`), which
+    wins over `.env`'s whenever there is one."""
     if settings.smtp_host and settings.smtp_from:
         return SmtpSender(
             settings.smtp_host,
@@ -96,6 +109,7 @@ def build_sender(settings: Settings) -> EmailSender | None:
             security=settings.smtp_security,
             username=settings.smtp_username,
             password=settings.smtp_password.get_secret_value() if settings.smtp_password else None,
+            credentials=credentials,
         )
     if settings.email_log_codes:
         return LogSender()

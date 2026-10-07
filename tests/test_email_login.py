@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+import smtplib
 import time
 from datetime import timedelta
 
@@ -678,3 +679,39 @@ async def test_codes_older_than_a_day_are_forgotten_on_the_next_send(repo: Repo)
     await login.send_code("new@example.com", email_login.SIGN_IN, locale="en")
     cursor = await repo._conn.execute("SELECT email FROM email_codes")
     assert [row[0] for row in await cursor.fetchall()] == ["new@example.com"]
+
+
+async def test_the_admins_mail_login_is_checked_stored_and_used(repo: Repo, settings) -> None:
+    """Owner, 2026-10-07: the mail login is set from /admin like the platform
+    keys — verified by logging in, kept encrypted, read by the sender per message."""
+    from bot.services.crypto import TokenCipher
+    from bot.services.smtp_auth import SmtpAuth, SmtpLoginInvalidError
+
+    settings.smtp_host, settings.smtp_from = "smtp.example.com", "bot@example.com"
+    auth = SmtpAuth(repo, TokenCipher(settings.fernet_key.get_secret_value()), settings)
+    tried: list[tuple[str, str]] = []
+
+    def check(username: str, password: str) -> None:
+        tried.append((username, password))
+        if password != "right":
+            raise smtplib.SMTPAuthenticationError(535, b"no")
+
+    auth._check_blocking = check  # type: ignore[method-assign]
+    with pytest.raises(SmtpLoginInvalidError):
+        await auth.set_login("only-one-word", 1)
+    with pytest.raises(SmtpLoginInvalidError):
+        await auth.set_login("me@smtp wrong", 1)
+    assert await auth.credentials() is None
+    await auth.set_login("  me@smtp   right ", 1)
+    assert await auth.credentials() == ("me@smtp", "right")
+    stored = await repo.get_app_setting("smtp_login_enc")
+    assert stored and "right" not in stored
+
+    sent: list[tuple[str | None, str | None]] = []
+    sender = SmtpSender("smtp.example.com", 587, "bot@example.com", credentials=auth.credentials)
+    sender._send_blocking = lambda message, user, password: sent.append((user, password))  # type: ignore[method-assign]
+    await sender.send("ada@example.com", "code", "123456")
+    assert sent == [("me@smtp", "right")]
+
+    await auth.clear(1)
+    assert await auth.credentials() is None

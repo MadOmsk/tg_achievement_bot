@@ -54,6 +54,7 @@ from bot.services.admin_settings import (
     EMAIL_SENDS_PER_CLIENT_KEY,
     EMAIL_SENDS_TOTAL_KEY,
 )
+from bot.services.crypto import TokenCipher
 from bot.services.email import EmailSendError, build_sender
 from bot.services.email_login import (
     CodeExpired,
@@ -64,6 +65,7 @@ from bot.services.email_login import (
     TrustingEmailLogin,
 )
 from bot.services.merge import MergeRefused
+from bot.services.smtp_auth import SmtpAuth
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_login_widget
 from bot.web.mini_invites import sign_up
 from bot.web.mini_session import start_session
@@ -98,7 +100,10 @@ def build_email_login(settings: Settings, repo: Repo) -> EmailLogin | None:
                 "Development only — never on a server."
             )
             return TrustingEmailLogin(repo)
-    sender = build_sender(settings)
+    # The login the admin set in /admin, read on every message (a separate
+    # SmtpAuth from the bot's: both read the same row, neither caches it).
+    smtp_auth = SmtpAuth(repo, TokenCipher(settings.fernet_key.get_secret_value()), settings)
+    sender = build_sender(settings, smtp_auth.credentials)
     if sender is None:
         return None
     secret = hashlib.sha256(

@@ -76,6 +76,7 @@ from bot.services.notifier import Notifier
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.release_notify import announce_release_if_needed
+from bot.services.smtp_auth import SmtpAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam_extras import SteamExtras
 from bot.services.translate.auth import AnthropicAuth
@@ -191,6 +192,9 @@ async def run(settings: Settings) -> None:
         cipher,
         env_key=settings.youtube_api_key.get_secret_value() if settings.youtube_api_key else None,
     )
+
+    # The mail server's login, set from /admin like the keys above.
+    smtp_auth = SmtpAuth(repo, cipher, settings)
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
@@ -375,6 +379,7 @@ async def run(settings: Settings) -> None:
     dispatcher["steam_auth"] = steam_auth
     dispatcher["anthropic_auth"] = anthropic_auth
     dispatcher["youtube_auth"] = youtube_auth
+    dispatcher["smtp_auth"] = smtp_auth
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
     # After the username one, so a person it just refreshed is found.
     dispatcher.message.outer_middleware(PersonMiddleware(repo))

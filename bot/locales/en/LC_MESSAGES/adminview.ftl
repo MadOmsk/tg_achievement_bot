@@ -27,6 +27,8 @@ adminview-home =
     PSN key:   { $psn_key_line }
     Steam key: { $steam_key_line }
     PSN requests in the last 24h: { $psn_requests }
+    Sign-in emails: { $mail_usage }
+adminview-mail-usage = an hour { $hour }/{ $hour_limit } · a day { $day }/{ $day_limit }
 adminview-btn-newusers = 👤 New users ▸
 adminview-btn-limits = ⚙️ Global settings ▸
 adminview-btn-users = Users ▸

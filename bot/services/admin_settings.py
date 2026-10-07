@@ -155,6 +155,10 @@ EMAIL_CHECKS_PER_CLIENT_KEY = "email_checks_per_client_10min"
 DEFAULT_EMAIL_SENDS_PER_CLIENT = 10
 DEFAULT_EMAIL_SENDS_TOTAL = 100
 DEFAULT_EMAIL_CHECKS_PER_CLIENT = 20
+# The mail service's own daily cap (Brevo's free plan: 300; Gmail: ~500) —
+# shown beside the day's count on /admin, so the admin sees it coming.
+EMAIL_PROVIDER_DAILY_KEY = "email_provider_daily_limit"
+DEFAULT_EMAIL_PROVIDER_DAILY = 300
 
 NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     TOP_LIMIT_KEY: NumericSetting("admin-setting-summary-rows", DEFAULT_TABLE_TOP, min=0),
@@ -231,6 +235,9 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     ),
     EMAIL_CHECKS_PER_CLIENT_KEY: NumericSetting(
         "admin-setting-email-checks-client", DEFAULT_EMAIL_CHECKS_PER_CLIENT, min=1, max=100
+    ),
+    EMAIL_PROVIDER_DAILY_KEY: NumericSetting(
+        "admin-setting-email-provider-daily", DEFAULT_EMAIL_PROVIDER_DAILY, min=1, max=100000
     ),
     PATCH_REFRESH_HOURS_KEY: NumericSetting(
         "admin-setting-patch-refresh", DEFAULT_PATCH_REFRESH_HOURS, min=1, max=168

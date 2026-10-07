@@ -25,6 +25,7 @@ admin-setting-key-check = Key check / /admin auto-refresh (min)
 admin-setting-monthly-delay = Month-end wrap-up delay (min)
 admin-setting-account-reset-cooldown = Account reset cooldown (hours)
 admin-setting-email-sends-client = Email codes per IP an hour
+admin-setting-email-provider-daily = The mail service's daily limit
 admin-setting-email-sends-total = Email codes in total an hour
 admin-setting-email-checks-client = Code checks per IP in 10 minutes
 admin-setting-patch-refresh = Game patch refresh (hours)
@@ -38,6 +39,7 @@ admin-keys-screen =
     Steam: { $steam }
     Anthropic: { $anthropic }
     YouTube: { $youtube }
+    Mail: { $smtp }
 admin-keys-set = ✅ configured
 admin-keys-unset = ⚠️ not configured
 admin-keys-steam-add = Set the Steam key
@@ -85,6 +87,21 @@ admin-keys-youtube-prompt =
 admin-keys-youtube-invalid = That YouTube key didn't work — check it and send it again.
 admin-keys-youtube-saved =
     YouTube key saved.
+
+    { $text }
+
+admin-keys-smtp-add = Set the mail login (SMTP)
+admin-keys-smtp-change = Change the mail login (SMTP)
+admin-keys-smtp-clear = Remove the mail login (SMTP)
+admin-keys-smtp-prompt =
+    Send the mail server's login and key in one message, space-separated:
+    login key
+    For Brevo: SMTP & API → SMTP — a login like …@smtp-brevo.com and an SMTP key
+    (Generate a new SMTP key). For Gmail: the address and an app password.
+    The server and the sender's address come from .env (SMTP_HOST, SMTP_FROM).
+admin-keys-smtp-invalid = The mail server refused this login — check the login and key and send them again (two words, space-separated).
+admin-keys-smtp-saved =
+    Mail login saved — sign-in codes go out with it.
 
     { $text }
 

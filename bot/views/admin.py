@@ -51,6 +51,7 @@ from bot.services.naming import (
 )
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
+from bot.services.smtp_auth import SmtpAuth
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED
 from bot.services.steam.auth import SteamAuth
@@ -101,6 +102,7 @@ async def render_keys(
     anthropic_auth: AnthropicAuth,
     youtube_auth: YouTubeAuth,
     *,
+    smtp_auth: SmtpAuth | None = None,
     locale: str,
 ) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
@@ -108,12 +110,14 @@ async def render_keys(
     psn_configured = await psn_auth.status() != PSN_NOT_CONFIGURED
     anthropic_configured = await anthropic_auth.status() != ANTHROPIC_NOT_CONFIGURED
     youtube_configured = await youtube_auth.configured()
+    smtp_configured = smtp_auth is not None and await smtp_auth.configured()
     text = _(
         "admin-keys-screen",
         steam=_("admin-keys-set") if steam_configured else _("admin-keys-unset"),
         psn=_("admin-keys-set") if psn_configured else _("admin-keys-unset"),
         anthropic=_("admin-keys-set") if anthropic_configured else _("admin-keys-unset"),
         youtube=_("admin-keys-set") if youtube_configured else _("admin-keys-unset"),
+        smtp=_("admin-keys-set") if smtp_configured else _("admin-keys-unset"),
     )
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -164,6 +168,17 @@ async def render_keys(
                 text=_("admin-keys-youtube-clear"), callback_data="a:keyclr:youtube"
             )
         )
+    if smtp_auth is not None:
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-keys-smtp-change") if smtp_configured else _("admin-keys-smtp-add"),
+                callback_data="a:keyset:smtp",
+            )
+        )
+        if smtp_configured:
+            builder.row(
+                InlineKeyboardButton(text=_("admin-keys-smtp-clear"), callback_data="a:keyclr:smtp")
+            )
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
     return text, builder.as_markup()
 
