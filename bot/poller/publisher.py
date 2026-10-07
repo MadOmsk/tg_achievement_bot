@@ -12,6 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
+from pathlib import Path
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
@@ -22,7 +23,7 @@ from bot.config import Settings
 from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.i18n import gettext
-from bot.services import images
+from bot.services import achievement_icons, covers, images
 from bot.services.achievements import passes_filters
 from bot.services.chat_gone import chat_is_gone
 from bot.services.descriptions_view import localize_descriptions
@@ -73,6 +74,35 @@ class PublishJob:
     # platform happened to be first.
     items: list[tuple[str, str, str]] = field(default_factory=list)
     reply_markup: InlineKeyboardMarkup | None = None
+    # Pictures to try when the gallery's first one does not go through, or
+    # there is none: the achievement's icon cached on disk, then the game's
+    # cover (its file, its URL) — `Picture`s.
+    backups: list[Picture] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Picture:
+    """One way to give a post its picture: a URL Telegram fetches (`url`), a
+    URL the bot fetches and uploads (`fetch`), or a file on disk (`file`)."""
+
+    how: str
+    where: str
+    spoiler: bool = False
+
+
+async def _photo_input(picture: Picture) -> str | BufferedInputFile | None:
+    """What `send_photo` takes for one picture, or None when there is nothing
+    to send (a fetch that failed, a file gone)."""
+    if picture.how == "url":
+        return picture.where
+    if picture.how == "fetch":
+        payload = await images.fetch(picture.where)
+    else:
+        try:
+            payload = await asyncio.to_thread(Path(picture.where).read_bytes)
+        except OSError:
+            return None
+    return BufferedInputFile(payload, filename="picture.jpg") if payload else None
 
 
 def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
@@ -267,6 +297,7 @@ class Publisher:
                         gallery=_gallery(allowed),
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
                         reply_markup=markup,
+                        backups=await self._backups(allowed[0]),
                     )
                 )
                 continue
@@ -296,6 +327,7 @@ class Publisher:
                         gallery=_gallery([item]),
                         items=[(xuid, item.title_id, item.achievement_id)],
                         reply_markup=markup,
+                        backups=await self._backups(item),
                     )
                 )
 
@@ -330,6 +362,23 @@ class Publisher:
         task = asyncio.create_task(tell())
         self._notices.add(task)
         task.add_done_callback(self._notices.discard)
+
+    async def _backups(self, item: AchievementRow) -> list[Picture]:
+        """Pictures for a post whose own icon cannot be sent: that icon from
+        the disk cache, then the game's cover — its file, its URL. A cover
+        reveals nothing, so it is never behind a spoiler."""
+        backups: list[Picture] = []
+        cached = achievement_icons.find_cached_icon(
+            item.platform, item.title_id, item.achievement_id
+        )
+        if cached is not None:
+            backups.append(Picture("file", str(cached), item.is_secret))
+        cover_path, cover_url = await self._repo.title_cover(item.title_id)
+        if cover_path:
+            backups.append(Picture("file", str(covers.cover_dir() / cover_path)))
+        if cover_url:
+            backups += [Picture("url", cover_url), Picture("fetch", cover_url)]
+        return backups
 
     async def _apply_flood_filter(
         self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]
@@ -557,6 +606,7 @@ class Publisher:
                     if item.xuid
                 ],
                 reply_markup=markup,
+                backups=await self._backups(achievements[0]),
             )
         )
 
@@ -637,15 +687,27 @@ class Publisher:
                         job.chat_id,
                     )
 
+            # A post always goes out, and with a picture whenever one can be
+            # found at all (owner, 2026-10-07): the achievement's icon by URL
+            # (Telegram fetches it), the same bytes fetched by the bot (Telegram
+            # cannot always reach a platform's CDN), the icon cached on disk,
+            # then the game's cover; text alone only when there is none.
+            candidates: list[Picture] = []
             if job.gallery:
                 url, secret = job.gallery[0]
+                candidates += [Picture("url", url, secret), Picture("fetch", url, secret)]
+            candidates += job.backups
+            for picture in candidates:
+                photo = await _photo_input(picture)
+                if photo is None:
+                    continue
                 try:
                     message = await self._bot.send_photo(
                         job.chat_id,
-                        photo=url,
+                        photo=photo,
                         caption=job.text,
                         parse_mode=ParseMode.HTML,
-                        has_spoiler=secret,
+                        has_spoiler=picture.spoiler,
                         reply_markup=job.reply_markup,
                     )
                     return message.message_id
@@ -654,35 +716,14 @@ class Publisher:
                 except Exception as exc:
                     if chat_is_gone(exc):
                         raise
-                    # Telegram fetches a URL itself and sometimes cannot reach a
-                    # platform's CDN; the bot can, so it uploads the bytes (#167
-                    # review: a post went out with no picture).
                     log.info(
-                        "icon for chat %s by URL did not go through (%r), uploading it",
+                        "a picture for chat %s did not go through (%s): %r",
                         job.chat_id,
+                        picture.how,
                         exc,
                     )
-                    payload = await images.fetch(url)
-                    if payload is not None:
-                        try:
-                            message = await self._bot.send_photo(
-                                job.chat_id,
-                                photo=BufferedInputFile(payload, filename="achievement.jpg"),
-                                caption=job.text,
-                                parse_mode=ParseMode.HTML,
-                                has_spoiler=secret,
-                                reply_markup=job.reply_markup,
-                            )
-                            return message.message_id
-                        except (TelegramForbiddenError, TelegramRetryAfter):
-                            raise
-                        except Exception as upload_exc:
-                            if chat_is_gone(upload_exc):
-                                raise
-                            log.info(
-                                "icon upload for chat %s failed too: %r", job.chat_id, upload_exc
-                            )
-                    log.info("sending chat %s the text without its picture", job.chat_id)
+            if candidates:
+                log.info("sending chat %s the text without a picture", job.chat_id)
 
             message = await self._bot.send_message(
                 job.chat_id,

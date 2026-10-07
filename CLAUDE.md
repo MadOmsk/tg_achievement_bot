@@ -748,6 +748,11 @@ isn't muted there; it wasn't already published there.
   boundary, closes what is open, and logs a warning — a net, not a substitute for
   keeping screens short. Capping lists by rows does not replace it: the limit is in
   characters.
+- **A post always goes out, with a picture whenever one exists** (owner,
+  2026-10-07; `Publisher._deliver`): the achievement's icon by URL (Telegram
+  fetches it), the same bytes fetched by the bot (Telegram cannot always reach a
+  platform's CDN), the icon cached on disk, then the game's cover (its file, its
+  URL; never behind a spoiler); text alone only when there is none.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.

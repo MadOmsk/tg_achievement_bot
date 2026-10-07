@@ -482,6 +482,14 @@ class _AdminRepo:
         row = await cursor.fetchone()
         return row["name"] if row else None
 
+    async def title_cover(self, title_id: str) -> tuple[str | None, str | None]:
+        """`(cover_path, icon_url)` — a game's cover on disk and its URL."""
+        cursor = await self._conn.execute(
+            "SELECT cover_path, icon_url FROM titles WHERE title_id = ?", (title_id,)
+        )
+        row = await cursor.fetchone()
+        return (row["cover_path"], row["icon_url"]) if row else (None, None)
+
     async def title_icon_url(self, title_id: str) -> str | None:
         cursor = await self._conn.execute(
             "SELECT icon_url FROM titles WHERE title_id = ?", (title_id,)

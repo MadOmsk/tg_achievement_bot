@@ -296,3 +296,53 @@ async def test_a_picture_telegram_cannot_fetch_is_uploaded(repo, monkeypatch) ->
     monkeypatch.setattr(publisher_module.images, "fetch", nothing)
     assert await Publisher(bot=bot, repo=repo)._deliver(job) == 8
     assert bot.texts == ["card"]
+
+
+async def test_with_no_icon_to_send_the_post_wears_the_games_cover(repo, monkeypatch) -> None:
+    """Owner, 2026-10-07: a post always goes out, with a picture found any way
+    there is — the game's cover when the achievement's own icon is nowhere."""
+    from types import SimpleNamespace
+
+    from bot.constants import Platform
+    from bot.db.repo import AchievementRow
+    from bot.poller import publisher as publisher_module
+    from bot.poller.publisher import Publisher, PublishJob
+
+    sent: list[object] = []
+
+    class _Bot:
+        async def send_photo(self, chat_id, photo, **kwargs):
+            if photo == "https://cdn/icon.png":
+                raise RuntimeError("Bad Request: failed to get HTTP URL content")
+            sent.append(photo)
+            return SimpleNamespace(message_id=9)
+
+        async def send_message(self, chat_id, text, **kwargs):
+            sent.append(text)
+            return SimpleNamespace(message_id=10)
+
+    async def nothing(url: str) -> None:
+        return None
+
+    monkeypatch.setattr(publisher_module.images, "fetch", nothing)
+    await repo.upsert_title("t1", "Game", Platform.XBOX_MODERN, "https://cdn/cover.jpg")
+    item = AchievementRow(
+        title_id="t1",
+        achievement_id="a1",
+        name="A",
+        description=None,
+        icon_url="https://cdn/icon.png",
+        unlocked_at=None,
+        gamerscore=10,
+        rarity_percent=None,
+        platform="xbox_modern",
+    )
+    pub = Publisher(bot=_Bot(), repo=repo)
+    job = PublishJob(
+        chat_id=-1,
+        text="card",
+        gallery=[("https://cdn/icon.png", False)],
+        backups=await pub._backups(item),
+    )
+    assert await pub._deliver(job) == 9
+    assert sent == ["https://cdn/cover.jpg"]
