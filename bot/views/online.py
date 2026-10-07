@@ -11,7 +11,7 @@ from __future__ import annotations
 from bot.constants import PresenceState
 from bot.db.repo import ChatPresenceRow
 from bot.i18n import translator
-from bot.services.naming import person_name, xbox_nickname
+from bot.services.naming import person_name
 from bot.services.platform_format import device_label
 from bot.views.lists import Listing
 from bot.views.parts import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
@@ -64,14 +64,7 @@ def _row_name(row: ChatPresenceRow) -> str:
     every single refresh (Follow-up 2026-09-08, reverting an earlier attempt
     that did exactly that).
     """
-    return person_name(
-        tg_id=row.tg_id,
-        handle=row.handle,
-        username=row.username,
-        xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
-        steam=row.steam_display_name,
-        psn=row.psn_display_name,
-    )
+    return person_name(person_id=row.person_id, handle=row.handle)
 
 
 def render_online_table(rows: list[ChatPresenceRow], updated_label: str, locale: str) -> str:

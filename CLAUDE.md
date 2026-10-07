@@ -138,6 +138,7 @@ name, or when the tree goes stale.
 │   │   ├── models.py, rows.py    ParsedAchievement and its AchievementRow, shared by all platforms
 │   │   ├── naming.py             the naming chains (#51) — the only answer to "what is X called"
 │   │   ├── handles.py            nickname rules: valid, normalized, shown, first one, digits (#157)
+│   │   ├── logins.py             the ways a person signs in, as the admin's cards list them
 │   │   ├── people.py             who may see whom: the relation between two people, `can_view` (#157)
 │   │   ├── profile_links.py      one profile-URL builder per platform
 │   │   ├── presence_view.py      "where is this person right now" — /online's rule, for one person
@@ -802,10 +803,14 @@ elsewhere in this file still describe the bot.
   `services/handles.py`, the storage `db/repo/_handles.py` (`users.handle`,
   `handle_norm`, `handle_number` — 0 means no digits —, `handle_confirmed_at`,
   `handle_changed_at`; migration 072).
-  - **Where a first nickname comes from**: a new person gets one from their Telegram
-    username at `ensure_user`; everybody else at start-up and on their first Mini App
-    visit (`give_handle`: username, then an Xbox/PSN nickname, else `Player`). Until
-    then the naming chain falls through to those same names. The Mini App shows
+  - **Where a first nickname comes from** (`give_handle`): the Telegram username,
+    then the Xbox, PSN, Steam nickname, then the part of an email before the @,
+    else `Player` (and its digits) — the first that keeps three Latin letters or
+    digits. Given at `ensure_user` from a username; on linking a platform account
+    (owner, 2026-10-07: somebody who skipped everything in Telegram is named by
+    their account at once); at an email sign-up; and, for anybody still without
+    one, at start-up and on their first Mini App visit. Until then the person is
+    `id<person id>`. The Mini App shows
     "Твой ник" once (`handle.confirmed` false) to keep or change it; later it is
     Settings → Никнейм.
   - **An avatar of one's own** (owner, 2026-10-03; migration 077,
@@ -1156,17 +1161,20 @@ hand-rolled versions of "who is this" once coexisted and disagreed. A screen tha
 seems to need a third chain is a question for the owner, not a decision at the
 keyboard.
 
-1. **Who is this person?** Their nickname (#157) → `username` → a connected
-   platform's nickname (Xbox → PlayStation → Steam) → `id<tg_id>`. Telegram's first
-   and last names are not in the chain. Everybody has a nickname, so the steps after
-   it are a net for a row read before one was given.
-2. **Which account is this?** That platform's own chain — used *only* where a line is
-   genuinely about one account: per-platform rows in `/stats`, `/panel` and the
-   admin's user card, connect/disconnect notices, and the account blocks of a
-   digest mixing two PSN accounts. **A post, a digest and `/online` name the
-   person** by chain 1 (owner, 2026-10-07): one name everywhere, in the app and
-   in Telegram; the platform is the mark beside it. `User.handle` is the shown
-   form, digits included (`_accounts._USER_COLUMNS` reads `HANDLE_SHOWN`).
+1. **Who is this person?** Their nickname in the app, as shown (`Name#1234`) →
+   `id<person id>` (`users.id`) — nothing else (owner, 2026-10-07;
+   `naming.person_name(person_id=, handle=)`). Not Telegram's username or names,
+   not a platform nickname, not a Telegram id. One name everywhere — posts,
+   digests, `/online`, summaries, `/stats`, notices, the Mini App, the admin's
+   lists; the platform is the mark beside it. Everybody is given a nickname (see
+   People: where a first nickname comes from), and the Mini App makes a person
+   without one choose, so the id is a net. `User.handle` is the shown form, digits
+   included (`_accounts._USER_COLUMNS` reads `HANDLE_SHOWN`).
+2. **Which account is this?** That platform's own chain — used *only* where a line
+   names one platform account: per-platform rows in `/stats`, `/panel` and the
+   admin's user card, connect/disconnect notices, the account blocks of a digest
+   mixing two PSN accounts, and the account blocks on a person's page in the Mini
+   App.
 
 | Platform | Chain | Notes |
 |---|---|---|
@@ -1268,9 +1276,11 @@ keyboard.
   anti-flood, message cleanup — each redrawing in place with the card's text above.
   Settings: digest size (#126), summary time, timezone, mutes,
   minimum gamerscore, summary switch, anti-flood, language (#48).
-- **The per-user card**: the Telegram identity in full (`tg_id` passed to Fluent as a
-  string, never `@N`) — or the email of somebody who has no Telegram — then one block
-  per platform in the display order — nickname,
+- **The per-user card**: the person (chain 1) and their id, then **every way they
+  sign in** (owner, 2026-10-07; `services/logins.py`, the same list the Mini App's
+  admin card shows): Telegram (`@username`, its id passed to Fluent as a string,
+  never `@N`), email — each linked or "— нет"; a new way in is one more entry
+  there. Then one block per platform in the display order — nickname,
   lifetime count with completions (🌀/👾/💠) and level, today's count, diagnostics.
 - **"🔄 Обновить"** is the only UI path besides `/panel`'s sync that calls a platform
   outside a background job: presence, the current game, then a catch-up since the

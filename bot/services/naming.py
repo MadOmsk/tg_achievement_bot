@@ -32,33 +32,17 @@ from bot.db.repo import ChatSubscriber, PlatformLink, User
 NO_NICKNAME = "—"
 
 
-def person_name(
-    *,
-    tg_id: int,
-    handle: str | None = None,
-    username: str | None = None,
-    xbox: str | None = None,
-    steam: str | None = None,
-    psn: str | None = None,
-) -> str:
-    """Who this person is: their nickname (#157) → `username` → any connected
-    platform's nickname (Xbox → PlayStation → Steam) → `id<tg_id>`.
+def person_name(*, person_id: int | None, handle: str | None) -> str:
+    """Who this person is (owner, 2026-10-07): their nickname in the app, as
+    shown — with its digits, `RideTheSun#4821` — or, where a person has none
+    yet, `id<person id>`. Nothing else: not Telegram's username, not a platform
+    nickname, not a Telegram id. The same name in every chat, every DM and the
+    Mini App; an account's own nickname is the account chains' business below.
 
-    Telegram's first and last names are not in the chain: a person is shown by
-    the nickname they chose and by nothing else. Everybody has one (it is given
-    at start-up and on first contact), so the steps after it are a net for a row
-    read before that happened, not a second way to be named.
-
-    The platform part follows the one display order every screen uses for a
-    platform list (`constants.platform_display_rank`, owner decision
-    2026-09-13).
-
-    The username is returned bare, without an `@` — deliberately, everywhere
-    (user request, 2026-09-12). A live mention pings its target, which is
-    wrong in `/online` (it redraws every few minutes, and this was already
-    reverted once for exactly that).
+    A nickname is given on first contact (`handles.from_text`), and the Mini
+    App makes a person without one choose, so the id is a net, not a name.
     """
-    return handle or username or _first_real(xbox, psn, steam) or f"id{tg_id}"
+    return handle or f"id{person_id}"
 
 
 def _first_real(*names: str | None) -> str | None:
@@ -134,47 +118,14 @@ def link_nickname(link: PlatformLink) -> str:
     )
 
 
-def person_name_of(user: User, links: Iterable[PlatformLink] = ()) -> str:
-    """`person_name` for the two shapes most call sites already hold: a
-    `users` row and that person's `platform_links`. Keeps every caller from
-    re-deriving which link is Steam and which is PSN."""
-    by_platform: dict[str, PlatformLink] = {}
-    for link in links:
-        # The first PSN account linked names the person (#10), not the last.
-        by_platform.setdefault(link.platform, link)
-    return person_name(
-        tg_id=user.tg_id,
-        handle=user.handle,
-        username=user.username,
-        xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
-        steam=_link_name(by_platform.get(Platform.STEAM)),
-        psn=_link_name(by_platform.get(Platform.PSN)),
-    )
-
-
-def _link_name(link: PlatformLink | None) -> str | None:
-    """A link's own nickname for use *inside the person chain*, where "no
-    name" has to stay falsy so the chain moves on — unlike the account
-    chains above, which end at a dash because their line is about that
-    account and has to render something."""
-    if link is None:
-        return None
-    return link.display_name or link.secondary_name or link.external_id or None
+def person_name_of(user: User) -> str:
+    """`person_name` for a `users` row."""
+    return person_name(person_id=user.id, handle=user.handle)
 
 
 def subscriber_names(rows: Iterable[ChatSubscriber]) -> list[str]:
     """One subscriber list, named by the person chain and sorted by what is
     actually shown (#51) — the query used to sort by `gamertag`, a column a
     Steam/PSN-only member does not have."""
-    names = [
-        person_name(
-            tg_id=row.tg_id,
-            handle=row.handle,
-            username=row.username,
-            xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
-            steam=row.steam_name,
-            psn=row.psn_name,
-        )
-        for row in rows
-    ]
+    names = [person_name(person_id=row.person_id, handle=row.handle) for row in rows]
     return sorted(names, key=str.casefold)

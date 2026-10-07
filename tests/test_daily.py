@@ -162,7 +162,7 @@ async def test_leaderboard_shows_platform_breakdown_even_for_one_platform(repo: 
     await repo.insert_new_achievements(XUID_B, [achievement("b1", now)], is_backfill=False)
 
     # Nothing from Telegram at all — no username, no first name — so the
-    # person chain has to reach the PSN nickname to name this row (#51).
+    # nickname comes from the PSN account when it is linked (owner, 2026-10-07).
     await repo.ensure_user(3)
     await repo.link_platform_account(
         await repo.person_id(3), "psn", "internal-account-id", "PsnOnly"
@@ -217,13 +217,11 @@ async def test_zero_scorers_still_appear(repo: Repo) -> None:
     assert "Alex" in text  # unlocked nothing, still listed
 
 
-async def test_gamertag_is_escaped_inside_the_html_table(repo: Repo) -> None:
-    """The list lives inside a <blockquote>; an unescaped "<" or "&" in a
-    name would break the markup Telegram parses.
-
-    No Telegram name or username here on purpose (#51): that walks the person
-    chain all the way down to the gamertag, so this covers both the escaping
-    and the fallback that puts a gamertag on this line at all."""
+async def test_a_gamertag_full_of_markup_never_reaches_the_html_table(repo: Repo) -> None:
+    """The list lives inside a <blockquote>; an unescaped "<" or "&" would
+    break the markup Telegram parses. A row names the person by their
+    nickname, which is Latin letters and digits only — a gamertag with
+    markup in it gives one with the markup stripped."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1)
     await repo.link_xbox_account(await repo.person_id(1), XUID_A, "A&B<C>", 1000)
@@ -234,7 +232,7 @@ async def test_gamertag_is_escaped_inside_the_html_table(repo: Repo) -> None:
 
     assert text is not None
     assert "<C>" not in text  # would be parsed as a (bogus) HTML tag
-    assert "&amp;" in text and "&lt;" in text
+    assert "1. ABC" in text
 
 
 async def test_a_zero_activity_day_still_sends_the_roster(repo: Repo) -> None:

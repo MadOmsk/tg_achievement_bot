@@ -20,7 +20,7 @@ from aiogram.types import InlineKeyboardMarkup
 from bot.db.repo import ChatMemberStat, GameAchievements, Repo
 from bot.i18n import translator
 from bot.services.admin_settings import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
-from bot.services.naming import person_name, xbox_nickname
+from bot.services.naming import person_name
 from bot.services.stats import local_now, month_cutoff_utc, month_window_utc
 from bot.util import utcnow
 from bot.views.date_picker import (
@@ -279,14 +279,7 @@ def _member_name(row: ChatMemberStat) -> str:
     `row.gamertag or f"id{row.tg_id}"` — an Xbox-only display cache — so a
     member with no Xbox account appeared as a bare id while the bot held his
     Telegram name, his username and his PSN nickname."""
-    return person_name(
-        tg_id=row.tg_id,
-        handle=row.handle,
-        username=row.username,
-        xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
-        steam=row.steam_name,
-        psn=row.psn_name,
-    )
+    return person_name(person_id=row.person_id, handle=row.handle)
 
 
 def _leader_row(place: int, row: ChatMemberStat, locale: str) -> str:

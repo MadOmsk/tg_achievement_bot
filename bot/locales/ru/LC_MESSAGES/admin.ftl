@@ -224,10 +224,15 @@ admin-users-header = 👥 Пользователи
 admin-users-columns = Колонки: когда был в сети · достижений сегодня / за месяц
 admin-users-row = { $icon } { $name } · { $ago } · { $today} / { $month }{ $note }
 admin-user-not-found = Пользователь не найден.
-admin-user-header = 👤 { $identity }
-# $tg_id arrives as a string on purpose — as a number Fluent groups the
-# digits, and an identifier is not a quantity.
-admin-user-tgid = tg_id { $tg_id }
+admin-user-header = 👤 { $name } · id { $person_id }
+# $tg_id and $person_id arrive as strings on purpose — as a number Fluent
+# groups the digits, and an identifier is not a quantity.
+admin-logins-title = Способы входа:
+admin-logins-row = { "  " }{ $label }: { $value }
+admin-logins-telegram = Telegram
+admin-logins-email = Почта
+admin-logins-tg-id = id { $tg_id }
+admin-logins-none = — нет
 admin-login-not-connected = не подключён
 admin-login-active = ✅ активен, обновлён { $ago }
 admin-login-invalid = ⚠️ протух

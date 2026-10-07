@@ -42,10 +42,12 @@ from bot.services.admin_settings import (
     NumericSetting,
     rare_threshold,
 )
+from bot.services.logins import Login, logins_of
 from bot.services.naming import (
     account_nickname,
     link_nickname,
     person_name,
+    person_name_of,
     subscriber_names,
     xbox_nickname,
 )
@@ -297,14 +299,7 @@ async def render_user_list(
         # this list is a roster of people, and its rows are how the operator
         # finds one. The bare id stays reachable as the last step, which on
         # this screen is diagnostic rather than a bad label.
-        name = person_name(
-            tg_id=user.tg_id,
-            handle=user.handle,
-            username=user.username,
-            xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
-            steam=user.steam_name,
-            psn=user.psn_online_id,
-        )
+        name = person_name(person_id=user.person_id, handle=user.handle)
         rows.append(
             _(
                 "admin-users-row",
@@ -345,31 +340,45 @@ async def render_user_list(
     return text, keyboard
 
 
-def _admin_tg_header(user: User, *, locale: str) -> str:
-    """Telegram identity, always shown in full (2026-09-08 user request) —
-    unlike /stats' header (one best single name), the admin needs to see
-    everything at once for lookups. The bare tg_id is never "@"-prefixed:
-    it isn't a real, resolvable username, only a genuine `user.username` is
-    (mentioning a nonexistent "@<number>" account risks nothing today, but
-    a real account could later register that exact numeric string as its
-    username and retroactively become a target of every old message that
-    did this)."""
+def _admin_tg_header(user: User, *, locale: str) -> list[str]:
+    """Who this is and every way they sign in (owner, 2026-10-07): the
+    person's name and id, then one line per kind of login, linked or not —
+    the super-admin needs all of it at once for lookups. A bare Telegram id
+    is never "@"-prefixed: it is not a username, and a real account could
+    later take that numeric string as one."""
     _ = translator("admin", locale)
-    bits = []
-    # The nickname, not the Telegram name: no real names are shown anywhere (#157).
-    if user.handle:
-        bits.append(user.handle)
-    if user.username:
-        bits.append(f"@{user.username}")
-    # As a string, not an int: Fluent formats a number for the locale, and
-    # this one came out as "tg_id 127 383 366" — an identifier is not a
-    # quantity, and that form is not even searchable.
-    # Somebody who signed in by email has none (#162): the address instead.
-    if user.tg_id is not None:
-        bits.append(_("admin-user-tgid", tg_id=str(user.tg_id)))
-    if user.email:
-        bits.append(user.email)
-    return _("admin-user-header", identity=", ".join(bits))
+    lines = [
+        _(
+            "admin-user-header",
+            name=person_name_of(user),
+            person_id=str(user.id),
+        ),
+        "",
+        _("admin-logins-title"),
+    ]
+    for login in logins_of(user):
+        lines.append(
+            _(
+                "admin-logins-row",
+                label=_(f"admin-logins-{login.kind}"),
+                value=_login_value(login, _) if login.linked else _("admin-logins-none"),
+            )
+        )
+    return lines
+
+
+def login_value(login: Login, *, locale: str) -> str:
+    """One login as the cards show it: `@name, id 123` for Telegram, the
+    address for email."""
+    return _login_value(login, translator("admin", locale))
+
+
+def _login_value(login: Login, _: Callable[..., str]) -> str:
+    if login.kind == "telegram":
+        parts = [f"@{login.username}"] if login.username else []
+        parts.append(_("admin-logins-tg-id", tg_id=login.ident or ""))
+        return ", ".join(parts)
+    return login.ident or ""
 
 
 async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale: str) -> list[str]:
@@ -569,7 +578,7 @@ async def render_user_card(
     # that platform together (nickname/id, status, achievements, last online
     # where it applies), five fixed lines each (2026-09-08 restructure)
     # instead of one crowded header line.
-    lines = [_admin_tg_header(user, locale=locale), ""]
+    lines = [*_admin_tg_header(user, locale=locale), ""]
     if user.xuid:
         lines += await _xbox_admin_block(repo, user, today_xbox, locale=locale)
         lines.append("")
