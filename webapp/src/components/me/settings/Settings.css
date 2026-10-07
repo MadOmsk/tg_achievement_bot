@@ -1,29 +1,3 @@
-.plat-note {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border-radius: 14px;
-  font-size: 0.8rem;
-  line-height: 1.4;
-}
-
-.plat-note.is-error {
-  background: rgba(255, 107, 122, 0.12);
-  border: 1px solid rgba(255, 107, 122, 0.28);
-  color: #ffb4bc;
-}
-
-.plat-note.is-warn {
-  background: rgba(255, 196, 90, 0.1);
-  border: 1px solid rgba(255, 196, 90, 0.24);
-  color: #ffd89a;
-}
-
-.plat-note.is-info {
-  background: rgba(155, 182, 255, 0.12);
-  border: 1px solid rgba(155, 182, 255, 0.22);
-  color: var(--mint-2);
-}
-
 .plat-card {
   display: flex;
   flex-direction: column;
@@ -101,10 +75,6 @@
   white-space: nowrap;
 }
 
-.plat-card .plat-note {
-  margin: 10px 0 0;
-}
-
 .input,
 .input.wide {
   border: 1px solid var(--stroke);
@@ -124,21 +94,6 @@
   color: #fff;
   opacity: 0.7;
   transform: scale(0.94);
-}
-
-.unlock-card-copy .hltb-copy-meta {
-  position: relative;
-  z-index: 1;
-  margin: 6px 0 0;
-  color: rgba(238, 241, 246, 0.62);
-  font-size: 0.78rem;
-  font-weight: 650;
-  line-height: 1.35;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .list button {
@@ -185,39 +140,6 @@
   padding: 6px 10px;
 }
 
-.connect-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 20px 18px;
-}
-
-.connect-form-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding-bottom: 4px;
-}
-
-.connect-form-head p {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.connect-form .input {
-  width: 100%;
-  margin: 0;
-  min-height: 48px;
-  padding: 14px 16px;
-}
-
-.connect-form .plat-note {
-  margin: -8px 0 0;
-}
-
 .game-filter-chips .chip {
   display: inline-flex;
   align-items: center;
@@ -252,13 +174,6 @@
   background: rgba(255, 107, 122, 0.14);
   color: #ff8a96;
 }
-
-.connect-form .btn {
-  width: 100%;
-  margin-top: 4px;
-  min-height: 48px;
-}
-
 
 /* "Accounts" and, on its right, the way to delete the account. */
 .accounts-head {
@@ -324,8 +239,6 @@
   border-top: 1px solid var(--hair);
 }
 
-
-
 .page-sub {
   margin: 0;
   color: var(--muted);
@@ -367,31 +280,13 @@
   line-height: 1.45;
 }
 
-.nick-field {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 56px;
-  padding: 0 18px;
-  border-radius: 18px;
-}
-
-.nick-field input {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.nick-field.is-locked {
-  opacity: 0.55;
+.nick-tag {
+  flex: none;
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 500;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
 }
 
 .nick-count {
@@ -402,21 +297,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-.nick-hint {
-  margin: 0 4px;
-  color: var(--muted);
-  font-size: 0.8rem;
-  line-height: 1.4;
-}
-
 .nick-hint.is-error {
   color: #ff8a96;
-}
-
-.nick-save {
-  width: 100%;
-  min-height: 50px;
-  margin-top: 14px;
 }
 
 .nick-avatar {
@@ -495,15 +377,23 @@
   display: inline-block;
 }
 
-.nick-avatar-badge.is-left {
-  right: auto;
-  left: 6px;
+.nick-avatar-badge.is-reset {
   margin: 0;
   padding: 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.nick-avatar-badge.is-left:focus {
+.nick-avatar-badge.is-reset:focus {
   outline: none;
+}
+
+.settings-me-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.settings-me {
+  gap: 14px;
 }

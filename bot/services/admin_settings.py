@@ -144,6 +144,22 @@ class NumericSetting:
 # each (key, default) pair still lives with the code that actually falls
 # back to it (imported above), so this registry can't drift from reality
 # the way five hand-typed dicts eventually would have.
+# Email sign-in limits (#166 review; owner, 2026-10-06: the admin's to set).
+# Per client — nginx's X-Real-IP — codes sent an hour and codes checked in ten
+# minutes; and codes the whole app sends an hour, since the mail server's
+# reputation is everybody's. The per-address limits stay fixed in
+# services/email_login.py.
+EMAIL_SENDS_PER_CLIENT_KEY = "email_codes_per_client_hour"
+EMAIL_SENDS_TOTAL_KEY = "email_codes_total_hour"
+EMAIL_CHECKS_PER_CLIENT_KEY = "email_checks_per_client_10min"
+DEFAULT_EMAIL_SENDS_PER_CLIENT = 10
+DEFAULT_EMAIL_SENDS_TOTAL = 100
+DEFAULT_EMAIL_CHECKS_PER_CLIENT = 20
+# The mail service's own daily cap (Brevo's free plan: 300; Gmail: ~500) —
+# shown beside the day's count on /admin, so the admin sees it coming.
+EMAIL_PROVIDER_DAILY_KEY = "email_provider_daily_limit"
+DEFAULT_EMAIL_PROVIDER_DAILY = 300
+
 NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     TOP_LIMIT_KEY: NumericSetting("admin-setting-summary-rows", DEFAULT_TABLE_TOP, min=0),
     # SPEC 1.6: both render into a <blockquote expandable>, not a fixed-width
@@ -211,6 +227,18 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
         zero_label="admin-disabled",
     ),
     # How often a played game's patch notes are re-read (poller/patch_refresh.py).
+    EMAIL_SENDS_PER_CLIENT_KEY: NumericSetting(
+        "admin-setting-email-sends-client", DEFAULT_EMAIL_SENDS_PER_CLIENT, min=1, max=100
+    ),
+    EMAIL_SENDS_TOTAL_KEY: NumericSetting(
+        "admin-setting-email-sends-total", DEFAULT_EMAIL_SENDS_TOTAL, min=1, max=1000
+    ),
+    EMAIL_CHECKS_PER_CLIENT_KEY: NumericSetting(
+        "admin-setting-email-checks-client", DEFAULT_EMAIL_CHECKS_PER_CLIENT, min=1, max=100
+    ),
+    EMAIL_PROVIDER_DAILY_KEY: NumericSetting(
+        "admin-setting-email-provider-daily", DEFAULT_EMAIL_PROVIDER_DAILY, min=1, max=100000
+    ),
     PATCH_REFRESH_HOURS_KEY: NumericSetting(
         "admin-setting-patch-refresh", DEFAULT_PATCH_REFRESH_HOURS, min=1, max=168
     ),

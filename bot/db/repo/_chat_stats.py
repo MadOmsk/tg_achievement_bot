@@ -15,7 +15,9 @@ from bot.db.repo._models import (
     OnlineAutoRefreshRow,
     _iso,
 )
+from bot.db.repo._refresh import ONLINE
 from bot.db.repo._sql import (
+    CHAT_MEMBERS,
     HANDLE_SHOWN,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
@@ -26,7 +28,6 @@ from bot.db.repo._sql import (
     rarity,
     rarity_cache_join,
 )
-from bot.util import utcnow_iso
 
 
 class _ChatStatsRepo:
@@ -68,7 +69,7 @@ class _ChatStatsRepo:
             # (#51): a member with no Xbox account used to have no name here
             # at all and rendered as a bare "id319472587", which is exactly
             # what #38 fixed and a revert took back out.
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name, psn.display_name AS psn_name,"
             "       COUNT(s.achievement_id) AS cnt,"
@@ -84,7 +85,7 @@ class _ChatStatsRepo:
             "       SUM(CASE WHEN s.trophy_type = 'silver' THEN 1 ELSE 0 END) AS silver,"
             "       SUM(CASE WHEN s.trophy_type = 'bronze' THEN 1 ELSE 0 END) AS bronze "
             "FROM " + member_source(members) + " sub "
-            "JOIN users u ON u.tg_id = sub.tg_id "
+            "JOIN users u ON u.id = sub.person_id "
             + XBOX_ACCOUNT
             # tg_id, not xuid (SPEC 9, M-Steam-2e) — sums every platform's
             # achievements for this person into one count, since
@@ -94,7 +95,7 @@ class _ChatStatsRepo:
             # Through the accounts this person holds now (#52), not through
             # a tg_id on the row: an account they no longer hold contributes
             # nothing, and one they just linked contributes everything.
-            + "LEFT JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            + "LEFT JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "LEFT JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             + date_bound
@@ -103,11 +104,12 @@ class _ChatStatsRepo:
             + active_account("steam", "steam")
             + active_account("psn", "psn")
             + "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
-            "GROUP BY u.tg_id ORDER BY cnt DESC, score DESC",
+            "GROUP BY u.id ORDER BY cnt DESC, score DESC",
             [rare_threshold, *date_params, chat_id],
         )
         return [
             ChatMemberStat(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 xuid=row["xuid"],
@@ -198,19 +200,15 @@ class _ChatStatsRepo:
         # A hand-picked list of people (the Mini App's "following" scope, #157)
         # stands in for the chat's membership; ids are integers formatted here.
         if members is None:
-            member_sql = (
-                "  SELECT tg_id FROM subscriptions WHERE chat_id = ? "
-                "  UNION "
-                "  SELECT tg_id FROM chat_seen WHERE chat_id = ?"
-            )
-            member_params: tuple[int, ...] = (chat_id, chat_id)
+            member_sql = f"  SELECT person_id FROM {CHAT_MEMBERS} WHERE chat_id = ?"
+            member_params: tuple[int, ...] = (chat_id,)
         else:
             ids = ",".join(str(int(m)) for m in members) or "NULL"
-            member_sql = f"  SELECT tg_id FROM users WHERE tg_id IN ({ids})"
+            member_sql = f"  SELECT id AS person_id FROM users WHERE id IN ({ids})"
             member_params = ()
         cursor = await self._conn.execute(
             "WITH member AS (" + member_sql + "), presence AS ("
-            "  SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "  SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "         u.last_name, " + XBOX_COLUMNS + ","
             "         xp.state AS xbox_state, xp.title_id AS xbox_title_id,"
             "         xp.device AS xbox_device,"
@@ -233,7 +231,7 @@ class _ChatStatsRepo:
             "              WHEN pp.state = 'Online' THEN 1"
             "              ELSE 0 END AS psn_level"
             "  FROM member"
-            "  JOIN users u ON u.tg_id = member.tg_id "
+            "  JOIN users u ON u.id = member.person_id "
             + XBOX_ACCOUNT
             + "  LEFT JOIN presence_state xp ON xp.xuid = xb.external_id "
             + active_account("steam", "steam")
@@ -268,7 +266,8 @@ class _ChatStatsRepo:
             "    END AS winner"
             "  FROM picked"
             ") "
-            "SELECT tg_id, gamertag, gamertag_modern, username, first_name, last_name,"
+            "SELECT tg_id, person_id, gamertag, gamertag_modern, username, first_name,"
+            " last_name,"
             "       handle, xuid,"
             "       CASE winner"
             "         WHEN 'steam' THEN"
@@ -303,6 +302,7 @@ class _ChatStatsRepo:
         )
         return [
             ChatPresenceRow(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 gamertag_modern=row["gamertag_modern"],
@@ -322,64 +322,22 @@ class _ChatStatsRepo:
             for row in await cursor.fetchall()
         ]
 
+    # One chat's live-updating /online (Follow-up 2026-09-05,
+    # poller/online_refresh.py); the statements are `_refresh.py`'s. A fresh
+    # /online supersedes the last: the caller deletes the old copy first
+    # (`get_online_auto_refresh` gives its id), and `created_at` — the 3h
+    # cutoff's clock — starts again.
     async def start_online_auto_refresh(self, chat_id: int, message_id: int) -> None:
-        """A fresh /online supersedes whatever was auto-refreshing in this
-        chat before (Follow-up 2026-09-05, poller/online_refresh.py) — the
-        old message just goes stale, nothing needs to actively stop it.
-        Both timestamps reset: created_at is the 3h cutoff's own clock,
-        independent of whatever the previous table's age was."""
-        now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO online_auto_refresh (chat_id, message_id, created_at, last_updated_at) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(chat_id) DO UPDATE SET"
-            " message_id = excluded.message_id, created_at = excluded.created_at,"
-            " last_updated_at = excluded.last_updated_at",
-            (chat_id, message_id, now, now),
-        )
-        await self._conn.commit()
+        await ONLINE.start(self._conn, chat_id, message_id)
 
     async def touch_online_auto_refresh(self, chat_id: int) -> None:
-        await self._conn.execute(
-            "UPDATE online_auto_refresh SET last_updated_at = ? WHERE chat_id = ?",
-            (utcnow_iso(), chat_id),
-        )
-        await self._conn.commit()
+        await ONLINE.touch(self._conn, chat_id)
 
     async def delete_online_auto_refresh(self, chat_id: int) -> None:
-        await self._conn.execute("DELETE FROM online_auto_refresh WHERE chat_id = ?", (chat_id,))
-        await self._conn.commit()
+        await ONLINE.delete(self._conn, chat_id)
 
     async def all_online_auto_refreshes(self) -> list[OnlineAutoRefreshRow]:
-        cursor = await self._conn.execute(
-            "SELECT chat_id, message_id, created_at, last_updated_at FROM online_auto_refresh"
-        )
-        return [
-            OnlineAutoRefreshRow(
-                chat_id=row["chat_id"],
-                message_id=row["message_id"],
-                created_at=row["created_at"],
-                last_updated_at=row["last_updated_at"],
-            )
-            for row in await cursor.fetchall()
-        ]
+        return await ONLINE.all(self._conn)
 
     async def get_online_auto_refresh(self, chat_id: int) -> OnlineAutoRefreshRow | None:
-        """Follow-up 2026-09-06: /online now deletes its own previous copy
-        before posting a new one (same "don't spam the chat" rule as
-        tracked_messages below) — needs the old message_id before
-        start_online_auto_refresh overwrites the row with the new one."""
-        cursor = await self._conn.execute(
-            "SELECT chat_id, message_id, created_at, last_updated_at "
-            "FROM online_auto_refresh WHERE chat_id = ?",
-            (chat_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return OnlineAutoRefreshRow(
-            chat_id=row["chat_id"],
-            message_id=row["message_id"],
-            created_at=row["created_at"],
-            last_updated_at=row["last_updated_at"],
-        )
+        return await ONLINE.get(self._conn, chat_id)

@@ -76,8 +76,8 @@ panel-login-row = Вход { $platform }: { $status }
 # (#5) — connect time, or any backfill/resync since. Xbox has no
 # equivalent row here: its own token status (panel-login-xbox-row above)
 # already answers a similar "can I actually read this account" question.
-panel-visibility-visible = ✅ ачивки видны
-panel-visibility-hidden = ⚠️ ачивки скрыты
+panel-visibility-visible = ✅ достижения видны
+panel-visibility-hidden = ⚠️ достижения скрыты
 panel-visibility-unknown = ❓ не проверено
 panel-publication-row = Публикация: { $status }
 panel-now-playing-row = Сейчас: { $playing }
@@ -90,8 +90,8 @@ panel-excluded = 🚫 исключён администратором
 panel-not-subscribed-anywhere = 🔘 не подписан ни в одном чате
 panel-subscribed-in = ✅ в { $chats }
 panel-publishing-without = {" "}· без { $platforms }
-panel-publishes-on-toast = Публикую ачивки этого аккаунта
-panel-publishes-off-toast = Ачивки этого аккаунта больше не публикуются
+panel-publishes-on-toast = Публикую достижения этого аккаунта
+panel-publishes-off-toast = Достижения этого аккаунта больше не публикуются
 
 # A platform's own screen behind its /panel button (#10).
 panel-account-title = { $icon } <b>{ $platform }</b>
@@ -126,7 +126,7 @@ panel-delete-confirm-2-yes = 🔥 Точно удалить аккаунт
 panel-delete-done = Ваш аккаунт и связанные данные успешно удалены. Если захотите вернуться, просто отправьте /start.
 panel-delete-toast = Аккаунт удалён
 panel-delete-not-found = Аккаунт уже удалён.
-panel-rarity-toast-all = Публикую все ачивки
+panel-rarity-toast-all = Публикую все достижения
 panel-rarity-toast-rare = Только редкие — с редкостью не выше { $threshold }%
 panel-rarity-toast-hidden = Ничего не публикую
 
@@ -135,12 +135,12 @@ panel-hidden-steam =
     ⚠️ Достижения в профиле Steam скрыты. Бот их не видит: не присылает уведомления о новых и не показывает их в приложении. Как открыть — по кнопке ниже.
 panel-hidden-psn =
     ⚠️ У аккаунта { $name } трофеи скрыты. Бот их не видит: не присылает уведомления о новых и не показывает их в приложении. Как открыть — по кнопке ниже.
-kb-howto-steam = 🔓 Как открыть ачивки
+kb-howto-steam = 🔓 Как открыть достижения
 kb-howto-psn = 🔓 Как открыть трофеи { $name }
 kb-steam-privacy = ⚙️ Открыть настройки Steam
 kb-recheck = 🔄 Проверить снова
 panel-howto-steam =
-    🔓 <b>Steam: как открыть ачивки</b>
+    🔓 <b>Steam: как открыть достижения</b>
 
     Бот видит только то, что в Steam открыто всем.
 

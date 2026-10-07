@@ -9,13 +9,13 @@ const MARK = { xbox: PLATFORMS.XBOX, psn: PLATFORMS.PSN, steam: PLATFORMS.STEAM 
 
 export function AdminUserDetail({
   data,
-  tgId,
+  personId,
   locale,
   onBack,
   onFail,
 }: {
   data: string;
-  tgId: number;
+  personId: number;
   locale: Locale;
   onBack: () => void;
   onFail: (err: unknown) => void;
@@ -23,12 +23,12 @@ export function AdminUserDetail({
   const [user, setUser] = useState<AdminUserCardType | null>(null);
 
   useEffect(() => {
-    void fetchAdminUser(data, tgId).then(setUser).catch(onFail);
-  }, [data, onFail, tgId]);
+    void fetchAdminUser(data, personId).then(setUser).catch(onFail);
+  }, [data, onFail, personId]);
 
   const linked = user ? ADMIN_USER_PLATFORMS.filter((p) => user[p]) : [];
   const patch = (body: Parameters<typeof patchAdminUser>[2]) =>
-    user && void patchAdminUser(data, user.tg_id, body).then(setUser).catch(onFail);
+    user && void patchAdminUser(data, user.person_id, body).then(setUser).catch(onFail);
 
   return (
     <>
@@ -44,7 +44,12 @@ export function AdminUserDetail({
           <Group title={t(locale, "groupInfo")}>
             <InfoRow
               label="Telegram"
-              value={`${user.username ? `${user.username} · ` : ""}id${user.tg_id}`}
+              value={
+                // An email-only person has no Telegram id: the address instead.
+                user.tg_id != null
+                  ? `${user.username ? `${user.username} · ` : ""}id${user.tg_id}`
+                  : (user.email ?? "—")
+              }
             />
             {linked.map((p) => (
               <InfoRow

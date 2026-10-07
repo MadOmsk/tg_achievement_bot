@@ -6,10 +6,10 @@
 .person-sheet {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 20px;
   width: 100%;
   box-sizing: border-box;
-  padding: 46px 18px 4px;
+  padding: 22px 18px 4px;
   text-align: left;
 }
 
@@ -56,7 +56,26 @@
   gap: 8px;
 }
 
-.ps-stats > div {
+.ps-stats > button {
+  align-items: flex-start;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ps-stats > button:disabled {
+  cursor: default;
+}
+
+.ps-stats > button:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.ps-stats > div,
+.ps-stats > button {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -103,16 +122,29 @@
   font-size: 0.88rem;
 }
 
+.ps-account + .ps-account {
+  border-top: 1px solid var(--hair);
+}
+
 .ps-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  width: 100%;
   min-height: 52px;
+  margin: 0;
   padding: 6px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.ps-row + .ps-row {
-  border-top: 1px solid var(--hair);
+.ps-row:disabled {
+  cursor: default;
 }
 
 .ps-row-main {
@@ -124,17 +156,80 @@
 }
 
 .ps-row-value {
-  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 750;
   font-variant-numeric: tabular-nums;
-  font-weight: 650;
+  white-space: nowrap;
 }
 
+.ps-row-value em {
+  margin-left: 2px;
+  color: var(--muted);
+  font-style: normal;
+  font-size: 0.8em;
+}
+
+.ps-row .dd-arrow {
+  transition: transform 0.2s ease;
+}
+
+.ps-account.is-open .ps-row .dd-arrow {
+  transform: rotate(180deg);
+}
+
+/* The details fold out under the row, lined up with the nickname. */
+.ps-details {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.22s ease;
+}
+
+.ps-account.is-open .ps-details {
+  grid-template-rows: 1fr;
+}
+
+.ps-facts {
+  min-height: 0;
+  overflow: hidden;
+  margin: 0;
+}
+
+.ps-account.is-open .ps-facts {
+  padding-bottom: 8px;
+}
+
+.ps-fact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+  border-top: 1px solid var(--hair);
+  font-size: 0.86rem;
+}
+
+.ps-fact dt {
+  color: var(--muted);
+}
+
+.ps-fact dd {
+  margin: 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ps-fact .tier-medal b {
+  font-size: 0.82rem;
+}
+
+/* The logos stand on the card's own edge, like the avatar and the labels above. */
 .ps-mark {
   flex: none;
   display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
+  place-items: center start;
+  width: 28px;
+  height: 28px;
 }
 
 .ps-games {
@@ -303,6 +398,3 @@
   flex: none;
 }
 
-.ps-state .dd-arrow {
-  color: inherit;
-}

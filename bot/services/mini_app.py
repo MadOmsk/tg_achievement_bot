@@ -1,10 +1,13 @@
 """Mini App deep-link URLs for group teasers and Open buttons.
 
-Query params (`c`, `u`, `t`, `g`) are what the SPA reads on a WebApp URL.
+Query params (`c`, `p`, `t`, `g`) are what the SPA reads on a WebApp URL.
 Groups cannot use `web_app` inline buttons — Telegram answers
 BUTTON_TYPE_INVALID — so those Open buttons are a `t.me/bot?startapp=`
 link instead. The SPA already parses the same payload from
-`initDataUnsafe.start_param` (`c<id>u<id>t<tab>g<encoded game>`).
+`initDataUnsafe.start_param` (`c<id>p<id>t<tab>g<encoded game>`).
+
+`p` is the person's own id (#156). Buttons posted before it carry `u` and a
+Telegram id; the SPA still reads those, so an old post's button keeps working.
 """
 
 from __future__ import annotations
@@ -46,7 +49,7 @@ def mini_app_open_url(
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query["c"] = str(chat_id)
     if person_id is not None:
-        query["u"] = str(person_id)
+        query["p"] = str(person_id)
     if tab:
         query["t"] = tab
     if game:
@@ -65,7 +68,7 @@ def mini_app_start_param(
     """Compact start_param — must stay in sync with webapp launchContext()."""
     param = f"c{chat_id}"
     if person_id is not None:
-        param += f"u{person_id}"
+        param += f"p{person_id}"
     if tab:
         param += f"t{tab}"
     if game:

@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 from bot.config import Settings
 from bot.db.repo import AchievementRow, Repo
+from bot.db.repo._sql import PERSON_BY_TG
 from bot.poller import psn_fetcher as psn_fetcher_module
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.services.crypto import TokenCipher
@@ -81,7 +82,7 @@ def _fake_sync(monkeypatch, outcomes):
 
 async def _linked_user(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, "Gamer")
 
 
 async def _configured_auth(repo: Repo, cipher: TokenCipher, monkeypatch) -> PsnAuth:
@@ -134,15 +135,15 @@ async def test_poll_account_publishes_what_sync_account_returns(
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 2
+    assert await fetcher.poll_account(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer") == 2
     # Found new trophies — level gets refreshed (Follow-up 2026-09-06).
-    link = await repo.get_platform_link(TG_ID, "psn")
+    link = await repo.get_platform_link(await repo.person_id(TG_ID), "psn")
     assert link is not None and link.psn_trophy_level == 7
 
-    assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 0
+    assert await fetcher.poll_account(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer") == 0
     assert len(publisher.published) == 1
 
-    assert await fetcher.poll_account(TG_ID, ACCOUNT_ID, "Gamer") == 1
+    assert await fetcher.poll_account(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer") == 1
     assert [a.achievement_id for a in publisher.published[1]] == ["3"]
 
 
@@ -164,7 +165,7 @@ async def test_backfill_marks_done_and_returns_the_private_titles(
     [target] = await repo.psn_pollable_users()
     assert target.backfill_done is False
 
-    result = await fetcher.backfill(TG_ID, ACCOUNT_ID)
+    result = await fetcher.backfill(await repo.person_id(TG_ID), ACCOUNT_ID)
 
     assert result.stored == 2
     assert result.private_title_ids == ["NPWR00009_00"]
@@ -174,7 +175,7 @@ async def test_backfill_marks_done_and_returns_the_private_titles(
     # After: the gate is open — the regular poller may now poll it (#21).
     [target] = await repo.psn_pollable_users()
     assert target.backfill_done is True
-    link = await repo.get_platform_link(TG_ID, "psn")
+    link = await repo.get_platform_link(await repo.person_id(TG_ID), "psn")
     assert link is not None and link.psn_trophy_level == 3
 
 
@@ -192,7 +193,7 @@ async def test_refresh_user_polls_a_backfilled_account(
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer", "ru")
+    summary = await fetcher.refresh_user(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer", "ru")
 
     assert calls[0]["is_backfill"] is False
     assert len(publisher.published) == 1
@@ -215,7 +216,7 @@ async def test_refresh_user_resyncs_a_stuck_account(
     publisher = FakePublisher()
     fetcher = PsnFetcher(settings, repo, auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, ACCOUNT_ID, "Gamer", "ru")
+    summary = await fetcher.refresh_user(await repo.person_id(TG_ID), ACCOUNT_ID, "Gamer", "ru")
 
     assert await repo.get_psn_title_progress(ACCOUNT_ID, "NPWR00001_00") is None  # wiped
     assert calls[0]["is_backfill"] is True
@@ -312,15 +313,15 @@ async def test_insert_new_achievements_psn_dedups_and_keeps_the_tier(repo: Repo)
     )
 
     first = await repo.insert_new_achievements_psn(
-        TG_ID, ACCOUNT_ID, [trophy_row], is_backfill=False
+        await repo.person_id(TG_ID), ACCOUNT_ID, [trophy_row], is_backfill=False
     )
     second = await repo.insert_new_achievements_psn(
-        TG_ID, ACCOUNT_ID, [trophy_row], is_backfill=False
+        await repo.person_id(TG_ID), ACCOUNT_ID, [trophy_row], is_backfill=False
     )
 
     assert len(first) == 1
     assert second == []  # already seen, same key as the first call
-    recent = await repo.recent_achievements(ACCOUNT_ID, 5)
+    recent = await repo.person_recent(await repo.person_id(TG_ID), 5)
     assert recent[0].trophy_type == "platinum"
 
 
@@ -328,7 +329,7 @@ async def test_psn_pollable_users_falls_back_to_account_id_with_no_online_id(
     repo: Repo,
 ) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, None)
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, None)
 
     [target] = await repo.psn_pollable_users()
 
@@ -372,7 +373,8 @@ async def test_tick_throttles_offline_users(
         "UPDATE users SET last_online_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
     )
     await repo._conn.execute(
-        "UPDATE account_links SET linked_at = ? WHERE tg_id = ?", (twenty_days_ago, TG_ID)
+        "UPDATE account_links SET linked_at = ? WHERE person_id = " + PERSON_BY_TG,
+        (twenty_days_ago, TG_ID),
     )
     one_hour_ago = (datetime.now(UTC) - timedelta(seconds=3600)).isoformat()
     await repo._conn.execute(

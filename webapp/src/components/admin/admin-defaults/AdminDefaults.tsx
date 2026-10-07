@@ -42,25 +42,23 @@ export function AdminDefaults({
         <SettingsSkel groups={[1, 1, 1]} />
       ) : (
         <>
-          <Group hint={t(locale, "adminRulesThresholdHint")}>
+          <Group>
             <NumberRow
               label={t(locale, "adminRulesThreshold")}
+              sub={t(locale, "adminRulesThresholdHint")}
               value={defaults.rare_threshold_percent}
               min={0.01}
               max={100}
               decimal
               onChange={(v) => patch({ rare_threshold_percent: v })}
             />
-          </Group>
-          <Group hint={t(locale, "adminRulesRarityHint")}>
             <SelectRow
               label={t(locale, "defaultsRarity")}
+              sub={t(locale, "adminRulesRarityHint")}
               value={defaults.rarity_mode}
               options={modes}
               onChange={(v) => patch({ rarity_mode: v })}
             />
-          </Group>
-          <Group>
             <ToggleRow
               label={t(locale, "defaultsLinks")}
               on={defaults.show_profile_links}

@@ -24,6 +24,7 @@ from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
+from bot.services.xbox.auth import TokenRefreshError
 from bot.services.xbox.client import XboxApiError, XboxClient
 
 log = logging.getLogger(__name__)
@@ -34,11 +35,11 @@ async def fill_xbox_title(
     anthropic_auth: AnthropicAuth,
     client: XboxClient,
     *,
-    tg_id: int,
+    person_id: int,
     title_id: str,
     platform: str,
 ) -> int:
-    """Cache both locales for one title, asking on `tg_id`'s behalf.
+    """Cache both locales for one title, asking on `person_id`'s behalf.
 
     Returns how many descriptions this call **newly** cached — measured
     against the cache, not counted from what the platform returned. Those two
@@ -56,8 +57,8 @@ async def fill_xbox_title(
     decides whether to try another owner or leave the title for next time.
     """
     xbox_platform = Platform.XBOX_360 if platform == Platform.XBOX_360 else Platform.XBOX_MODERN
-    russian = await client.title_achievements(tg_id, title_id, xbox_platform, language="ru-RU")
-    english = await client.title_achievements(tg_id, title_id, xbox_platform, language="en-US")
+    russian = await client.title_achievements(person_id, title_id, xbox_platform, language="ru-RU")
+    english = await client.title_achievements(person_id, title_id, xbox_platform, language="en-US")
 
     # Names and the game's own title ride along (#61) — this job walks every
     # title a few per tick, which makes it the one thing that reaches a game
@@ -108,11 +109,18 @@ async def fill_xbox_title_any_owner(
     Returns None when every owner failed, so the caller can tell "nothing to
     cache" (0) apart from "could not ask" (None).
     """
-    for tg_id in owners:
+    for person_id in owners:
         try:
             return await fill_xbox_title(
-                repo, anthropic_auth, client, tg_id=tg_id, title_id=title_id, platform=platform
+                repo,
+                anthropic_auth,
+                client,
+                person_id=person_id,
+                title_id=title_id,
+                platform=platform,
             )
-        except XboxApiError as exc:
-            log.info("title %s: owner %s could not answer (%s)", title_id, tg_id, exc)
+        except (XboxApiError, TokenRefreshError) as exc:
+            # A dead or failing login is an expected state (Polling model:
+            # isolate failures), not a crash: one line, then the next owner.
+            log.info("title %s: owner %s could not answer (%r)", title_id, person_id, exc)
     return None

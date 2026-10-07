@@ -319,24 +319,25 @@ async def test_get_owned_games_raises_when_game_details_is_private(
 
 async def test_platform_link_round_trip(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    assert await repo.get_platform_link(1, "steam") is None
+    assert await repo.get_platform_link(await repo.person_id(1), "steam") is None
 
-    await repo.link_platform_account(1, "steam", STEAM_ID, "Gabe")
-    link = await repo.get_platform_link(1, "steam")
+    await repo.link_platform_account(await repo.person_id(1), "steam", STEAM_ID, "Gabe")
+    link = await repo.get_platform_link(await repo.person_id(1), "steam")
 
     assert link is not None
     assert (link.platform, link.external_id, link.display_name) == ("steam", STEAM_ID, "Gabe")
-    assert [platform_link.platform for platform_link in await repo.platform_links_of(1)] == [
-        "steam"
-    ]
+    assert [
+        platform_link.platform
+        for platform_link in await repo.platform_links_of(await repo.person_id(1))
+    ] == ["steam"]
 
 
 async def test_relinking_replaces_the_previous_account(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "steam", "111", "Old Name")
-    await repo.link_platform_account(1, "steam", "222", "New Name")
+    await repo.link_platform_account(await repo.person_id(1), "steam", "111", "Old Name")
+    await repo.link_platform_account(await repo.person_id(1), "steam", "222", "New Name")
 
-    link = await repo.get_platform_link(1, "steam")
+    link = await repo.get_platform_link(await repo.person_id(1), "steam")
 
     assert link is not None
     assert (link.external_id, link.display_name) == ("222", "New Name")
@@ -344,11 +345,11 @@ async def test_relinking_replaces_the_previous_account(repo: Repo) -> None:
 
 async def test_unlink_removes_the_account(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "steam", STEAM_ID, "Gabe")
+    await repo.link_platform_account(await repo.person_id(1), "steam", STEAM_ID, "Gabe")
 
-    await repo.unlink_platform_account(1, "steam")
+    await repo.unlink_platform_account(await repo.person_id(1), "steam")
 
-    assert await repo.get_platform_link(1, "steam") is None
+    assert await repo.get_platform_link(await repo.person_id(1), "steam") is None
 
 
 async def test_platform_links_all_spans_every_user(repo: Repo) -> None:
@@ -356,9 +357,11 @@ async def test_platform_links_all_spans_every_user(repo: Repo) -> None:
     link across the whole bot, not any one person's (2026-09-05)."""
     await repo.ensure_user(1, "one")
     await repo.ensure_user(2, "two")
-    await repo.link_platform_account(1, "steam", "111", "One")
-    await repo.link_platform_account(2, "steam", "222", "Two")
-    await repo.link_xbox_account(1, "xuid-1", "OneXbox", 0)  # a different platform, not returned
+    await repo.link_platform_account(await repo.person_id(1), "steam", "111", "One")
+    await repo.link_platform_account(await repo.person_id(2), "steam", "222", "Two")
+    await repo.link_xbox_account(
+        await repo.person_id(1), "xuid-1", "OneXbox", 0
+    )  # a different platform, not returned
 
     links = await repo.platform_links_all("steam")
 
@@ -371,8 +374,8 @@ async def test_platform_links_all_carries_the_psn_trophy_level(repo: Repo) -> No
     Found live: the SELECT here never selected the column at all, so every
     link came back with psn_trophy_level=None regardless of the real value."""
     await repo.ensure_user(1, "one")
-    await repo.link_platform_account(1, "psn", "acc-1", "One")
-    await repo.set_psn_trophy_level(1, 12)
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "One")
+    await repo.set_psn_trophy_level(await repo.person_id(1), 12)
 
     links = await repo.platform_links_all("psn")
 

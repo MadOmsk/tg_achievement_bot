@@ -146,6 +146,25 @@ class UsernameMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+class PersonMiddleware(BaseMiddleware):
+    """Who the update is from, as a person (#156): `person_id` in the handler's
+    data, None for somebody the bot has no record of yet. Telegram is only how
+    they reached the bot; everything stored about them is keyed by this id."""
+
+    def __init__(self, repo: Repo) -> None:
+        self._repo = repo
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        sender = getattr(event, "from_user", None)
+        data["person_id"] = await self._repo.person_id(sender.id) if sender else None
+        return await handler(event, data)
+
+
 # ------------------------------------------------------------- subscription
 
 
@@ -157,13 +176,15 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
     if message.from_user is None:
         return
 
-    user = await repo.get_user(message.from_user.id)
+    user = await repo.get_user(await repo.person_id(message.from_user.id))
     # Found live (2026-09-08, keimaks/kmaks90 — PSN-only, confirmed bug):
     # this used to require Xbox specifically (`not user.xuid` alone), so a
     # Steam/PSN-only person could never subscribe anywhere at all — not a
     # design choice, just this handler never learning about the other two
     # platforms the rest of the bot has long since supported.
-    platform_links = await repo.platform_links_of(message.from_user.id) if user else []
+    platform_links = (
+        await repo.platform_links_of(await repo.person_id(message.from_user.id)) if user else []
+    )
     if user is None or (not user.xuid and not platform_links):
         me = await message.bot.me()  # type: ignore[union-attr]
         await message.answer(
@@ -174,10 +195,10 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
 
     await repo.upsert_chat(message.chat.id, message.chat.title, message.from_user.id)
     async with _subscription_lock(message.chat.id, message.from_user.id):
-        if await repo.is_subscribed(message.chat.id, message.from_user.id):
+        if await repo.is_subscribed(message.chat.id, await repo.person_id(message.from_user.id)):
             await message.answer(i18n.get("chat-subscribe-already"))
             return
-        await repo.subscribe(message.chat.id, message.from_user.id)
+        await repo.subscribe(message.chat.id, await repo.person_id(message.from_user.id))
     me = await message.bot.me()  # type: ignore[union-attr]
     await message.answer(
         i18n.get(
@@ -185,7 +206,9 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
             # The person, not their Xbox account (#51) — this read
             # `user.gamertag`, so anyone without Xbox got the generic
             # "твои достижения" instead of their own name.
-            gamertag=person_name_of(user, await repo.platform_links_of(message.from_user.id)),
+            gamertag=person_name_of(
+                user, await repo.platform_links_of(await repo.person_id(message.from_user.id))
+            ),
         ),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[[settings_button(me.username or "", i18n)]]
@@ -199,7 +222,7 @@ async def unsubscribe(message: Message, repo: Repo, i18n: I18nContext) -> None:
     remember subscribing in deserves a confirm, not an instant action."""
     if message.chat.type not in GROUP_TYPES or message.from_user is None:
         return
-    if not await repo.is_subscribed(message.chat.id, message.from_user.id):
+    if not await repo.is_subscribed(message.chat.id, await repo.person_id(message.from_user.id)):
         await message.answer(i18n.get("chat-unsubscribe-not-subscribed"))
         return
 
@@ -240,7 +263,7 @@ async def unsubscribe_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nCon
     if not isinstance(callback.message, Message):
         return
     async with _subscription_lock(callback.message.chat.id, tg_id):
-        await repo.unsubscribe(callback.message.chat.id, tg_id)
+        await repo.unsubscribe(callback.message.chat.id, await repo.person_id(tg_id))
     await callback.message.edit_text(i18n.get("chat-unsubscribe-done"))
     await callback.answer()
 
@@ -304,7 +327,7 @@ async def stats(
             )
         return
 
-    settings_row = await repo.get_user_settings(target.tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
     now_local = local_now(tz_offset_min)
     markup = stats_navigation_keyboard(
@@ -416,7 +439,7 @@ async def who_stats_button(
 ) -> None:
     assert callback.data is not None
     tg_id = int(callback.data.rsplit(":", 1)[1])
-    target = await repo.get_user(tg_id)
+    target = await repo.get_user(await repo.person_id(tg_id))
     if target is None:
         await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
         return
@@ -427,7 +450,7 @@ async def who_stats_button(
     if isinstance(callback.message, Message):
         text = await build_stats_text(repo, target, callback.message.chat.id, i18n)
         if text is not None:
-            settings_row = await repo.get_user_settings(target.tg_id)
+            settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
             tz_offset_min = settings_row.tz_offset_min if settings_row else None
             now_local = local_now(tz_offset_min)
             markup = stats_navigation_keyboard(
@@ -542,7 +565,7 @@ async def stats_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I18nCont
     year = int(parts[3])
     month = int(parts[4])
 
-    target = await repo.get_user(target_id)
+    target = await repo.get_user(await repo.person_id(target_id))
     if target is None:
         await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
         return
@@ -559,7 +582,7 @@ async def stats_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I18nCont
         await callback.answer()
         return
 
-    settings_row = await repo.get_user_settings(target.tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
     now_local = local_now(tz_offset_min)
     markup = stats_navigation_keyboard(
@@ -589,12 +612,12 @@ async def stats_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I18nCont
     target_id = int(parts[2])
     year = int(parts[3])
 
-    target = await repo.get_user(target_id)
+    target = await repo.get_user(await repo.person_id(target_id))
     if target is None:
         await callback.answer(i18n.get("chat-user-not-found"), show_alert=True)
         return
 
-    settings_row = await repo.get_user_settings(target.tg_id)
+    settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
     tz_offset_min = settings_row.tz_offset_min if settings_row else None
     now_local = local_now(tz_offset_min)
     markup = stats_month_calendar_keyboard(
@@ -802,16 +825,20 @@ async def recent(
 async def _resolve(message: Message, repo: Repo, argument: str | None) -> User | None:
     """Find who the command is about: reply, mention, @username or the sender."""
     if message.reply_to_message and message.reply_to_message.from_user:
-        return await repo.get_user(message.reply_to_message.from_user.id)
+        return await repo.get_user(await repo.person_id(message.reply_to_message.from_user.id))
 
     for entity in message.entities or []:
         if entity.type == "text_mention" and entity.user:
-            return await repo.get_user(entity.user.id)
+            return await repo.get_user(await repo.person_id(entity.user.id))
 
     if argument:
         return await repo.find_user_by_username(argument.strip())
 
-    return await repo.get_user(message.from_user.id) if message.from_user else None
+    return (
+        await repo.get_user(await repo.person_id(message.from_user.id))
+        if message.from_user
+        else None
+    )
 
 
 # ---------------------------------------------------------------------- hub
@@ -912,11 +939,13 @@ async def subscribe_button(
     message = callback.message
     if not isinstance(message, Message):
         return
-    user = await repo.get_user(callback.from_user.id)
+    user = await repo.get_user(await repo.person_id(callback.from_user.id))
     # Same fix as /subscribe above (2026-09-08, confirmed live bug) — only
     # redirect to connect when *nothing* is linked; a Steam/PSN-only person
     # should just subscribe outright, not get bounced to Xbox forever.
-    platform_links = await repo.platform_links_of(callback.from_user.id) if user else []
+    platform_links = (
+        await repo.platform_links_of(await repo.person_id(callback.from_user.id)) if user else []
+    )
     if user is None or (not user.xuid and not platform_links):
         # A callback answer can only carry one URL, unlike /subscribe's own
         # reply keyboard above — Xbox's own deep link stays the default
@@ -935,14 +964,18 @@ async def subscribe_button(
     async with _subscription_lock(message.chat.id, callback.from_user.id):
         # Subscribing here, or — once subscribed — cycling the person's own
         # rarity mode, which since #126 applies to every chat they are in.
-        settings_row = await repo.get_user_settings(callback.from_user.id)
+        settings_row = await repo.get_user_settings(await repo.person_id(callback.from_user.id))
         current_mode = settings_row.rarity_mode if settings_row else RarityMode.ALL
-        if not await repo.is_subscribed(message.chat.id, callback.from_user.id):
-            await repo.subscribe(message.chat.id, callback.from_user.id)
+        if not await repo.is_subscribed(
+            message.chat.id, await repo.person_id(callback.from_user.id)
+        ):
+            await repo.subscribe(message.chat.id, await repo.person_id(callback.from_user.id))
             toast = i18n.get(f"chat-hub-toast-{current_mode}")
         else:
             new_mode = next_rarity_mode(current_mode)
-            await repo.update_user_settings(callback.from_user.id, rarity_mode=new_mode)
+            await repo.update_user_settings(
+                await repo.person_id(callback.from_user.id), rarity_mode=new_mode
+            )
             toast = i18n.get(f"chat-hub-toast-{new_mode}")
 
     await callback.answer(toast)

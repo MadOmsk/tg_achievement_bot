@@ -80,7 +80,9 @@ async def test_clone_user_tables(tmp_path: Path) -> None:
     src_db = await Database(src_path).connect()
     src_repo = Repo(src_db)
     await src_repo.ensure_user(111, username="user1", first_name="First1")
-    await src_repo.link_xbox_account(111, "2533000000000001", "Gamer1", 1000)
+    await src_repo.link_xbox_account(
+        await src_repo.person_id(111), "2533000000000001", "Gamer1", 1000
+    )
     await src_db.close()
 
     dst_db = await Database(dst_path).connect()
@@ -89,7 +91,7 @@ async def test_clone_user_tables(tmp_path: Path) -> None:
     assert stats.get("accounts", 0) >= 1
 
     dst_repo = Repo(dst_db)
-    link = await dst_repo.get_platform_link(111, "xbox")
+    link = await dst_repo.get_platform_link(await dst_repo.person_id(111), "xbox")
     assert link is not None
     assert link.external_id == "2533000000000001"
     assert link.display_name == "Gamer1"
@@ -102,9 +104,10 @@ async def test_run_sync_flow(tmp_path: Path) -> None:
     db = await Database(db_file).connect()
     repo = Repo(db)
     await repo.ensure_user(222, username="player", first_name="Player")
-    await repo.link_xbox_account(222, "2533000000000002", "PlayerTag", 500)
-    await repo.save_refresh_token(222, b"fake_encrypted_token")
+    await repo.link_xbox_account(await repo.person_id(222), "2533000000000002", "PlayerTag", 500)
+    await repo.save_refresh_token(await repo.person_id(222), b"fake_encrypted_token")
     await repo.upsert_title("100", "Game One", Platform.XBOX_MODERN)
+    person = await repo.person_id(222)
     await db.close()
 
     fernet_val = Fernet.generate_key().decode()
@@ -146,7 +149,7 @@ async def test_run_sync_flow(tmp_path: Path) -> None:
         await run_sync(cfg)
 
         mock_auth.start.assert_awaited_once()
-        mock_fetcher.backfill.assert_awaited_once_with(222, "2533000000000002")
+        mock_fetcher.backfill.assert_awaited_once_with(person, "2533000000000002")
         mock_cat.ensure_title_achievements_fresh.assert_awaited_once_with(
             "xbox_modern", "100", force=True
         )

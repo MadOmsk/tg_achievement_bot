@@ -278,7 +278,7 @@ async def build_client(npsso: str, *, headers: dict[str, str] | None = None) -> 
         raise PsnClientSetupError(str(exc)) from exc
 
 
-async def check_alive(client: PSNAWP) -> bool:
+async def check_alive(client: PSNAWP, *, unreachable_is_alive: bool = False) -> bool:
     """The service account's own profile — the cheapest authenticated call
     available. `client.me()` alone proves nothing (found live 2026-09-06:
     it never touches the network by itself, same lazy pattern as PSNAWP's
@@ -294,11 +294,21 @@ async def check_alive(client: PSNAWP) -> bool:
     failure to answer that question honestly means "no" — the caller
     (set_npsso) then reports it the same simple way either way: this
     input didn't work, try again.
+
+    `unreachable_is_alive`: what a failure to reach Sony at all means — no
+    DNS, no connection, a timeout, Sony's own 5xx (all `OSError`s, requests'
+    included). Verifying a new NPSSO says no: it was not verified. The
+    periodic health check says yes, as Steam's and Anthropic's do: a dead
+    network is not a dead NPSSO (a home PC's DNS outage once reported it
+    dead).
     """
     try:
         await _call(lambda: client.me().online_id)
     except PSNAWPAuthenticationError:
         return False
+    except OSError:
+        log.info("check_alive: PSN unreachable", exc_info=True)
+        return unreachable_is_alive
     except Exception:
         log.info("check_alive: unexpected failure verifying the client", exc_info=True)
         return False

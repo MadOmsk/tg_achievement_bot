@@ -16,7 +16,7 @@ export function NicknameForm({
   onBack,
   onSubmit,
   onKeep,
-  tgId,
+  personId,
   avatarCustom,
   onAvatar,
   onAvatarReset,
@@ -28,7 +28,7 @@ export function NicknameForm({
   onSubmit: (value: string) => Promise<void>;
   onKeep?: () => Promise<void>;
   /** Whose face it is, and whether it is one chosen in the app. */
-  tgId: number;
+  personId?: number;
   avatarCustom?: boolean;
   onAvatar: (image: Blob) => Promise<void>;
   onAvatarReset: () => Promise<void>;
@@ -64,6 +64,12 @@ export function NicknameForm({
   };
 
   const shown = value || handle.name;
+  // The digits stay while only the letters' case changes; any other name is
+  // checked anew, and gets digits of its own only if it is taken.
+  const tag =
+    handle.number && value.toLowerCase() === handle.name.toLowerCase()
+      ? `#${String(handle.number).padStart(4, "0")}`
+      : null;
   const file = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -113,28 +119,17 @@ export function NicknameForm({
             onClick={() => file.current?.click()}
             aria-label={t(locale, "avatarChange")}
           >
-            <Avatar name={shown} photo={telegramPhoto()} tgId={tgId} size={168} />
+            <Avatar name={shown} photo={telegramPhoto()} personId={personId} size={168} />
             {preview && (
               <img className="nick-avatar-preview" src={preview} alt="" />
             )}
             {uploading && <span className="nick-avatar-spin" aria-hidden />}
-            <span className="nick-avatar-badge" aria-hidden>
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path
-                  d="M4 8h3l2-3h6l2 3h3v11H4z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
           </button>
           {avatarCustom && (
-            // Back to the Telegram photo: the left badge, after a question.
+            // Back to the Telegram photo: the badge at the lower right, after a question.
             <button
               type="button"
-              className="nick-avatar-badge is-left"
+              className="nick-avatar-badge is-reset"
               aria-label={t(locale, "avatarReset")}
               title={t(locale, "avatarReset")}
               onClick={() => {
@@ -172,7 +167,7 @@ export function NicknameForm({
           {first && <p className="nick-intro">{t(locale, "nicknameIntro")}</p>}
         </div>
 
-        <label className={locked ? "nick-field is-locked" : "nick-field"}>
+        <label className={["field is-big", locked ? "is-locked" : "", note ? "is-error" : ""].filter(Boolean).join(" ")}>
           <input
             value={value}
             onChange={(e) => setValue(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 20))}
@@ -184,15 +179,21 @@ export function NicknameForm({
             disabled={locked}
             aria-label={t(locale, "nickname")}
           />
-          <span className="nick-count">{value.length}/20</span>
+          {/* The digits a taken name carries, on the right; while typing a new
+              name, how long it is instead. */}
+          {tag ? (
+            <span className="nick-tag">{tag}</span>
+          ) : (
+            <span className="nick-count">{value.length}/20</span>
+          )}
         </label>
         {(note || (locked && waitUntil)) && (
-          <p className={note ? "nick-hint is-error" : "nick-hint"}>
+          <p className={note ? "field-note is-error" : "field-note"}>
             {note ?? `${t(locale, "nicknameNext")} ${waitUntil?.toLocaleDateString(locale)}`}
           </p>
         )}
 
-        <button type="submit" className="btn nick-save" disabled={!valid || busy || locked || (unchanged && !first)}>
+        <button type="submit" className="btn is-wide" disabled={!valid || busy || locked || (unchanged && !first)}>
           {unchanged && first ? t(locale, "nicknameKeep") : t(locale, "nicknameSave")}
         </button>
       </form>

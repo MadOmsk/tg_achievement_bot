@@ -179,18 +179,18 @@ async def test_chat_locale_round_trips(repo: Repo) -> None:
 
 async def test_user_locale_defaults_to_russian(repo: Repo) -> None:
     await repo.ensure_user(TG_ID)
-    assert await repo.user_locale(TG_ID) == "ru"
+    assert await repo.user_locale(await repo.person_id(TG_ID)) == "ru"
 
 
 async def test_user_locale_unknown_user_is_russian(repo: Repo) -> None:
-    assert await repo.user_locale(-1) == "ru"
+    assert await repo.user_locale(await repo.person_id(-1)) == "ru"
 
 
 async def test_user_locale_round_trips(repo: Repo) -> None:
     await repo.ensure_user(TG_ID)
-    await repo.update_user_settings(TG_ID, locale="en")
-    assert await repo.user_locale(TG_ID) == "en"
-    settings = await repo.get_user_settings(TG_ID)
+    await repo.update_user_settings(await repo.person_id(TG_ID), locale="en")
+    assert await repo.user_locale(await repo.person_id(TG_ID)) == "en"
+    settings = await repo.get_user_settings(await repo.person_id(TG_ID))
     assert settings is not None
     assert settings.locale == "en"
 
@@ -198,7 +198,7 @@ async def test_user_locale_round_trips(repo: Repo) -> None:
 async def test_update_user_settings_still_rejects_unknown_fields(repo: Repo) -> None:
     await repo.ensure_user(TG_ID)
     with pytest.raises(ValueError, match="lang"):
-        await repo.update_user_settings(TG_ID, lang="en")
+        await repo.update_user_settings(await repo.person_id(TG_ID), lang="en")
 
 
 # --------------------------------------------------------------- the manager
@@ -208,7 +208,7 @@ async def test_manager_uses_the_chats_locale_in_a_group(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(TG_ID)
     await repo.update_chat_settings(CHAT_ID, locale="en")
-    await repo.update_user_settings(TG_ID, locale="ru")
+    await repo.update_user_settings(await repo.person_id(TG_ID), locale="ru")
 
     manager = LocaleManager()
     # The person's own setting loses here on purpose: one group message is
@@ -218,7 +218,7 @@ async def test_manager_uses_the_chats_locale_in_a_group(repo: Repo) -> None:
 
 async def test_manager_uses_the_persons_locale_in_a_dm(repo: Repo) -> None:
     await repo.ensure_user(TG_ID)
-    await repo.update_user_settings(TG_ID, locale="en")
+    await repo.update_user_settings(await repo.person_id(TG_ID), locale="en")
 
     manager = LocaleManager()
     assert await manager.get_locale(repo, _private(), _user()) == "en"

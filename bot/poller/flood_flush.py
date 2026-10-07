@@ -21,6 +21,11 @@ from bot.util import utcnow
 
 log = logging.getLogger(__name__)
 
+#: How long before its window started a held-back row may have been stored:
+#: the call that flips a window into throttled mode holds back the rest of
+#: its own batch, stored a moment before the flip.
+HELD_SLACK = timedelta(minutes=5)
+
 
 class FloodFlush:
     def __init__(self, repo: Repo, publisher: Publisher) -> None:
@@ -35,7 +40,7 @@ class FloodFlush:
             if chat is None:
                 # The chat is gone (deactivated/deleted) — nothing left to
                 # flush into, and admin_chats() will never mention it again.
-                await self._repo.clear_flood_state(state.tg_id, state.chat_id)
+                await self._repo.clear_flood_state(state.person_id, state.chat_id)
                 continue
             window_expired = now >= state.window_started_at + timedelta(
                 minutes=chat.flood_window_minutes
@@ -55,23 +60,32 @@ class FloodFlush:
 
     async def _flush_one(self, state: FloodState) -> None:
         try:
-            targets = await self._repo.publication_targets(state.tg_id)
+            targets = await self._repo.publication_targets(state.person_id)
             chat = next((t for t in targets if t.chat_id == state.chat_id), None)
             if chat is not None:
-                pending = await self._repo.unpublished_achievements(state.tg_id, state.chat_id)
+                since = state.window_started_at - HELD_SLACK
+                pending = await self._repo.unpublished_achievements(
+                    state.person_id,
+                    state.chat_id,
+                    seen_since=since.isoformat(timespec="seconds"),
+                )
                 allowed = [
                     item
                     for item in pending
                     if passes_filters(item, chat, chat.rare_threshold_percent)
                 ]
                 if allowed:
-                    await self._publisher.publish_flood_digest(state.tg_id, state.chat_id, allowed)
+                    await self._publisher.publish_flood_digest(
+                        state.person_id, state.chat_id, allowed
+                    )
             # No subscription any more (unsubscribed mid-window) — nothing to
             # flush into, just clear the stale throttle row below.
         except Exception:
-            log.exception("flood flush failed for tg_id=%s chat_id=%s", state.tg_id, state.chat_id)
+            log.exception(
+                "flood flush failed for person_id=%s chat_id=%s", state.person_id, state.chat_id
+            )
         finally:
-            await self._repo.clear_flood_state(state.tg_id, state.chat_id)
+            await self._repo.clear_flood_state(state.person_id, state.chat_id)
 
 
 def _five_minutes_before_summary(chat: ChatTarget) -> bool:

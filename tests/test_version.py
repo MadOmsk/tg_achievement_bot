@@ -156,8 +156,14 @@ async def test_a_migration_whose_column_schema_sql_already_added_is_not_fatal(tm
 
     migrations = tmp_path / "migrations"
     migrations.mkdir()
+    # The rest of the migration still runs (#167): `executescript` used to stop
+    # at the duplicate, and the error was swallowed with everything after it.
     (migrations / "900_add_name_ru.sql").write_text(
-        "ALTER TABLE later ADD COLUMN name_ru TEXT;", encoding="utf-8"
+        "-- a comment; with a semicolon\n"
+        "ALTER TABLE later ADD COLUMN name_ru TEXT;\n"
+        "ALTER TABLE later ADD COLUMN name_en TEXT;\n"
+        "CREATE TRIGGER later_t AFTER INSERT ON later BEGIN SELECT 1; SELECT 2; END;\n",
+        encoding="utf-8",
     )
 
     import bot.db.repo._database as database_module
@@ -166,9 +172,17 @@ async def test_a_migration_whose_column_schema_sql_already_added_is_not_fatal(tm
     database_module.MIGRATIONS_DIR = migrations
     try:
         reopened = await Database(tmp_path / "bot.db").connect()  # must not raise
+        cursor = await reopened.conn.execute("PRAGMA table_info(later)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+        cursor = await reopened.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'later_t'"
+        )
+        trigger = await cursor.fetchone()
         await reopened.close()
     finally:
         database_module.MIGRATIONS_DIR = original
+    assert "name_en" in columns
+    assert trigger is not None
 
 
 async def test_a_migration_that_fails_for_any_other_reason_still_stops_startup(tmp_path) -> None:
@@ -303,3 +317,18 @@ def test_a_documentation_only_commit_does_not_advance_the_version(tmp_path, monk
     finally:
         version_module.revision.cache_clear()
         version_module.line.cache_clear()
+
+
+async def test_a_new_database_gets_the_indexes_its_baselined_migrations_carried(
+    tmp_path,
+) -> None:
+    """#167: a database made from scratch is baselined, so the indexes that
+    only migrations created were missing; they are made after the migrations."""
+    db = await Database(tmp_path / "fresh.db").connect()
+    try:
+        cursor = await db.conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+        names = {row[0] for row in await cursor.fetchall()}
+    finally:
+        await db.close()
+    assert {"idx_seen_unlocked", "idx_seen_account", "idx_bot_messages_system"} <= names
+    assert "idx_title_achievements_title" not in names

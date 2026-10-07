@@ -109,7 +109,7 @@ class XboxAuthService:
     # ------------------------------------------------------------- sign-in
 
     def authorization_url(self, state: str) -> str:
-        """URL of the Microsoft consent screen. `state` carries the tg_id.
+        """URL of the Microsoft consent screen. `state` keys the pending login.
 
         `prompt=select_account` makes Microsoft ask which account to use instead
         of signing in silently with whichever one the browser remembers: one
@@ -143,29 +143,37 @@ class XboxAuthService:
             refresh_token=refresh_token,
         )
 
-    async def store_identity(self, tg_id: int, identity: XboxIdentity) -> None:
-        await self._repo.save_refresh_token(tg_id, self._cipher.encrypt(identity.refresh_token))
+    async def store_identity(self, person_id: int, identity: XboxIdentity) -> None:
+        await self._repo.save_refresh_token(person_id, self._cipher.encrypt(identity.refresh_token))
         await self._repo.link_xbox_account(
-            tg_id, xuid=identity.xuid, gamertag=identity.gamertag, gamerscore=None
+            person_id,
+            xuid=identity.xuid,
+            gamertag=identity.gamertag,
+            gamerscore=None,
         )
-        self._managers.pop(tg_id, None)
+        self._managers.pop(person_id, None)
+
+    def forget(self, person_id: int) -> None:
+        """Drop the cached login of a person whose Xbox account changed hands — a
+        merge (#162) — so the next request reads the stored token afresh."""
+        self._managers.pop(person_id, None)
 
     # ------------------------------------------------------------ refresh
 
-    async def authenticated_manager(self, tg_id: int) -> AuthenticationManager:
+    async def authenticated_manager(self, person_id: int) -> AuthenticationManager:
         """Return a manager whose XSTS token is good for the next few minutes.
 
         Lazy: called right before a request, never on a schedule.
         """
-        async with self._locks.setdefault(tg_id, asyncio.Lock()):
-            manager = self._managers.get(tg_id) or await self._restore_manager(tg_id)
+        async with self._locks.setdefault(person_id, asyncio.Lock()):
+            manager = self._managers.get(person_id) or await self._restore_manager(person_id)
 
             try:
                 if not self._fresh(manager.oauth):
                     oauth = await manager.refresh_oauth_token()
                     manager.oauth = oauth
                     # Before anything else touches the network (SPEC 5.1).
-                    await self._persist_refresh_token(tg_id, oauth)
+                    await self._persist_refresh_token(person_id, oauth)
                     manager.user_token = None
                     manager.xsts_token = None
 
@@ -175,21 +183,21 @@ class XboxAuthService:
                     manager.xsts_token = await manager.request_xsts_token()
             except httpx.HTTPStatusError as exc:
                 secret = manager.oauth.refresh_token if manager.oauth else None
-                await self._on_http_error(tg_id, exc, secret)
+                await self._on_http_error(person_id, exc, secret)
                 raise  # unreachable: _on_http_error always raises
             except httpx.RequestError as exc:
                 # A timeout is not a dead token.
-                raise await self._on_network_error(tg_id, exc) from None
+                raise await self._on_network_error(person_id, exc) from None
 
-            self._managers[tg_id] = manager
+            self._managers[person_id] = manager
             return manager
 
-    async def _restore_manager(self, tg_id: int) -> AuthenticationManager:
-        record = await self._repo.get_token(tg_id)
+    async def _restore_manager(self, person_id: int) -> AuthenticationManager:
+        record = await self._repo.get_token(person_id)
         if record is None:
-            raise NotConnectedError(f"user {tg_id} has no token")
+            raise NotConnectedError(f"person {person_id} has no token")
         if record.status != TokenStatus.ACTIVE:
-            raise TokenDeadError(f"token of user {tg_id} is {record.status}")
+            raise TokenDeadError(f"token of person {person_id} is {record.status}")
 
         manager = self._manager()
         # A placeholder OAuth response that only carries the refresh token:
@@ -204,43 +212,45 @@ class XboxAuthService:
         )
         return manager
 
-    async def _persist_refresh_token(self, tg_id: int, oauth: OAuth2TokenResponse) -> None:
+    async def _persist_refresh_token(self, person_id: int, oauth: OAuth2TokenResponse) -> None:
         if not oauth.refresh_token:
             raise TokenDeadError("refresh response carried no new refresh token")
-        await self._repo.save_refresh_token(tg_id, self._cipher.encrypt(oauth.refresh_token))
+        await self._repo.save_refresh_token(person_id, self._cipher.encrypt(oauth.refresh_token))
 
     async def _on_http_error(
-        self, tg_id: int, exc: httpx.HTTPStatusError, secret: str | None = None
+        self, person_id: int, exc: httpx.HTTPStatusError, secret: str | None = None
     ) -> None:
         detail = _scrub(_describe(exc), secret)
         if _is_invalid_grant(exc):
             # Log everything Microsoft said; the user only sees "access expired"
             # because none of these variants changes what he has to do.
-            log.warning("token of tg_id=%s refused by Microsoft: %s", tg_id, detail)
-            await self._kill(tg_id)
+            log.warning("token of person_id=%s refused by Microsoft: %s", person_id, detail)
+            await self._kill(person_id)
             raise TokenDeadError("refresh token rejected") from None
-        log.warning("refresh for tg_id=%s failed: %s", tg_id, detail)
-        raise await self._count_failure(tg_id, detail) from None
+        log.warning("refresh for person_id=%s failed: %s", person_id, detail)
+        raise await self._count_failure(person_id, detail) from None
 
-    async def _on_network_error(self, tg_id: int, exc: httpx.RequestError) -> Exception:
-        return await self._count_failure(tg_id, f"{type(exc).__name__}: {exc}")
+    async def _on_network_error(self, person_id: int, exc: httpx.RequestError) -> Exception:
+        return await self._count_failure(person_id, f"{type(exc).__name__}: {exc}")
 
-    async def _count_failure(self, tg_id: int, detail: str) -> Exception:
-        failures = await self._repo.bump_token_failure(tg_id)
+    async def _count_failure(self, person_id: int, detail: str) -> Exception:
+        failures = await self._repo.bump_token_failure(person_id)
         if failures >= MAX_CONSECUTIVE_FAILURES:
-            log.warning("token of tg_id=%s failed %s times in a row: %s", tg_id, failures, detail)
-            await self._kill(tg_id)
+            log.warning(
+                "token of person_id=%s failed %s times in a row: %s", person_id, failures, detail
+            )
+            await self._kill(person_id)
             return TokenDeadError("refresh failed repeatedly")
         return TokenRefreshError(detail)
 
-    async def _kill(self, tg_id: int) -> None:
-        await self._repo.set_token_status(tg_id, TokenStatus.INVALID)
-        self._managers.pop(tg_id, None)
+    async def _kill(self, person_id: int) -> None:
+        await self._repo.set_token_status(person_id, TokenStatus.INVALID)
+        self._managers.pop(person_id, None)
         if self.on_token_dead is not None:
             try:
-                await self.on_token_dead(tg_id)
+                await self.on_token_dead(person_id)
             except Exception:
-                log.exception("token-dead callback failed for tg_id=%s", tg_id)
+                log.exception("token-dead callback failed for person_id=%s", person_id)
 
     # ------------------------------------------------------------ helpers
 

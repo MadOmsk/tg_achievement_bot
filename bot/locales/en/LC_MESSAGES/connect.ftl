@@ -67,3 +67,17 @@ connect-greeting-multi =
 connect-pick-platform = Where do we start?
 connect-open-app-hint = Or open the app:
 connect-open-app-button = Open the app
+
+# Adding Telegram to an app account by a t.me link (#162)
+connect-link-done = Done — Telegram is linked to your account in the app.
+connect-link-already = This Telegram is already linked to this account.
+connect-link-expired = The link has expired. Get a new one in the app: Settings → Sign-in.
+connect-link-other-telegram = Another Telegram is already linked to this account.
+connect-link-merge-confirm =
+    This Telegram already belongs to the account { $current }. Merge it into the account { $other }?
+
+    The Xbox, Steam and PSN accounts, the history and the follows move to { $other }, and { $current } is gone. If somebody else sent you the link, tap «Cancel».
+connect-link-merge-yes = Merge
+connect-link-merge-no = Cancel
+connect-link-merge-cancelled = Cancelled — nothing changed.
+connect-link-merge-in-app = This Telegram already belongs to another account. Open the app: Settings → Sign-in — the two can be merged into one there.

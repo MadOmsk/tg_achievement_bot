@@ -104,7 +104,7 @@ class PsnFetcher:
                 continue
             try:
                 await self.poll_account(
-                    target.tg_id, target.account_id, target.online_id or target.account_id
+                    target.person_id, target.account_id, target.online_id or target.account_id
                 )
             except Exception:
                 # Isolation per account (CLAUDE.md's per-account failure rule) —
@@ -126,14 +126,14 @@ class PsnFetcher:
         except PsnApiError:
             return None
 
-    async def poll_account(self, tg_id: int, account_id: str, online_id: str) -> int:
+    async def poll_account(self, person_id: int, account_id: str, online_id: str) -> int:
         """One account's worth of newly-earned trophies, published if any."""
         try:
             client = await self._psn_auth.get_client()
             outcome = await sync_account(
                 self._repo,
                 client,
-                tg_id,
+                person_id,
                 account_id,
                 is_backfill=False,
                 anthropic_auth=self._anthropic_auth,
@@ -158,13 +158,13 @@ class PsnFetcher:
             # DLC trophy actually earned today still lands, the rest are
             # recorded and stay quiet.
             log.info(
-                "tg_id=%s: %s psn trophies from a first group-aware scan, capped to %sh",
-                tg_id,
+                "person_id=%s: %s psn trophies from a first group-aware scan, capped to %sh",
+                person_id,
                 len(outcome.catch_up_rows),
                 GROUP_WIDENING_WINDOW_HOURS,
             )
             await self._publisher.publish(
-                tg_id,
+                person_id,
                 account_id,
                 online_id,
                 outcome.catch_up_rows,
@@ -173,18 +173,18 @@ class PsnFetcher:
             )
         if not outcome.new_rows:
             if outcome.catch_up_rows:
-                await self._refresh_level(client, tg_id, account_id)
+                await self._refresh_level(client, person_id, account_id)
                 await self._ensure_hltb_matches(outcome.catch_up_rows)
             return len(outcome.catch_up_rows)
 
-        log.info("tg_id=%s unlocked %s new psn trophies", tg_id, len(outcome.new_rows))
+        log.info("person_id=%s unlocked %s new psn trophies", person_id, len(outcome.new_rows))
         # No game_name here (unlike Xbox/Steam's own poll_title): a single
         # poll can cover several different games at once (M-PSN-2's own
         # multi-achievement paragraph) — format_digest/_group_by_title
         # (services/achievements.py) already handle that by grouping on
         # each row's own title_name, same as a Xbox/Steam catch-up burst.
         await self._publisher.publish(
-            tg_id,
+            person_id,
             account_id,
             online_id,
             outcome.new_rows,
@@ -194,7 +194,7 @@ class PsnFetcher:
         # Level only ever changes when a trophy is earned (Follow-up
         # 2026-09-06, /stats' own PSN line) — refreshed here, not on every
         # tick.
-        await self._refresh_level(client, tg_id, account_id)
+        await self._refresh_level(client, person_id, account_id)
         await self._ensure_hltb_matches(outcome.catch_up_rows + outcome.new_rows)
         return len(outcome.new_rows)
 
@@ -229,7 +229,7 @@ class PsnFetcher:
         self._relink_window[account_id] = window_hours
 
     async def backfill(
-        self, tg_id: int, account_id: str, *, progress: Progress | None = None
+        self, person_id: int, account_id: str, *, progress: Progress | None = None
     ) -> PsnBackfillResult:
         """Mark everything already earned as seen, publishing nothing — same
         principle as Xbox/Steam's own backfill (SPEC 5.6, M-Steam-2d).
@@ -254,11 +254,13 @@ class PsnFetcher:
         # backfill-time check right above this file's Steam counterpart.
         if not await is_trophy_visible(client, account_id):
             await self._repo.set_achievements_visible(
-                tg_id, Platform.PSN, False, external_id=account_id
+                person_id, Platform.PSN, False, external_id=account_id
             )
-            log.info("psn backfill for tg_id=%s skipped: trophies not visible", tg_id)
+            log.info("psn backfill for person_id=%s skipped: trophies not visible", person_id)
             return PsnBackfillResult(visible=False)
-        await self._repo.set_achievements_visible(tg_id, Platform.PSN, True, external_id=account_id)
+        await self._repo.set_achievements_visible(
+            person_id, Platform.PSN, True, external_id=account_id
+        )
 
         # No limit (unlike poll_account) — the whole account's history, not
         # just the recent window regular polling uses, or an older game's
@@ -267,7 +269,7 @@ class PsnFetcher:
         outcome = await sync_account(
             self._repo,
             client,
-            tg_id,
+            person_id,
             account_id,
             is_backfill=True,
             limit=None,
@@ -277,22 +279,24 @@ class PsnFetcher:
         )
         await self._repo.mark_psn_backfill_done(account_id)
         log.info(
-            "psn backfill for tg_id=%s stored %s trophies (%s private, %s unmapped error(s))",
-            tg_id,
+            "psn backfill for person_id=%s stored %s trophies (%s private, %s unmapped error(s))",
+            person_id,
             len(outcome.new_rows),
             len(outcome.private_title_ids),
             outcome.unmapped_errors,
         )
         # So /stats has a real level to show from the moment someone links,
         # not just after their first live trophy (Follow-up 2026-09-06).
-        await self._refresh_level(client, tg_id, account_id)
+        await self._refresh_level(client, person_id, account_id)
         return PsnBackfillResult(
             stored=len(outcome.new_rows),
             private_title_ids=list(outcome.private_title_ids),
             games=outcome.scanned,
         )
 
-    async def refresh_user(self, tg_id: int, account_id: str, online_id: str, locale: str) -> str:
+    async def refresh_user(
+        self, person_id: int, account_id: str, online_id: str, locale: str
+    ) -> str:
         """An out-of-turn look at one PSN account for the admin card (#27) —
         the PSN counterpart of Fetcher/SteamFetcher.refresh_user, which PSN
         never had. Doubles as the recovery path for an account stuck in
@@ -320,26 +324,26 @@ class PsnFetcher:
                 pass
             else:
                 await self._repo.set_achievements_visible(
-                    tg_id, Platform.PSN, visible, external_id=account_id
+                    person_id, Platform.PSN, visible, external_id=account_id
                 )
 
         if not await self._repo.psn_backfill_done(account_id):
             await self._repo.clear_psn_title_progress(account_id)
             try:
-                result = await self.backfill(tg_id, account_id)
+                result = await self.backfill(person_id, account_id)
             except Exception:
-                log.exception("admin psn resync (backfill) of tg_id=%s failed", tg_id)
+                log.exception("admin psn resync (backfill) of person_id=%s failed", person_id)
                 return _("psnfetcher-resync-failed")
             return _("psnfetcher-resynced-backfill", stored=result.stored)
 
         try:
-            published = await self.poll_account(tg_id, account_id, online_id)
+            published = await self.poll_account(person_id, account_id, online_id)
         except Exception:
-            log.exception("admin psn resync (poll) of tg_id=%s failed", tg_id)
+            log.exception("admin psn resync (poll) of person_id=%s failed", person_id)
             return _("psnfetcher-resync-failed")
         return _("psnfetcher-resynced-poll", published=published)
 
-    async def _refresh_level(self, client: PSNAWP, tg_id: int, account_id: str) -> None:
+    async def _refresh_level(self, client: PSNAWP, person_id: int, account_id: str) -> None:
         """Never blocks its caller on failure — a stale cached level is a
         much smaller problem than losing an achievement, or a whole tick,
         over this one extra call (Follow-up 2026-09-06). Catches broadly,
@@ -349,6 +353,8 @@ class PsnFetcher:
         _as_float) — this is deliberately the more paranoid default."""
         try:
             level = await account_trophy_level(client, account_id)
-            await self._repo.set_psn_trophy_level(tg_id, level, account_id=account_id)
+            await self._repo.set_psn_trophy_level(person_id, level, account_id=account_id)
         except Exception:
-            log.warning("could not refresh psn trophy level for tg_id=%s", tg_id, exc_info=True)
+            log.warning(
+                "could not refresh psn trophy level for person_id=%s", person_id, exc_info=True
+            )

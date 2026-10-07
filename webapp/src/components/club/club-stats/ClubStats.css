@@ -50,39 +50,48 @@
     );
 }
 
-/* The two headline figures: a framed tile each. */
+/* The headline figures as one table (owner, 2026-10-07): a column each, no
+ * frames, hairlines between. */
 .stat-hero {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
   margin: 0 0 28px;
-}
-
-.stat-hero:has(.stat-tile:only-child) {
-  grid-template-columns: 1fr;
+  padding: 16px 0;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .stat-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   min-width: 0;
-  padding: 16px 14px 14px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--stroke);
+  padding: 0 8px;
+  text-align: center;
+}
+
+.stat-tile + .stat-tile {
+  border-left: 1px solid var(--hair);
 }
 
 .stat-tile p {
+  overflow: hidden;
+  max-width: 100%;
   margin: 0;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.04em;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .stat-tile strong {
   display: block;
-  margin: 8px 0 6px;
-  font-size: 1.6rem;
+  margin: 10px 0 8px;
+  font-size: 1.55rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
@@ -91,8 +100,17 @@
 
 .stat-tile small {
   display: block;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.stat-tile small span {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   font-weight: 600;
 }
 
@@ -178,4 +196,50 @@
   color: var(--muted);
   font-size: 0.74rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* A pick, as the head's month is (not a link): the list title's own type. */
+.dd-trigger.period-pick {
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* «Охотятся вместе» as a page: what it is, then one row per achievement with
+ * its people. */
+.hunt-page-lead {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.hunt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feed-copy-foot.is-people {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.feed-copy-foot.is-people .compare-marks {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.feed-copy-foot.is-people .avatar {
+  box-shadow: none;
+}
+
+.feed-copy-foot.is-people .avatar > span {
+  font-size: 0.55rem;
+  letter-spacing: 0;
 }

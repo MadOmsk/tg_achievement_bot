@@ -108,10 +108,10 @@ class CoverRefresh:
             # walks, so there is nothing useful to ask here — a PSN game
             # without one has simply not been scanned since covers existed.
             return None
-        if title.owner_tg_id is None:
+        if title.owner is None:
             return None
         try:
-            entry = await self._client.resolve_title(title.owner_tg_id, title.title_id)
+            entry = await self._client.resolve_title(title.owner, title.title_id)
         except (XboxApiError, TokenRefreshError) as exc:
             # TokenRefreshError is not an XboxApiError — it comes from the
             # auth service, not the API client — and catching only the

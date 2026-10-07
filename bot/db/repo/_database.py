@@ -6,6 +6,7 @@ own __init__.py for the full picture. Behavior is unchanged.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from pathlib import Path
 from typing import Self
@@ -13,6 +14,7 @@ from typing import Self
 import aiosqlite
 
 from bot.constants import SettingKey
+from bot.db.repo._tx import TransactionGate
 from bot.util import utcnow_iso
 from bot.version import schema_gap
 
@@ -38,6 +40,49 @@ DEFAULT_APP_SETTINGS: dict[str, str] = {
 }
 
 
+# Indexes on columns a migration added (#167). schema.sql cannot name such a
+# column — it runs before the migrations, and an old file does not have it
+# yet — and a new database is baselined, so its migrations never ran either:
+# these were missing on every database made from scratch. Created after the
+# migrations, on every start; IF NOT EXISTS makes that free.
+INDEXES_AFTER_MIGRATIONS = (
+    "CREATE INDEX IF NOT EXISTS idx_seen_unlocked ON seen_achievements(xuid, unlocked_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_seen_account ON seen_achievements(account_platform, xuid)",
+    # poller/message_cleanup.py sweeps every chat's system messages each minute.
+    "CREATE INDEX IF NOT EXISTS idx_bot_messages_system ON bot_messages(is_system, sent_at)",
+    # The primary key (platform, title_id, achievement_id) already serves it.
+    "DROP INDEX IF EXISTS idx_title_achievements_title",
+)
+
+
+_ADD_COLUMN = re.compile(
+    r"\s*ALTER\s+TABLE\s+[\"`]?(?P<table>\w+)[\"`]?\s+ADD\s+(?:COLUMN\s+)?"
+    r"[\"`]?(?P<column>\w+)",
+    re.IGNORECASE,
+)
+
+
+def _statements(script: str) -> list[str]:
+    """A migration cut into its statements, each with the text before it (its
+    comments), so joining them again gives the script back. SQLite's own
+    `complete_statement` decides where one ends — a trigger's body has `;`
+    inside it."""
+    statements: list[str] = []
+    current = ""
+    for line in script.splitlines(keepends=True):
+        current += line
+        if sqlite3.complete_statement(current):
+            statements.append(current)
+            current = ""
+    if current.strip():
+        statements.append(current)
+    return statements
+
+
+def _without_comments(statement: str) -> str:
+    return " ".join(line.split("--", 1)[0] for line in statement.splitlines())
+
+
 class SchemaTooNewError(RuntimeError):
     """The database has migrations this code does not ship (#56)."""
 
@@ -48,6 +93,8 @@ class Database:
     def __init__(self, path: Path) -> None:
         self._path = path
         self._conn: aiosqlite.Connection | None = None
+        # Who holds the connection for a block of writes (#167, `_tx.py`).
+        self.gate = TransactionGate()
 
     @property
     def conn(self) -> aiosqlite.Connection:
@@ -64,6 +111,9 @@ class Database:
         await self._conn.execute("PRAGMA journal_mode = WAL")
         await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._conn.execute("PRAGMA busy_timeout = 30000")
+        # Safe with WAL (a power cut may lose the last commits, never corrupt
+        # the file) and spares an fsync on every one of the pollers' commits.
+        await self._conn.execute("PRAGMA synchronous = NORMAL")
         try:
             # Whether this file had anything in it *before* schema.sql ran —
             # see _apply_migrations for why that one bit matters.
@@ -71,6 +121,8 @@ class Database:
             await self._refuse_a_newer_database()
             await self._apply_schema()
             await self._apply_migrations(fresh=fresh)
+            for statement in INDEXES_AFTER_MIGRATIONS:
+                await self._conn.execute(statement)
             await self._seed_app_settings()
             await self._conn.commit()
         except BaseException:
@@ -185,19 +237,34 @@ class Database:
         with `name_ru`, and 044 died on "duplicate column name: name_ru" —
         which would have been the production deploy, not a rehearsal.
 
-        Only that one error is swallowed, and it is logged: it means the column
-        is already exactly where the migration wanted it.
+        So an ADD COLUMN whose column is already there is left out of the
+        script before it runs, and logged: the column is already exactly where
+        the migration wanted it. It used to be the error that was swallowed —
+        but `executescript` stops at the failing statement, so everything after
+        it in that migration silently never ran, and the migration was still
+        recorded as applied (#167). Any other error stops start-up.
         """
         # A local file of a few kilobytes, read once at startup before the
         # bot serves anything — the blocking read ASYNC240 warns about is
         # what this has always done, just now one call further in.
         script = path.read_text(encoding="utf-8")  # noqa: ASYNC240
-        try:
-            await self.conn.executescript(script)
-        except sqlite3.OperationalError as exc:
-            if "duplicate column name" not in str(exc):
-                raise
-            log.info("migration %s: %s — schema.sql had already added it", path.stem, exc)
+        kept: list[str] = []
+        for statement in _statements(script):
+            added = _ADD_COLUMN.match(_without_comments(statement))
+            if added and await self._has_column(added["table"], added["column"]):
+                log.info(
+                    "migration %s: %s.%s exists already (schema.sql added it), skipped",
+                    path.stem,
+                    added["table"],
+                    added["column"],
+                )
+                continue
+            kept.append(statement)
+        await self.conn.executescript("".join(kept))
+
+    async def _has_column(self, table: str, column: str) -> bool:
+        cursor = await self.conn.execute(f"PRAGMA table_info({table})")
+        return any(row["name"].lower() == column.lower() for row in await cursor.fetchall())
 
     async def _seed_app_settings(self) -> None:
         for key, value in DEFAULT_APP_SETTINGS.items():

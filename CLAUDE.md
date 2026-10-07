@@ -8,6 +8,13 @@ connected Xbox, Steam, and PlayStation Network accounts, with per-chat rarity
 filters, personal stats, an admin panel, daily summaries, HowLongToBeat lookup,
 and a Telegram Mini App.
 
+**The app is called Unlocked** (owner, 2026-10-05): it is no longer only a bot.
+The name and the logo (an "achievement unlocked" toast with a cup,
+`webapp/public/logo.svg`; the PNGs and `apple-touch-icon.png` are rendered from
+it) are what the Mini App, the installed app, pushes, sign-in emails and the
+Xbox sign-in page show. The bots keep their Telegram names until changed in
+BotFather.
+
 This file is the single source of truth for current behavior, invariants, and open
 work — read it in full before making product or architecture changes, and **keep it
 current**: when a change alters something this file states (a rule, an invariant, the
@@ -39,13 +46,13 @@ admin controls, and predictable behavior, not public SaaS scale.
   Microsoft OAuth callback and the Telegram Mini App (`webapp/`, served separately;
   this process only answers `/api/mini/*` next to `/auth/callback`). Slash commands
   and chat notifications stay — the Mini App is an extra door, not a replacement.
-  **The same Mini App is to open in a plain browser too** (owner, 2026-10-02; #157):
-  outside Telegram it shows a sign-in screen, and a person signs in **through a
-  messenger** — Telegram now (Telegram Login), WhatsApp later — one person with
-  several messenger logins. The other methods listed in #156 (email, Discord, phone,
-  Google, a platform account) are not planned for now. **Telegram Login is built**
-  (see "Browser sign-in" under People, nicknames and follows); WhatsApp is not. New
-  code must not assume that every person has a Telegram id.
+  **The same Mini App opens in a plain browser too** (owner, 2026-10-02; #157):
+  outside Telegram it shows a sign-in screen. **A person signs in by email or by
+  Telegram** (owner, 2026-10-04, #162) and may keep both; Settings → «Вход» adds and
+  removes them. SMS and WhatsApp were considered and dropped; Discord, phone, Google
+  and a platform account (#156) are not planned. Telegram is still what publishing
+  to group chats and the bot's DMs need. New code must not assume that every person
+  has a Telegram id.
 - No `/compare` or `/top` (see the appendix).
 - One `rarity_mode` per person, for every platform and every chat — not one per
   platform (see the appendix). What a person *can* switch off is a whole account's
@@ -78,6 +85,8 @@ name, or when the tree goes stale.
 ├── pyproject.toml             dependencies, ruff, pytest config
 ├── manage.ps1 / manage.bat    the dev server's process manager and its double-click dashboard
 ├── webapp/                    Telegram Mini App SPA (Vite/React); built by CI, never served by the bot
+├── docs/                      guides for whoever runs a server, English and Russian
+│                              (`mail-setup.md` / `.ru.md`: the mail server for email sign-in)
 ├── changelog/                 release notes per version: `<v>.ru.md` / `.en.md` (what a chat member
 │                              notices), `.summary.<locale>.txt` (the announcement's bullets),
 │                              `.contributors.md` (what changed about working here)
@@ -139,6 +148,11 @@ name, or when the tree goes stale.
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
 │   │   ├── release_notify.py     the release announcement on startup
 │   │   ├── notify.py             notifications to the admin
+│   │   ├── email.py              sending mail: one `EmailSender`, SMTP or (dev) the log (#162)
+│   │   ├── email_login.py        sign-in codes by email: rules, rationing, checking (#162)
+│   │   ├── invites.py            invite codes: their form, and sign-ups waiting for one
+│   │   ├── notifier.py           the app's own notifications: list, push, Telegram DM (#164)
+│   │   ├── webpush.py            Web Push: RFC 8291 encryption and VAPID, on `cryptography` (#164)
 │   │   ├── mini_app.py           Mini App open-button URLs
 │   │   ├── hltb.py               howlongtobeatpy wrapper, cached in hltb_cache; ensure_title_match
 │   │   │                         is the lazy trigger for hltb_match.py below
@@ -155,8 +169,10 @@ name, or when the tree goes stale.
 │   │   │                         (fetch_unlocked + schema/rarity cache)
 │   │   ├── psn/                  auth.py (NPSSO, PsnAuth), client.py (to_thread wrapper),
 │   │   │                         achievements.py (sync_account, one game at a time, #26)
-│   │   └── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
-│   │                             client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
+│   │   ├── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
+│   │   │                         client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
+│   │   └── youtube/              video guides: auth.py (#17 shape), client.py (Data API v3), guides.py (what a
+│   │                             video names, no DB access), videos.py (an achievement's videos)
 │   │
 │   ├── poller/                  APScheduler jobs, one tick a minute
 │   │   ├── scheduler.py, cadence.py              job assembly; shared interval/dormancy math
@@ -169,6 +185,7 @@ name, or when the tree goes stale.
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
 │   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
 │   │   ├── patch_refresh.py      played games' patch notes, re-read every few hours
+│   │   ├── guide_videos.py       guide channels' YouTube videos: the newest page, the whole history weekly
 │   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
@@ -179,7 +196,10 @@ name, or when the tree goes stale.
 │   │
 │   ├── web/                     oauth.py (OAuth callback + Mini API mount), mini_api.py (JSON,
 │   │                            Init Data auth), mini_auth.py, mini_me.py, mini_chat.py,
-│   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py
+│   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py,
+│   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept),
+│   │                            mini_notifications.py (the list, push subscriptions),
+│                            mini_invites.py (signing up with an invite, a member's codes)
 │   │
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
@@ -236,16 +256,35 @@ Required environment variables: `BOT_TOKEN`, `ADMIN_TG_IDS` (comma-separated
 super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
-Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `OAUTH_LISTEN_HOST` /
+Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
 `OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
-App entry points), and the poller interval settings.
+App entry points), the poller interval settings, and the mail server for email sign-in
+(`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_FROM` — a bare address, it is also push's contact; #162;
+setting it up: `docs/mail-setup.md`).
 
-- **`STEAM_API_KEY` and `ANTHROPIC_API_KEY` are first-run seeds** (#17): the auth
-  wrapper (`SteamAuth` / `AnthropicAuth`) imports the env value once into
+- **No mail server, no email sign-in** — not an error: the sign-in screen offers
+  Telegram only. For the dev server only: `EMAIL_LOG_CODES=true` writes the codes to
+  the log instead of sending them, and `EMAIL_SKIP_CODE=true` takes a typed address
+  as proved with no code at all (anybody could sign in as anybody, so it is ignored,
+  with an error in the log, whenever `SMTP_HOST` is set). Another way to send mail is one more class
+  behind `services/email.py::EmailSender`.
+- **The mail server's login is set from /admin** (owner, 2026-10-07;
+  `services/smtp_auth.py`): «🔑 Ключи платформ» → «Почта (SMTP)», "login key" in
+  one message, checked by logging in to the server, kept encrypted, read by the
+  sender on every message (no restart). `SMTP_USERNAME` / `SMTP_PASSWORD` are a
+  first-run seed like the keys below; `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`
+  and `SMTP_FROM` stay in `.env`. The /admin home shows sign-in emails sent in the
+  last hour and day against the app's hourly cap and the mail service's daily one
+  (`email_provider_daily_limit`, 300 — Brevo's free plan).
+
+- **`STEAM_API_KEY`, `ANTHROPIC_API_KEY` and `YOUTUBE_API_KEY` are first-run seeds**
+  (#17): the auth wrapper (`SteamAuth` / `AnthropicAuth` / `YouTubeAuth`) imports the env value once into
   `app_settings`, encrypted, and from then on the admin panel's "🔑 Ключи платформ"
   owns it — set / change / clear with no restart. Clearing it in the panel disables
   the seed, so a stale env var cannot resurrect it. No Steam key: `/connect_steam`
-  says "not configured". No Anthropic key: translation is skipped. Neither is fatal.
+  says "not configured". No Anthropic key: translation is skipped. No YouTube key:
+  no video guides. None is fatal.
 - **Everything else tunable lives in `app_settings`**, editable live from `/admin`:
   display limits, summary caps, HLTB limits, `account_reset_cooldown_hours` (see
   Data model, default 24h, 0 = off).
@@ -263,8 +302,11 @@ every column. History: #106.
   was written for. The test is "was the file empty before schema.sql ran", not
   "does `schema_migrations` exist".
 - **A migration adding a column schema.sql already created is not an error**:
-  `_apply_one` swallows `duplicate column name`, and only that, and logs it. A
-  database skipping versions meets both halves of the bring-up at once.
+  `_apply_one` leaves that `ADD COLUMN` out of the script before it runs, and logs
+  it (#167 — swallowing the error used to skip the rest of the migration). A
+  database skipping versions meets both halves of the bring-up at once. Indexes on
+  columns a migration added are `_database.py::INDEXES_AFTER_MIGRATIONS`, made after
+  the migrations on every start, since a new database is baselined.
 - **A failed bring-up stops the process.** `connect()` closes the connection before
   re-raising; an open aiosqlite connection keeps a non-daemon thread alive and the
   bot neither serves nor exits. The same holds for anything later in `run()`
@@ -281,23 +323,57 @@ every column. History: #106.
 
 - `users` has an id of its own (`users.id`, migration 071; #156 step 1) and keeps
   the Telegram identity as `tg_id` — unique, and empty for a person who will sign in
-  another way. **Every other table still points at `users(tg_id)`** until it moves to
-  the person id (step 2), so code still treats `tg_id` as the person for now.
-  071 rebuilds `users` with foreign keys switched off inside the script itself (the
-  pragma does nothing inside a transaction), so a migration that rebuilds a parent
-  table follows the same shape. **The rest is changing** (#156): each way to sign in
-  (Telegram, later email and the rest) becomes a field on the person. A person may
-  then have no Telegram and no platform account at all — someone who signed in by
-  email only to follow friends. Merging two people is the person's own request:
-  the same platform accounts (or one side empty) merge at once; a conflict (two
-  different Steam ids) is put to the person, and settings come from the fresher side.
+  another way. **The tables about a person point at `users(id)`** (migration 078,
+  #156 step 2): `account_links`, `tokens`, `user_settings`, `subscriptions`,
+  `notification_throttle`. What is Telegram by nature keeps a Telegram id:
+  `chat_seen`, the admins' ids, and the reset cooldowns (`platform_cooldowns*`), which
+  must outlive a deleted person to stop a delete-and-rejoin. **Code speaks in person
+  ids** (#156 step 3): the repo's methods about a person, the services, the pollers
+  (`target.person_id`), the publisher and the Xbox login all take `users.id`; the
+  Mini App's request user carries `person_id`, and `PersonMiddleware` hands
+  handlers theirs. **A Telegram id is resolved once, at a Telegram door** — an
+  update, a callback, an old link that still names a Telegram id — with
+  `repo.person_id(tg_id)` / `get_user_by_tg`, and `repo.tg_id_of(person)` goes
+  back for what is Telegram's (a DM, the cooldowns). A chat's members
+  are person ids (`_sql.member_source`, `(chat_id, person_id)`): subscriptions,
+  and `chat_seen` through `users`. 071 and 078 rebuild their tables with foreign keys
+  switched off inside the script itself (the pragma does nothing inside a
+  transaction); a migration that rebuilds a parent table follows the same shape.
+  **Each way to sign in is a field on the person** (#156, #162): `tg_id`, and
+  `email` (migration 079 — lower-cased, unique, set only once a code proved it). A
+  person may have no Telegram and no platform account at all — someone who signed
+  in by email only to follow friends. Such a person has no person-side reset
+  cooldown (it is keyed by Telegram id); the per-account count still holds. A
+  column added to `users` that needs an index gets it in its migration, with the
+  rule written into the `CREATE TABLE` for new databases: `schema.sql` runs before
+  the migrations, so a standalone index on a new column fails on an old file.
+  **Merging two people** (built; `services/merge.py`, `db/repo/_merge.py`): when a
+  signed-in person adds a login that is somebody else's and proves it (an email's
+  code, the Login Widget's signature, or writing to the bot through a `link_`
+  token), the app is offered the merge instead of `taken`. **Opening a `link_`
+  token is not consent** — anybody can be sent one: when that Telegram already is
+  somebody with something to lose, the bot first asks *them* («Объединить» /
+  «Отмена», naming both accounts, `lnkm:yes|no`), and only their yes offers the
+  merge in the app (`PeopleMerge.ask_to_confirm` / `confirmed`). The person signed in
+  stays, with their nickname; the other is folded in and deleted, in one
+  transaction. One side empty: take the other's. Both have one (Xbox, Steam,
+  Telegram, email): the person picks, and the account not picked is unlinked like
+  any unlink, its history kept; the Xbox login follows the Xbox account kept. PSN
+  accounts add up to `MAX_PSN_ACCOUNTS`, past that the person picks. Chats, follows
+  and blocks (never a self-follow), sessions, notifications and push devices move;
+  settings come from the side changed more recently. A person the bot made a
+  moment ago (a Telegram account's first message, with nothing to lose) is folded
+  in without asking. Offers and `link_` tokens live in memory for ten minutes. The
+  merge defers foreign keys to commit (`chat_seen` points at `users.tg_id`, which
+  moves between the two rows).
   **A super-admin stays an ordinary person named by `ADMIN_TG_IDS`** (owner,
   2026-10-02): no role field. So a super-admin must always keep a Telegram id —
-  nothing (unlinking a login, a merge) may leave them without one.
+  nothing (removing Telegram, a merge) may leave them without one; both refuse
+  with `admin`.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
-  generations). `account_links (tg_id, platform, external_id, is_active, linked_at,
+  generations). `account_links (person_id, platform, external_id, is_active, linked_at,
   unlinked_at, publishes)` says who holds it now and who held it before, and whether
   the holder announces its achievements (#20: the person's own switch per account; a
   muted account still counts in stats, summaries and `/online`).
@@ -375,7 +451,7 @@ every column. History: #106.
   `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
   profile links are one admin switch, `app_settings['show_profile_links']`, on by
   default — owner, 2026-09-29.) Somebody in many chats used to set the mode in each (#126).
-- **Anti-flood state**: `notification_throttle (tg_id, chat_id, window_started_at,
+- **Anti-flood state**: `notification_throttle (person_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
   finds.
@@ -459,7 +535,7 @@ every column. History: #106.
 
 `tokens` stores encrypted Xbox refresh tokens only (access/XSTS tokens stay in
 memory); status is active / invalid / revoked. Shared credentials (PSN NPSSO, Steam
-key, Anthropic key) are encrypted in `app_settings`.
+key, Anthropic key, YouTube key) are encrypted in `app_settings`.
 
 ## Platform integrations
 
@@ -659,6 +735,11 @@ known rarity is at or below the rarity threshold (a platform with no rarity at a
 Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
 isn't muted there; it wasn't already published there.
 
+- **`hidden` is about notifications only** (owner, 2026-10-06; #167): a person who
+  publishes nothing still counts in a chat's summaries, rankings, `/recent`, its
+  subscriber list and the Mini App. Leaving a chat's statistics is unsubscribing;
+  who sees one's activity in the Mini App is `users.activity_visible`.
+
 - **The rarity threshold is one for every chat** (owner, 2026-10-01):
   `app_settings['rare_threshold_percent']`, 10% until an admin changes it in
   /admin → global settings; no chat overrides it. The repo reads it wherever a
@@ -675,6 +756,11 @@ isn't muted there; it wasn't already published there.
   boundary, closes what is open, and logs a warning — a net, not a substitute for
   keeping screens short. Capping lists by rows does not replace it: the limit is in
   characters.
+- **A post always goes out, with a picture whenever one exists** (owner,
+  2026-10-07; `Publisher._deliver`): the achievement's icon by URL (Telegram
+  fetches it), the same bytes fetched by the bot (Telegram cannot always reach a
+  platform's CDN), the icon cached on disk, then the game's cover (its file, its
+  URL; never behind a spoiler); text alone only when there is none.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.
@@ -725,7 +811,8 @@ elsewhere in this file still describe the bot.
     (`services/custom_avatars.py`, Pillow): the server does not trust the client's
     crop. `DELETE` goes back to the Telegram photo; a super-admin takes a picture
     down from the user card in `/admin` («🖼 Сбросить аватар», `a:avclr:`), and
-    deleting the account removes the file. `/api/mini/avatar/{tg_id}` serves the
+    deleting the account removes the file. `/api/mini/avatar/p/{person_id}` (and, for
+    links already out, `/api/mini/avatar/{tg_id}`) serves the
     chosen picture first, with an ETag and `no-cache` so a change shows at once.
   - Endpoints: `PUT /api/mini/me/handle` (`error` is `invalid` or `too_soon`),
     `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.
@@ -735,16 +822,16 @@ elsewhere in this file still describe the bot.
   one followed (owner, 2026-10-02) — blocking is the way to end it (a block deletes the follows between the two and hides each from
   the other's search and lists; the blocked one cannot follow). Search is by
   nickname only: a prefix of 3+ characters, or an exact `Name#1234`, 20 results.
-  People from a shared chat (subscribed or seen writing) are suggested. A new
-  follower is told in one DM, unless they turned it off in Settings → Уведомления
-  (`user_settings.notify_followers`, migration 075) (`people-new-follower` / `people-new-friend`); friends'
-  achievements are never sent as DMs. **Following is not a way to ping somebody**
+  People from a shared chat (subscribed or seen writing) are suggested, and friends of friends above them — «Вы можете знать», people followed by those you follow, the most shared first (`repo.people_you_may_know`, `/api/mini/people/may-know`). A new
+  follower is told through the app's own notifications (below); push and Telegram
+  carry it only when switched on there (075's `notify_followers` is no longer read).
+  New posts are told as well, by the follower's own choice (below). **Following is not a way to ping somebody**
   (owner, 2026-10-03; `follow_log`, migration 076): one such DM per pair a day, and
   following a person again within ten minutes of unfollowing them is refused
   (`FollowTooSoon` → 429 `too_soon`). These tables and routes speak in **person
-  ids** (`users.id`), `tg_id` is sent along only for the avatar — and only to a
-  viewer who may see that person's activity: search is open to anyone with the
-  app, and a Telegram id is not public.
+  ids** (`users.id`); a row's `tg_id` goes only to a viewer who may see that
+  person's activity — a Telegram id is not public. Nickname and face are, so
+  the face is asked for by person id.
   Code: `db/repo/_follows.py`, `services/people.py`, `web/mini_people.py`.
 - **Privacy is one setting** (`users.activity_visible`): who sees my activity in the
   app — everyone (default), friends, nobody. The one rule is
@@ -758,21 +845,22 @@ elsewhere in this file still describe the bot.
   `/online`: those show what the chat was already told. Every new screen that shows
   another person's activity must call `repo.can_view_activity`. Publishing to
   chats is unrelated and works as before.
-- **Publishing** (shipped): Settings → Публикация has the rarity mode, secrets, a
-  switch per chat and a switch per game account (#20). Settings → Приватность has
-  the one privacy setting and the list of blocked people.
+- **Publishing** (shipped): Settings → «Посты в чатах» has the rarity mode, a
+  switch per chat and a switch per game account (#20). Settings → Профиль →
+  Приватность has the one privacy setting and the list of blocked people.
 - **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
-  became "Рейтинг" beside the feed (a `Лента | Рейтинг` switch in the page head, one
+  became "Рейтинг" beside the feed (a `Достижения | Новости | Рейтинг` switch in the page head — the feed is «Достижения», game news «Новости»; one
   dock tab; the `summary` screen name and `?t=summary` links still work).
   **Scope** (owner, 2026-10-02): there is no chat picker — the Feed, the Ranking, Home's
   strip of people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their card (`PersonSheet`, `/api/mini/people/tg/{tg_id}`); its avatar or nickname opens the full profile. The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
-- **Browser sign-in** (shipped, Telegram only; migration 074): in a plain browser the
-  Mini App shows a sign-in screen with Telegram's Login Widget. `POST
+- **Browser sign-in** (shipped; Telegram by migration 074, email by 079): in a plain
+  browser the Mini App shows a sign-in screen with Telegram's Login Widget and, when
+  a mail server is set up (`/api/mini/auth/config` says `email`), an address field. `POST
   /api/mini/auth/telegram` checks the widget's signature (`mini_auth.
   validate_login_widget`: HMAC with SHA-256 of the bot token, at most 10 minutes old)
   and sets an HttpOnly, SameSite=Lax cookie `ab_session`; `web_sessions` keeps only a
@@ -781,8 +869,203 @@ elsewhere in this file still describe the bot.
   never allows credentials, so only the same origin carries the cookie. `POST
   /api/mini/auth/logout` ends it. **Setup per bot**: BotFather `/setdomain` must name
   the Mini App's host (`xbox.sultanpharm.com`, `test.xbox.sultanpharm.com`, and the
-  dev tunnel) or the widget refuses to render. A session serves only a person with a
-  Telegram id until the tables move to the person id (#156 step 2).
+  dev tunnel) or the widget refuses to render. A session resolves to the person
+  (`repo.session_person`), who may have no Telegram id (`MiniAppUser.tg_id` is then
+  None and the Telegram corners — chats, publishing — are empty).
+  - **Email** (#162, `services/email_login.py`, `web/mini_logins.py`): `POST
+    /api/mini/auth/email/start` sends a six-digit code, `/verify` checks it and opens
+    a session — for the person with that address, or a new person without Telegram,
+    who gets a nickname at once. A code lives 10 minutes and takes 5 guesses; only an
+    HMAC of it is stored (keyed from `FERNET_KEY`); a new one replaces the last; one
+    address gets one a minute and five an hour. **A guess is counted before it is
+    compared, in one statement** (`take_email_code_attempt`), so parallel requests
+    cannot share one count; a code marks itself used only once. Per client
+    (nginx's `X-Real-IP`, in memory, `mini_logins`): ten codes sent an hour and
+    twenty checked in ten minutes, and a hundred sent an hour by the whole app —
+    the mail server's reputation is everybody's. All three are the admin's global
+    settings (`email_codes_per_client_hour`, `email_checks_per_client_10min`,
+    `email_codes_total_hour`), read on every request. The answer never says whether an
+    address is known. Errors are codes the Mini App words: `invalid`, `too_soon`,
+    `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
+    `last_login`, `admin`, `in_telegram`, `not_linked`; a `taken` that a merge can
+    answer carries a `merge` preview (`GET|POST|DELETE /api/mini/me/merge`).
+    On the sign-in screen, once a code went out only the code is on the screen
+    («Введи код из письма») — not the address step's text nor Telegram's widget;
+    the forms are `noValidate`, so a bad address is worded by the app, never by
+    the browser's bubble.
+  - **Invites** (owner, 2026-10-05; `services/invites.py`, `web/mini_invites.py`,
+    `db/repo/_invites.py`, migration 082): for now **somebody new signs up in a
+    browser only with a code** — by email, or by the Login Widget. Inside
+    Telegram (the bot, the Mini App there) nobody needs one: those people come
+    from the community's chats. Any member makes codes in Settings → «Пригласить
+    друга» (`XXXX-XXXX-XXXX-XXXX`, no look-alike symbols): one code lets one
+    person in, never expires, no limit, and who came by it is kept and shown. A
+    sign-in that proved somebody new without a usable code answers
+    `invite_required` (403) with a `signup` token, kept in memory 15 minutes;
+    the app asks for the code and `POST /api/mini/auth/signup` finishes it. A
+    shared link (`?invite=`; a code's copy icon puts the code and its link in
+    the clipboard) carries the code into the sign-in, and no step shows. An
+    unused code is deleted by its trash icon.
+    `invite_invalid`, `signup_expired`. The dev server's no-code email mode still
+    asks for an invite.
+  - **Asked once for an email** (owner, 2026-10-05; migration 083): somebody
+    with no address meets «Добавь почту» on opening the app, after the nickname,
+    wherever they opened it — until they add one or say «Позже»
+    (`users.email_prompted_at`, `POST /api/mini/me/email/later`); `/me` says
+    `email_prompt` only where a mail server can send the code.
+  - **Telegram through the bot** (#162): «Открыть Telegram и привязать» gets a
+    `t.me/<bot>?start=link_<token>` link (`GET /api/mini/me/telegram/link`); writing
+    to the bot through it adds that Telegram, or offers the merge when it already is
+    somebody — for a phone, or a host the Login Widget does not render on
+    (`handlers/connect.py::_link_telegram`).
+  - **Settings → «Вход»**: `GET /api/mini/me/logins`. **Email is the main way in
+    and is never removed** (owner, 2026-10-05) — only added or changed, by the same
+    code (`/api/mini/me/email/start|verify`). Telegram is added through the Login
+    Widget (`POST /api/mini/me/telegram`) and taken away (`DELETE`) only while an
+    address is left, never from a super-admin, and only from a browser — inside
+    Telegram the app signs in with that very account (`mini_logins._telegram_blocked`:
+    `last_login`, `admin`, `in_telegram`). Taking it away drops what came with it:
+    the chats (publishing needs Telegram), `chat_seen`, Telegram's names and photo;
+    the nickname, accounts, history and follows stay, and that Telegram account
+    becomes a new person if it opens the bot again (`repo.remove_telegram`). A login
+    that belongs to another person is refused (`taken`).
+  - **In the Mini App** one form does both jobs: `components/me/logins/EmailCodeForm`
+    (address, then the code, which sends itself on the sixth digit; a resend
+    countdown; errors worded from the codes above) on the sign-in screen and in
+    Settings → «Вход» (`LoginsPane`); the Login Widget is `shared/lib/telegram-login`.
+    A person without Telegram sees Publishing's chats replaced by «привяжи Telegram».
+    A first nickname for such a person comes from the part of the address before
+    the @. `ApiError` keeps a refusal's `error` and body for the screens.
+- **The Mini App names people by person id** (#156): every person in its JSON
+  (feed items, ranking rows, `/online` rows, a person's page, `/me`) carries
+  `person_id`, and the app keys faces, profiles, lists and "is this me" by it — a
+  person with no Telegram is a person like any other. Faces:
+  `/api/mini/avatar/p/{person_id}`; a person's page: `/api/mini/club/people?person=`
+  (`chat_id` optional — only which chat it was opened from; the privacy check is
+  the gate); a game's progress: `?person=`. A post's «Открыть» button carries
+  `p<person id>` (`services/mini_app.py`); a button posted before carries
+  `u<tg id>`, which the app still reads: a profile is looked up by it
+  (`/api/mini/people/tg/{tg_id}`), and a game page asks by it (`?tg_id=`) and learns
+  the person from the answer's `viewed` (person id and nickname). **The admin is named by Telegram id** (`ADMIN_TG_IDS`);
+  **the people the admin manages, by person id** — somebody who signed in by email
+  has no Telegram id: `/admin`'s buttons carry `p<person id>` (`a:u:p12`, a bare
+  number from a button drawn before is a Telegram id and still works), the Mini
+  App's admin `/api/mini/admin/users/p<person id>`, and the roster's day and month
+  counts are per person.
+  - Connecting Xbox from the browser works without Telegram: the pending login is
+    keyed by the person (`ConnectService`), and with no Telegram id the history is
+    read quietly instead of with a status DM.
+- **The app's own notifications** (#164; owner, 2026-10-04): what a person is
+  told goes through `services/notifier.py::Notifier.notify(recipient, kind, **data)`,
+  which keeps it in their list (`notifications`, the latest 200, worded on reading in
+  the reader's language from `notifications.ftl`), pushes it to every browser that
+  allowed it, and sends it as a Telegram DM. **Every notice is kept in the list; push
+  and Telegram each carry only the kinds switched on there — none by default**
+  (owner, 2026-10-06; `user_settings.notify_push_on` / `notify_telegram_on`, comma-
+  separated `KINDS` keys with a choice after a colon where the kind has one,
+  migration 088, which keeps the follower DMs of whoever had them; 087's per-kind
+  switches are left unread). Beside that, each channel has its own switch (`notify_push`, `notify_telegram`;
+  migration 080), and the DM needs Telegram. One channel failing never stops the
+  others, nor what caused the notice.
+  Each kind (`notifier.KINDS`) says which channels it takes. Today: a new follower,
+  a new friend, a dead Xbox login (`xbox_login_dead`, from
+  `XboxAuthService.on_token_dead`) — that one in the list and as a push only: its
+  DM is `poller/reminders.py`'s, which carries the relogin button — and a new post.
+  - **A new post** (`new_post`; owner, 2026-10-05): somebody followed earned new
+    achievements in one game. Every follower's list has it; each channel picks
+    whose (friends or everyone followed, `new_post:friends` / `new_post:following`;
+    `repo.post_notice_recipients` says who is a friend), and
+    `repo.can_view_activity` still gates it.
+    It names the first achievement that is not secret, and carries its picture.
+    `Publisher.publish` fires it once per call, before any chat filter and after
+    the account's own posting switch (#20), in a background task
+    (`Publisher.on_new_post` → `Notifier.tell_about_post`), so it never holds up
+    publishing. One game is one post: a person hears of it once in
+    `POST_NOTICE_INTERVAL` (3 h), however many polls bring its achievements in.
+  - **A game's news** (`game_news`; owner, 2026-10-06): a developer's post read
+    for the first time (`SteamExtras.refresh_patches` → `on_new_posts` →
+    `Notifier.tell_about_game_news`) is told to everybody who earned something in
+    that game in the last 60 days (`repo.game_news_readers`): in the list always,
+    on a channel by its choice (all, patches, news). Only posts of the last two days, two at most a
+    read, and none from an app's first read (its history). A tap opens the game.
+  - **Web Push without a new dependency**: `services/webpush.py` seals a message
+    (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
+    with `httpx`; `tests/test_webpush.py` checks it against the RFC's own example.
+    The server's key pair is made once and kept encrypted in `app_settings`
+    (`vapid_private_key`) — a new one would orphan every subscribed browser. A
+    browser that unsubscribed (404/410) is forgotten at once, one that keeps
+    refusing after five tries. **Only a known push service is stored as an
+    endpoint** (`mini_notifications.PUSH_HOSTS`: FCM, Mozilla, Apple, Windows; https
+    on 443): the server posts to it, and an arbitrary address would make it call
+    any host, an internal one included. Push needs `MINI_APP_URL` (where a tap opens) and a
+    contact for the push services (`SMTP_FROM`, else the app's https address).
+  - Routes: `GET /api/mini/notifications`, `POST …/read`; `GET /api/mini/push/key`,
+    `POST|DELETE /api/mini/push/subscription`; the switches through
+    `PATCH /api/mini/settings`; `/me` carries `notifications_unread`.
+  - **In the Mini App**: a bell on Home with the unread count opens the list. A
+    notice is read once tapped (`POST …/read` with `ids`), or all at once by
+    «Прочитать все» (no `ids`). A tap opens what it is about: a new post's game
+    on the author's progress (`game` in the list, `g=` beside `p=` in a push's
+    URL — `Kind.game`), else the person. A row is drawn as an activity feed's (owner, 2026-10-06;
+    `listed()` gives `bold`, `lead`, `detail`, `image`): grouped by day; a face —
+    the person's, or the game's cover for its news — with a coloured mark of
+    what it is about (cup, people, a handshake for a friend, news); one line, «**Anastasiafil** получает
+    «…» и ещё 2» or «**Gears of War: E-Day** — новый патч»; under it the game or the post; how long ago at the right. Unread rows are in full light with a small
+    accent dot left of the face; read ones step back. The list scrolls inside the
+    sheet. A friend's face everywhere carries the same handshake mark
+    (`people/friend-mark`).
+    Settings → «Уведомления» (owner, 2026-10-06): two blocks with the same rows,
+    «Пуши» (this device's switch: subscribed or not) and «Telegram» (its switch;
+    the block is there only with Telegram linked); under a switch that is on —
+    «Новые посты» (off / friends / everyone followed), new followers, new
+    friends, «Новости игр» (off / all / patches / news), and for push the Xbox
+    sign-in (its Telegram message is `poller/reminders.py`'s, with the button).
+    Stored as tokens, `new_post:friends`, `game_news:patch`
+    (`notifier.carries`); 081's `notify_posts` is no longer read. A hint under a setting
+    is its row's second line, never a note under the group, unless it is about a
+    choice among the group's rows. `components/me/notifications/push.ts` says why a
+    device cannot get pushes, each worded: inside Telegram (the bot's DMs are the
+    notices there), an iPhone page not on the Home Screen (Safari pushes only
+    then), a browser without push, push not set up on the server, or blocked in
+    the browser.
+  - **The app is installable** (a PWA): `webapp/public/manifest.webmanifest` and
+    `sw.js`. The service worker only shows pushes and opens the app on a tap — **no
+    offline cache**, so a deploy is never hidden behind an old copy. It is
+    registered only outside Telegram. Paths are relative or `BASE_URL`, since
+    production serves the app under `/app/`. A browser that can install it gets
+    a banner above the dock (`shared/lib/install-prompt`): Chromium's own install
+    dialog behind «Установить» (`beforeinstallprompt`, caught at start-up in
+    `main.tsx`), on an iPhone the Share → Add to Home Screen steps. Never inside
+    Telegram or once installed; closed, it rests 14 days (`localStorage`).
+- **Settings, top to bottom** (owner, 2026-10-05): the home is rows that open
+  screens and nothing else — a switch or a picker lives one screen in. Each row
+  starts with its glyph (`RowGlyph`, bare, no tile; the profile row with the
+  face) and says in its second line what is inside. The profile card opens
+  «Профиль» — «Как видят другие», «Вход», «Приватность», the game accounts, then
+  «Выйти» / «Удалить аккаунт»; then «Посты в чатах» (what of yours goes to the
+  chats — named so, not «Публикация», to tell it from what is sent to you),
+  «Уведомления», «Общие» (language, timezone, secret achievements); the admin's
+  screens, the API load on «Ключи» beside the keys; «Пригласить друга» last. Inside a screen, a row
+  shows its current choice on the right where there is one. Back from a
+  profile screen is the profile; back from connecting an account opens it too
+  (its notes are there). The follows page also lists the people one blocked.
+- **The phone's "back" steps back inside the app** (owner, 2026-10-05;
+  `shared/lib/back-stack`): Android's back in the installed app, and Telegram's
+  header button (`BackButton`) inside Telegram, close the topmost open layer —
+  a screen with a back arrow (`BackHead`), a sheet, the game page, a person's
+  page, then any tab back to Home — and only then leave. Each layer calls
+  `useBackHandler`; a new layer that reuses a component (one arrow, another
+  title) passes `layer` so it counts as new. The history holds **one entry per open
+  layer, pushed when it opens** — never after a back: Chrome lets back skip an
+  entry added without the user's gesture, and a re-armed one closed the app on
+  the second back. Changes are reconciled once a moment's layers settle (a
+  layer closing as another opens is no step at all), and nothing is pushed
+  while a step back of our own is on its way. A new screen with its own way out registers too.
+- **A reload comes back where it was** (owner, 2026-10-06; `App.tsx::PLACE_KEY`):
+  the screen, the person and the game open are kept in `sessionStorage` for the
+  tab's session, and a reload with no link of its own (`c`, `p`, `u`, `t`, `g`,
+  a start parameter) opens them again instead of Home. A link always wins;
+  connecting an account starts over at Home.
 - **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
   `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
@@ -793,10 +1076,57 @@ elsewhere in this file still describe the bot.
 - **Actions look one way each** (owner, 2026-10-02; `components/shared/styles/base.css`):
   `.btn` is a pill without an outline — the action ("Подписаться", "Подключить");
   `.btn.is-quiet` is the paler pill of a state that opens choices ("Друзья ⌄");
+  `.btn.is-wide` is a form's own action, the whole width under its field;
   `.see-all` is blue text with → for going somewhere ("Все →", "Искать →");
   `DropdownArrow` ⌄ marks anything picked from a list (dropdowns, the month), and the
   row `Chevron` → a row that opens a screen. The follow control is one component,
   `FollowButton`: follow at once, and behind "Друзья ⌄" unfollow and block.
+- **One text field** (owner, 2026-10-05; `base.css`): every place one types —
+  sign-in and email, the nickname (`.is-big`), a sign-in code (`.is-code`), a
+  Steam/PSN link, an admin key — is `<label className="field"><input/></label>`,
+  with `.field-note` under it (`.is-error` for what went wrong, and the field
+  takes `.is-error` too) and a `.btn.is-wide`, stacked by `.form-stack`. Focus
+  is the same everywhere: a brighter surface and an accent edge and ring — the
+  search bar shares it in its pill shape, and a settings row's number
+  (`.fr-number`) in miniature. A new form never styles an input of its own.
+- **A finished game** (owner, 2026-10-06: beautiful but laconic, a real joy;
+  `game/game-hero/GameHero`): a platinum medal on the picture's lower edge — a
+  metal disc, an iridescent rim turning slowly, a breathing glow, stars twinkling round it, «Пройдено на
+  100%» and the day the last achievement came — at rest and open alike, no rays.
+  The first time one opens one's own finished game, the medal pops in with a ring
+  of sparks and a tap of the phone, once per game on the device
+  (`localStorage` `celebrated-games`).
+  A game not finished wears the same medal, quieter (owner, 2026-10-06): a dark
+  disc, its rim filled clockwise as far as the person got — white, as the
+  progress bars in the lists —, and
+  the percentage and the day of the last achievement under it (how many is in the tab's title) — the bar plate it replaced is gone. Its own effects, not
+  the platinum's: the rim fills from nothing as the page opens (`@property --p`),
+  a bright point pulses at the arc's end, and the picture dims round it.
+- **The ranking** (owner, 2026-10-07): one table, no frames, a column each — the last day, the month shown
+  and its year (`/club/summary`'s `year`, from 1 January to the month's end, in
+  the same timezone), and the leaders by day / month / year from a dropdown.
+  «Охотятся вместе» lists each achievement once, with the faces of everybody
+  who earned it (as the game page's compare), the most shared first; its page is
+  titled «Охотятся вместе», the game under the head.
+- **No drawers: pages** (owner, 2026-10-07; `shared/lib/sheet/Sheet`): what rose
+  from the bottom as a drawer — notifications, a person's card, follows, the
+  month's games, a ranking's lists, an achievement, an HLTB game, the merge — is
+  a page over everything, sliding in from the side, with its own scroll and a
+  head with the way back (the arrow, the phone's back); `title` (or `head`) and
+  `aside` name it in the head. A person's page has the person in its head — face,
+  nickname, where they are — and the follow control at its right; a lone
+  game account is open, several start closed. The follows page names its list in the head and picks it at the
+  right (following / friends / followers / blocked, each with its count), and
+  searches the list shown by nickname under the head. A pick from a short list is the `Dropdown`, never a page: the
+  month, the ranking's day / month. The day to jump to in a feed is the month's
+  calendar unfolding under the day's label, the screen's width
+  (`person/day-jump/DayCalendar`: days with posts enabled, with their counts).
+  The feed's posts are built as the reader nears the end (`FeedPosts`, eight
+  at a time, 2000px ahead), never a whole month at once — a phone's browser
+  dropped the page; a jump to a day builds up to it first. An HLTB game from
+  search is laid out as a post's page (`hltb/game-sheet/GameSheet`): the
+  picture edge to edge, year and platform, the name, the three times as one
+  table, the story, «Открыть на HowLongToBeat».
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 
@@ -906,7 +1236,7 @@ keyboard.
   (`ADMIN_TG_IDS`); the **админ чата** is the per-chat role #15 proposes, which does
   not exist yet.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
-  set / change / clear the Steam key, PSN NPSSO and Anthropic key (#17) — a key is
+  set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; global limits, each on its own row with its value and its own
   input, `0` rendered as "без ограничения", and the rarity threshold on top; defaults
@@ -917,7 +1247,8 @@ keyboard.
   Settings: digest size (#126), summary time, timezone, mutes,
   minimum gamerscore, summary switch, anti-flood, language (#48).
 - **The per-user card**: the Telegram identity in full (`tg_id` passed to Fluent as a
-  string, never `@N`), then one block per platform in the display order — nickname,
+  string, never `@N`) — or the email of somebody who has no Telegram — then one block
+  per platform in the display order — nickname,
   lifetime count with completions (🌀/👾/💠) and level, today's count, diagnostics.
 - **"🔄 Обновить"** is the only UI path besides `/panel`'s sync that calls a platform
   outside a background job: presence, the current game, then a catch-up since the
@@ -1119,7 +1450,8 @@ History: #111.
   never tops the list.
 - **Three readers keep plain `COALESCE(unlocked_at, created_at)` on purpose** and say
   so in place: `unpublished_achievements` (it already excludes imports),
-  `account_latest_unlock` (it asks when data starts), `recent_achievements`.
+  `account_latest_unlock` (it asks when data starts), and
+  `psn_titles_missing_groups` (it only orders a queue).
 - **Lifetime counts** count `seen_achievements` rows, never sum `title_history`; the
   x360 title-by-title backfill is the soft spot (#91). **Gamerscore** comes from the
   Xbox profile, never a sum.
@@ -1138,7 +1470,12 @@ History: #112.
 - `/hltb` works in DMs and groups: asks for a game (a reply to the prompt works in
   groups), suggests recent games of known members, cleans platform-noisy titles,
   shows candidates instead of trusting the first result, and caches the chosen result
-  by HLTB id forever. An HLTB outage is an expected failure.
+  by HLTB id. An HLTB outage is an expected failure.
+- **A cached entry is read again when stale** (owner, 2026-10-06;
+  `services/hltb.py::is_stale`): every 3 days for a game of this year or last, or
+  one with no main-story time yet — its players are still timing it —, else every
+  90 days. On the next lookup, never by a walker; a failed re-read keeps what is
+  stored, and an unchanged summary keeps its translation.
 - **Game descriptions come from HLTB itself** (#2): no id-matching between services,
   and console exclusives are covered. Read from the page's `__NEXT_DATA__`
   (`profile_summary`, beside `genre`), never from rendered HTML whose class names
@@ -1242,8 +1579,8 @@ sent to a chat.
   `poller/patch_refresh.py`, one game a tick, only for games played in the last 30
   days — so a crowd opening a game, or thousands of games, never means a read each.
 - **Links, videos, pictures** stay in the text: a link as `[label](url)`, a video (a
-  guide's embedded player, a patch's `[previewyoutube]`) and a guide's screenshot as
-  their address alone on a line — the Mini App draws a link, a video card and a
+  guide's embedded player, a post's `[previewyoutube]`) and a picture (a guide's
+  screenshot, a post's `[img]`) as their address alone on a line — the Mini App draws a link, a video card and a
   picture (`webapp/src/components/game/rich-text/RichText.tsx`).
 - **Steam's community site refuses bursts** (429): guide pages are read one at a
   time, 2.5 s apart, for the whole bot; a refusal pauses every read for 90 s. Pages
@@ -1252,12 +1589,86 @@ sent to a chat.
   keeps its tips but not its time stamp. **The guides endpoint never waits for a
   fill**: it starts one in the background and answers with what is stored and
   `complete: false`, and the Mini App asks again until it is true.
-- **Patches**: the developer's own announcements (`GetNewsForApp`, `feeds=
+- **Patches and news**: every post of the developer's own (`GetNewsForApp`, `feeds=
   steam_community_announcements` — on a busy day the default feed is other sites'
-  articles only), a post tagged `patchnotes` or titled like a patch (update, patch,
-  hotfix, a version number; not a demo or playtest). Re-read by
-  `poller/patch_refresh.py` for games somebody earned something in over the last 30
-  days, every `patch_refresh_hours` (6, /admin), three apps a tick.
+  articles only), the last thirty, kept in `game_patches` with its `kind` and first
+  picture (migration 084): a patch is a post tagged `patchnotes` or titled like one
+  (update, patch, hotfix, a version number; not a demo or playtest), anything else
+  is news. A post keeps its time, not only its day (migration 085: `published_at` is `…T14:32:00Z`, shown in the reader's own time). The game page's «Обновления» shows both, with a filter at the tab's right (all / news / patches); **«Новости»** (owner,
+  2026-10-05; `repo.games_news`, `GET /api/mini/club/news?scope=following&month=`)
+  shows both, untranslated, for the games the viewer and the people they follow
+  earned something in within 60 days before the month's end, newest first, one
+  card per post however many of our games are that Steam app, laid out as the
+  achievements' posts are (days; the game's face and name where a post has its
+  author; the picture edge to edge, all of it seen; the text on frosted glass).
+  A post opens whole on a page of its own over everything, the game page too
+  (`components/game/news-page/NewsPage`: its own scroll and back; the picture,
+  the game, the day, the title, the full text with its pictures, videos and
+  links, then «Открыть в Steam»); a patch in a game's «Обновления» opens on the
+  same page. Its game opens the game.
+- **An achievement has a page of its own** (owner, 2026-10-05;
+  `components/game/achievement-page/AchievementPage`, on the same layout as a
+  post's page, `components/game/post-page/PostPage.css`): a row on the game page
+  opens it (a secret one is revealed first). The game in the head, its rarity and
+  points (or trophy) at the head's right, as the game page shows its score; the
+  picture whole; when it was earned; its name and description; then «Как
+  получить», the Steam guides' tip whole, when there is one — a row with a tip
+  carries the book mark. A post's page keeps the head for the game alone: its kind
+  («Патч», «Новость») sits at the right of the date line, as in the list of
+  updates (owner, 2026-10-06).
+- **A picture opens in the app, full screen** (owner, 2026-10-05;
+  `shared/lib/image-viewer`: `openImage(src)`, one `ImageViewerHost` in the app
+  shell): the pictures in a guide's tip, a post or a patch, the picture at the top
+  of a post's or an achievement's page, and a face that zooms. Never on Steam. As
+  large as the screen allows, all of it; two fingers zoom and move it, a double
+  tap zooms in or back; a tap at its own size or the phone's back closes it —
+  nothing is drawn over the picture. The feeds keep their taps (a post opens its game or its page).
+- **A post's frame is its picture's shape** (owner, 2026-10-05; both feeds,
+  `shared/lib/img-ratio`): proportions read when the picture loads and
+  remembered (`localStorage`), kept between 4:5 and 1.91:1; beyond that the
+  picture is whole over its blurred copy. A picture wider than a square
+  (`isWide`) is its own height, edge to edge, and the text comes under it
+  instead of over it; a square or a tall one keeps the text over its foot. A
+  feed's frame is never wider than 1.15:1 (`FEED_RATIO_MAX`): a wider picture
+  keeps its whole height and loses a little of its sides. A post of several
+  achievements takes the first one's shape for every slide. Console exclusives have no Steam
+  app and so no news. Re-read by `poller/patch_refresh.py` for games somebody
+  earned something in over the last 30 days, every `patch_refresh_hours` (6,
+  /admin), three apps a tick.
+
+### Video guides from YouTube
+
+Guide videos for an achievement, shown on its page in «Как получить» (owner,
+2026-10-06). Today one channel, TrophyTom (`services/youtube/guides.py::CHANNELS`).
+
+- **Read by `poller/guide_videos.py`** with the YouTube Data API key: a channel's
+  whole history, eight pages of 50 a tick, the place kept
+  (`guide_channels.backfill_token`) so a failure resumes; then its newest page every
+  6 hours, and the whole history again every week (`read_through_at`) — a timeline
+  is often added to a video long after upload, and only a full pass sees it on an
+  old one. A page is one unit of the key's 10 000 a day (~220 a week for the
+  re-read). A refused call rests the channel an hour. A page lands in one
+  transaction. Nothing is downloaded: a card links to YouTube at the moment.
+- **What a video names** (`guide_videos`, `guide_marks`, migration 086): a title
+  with 🏆 names one achievement right before it ("House Flipper Remastered - Beach
+  please 🏆 Trophy / Achievement Guide"); a description's timeline names moments
+  ("02:42 – ACHIEVEMENT – Chainsaw Go…", "– TROPHY – … – PART 2", or a bare name in a
+  whole-game video). Every timeline line is kept; collectibles and chapters match
+  nothing and never show.
+- **Matched on reading, exactly** (`services/youtube/videos.py`): a video is a
+  game's when its title's first part(s) — split at " - ", normalized as HLTB's
+  matcher does — are one of the game's names or their edition-cut cores, so
+  "Gears of War 2 - …" is never Gears of War's; a moment is an achievement's when
+  its label equals the achievement's English name, normalized. Nothing is guessed:
+  a near miss shows nothing. The newest three per achievement, parts in order.
+- `/guides` answers them as `videos` beside `tips`; a row with a tip carries the
+  book mark, one with a video the video mark beside it.
+- **The game's own guide** (`videos.py::game_guide`, `guide` in `/guides`): what is
+  matched to one achievement rarely covers them all, so a game the channel has
+  videos of gets a video button in the game page's head — its whole-game video
+  when one is titled so ("Full Game", "All Achievements"), else the channel's
+  search for the game. Never on the picture: that is the game's own (a gallery
+  later).
 
 ## Versioning
 
@@ -1284,7 +1695,7 @@ History: #112.
 
 - Never commit `.env`, databases, logs, PID files or runtime data.
 - Every stored credential is Fernet-encrypted: Xbox refresh tokens, the PSN NPSSO, the
-  Steam key, the Anthropic key. Losing `FERNET_KEY` means every user reconnects and
+  Steam key, the Anthropic key, the YouTube key. Losing `FERNET_KEY` means every user reconnects and
   every shared key is re-entered — back it up.
 - Never log a token, key, NPSSO, authorization header, or a URL with a secret in its
   query — `httpx` logs full URLs at INFO, and Steam's `GetOwnedGames` carries the key.
@@ -1449,6 +1860,15 @@ History: #112.
 
 - Handlers are thin — services and repo methods, never raw SQL or platform logic.
 - All SQL lives in `bot/db/repo/`, `schema.sql` and the migrations.
+- **Writes that must land together go in `async with self.transaction()`** (#167,
+  `db/repo/_tx.py`). The bot has one connection: a transaction is the
+  connection's, so one coroutine's `commit()` used to commit another's half-written
+  work and a `rollback()` threw it away. While a block is open everybody else
+  waits before their next statement, `commit()` inside it waits for its end, an
+  exception rolls back only the block, and a block inside a block is a savepoint.
+  Never call `rollback()` (inside a block it raises); keep network calls and file
+  deletion out of a block — it holds the connection. Single statements stay as
+  they were: execute, then commit.
 - Platform clients (`services/xbox|steam|psn`) know nothing about Telegram.
 - Everything is async; wrap synchronous libraries (`psnawp`) in `asyncio.to_thread`.
 - No new dependency unless clearly needed.
@@ -1503,7 +1923,8 @@ actually invocable (`tests/test_handler_wiring.py`).
 - **GitHub is kept in English** (owner, 2026-09-24): issues, comments, PR descriptions,
   commit messages — even when the conversation was Russian. The exceptions are the
   files deliberately kept in two languages: `README.md` / `README.ru.md`,
-  `changelog/<v>.ru.md` / `.en.md` and their summaries, and `bot/locales/ru|en/`.
+  `docs/*.md` / `*.ru.md`, `changelog/<v>.ru.md` / `.en.md` and their summaries,
+  and `bot/locales/ru|en/`.
 - Comment *why*, not *what* — especially in the pollers and around token refresh.
 - Prefer small, precise changes that preserve behavior unless the task is to change
   it.

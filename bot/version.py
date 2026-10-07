@@ -47,7 +47,7 @@ MAJOR = 1
 #: edits — when the owner decides a release starts a new minor. Working
 #: branches read one above it (see `line()`). Production has been `7` since
 #: release 1.7.
-TRUNK_LINE = 7
+TRUNK_LINE = 8
 
 #: The branch that *is* production (2026-09-18): merging into it is the
 #: release, and everything else is by definition a line of work above it.

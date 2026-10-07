@@ -2,6 +2,7 @@ import type { FeedItem } from "../../../api";
 import { timeAgo, type Locale } from "../../../i18n";
 import { Avatar } from "../../shared/lib";
 import { HeroGame } from "../hero-game/HeroGame";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function PostLead({
   item,
@@ -11,7 +12,7 @@ export function PostLead({
 }: {
   item: FeedItem;
   locale: Locale;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
   whoOnly?: boolean;
 }) {
   return (
@@ -21,12 +22,14 @@ export function PostLead({
         className="feed-post-who"
         onClick={(e) => {
           e.stopPropagation();
-          onOpenPerson?.(item.tg_id);
+          onOpenPerson?.(item.person_id);
         }}
       >
-        <Avatar name={item.person} tgId={item.tg_id} size={36} />
+        <Avatar name={item.person} personId={item.person_id} size={36} />
         <span>
-          <strong>{item.person}</strong>
+          <strong>
+            <HandleName text={item.person} />
+          </strong>
           <p>{timeAgo(item.unlocked_at, locale)}</p>
         </span>
       </button>

@@ -51,6 +51,48 @@ async def test_following_needs_no_consent_and_two_follows_make_friends(repo: Rep
     assert await repo.follow_counts(alice) == (1, 0)
 
 
+async def test_friends_of_friends_are_suggested_by_how_many_lead_to_them(repo: Repo) -> None:
+    alice, bobby, carol = await _people(repo)
+    await repo.follow(alice, bobby)
+    await repo.follow(bobby, carol)
+    await repo.follow(bobby, alice)  # alice herself is never suggested
+
+    rows = await repo.people_you_may_know(alice)
+    assert [(row.id, mutual) for row, mutual in rows] == [(carol, 1)]
+
+    await repo.follow(alice, carol)  # followed: no longer a suggestion
+    assert await repo.people_you_may_know(alice) == []
+
+
+async def test_friends_of_friends_never_reveal_a_hidden_persons_follows(repo: Repo) -> None:
+    """Whom somebody follows is their activity: a person whose activity the
+    viewer may not see leads to no suggestion."""
+    alice, bobby, carol = await _people(repo)
+    await repo.follow(alice, bobby)
+    await repo.follow(bobby, carol)
+    await repo.set_activity_visible(bobby, ACTIVITY_NOBODY)
+    assert await repo.people_you_may_know(alice) == []
+    await repo.set_activity_visible(bobby, ACTIVITY_FRIENDS)
+    assert await repo.people_you_may_know(alice) == []
+    await repo.follow(bobby, alice)  # now friends: alice may see bobby's follows
+    assert [row.id for row, _ in await repo.people_you_may_know(alice)] == [carol]
+
+
+async def test_another_persons_follows_carry_the_viewers_relation(repo: Repo) -> None:
+    alice, bobby, carol = await _people(repo)
+    await repo.follow(bobby, carol)
+    await repo.follow(alice, carol)
+    await repo.follow(carol, bobby)
+
+    following = await repo.following_of_person(alice, bobby)
+    assert [row.id for row in following] == [carol]
+    assert following[0].relation.following  # alice follows carol
+    assert [row.id for row in await repo.followers_of_person(alice, bobby)] == [carol]
+
+    await repo.block(carol, alice)
+    assert await repo.following_of_person(alice, bobby) == []
+
+
 async def test_a_block_ends_both_follows_and_hides_each_from_the_other(repo: Repo) -> None:
     alice, bobby, _ = await _people(repo)
     await repo.follow(alice, bobby)
@@ -87,11 +129,17 @@ async def test_search_finds_a_numbered_nickname_by_its_digits(repo: Repo) -> Non
     assert len(await repo.search_people(alice, "bobby")) == 2
 
 
+async def test_search_by_digits_takes_exactly_four_plain_digits(repo: Repo) -> None:
+    alice, _, _ = await _people(repo)
+    for query in ("bobby#²", "bobby#" + "9" * 20, "bobby#12", "bobby#١٢٣٤"):
+        assert await repo.search_people(alice, query) == []
+
+
 async def test_suggestions_are_people_from_shared_chats_not_yet_followed(repo: Repo) -> None:
     alice, bobby, carol = await _people(repo)
     await repo.upsert_chat(-100, "Chat", 1)
-    await repo.subscribe(-100, 1)
-    await repo.subscribe(-100, 2)
+    await repo.subscribe(-100, await repo.person_id(1))
+    await repo.subscribe(-100, await repo.person_id(2))
     assert [p.handle for p in await repo.suggested_people(alice)] == ["bobby"]
     await repo.follow(alice, bobby)
     assert await repo.suggested_people(alice) == []
@@ -101,8 +149,8 @@ async def test_suggestions_are_people_from_shared_chats_not_yet_followed(repo: R
 async def test_the_activity_setting_decides_who_sees(repo: Repo) -> None:
     alice, bobby, _ = await _people(repo)
     await repo.upsert_chat(-100, "Chat", 1)
-    await repo.subscribe(-100, 1)
-    await repo.subscribe(-100, 2)
+    await repo.subscribe(-100, await repo.person_id(1))
+    await repo.subscribe(-100, await repo.person_id(2))
     assert await repo.can_view_activity(bobby, alice)
     await repo.set_activity_visible(alice, ACTIVITY_FRIENDS)
     assert not await repo.can_view_activity(bobby, alice)
@@ -122,8 +170,8 @@ async def test_everyone_means_people_who_know_you_not_any_stranger(repo: Repo) -
     await repo.follow(carol, alice)
     assert await repo.can_view_activity(carol, alice)
     await repo.upsert_chat(-100, "Chat", 1)
-    await repo.subscribe(-100, 1)
-    await repo.subscribe(-100, 2)
+    await repo.subscribe(-100, await repo.person_id(1))
+    await repo.subscribe(-100, await repo.person_id(2))
     assert await repo.can_view_activity(bobby, alice)
     await repo.deactivate_chat(-100)
     assert not await repo.can_view_activity(bobby, alice)
@@ -163,6 +211,8 @@ async def test_mini_api_people_flow(repo: Repo, settings) -> None:
     mine = {"X-Telegram-Init-Data": _signed_init_data(token, 42)}
     await repo.ensure_user(7, "friend7")
     other = await repo.person_id(7)
+    # Telegram carries a new follower only when switched on (none by default).
+    await repo.update_user_settings(other, notify_telegram_on="new_follower,new_friend")
 
     client = TestClient(TestServer(app))
     await client.start_server()
@@ -231,7 +281,7 @@ async def test_the_following_scope_feeds_and_ranks_only_followed_people(
 
     for tg_id, xuid in ((42, "x42"), (7, "x7"), (8, "x8")):
         await repo.ensure_user(tg_id, f"user{tg_id}")
-        await repo.link_xbox_account(tg_id, xuid, f"Tag{tg_id}", 0)
+        await repo.link_xbox_account(await repo.person_id(tg_id), xuid, f"Tag{tg_id}", 0)
         await repo.insert_new_achievements(xuid, [row(f"a{tg_id}")], is_backfill=False)
     me = await repo.person_id(42)
     followed = await repo.person_id(7)
@@ -253,6 +303,11 @@ async def test_the_following_scope_feeds_and_ranks_only_followed_people(
             await client.get("/api/mini/club/summary?scope=following", headers=headers)
         ).json()
         assert len(summary["month"]) == 2
+        # The year of the month shown, its board the same people's.
+        assert summary["year_key"] == int(summary["month_key"][:4])
+        assert sorted(row["person_id"] for row in summary["year"]) == sorted(
+            row["person_id"] for row in summary["month"]
+        )
         assert stranger  # followed by nobody, so absent from both
 
         # A followed person who hides their activity drops out.
@@ -269,8 +324,8 @@ async def test_a_private_profile_shows_only_the_name(repo: Repo, settings) -> No
     await repo.ensure_user(42, "viewer")
     await repo.ensure_user(7, "secretive")
     await repo.upsert_chat(-100, "Chat", 42)
-    await repo.subscribe(-100, 42)
-    await repo.subscribe(-100, 7)
+    await repo.subscribe(-100, await repo.person_id(42))
+    await repo.subscribe(-100, await repo.person_id(7))
     target = await repo.person_id(7)
 
     app = web.Application(middlewares=[cors_middleware()])
@@ -296,7 +351,7 @@ async def test_online_in_the_following_scope_lists_only_followed_people(
 ) -> None:
     for tg_id in (42, 7, 8):
         await repo.ensure_user(tg_id, f"user{tg_id}")
-        await repo.link_xbox_account(tg_id, f"x{tg_id}", f"Tag{tg_id}", 0)
+        await repo.link_xbox_account(await repo.person_id(tg_id), f"x{tg_id}", f"Tag{tg_id}", 0)
     await repo.follow(await repo.person_id(42), await repo.person_id(7))
 
     app = web.Application(middlewares=[cors_middleware()])
@@ -316,11 +371,11 @@ async def test_online_in_the_following_scope_lists_only_followed_people(
 async def test_the_person_card_carries_their_play_when_visible(repo: Repo, settings) -> None:
     await repo.ensure_user(42, "viewer")
     await repo.ensure_user(7, "player7")
-    await repo.link_xbox_account(7, "x7", "Tag7", 1500)
+    await repo.link_xbox_account(await repo.person_id(7), "x7", "Tag7", 1500)
     other = await repo.person_id(7)
     await repo.upsert_chat(-100, "Chat", 42)
-    await repo.subscribe(-100, 42)
-    await repo.subscribe(-100, 7)
+    await repo.subscribe(-100, await repo.person_id(42))
+    await repo.subscribe(-100, await repo.person_id(7))
     app = web.Application(middlewares=[cors_middleware()])
     setup_mini_api(app, settings, repo)
     headers = {"X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), 42)}
@@ -329,7 +384,9 @@ async def test_the_person_card_carries_their_play_when_visible(repo: Repo, setti
     try:
         body = await (await client.get(f"/api/mini/people/{other}", headers=headers)).json()
         assert body["tg_id"] == 7
-        assert body["activity"]["platforms"][0]["gamerscore"] == 1500
+        xbox = body["activity"]["platforms"][0]
+        assert xbox["gamerscore"] == 1500
+        assert (xbox["games"], xbox["rare"], xbox["last_at"]) == (0, 0, None)
         assert body["activity"]["games"] == []
 
         await repo.set_activity_visible(other, "nobody")
@@ -337,3 +394,30 @@ async def test_the_person_card_carries_their_play_when_visible(repo: Repo, setti
         assert body["can_view"] is False and body["activity"] is None
     finally:
         await client.close()
+
+
+async def test_the_card_sums_several_psn_accounts_into_one_row(repo: Repo) -> None:
+    """The PSN row is a sum over the person's accounts (#10), so its level and
+    its date are too: the highest level, the earliest link — not the first
+    account's."""
+    from bot.constants import Platform
+    from bot.web.mini_chat import build_person_payload
+
+    await repo.ensure_user(7, "player7")
+    await repo.link_platform_account(await repo.person_id(7), Platform.PSN, "psn-a", "First")
+    await repo.link_platform_account(await repo.person_id(7), Platform.PSN, "psn-b", "Second")
+    await repo.set_psn_trophy_level(await repo.person_id(7), 120, account_id="psn-a")
+    await repo.set_psn_trophy_level(await repo.person_id(7), 450, account_id="psn-b")
+    target = await repo.get_user(await repo.person_id(7))
+    payload = await build_person_payload(repo, target, locale="ru")
+    (psn,) = [p for p in payload["platforms"] if p["platform"] == Platform.PSN]
+    assert psn["name"] == "First, Second"
+    assert psn["trophy_level"] == 450
+    assert psn["linked_at"] is not None
+
+
+async def test_a_name_lookup_builds_a_whole_user(repo: Repo) -> None:
+    await repo.ensure_user(1, "Alice")
+    await repo.link_xbox_account(await repo.person_id(1), "x1", "AliceTag", 10)
+    user = await repo.find_user_by_username("@alice")
+    assert user is not None and user.xuid == "x1" and user.gamertag == "AliceTag"

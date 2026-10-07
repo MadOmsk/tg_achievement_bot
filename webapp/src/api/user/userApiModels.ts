@@ -1,3 +1,5 @@
+/** Whose new posts a person is told about: friends, everybody followed, nobody. */
+
 export type PresenceInfo = {
   state: string | null;
   title_name?: string | null;
@@ -37,8 +39,68 @@ export type Handle = {
   next_change_at: string | null;
 };
 
+/** One side of a merge (#162): what that account brings. */
+export type MergeSide = {
+  person_id: number;
+  handle: string | null;
+  email: string | null;
+  telegram: string | null;
+  has_telegram: boolean;
+  /** platform → its accounts, [{ id, name }] */
+  accounts: Record<string, Array<{ id: string; name: string | null }>>;
+  follows: number;
+  chats: number;
+};
+
+type Pick<T> = { keep: T; absorb: T };
+
+/** Two accounts that are one person, and where the person must choose (#162). */
+export type MergePreview = {
+  keep: MergeSide;
+  absorb: MergeSide;
+  conflicts: {
+    xbox?: Pick<{ id: string; name: string | null }>;
+    steam?: Pick<{ id: string; name: string | null }>;
+    telegram?: Pick<{ name: string | null; admin: boolean }>;
+    email?: Pick<string>;
+    psn?: { accounts: Array<{ id: string; name: string | null }>; max: number };
+  };
+};
+
+export type MergeChoices = Partial<{
+  xbox: "keep" | "absorb";
+  steam: "keep" | "absorb";
+  telegram: "keep" | "absorb";
+  email: "keep" | "absorb";
+  psn: string[];
+}>;
+
+/** The ways a person signs in (#162), as Settings → «Вход» shows them. */
+export type LoginsResponse = {
+  email: string | null;
+  telegram: {
+    linked: boolean;
+    username: string | null;
+    /** Whether it may be taken away now; if not, why (`last_login`, `admin`,
+     * `in_telegram`). */
+    removable?: boolean;
+    blocked?: "last_login" | "admin" | "in_telegram" | null;
+  };
+  /** A merge waiting for the person's word, e.g. after linking Telegram in the bot. */
+  merge_pending?: boolean;
+  /** Whether a code can be sent at all (a mail server is set up). */
+  email_available: boolean;
+};
+
 export type MeResponse = {
-  tg_id: number;
+  /** The person's own id (#156): what the app names people by. */
+  person_id: number;
+  /** The app's own notices not yet seen (#164). */
+  notifications_unread?: number;
+  /** No email yet and not put off: the app asks for one once (owner, 2026-10-05). */
+  email_prompt?: boolean;
+  /** None for a person who signed in by email and has no Telegram (#162). */
+  tg_id: number | null;
   handle: Handle | null;
   /** The person chose a picture in the app instead of the Telegram photo. */
   avatar_custom?: boolean;
@@ -56,8 +118,12 @@ export type MeResponse = {
     rarity_mode: string;
     /** Who sees this person's activity in the app (#157). */
     activity_visible?: "all" | "friends" | "nobody";
-    /** A DM from the bot when someone follows this person (#157). */
-    notify_followers?: boolean;
+    /** Where the app's notices go (#164): pushed to devices, and as a DM. */
+    notify_push?: boolean;
+    notify_telegram?: boolean;
+    /** The kinds of notice push and Telegram each carry (none by default). */
+    notify_push_on?: string[];
+    notify_telegram_on?: string[];
   };
   xbox: {
     linked: boolean;
@@ -130,7 +196,10 @@ export type UserSettingsPatch = Partial<{
   show_profile_links: boolean;
   show_secrets: boolean;
   rarity_mode: string;
-  notify_followers: boolean;
+  notify_push: boolean;
+  notify_telegram: boolean;
+  notify_push_on: string[];
+  notify_telegram_on: string[];
 }>;
 
 // A chat only says whether a person publishes there (#126): the rarity
@@ -140,4 +209,18 @@ export type ChatPatchAction = "subscribe" | "unsubscribe" | "forget";
 export type ChatPatchBody = {
   action?: ChatPatchAction;
   [key: string]: unknown;
+};
+
+/** A member's invite codes (owner, 2026-10-05): unused first, then whom each let in. */
+export type InviteItem = {
+  code: string;
+  created_at: string;
+  used_at: string | null;
+  used_by: { person_id: number; name: string | null } | null;
+};
+
+export type InvitesResponse = {
+  /** Where a shared link opens; null to build it from the page's own address. */
+  link_base: string | null;
+  items: InviteItem[];
 };

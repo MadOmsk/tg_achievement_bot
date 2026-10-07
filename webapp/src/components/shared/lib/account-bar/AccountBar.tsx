@@ -3,6 +3,7 @@ import type { MeResponse } from "../../../../api";
 import { t, type Locale } from "../../../../i18n";
 import { Avatar, accountLabel, telegramPhoto } from "../avatar/Avatar";
 import "./AccountBar.css";
+import { HandleName } from "../handle-name/HandleName";
 
 export function AccountBar({
   me,
@@ -27,13 +28,15 @@ export function AccountBar({
           <Avatar
             name={name}
             photo={telegramPhoto()}
-            tgId={me.tg_id}
+            personId={me.person_id ?? undefined}
             size={48}
             zoomLabel={t(locale, "close")}
           />
           <span>
             <span className="account-name-row">
-              <strong>{name}</strong>
+              <strong>
+                <HandleName text={name} />
+              </strong>
               {plats}
             </span>
             {status && <small className="account-status">{status}</small>}

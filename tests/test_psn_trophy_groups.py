@@ -56,11 +56,14 @@ async def _stored(repo: Repo) -> dict[str, tuple[str | None, int]]:
 
 async def _held_game(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, "Gamer")
     await repo.upsert_title(GAME, "Spider-Man Remastered", "psn", platforms='["PS5"]')
     # 1 and 2 stored before #46 (no group), 3 since (grouped)
     await repo.insert_new_achievements_psn(
-        TG_ID, ACCOUNT_ID, [_row("1", None), _row("2", None), _row("3", "005")], is_backfill=False
+        await repo.person_id(TG_ID),
+        ACCOUNT_ID,
+        [_row("1", None), _row("2", None), _row("3", "005")],
+        is_backfill=False,
     )
 
 
@@ -120,7 +123,7 @@ async def test_the_walker_asks_once_per_game_and_then_leaves_it(repo: Repo, monk
 
 async def test_an_unlinked_account_is_not_walked(repo: Repo) -> None:
     await _held_game(repo)
-    await repo.unlink_platform_account(TG_ID, "psn")
+    await repo.unlink_platform_account(await repo.person_id(TG_ID), "psn")
 
     assert await repo.psn_titles_missing_groups(10) == []
 
@@ -138,7 +141,7 @@ async def test_a_game_with_progress_and_nothing_stored_is_filled_in(
     """The scan advanced progress when the fetch failed, so it never asks
     again (#120): the walker does, and stores what it finds as history."""
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, "Gamer")
     await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR22032_00", 1)
     await repo.set_psn_title_progress(ACCOUNT_ID, "NPWR00000_00", 0)  # nothing earned
 

@@ -10,6 +10,8 @@ same as /online has no auto-refreshing equivalent for /who's picker.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import TokenStatus
@@ -17,13 +19,19 @@ from bot.db.repo import Repo
 from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services.admin_settings import (
+    DEFAULT_EMAIL_PROVIDER_DAILY,
+    DEFAULT_EMAIL_SENDS_TOTAL,
+    EMAIL_PROVIDER_DAILY_KEY,
+    EMAIL_SENDS_TOTAL_KEY,
+)
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
 from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import request_count_today
 from bot.services.stats import local_now
 from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED
 from bot.services.steam.auth import SteamAuth
-from bot.util import humanize_ago
+from bot.util import humanize_ago, utcnow
 
 # Europe/Moscow — same default the rest of the project falls back to
 # (schema.sql's chat_settings.tz_offset_min, config.py's Settings.tz) when
@@ -67,6 +75,26 @@ def _format_api_usage(windows: list[tuple[int, int, float]], *, locale: str) -> 
         )
         parts.append(_("adminview-usage-part", used=used, limit=limit, label=label))
     return " · ".join(parts) if parts else _("adminview-usage-none")
+
+
+async def _mail_usage(repo: Repo, *, locale: str) -> str:
+    """Sign-in codes sent in the last hour and day, against the app's own
+    hourly cap and the mail service's daily one (owner, 2026-10-07)."""
+    _ = translator("adminview", locale)
+    now = utcnow()
+    hour = await repo.email_codes_sent_since(
+        (now - timedelta(hours=1)).isoformat(timespec="seconds")
+    )
+    day = await repo.email_codes_sent_since((now - timedelta(days=1)).isoformat(timespec="seconds"))
+    return _(
+        "adminview-mail-usage",
+        hour=hour,
+        hour_limit=await repo.get_int_setting(EMAIL_SENDS_TOTAL_KEY, DEFAULT_EMAIL_SENDS_TOTAL),
+        day=day,
+        day_limit=await repo.get_int_setting(
+            EMAIL_PROVIDER_DAILY_KEY, DEFAULT_EMAIL_PROVIDER_DAILY
+        ),
+    )
 
 
 async def render_admin_home(
@@ -142,6 +170,7 @@ async def render_admin_home(
         # item 4 — nowhere documented) — a bare count, not a "used/limit"
         # ratio that would imply a number we don't actually have.
         psn_requests=request_count_today(),
+        mail_usage=await _mail_usage(repo, locale=locale),
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[

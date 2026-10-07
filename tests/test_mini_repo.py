@@ -32,22 +32,22 @@ def _row(
 
 async def test_show_secrets_defaults_off_and_updates(repo: Repo) -> None:
     await repo.ensure_user(1, "ada")
-    settings = await repo.get_user_settings(1)
+    settings = await repo.get_user_settings(await repo.person_id(1))
     assert settings is not None
     assert settings.show_secrets is False
 
-    await repo.update_user_settings(1, show_secrets=1)
-    settings = await repo.get_user_settings(1)
+    await repo.update_user_settings(await repo.person_id(1), show_secrets=1)
+    settings = await repo.get_user_settings(await repo.person_id(1))
     assert settings is not None
     assert settings.show_secrets is True
 
 
 async def test_person_recent_and_chat_unlock_months(repo: Repo) -> None:
     await repo.ensure_user(10, "ada")
-    await repo.link_platform_account(10, "steam", "76561190000000010", "Ada")
+    await repo.link_platform_account(await repo.person_id(10), "steam", "76561190000000010", "Ada")
     now = utcnow()
     await repo.insert_new_achievements_steam(
-        10,
+        await repo.person_id(10),
         "76561190000000010",
         [
             _row(
@@ -64,7 +64,7 @@ async def test_person_recent_and_chat_unlock_months(repo: Repo) -> None:
         is_backfill=False,
     )
 
-    feed = await repo.person_recent(10, 10)
+    feed = await repo.person_recent(await repo.person_id(10), 10)
     assert len(feed) == 2
     assert feed[0].achievement_id == "a1"
     assert feed[0].icon_url == "https://example/a1.png"
@@ -73,11 +73,11 @@ async def test_person_recent_and_chat_unlock_months(repo: Repo) -> None:
     assert feed[0].trophy_group_id is None
 
     since = now - timedelta(days=7)
-    recent = await repo.person_recent(10, 10, since=since)
+    recent = await repo.person_recent(await repo.person_id(10), 10, since=since)
     assert [row.achievement_id for row in recent] == ["a1"]
 
     await repo.upsert_chat(-100, "club", 10)
-    await repo.subscribe(-100, 10)
+    await repo.subscribe(-100, await repo.person_id(10))
     months = await repo.chat_unlock_months(-100)
     assert len(months) >= 1
     assert all(len(ym) == 7 and ym[4] == "-" for ym in months)
@@ -108,9 +108,9 @@ async def test_psn_trophy_tier_counts(repo: Repo) -> None:
     platinum — and getting it backwards would read as a pile of platinums.
     """
     await repo.ensure_user(20, "ada")
-    await repo.link_platform_account(20, "psn", "acc-20", "AdaPSN")
+    await repo.link_platform_account(await repo.person_id(20), "psn", "acc-20", "AdaPSN")
     await repo.insert_new_achievements_psn(
-        20,
+        await repo.person_id(20),
         "acc-20",
         [
             _trophy("t1", "bronze"),
@@ -124,11 +124,11 @@ async def test_psn_trophy_tier_counts(repo: Repo) -> None:
         is_backfill=False,
     )
 
-    assert await repo.psn_trophy_tier_counts(20) == (3, 2, 1, 1)
+    assert await repo.psn_trophy_tier_counts(await repo.person_id(20)) == (3, 2, 1, 1)
 
 
 async def test_psn_trophy_tier_counts_without_any_trophies(repo: Repo) -> None:
     """SUM over no rows is NULL, not 0 — the caller unpacks four ints and
     would hand `None` straight into the panel's own arithmetic."""
     await repo.ensure_user(21, "grace")
-    assert await repo.psn_trophy_tier_counts(21) == (0, 0, 0, 0)
+    assert await repo.psn_trophy_tier_counts(await repo.person_id(21)) == (0, 0, 0, 0)

@@ -99,7 +99,7 @@ async def run() -> int:
             total,
             len(titles),
         )
-        all_titles.extend((t_id, tg_id, plat) for t_id, tg_id in titles)
+        all_titles.extend((t_id, person_id, plat) for t_id, person_id in titles)
 
     if args.dry_run or not all_titles:
         await database.close()
@@ -111,9 +111,9 @@ async def run() -> int:
     client = XboxClient(auth)
 
     done = skipped = failed = percentages = 0
-    for index, (title_id, tg_id, plat) in enumerate(all_titles, start=1):
+    for index, (title_id, person_id, plat) in enumerate(all_titles, start=1):
         try:
-            rarity = await client.title_rarity(tg_id, title_id)
+            rarity = await client.title_rarity(person_id, title_id)
         except XboxApiError as exc:
             # A delisted game, an owner whose token is dead, an unlucky
             # afternoon at Microsoft. One title must never end the run.

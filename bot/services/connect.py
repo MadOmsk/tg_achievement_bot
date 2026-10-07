@@ -22,8 +22,11 @@ class ConnectError(Exception):
 
 @dataclass(slots=True)
 class _PendingState:
-    tg_id: int
+    person_id: int
     created_at: float
+    # Only for what follows in Telegram (the DM, the origin chat); None for a
+    # person who started in the browser by email (#162).
+    tg_id: int | None = None
     origin_chat_id: int | None = None
 
 
@@ -39,7 +42,9 @@ class ConnectService:
         self._repo = repo
         self._pending: dict[str, _PendingState] = {}
 
-    def start_login(self, tg_id: int, origin_chat_id: int | None = None) -> str:
+    def start_login(
+        self, person_id: int, *, tg_id: int | None = None, origin_chat_id: int | None = None
+    ) -> str:
         """`origin_chat_id` is the group where the person pressed «Подключить XBOX»
         from, if any — carried through to `complete_login` so we can
         auto-subscribe him there once the login actually succeeds (SPEC 6.3).
@@ -47,12 +52,18 @@ class ConnectService:
         self._forget_expired()
         state = secrets.token_urlsafe(24)
         self._pending[state] = _PendingState(
-            tg_id=tg_id, created_at=utcnow().timestamp(), origin_chat_id=origin_chat_id
+            person_id=person_id,
+            created_at=utcnow().timestamp(),
+            tg_id=tg_id,
+            origin_chat_id=origin_chat_id,
         )
         return self._auth.authorization_url(state)
 
-    async def complete_login(self, state: str, code: str) -> tuple[int, XboxIdentity, int | None]:
-        """Validate the state, exchange the code, store the account."""
+    async def complete_login(
+        self, state: str, code: str
+    ) -> tuple[int, int | None, XboxIdentity, int | None]:
+        """Validate the state, exchange the code, store the account. Returns the
+        person, their Telegram id if any, the account and the origin chat."""
         self._forget_expired()
         pending = self._pending.pop(state, None)
         if pending is None:
@@ -63,7 +74,7 @@ class ConnectService:
         identity = await self._auth.exchange_code(code)
 
         owner = await self._repo.get_user_by_xuid(identity.xuid)
-        if owner is not None and owner.tg_id != pending.tg_id:
+        if owner is not None and owner.id != pending.person_id:
             # One Xbox account per person (SPEC 1): otherwise the same
             # achievements would be published twice under different names.
             # Unlike the branch above, this one knows who is being told.
@@ -71,7 +82,7 @@ class ConnectService:
                 gettext(
                     "connectservice",
                     "connectservice-account-owned",
-                    locale=await self.user_locale(pending.tg_id),
+                    locale=await self.user_locale(pending.person_id),
                 )
             )
 
@@ -86,18 +97,18 @@ class ConnectService:
                     platform="Xbox",
                     hours=hours,
                     minutes=minutes,
-                    locale=await self.user_locale(pending.tg_id),
+                    locale=await self.user_locale(pending.person_id),
                 )
             )
 
-        await self._auth.store_identity(pending.tg_id, identity)
-        log.info("tg_id=%s linked xuid=%s", pending.tg_id, identity.xuid)
-        return pending.tg_id, identity, pending.origin_chat_id
+        await self._auth.store_identity(pending.person_id, identity)
+        log.info("person_id=%s linked xuid=%s", pending.person_id, identity.xuid)
+        return pending.person_id, pending.tg_id, identity, pending.origin_chat_id
 
-    async def user_locale(self, tg_id: int) -> str:
+    async def user_locale(self, person_id: int) -> str:
         """Passed through for web/oauth.py, which renders the post-login page
         for one known person but holds no Repo of its own (#48)."""
-        return await self._repo.user_locale(tg_id)
+        return await self._repo.user_locale(person_id)
 
     def _forget_expired(self) -> None:
         now = utcnow().timestamp()

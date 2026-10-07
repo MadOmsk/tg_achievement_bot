@@ -1,4 +1,4 @@
-export const ADMIN_KEY_NAMES = ["steam", "psn", "anthropic"] as const;
+export const ADMIN_KEY_NAMES = ["steam", "psn", "anthropic", "youtube"] as const;
 export type AdminKeyName = (typeof ADMIN_KEY_NAMES)[number];
 
 export const ADMIN_USER_PLATFORMS = ["xbox", "psn", "steam"] as const;
@@ -32,6 +32,6 @@ export type AdminScreen =
   | { name: typeof A.LIMITS }
   | { name: typeof A.DEFAULTS }
   | { name: typeof A.USERS }
-  | { name: typeof A.USER; tgId: number }
+  | { name: typeof A.USER; personId: number }
   | { name: typeof A.CHATS }
   | { name: typeof A.CHAT; chatId: number };

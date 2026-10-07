@@ -46,8 +46,8 @@ async def test_chat_member_presence_orders_playing_first(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     for tg_id, xuid, tag in ((1, XUID_A, "Offline"), (2, XUID_B, "Playing")):
         await repo.ensure_user(tg_id, tag.lower())
-        await repo.link_xbox_account(tg_id, xuid, tag, 0)
-        await repo.subscribe(CHAT_ID, tg_id)
+        await repo.link_xbox_account(await repo.person_id(tg_id), xuid, tag, 0)
+        await repo.subscribe(CHAT_ID, await repo.person_id(tg_id))
     await repo.save_presence_state(XUID_A, "Offline", None, None, changed=True)
     await repo.save_presence_state(XUID_B, "Online", "123", "Halo Infinite", changed=True)
 
@@ -68,13 +68,17 @@ async def test_chat_member_presence_reports_platform_for_steam_only_and_mixed(
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
 
     await repo.ensure_user(1, "steamonly")
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamOnly")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamOnly"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
     await repo.ensure_user(2, "both")
-    await repo.link_xbox_account(2, XUID_B, "Both", 0)
-    await repo.link_platform_account(2, "steam", "76561197981065056", "BothSteam")
-    await repo.subscribe(CHAT_ID, 2)
+    await repo.link_xbox_account(await repo.person_id(2), XUID_B, "Both", 0)
+    await repo.link_platform_account(
+        await repo.person_id(2), "steam", "76561197981065056", "BothSteam"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(2))
     await repo.save_presence_state(XUID_B, "Online", "123", "Halo Infinite", changed=True)
     await repo.save_steam_presence_state("76561197981065056", 1, "550", "L4D2", changed=True)
     # Both writes land in the same second at second-resolution timestamps —
@@ -105,8 +109,10 @@ async def test_chat_member_presence_includes_a_psn_only_person(repo: Repo) -> No
     vouch for; online_view.py falls back to their Telegram name there."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "psnonly")
-    await repo.link_platform_account(1, "psn", "internal-account-id", "PsnOnly")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_platform_account(
+        await repo.person_id(1), "psn", "internal-account-id", "PsnOnly"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
     rows = await repo.chat_member_presence(CHAT_ID)
 
@@ -124,10 +130,14 @@ async def test_chat_member_presence_untracked_psn_never_outranks_real_activity(
     activity for someone with all three linked."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "triple")
-    await repo.link_xbox_account(1, XUID_A, "Triple", 0)
-    await repo.link_platform_account(1, "steam", "76561197981065056", "TripleSteam")
-    await repo.link_platform_account(1, "psn", "internal-account-id", "TriplePsn")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), XUID_A, "Triple", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197981065056", "TripleSteam"
+    )
+    await repo.link_platform_account(
+        await repo.person_id(1), "psn", "internal-account-id", "TriplePsn"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
     await repo.save_presence_state(XUID_A, "Online", "123", "Halo Infinite", changed=True)
 
     rows = await repo.chat_member_presence(CHAT_ID)
@@ -142,9 +152,11 @@ async def test_chat_member_presence_psn_wins_when_actually_playing(repo: Repo) -
     everything else, same activity-level ordering."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "psnplayer")
-    await repo.link_xbox_account(1, XUID_A, "PsnPlayer", 0)
-    await repo.link_platform_account(1, "psn", "internal-account-id", "PsnPlayerPsn")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), XUID_A, "PsnPlayer", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "psn", "internal-account-id", "PsnPlayerPsn"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
     await repo.save_presence_state(XUID_A, "Online", None, None, changed=True)  # online, idle
     await repo.save_psn_presence_state(
         "internal-account-id", "Online", "CUSA14296_00", "Rust", changed=True
@@ -168,10 +180,14 @@ async def test_chat_member_presence_psn_offline_can_still_be_the_last_active_pla
     three known-offline, the most recently polled one wins the nickname."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "alloffline")
-    await repo.link_xbox_account(1, XUID_A, "AllOffline", 0)
-    await repo.link_platform_account(1, "steam", "76561197981065056", "AllOfflineSteam")
-    await repo.link_platform_account(1, "psn", "internal-account-id", "AllOfflinePsn")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), XUID_A, "AllOffline", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197981065056", "AllOfflineSteam"
+    )
+    await repo.link_platform_account(
+        await repo.person_id(1), "psn", "internal-account-id", "AllOfflinePsn"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
     await repo.save_presence_state(XUID_A, "Offline", None, None, changed=True)
     await repo.save_steam_presence_state("76561197981065056", 0, None, None, changed=True)
@@ -203,9 +219,11 @@ async def test_playing_on_one_platform_beats_merely_online_on_the_other(repo: Re
     activity level (SPEC 9, M-Steam-2e, "играет > онлайн > офлайн")."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "madomsk")
-    await repo.link_xbox_account(1, XUID_A, "MadOmsk", 0)
-    await repo.link_platform_account(1, "steam", "76561197981065056", "MadOmskSteam")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), XUID_A, "MadOmsk", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197981065056", "MadOmskSteam"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
     # Steam: playing. Xbox: online, not playing — but polled after Steam,
     # so its updated_at is the more recent one.
@@ -231,9 +249,11 @@ async def test_chat_member_presence_offline_shows_the_last_active_platform(repo:
     misreport who is actually active."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "bothoffline")
-    await repo.link_xbox_account(1, XUID_A, "BothOffline", 0)
-    await repo.link_platform_account(1, "steam", "76561197981065056", "BothOfflineSteam")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), XUID_A, "BothOffline", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197981065056", "BothOfflineSteam"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
     await repo.save_presence_state(XUID_A, "Offline", None, None, changed=True)
     await repo.save_steam_presence_state("76561197981065056", 0, None, None, changed=True)
@@ -257,9 +277,13 @@ async def test_chat_member_presence_carries_platform_names_and_telegram_identity
     this is where they get joined in."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "someone", "Igor", "Petrov")
-    await repo.link_platform_account(1, "steam", "76561197981065056", "SteamNick")
-    await repo.link_platform_account(1, "psn", "internal-account-id", "PsnNick")
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197981065056", "SteamNick"
+    )
+    await repo.link_platform_account(
+        await repo.person_id(1), "psn", "internal-account-id", "PsnNick"
+    )
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
     rows = await repo.chat_member_presence(CHAT_ID)
 
@@ -286,11 +310,11 @@ async def test_online_lists_a_connected_non_publisher_who_was_seen_writing(
     (SPEC 6.3, the "test chat" bug: 2 people in the chat, /online showed 1)."""
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.ensure_user(1, "publisher")
-    await repo.link_xbox_account(1, XUID_A, "Publisher", 0)
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), XUID_A, "Publisher", 0)
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
     await repo.ensure_user(2, "lurker")
-    await repo.link_xbox_account(2, XUID_B, "Lurker", 0)
+    await repo.link_xbox_account(await repo.person_id(2), XUID_B, "Lurker", 0)
     await repo.record_chat_seen(CHAT_ID, 2)  # wrote here, never subscribed
 
     rows = await repo.chat_member_presence(CHAT_ID)

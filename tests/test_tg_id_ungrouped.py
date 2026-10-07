@@ -17,7 +17,7 @@ TG_ID = 188022193
 def test_delete_confirmations_show_the_id_in_one_piece() -> None:
     for render in (render_admin_user_delete_confirm_1, render_admin_user_delete_confirm_2):
         for locale in ("ru", "en"):
-            text = render("Igor", TG_ID, locale=locale).text
+            text = render("Igor", 1, TG_ID, locale=locale).text
             assert str(TG_ID) in text, text
 
 
@@ -25,4 +25,4 @@ async def test_admin_notice_shows_the_id_in_one_piece(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
     notifier = AdminNotifier(bot=None, repo=repo, admin_ids=[])  # type: ignore[arg-type]
     for locale in ("ru", "en"):
-        assert str(TG_ID) in await notifier._who(TG_ID, locale)
+        assert str(TG_ID) in await notifier._who(await repo.person_id(TG_ID), locale)

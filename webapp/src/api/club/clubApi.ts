@@ -1,6 +1,6 @@
 import { BaseApi } from "../base/baseApi";
 import { API_BASE_ROUTES, CLUB_ROUTES } from "../../components/shared/constants/routes";
-import type { FeedResponse, OnlineMember, PersonPayload, SummaryResponse } from "./clubApiModels";
+import type { FeedResponse, NewsResponse, OnlineMember, PersonPayload, SummaryResponse } from "./clubApiModels";
 
 /** One chat, or the people you follow (#157). */
 function scopeQuery(scope: number | "following"): Record<string, string | number> {
@@ -24,6 +24,11 @@ export class ClubApi extends BaseApi {
     });
   }
 
+  /** Game news: what the developers of the games one's circle plays posted. */
+  fetchNews(initData: string, opts?: { month?: string }): Promise<NewsResponse> {
+    return this.get<NewsResponse>(initData, CLUB_ROUTES.NEWS, { scope: "following", month: opts?.month });
+  }
+
   fetchOnline(
     initData: string,
     chatId: number | "following",
@@ -42,15 +47,16 @@ export class ClubApi extends BaseApi {
     });
   }
 
+  /** A person's page; `chatId` is the chat it was opened from, if any. */
   fetchPerson(
     initData: string,
-    chatId: number,
-    tgId: number,
+    chatId: number | null,
+    personId: number,
     opts?: { month?: string },
   ): Promise<PersonPayload> {
     return this.get<PersonPayload>(initData, CLUB_ROUTES.PEOPLE, {
-      chat_id: chatId,
-      tg_id: tgId,
+      chat_id: chatId ?? undefined,
+      person: personId,
       month: opts?.month,
     });
   }

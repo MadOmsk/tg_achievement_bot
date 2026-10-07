@@ -1,7 +1,7 @@
 .unlock-card-copy.is-minimal .minimal-game {
   display: block;
   max-width: 100%;
-  margin: 0;
+  margin: 8px 0 0;
   color: rgba(238, 241, 246, 0.68);
   font-size: 0.68rem;
   font-weight: 700;
@@ -13,7 +13,7 @@
 }
 
 .unlock-card-copy.is-minimal h2 {
-  margin-top: 8px;
+  margin-top: 0;
   font-size: 1.1rem;
 }
 
@@ -36,7 +36,7 @@
   inset: auto 0 0 0;
   z-index: 5;
   height: auto;
-  padding: 48px 16px 34px;
+  padding: 48px 16px 18px;
   background: linear-gradient(
     to top,
     rgba(8, 10, 16, 0.42) 0%,
@@ -54,4 +54,14 @@
   font-weight: 800;
   line-height: 1.2;
   letter-spacing: -0.02em;
+}
+
+/* The dots lie at the foot of the text's block, as a feed post's do: room under
+ * the name and the game for them. */
+.unlock-slider.is-gallery .unlock-dots {
+  bottom: 14px;
+}
+
+.unlock-slider.is-gallery .unlock-card-copy.is-minimal {
+  padding-bottom: 33px;
 }

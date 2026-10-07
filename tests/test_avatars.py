@@ -36,7 +36,7 @@ async def test_the_largest_size_is_what_gets_stored(repo: Repo) -> None:
 
     await AvatarRefresh(bot, repo).tick()  # type: ignore[arg-type]
 
-    user = await repo.get_user(1)
+    user = await repo.get_user(await repo.person_id(1))
     assert user is not None and user.photo_file_id == "big"
 
 
@@ -50,7 +50,7 @@ async def test_somebody_with_no_visible_photo_is_not_asked_again_next_tick(repo:
     await AvatarRefresh(bot, repo).tick()  # type: ignore[arg-type]
 
     assert bot.asked == [1]
-    user = await repo.get_user(1)
+    user = await repo.get_user(await repo.person_id(1))
     assert user is not None and user.photo_file_id is None
 
 
@@ -130,7 +130,7 @@ async def test_the_same_photo_is_not_downloaded_twice(repo: Repo, tmp_path, monk
 
 async def test_a_platform_account_gets_its_own_picture(repo: Repo, tmp_path, monkeypatch) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(await repo.person_id(1), "steam", "76561197960287930", "Gabe")
     _use_tmp_avatar_dir(monkeypatch, tmp_path)
 
     async def fake_avatar_url(api_key: str, steam_id: str) -> str:
@@ -158,7 +158,7 @@ async def test_an_unchanged_platform_picture_is_not_downloaded_again(
     repo: Repo, tmp_path, monkeypatch
 ) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(await repo.person_id(1), "steam", "76561197960287930", "Gabe")
     await repo.set_account_avatar("steam", "76561197960287930", "https://a/full.jpg", "f.jpg", "h")
     _use_tmp_avatar_dir(monkeypatch, tmp_path)
 
@@ -214,7 +214,7 @@ async def test_a_user_telegram_has_never_heard_of_is_not_retried_forever(repo: R
 async def test_ensure_user_refuses_negative_tg_id(repo: Repo) -> None:
     """#66: a chat id is negative and must never be inserted into `users`."""
     await repo.ensure_user(-5246175458, "a group, not a person")
-    assert await repo.get_user(-5246175458) is None
+    assert await repo.get_user(await repo.person_id(-5246175458)) is None
 
 
 async def test_a_network_blip_leaves_the_person_first_in_line(repo: Repo) -> None:

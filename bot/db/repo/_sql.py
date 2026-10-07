@@ -31,21 +31,29 @@ from collections.abc import Sequence
 OWNED_BY_PERSON = (
     "JOIN account_links al ON al.platform = s.account_platform"
     "   AND al.external_id = s.xuid AND al.is_active = 1 "
+    "JOIN users alu ON alu.id = al.person_id "
 )
+
+# The person of a Telegram id, as a subquery bound to one `?` (#156) — for the
+# few statements that still start from a Telegram id: creating a person,
+# deleting one, and a chat's memberships, which mix in `chat_seen`.
+PERSON_BY_TG = "(SELECT id FROM users WHERE tg_id = ?)"
 
 # The same thing as a subquery, for statements that cannot take a join —
 # UPDATE/DELETE, and any SELECT whose shape would change if a join were
-# added to it.
+# added to it. A list rather than a correlated EXISTS (#167): the EXISTS
+# scanned every row of the table and probed each, this one looks up the
+# person's few accounts in idx_seen_account — twenty times faster on
+# production's copy, same rows.
 OWNED_BY_PERSON_EXISTS = (
-    "EXISTS (SELECT 1 FROM account_links al"
-    "        WHERE al.tg_id = ? AND al.is_active = 1"
-    "          AND al.platform = seen_achievements.account_platform"
-    "          AND al.external_id = seen_achievements.xuid) "
+    "(seen_achievements.account_platform, seen_achievements.xuid) IN ("
+    "  SELECT al.platform, al.external_id FROM account_links al"
+    "  WHERE al.person_id = ? AND al.is_active = 1) "
 )
 
 
 def active_account(
-    alias: str, platform: str, *, on: str = "u.tg_id", by_presence: bool = False
+    alias: str, platform: str, *, on: str = "u.id", by_presence: bool = False
 ) -> str:
     """The two LEFT JOINs that reach one platform's *currently linked*
     account for a person, exposed under `alias` so a query can keep reading
@@ -78,10 +86,10 @@ def active_account(
         order = "ORDER BY x.linked_at, x.rowid "
         source = "FROM account_links x "
     return (
-        f"LEFT JOIN account_links {link} ON {link}.tg_id = {on}"
+        f"LEFT JOIN account_links {link} ON {link}.person_id = {on}"
         f"   AND {link}.platform = '{platform}' AND {link}.is_active = 1"
         f"   AND {link}.rowid = (SELECT x.rowid {source}"
-        f"      WHERE x.tg_id = {on} AND x.platform = '{platform}' AND x.is_active = 1"
+        f"      WHERE x.person_id = {on} AND x.platform = '{platform}' AND x.is_active = 1"
         f"      {order}LIMIT 1) "
         f"LEFT JOIN accounts {alias} ON {alias}.platform = {link}.platform"
         f"   AND {alias}.external_id = {link}.external_id "
@@ -97,7 +105,7 @@ def active_account(
 #   xb.display_name   -> the modern gamertag (what to show)
 #   xb.secondary_name -> the classic one (what profile links are built from)
 XBOX_ACCOUNT = (
-    "LEFT JOIN account_links xb_link ON xb_link.tg_id = u.tg_id"
+    "LEFT JOIN account_links xb_link ON xb_link.person_id = u.id"
     "   AND xb_link.platform = 'xbox' AND xb_link.is_active = 1 "
     "LEFT JOIN accounts xb ON xb.platform = xb_link.platform"
     "   AND xb.external_id = xb_link.external_id "
@@ -109,14 +117,25 @@ XBOX_ACCOUNT = (
 MEMBERS_CHAT = 0
 
 
+# A chat's members as `(chat_id, person_id)`: who is subscribed there, and who
+# was seen writing there (`chat_seen`, by Telegram id) — the membership
+# `/online`, `/who`, «Мои чаты», shared-chat suggestions and the "everyone who
+# knows you" privacy rule all mean. One copy (#167); five had been written out.
+CHAT_MEMBERS = (
+    "(SELECT sb.chat_id, sb.person_id FROM subscriptions sb"
+    " UNION SELECT cs.chat_id, su.id FROM chat_seen cs JOIN users su ON su.tg_id = cs.tg_id)"
+)
+
+
 def member_source(members: Sequence[int] | None) -> str:
-    """What `FROM ... sub` reads in the chat queries: the real `subscriptions`
-    table, or — for a given list of people — a one-column stand-in with the same
-    shape. Integers only, formatted here, so nothing is injected."""
+    """What `FROM ... sub` reads in the chat queries: a chat's subscribers, or —
+    for a given list of person ids — a stand-in with the same shape. Both read
+    as `(chat_id, person_id)` (#156). Integers only, formatted here, so nothing
+    is injected."""
     if members is None:
-        return "subscriptions"
+        return "(SELECT sb.chat_id, sb.person_id FROM subscriptions sb)"
     ids = ",".join(str(int(m)) for m in members) or "NULL"
-    return f"(SELECT {MEMBERS_CHAT} AS chat_id, tg_id FROM users WHERE tg_id IN ({ids}))"
+    return f"(SELECT {MEMBERS_CHAT} AS chat_id, id AS person_id FROM users WHERE id IN ({ids}))"
 
 
 # A person's nickname as shown, digits included (#157): `RideTheSun#4821`.
@@ -175,16 +194,6 @@ def earned_since(prefix: str = "s.") -> str:
     """The window filter both of the above compose into: one `?`, bound to
     the start of the window."""
     return f"{earned_date_is_real(prefix)} AND {earned_at(prefix)} >= ?"
-
-
-# A person whose rarity mode is "none" publishes nothing, and is left out of a
-# chat's lists that are about what gets published (#126: the mode is the
-# person's, not the subscription's). Takes the users alias.
-def publishes(user_alias: str = "u") -> str:
-    return (
-        "NOT EXISTS (SELECT 1 FROM user_settings us_mode"
-        f" WHERE us_mode.tg_id = {user_alias}.tg_id AND us_mode.rarity_mode = 'hidden')"
-    )
 
 
 # --------------------------------------------------------------- names (#61)

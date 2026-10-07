@@ -61,7 +61,7 @@ class TitleCatalogService:
         platform: Platform | str,
         title_id: str,
         *,
-        tg_id: int | None = None,
+        person_id: int | None = None,
         force: bool = False,
         debounce_hours: int = DEFAULT_DEBOUNCE_HOURS,
     ) -> list[TitleAchievementRow]:
@@ -91,13 +91,13 @@ class TitleCatalogService:
             if plat == Platform.STEAM.value:
                 return await self._refresh_steam(title_id, force=force)
             elif plat == Platform.PSN.value:
-                return await self._refresh_psn(title_id, force=force, tg_id=tg_id)
+                return await self._refresh_psn(title_id, force=force, person_id=person_id)
             elif plat in (Platform.XBOX_MODERN.value, Platform.XBOX_360.value):
                 return await self._refresh_xbox(
                     plat,
                     title_id,
                     force=force,
-                    tg_id=tg_id,
+                    person_id=person_id,
                 )
         except Exception:
             log.warning("failed to refresh title catalog for %s/%s", plat, title_id, exc_info=True)
@@ -108,23 +108,23 @@ class TitleCatalogService:
         self,
         platform: Platform | str,
         title_id: str,
-        tg_id: int | None,
+        person_id: int | None,
         *,
         force: bool = False,
         debounce_hours: int = DEFAULT_DEBOUNCE_HOURS,
     ) -> list[TitleAchievementWithUnlock]:
-        """Fetch full achievement checklist with unlock state for a specific Telegram user."""
+        """Fetch full achievement checklist with unlock state for one person."""
         plat = platform.value if isinstance(platform, Platform) else platform
 
         await self.ensure_title_achievements_fresh(
-            plat, title_id, tg_id=tg_id, force=force, debounce_hours=debounce_hours
+            plat, title_id, person_id=person_id, force=force, debounce_hours=debounce_hours
         )
 
         xuid: str | None = None
-        if tg_id:
+        if person_id:
             is_xbox = plat in (Platform.XBOX_MODERN.value, Platform.XBOX_360.value)
             account_plat = "xbox" if is_xbox else plat
-            link = await self._repo.get_platform_link(tg_id, account_plat)
+            link = await self._repo.get_platform_link(person_id, account_plat)
             if link:
                 xuid = link.external_id
 
@@ -220,7 +220,7 @@ class TitleCatalogService:
     # -------------------------------------------------------------------- PSN
 
     async def _refresh_psn(
-        self, np_communication_id: str, *, force: bool = False, tg_id: int | None = None
+        self, np_communication_id: str, *, force: bool = False, person_id: int | None = None
     ) -> list[TitleAchievementRow]:
         if not self._psn_auth:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
@@ -233,8 +233,8 @@ class TitleCatalogService:
 
         # Determine account_id to query
         account_id: str | None = None
-        if tg_id:
-            link = await self._repo.get_platform_link(tg_id, "psn")
+        if person_id:
+            link = await self._repo.get_platform_link(person_id, "psn")
             if link:
                 account_id = link.external_id
 
@@ -363,16 +363,16 @@ class TitleCatalogService:
         title_id: str,
         *,
         force: bool = False,
-        tg_id: int | None = None,
+        person_id: int | None = None,
     ) -> list[TitleAchievementRow]:
         if not self._xbox_client:
             return await self._repo.get_title_achievements(platform_str, title_id)
 
-        target_tg_id = tg_id
-        if not target_tg_id:
-            target_tg_id = await self._repo.any_active_xbox_tg_id()
+        target_person = person_id
+        if not target_person:
+            target_person = await self._repo.any_active_xbox_person()
 
-        if not target_tg_id:
+        if not target_person:
             return await self._repo.get_title_achievements(platform_str, title_id)
 
         platform_enum = (
@@ -381,7 +381,7 @@ class TitleCatalogService:
 
         try:
             achievements_en, api_total = await self._xbox_client.title_achievements_with_total(
-                target_tg_id,
+                target_person,
                 title_id,
                 platform_enum,
                 language="en-US",
@@ -414,7 +414,7 @@ class TitleCatalogService:
         # Mismatch or new: fetch ru-RU
         try:
             achievements_ru = await self._xbox_client.title_achievements(
-                target_tg_id,
+                target_person,
                 title_id,
                 platform_enum,
                 language="ru-RU",

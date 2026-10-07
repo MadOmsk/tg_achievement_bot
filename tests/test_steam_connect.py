@@ -106,7 +106,9 @@ async def test_prompt_names_the_linked_account_and_still_asks(repo: Repo, steam_
     later in the flow.
     """
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "Gabe"
+    )
     bot = FakeBot()
     awaiting.clear(TG_ID)
 

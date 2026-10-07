@@ -41,6 +41,14 @@ Layout:
                     caches. Also added after the split.
     _steam.py       a game's Steam app, its guides' tips and its patch
                     notes (migration 069).
+    _logins.py      ways in besides a Telegram update: email addresses and
+                    their one-time codes, Telegram added later (#162).
+    _notifications.py  the app's own notifications: the list per person and
+                    the browsers that allowed push (#164).
+    _merge.py       folding one person into another, in one transaction.
+    _invites.py     invite codes members make, and who came by each (082).
+    _guides.py      video guides from YouTube channels: their videos and the
+                    moments their descriptions mark (086).
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -51,7 +59,7 @@ already say just as well.
 
 from __future__ import annotations
 
-import aiosqlite
+from contextlib import AbstractAsyncContextManager
 
 from bot.db.repo._accounts import _AccountsRepo
 from bot.db.repo._achievements import _AchievementsRepo
@@ -68,7 +76,11 @@ from bot.db.repo._database import (
 from bot.db.repo._descriptions import _DescriptionsRepo
 from bot.db.repo._flood import _FloodRepo
 from bot.db.repo._follows import FollowTooSoon, PersonRow, _FollowsRepo
+from bot.db.repo._guides import GuideChannel, GuideMoment, GuideVideoRow, _GuidesRepo
 from bot.db.repo._handles import HandleInvalid, HandleState, HandleTooSoon, _HandlesRepo
+from bot.db.repo._invites import InviteRow, _InvitesRepo
+from bot.db.repo._logins import EmailCode, LoginTaken, _LoginsRepo
+from bot.db.repo._merge import MergeChoices, MergeSide, _MergeRepo
 from bot.db.repo._messages import _MessagesRepo
 from bot.db.repo._models import (
     AchievementRow,
@@ -107,11 +119,13 @@ from bot.db.repo._models import (
     UserChatRow,
     UserSettings,
 )
+from bot.db.repo._notifications import NotificationRow, PushSubscription, _NotificationsRepo
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
 from bot.db.repo._sessions import _SessionsRepo
 from bot.db.repo._stats import _StatsRepo
-from bot.db.repo._steam import StoredPatch, TitleSteam, _SteamRepo
+from bot.db.repo._steam import GameNewsRow, StoredPatch, TitleSteam, _SteamRepo
+from bot.db.repo._tx import GatedConnection, transaction
 
 __all__ = [
     # Re-exported for scripts/backfill_*.py and the odd test that reaches
@@ -132,13 +146,23 @@ __all__ = [
     "CooldownCheckResult",
     "Database",
     "DeletableMessage",
+    "EmailCode",
     "FloodState",
     "FollowTooSoon",
     "GameAchievements",
+    "GameNewsRow",
+    "GuideChannel",
+    "GuideMoment",
+    "GuideVideoRow",
     "HandleInvalid",
     "HandleState",
     "HandleTooSoon",
     "HltbCacheRow",
+    "InviteRow",
+    "LoginTaken",
+    "MergeChoices",
+    "MergeSide",
+    "NotificationRow",
     "OnlineAutoRefreshRow",
     "PersonRow",
     "PlatformLink",
@@ -147,6 +171,7 @@ __all__ = [
     "PsnPollTarget",
     "PsnPresenceRow",
     "PsnPresenceTarget",
+    "PushSubscription",
     "RecentAchievement",
     "Repo",
     "SteamPollTarget",
@@ -184,6 +209,11 @@ class Repo(
     _HandlesRepo,
     _FollowsRepo,
     _SessionsRepo,
+    _LoginsRepo,
+    _NotificationsRepo,
+    _MergeRepo,
+    _InvitesRepo,
+    _GuidesRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 
@@ -191,5 +221,9 @@ class Repo(
         self._db = db
 
     @property
-    def _conn(self) -> aiosqlite.Connection:
-        return self._db.conn
+    def _conn(self) -> GatedConnection:
+        return GatedConnection(self._db.conn, self._db.gate)
+
+    def transaction(self) -> AbstractAsyncContextManager[None]:
+        """A block of writes that lands whole or not at all (#167, `_tx.py`)."""
+        return transaction(self._conn)

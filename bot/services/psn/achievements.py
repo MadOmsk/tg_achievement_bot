@@ -14,7 +14,7 @@ advanced" and "trophies stored" happen together, per game, so an
 interruption can only ever cost one redundant re-fetch next run
 (`INSERT OR IGNORE`), never a dropped trophy.
 
-Resolving `tg_id` and publishing stay the poller's job (poller/
+Resolving the person and publishing stay the poller's job (poller/
 psn_fetcher.py) — sync_account returns the freshly-inserted rows for it to
 publish.
 """
@@ -85,7 +85,7 @@ class PsnSyncOutcome:
 async def sync_account(
     repo: Repo,
     client: PSNAWP,
-    tg_id: int,
+    person_id: int,
     account_id: str,
     *,
     is_backfill: bool,
@@ -275,7 +275,7 @@ async def sync_account(
             for item in earned
         ]
         inserted = await repo.insert_new_achievements_psn(
-            tg_id, account_id, rows, is_backfill=is_backfill
+            person_id, account_id, rows, is_backfill=is_backfill
         )
         # Only now — after this game's trophies are committed — is its
         # progress advanced. An interruption before this line leaves the
@@ -294,7 +294,7 @@ async def sync_account(
 
 
 async def regroup_title(
-    repo: Repo, client: PSNAWP, tg_id: int, account_id: str, title: TitleRef
+    repo: Repo, client: PSNAWP, person_id: int, account_id: str, title: TitleRef
 ) -> int:
     """Complete this account's trophies in one game: give the ones stored
     before #46 their group (#115), and store any earned trophy the bot never
@@ -309,7 +309,7 @@ async def regroup_title(
     """
     earned = await trophies_for_title(client, account_id, title)
     rows = [to_achievement_row(_to_parsed(title.np_communication_id, item)) for item in earned]
-    added = await repo.insert_new_achievements_psn(tg_id, account_id, rows, is_backfill=True)
+    added = await repo.insert_new_achievements_psn(person_id, account_id, rows, is_backfill=True)
     regrouped = await repo.set_psn_trophy_groups(
         account_id,
         title.np_communication_id,

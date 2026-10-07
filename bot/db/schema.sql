@@ -3,8 +3,9 @@
 
 -- People. A person has an id of their own (#156, migration 071); a Telegram
 -- account is one way to sign in, kept as `tg_id` — unique, and empty for a
--- person who signs in some other way. Other tables still point at
--- users(tg_id) until they move to the person id. Only the identity lives here
+-- person who signs in some other way. The tables about a person point at `id`
+-- (078); what is Telegram by nature (`chat_seen`, the admins, the reset
+-- cooldowns) keeps a Telegram id. Only the identity lives here
 -- (#52): an Xbox account is an `accounts` row like any other, reached through
 -- the active link in `account_links`.
 CREATE TABLE IF NOT EXISTS users (
@@ -52,14 +53,25 @@ CREATE TABLE IF NOT EXISTS users (
     -- Who sees this person's activity in the app (#157, migration 073).
     activity_visible TEXT NOT NULL DEFAULT 'all'
         CHECK (activity_visible IN ('all', 'friends', 'nobody')),
+    -- An address the person proved with a code, lower-cased (#162, migration
+    -- 079): a way to sign in besides Telegram. NULL = none.
+    email           TEXT,
+    email_linked_at TEXT,
+    -- When a person with no email put off adding one (migration 083): the app
+    -- asks once, on opening it.
+    email_prompted_at TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
-    UNIQUE (handle_norm, handle_number)
+    UNIQUE (handle_norm, handle_number),
+    -- One person per address; here for new databases, migration 079 makes the
+    -- same rule an index for existing ones (schema.sql runs before migrations,
+    -- so a standalone index on a new column would fail on an old file).
+    UNIQUE (email)
 );
 
 -- One user, one token. Refresh only; everything else lives in memory.
 CREATE TABLE IF NOT EXISTS tokens (
-    tg_id             INTEGER PRIMARY KEY REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id         INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     refresh_token_enc BLOB NOT NULL,      -- Fernet, NEVER logged
     status            TEXT NOT NULL DEFAULT 'active'
                       CHECK (status IN ('active', 'invalid', 'revoked')),
@@ -85,14 +97,14 @@ CREATE TABLE IF NOT EXISTS chats (
 
 CREATE TABLE IF NOT EXISTS subscriptions (
     chat_id     INTEGER NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
-    tg_id       INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at  TEXT NOT NULL,
     -- Which achievements go out is the person's (user_settings.rarity_mode),
     -- and how many at once make a digest is the chat's
     -- (chat_settings.digest_threshold) — both used to live here, per
     -- subscription, until #126: a person in many chats set the same thing
     -- in each.
-    PRIMARY KEY (chat_id, tg_id)
+    PRIMARY KEY (chat_id, person_id)
 );
 
 -- Who's been seen writing in a chat, separately from `subscriptions` (who
@@ -105,11 +117,12 @@ CREATE TABLE IF NOT EXISTS chat_seen (
 );
 
 CREATE TABLE IF NOT EXISTS user_settings (
-    tg_id            INTEGER PRIMARY KEY REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     -- Which achievements this person publishes, in every chat they are
     -- subscribed to (#126): 'all', 'rare' (at or below each chat's own
-    -- threshold), or 'hidden' — nothing published, and left out of chats'
-    -- summaries and /recent. One value for every platform: a platform with no
+    -- threshold), or 'hidden' — nothing published. Only notifications: the
+    -- person still counts in a chat's summaries, rankings and /recent, and
+    -- leaving those is unsubscribing (#167). One value for every platform: a platform with no
     -- rarity at all (Xbox 360) is exempt from 'rare' rather than getting a
     -- switch of its own. It was per subscription until #126 — somebody in
     -- many chats had to set the same thing in each.
@@ -134,8 +147,30 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- itself in English, and auto-switching them would be a silent
     -- regression rather than a feature. Explicit opt-in, default 'ru'.
     locale           TEXT    NOT NULL DEFAULT 'ru',
-    -- A DM when someone follows this person (#157, migration 075).
-    notify_followers INTEGER NOT NULL DEFAULT 1
+    -- Whether to be told when someone follows this person (#157, migration 075);
+    -- no longer read: 088 moved it onto the channels' lists.
+    notify_followers INTEGER NOT NULL DEFAULT 1,
+    -- Where the app's notifications go (#164, migration 080): pushed to the
+    -- devices that allowed it, and as a Telegram DM (only with Telegram linked).
+    notify_push      INTEGER NOT NULL DEFAULT 1,
+    notify_telegram  INTEGER NOT NULL DEFAULT 1,
+    -- Whose posts this person was told about (migration 081); no longer read:
+    -- each channel says it in notify_push_on / notify_telegram_on (088).
+    notify_posts     TEXT    NOT NULL DEFAULT 'friends'
+        CHECK (notify_posts IN ('friends', 'following', 'none')),
+    -- A switch per kind (migration 087); no longer read since 088, kept so a
+    -- new database has the columns an upgraded one has.
+    notify_new_posts INTEGER NOT NULL DEFAULT 1,
+    notify_friends   INTEGER NOT NULL DEFAULT 1,
+    notify_account   INTEGER NOT NULL DEFAULT 1,
+    notify_game_news TEXT    NOT NULL DEFAULT 'all'
+        CHECK (notify_game_news IN ('all', 'patch', 'news', 'none')),
+    -- The kinds of notice switched on for each channel (migration 088), none
+    -- by default; comma-separated keys of services/notifier.py::KINDS, a choice
+    -- after a colon where the kind has one (new_post:friends, game_news:patch).
+    -- The app's own list keeps every notice.
+    notify_push_on      TEXT NOT NULL DEFAULT '',
+    notify_telegram_on  TEXT NOT NULL DEFAULT ''
 );
 
 -- Rare-achievement threshold, daily-summary time and its timezone are always
@@ -244,7 +279,8 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
 
 CREATE INDEX IF NOT EXISTS idx_seen_achievements_title_id ON seen_achievements(title_id);
 -- The indexes on migrated columns (unlocked_at, account_platform) are NOT created here,
--- on purpose — see migration 037 and the note below: this file runs before any migration,
+-- on purpose — they are `_database.py::INDEXES_AFTER_MIGRATIONS`, made after the
+-- migrations on every start. See migration 037 and the note below: this file runs before any migration,
 -- so naming a column that only a migration adds crashes startup for every existing database.
 -- idx_seen_tg_unlocked is gone with `tg_id` itself (#52): who a row belongs
 -- to is account_links' answer now, and the two indexes above are what the
@@ -281,12 +317,12 @@ CREATE TABLE IF NOT EXISTS publications (
 -- chat already means "not sent there yet", so there is nothing new to store
 -- beyond the window's own start time.
 CREATE TABLE IF NOT EXISTS notification_throttle (
-    tg_id             INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     chat_id           INTEGER NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
     window_started_at TEXT    NOT NULL,
     count_in_window   INTEGER NOT NULL DEFAULT 0,
     throttled         INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (tg_id, chat_id)
+    PRIMARY KEY (person_id, chat_id)
 );
 
 -- Presence state — the polling engine
@@ -570,7 +606,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 -- "which account was linked before this one" is just a row, and relinking a
 -- previously-known account finds its history waiting.
 CREATE TABLE IF NOT EXISTS account_links (
-    tg_id       INTEGER NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+    person_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     platform    TEXT NOT NULL,
     external_id TEXT NOT NULL,
     is_active   INTEGER NOT NULL DEFAULT 1,
@@ -581,13 +617,13 @@ CREATE TABLE IF NOT EXISTS account_links (
     -- (#10) each has its own. A muted account still counts in stats,
     -- summaries and /online; it only stops posting.
     publishes   INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (tg_id, platform, external_id),
+    PRIMARY KEY (person_id, platform, external_id),
     FOREIGN KEY (platform, external_id) REFERENCES accounts(platform, external_id)
 );
 -- One account per platform per person — except PSN, where a person may
 -- hold up to three (#10; the limit of three is enforced in code, not here).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_links_one_active_per_platform
-    ON account_links(tg_id, platform) WHERE is_active = 1 AND platform <> 'psn';
+    ON account_links(person_id, platform) WHERE is_active = 1 AND platform <> 'psn';
 -- An account has at most one current owner, which is what makes a takeover
 -- well-defined: linking an account somebody else holds deactivates their
 -- link (and tells them), rather than quietly producing two owners.
@@ -673,9 +709,6 @@ CREATE TABLE IF NOT EXISTS title_achievements (
     PRIMARY KEY (platform, title_id, achievement_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_title_achievements_title
-    ON title_achievements(platform, title_id);
-
 -- One Steam app's guides and patch notes (migration 069) — an Xbox, a
 -- PlayStation and a Steam version of one game share them, so they are read
 -- once for all. `*_checked_at` say when each was last read in full.
@@ -708,6 +741,11 @@ CREATE TABLE IF NOT EXISTS game_patches (
     title_ru     TEXT,
     text_ru      TEXT,
     created_at   TEXT    NOT NULL,
+    -- A patch, or any other post of the developer's (migration 084): the
+    -- Mini App's «Новости» lists both, the game page only the patches.
+    kind         TEXT    NOT NULL DEFAULT 'patch' CHECK (kind IN ('patch', 'news')),
+    -- The post's first picture, for its card.
+    image_url    TEXT,
     PRIMARY KEY (steam_appid, gid)
 );
 
@@ -855,3 +893,100 @@ CREATE TABLE IF NOT EXISTS web_sessions (
     user_agent   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_web_sessions_person ON web_sessions (person_id);
+
+
+-- One-time sign-in codes sent by email (#162, migration 079). Only an HMAC of
+-- the code is kept; `person_id` is set when a signed-in person adds the address
+-- (purpose 'link'), NULL for a sign-in.
+CREATE TABLE IF NOT EXISTS email_codes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    email       TEXT NOT NULL,
+    purpose     TEXT NOT NULL CHECK (purpose IN ('sign_in', 'link')),
+    person_id   INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    code_hash   TEXT NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    used_at     TEXT,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_codes (email, created_at);
+
+-- The app's own notifications (#164, migration 080): the list kept per person,
+-- worded on reading.
+CREATE TABLE IF NOT EXISTS notifications (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    -- What the text is made from (who, which game…), JSON; worded on reading,
+    -- in the reader's language at that moment.
+    data        TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL,
+    read_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_person ON notifications (person_id, id);
+
+-- One row per browser that allowed push (#164). `endpoint` is the push
+-- service's address for that browser; `p256dh`/`auth` are its keys.
+-- Invites (migration 082): a code a member made lets one new person sign up in
+-- a browser — by email or Telegram's Login Widget. Inside Telegram nobody needs
+-- one.
+CREATE TABLE IF NOT EXISTS invites (
+    code        TEXT PRIMARY KEY,
+    created_by  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    used_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    used_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_invites_created_by ON invites (created_by, created_at);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint    TEXT PRIMARY KEY,
+    person_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    p256dh      TEXT NOT NULL,
+    auth        TEXT NOT NULL,
+    user_agent  TEXT,
+    created_at  TEXT NOT NULL,
+    last_ok_at  TEXT,
+    failures    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_person ON push_subscriptions (person_id);
+
+-- Video guides from YouTube channels (owner, 2026-10-06; migration 086): every video of a
+-- guide channel, and the moments its description marks — a timeline line,
+-- or the whole video when its title names one achievement. Matched to our
+-- achievements when a page asks, by exact name within the game, so nothing
+-- here points at a game or an achievement of ours.
+CREATE TABLE IF NOT EXISTS guide_channels (
+    channel_id      TEXT PRIMARY KEY,
+    uploads_id      TEXT,
+    -- Where the first pass through the channel's history stopped.
+    backfill_token  TEXT,
+    backfill_done   INTEGER NOT NULL DEFAULT 0,
+    checked_at      TEXT,
+    -- When the last pass through the whole history ended: it is made again
+    -- weekly, since a timeline is often added to a video long after upload.
+    read_through_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS guide_videos (
+    video_id      TEXT PRIMARY KEY,
+    channel_id    TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    -- The title's parts between " - ", each normalized, joined by " | ":
+    -- a game is found by its name being the first part(s).
+    title_key     TEXT NOT NULL,
+    published_at  TEXT,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_guide_videos_key ON guide_videos (title_key);
+
+CREATE TABLE IF NOT EXISTS guide_marks (
+    video_id       TEXT NOT NULL REFERENCES guide_videos (video_id) ON DELETE CASCADE,
+    -- What the moment is about, normalized as an achievement's name is.
+    label          TEXT NOT NULL,
+    start_seconds  INTEGER NOT NULL,
+    -- "– PART 2" in a timeline; 0 when the line names no part.
+    part           INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (video_id, label, start_seconds)
+);
+CREATE INDEX IF NOT EXISTS idx_guide_marks_label ON guide_marks (label);

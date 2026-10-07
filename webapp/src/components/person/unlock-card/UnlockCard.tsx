@@ -22,7 +22,7 @@ export function UnlockHero({
   minimal?: boolean;
   locale: Locale;
   onReveal?: (key: string) => void;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
 }) {
   return (
     <UnlockCard
@@ -57,7 +57,7 @@ export function UnlockCard({
   /** Just the picture, the achievement's name and its game — no marks, progress or description. */
   minimal?: boolean;
   onOpen?: (item: FeedItem) => void;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
   onReveal?: (key: string) => void;
   artRef?: Ref<HTMLDivElement>;
 }) {
@@ -141,11 +141,11 @@ export function UnlockCard({
       )}
       {minimal ? (
         <div className="unlock-card-copy is-minimal">
-          {item.game && <p className="minimal-game">{item.game}</p>}
           <h2>
             <span className={blur}>{item.name}</span>
           </h2>
           {item.description && <p className={["minimal-desc", blur].filter(Boolean).join(" ")}>{item.description}</p>}
+          {item.game && <p className="minimal-game">{item.game}</p>}
         </div>
       ) : gameInCopy ? (
         <div className="unlock-card-foot">

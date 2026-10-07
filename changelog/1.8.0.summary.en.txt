@@ -1,0 +1,8 @@
+• The app is now called Unlocked — a new logo, and it installs on your phone
+• Sign in by email; newcomers sign up in a browser with a friend's invite
+• A notifications bell: followers, friends, their achievements and your games' news — your phone gets only what you pick
+• "News": what the developers of your games post on Steam
+• Pages of their own for posts and achievements — guide tips and YouTube video guides
+• A platinum medal for finished games, a round progress for the rest
+• The ranking by day, month and year; a calendar in the feed
+• Pages instead of drawers, and the phone's back button no longer closes the app

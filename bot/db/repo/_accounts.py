@@ -19,7 +19,7 @@ from bot.db.repo._models import (
     _as_user,
     _as_user_settings,
 )
-from bot.db.repo._sql import XBOX_ACCOUNT, XBOX_COLUMNS
+from bot.db.repo._sql import PERSON_BY_TG, XBOX_ACCOUNT, XBOX_COLUMNS
 from bot.i18n import DEFAULT_LOCALE
 from bot.services.handles import FALLBACK_HANDLE, from_text
 from bot.util import utcnow, utcnow_iso
@@ -36,45 +36,55 @@ class _AccountsRepo:
         username: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
-    ) -> None:
-        """Create the user and his settings row on first contact.
+    ) -> int | None:
+        """Create the user and his settings row on first contact; returns the
+        person's own id (#156), None for a non-user id.
         first_name/last_name (Follow-up 2026-09-06, /stats' header) are
         optional here on purpose — most call sites only ever had a username
         to pass before this existed, and the message middleware
         (handlers/chat.py) backfills both from this person's very next
-        message regardless."""
+        message regardless.
+
+        The username is the one Telegram just sent, always: None means the
+        person has none (or removed it), and keeping the old one instead left
+        a stale name on people who never had one."""
         if tg_id <= 0:
             log.warning("refusing to create user with non-user tg_id=%s (#66)", tg_id)
-            return
+            return None
 
-        now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO users (tg_id, username, first_name, last_name, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(tg_id) DO UPDATE SET "
-            "  username = COALESCE(excluded.username, users.username),"
-            "  first_name = COALESCE(excluded.first_name, users.first_name),"
-            "  last_name = COALESCE(excluded.last_name, users.last_name),"
-            "  updated_at = excluded.updated_at",
-            (tg_id, username, first_name, last_name, now, now),
-        )
-        # The rarity mode starts from the admin's default for new people
-        # (#126). Profile links are no longer a person's setting at all — the
-        # admin's one switch decides for everybody (owner, 2026-09-29), and
-        # `user_settings.show_profile_links` is left unread.
-        default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
-        await self._conn.execute(
-            "INSERT OR IGNORE INTO user_settings (tg_id, rarity_mode) VALUES (?, ?)",
-            (tg_id, default_rarity_mode or "all"),
-        )
-        await self._conn.commit()
+        # The person and their settings row land together (#167).
+        async with self.transaction():
+            now = utcnow_iso()
+            await self._conn.execute(
+                "INSERT INTO users"
+                " (tg_id, username, first_name, last_name, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(tg_id) DO UPDATE SET "
+                "  username = excluded.username,"
+                "  first_name = COALESCE(excluded.first_name, users.first_name),"
+                "  last_name = COALESCE(excluded.last_name, users.last_name),"
+                "  updated_at = excluded.updated_at",
+                (tg_id, username, first_name, last_name, now, now),
+            )
+            # The rarity mode starts from the admin's default for new people
+            # (#126). Profile links are no longer a person's setting at all — the
+            # admin's one switch decides for everybody (owner, 2026-09-29), and
+            # `user_settings.show_profile_links` is left unread.
+            default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
+            await self._conn.execute(
+                "INSERT OR IGNORE INTO user_settings (person_id, rarity_mode) VALUES ("
+                + PERSON_BY_TG
+                + ", ?)",
+                (tg_id, default_rarity_mode or "all"),
+            )
         # A new person starts with a nickname made from their username; the
         # Mini App asks them to keep or change it (#157). With no usable
         # username they have none yet, so the screens name them by a platform
         # nickname until `give_handle` finds one (start-up, or their first visit
         # to the Mini App). Telegram's real name is never used.
         if from_text(username) != FALLBACK_HANDLE:
-            await self.assign_first_handle(tg_id, username)
+            await self.assign_first_handle(await self.person_id(tg_id), username)
+        return await self.person_id(tg_id)  # type: ignore[attr-defined]
 
     async def update_username(self, tg_id: int, username: str) -> None:
         await self._conn.execute(
@@ -129,6 +139,14 @@ class _AccountsRepo:
         return (row["photo_unique_id"], row["photo_path"]) if row else (None, None)
 
     async def delete_user(self, tg_id: int, *, is_admin: bool = False) -> bool:
+        """`delete_person` for the person behind a Telegram id (the admin's card
+        and the bot's own commands name people that way)."""
+        person = await self.person_id(tg_id)  # type: ignore[attr-defined]
+        if person is None:
+            return False
+        return await self.delete_person(person, is_admin=is_admin)
+
+    async def delete_person(self, person_id: int, *, is_admin: bool = False) -> bool:
         """Completely remove a user, their linked platform accounts, and all related
         rows (tokens, subscriptions, settings, seen achievements, publications,
         presence/poll state, cached history, avatars).
@@ -139,138 +157,136 @@ class _AccountsRepo:
         Returns True if a user was deleted, False if no such user existed.
         """
         cursor = await self._conn.execute(
-            "SELECT photo_path, custom_avatar_path FROM users WHERE tg_id = ?", (tg_id,)
+            "SELECT tg_id, photo_path, custom_avatar_path FROM users WHERE id = ?", (person_id,)
         )
         row = await cursor.fetchone()
         if not row:
             return False
+        # The cooldowns and the Telegram-side screens are keyed by Telegram id;
+        # a person who never had one leaves only the per-account counts (#162).
+        tg_id = row["tg_id"]
         # The Telegram photo and the picture chosen in the Mini App (#157): a
         # deleted person's face must not stay behind on disk.
         pictures = [p for p in (row["photo_path"], row["custom_avatar_path"]) if p]
 
-        # Step 1: Find all linked platform accounts for this user
-        cursor = await self._conn.execute(
-            "SELECT platform, external_id, is_active FROM account_links WHERE tg_id = ?",
-            (tg_id,),
-        )
-        link_rows = await cursor.fetchall()
-        linked_accounts = [(r["platform"], r["external_id"]) for r in link_rows]
-        held: dict[str, int] = {}
-        for r in link_rows:
-            if r["is_active"]:
-                held[r["platform"]] = held.get(r["platform"], 0) + 1
-
-        from bot.services.avatars import avatar_dir
-
-        # Step 2: Clean up platform accounts that belong to this user
-        for platform, external_id in linked_accounts:
-            # Check if any OTHER active user has linked this account
+        # One transaction (#167): a deletion that stopped halfway — or whose
+        # cooldown write committed the first half — left accounts without
+        # their rows, or rows without their person.
+        async with self.transaction():
+            # Step 1: Find all linked platform accounts for this user
             cursor = await self._conn.execute(
-                "SELECT tg_id FROM account_links "
-                "WHERE platform = ? AND external_id = ? AND is_active = 1 AND tg_id != ?",
-                (platform, external_id, tg_id),
+                "SELECT platform, external_id, is_active FROM account_links WHERE person_id = ?",
+                (person_id,),
             )
-            other_owner = await cursor.fetchone()
+            link_rows = await cursor.fetchall()
+            linked_accounts = [(r["platform"], r["external_id"]) for r in link_rows]
+            held: dict[str, int] = {}
+            for r in link_rows:
+                if r["is_active"]:
+                    held[r["platform"]] = held.get(r["platform"], 0) + 1
 
-            if not other_owner:
-                # Wipe seen_achievements
-                await self._conn.execute(
-                    "DELETE FROM seen_achievements WHERE account_platform = ? AND xuid = ?",
-                    (platform, external_id),
-                )
-                # Wipe publications
-                await self._conn.execute(
-                    "DELETE FROM publications WHERE xuid = ?",
-                    (external_id,),
-                )
-                # Wipe title_history
-                await self._conn.execute(
-                    "DELETE FROM title_history WHERE xuid = ?",
-                    (external_id,),
-                )
-                # Wipe presence and poller state
-                if platform in (AccountPlatform.XBOX, "xbox_modern", "xbox_360"):
-                    await self._conn.execute(
-                        "DELETE FROM presence_state WHERE xuid = ?",
-                        (external_id,),
-                    )
-                elif platform == AccountPlatform.STEAM:
-                    await self._conn.execute(
-                        "DELETE FROM steam_presence_state WHERE steam_id = ?",
-                        (external_id,),
-                    )
-                elif platform == AccountPlatform.PSN:
-                    await self._conn.execute(
-                        "DELETE FROM psn_presence_state WHERE account_id = ?",
-                        (external_id,),
-                    )
-                    await self._conn.execute(
-                        "DELETE FROM psn_title_progress WHERE account_id = ?",
-                        (external_id,),
-                    )
-                    await self._conn.execute(
-                        "DELETE FROM psn_poll_state WHERE account_id = ?",
-                        (external_id,),
-                    )
+            from bot.services.avatars import avatar_dir
 
-                # Wipe avatar on disk
+            # Step 2: Clean up platform accounts that belong to this user
+            for platform, external_id in linked_accounts:
+                # Check if any OTHER active user has linked this account
                 cursor = await self._conn.execute(
-                    "SELECT avatar_path FROM accounts WHERE platform = ? AND external_id = ?",
-                    (platform, external_id),
+                    "SELECT 1 FROM account_links "
+                    "WHERE platform = ? AND external_id = ? AND is_active = 1"
+                    " AND person_id != ?",
+                    (platform, external_id, person_id),
                 )
-                acc_row = await cursor.fetchone()
-                if acc_row and acc_row["avatar_path"]:
-                    try:
-                        acc_path = avatar_dir() / acc_row["avatar_path"]
-                        if acc_path.is_file():
-                            acc_path.unlink()
-                    except OSError:
-                        log.warning(
-                            "failed to remove platform avatar platform=%s ext_id=%s path=%s",
-                            platform,
-                            external_id,
-                            acc_row["avatar_path"],
+                other_owner = await cursor.fetchone()
+
+                if not other_owner:
+                    # Wipe seen_achievements
+                    await self._conn.execute(
+                        "DELETE FROM seen_achievements WHERE account_platform = ? AND xuid = ?",
+                        (platform, external_id),
+                    )
+                    # Wipe publications
+                    await self._conn.execute(
+                        "DELETE FROM publications WHERE xuid = ?",
+                        (external_id,),
+                    )
+                    # Wipe title_history
+                    await self._conn.execute(
+                        "DELETE FROM title_history WHERE xuid = ?",
+                        (external_id,),
+                    )
+                    # Wipe presence and poller state
+                    if platform in (AccountPlatform.XBOX, "xbox_modern", "xbox_360"):
+                        await self._conn.execute(
+                            "DELETE FROM presence_state WHERE xuid = ?",
+                            (external_id,),
+                        )
+                    elif platform == AccountPlatform.STEAM:
+                        await self._conn.execute(
+                            "DELETE FROM steam_presence_state WHERE steam_id = ?",
+                            (external_id,),
+                        )
+                    elif platform == AccountPlatform.PSN:
+                        await self._conn.execute(
+                            "DELETE FROM psn_presence_state WHERE account_id = ?",
+                            (external_id,),
+                        )
+                        await self._conn.execute(
+                            "DELETE FROM psn_title_progress WHERE account_id = ?",
+                            (external_id,),
+                        )
+                        await self._conn.execute(
+                            "DELETE FROM psn_poll_state WHERE account_id = ?",
+                            (external_id,),
                         )
 
-                # Wipe account_links and accounts
+                    # Its avatar goes from disk once the rows are gone for good.
+                    cursor = await self._conn.execute(
+                        "SELECT avatar_path FROM accounts WHERE platform = ? AND external_id = ?",
+                        (platform, external_id),
+                    )
+                    acc_row = await cursor.fetchone()
+                    if acc_row and acc_row["avatar_path"]:
+                        pictures.append(acc_row["avatar_path"])
+
+                    # Wipe account_links and accounts
+                    await self._conn.execute(
+                        "DELETE FROM account_links WHERE platform = ? AND external_id = ?",
+                        (platform, external_id),
+                    )
+                    await self._conn.execute(
+                        "DELETE FROM accounts WHERE platform = ? AND external_id = ?",
+                        (platform, external_id),
+                    )
+
+            # One reset per platform for the person, and one per account for
+            # each account it held: several PSN accounts (#10) each keep their own
+            # count and their own free re-link, and a single deletion never counts
+            # twice against anything.
+            if not is_admin:
+                reset: dict[str, list[str]] = {}
+                for platform, external_id in linked_accounts:
+                    reset.setdefault(platform, []).append(external_id)
+                for platform, external_ids in reset.items():
+                    await self.record_platform_reset(
+                        tg_id, platform, *external_ids, held=held.get(platform, 1)
+                    )
+
+            if is_admin and tg_id is not None:
+                await self.clear_platform_cooldown(tg_id)
+
+            # Step 3: Remove user, tokens, and related records
+            await self._conn.execute("DELETE FROM tokens WHERE person_id = ?", (person_id,))
+            await self._conn.execute("DELETE FROM users WHERE id = ?", (person_id,))
+            if tg_id is not None:
                 await self._conn.execute(
-                    "DELETE FROM account_links WHERE platform = ? AND external_id = ?",
-                    (platform, external_id),
+                    "DELETE FROM tracked_messages"
+                    " WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
+                    (tg_id, tg_id),
                 )
                 await self._conn.execute(
-                    "DELETE FROM accounts WHERE platform = ? AND external_id = ?",
-                    (platform, external_id),
+                    "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
+                    (tg_id,),
                 )
-
-        # One reset per platform for the person, and one per account for
-        # each account it held: several PSN accounts (#10) each keep their own
-        # count and their own free re-link, and a single deletion never counts
-        # twice against anything.
-        if not is_admin:
-            reset: dict[str, list[str]] = {}
-            for platform, external_id in linked_accounts:
-                reset.setdefault(platform, []).append(external_id)
-            for platform, external_ids in reset.items():
-                await self.record_platform_reset(
-                    tg_id, platform, *external_ids, held=held.get(platform, 1)
-                )
-
-        if is_admin:
-            await self.clear_platform_cooldown(tg_id)
-
-        # Step 3: Remove user, tokens, and related records
-        await self._conn.execute("DELETE FROM tokens WHERE tg_id = ?", (tg_id,))
-        await self._conn.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
-        await self._conn.execute(
-            "DELETE FROM tracked_messages WHERE chat_id = ? OR (kind = 'stats' AND subject_id = ?)",
-            (tg_id, tg_id),
-        )
-        await self._conn.execute(
-            "DELETE FROM admin_panel_refresh WHERE admin_id = ?",
-            (tg_id,),
-        )
-
-        await self._conn.commit()
 
         for picture in pictures:
             try:
@@ -278,7 +294,7 @@ class _AccountsRepo:
                 if path.is_file():
                     path.unlink()
             except OSError:
-                log.warning("failed to remove avatar for tg_id=%s path=%s", tg_id, picture)
+                log.warning("failed to remove avatar for person_id=%s path=%s", person_id, picture)
 
         return True
 
@@ -286,12 +302,9 @@ class _AccountsRepo:
         from bot.constants import SettingKey
         from bot.services.admin_settings import DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
 
-        cursor = await self._conn.execute(
-            "SELECT value FROM app_settings WHERE key = ?",
-            (SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS,),
+        return await self.get_int_setting(
+            SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS, DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
         )
-        row = await cursor.fetchone()
-        return int(row["value"]) if row else DEFAULT_ACCOUNT_RESET_COOLDOWN_HOURS
 
     @staticmethod
     def _elapsed_seconds(last_reset_at: str) -> float:
@@ -302,8 +315,10 @@ class _AccountsRepo:
             if moment.tzinfo is None:
                 moment = moment.replace(tzinfo=UTC)
             return (utcnow() - moment).total_seconds()
-        except Exception:
-            return 0
+        except (TypeError, ValueError):
+            # A timestamp nobody can read is no reset at all — never one
+            # that keeps a person blocked for good.
+            return float("inf")
 
     def _next_count(self, existing: Any, cooldown_hours: int) -> int:
         """1 for the first reset in a window, one more for each after it."""
@@ -312,7 +327,7 @@ class _AccountsRepo:
         return 1
 
     async def record_platform_reset(
-        self, tg_id: int, platform: str, *external_ids: str, held: int = 1
+        self, tg_id: int | None, platform: str, *external_ids: str, held: int = 1
     ) -> None:
         """Record one deletion/reset: once for the person on this platform
         (`platform_cooldowns`) and once for each account it covered
@@ -328,7 +343,39 @@ class _AccountsRepo:
         if cooldown_hours <= 0:
             return
         now_iso = utcnow_iso()
+        if tg_id is not None:
+            await self._record_person_reset(
+                tg_id, platform, external_ids, held, cooldown_hours, now_iso
+            )
+        for external_id in {str(item) for item in external_ids if item}:
+            cursor = await self._conn.execute(
+                "SELECT reset_count, last_reset_at FROM platform_cooldown_accounts "
+                "WHERE platform = ? AND external_id = ?",
+                (platform, external_id),
+            )
+            count = self._next_count(await cursor.fetchone(), cooldown_hours)
+            await self._conn.execute(
+                "INSERT INTO platform_cooldown_accounts "
+                "(platform, external_id, tg_id, reset_count, last_reset_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(platform, external_id) DO UPDATE SET "
+                "  tg_id = excluded.tg_id, "
+                "  reset_count = excluded.reset_count, "
+                "  last_reset_at = excluded.last_reset_at",
+                # 0 for a person with no Telegram id: the column only says who.
+                (platform, external_id, tg_id or 0, count, now_iso),
+            )
+        await self._conn.commit()
 
+    async def _record_person_reset(
+        self,
+        tg_id: int,
+        platform: str,
+        external_ids: tuple[str, ...],
+        held: int,
+        cooldown_hours: int,
+        now_iso: str,
+    ) -> None:
         cursor = await self._conn.execute(
             "SELECT reset_count, last_reset_at, free_relinks, relinks FROM platform_cooldowns "
             "WHERE tg_id = ? AND platform = ?",
@@ -354,27 +401,8 @@ class _AccountsRepo:
             (tg_id, platform, first, count, now_iso, free_relinks, relinks),
         )
 
-        for external_id in {str(item) for item in external_ids if item}:
-            cursor = await self._conn.execute(
-                "SELECT reset_count, last_reset_at FROM platform_cooldown_accounts "
-                "WHERE platform = ? AND external_id = ?",
-                (platform, external_id),
-            )
-            count = self._next_count(await cursor.fetchone(), cooldown_hours)
-            await self._conn.execute(
-                "INSERT INTO platform_cooldown_accounts "
-                "(platform, external_id, tg_id, reset_count, last_reset_at) "
-                "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(platform, external_id) DO UPDATE SET "
-                "  tg_id = excluded.tg_id, "
-                "  reset_count = excluded.reset_count, "
-                "  last_reset_at = excluded.last_reset_at",
-                (platform, external_id, tg_id, count, now_iso),
-            )
-        await self._conn.commit()
-
     async def check_platform_cooldown(
-        self, tg_id: int, platform: str, external_id: str | None = None
+        self, tg_id: int | None, platform: str, external_id: str | None = None
     ) -> CooldownCheckResult:
         """Check if re-linking is currently blocked by the anti-abuse cooldown.
         Rules:
@@ -431,11 +459,11 @@ class _AccountsRepo:
                 )
         return result
 
-    async def note_platform_relink(self, tg_id: int, platform: str) -> None:
+    async def note_platform_relink(self, tg_id: int | None, platform: str) -> None:
         """One more account linked by this person inside a cooldown window,
         which is what the PSN allowance counts. Outside a window: nothing."""
         cooldown_hours = await self._cooldown_hours()
-        if cooldown_hours <= 0:
+        if cooldown_hours <= 0 or tg_id is None:
             return
         cursor = await self._conn.execute(
             "SELECT last_reset_at FROM platform_cooldowns WHERE tg_id = ? AND platform = ?",
@@ -541,7 +569,14 @@ class _AccountsRepo:
     # `User` keeps reading `user.xuid` / `user.gamertag` unchanged.
     _USER_COLUMNS = "SELECT u.*, " + XBOX_COLUMNS + "FROM users u " + XBOX_ACCOUNT
 
-    async def get_user(self, tg_id: int) -> User | None:
+    async def get_user(self, person_id: int) -> User | None:
+        cursor = await self._conn.execute(self._USER_COLUMNS + "WHERE u.id = ?", (person_id,))
+        row = await cursor.fetchone()
+        return _as_user(row) if row else None
+
+    async def get_user_by_tg(self, tg_id: int) -> User | None:
+        """The person behind a Telegram id — for what still arrives keyed by one:
+        an update, a callback, a Mini App URL (#156)."""
         cursor = await self._conn.execute(self._USER_COLUMNS + "WHERE u.tg_id = ?", (tg_id,))
         row = await cursor.fetchone()
         return _as_user(row) if row else None
@@ -555,7 +590,7 @@ class _AccountsRepo:
         return _as_user(row) if row else None
 
     async def link_xbox_account(
-        self, tg_id: int, xuid: str, gamertag: str | None, gamerscore: int | None
+        self, person_id: int, xuid: str, gamertag: str | None, gamerscore: int | None
     ) -> int | None:
         """Link an Xbox account, through the same `accounts`/`account_links`
         pair every other platform uses since #52 — Xbox is one account and
@@ -569,25 +604,27 @@ class _AccountsRepo:
         Returns the tg_id the account was taken from, when somebody else was
         holding it — same contract as `link_platform_account`.
         """
-        taken_from = await self.link_platform_account(tg_id, AccountPlatform.XBOX, xuid, gamertag)
-        await self._conn.execute(
-            "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
-            "       gamerscore = COALESCE(?, gamerscore), updated_at = ? "
-            "WHERE platform = ? AND external_id = ?",
-            (gamertag, gamerscore, utcnow_iso(), AccountPlatform.XBOX, xuid),
-        )
-        await self._conn.commit()
+        async with self.transaction():
+            taken_from = await self.link_platform_account(
+                person_id, AccountPlatform.XBOX, xuid, gamertag
+            )
+            await self._conn.execute(
+                "UPDATE accounts SET secondary_name = COALESCE(?, secondary_name),"
+                "       gamerscore = COALESCE(?, gamerscore), updated_at = ? "
+                "WHERE platform = ? AND external_id = ?",
+                (gamertag, gamerscore, utcnow_iso(), AccountPlatform.XBOX, xuid),
+            )
         return taken_from
 
-    async def unlink_xbox_account(self, tg_id: int) -> None:
+    async def unlink_xbox_account(self, person_id: int) -> None:
         """/disconnect_xbox: the link is deactivated, the account and
         everything it earned stay (SPEC 6.1, and #52's own rule — relinking
         later finds its history waiting instead of paying for a backfill)."""
-        await self.unlink_platform_account(tg_id, AccountPlatform.XBOX)
+        await self.unlink_platform_account(person_id, AccountPlatform.XBOX)
 
     # --------------------------------------------------------------- tokens
 
-    async def save_refresh_token(self, tg_id: int, token_enc: bytes) -> None:
+    async def save_refresh_token(self, person_id: int, token_enc: bytes) -> None:
         """Store a fresh token and clear the failure state.
 
         Called both on first connect and on every refresh — SPEC 5.1 requires
@@ -595,9 +632,10 @@ class _AccountsRepo:
         """
         now = utcnow_iso()
         await self._conn.execute(
-            "INSERT INTO tokens (tg_id, refresh_token_enc, status, created_at, last_refresh_at) "
+            "INSERT INTO tokens"
+            " (person_id, refresh_token_enc, status, created_at, last_refresh_at) "
             "VALUES (?, ?, 'active', ?, ?) "
-            "ON CONFLICT(tg_id) DO UPDATE SET "
+            "ON CONFLICT(person_id) DO UPDATE SET "
             "  refresh_token_enc = excluded.refresh_token_enc,"
             "  status = 'active',"
             "  fail_count = 0,"
@@ -605,30 +643,37 @@ class _AccountsRepo:
             "  notify_count = 0,"
             "  last_notified_at = NULL,"
             "  last_refresh_at = excluded.last_refresh_at",
-            (tg_id, token_enc, now, now),
+            (person_id, token_enc, now, now),
         )
         await self._conn.commit()
 
-    async def get_token(self, tg_id: int) -> TokenRecord | None:
-        cursor = await self._conn.execute("SELECT * FROM tokens WHERE tg_id = ?", (tg_id,))
+    async def get_token(self, person_id: int) -> TokenRecord | None:
+        cursor = await self._conn.execute(
+            "SELECT t.*, u.tg_id FROM tokens t JOIN users u ON u.id = t.person_id WHERE u.id = ?",
+            (person_id,),
+        )
         row = await cursor.fetchone()
         return _as_token(row) if row else None
 
-    async def set_token_status(self, tg_id: int, status: str) -> None:
+    async def set_token_status(self, person_id: int, status: str) -> None:
         invalid_at = utcnow_iso() if status == TokenStatus.INVALID else None
         await self._conn.execute(
-            "UPDATE tokens SET status = ?, invalid_at = ? WHERE tg_id = ?",
-            (status, invalid_at, tg_id),
+            "UPDATE tokens SET status = ?, invalid_at = ? WHERE person_id = ?",
+            (status, invalid_at, person_id),
         )
         await self._conn.commit()
 
-    async def bump_token_failure(self, tg_id: int) -> int:
+    async def bump_token_failure(self, person_id: int) -> int:
         """A network error is not a dead token (SPEC 5.1) — count and report."""
         await self._conn.execute(
-            "UPDATE tokens SET fail_count = fail_count + 1 WHERE tg_id = ?", (tg_id,)
+            "UPDATE tokens SET fail_count = fail_count + 1 WHERE person_id = ?",
+            (person_id,),
         )
         await self._conn.commit()
-        cursor = await self._conn.execute("SELECT fail_count FROM tokens WHERE tg_id = ?", (tg_id,))
+        cursor = await self._conn.execute(
+            "SELECT fail_count FROM tokens WHERE person_id = ?",
+            (person_id,),
+        )
         row = await cursor.fetchone()
         return int(row["fail_count"]) if row else 0
 
@@ -642,43 +687,48 @@ class _AccountsRepo:
         """
         cutoff = (utcnow() - timedelta(hours=min_interval_hours)).isoformat(timespec="seconds")
         cursor = await self._conn.execute(
-            "SELECT tg_id FROM tokens "
-            "WHERE status = 'invalid' AND notify_count < ? "
-            "  AND (last_notified_at IS NULL OR last_notified_at < ?)",
+            "SELECT u.tg_id FROM tokens t JOIN users u ON u.id = t.person_id "
+            "WHERE t.status = 'invalid' AND t.notify_count < ? AND u.tg_id IS NOT NULL"
+            "  AND (t.last_notified_at IS NULL OR t.last_notified_at < ?)",
             (max_reminders, cutoff),
         )
         return [row["tg_id"] for row in await cursor.fetchall()]
 
-    async def mark_token_notified(self, tg_id: int) -> None:
+    async def mark_token_notified(self, person_id: int) -> None:
         await self._conn.execute(
             "UPDATE tokens SET notify_count = notify_count + 1, last_notified_at = ? "
-            "WHERE tg_id = ?",
-            (utcnow_iso(), tg_id),
+            "WHERE person_id = ?",
+            (utcnow_iso(), person_id),
         )
         await self._conn.commit()
 
-    async def delete_token(self, tg_id: int) -> None:
-        await self._conn.execute("DELETE FROM tokens WHERE tg_id = ?", (tg_id,))
+    async def delete_token(self, person_id: int) -> None:
+        await self._conn.execute("DELETE FROM tokens WHERE person_id = ?", (person_id,))
         await self._conn.commit()
 
     # ------------------------------------------------------- user settings
 
-    async def get_user_settings(self, tg_id: int) -> UserSettings | None:
-        cursor = await self._conn.execute("SELECT * FROM user_settings WHERE tg_id = ?", (tg_id,))
+    async def get_user_settings(self, person_id: int) -> UserSettings | None:
+        cursor = await self._conn.execute(
+            "SELECT s.*, u.tg_id FROM user_settings s JOIN users u ON u.id = s.person_id"
+            " WHERE u.id = ?",
+            (person_id,),
+        )
         row = await cursor.fetchone()
         return _as_user_settings(row) if row else None
 
-    async def user_locale(self, tg_id: int) -> str:
+    async def user_locale(self, person_id: int) -> str:
         """This person's own language, used for DMs only (#48) — a group
         follows chat_settings.locale instead. Someone with no settings row
         yet reads as the default, same as every other per-user setting."""
         cursor = await self._conn.execute(
-            "SELECT locale FROM user_settings WHERE tg_id = ?", (tg_id,)
+            "SELECT locale FROM user_settings WHERE person_id = ?",
+            (person_id,),
         )
         row = await cursor.fetchone()
         return row["locale"] if row else DEFAULT_LOCALE
 
-    async def update_user_settings(self, tg_id: int, **fields: Any) -> None:
+    async def update_user_settings(self, person_id: int, **fields: Any) -> None:
         allowed = {
             "tz_offset_min",
             "show_profile_links",
@@ -686,6 +736,11 @@ class _AccountsRepo:
             "locale",
             "rarity_mode",
             "notify_followers",
+            "notify_push",
+            "notify_telegram",
+            "notify_posts",
+            "notify_push_on",
+            "notify_telegram_on",
         }
         unknown = set(fields) - allowed
         if unknown:
@@ -694,8 +749,8 @@ class _AccountsRepo:
             return
         assignments = ", ".join(f"{name} = ?" for name in fields)
         await self._conn.execute(
-            f"UPDATE user_settings SET {assignments} WHERE tg_id = ?",
-            (*fields.values(), tg_id),
+            f"UPDATE user_settings SET {assignments} WHERE person_id = ?",
+            (*fields.values(), person_id),
         )
         await self._conn.commit()
 
@@ -738,12 +793,13 @@ class _AccountsRepo:
         await self._conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
         await self._conn.commit()
 
-    async def any_active_xbox_tg_id(self) -> int | None:
-        """Find any user with an active Xbox link and active token (e.g. for catalog queries)."""
+    async def any_active_xbox_person(self) -> int | None:
+        """Any person with an active Xbox link and a live token — whose login a
+        catalog read may borrow."""
         cursor = await self._conn.execute(
-            "SELECT al.tg_id FROM account_links al "
-            "JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
+            "SELECT al.person_id FROM account_links al "
+            "JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "WHERE al.platform = 'xbox' AND al.is_active = 1 LIMIT 1"
         )
         row = await cursor.fetchone()
-        return int(row["tg_id"]) if row else None
+        return int(row["person_id"]) if row else None

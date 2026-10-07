@@ -324,16 +324,6 @@ button.picker-row.is-game {
   -webkit-overflow-scrolling: touch;
 }
 
-.sheet-body.is-mid:has(.sheet-hltb) {
-  height: 72dvh;
-  max-height: 72dvh;
-  padding: 0;
-  background: #0a0c12;
-  border-color: transparent;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
 .sheet-body.is-compact {
   width: 100%;
   max-width: 22rem;
@@ -437,4 +427,102 @@ button.picker-row.is-game {
     opacity: 0;
     transform: translateY(8px) scale(0.97);
   }
+}
+
+/* A page where a drawer used to be (owner, 2026-10-07): over the app and the
+ * game page, under a post's page; its own scroll; it slides in from the side. */
+.sheet-page {
+  position: fixed;
+  inset: 0;
+  z-index: 42;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 18px calc(28px + var(--safe-bottom));
+  background-color: var(--bg);
+  background-image: var(--app-bg);
+  isolation: isolate;
+  animation: sheet-page-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sheet-page.is-leave {
+  animation: sheet-page-out 0.26s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes sheet-page-in {
+  from {
+    transform: translateX(24%);
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-page-out {
+  to {
+    transform: translateX(24%);
+    opacity: 0;
+  }
+}
+
+.sheet-page > .page-head {
+  margin-top: 0;
+  margin-bottom: 0;
+  min-height: calc(72px + var(--safe-top));
+}
+
+.sheet-page > .page-head h1 {
+  overflow: hidden;
+  font-size: 1.1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What the drawer's sizes did, the page undoes: it grows with what it holds
+ * and the page itself scrolls. */
+.sheet-page > .sheet-body,
+.sheet-page > .sheet-body.is-mid,
+.sheet-page > .sheet-body.is-tall,
+.sheet-page > .sheet-body.is-compact,
+.sheet-page > .sheet-body.is-photo {
+  display: block;
+  width: auto;
+  max-width: 28rem;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  margin: 0 auto;
+  padding: 18px 0 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.sheet-page .sheet-content,
+.sheet-page .sheet-content.score-sheet,
+.sheet-page .sheet-content.picker-sheet {
+  display: block;
+  overflow: visible;
+  padding: 0;
+}
+
+.sheet-page .picker-list,
+.sheet-page .notices-days {
+  overflow: visible;
+}
+
+.sheet-page .notices-days {
+  margin: 0;
+  padding: 0;
+}
+
+.sheet-page > .sheet-body > .person-sheet {
+  padding: 4px 0 0;
+}
+
+/* Somebody's page: the bar a profile has, flush with the layer's top. */
+.sheet-page > header.account-bar.person-bar {
+  margin-top: 0;
 }

@@ -26,10 +26,10 @@ from bot.util import utcnow
 from bot.views.parts import visibility_status_text
 
 
-async def handle_block(repo: Repo, tg_id: int) -> dict[str, Any] | None:
+async def handle_block(repo: Repo, person_id: int) -> dict[str, Any] | None:
     """The person's nickname for the Mini App (#157): the parts, the displayed
     form, whether they have been asked to keep it yet, and when it may change."""
-    state = await repo.handle_state(tg_id)
+    state = await repo.handle_state(person_id)
     if state is None or state.handle is None:
         return None
     next_change = None
@@ -46,29 +46,28 @@ async def handle_block(repo: Repo, tg_id: int) -> dict[str, Any] | None:
     }
 
 
-async def _activity_visible(repo: Repo, tg_id: int) -> str:
-    person = await repo.person_id(tg_id)
-    return await repo.activity_visible(person) if person is not None else "all"
-
-
 async def build_me_payload(
     repo: Repo,
     *,
-    tg_id: int,
+    person_id: int,
+    tg_id: int | None,
     username: str | None,
     first_name: str | None,
     last_name: str | None,
     is_admin: bool,
 ) -> dict[str, Any]:
-    await repo.ensure_user(tg_id, username, first_name=first_name, last_name=last_name)
-    await repo.give_handle(tg_id)
-    user = await repo.get_user(tg_id)
-    settings_row = await repo.get_user_settings(tg_id)
-    steam = await repo.get_platform_link(tg_id, Platform.STEAM)
-    psn_links = await repo.platform_links_for(tg_id, Platform.PSN)
+    if tg_id is not None:
+        # The app's first call on opening: keep Telegram's names fresh.
+        await repo.ensure_user(tg_id, username, first_name=first_name, last_name=last_name)
+    await repo.give_handle(person_id)
+    user = await repo.get_user(person_id)
+    settings_row = await repo.get_user_settings(person_id)
+    steam = await repo.get_platform_link(person_id, Platform.STEAM)
+    psn_links = await repo.platform_links_for(person_id, Platform.PSN)
     psn = psn_links[0] if psn_links else None
-    token = await repo.get_token(tg_id) if user and user.xuid else None
-    chats = await repo.user_chats(tg_id)
+    token = await repo.get_token(person_id) if user and user.xuid else None
+    # Chats are Telegram's: somebody who signed in another way has none.
+    chats = await repo.user_chats(tg_id) if tg_id is not None else []
 
     locale = (settings_row.locale if settings_row else None) or "ru"
     tz_offset = settings_row.tz_offset_min if settings_row else None
@@ -76,23 +75,25 @@ async def build_me_payload(
     show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
     show_secrets = bool(settings_row and settings_row.show_secrets)
 
-    xbox_count = await repo.xbox_achievement_count(tg_id) if user and user.xuid else 0
+    xbox_count = await repo.xbox_achievement_count(person_id) if user and user.xuid else 0
     xbox_completed = await repo.xbox_completed_games_count(user.xuid) if user and user.xuid else 0
-    steam_count = await repo.platform_achievement_count(tg_id, Platform.STEAM) if steam else 0
-    steam_completed = await repo.steam_completed_games_count(tg_id) if steam else 0
-    psn_count = await repo.platform_achievement_count(tg_id, Platform.PSN) if psn else 0
-    psn_tiers = await repo.psn_trophy_tier_counts(tg_id) if psn else (0, 0, 0, 0)
+    steam_count = await repo.platform_achievement_count(person_id, Platform.STEAM) if steam else 0
+    steam_completed = await repo.steam_completed_games_count(person_id) if steam else 0
+    psn_count = await repo.platform_achievement_count(person_id, Platform.PSN) if psn else 0
+    psn_tiers = await repo.psn_trophy_tier_counts(person_id) if psn else (0, 0, 0, 0)
     psn_platinum = psn_tiers[3]
-    counters = await counters_for(repo, tg_id)
+    counters = await counters_for(repo, person_id)
     week_xbox, week_steam, week_psn = await repo.achievement_platform_breakdown(
-        tg_id, week_cutoff_utc()
+        person_id, week_cutoff_utc()
     )
 
     return {
+        "person_id": person_id,
         "tg_id": tg_id,
-        "handle": await handle_block(repo, tg_id),
+        "handle": await handle_block(repo, person_id),
         # A picture chosen in the app replaces the Telegram photo (#157).
-        "avatar_custom": bool(await repo.custom_avatar_path(tg_id)),
+        "avatar_custom": bool(await repo.custom_avatar_path(person_id)),
+        "notifications_unread": await repo.unread_notifications(person_id),
         "username": username,
         "first_name": first_name,
         "last_name": last_name,
@@ -105,9 +106,14 @@ async def build_me_payload(
             "show_secrets": show_secrets,
             # Which achievements go out, in every chat (#126).
             "rarity_mode": settings_row.rarity_mode if settings_row else "all",
-            "notify_followers": bool(settings_row.notify_followers) if settings_row else True,
+            # Where notifications go (#164); Telegram only matters with Telegram.
+            "notify_push": bool(settings_row.notify_push) if settings_row else True,
+            "notify_telegram": bool(settings_row.notify_telegram) if settings_row else True,
+            # The kinds each channel carries (none by default).
+            "notify_push_on": sorted(settings_row.notify_push_on) if settings_row else [],
+            "notify_telegram_on": sorted(settings_row.notify_telegram_on) if settings_row else [],
             # Who sees this person's activity in the app (#157).
-            "activity_visible": await _activity_visible(repo, tg_id),
+            "activity_visible": await repo.activity_visible(person_id),
         },
         "xbox": await _xbox_block(
             repo,
@@ -170,7 +176,7 @@ async def _xbox_block(
     if linked and user and user.xuid:
         presence = await _xbox_presence(repo, user.xuid)
     xbox_link = (
-        await repo.get_platform_link(user.tg_id, AccountPlatform.XBOX) if linked and user else None
+        await repo.get_platform_link(user.id, AccountPlatform.XBOX) if linked and user else None
     )
     return {
         "linked": linked,
@@ -327,5 +333,5 @@ async def _publication(repo: Repo, user: User | None) -> dict[str, Any]:
         return {"excluded": False, "chat_titles": []}
     if user.is_excluded:
         return {"excluded": True, "chat_titles": []}
-    titles = await repo.chats_of_user(user.tg_id)
+    titles = await repo.chats_of_user(user.id)
     return {"excluded": False, "chat_titles": titles}

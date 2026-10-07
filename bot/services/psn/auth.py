@@ -166,7 +166,7 @@ class PsnAuth:
 
         try:
             client = await self.get_client()
-            alive = await check_alive(client)
+            alive = await check_alive(client, unreachable_is_alive=True)
         except PsnApiError:
             # PsnTokenDeadError (bad NPSSO) or PsnClientSetupError (couldn't
             # even construct the client, e.g. the sandboxed-temp-dir bug

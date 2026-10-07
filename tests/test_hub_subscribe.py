@@ -69,7 +69,7 @@ async def test_subscribe_button_redirects_when_not_connected(
 
     await subscribe_button(callback, repo, bot, i18n, settings)
 
-    assert not await repo.is_subscribed(CHAT_ID, TG_ID)
+    assert not await repo.is_subscribed(CHAT_ID, await repo.person_id(TG_ID))
     callback.answer.assert_called_once_with(url=f"https://t.me/xboxbot?start=connect{CHAT_ID}")
     message.answer.assert_called_once()
     assert i18n.get("chat-subscribe-connect-first") in message.answer.call_args[0][0]
@@ -79,13 +79,13 @@ async def test_subscribe_button_first_press_subscribes_with_admin_default_all(
     repo: Repo, i18n: I18nContext, settings: Settings
 ) -> None:
     await repo.ensure_user(TG_ID, "tester")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Gamertag1", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Gamertag1", 0)
     callback, message = _make_callback()
     bot = _make_bot()
 
     await subscribe_button(callback, repo, bot, i18n, settings)
 
-    assert await repo.is_subscribed(CHAT_ID, TG_ID)
+    assert await repo.is_subscribed(CHAT_ID, await repo.person_id(TG_ID))
     assert await _mode(repo) == RarityMode.ALL
     callback.answer.assert_called_once_with("Публикую все достижения")
     message.edit_text.assert_called_once()
@@ -96,13 +96,13 @@ async def test_subscribe_button_first_press_subscribes_with_admin_default_rare(
 ) -> None:
     await repo.set_app_setting("default_rarity_mode", RarityMode.RARE)
     await repo.ensure_user(TG_ID, "tester")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Gamertag1", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Gamertag1", 0)
     callback, _ = _make_callback()
     bot = _make_bot()
 
     await subscribe_button(callback, repo, bot, i18n, settings)
 
-    assert await repo.is_subscribed(CHAT_ID, TG_ID)
+    assert await repo.is_subscribed(CHAT_ID, await repo.person_id(TG_ID))
     assert await _mode(repo) == RarityMode.RARE
     callback.answer.assert_called_once_with("Только редкие")
 
@@ -111,7 +111,7 @@ async def test_subscribe_button_cycles_all_rare_hidden_all(
     repo: Repo, i18n: I18nContext, settings: Settings
 ) -> None:
     await repo.ensure_user(TG_ID, "tester")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Gamertag1", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Gamertag1", 0)
     bot = _make_bot()
 
     # 1. Initial subscription -> ALL
@@ -136,7 +136,8 @@ async def test_subscribe_button_cycles_all_rare_hidden_all(
     assert await _mode(repo) == RarityMode.HIDDEN
     callback3.answer.assert_called_once_with("Ничего не публикую")
     subs3 = await repo.chat_subscribers(CHAT_ID)
-    assert not any(s.tg_id == TG_ID for s in subs3)  # Excluded from hub publishing roster!
+    # Still a subscriber (#167): the mode is about notifications only.
+    assert any(s.tg_id == TG_ID for s in subs3)
 
     # 4. Press again -> ALL
     callback4, _ = _make_callback()
@@ -144,7 +145,7 @@ async def test_subscribe_button_cycles_all_rare_hidden_all(
     assert await _mode(repo) == RarityMode.ALL
     callback4.answer.assert_called_once_with("Публикую все достижения")
     subs4 = await repo.chat_subscribers(CHAT_ID)
-    assert any(s.tg_id == TG_ID for s in subs4)  # Back in roster!
+    assert any(s.tg_id == TG_ID for s in subs4)
 
 
 async def test_the_mode_outlives_a_subscription(repo: Repo) -> None:
@@ -152,13 +153,13 @@ async def test_the_mode_outlives_a_subscription(repo: Repo) -> None:
     leaves it as it was for every other."""
     await repo.upsert_chat(CHAT_ID, "Chat", 1)
     await repo.ensure_user(TG_ID, "tester")
-    await repo.subscribe(CHAT_ID, TG_ID)
-    await repo.update_user_settings(TG_ID, rarity_mode=RarityMode.RARE)
-    await repo.unsubscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
+    await repo.update_user_settings(await repo.person_id(TG_ID), rarity_mode=RarityMode.RARE)
+    await repo.unsubscribe(CHAT_ID, await repo.person_id(TG_ID))
     assert await _mode(repo) == RarityMode.RARE
 
 
 async def _mode(repo: Repo) -> str:
-    settings_row = await repo.get_user_settings(TG_ID)
+    settings_row = await repo.get_user_settings(await repo.person_id(TG_ID))
     assert settings_row is not None
     return settings_row.rarity_mode

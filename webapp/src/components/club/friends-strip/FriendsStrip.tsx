@@ -2,6 +2,8 @@ import type { OnlineMember } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, Icon, isOnline } from "../../shared/lib";
 import { rankPeople } from "../utils";
+import { FriendMark } from "../../people/friend-mark/FriendMark";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function FriendsStrip({
   members,
@@ -10,15 +12,24 @@ export function FriendsStrip({
   onOpen,
   onSeeAll,
   onFind,
+  emptyText,
+  friendIds,
 }: {
   members: OnlineMember[];
   locale: Locale;
   limit: number;
-  onOpen: (tgId: number) => void;
+  onOpen: (personId: number) => void;
   onSeeAll: () => void;
-  onFind: () => void;
+  /** Your own strip offers a search when empty; somebody else's only says so. */
+  onFind?: () => void;
+  emptyText?: string;
+  /** The viewer's friends among them, marked on their faces. */
+  friendIds?: Set<number>;
 }) {
-  const pool = rankPeople(members);
+  // Friends first, then as everywhere: playing, online, the rest.
+  const pool = rankPeople(members).sort(
+    (a, b) => Number(Boolean(friendIds?.has(b.person_id))) - Number(Boolean(friendIds?.has(a.person_id))),
+  );
   if (pool.length === 0) {
     return (
       <>
@@ -26,12 +37,14 @@ export function FriendsStrip({
           <h1 className="kicker" style={{ margin: 0 }}>
             {t(locale, "peopleFollowing")}
           </h1>
-          <button type="button" className="see-all" onClick={onFind}>
-            <span>{t(locale, "find")}</span>
-            <Icon name="forward" size={16} />
-          </button>
+          {onFind && (
+            <button type="button" className="see-all" onClick={onFind}>
+              <span>{t(locale, "find")}</span>
+              <Icon name="forward" size={16} />
+            </button>
+          )}
         </div>
-        <p className="friends-empty">{t(locale, "friendsEmpty")}</p>
+        <p className="friends-empty">{emptyText ?? t(locale, "friendsEmpty")}</p>
       </>
     );
   }
@@ -53,20 +66,24 @@ export function FriendsStrip({
       <div className="friends">
         {shown.map((m) => (
           <button
-            key={m.tg_id}
+            key={m.person_id}
             type="button"
             className="friend"
-            onClick={() => onOpen(m.tg_id)}
+            onClick={() => onOpen(m.person_id)}
           >
-            <Avatar
-              name={m.name}
-              tgId={m.tg_id}
-              online={isOnline(m)}
-              platform={m.platform}
-              size={80}
-            />
-            <strong>{m.name}</strong>
-            <p>{m.playing ? m.title_name : m.status}</p>
+            <FriendMark friend={Boolean(friendIds?.has(m.person_id))} label={t(locale, "friends")} big>
+              <Avatar
+                name={m.name}
+                personId={m.person_id}
+                online={isOnline(m)}
+                platform={m.platform}
+                size={80}
+              />
+            </FriendMark>
+            <strong>
+              <HandleName text={m.name} />
+            </strong>
+            {(m.playing ? m.title_name : m.status) && <p>{m.playing ? m.title_name : m.status}</p>}
           </button>
         ))}
       </div>

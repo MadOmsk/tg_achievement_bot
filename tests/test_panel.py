@@ -21,7 +21,9 @@ async def test_no_accounts_shows_every_platform_not_connected(repo: Repo) -> Non
 
 async def test_steam_linked_without_xbox_shows_both_lines(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "Gabe"
+    )
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
@@ -39,7 +41,7 @@ async def test_steam_or_psn_only_person_still_gets_the_full_settings_body(repo: 
     from before Steam/PSN existed. Every row/button now degrades per-
     platform instead of the whole screen switching on Xbox alone."""
     await repo.ensure_user(TG_ID, "psnonly")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "PsnOnly")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "PsnOnly")
 
     text, markup = (await render_panel(repo, TG_ID)).as_pair()
 
@@ -54,7 +56,7 @@ async def test_steam_or_psn_only_person_still_gets_the_full_settings_body(repo: 
 
 async def test_xbox_connected_without_steam_has_no_steam_line(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Igor", 1000)
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
@@ -64,8 +66,10 @@ async def test_xbox_connected_without_steam_has_no_steam_line(repo: Repo) -> Non
 
 async def test_both_platforms_linked_show_both_lines(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Igor", 1000)
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "Gabe"
+    )
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
@@ -78,23 +82,27 @@ async def test_steam_status_shows_visibility_and_when_it_was_checked(repo: Repo)
     "when checked" only shows once a check has actually happened; a fresh
     link with no check yet stays at the bare "не проверено"."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "Gabe"
+    )
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
     assert "❓ не проверено" in text
 
-    await repo.set_achievements_visible(TG_ID, "steam", True)
+    await repo.set_achievements_visible(await repo.person_id(TG_ID), "steam", True)
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
     # Only whether all is well — not when it was checked (owner, 2026-09-30).
-    assert "Вход Steam: ✅ ачивки видны\n" in text
+    assert "Вход Steam: ✅ достижения видны\n" in text
 
 
 async def test_psn_linked_gets_its_own_profile_button(repo: Repo) -> None:
     """Follow-up 2026-09-06 — a PSN profile button, now on the PSN screen
     behind the panel's platform button (#10), named "PSN: nick"."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
-    await repo.link_platform_account(TG_ID, "psn", "internal-account-id", "superomsk")
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Igor", 1000)
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "psn", "internal-account-id", "superomsk"
+    )
 
     screen = await render_account_menu(repo, TG_ID, "psn", locale="ru")
 
@@ -111,11 +119,11 @@ async def test_several_psn_accounts_each_get_a_line_and_their_own_switch(repo: R
     reads "Частично" when only some of them post, and the publication row
     names the muted one."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "SuperOmsk")
-    await repo.link_platform_account(TG_ID, "psn", "acc-2", "OmskSecond")
-    await repo.set_account_publishes(TG_ID, "psn", "acc-2", False)
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "SuperOmsk")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-2", "OmskSecond")
+    await repo.set_account_publishes(await repo.person_id(TG_ID), "psn", "acc-2", False)
     await repo.upsert_chat(-100, "XBOX CG", None)
-    await repo.subscribe(-100, TG_ID)
+    await repo.subscribe(-100, await repo.person_id(TG_ID))
 
     text, markup = (await render_panel(repo, TG_ID)).as_pair()
 
@@ -135,9 +143,9 @@ async def test_several_psn_accounts_each_get_a_line_and_their_own_switch(repo: R
 
 async def test_a_dead_xbox_login_opens_its_screen_with_reconnect_first(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
-    await repo.save_refresh_token(TG_ID, b"encrypted")
-    await repo.set_token_status(TG_ID, "invalid")
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Igor", 1000)
+    await repo.save_refresh_token(await repo.person_id(TG_ID), b"encrypted")
+    await repo.set_token_status(await repo.person_id(TG_ID), "invalid")
 
     screen = await render_account_menu(repo, TG_ID, "xbox", locale="ru")
 
@@ -149,7 +157,7 @@ async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(re
     """#18: the header now carries identity + lifetime per-platform counts,
     and the 24h/30d rows and "последние достижения" list are gone."""
     await repo.ensure_user(TG_ID, "madomsk")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "MadXbox", 12345)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "MadXbox", 12345)
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
@@ -167,11 +175,13 @@ async def test_header_shows_identity_and_per_platform_counts_not_daily_totals(re
 
 async def test_header_lists_every_connected_platform(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, None, "Igor", "Petrov")
-    await repo.change_handle(TG_ID, "IgorP")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "MadXbox", 1000)
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "SteamNick")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "PsnNick")
-    await repo.set_psn_trophy_level(TG_ID, 42)
+    await repo.change_handle(await repo.person_id(TG_ID), "IgorP")
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "MadXbox", 1000)
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "SteamNick"
+    )
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "PsnNick")
+    await repo.set_psn_trophy_level(await repo.person_id(TG_ID), 42)
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
 
@@ -191,8 +201,8 @@ async def test_now_row_names_the_platform_the_person_is_actually_playing_on(
     """Issue #1's tail: the row used to read Xbox's presence only, so
     somebody playing on PlayStation looked offline on their own panel."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "PsnOnly")
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Igor", 1000)
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "PsnOnly")
     await repo.save_presence_state("xuid-1", "Online", None, None, changed=True)
     await repo.save_psn_presence_state(
         "acc-1", "Online", "CUSA00001", "Ghost of Tsushima", changed=True
@@ -207,7 +217,9 @@ async def test_a_steam_only_person_gets_a_now_row_at_all(repo: Repo) -> None:
     """It was gated on `user.xuid`, so this row was simply absent for
     anyone without an Xbox account — the last Xbox-gated row on the panel."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "Gabe"
+    )
     await repo.save_steam_presence_state("76561197960287930", 1, "570", "Dota 2", changed=True)
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
@@ -220,7 +232,9 @@ async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
     "offline", there is no "where" left for a platform name to answer, and
     picking one of three equally-offline platforms says nothing."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "Gabe"
+    )
     await repo.save_steam_presence_state("76561197960287930", 0, None, None, changed=True)
 
     text, _markup = (await render_panel(repo, TG_ID)).as_pair()
@@ -231,8 +245,10 @@ async def test_an_offline_now_row_names_no_platform(repo: Repo) -> None:
 
 async def test_panel_steam_header_uses_naming_chain_fallback(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", None)
-    await repo.set_platform_secondary_name(TG_ID, "steam", "gaben_vanity")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", None
+    )
+    await repo.set_platform_secondary_name(await repo.person_id(TG_ID), "steam", "gaben_vanity")
 
     text, _ = (await render_panel(repo, TG_ID)).as_pair()
     assert "Steam: gaben_vanity" in text
@@ -240,8 +256,10 @@ async def test_panel_steam_header_uses_naming_chain_fallback(repo: Repo) -> None
 
 async def test_panel_psn_header_uses_naming_chain_fallback(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, "psn", "2130000000000000000", None)
-    await repo.set_platform_secondary_name(TG_ID, "psn", "old_psn_tag")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "psn", "2130000000000000000", None
+    )
+    await repo.set_platform_secondary_name(await repo.person_id(TG_ID), "psn", "old_psn_tag")
 
     text, _ = (await render_panel(repo, TG_ID)).as_pair()
     assert "PlayStation: old_psn_tag" in text
@@ -316,7 +334,7 @@ async def test_panel_delete_account_flow(repo: Repo, i18n, monkeypatch) -> None:
     assert len(edits) == 3
     assert edits[-1][1] is None  # no keyboard on final message
     assert cb3.answers[0][1] is True  # show_alert=True
-    assert await repo.get_user(TG_ID) is None
+    assert await repo.get_user(await repo.person_id(TG_ID)) is None
 
 
 async def test_panel_refresh_touches_last_online(repo: Repo, i18n, monkeypatch) -> None:
@@ -342,7 +360,7 @@ async def test_panel_refresh_touches_last_online(repo: Repo, i18n, monkeypatch) 
     cb = _Cb(TG_ID)
     await panel_handlers.panel_refresh(cb, repo, i18n)  # type: ignore[arg-type]
 
-    user = await repo.get_user(TG_ID)
+    user = await repo.get_user(await repo.person_id(TG_ID))
     assert user is not None
     assert user.last_online_at is not None
 
@@ -398,10 +416,12 @@ async def test_panel_sync_multi_platform_and_cooldown(
     panel_handlers._last_sync.clear()
 
     await repo.ensure_user(TG_ID, "triathlete")
-    await repo.link_xbox_account(TG_ID, "xuid-1", "Igor", 1000)
-    await repo.save_refresh_token(TG_ID, b"encrypted-token")
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
-    await repo.link_platform_account(TG_ID, "psn", "acc-psn-1", "Kaz")
+    await repo.link_xbox_account(await repo.person_id(TG_ID), "xuid-1", "Igor", 1000)
+    await repo.save_refresh_token(await repo.person_id(TG_ID), b"encrypted-token")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "Gabe"
+    )
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-psn-1", "Kaz")
 
     edits: list[str] = []
 
@@ -486,7 +506,7 @@ async def test_panel_sync_multi_platform_and_cooldown(
     assert psn_calls == [(TG_ID, "acc-psn-1")]
 
     # 2. User last_online_at was touched:
-    user = await repo.get_user(TG_ID)
+    user = await repo.get_user(await repo.person_id(TG_ID))
     assert user is not None and user.last_online_at is not None
 
     # 3. Summary message was sent:
@@ -519,16 +539,22 @@ async def test_a_platform_whose_achievements_are_hidden_gets_a_mark(repo: Repo) 
     """❗ on the platform's own button (owner, 2026-09-30) — for PSN, when any
     one of its accounts is hidden."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_platform_account(TG_ID, "steam", "76561197960287930", "Gabe")
-    await repo.link_platform_account(TG_ID, "psn", "acc-1", "One")
-    await repo.link_platform_account(TG_ID, "psn", "acc-2", "Two")
-    await repo.set_achievements_visible(TG_ID, "steam", True)
-    await repo.set_achievements_visible(TG_ID, "psn", True, external_id="acc-1")
-    await repo.set_achievements_visible(TG_ID, "psn", False, external_id="acc-2")
+    await repo.link_platform_account(
+        await repo.person_id(TG_ID), "steam", "76561197960287930", "Gabe"
+    )
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-1", "One")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-2", "Two")
+    await repo.set_achievements_visible(await repo.person_id(TG_ID), "steam", True)
+    await repo.set_achievements_visible(
+        await repo.person_id(TG_ID), "psn", True, external_id="acc-1"
+    )
+    await repo.set_achievements_visible(
+        await repo.person_id(TG_ID), "psn", False, external_id="acc-2"
+    )
 
     text, markup = (await render_panel(repo, TG_ID)).as_pair()
 
     buttons = {b.callback_data: b.text for row in markup.inline_keyboard for b in row}
     assert buttons["panel:acc:steam"] == "⚫ Steam ▸"
     assert buttons["panel:acc:psn"] == "🔵 PSN (2) ❗ ▸"
-    assert "Вход PSN2: ⚠️ ачивки скрыты" in text
+    assert "Вход PSN2: ⚠️ достижения скрыты" in text

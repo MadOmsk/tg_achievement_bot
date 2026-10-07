@@ -40,8 +40,8 @@ async def _backdate(repo: Repo, *, created_minutes_ago: int, updated_minutes_ago
 async def _member(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Test chat", 1)
     await repo.ensure_user(1, "igor")
-    await repo.link_xbox_account(1, XUID, "Igor", 0)
-    await repo.subscribe(CHAT_ID, 1)
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "Igor", 0)
+    await repo.subscribe(CHAT_ID, await repo.person_id(1))
 
 
 async def test_defaults(repo: Repo) -> None:

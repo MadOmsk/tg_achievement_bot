@@ -2,6 +2,7 @@ import type { OnlineMember } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, Sheet, isOnline } from "../../shared/lib";
 import { rankPeople } from "../utils";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function RosterSheet({
   members,
@@ -12,33 +13,34 @@ export function RosterSheet({
   members: OnlineMember[];
   locale: Locale;
   onClose: () => void;
-  onOpen: (tgId: number) => void;
+  onOpen: (personId: number) => void;
 }) {
   const rows = rankPeople(members);
   return (
-    <Sheet onClose={onClose} mid>
+    <Sheet onClose={onClose} mid title={t(locale, "friends")}>
       <div className="sheet-content score-sheet picker-sheet">
-        <h2>{t(locale, "friends")}</h2>
         {rows.length === 0 ? (
           <p className="empty">{t(locale, "nobodyOnline")}</p>
         ) : (
           <div className="picker-list">
             {rows.map((m) => (
               <button
-                key={m.tg_id}
+                key={m.person_id}
                 type="button"
                 className="picker-row is-person"
-                onClick={() => onOpen(m.tg_id)}
+                onClick={() => onOpen(m.person_id)}
               >
                 <Avatar
                   name={m.name}
-                  tgId={m.tg_id}
+                  personId={m.person_id}
                   online={isOnline(m)}
                   platform={m.platform}
                   size={40}
                 />
                 <span className="picker-row-copy">
-                  <strong>{m.name}</strong>
+                  <strong>
+                    <HandleName text={m.name} />
+                  </strong>
                   <p>{m.playing ? m.title_name : m.status}</p>
                 </span>
               </button>

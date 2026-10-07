@@ -60,8 +60,8 @@ class FakePublisher:
 
 async def _connected_user(repo: Repo, cipher: TokenCipher) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.save_refresh_token(TG_ID, cipher.encrypt("refresh"))
-    await repo.link_xbox_account(TG_ID, XUID, "Mad Omsk", None)
+    await repo.save_refresh_token(await repo.person_id(TG_ID), cipher.encrypt("refresh"))
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Mad Omsk", None)
 
 
 async def _stored_description(repo: Repo, achievement_id: str) -> str | None:
@@ -92,7 +92,12 @@ async def test_genuine_native_translation_is_cached_with_no_llm_call(
     monkeypatch.setattr(descriptions_module, "translate_descriptions", _boom)
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=anthropic_auth)
 
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Game") == 1
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Game"
+        )
+        == 1
+    )
 
     cached = await repo.get_cached_description("xbox_modern", "1", "A1")
     assert cached is not None
@@ -120,7 +125,12 @@ async def test_identical_locales_ask_the_llm_for_a_russian_version(
     await anthropic_auth.get_key()
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=anthropic_auth)
 
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Game") == 1
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Game"
+        )
+        == 1
+    )
 
     cached = await repo.get_cached_description("xbox_modern", "1", "A1")
     assert cached is not None
@@ -150,13 +160,17 @@ async def test_second_poll_never_refetches_the_russian_locale(
     monkeypatch.setattr(descriptions_module, "translate_descriptions", _fake_translate)
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=anthropic_auth)
 
-    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Game")
+    await fetcher.poll_title(
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Game"
+    )
     assert client.calls.count("ru-RU") == 1
 
     # A3 arrives later in the same game — A1/A2 are already cached, only A3
     # (not present here at all) would ever need a fresh lookup; since it
     # isn't in this response either, no new ru-RU call should fire.
-    await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Game")
+    await fetcher.poll_title(
+        await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Game"
+    )
     assert client.calls.count("ru-RU") == 1
 
 
@@ -178,7 +192,12 @@ async def test_no_anthropic_key_stores_the_english_description_untranslated(
     anthropic_auth = AnthropicAuth(repo, cipher)  # never configured
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=anthropic_auth)
 
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Game") == 1
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Game"
+        )
+        == 1
+    )
 
     # Stored untranslated rather than dropped (user request, 2026-09-13).
     cached = await repo.get_cached_description("xbox_modern", "1", "A1")
@@ -228,5 +247,10 @@ async def test_a_catalog_holding_the_english_under_ru_is_still_translated(
     await anthropic_auth.get_key()
     fetcher = Fetcher(repo, client, FakePublisher(), anthropic_auth=anthropic_auth)
 
-    assert await fetcher.poll_title(TG_ID, XUID, "Mad Omsk", "1", "xbox_modern", "Game") == 1
+    assert (
+        await fetcher.poll_title(
+            await repo.person_id(TG_ID), XUID, "Mad Omsk", "1", "xbox_modern", "Game"
+        )
+        == 1
+    )
     assert await _stored_description(repo, "A1") == "[ru] Win the game"

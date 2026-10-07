@@ -36,7 +36,8 @@ export function GameOpenProvider({
   /** A game to open right away — a Mini App deep link landing straight on it. */
   initialGame?: GameRef | null;
   /** Told whether a game page is open, each time that changes. */
-  onGameChange?: (open: boolean) => void;
+  /** The game page open now, or null once it is left. */
+  onGameChange?: (game: GameRef | null) => void;
   children: ReactNode;
 }) {
   const [game, setGame] = useState<GameRef | null>(initialGame);
@@ -46,7 +47,7 @@ export function GameOpenProvider({
   // (see base.css): a long feed of blurred, filtered cards under a full-screen
   // layer was eating the phone's graphics memory, and that showed as artifacts.
   useEffect(() => {
-    onGameChange?.(game !== null);
+    onGameChange?.(game);
   }, [game, onGameChange]);
 
   useEffect(() => {

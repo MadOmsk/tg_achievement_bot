@@ -50,10 +50,10 @@ class PsnTrophyGroups:
             client = await self._psn_auth.get_client()
         except (PsnNotConfiguredError, PsnApiError):
             return
-        for tg_id, account_id, title_id, platforms in pending:
+        for person_id, account_id, title_id, platforms in pending:
             title = title_ref(title_id, json.loads(platforms) if platforms else None)
             try:
-                changed = await regroup_title(self._repo, client, tg_id, account_id, title)
+                changed = await regroup_title(self._repo, client, person_id, account_id, title)
             except PsnTokenDeadError:
                 return  # service_health's business; nothing more this tick
             except Exception:

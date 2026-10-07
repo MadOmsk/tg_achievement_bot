@@ -41,14 +41,14 @@ class PresencePoller:
                 await self._handle(target)
             except (TokenDeadError, NotConnectedError) as exc:
                 # The user is told about it by the reminder job, not from here.
-                log.info("skipping tg_id=%s: %s", target.tg_id, exc)
+                log.info("skipping person_id=%s: %s", target.person_id, exc)
             except (TokenRefreshError, XboxApiError) as exc:
-                log.info("tg_id=%s not polled this tick: %s", target.tg_id, exc)
+                log.info("person_id=%s not polled this tick: %s", target.person_id, exc)
             except Exception:
-                log.exception("unexpected failure while polling tg_id=%s", target.tg_id)
+                log.exception("unexpected failure while polling person_id=%s", target.person_id)
 
     async def _handle(self, target: PollTarget) -> None:
-        snapshot = await self._client.presence(target.tg_id)
+        snapshot = await self._client.presence(target.person_id)
         changed = snapshot.state != target.state or snapshot.title_id != target.title_id
 
         # Presence returns an empty name for PC titles, so resolve it once when
@@ -57,7 +57,7 @@ class PresencePoller:
         title_name = snapshot.title_name
         if snapshot.title_id and not title_name:
             title_name = await self._fetcher.ensure_title_name(
-                target.tg_id, snapshot.title_id, None
+                target.person_id, snapshot.title_id, None
             )
 
         await self._repo.save_presence_state(
@@ -69,9 +69,9 @@ class PresencePoller:
             changed=changed,
         )
         if snapshot.state == PresenceState.ONLINE:
-            await self._repo.touch_last_online(target.tg_id)
+            await self._repo.touch_last_online(target.person_id)
 
-        gamertag = await self._gamertag(target.tg_id)
+        gamertag = await self._gamertag(target.person_id)
 
         if changed and target.title_id:
             # The final request of the session: the last achievement is often
@@ -84,7 +84,7 @@ class PresencePoller:
                 force=True,
                 device=target.device,
             )
-            await self._fetcher.refresh_title_history(target.tg_id, target.xuid)
+            await self._fetcher.refresh_title_history(target.person_id, target.xuid)
 
         if snapshot.in_game and snapshot.title_id:
             await self._poll_achievements(
@@ -115,7 +115,7 @@ class PresencePoller:
         if platform_hint:
             device = platform_hint.device
         await self._fetcher.poll_title(
-            target.tg_id, target.xuid, gamertag, title_id, platform, title_name, device=device
+            target.person_id, target.xuid, gamertag, title_id, platform, title_name, device=device
         )
 
     def _debounce_passed(self, target: PollTarget) -> bool:
@@ -135,14 +135,14 @@ class PresencePoller:
             interval_idle=self._settings.presence_interval_idle,
         )
 
-    async def _gamertag(self, tg_id: int) -> str:
+    async def _gamertag(self, person_id: int) -> str:
         """A stand-in *name* for someone with no gamertag cached yet, not a
         sentence — it ends up where a nickname goes in a published message.
         Deliberately the default locale (#48): this is resolved long before
         any particular chat is in view, and the same person can be published
         to chats in different languages from this one call.
         """
-        user = await self._repo.get_user(tg_id)
+        user = await self._repo.get_user(person_id)
         return (user.gamertag if user and user.gamertag else None) or gettext(
             "presence", "presence-default-player", locale=DEFAULT_LOCALE
         )

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Icon } from "../../shared/lib";
+import { Icon, openImage } from "../../shared/lib";
 
 // `[label](https://…)` from the backend, or a bare address in the text. A guide
 // names the site right after its link, `[mapgenie.io]`; that is swallowed, the
@@ -169,8 +169,9 @@ export function RichLines({
           alt=""
           loading="lazy"
           onClick={(event) => {
+            // Opened here, full screen and zoomable — not on Steam.
             event.stopPropagation();
-            openUrl(image);
+            openImage(image);
           }}
         />,
       );

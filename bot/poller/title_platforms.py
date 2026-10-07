@@ -40,17 +40,15 @@ class TitlePlatformsRefresh:
         self._titles_per_tick = titles_per_tick
 
     async def tick(self) -> None:
-        for title_id, owner_tg_id in await self._repo.titles_needing_platforms(
-            self._titles_per_tick
-        ):
+        for title_id, owner in await self._repo.titles_needing_platforms(self._titles_per_tick):
             try:
-                await self._visit(title_id, owner_tg_id)
+                await self._visit(title_id, owner)
             except Exception:
                 log.exception("platform lookup failed for title %s", title_id)
 
-    async def _visit(self, title_id: str, owner_tg_id: int) -> None:
+    async def _visit(self, title_id: str, owner: int) -> None:
         try:
-            entry = await self._client.resolve_title(owner_tg_id, title_id)
+            entry = await self._client.resolve_title(owner, title_id)
         except (XboxApiError, TokenRefreshError) as exc:
             log.info("platform lookup for title %s unanswerable (%s)", title_id, exc)
             entry = None

@@ -43,7 +43,6 @@
   margin: 0;
 }
 
-
 .account-who {
   display: flex;
   align-items: center;
@@ -61,17 +60,33 @@
   user-select: none;
 }
 
-
 .page-head.is-split .month-chip {
   margin-left: auto;
 }
 
-.month-chip-skel {
+/* Laid out as the chip itself (below), its content hidden. */
+.skel.month-chip-skel {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   flex: 0 0 auto;
   margin-left: auto;
-  width: 88px;
-  height: 24px;
+  padding: 4px 0;
   border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.skel.month-chip-skel > * {
+  visibility: hidden;
+}
+
+.month-chip-skel svg {
+  flex: 0 0 auto;
+  margin-left: 4px;
 }
 
 .month-chip,
@@ -186,9 +201,7 @@
   min-height: 44px;
   margin: 0 0 16px;
   padding: 0 14px;
-  border: 1px solid var(--stroke);
   border-radius: 999px;
-  background: var(--glass);
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
   color: var(--muted);
@@ -290,13 +303,6 @@
 
 }
 
-.sheet-hltb {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
 .sheet-hero {
   --hero-lift: 0px;
   --hero-art: min(92vw, 520px);
@@ -365,7 +371,6 @@
 .pane-switch .dd-arrow {
   width: 18px;
   height: 18px;
-  color: var(--text);
 }
 
 .section-links {

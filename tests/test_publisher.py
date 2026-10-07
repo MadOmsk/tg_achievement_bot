@@ -105,13 +105,15 @@ async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) ->
     tg_id = 9999
     await repo.ensure_user(tg_id)
     await repo.upsert_chat(chat_id, "Test Chat", tg_id)
-    await repo.subscribe(chat_id, tg_id)
+    await repo.subscribe(chat_id, await repo.person_id(tg_id))
 
     settings = SimpleNamespace(mini_app_url="https://app.example.com")
     pub = Publisher(bot=None, repo=repo, settings=settings, bot_username="testbot")
 
     item = achievement("ach1", "icon.png")
-    await pub.publish(tg_id, "xuid1", "Player", [item], title_name="Game Title")
+    await pub.publish(
+        await repo.person_id(tg_id), "xuid1", "Player", [item], title_name="Game Title"
+    )
 
     job = await pub._queue.get()
     assert job.chat_id == chat_id
@@ -121,7 +123,8 @@ async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) ->
     encoded_game = (
         base64.urlsafe_b64encode(f"{item.platform}:{item.title_id}".encode()).decode().rstrip("=")
     )
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{encoded_game}"
+    person = await repo.person_id(tg_id)
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}p{person}g{encoded_game}"
 
 
 async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
@@ -133,14 +136,16 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
     tg_id = 9999
     await repo.ensure_user(tg_id)
     await repo.upsert_chat(chat_id, "Test Chat", tg_id)
-    await repo.subscribe(chat_id, tg_id)
+    await repo.subscribe(chat_id, await repo.person_id(tg_id))
     await repo.update_chat_settings(chat_id, digest_threshold=2)  # the chat's since #126
 
     settings = SimpleNamespace(mini_app_url="https://app.example.com")
     pub = Publisher(bot=None, repo=repo, settings=settings, bot_username="testbot")
 
     items = [achievement("ach1", "icon1.png"), achievement("ach2", "icon2.png")]
-    await pub.publish(tg_id, "xuid1", "Player", items, title_name="Game Title")
+    await pub.publish(
+        await repo.person_id(tg_id), "xuid1", "Player", items, title_name="Game Title"
+    )
 
     job = await pub._queue.get()
     assert job.chat_id == chat_id
@@ -152,7 +157,8 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
         .decode()
         .rstrip("=")
     )
-    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}u{tg_id}g{encoded_game}"
+    person = await repo.person_id(tg_id)
+    assert button.url == f"https://t.me/testbot?startapp=c{chat_id}p{person}g{encoded_game}"
 
 
 async def test_publisher_no_markup_when_no_mini_app_url(repo) -> None:
@@ -162,12 +168,14 @@ async def test_publisher_no_markup_when_no_mini_app_url(repo) -> None:
     tg_id = 9999
     await repo.ensure_user(tg_id)
     await repo.upsert_chat(chat_id, "Test Chat", tg_id)
-    await repo.subscribe(chat_id, tg_id)
+    await repo.subscribe(chat_id, await repo.person_id(tg_id))
 
     pub = Publisher(bot=None, repo=repo, settings=None, bot_username="testbot")
 
     item = achievement("ach1", "icon.png")
-    await pub.publish(tg_id, "xuid1", "Player", [item], title_name="Game Title")
+    await pub.publish(
+        await repo.person_id(tg_id), "xuid1", "Player", [item], title_name="Game Title"
+    )
 
     job = await pub._queue.get()
     assert job.reply_markup is None
@@ -246,3 +254,95 @@ async def test_publisher_deliver_passes_reply_markup_to_bot(repo) -> None:
     )
     msg_id4 = await pub._deliver(job4)
     assert msg_id4 == 201
+
+
+async def test_a_picture_telegram_cannot_fetch_is_uploaded(repo, monkeypatch) -> None:
+    """Telegram fetches a URL itself and sometimes cannot reach a platform's CDN:
+    the bot fetches it and uploads the bytes, and only without them sends text."""
+    from types import SimpleNamespace
+
+    from aiogram.types import BufferedInputFile
+
+    from bot.poller import publisher as publisher_module
+    from bot.poller.publisher import Publisher, PublishJob
+
+    class _Bot:
+        def __init__(self) -> None:
+            self.photos: list[object] = []
+            self.texts: list[str] = []
+
+        async def send_photo(self, chat_id, photo, **kwargs):
+            if isinstance(photo, str):
+                raise RuntimeError("Bad Request: failed to get HTTP URL content")
+            self.photos.append(photo)
+            return SimpleNamespace(message_id=7)
+
+        async def send_message(self, chat_id, text, **kwargs):
+            self.texts.append(text)
+            return SimpleNamespace(message_id=8)
+
+    async def fetched(url: str) -> bytes:
+        return b"\xff\xd8\xffjpeg"
+
+    bot = _Bot()
+    monkeypatch.setattr(publisher_module.images, "fetch", fetched)
+    job = PublishJob(chat_id=-1, text="card", gallery=[("https://cdn/x.png", False)])
+    assert await Publisher(bot=bot, repo=repo)._deliver(job) == 7
+    assert isinstance(bot.photos[0], BufferedInputFile) and not bot.texts
+
+    async def nothing(url: str) -> None:
+        return None
+
+    monkeypatch.setattr(publisher_module.images, "fetch", nothing)
+    assert await Publisher(bot=bot, repo=repo)._deliver(job) == 8
+    assert bot.texts == ["card"]
+
+
+async def test_with_no_icon_to_send_the_post_wears_the_games_cover(repo, monkeypatch) -> None:
+    """Owner, 2026-10-07: a post always goes out, with a picture found any way
+    there is — the game's cover when the achievement's own icon is nowhere."""
+    from types import SimpleNamespace
+
+    from bot.constants import Platform
+    from bot.db.repo import AchievementRow
+    from bot.poller import publisher as publisher_module
+    from bot.poller.publisher import Publisher, PublishJob
+
+    sent: list[object] = []
+
+    class _Bot:
+        async def send_photo(self, chat_id, photo, **kwargs):
+            if photo == "https://cdn/icon.png":
+                raise RuntimeError("Bad Request: failed to get HTTP URL content")
+            sent.append(photo)
+            return SimpleNamespace(message_id=9)
+
+        async def send_message(self, chat_id, text, **kwargs):
+            sent.append(text)
+            return SimpleNamespace(message_id=10)
+
+    async def nothing(url: str) -> None:
+        return None
+
+    monkeypatch.setattr(publisher_module.images, "fetch", nothing)
+    await repo.upsert_title("t1", "Game", Platform.XBOX_MODERN, "https://cdn/cover.jpg")
+    item = AchievementRow(
+        title_id="t1",
+        achievement_id="a1",
+        name="A",
+        description=None,
+        icon_url="https://cdn/icon.png",
+        unlocked_at=None,
+        gamerscore=10,
+        rarity_percent=None,
+        platform="xbox_modern",
+    )
+    pub = Publisher(bot=_Bot(), repo=repo)
+    job = PublishJob(
+        chat_id=-1,
+        text="card",
+        gallery=[("https://cdn/icon.png", False)],
+        backups=await pub._backups(item),
+    )
+    assert await pub._deliver(job) == 9
+    assert sent == ["https://cdn/cover.jpg"]

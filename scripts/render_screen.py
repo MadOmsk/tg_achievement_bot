@@ -47,8 +47,10 @@ from bot.i18n import i18n_for
 from bot.services.admin_settings import TOP_LIMIT_KEY
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
+from bot.services.smtp_auth import SmtpAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
+from bot.services.youtube.auth import YouTubeAuth
 from bot.views import Screen
 from bot.views.admin import (
     render_chat_card as render_admin_chat_card,
@@ -131,7 +133,7 @@ async def _panel_chat_card(ctx: Context) -> Screen | None:
 
 @screen("stats")
 async def _stats(ctx: Context) -> Screen | None:
-    user = await ctx.repo.get_user(ctx.tg_id)
+    user = await ctx.repo.get_user(await ctx.repo.person_id(ctx.tg_id))
     if user is None:
         return None
     text = await build_stats_text(ctx.repo, user, ctx.chat_id, await i18n_for(ctx.locale))
@@ -312,6 +314,8 @@ async def _admin_keys(ctx: Context) -> Screen:
             ),
             PsnAuth(ctx.repo, cipher),
             AnthropicAuth(ctx.repo, cipher),
+            YouTubeAuth(ctx.repo, cipher),
+            smtp_auth=SmtpAuth(ctx.repo, cipher, ctx.settings),
             locale=ctx.locale,
         )
     )

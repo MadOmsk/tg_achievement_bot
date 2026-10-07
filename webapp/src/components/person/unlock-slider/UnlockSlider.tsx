@@ -105,7 +105,7 @@ function UnlockSliderBase({
   revealed?: Set<string>;
   showSecrets?: boolean;
   onReveal?: (key: string) => void;
-  onOpenPerson?: (tgId: number) => void;
+  onOpenPerson?: (personId: number) => void;
   variant?: "hero" | "feed" | "game";
   /** Whose achievement it is, in the card's corner (off on a person's own page). */
   author?: boolean;
@@ -120,7 +120,11 @@ function UnlockSliderBase({
   const [swiper, setSwiper] = useState<SwiperInstance | null>(null);
 
   return (
-    <div className={feedDots ? "unlock-slider is-feed" : "unlock-slider"}>
+    <div
+      className={["unlock-slider", feedDots ? "is-feed" : "", minimal && n > 1 ? "is-gallery" : ""]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <Swiper
         className="unlock-swiper"
         modules={[EffectCreative]}
@@ -171,7 +175,7 @@ function UnlockSliderBase({
           swiper={swiper}
           slides={slides}
           slideKey={slideKey}
-          stay={feedDots}
+          stay={feedDots || minimal}
         />
       )}
     </div>

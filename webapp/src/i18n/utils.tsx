@@ -72,7 +72,10 @@ export function timeAgo(iso: string | null, locale: string): string {
   if (mins < 60) return `${mins} ${t(locale, "minutesAgo")}`;
   const hours = Math.round(mins / 60);
   if (hours < 24) return `${hours} ${t(locale, "hoursAgo")}`;
-  return `${Math.round(hours / 24)} ${t(locale, "daysAgo")}`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days} ${t(locale, "daysAgo")}`;
+  if (days < 365) return `${Math.round(days / 30)} ${t(locale, "monthsAgo")}`;
+  return `${Math.round(days / 365)} ${t(locale, "yearsAgo")}`;
 }
 
 export function platformMark(platform: string): string {

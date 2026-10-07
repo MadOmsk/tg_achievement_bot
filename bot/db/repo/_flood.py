@@ -13,11 +13,11 @@ from bot.util import parse_iso
 
 
 class _FloodRepo:
-    async def get_flood_state(self, tg_id: int, chat_id: int) -> FloodState | None:
+    async def get_flood_state(self, person_id: int, chat_id: int) -> FloodState | None:
         cursor = await self._conn.execute(
             "SELECT window_started_at, count_in_window, throttled FROM notification_throttle "
-            "WHERE tg_id = ? AND chat_id = ?",
-            (tg_id, chat_id),
+            "WHERE person_id = ? AND chat_id = ?",
+            (person_id, chat_id),
         )
         row = await cursor.fetchone()
         if row is None:
@@ -25,7 +25,7 @@ class _FloodRepo:
         started = parse_iso(row["window_started_at"])
         assert started is not None  # column is NOT NULL, always our own utcnow_iso()
         return FloodState(
-            tg_id=tg_id,
+            person_id=person_id,
             chat_id=chat_id,
             window_started_at=started,
             count_in_window=row["count_in_window"],
@@ -34,7 +34,7 @@ class _FloodRepo:
 
     async def set_flood_state(
         self,
-        tg_id: int,
+        person_id: int,
         chat_id: int,
         *,
         window_started_at: datetime,
@@ -43,14 +43,14 @@ class _FloodRepo:
     ) -> None:
         await self._conn.execute(
             "INSERT INTO notification_throttle"
-            " (tg_id, chat_id, window_started_at, count_in_window, throttled) "
+            " (person_id, chat_id, window_started_at, count_in_window, throttled) "
             "VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(tg_id, chat_id) DO UPDATE SET"
+            "ON CONFLICT(person_id, chat_id) DO UPDATE SET"
             " window_started_at = excluded.window_started_at,"
             " count_in_window = excluded.count_in_window,"
             " throttled = excluded.throttled",
             (
-                tg_id,
+                person_id,
                 chat_id,
                 window_started_at.isoformat(timespec="seconds"),
                 count_in_window,
@@ -59,9 +59,10 @@ class _FloodRepo:
         )
         await self._conn.commit()
 
-    async def clear_flood_state(self, tg_id: int, chat_id: int) -> None:
+    async def clear_flood_state(self, person_id: int, chat_id: int) -> None:
         await self._conn.execute(
-            "DELETE FROM notification_throttle WHERE tg_id = ? AND chat_id = ?", (tg_id, chat_id)
+            "DELETE FROM notification_throttle WHERE person_id = ? AND chat_id = ?",
+            (person_id, chat_id),
         )
         await self._conn.commit()
 
@@ -74,7 +75,8 @@ class _FloodRepo:
         gets silently replaced next time an achievement arrives
         (publisher.py's own job, not this one)."""
         cursor = await self._conn.execute(
-            "SELECT tg_id, chat_id, window_started_at, count_in_window FROM notification_throttle "
+            "SELECT person_id, chat_id, window_started_at, count_in_window"
+            " FROM notification_throttle "
             "WHERE throttled = 1"
         )
         rows = await cursor.fetchall()
@@ -84,7 +86,7 @@ class _FloodRepo:
             assert started is not None  # column is NOT NULL, always our own utcnow_iso()
             result.append(
                 FloodState(
-                    tg_id=row["tg_id"],
+                    person_id=row["person_id"],
                     chat_id=row["chat_id"],
                     window_started_at=started,
                     count_in_window=row["count_in_window"],

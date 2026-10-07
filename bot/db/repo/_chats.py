@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from bot.db.repo._models import ChatDailySettings, ChatTarget, UserChatRow
-from bot.db.repo._sql import GLOBAL_RARE_THRESHOLD
+from bot.db.repo._sql import CHAT_MEMBERS, GLOBAL_RARE_THRESHOLD, PERSON_BY_TG
 from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.util import utcnow_iso
 
@@ -16,19 +16,22 @@ from bot.util import utcnow_iso
 class _ChatsRepo:
     # -------------------------------------------------------- subscriptions
 
-    async def delete_subscriptions_of_user(self, tg_id: int) -> None:
-        await self._conn.execute("DELETE FROM subscriptions WHERE tg_id = ?", (tg_id,))
+    async def delete_subscriptions_of_user(self, person_id: int) -> None:
+        await self._conn.execute(
+            "DELETE FROM subscriptions WHERE person_id = ?",
+            (person_id,),
+        )
         await self._conn.commit()
 
     async def delete_presence_state(self, xuid: str) -> None:
         await self._conn.execute("DELETE FROM presence_state WHERE xuid = ?", (xuid,))
         await self._conn.commit()
 
-    async def chats_of_user(self, tg_id: int) -> list[str]:
+    async def chats_of_user(self, person_id: int) -> list[str]:
         cursor = await self._conn.execute(
             "SELECT c.title FROM subscriptions s JOIN chats c ON c.chat_id = s.chat_id "
-            "WHERE s.tg_id = ? AND c.is_active = 1",
-            (tg_id,),
+            "WHERE s.person_id = ? AND c.is_active = 1",
+            (person_id,),
         )
         return [
             row["title"] or gettext("util", "util-untitled-chat") for row in await cursor.fetchall()
@@ -52,22 +55,24 @@ class _ChatsRepo:
         cursor = await self._conn.execute("SELECT 1 FROM chats WHERE chat_id = ?", (chat_id,))
         return await cursor.fetchone() is not None
 
-    async def subscribe(self, chat_id: int, tg_id: int) -> None:
+    async def subscribe(self, chat_id: int, person_id: int) -> None:
         await self._conn.execute(
-            "INSERT OR IGNORE INTO subscriptions (chat_id, tg_id, created_at) VALUES (?, ?, ?)",
-            (chat_id, tg_id, utcnow_iso()),
+            "INSERT OR IGNORE INTO subscriptions (chat_id, person_id, created_at) VALUES (?, ?, ?)",
+            (chat_id, person_id, utcnow_iso()),
         )
         await self._conn.commit()
 
-    async def unsubscribe(self, chat_id: int, tg_id: int) -> None:
+    async def unsubscribe(self, chat_id: int, person_id: int) -> None:
         await self._conn.execute(
-            "DELETE FROM subscriptions WHERE chat_id = ? AND tg_id = ?", (chat_id, tg_id)
+            "DELETE FROM subscriptions WHERE chat_id = ? AND person_id = ?",
+            (chat_id, person_id),
         )
         await self._conn.commit()
 
-    async def is_subscribed(self, chat_id: int, tg_id: int) -> bool:
+    async def is_subscribed(self, chat_id: int, person_id: int) -> bool:
         cursor = await self._conn.execute(
-            "SELECT 1 FROM subscriptions WHERE chat_id = ? AND tg_id = ?", (chat_id, tg_id)
+            "SELECT 1 FROM subscriptions WHERE chat_id = ? AND person_id = ?",
+            (chat_id, person_id),
         )
         return await cursor.fetchone() is not None
 
@@ -79,17 +84,16 @@ class _ChatsRepo:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, s.chat_id AS subscribed "
             "FROM chats c "
-            "LEFT JOIN subscriptions s ON s.chat_id = c.chat_id AND s.tg_id = ? "
+            "LEFT JOIN subscriptions s ON s.chat_id = c.chat_id AND s.person_id = "
+            + PERSON_BY_TG
+            + " "
             "WHERE c.is_active = 1 AND c.chat_id IN ("
-            "  SELECT chat_id FROM subscriptions WHERE tg_id = ?"
-            "  UNION "
-            "  SELECT chat_id FROM chat_seen WHERE tg_id = ?"
-            ") "
+            "  SELECT chat_id FROM " + CHAT_MEMBERS + " WHERE person_id = " + PERSON_BY_TG + ") "
             "ORDER BY CASE WHEN s.chat_id IS NOT NULL THEN 0 ELSE 1 END,"
             "  (SELECT MAX(cs.last_seen_at) FROM chat_seen cs"
             "    WHERE cs.chat_id = c.chat_id AND cs.tg_id = ?) DESC,"
             "  c.title",
-            (tg_id, tg_id, tg_id, tg_id),
+            (tg_id, tg_id, tg_id),
         )
         return [
             UserChatRow(
@@ -107,7 +111,8 @@ class _ChatsRepo:
         (`record_chat_seen`/`subscribe`) — there is no third state that
         blocks that."""
         await self._conn.execute(
-            "DELETE FROM subscriptions WHERE chat_id = ? AND tg_id = ?", (chat_id, tg_id)
+            "DELETE FROM subscriptions WHERE chat_id = ? AND person_id = " + PERSON_BY_TG,
+            (chat_id, tg_id),
         )
         await self._conn.execute(
             "DELETE FROM chat_seen WHERE chat_id = ? AND tg_id = ?", (chat_id, tg_id)
@@ -119,7 +124,7 @@ class _ChatsRepo:
         await self._conn.execute("UPDATE chats SET is_active = 0 WHERE chat_id = ?", (chat_id,))
         await self._conn.commit()
 
-    async def publication_targets(self, tg_id: int) -> list[ChatTarget]:
+    async def publication_targets(self, person_id: int) -> list[ChatTarget]:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, s.min_gamerscore, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
@@ -129,9 +134,9 @@ class _ChatsRepo:
             "FROM subscriptions sub "
             "JOIN chats c ON c.chat_id = sub.chat_id "
             "JOIN chat_settings s ON s.chat_id = c.chat_id "
-            "LEFT JOIN user_settings us ON us.tg_id = sub.tg_id "
-            "WHERE sub.tg_id = ? AND c.is_active = 1",
-            (tg_id,),
+            "LEFT JOIN user_settings us ON us.person_id = sub.person_id "
+            "WHERE sub.person_id = ? AND c.is_active = 1",
+            (person_id,),
         )
         return [
             ChatTarget(

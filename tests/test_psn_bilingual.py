@@ -61,7 +61,7 @@ def _install_fakes(monkeypatch, titles, by_client: dict[object, dict[str, list[E
 
 async def _linked(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "psn", ACCOUNT_ID, "Gamer")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "psn", ACCOUNT_ID, "Gamer")
 
 
 async def _run(repo: Repo, anthropic_auth: AnthropicAuth, translation_client: object | None):

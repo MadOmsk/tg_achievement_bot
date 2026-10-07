@@ -4,8 +4,9 @@ export type GameRef = {
   name?: string | null;
   icon_url?: string | null;
   cover?: string | null;
-  /** Whose card it was opened from: their progress is shown first. */
-  person?: { tg_id: number; name: string } | null;
+  /** Whose card it was opened from: their progress is shown first. A post's
+   * button from before person ids (#156) knows only their Telegram id. */
+  person?: { person_id?: number; tg_id?: number; name: string } | null;
 };
 
 export type GameAchievement = {
@@ -70,6 +71,8 @@ export type GameHltbDetails = {
 
 export type GameDetails = {
   ok: boolean;
+  /** Whose progress this is, when not the viewer's own. */
+  viewed?: { person_id: number; name: string } | null;
   platform: string;
   title_id: string;
   name: string | null;
@@ -97,6 +100,10 @@ export type GamePatch = {
   title: string;
   date: string;
   text: string;
+  image?: string | null;
+  kind?: "patch" | "news";
+  /** The post on Steam. */
+  url?: string;
 };
 
 export type GamePatchesResponse = {
@@ -109,10 +116,36 @@ export type AchievementTip = {
   text: string;
 };
 
+export type GameGuide = {
+  url: string;
+  channel: string;
+  /** How many of the channel's videos are about the game. */
+  count: number;
+  video_id: string | null;
+  title: string | null;
+};
+
+/** A guide video that names one achievement: where in it to start. */
+export type AchievementVideo = {
+  id: string;
+  title: string;
+  channel: string;
+  /** Seconds into the video. */
+  start: number;
+  /** "PART 2" of a guide in several; 0 when it is one. */
+  part: number;
+  url: string;
+};
+
 /** The tip for every achievement of the game that has one, by achievement id. */
 export type GameGuidesResponse = {
   ok: boolean;
   tips: Record<string, AchievementTip>;
+  /** Guide videos by achievement id. */
+  videos?: Record<string, AchievementVideo[]>;
+  /** The game's guide on a guide channel: a whole-game video, or the
+   * channel's search for the game. */
+  guide?: GameGuide | null;
   /** False while Steam still holds some guides back; asking again later finds more. */
   complete: boolean;
 };

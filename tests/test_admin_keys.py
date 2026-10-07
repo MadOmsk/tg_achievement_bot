@@ -13,6 +13,7 @@ from bot.services.psn.auth import PsnAuth
 from bot.services.steam import auth as steam_auth_module
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
+from bot.services.youtube.auth import YouTubeAuth
 from bot.views.admin import render_keys
 
 KEY = "0123456789ABCDEF0123456789ABCDEF"
@@ -27,17 +28,23 @@ async def test_keys_screen_lists_all_platforms_unconfigured(
     repo: Repo, cipher: TokenCipher, i18n
 ) -> None:
     text, markup = await render_keys(
-        SteamAuth(repo, cipher), PsnAuth(repo, cipher), AnthropicAuth(repo, cipher), locale="ru"
+        SteamAuth(repo, cipher),
+        PsnAuth(repo, cipher),
+        AnthropicAuth(repo, cipher),
+        YouTubeAuth(repo, cipher),
+        locale="ru",
     )
 
     datas = _callback_datas(markup)
     assert "a:keyset:steam" in datas
     assert "a:keyset:psn" in datas
     assert "a:keyset:anthropic" in datas
+    assert "a:keyset:youtube" in datas
     # Nothing configured — no Clear buttons.
     assert "a:keyclr:steam" not in datas
     assert "a:keyclr:psn" not in datas
     assert "a:keyclr:anthropic" not in datas
+    assert "a:keyclr:youtube" not in datas
     assert "не настроен" in text
 
 
@@ -52,7 +59,11 @@ async def test_keys_screen_offers_clear_once_steam_is_configured(
     await steam_auth.set_key(KEY, admin_id=ADMIN_ID)
 
     _text, markup = await render_keys(
-        steam_auth, PsnAuth(repo, cipher), AnthropicAuth(repo, cipher), locale="ru"
+        steam_auth,
+        PsnAuth(repo, cipher),
+        AnthropicAuth(repo, cipher),
+        YouTubeAuth(repo, cipher),
+        locale="ru",
     )
 
     datas = _callback_datas(markup)
@@ -85,7 +96,9 @@ async def test_admin_text_input_saves_a_valid_steam_key(
     _awaiting_input[ADMIN_ID] = (STEAM_KEY_KEY, None)
     msg = _FakeMessage(KEY)
 
-    await admin_text_input(msg, psn_auth, steam_auth, anthropic_auth, i18n)
+    await admin_text_input(
+        msg, psn_auth, steam_auth, anthropic_auth, YouTubeAuth(repo, cipher), None, i18n
+    )
 
     assert await steam_auth.get_key() == KEY
     assert ADMIN_ID not in _awaiting_input  # flow finished
@@ -104,7 +117,13 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
     msg = _FakeMessage("bad-key")
 
     await admin_text_input(
-        msg, PsnAuth(repo, cipher), steam_auth, AnthropicAuth(repo, cipher), i18n
+        msg,
+        PsnAuth(repo, cipher),
+        steam_auth,
+        AnthropicAuth(repo, cipher),
+        YouTubeAuth(repo, cipher),
+        None,
+        i18n,
     )
 
     assert await steam_auth.get_key() is None

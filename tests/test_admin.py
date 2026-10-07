@@ -135,17 +135,17 @@ async def test_render_user_list_shows_visibility_icons_on_body_and_buttons(
 ) -> None:
     # User 1: Xbox (active) + Steam (hidden) + PSN (visible)
     await repo.ensure_user(1, "allplatforms", "Alex")
-    await repo.link_xbox_account(1, "xuid-1", "AlexXbox", 100)
-    await repo.save_refresh_token(1, b"enc")
-    await repo.link_platform_account(1, "steam", "steam-1", "AlexSteam")
-    await repo.link_platform_account(1, "psn", "psn-1", "AlexPsn")
-    await repo.set_achievements_visible(1, "steam", False)
-    await repo.set_achievements_visible(1, "psn", True)
+    await repo.link_xbox_account(await repo.person_id(1), "xuid-1", "AlexXbox", 100)
+    await repo.save_refresh_token(await repo.person_id(1), b"enc")
+    await repo.link_platform_account(await repo.person_id(1), "steam", "steam-1", "AlexSteam")
+    await repo.link_platform_account(await repo.person_id(1), "psn", "psn-1", "AlexPsn")
+    await repo.set_achievements_visible(await repo.person_id(1), "steam", False)
+    await repo.set_achievements_visible(await repo.person_id(1), "psn", True)
 
     # User 2: PSN only (hidden)
     await repo.ensure_user(2, "psnonly", "Igor")
-    await repo.link_platform_account(2, "psn", "psn-2", "IgorPsn")
-    await repo.set_achievements_visible(2, "psn", False)
+    await repo.link_platform_account(await repo.person_id(2), "psn", "psn-2", "IgorPsn")
+    await repo.set_achievements_visible(await repo.person_id(2), "psn", False)
 
     text, markup = await render_user_list(repo, 0, locale="ru")
 

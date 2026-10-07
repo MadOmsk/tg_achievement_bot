@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FeedItem } from "../../../api";
 import { dayKey, dayLabel, type Locale } from "../../../i18n";
-import { feedKey, veiled } from "../utils";
+import { feedKey } from "../utils";
 import { useDayJump } from "../day-jump/useDayJump";
-import { UnlockCard } from "../unlock-card/UnlockCard";
-import { UnlockSlider } from "../unlock-slider/UnlockSlider";
+import { FeedPost } from "../feed-post/FeedPost";
 
-// The tab opens on its first posts at once and builds the rest in the
-// background, a few per turn — not on scroll, so nothing pops in under the
-// finger, and not all at the start, which held the tap for a second.
-const FIRST_POSTS = 4;
-const POSTS_PER_TURN = 4;
+// The tab opens on its first posts and builds more as the reader nears the
+// end, well ahead of the finger (owner, 2026-10-07): a month of posts built at
+// once was more than a phone's browser would keep.
+const FIRST_POSTS = 8;
+const POSTS_PER_STEP = 8;
+const AHEAD = "2000px";
 
 export function FeedPosts({
   items,
@@ -25,10 +25,10 @@ export function FeedPosts({
   revealed: Set<string>;
   showSecrets?: boolean;
   onReveal: (key: string) => void;
-  onOpenPerson: (tgId: number) => void;
+  onOpenPerson: (personId: number) => void;
 }) {
-  const jump = useDayJump(items, locale);
   const [built, setBuilt] = useState(FIRST_POSTS);
+  const end = useRef<HTMLDivElement>(null);
   // Days first, then — inside a day — runs of one person's achievements in one
   // game, which become a carousel.
   const days: Array<{ key: string; label: string; iso: string | null; groups: FeedItem[][] }> = [];
@@ -48,7 +48,7 @@ export function FeedPosts({
     const head = last?.[0];
     if (
       head &&
-      head.tg_id === row.tg_id &&
+      head.person_id === row.person_id &&
       head.platform === row.platform &&
       head.title_id === row.title_id
     ) {
@@ -58,10 +58,29 @@ export function FeedPosts({
     }
   }
   const total = days.reduce((sum, day) => sum + day.groups.length, 0);
+  // How many posts come before each day ends: what a jump to it needs built.
+  const through = new Map<string, number>();
+  let count = 0;
+  for (const day of days) {
+    count += day.groups.length;
+    through.set(day.key, count);
+  }
+  const jump = useDayJump(items, locale, (key) => {
+    const need = through.get(key);
+    if (need != null) setBuilt((n) => Math.max(n, need));
+  });
+
   useEffect(() => {
-    if (built >= total) return;
-    const id = window.setTimeout(() => setBuilt((n) => n + POSTS_PER_TURN), 60);
-    return () => window.clearTimeout(id);
+    const node = end.current;
+    if (!node || built >= total) return;
+    const watch = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setBuilt((n) => n + POSTS_PER_STEP);
+      },
+      { rootMargin: `0px 0px ${AHEAD} 0px` },
+    );
+    watch.observe(node);
+    return () => watch.disconnect();
   }, [built, total]);
 
   let budget = built;
@@ -80,51 +99,23 @@ export function FeedPosts({
           className="feed-day"
           ref={jump.register(day.key)}
         >
-          {day.label && (
-            <button
-              type="button"
-              className="feed-day-label"
-              onClick={() => jump.open(day.iso)}
-            >
-              {day.label}
-            </button>
-          )}
+          {day.label && jump.label(day.key, day.label)}
           <div className="feed-posts">
-            {day.groups.map((group) => {
-              const head = group[0];
-              const key = `${feedKey(head)}:n${group.length}`;
-              if (group.length === 1) {
-                const secret = veiled(head, feedKey(head), revealed, showSecrets);
-                return (
-                  <UnlockCard
-                    key={key}
-                    item={head}
-                    locale={locale}
-                    secret={secret}
-                    author
-                    gameInCopy
-                    onOpenPerson={onOpenPerson}
-                    onReveal={onReveal}
-                  />
-                );
-              }
-              return (
-                <UnlockSlider
-                  key={key}
-                  items={group}
-                  locale={locale}
-                  revealed={revealed}
-                  showSecrets={showSecrets}
-                  onReveal={onReveal}
-                  onOpenPerson={onOpenPerson}
-                  variant="feed"
-                />
-              );
-            })}
+            {day.groups.map((group) => (
+              <FeedPost
+                key={`${feedKey(group[0])}:n${group.length}`}
+                items={group}
+                locale={locale}
+                revealed={revealed}
+                showSecrets={showSecrets}
+                onReveal={onReveal}
+                onOpenPerson={onOpenPerson}
+              />
+            ))}
           </div>
         </section>
       ))}
-      {jump.picker}
+      {built < total && <div ref={end} style={{ height: 1 }} aria-hidden />}
     </div>
   );
 }

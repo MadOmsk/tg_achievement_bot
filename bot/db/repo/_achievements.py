@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 class _AchievementsRepo:
     # --------------------------------------------- admin "reset & resync"
 
-    async def reset_xbox_data(self, tg_id: int, xuid: str) -> int:
+    async def reset_xbox_data(self, person_id: int, xuid: str) -> int:
         """Wipe everything stored *about this Xbox account* — the admin card's
         "🗑 Сброс" (user request 2026-09-08, restated 2026-09-13: "wipe the
         platform account completely and start reading it as if it had only
@@ -67,7 +67,7 @@ class _AchievementsRepo:
         await self._conn.commit()
         return deleted
 
-    async def reset_psn_data(self, tg_id: int, account_id: str) -> int:
+    async def reset_psn_data(self, person_id: int, account_id: str) -> int:
         """PSN's counterpart of `reset_xbox_data` — also clears the per-game
         progress cache (same table `clear_psn_title_progress` clears for
         #27's stuck-account recovery) and flips `backfill_done` back off, so
@@ -109,6 +109,55 @@ class _AchievementsRepo:
             (account_platform, external_id, now, now),
         )
 
+    async def _insert_rows(
+        self,
+        external_id: str,
+        achievements: Sequence[AchievementRow],
+        *,
+        is_backfill: bool,
+        device_default: str | None = None,
+    ) -> list[AchievementRow]:
+        """The one insert behind every platform's `insert_new_achievements*`
+        (#167): INSERT OR IGNORE on the primary key is the dedup, and the
+        rows it actually wrote are the new ones. A backfill row never carries
+        a device — history is not where anything was earned *now*. PSN's
+        tier and group are NULL on the other platforms' rows."""
+        # One batch is one transaction (#167): a cancelled poll (a catch-up past
+        # its deadline) leaves none of it, rather than rows a later commit or
+        # rollback of somebody else decides about.
+        async with self.transaction():
+            new_rows: list[AchievementRow] = []
+            now = utcnow_iso()
+            for item in achievements:
+                cursor = await self._conn.execute(
+                    "INSERT OR IGNORE INTO seen_achievements "
+                    "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
+                    " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
+                    " trophy_group_id, device, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        external_id,
+                        item.title_id,
+                        item.achievement_id,
+                        item.name,
+                        item.description,
+                        item.icon_url,
+                        item.unlocked_at,
+                        item.gamerscore,
+                        item.rarity_percent,
+                        item.platform,
+                        1 if is_backfill else 0,
+                        1 if item.is_secret else 0,
+                        item.trophy_type,
+                        item.trophy_group_id,
+                        None if is_backfill else (item.device or device_default),
+                        now,
+                    ),
+                )
+                if cursor.rowcount:
+                    new_rows.append(item)
+        return new_rows
+
     async def insert_new_achievements(
         self, xuid: str, achievements: Sequence[AchievementRow], *, is_backfill: bool
     ) -> list[AchievementRow]:
@@ -125,39 +174,11 @@ class _AchievementsRepo:
             return []
         await self._ensure_account(AccountPlatform.XBOX, xuid)
 
-        new_rows: list[AchievementRow] = []
-        now = utcnow_iso()
-        for item in achievements:
-            cursor = await self._conn.execute(
-                "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at, "
-                "gamerscore, rarity_percent, platform, is_backfill, is_secret, device, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    xuid,
-                    item.title_id,
-                    item.achievement_id,
-                    item.name,
-                    item.description,
-                    item.icon_url,
-                    item.unlocked_at,
-                    item.gamerscore,
-                    item.rarity_percent,
-                    item.platform,
-                    1 if is_backfill else 0,
-                    1 if item.is_secret else 0,
-                    None if is_backfill else item.device,
-                    now,
-                ),
-            )
-            if cursor.rowcount:
-                new_rows.append(item)
-        await self._conn.commit()
-        return new_rows
+        return await self._insert_rows(xuid, achievements, is_backfill=is_backfill)
 
     async def insert_new_achievements_steam(
         self,
-        tg_id: int,
+        person_id: int,
         steam_id: str,
         achievements: Sequence[AchievementRow],
         *,
@@ -187,39 +208,13 @@ class _AchievementsRepo:
             await self.upsert_title(title_id, name, Platform.STEAM, platforms='["PC"]')
         await self._ensure_account(AccountPlatform.STEAM, steam_id)
 
-        new_rows: list[AchievementRow] = []
-        now = utcnow_iso()
-        for item in achievements:
-            cursor = await self._conn.execute(
-                "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at, "
-                "gamerscore, rarity_percent, platform, is_backfill, is_secret, device, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    steam_id,
-                    item.title_id,
-                    item.achievement_id,
-                    item.name,
-                    item.description,
-                    item.icon_url,
-                    item.unlocked_at,
-                    item.gamerscore,
-                    item.rarity_percent,
-                    item.platform,
-                    1 if is_backfill else 0,
-                    1 if item.is_secret else 0,
-                    None if is_backfill else (item.device or "PC"),
-                    now,
-                ),
-            )
-            if cursor.rowcount:
-                new_rows.append(item)
-        await self._conn.commit()
-        return new_rows
+        return await self._insert_rows(
+            steam_id, achievements, is_backfill=is_backfill, device_default="PC"
+        )
 
     async def insert_new_achievements_psn(
         self,
-        tg_id: int,
+        person_id: int,
         account_id: str,
         achievements: Sequence[AchievementRow],
         *,
@@ -244,38 +239,7 @@ class _AchievementsRepo:
             await self.upsert_title(title_id, name, Platform.PSN)
         await self._ensure_account(AccountPlatform.PSN, account_id)
 
-        new_rows: list[AchievementRow] = []
-        now = utcnow_iso()
-        for item in achievements:
-            cursor = await self._conn.execute(
-                "INSERT OR IGNORE INTO seen_achievements "
-                "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
-                " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
-                " trophy_group_id, device, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    account_id,
-                    item.title_id,
-                    item.achievement_id,
-                    item.name,
-                    item.description,
-                    item.icon_url,
-                    item.unlocked_at,
-                    item.gamerscore,
-                    item.rarity_percent,
-                    item.platform,
-                    1 if is_backfill else 0,
-                    1 if item.is_secret else 0,
-                    item.trophy_type,
-                    item.trophy_group_id,
-                    None if is_backfill else item.device,
-                    now,
-                ),
-            )
-            if cursor.rowcount:
-                new_rows.append(item)
-        await self._conn.commit()
-        return new_rows
+        return await self._insert_rows(account_id, achievements, is_backfill=is_backfill)
 
     async def get_psn_title_progress(self, account_id: str, np_communication_id: str) -> int | None:
         """The last-seen `progress` for one (account, game) — poller/
@@ -301,48 +265,6 @@ class _AchievementsRepo:
             (account_id, np_communication_id, progress, utcnow_iso()),
         )
         await self._conn.commit()
-
-    async def recent_achievements(self, xuid: str, limit: int = 5) -> list[AchievementRow]:
-        """The last N unlocks, newest first — for the panel (SPEC 6.2).
-        Undated rows never win: an unknown unlock time is not "recent"."""
-        cursor = await self._conn.execute(
-            "SELECT s.title_id, s.achievement_id, s.name, s.description, s.icon_url,"
-            "       s.gamerscore, "
-            f"      {rarity()} AS rarity_percent,"
-            "       s.platform, s.is_secret, s.trophy_type, s.trophy_group_id,"
-            "       t.name AS game,"
-            # COALESCE(unlocked_at, created_at): Microsoft sends a placeholder
-            # date for some Xbox 360 achievements, which the parser discards
-            # (see services/xbox/models.py). Those rows still count (owner
-            # decision, 2026-09-13) — when the platform gives no usable time,
-            # when the bot first saw it is the honest stand-in. The stored
-            # column keeps the NULL; only what is read carries the fallback.
-            "       COALESCE(s.unlocked_at, s.created_at) AS seen_at "
-            "FROM seen_achievements s "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            + rarity_cache_join()
-            + "WHERE s.xuid = ? "
-            "ORDER BY seen_at DESC LIMIT ?",
-            (xuid, limit),
-        )
-        return [
-            AchievementRow(
-                title_id=row["title_id"],
-                achievement_id=row["achievement_id"],
-                name=row["name"],
-                description=row["description"],
-                icon_url=row["icon_url"],
-                unlocked_at=row["seen_at"],
-                gamerscore=row["gamerscore"],
-                rarity_percent=row["rarity_percent"],
-                platform=row["platform"],
-                title_name=row["game"],
-                is_secret=bool(row["is_secret"]),
-                trophy_type=row["trophy_type"],
-                trophy_group_id=row["trophy_group_id"],
-            )
-            for row in await cursor.fetchall()
-        ]
 
     async def has_any_achievements(self, xuid: str) -> bool:
         cursor = await self._conn.execute(
@@ -371,8 +293,10 @@ class _AchievementsRepo:
         )
         return await cursor.fetchone() is not None
 
-    async def unpublished_achievements(self, tg_id: int, chat_id: int) -> list[AchievementRow]:
-        """Every one of this person's achievements — any platform, `xuid`
+    async def unpublished_achievements(
+        self, person_id: int, chat_id: int, *, seen_since: str
+    ) -> list[AchievementRow]:
+        """This person's achievements — any platform, `xuid`
         populated on each row since they don't all share one — that never
         made it into `publications` for this specific chat (2026-09-09,
         anti-flood filter, poller/flood_flush.py): an achievement the flood
@@ -388,6 +312,12 @@ class _AchievementsRepo:
         caller re-runs `passes_filters` before using any of these, so a
         correctly-excluded achievement is excluded again, forever, exactly
         as it is today outside the flood filter entirely.
+
+        Only rows the bot stored at `seen_since` or later (#167): what the
+        flood filter held back arrived inside its window, and everything else
+        never posted here — history older than a catch-up's publish window,
+        unlocks from before the person joined this chat — must not ride out
+        in the digest.
         """
         cursor = await self._conn.execute(
             "SELECT s.title_id, s.achievement_id, s.name, s.description, s.icon_url,"
@@ -408,9 +338,10 @@ class _AchievementsRepo:
             "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "
             # A muted account (#20) holds nothing back to flush: it never
             # posts at all, so the flood filter's backlog excludes it too.
-            "WHERE al.tg_id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL AND al.publishes = 1 "
+            "WHERE alu.id = ? AND s.is_backfill = 0 AND p.chat_id IS NULL AND al.publishes = 1 "
+            "  AND s.created_at >= ? "
             "ORDER BY COALESCE(s.unlocked_at, s.created_at) ASC",
-            (chat_id, tg_id),
+            (chat_id, person_id, seen_since),
         )
         return [
             AchievementRow(

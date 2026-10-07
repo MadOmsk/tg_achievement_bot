@@ -9,18 +9,21 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
+from pathlib import Path
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import InlineKeyboardMarkup, InputMediaPhoto
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InputMediaPhoto
 
 from bot.config import Settings
 from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.i18n import gettext
+from bot.services import achievement_icons, covers, images
 from bot.services.achievements import passes_filters
 from bot.services.chat_gone import chat_is_gone
 from bot.services.descriptions_view import localize_descriptions
@@ -47,6 +50,10 @@ SEND_INTERVAL_SECONDS = 3.0  # ~20 messages a minute
 # 7.2), the gallery is just illustrative, not required to be exhaustive.
 MEDIA_GROUP_MAX = 10
 
+# Told when a person has new achievements in one game, for the people following
+# them (#164): (person_id, platform, title_id, game, count).
+PostNotice = Callable[..., Awaitable[None]]
+
 
 @dataclass(slots=True)
 class PublishJob:
@@ -67,6 +74,35 @@ class PublishJob:
     # platform happened to be first.
     items: list[tuple[str, str, str]] = field(default_factory=list)
     reply_markup: InlineKeyboardMarkup | None = None
+    # Pictures to try when the gallery's first one does not go through, or
+    # there is none: the achievement's icon cached on disk, then the game's
+    # cover (its file, its URL) — `Picture`s.
+    backups: list[Picture] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Picture:
+    """One way to give a post its picture: a URL Telegram fetches (`url`), a
+    URL the bot fetches and uploads (`fetch`), or a file on disk (`file`)."""
+
+    how: str
+    where: str
+    spoiler: bool = False
+
+
+async def _photo_input(picture: Picture) -> str | BufferedInputFile | None:
+    """What `send_photo` takes for one picture, or None when there is nothing
+    to send (a fetch that failed, a file gone)."""
+    if picture.how == "url":
+        return picture.where
+    if picture.how == "fetch":
+        payload = await images.fetch(picture.where)
+    else:
+        try:
+            payload = await asyncio.to_thread(Path(picture.where).read_bytes)
+        except OSError:
+            return None
+    return BufferedInputFile(payload, filename="picture.jpg") if payload else None
 
 
 def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
@@ -109,6 +145,9 @@ class Publisher:
         # the life of the process instead of deactivated, see `_send`.
         self._unreachable: set[int] = set()
         self._worker: asyncio.Task[None] | None = None
+        # Set once the app's notifications exist (bot/main.py).
+        self.on_new_post: PostNotice | None = None
+        self._notices: set[asyncio.Task[None]] = set()
 
     async def _get_bot_username(self) -> str:
         if self._bot_username:
@@ -159,7 +198,7 @@ class Publisher:
 
     async def publish(
         self,
-        tg_id: int,
+        person_id: int,
         xuid: str,
         gamertag: str,
         achievements: list[AchievementRow],
@@ -186,7 +225,7 @@ class Publisher:
         # The person's own switch for this account (#20): muted, it stays
         # stored and counted, and posts nowhere.
         if not await self._repo.account_publishes(
-            tg_id, account_platform_of(achievements[0].platform), xuid
+            person_id, account_platform_of(achievements[0].platform), xuid
         ):
             return
         if window_hours is not None:
@@ -198,8 +237,9 @@ class Publisher:
             ]
             if not achievements:
                 return
+        self._tell_followers(person_id, achievements, title_name)
 
-        for chat in await self._repo.publication_targets(tg_id):
+        for chat in await self._repo.publication_targets(person_id):
             allowed = [
                 item
                 for item in achievements
@@ -217,7 +257,7 @@ class Publisher:
                 continue
 
             if chat.flood_limit > 0:
-                allowed = await self._apply_flood_filter(tg_id, chat, allowed)
+                allowed = await self._apply_flood_filter(person_id, chat, allowed)
                 if not allowed:
                     continue  # every item this call was buffered, not sent
 
@@ -245,7 +285,7 @@ class Publisher:
             # singular above), so every item in `allowed` shares it.
             game_ref = (allowed[0].platform, allowed[0].title_id) if allowed else None
             markup = await self._markup_for(
-                chat.chat_id, chat.locale, person_id=tg_id, game=game_ref
+                chat.chat_id, chat.locale, person_id=person_id, game=game_ref
             )
             if len(allowed) >= chat.digest_threshold:
                 await self._queue.put(
@@ -257,6 +297,7 @@ class Publisher:
                         gallery=_gallery(allowed),
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
                         reply_markup=markup,
+                        backups=await self._backups(allowed[0]),
                     )
                 )
                 continue
@@ -286,11 +327,61 @@ class Publisher:
                         gallery=_gallery([item]),
                         items=[(xuid, item.title_id, item.achievement_id)],
                         reply_markup=markup,
+                        backups=await self._backups(item),
                     )
                 )
 
+    def _tell_followers(
+        self, person_id: int, achievements: list[AchievementRow], title_name: str | None
+    ) -> None:
+        """The followers' notice is about the post itself, not any chat: it goes
+        whatever the chats filter, in the background, so pushes to many devices
+        never hold up publishing."""
+        if self.on_new_post is None:
+            return
+        first = achievements[0]
+        game = first.title_name or title_name or first.title_id
+        # The notice names an achievement and shows its picture — never a secret one.
+        shown = next((item for item in achievements if not item.is_secret), None)
+        notice = self.on_new_post
+
+        async def tell() -> None:
+            try:
+                await notice(
+                    person_id,
+                    first.platform,
+                    first.title_id,
+                    game,
+                    len(achievements),
+                    achievement=shown.name if shown else None,
+                    icon=shown.icon_url if shown else None,
+                )
+            except Exception:
+                log.exception("post notices for person_id=%s failed", person_id)
+
+        task = asyncio.create_task(tell())
+        self._notices.add(task)
+        task.add_done_callback(self._notices.discard)
+
+    async def _backups(self, item: AchievementRow) -> list[Picture]:
+        """Pictures for a post whose own icon cannot be sent: that icon from
+        the disk cache, then the game's cover — its file, its URL. A cover
+        reveals nothing, so it is never behind a spoiler."""
+        backups: list[Picture] = []
+        cached = achievement_icons.find_cached_icon(
+            item.platform, item.title_id, item.achievement_id
+        )
+        if cached is not None:
+            backups.append(Picture("file", str(cached), item.is_secret))
+        cover_path, cover_url = await self._repo.title_cover(item.title_id)
+        if cover_path:
+            backups.append(Picture("file", str(covers.cover_dir() / cover_path)))
+        if cover_url:
+            backups += [Picture("url", cover_url), Picture("fetch", cover_url)]
+        return backups
+
     async def _apply_flood_filter(
-        self, tg_id: int, chat: ChatTarget, allowed: list[AchievementRow]
+        self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]
     ) -> list[AchievementRow]:
         """Anti-flood filter (2026-09-09 user request): up to
         `chat.flood_limit` individually-notified achievements per rolling
@@ -311,14 +402,18 @@ class Publisher:
         into throttled mode, exactly as if it had arrived on its own.
         """
         now = utcnow()
-        state = await self._repo.get_flood_state(tg_id, chat.chat_id)
-        if state is not None and now >= state.window_started_at + timedelta(
-            minutes=chat.flood_window_minutes
+        state = await self._repo.get_flood_state(person_id, chat.chat_id)
+        if (
+            state is not None
+            and not state.throttled
+            and now >= state.window_started_at + timedelta(minutes=chat.flood_window_minutes)
         ):
-            # This window is over. Whatever it left buffered is
-            # flood_flush.py's job to find and send, not this one's —
-            # simplest to just treat this as "no window open" and let a
-            # fresh one start below, same as if nothing had ever run yet.
+            # This window is over: a fresh one starts below, same as if
+            # nothing had ever run yet. A *throttled* one that is over stays
+            # as it is until flood_flush.py sweeps it (within the minute):
+            # starting afresh here wrote over the state the sweep looks for,
+            # and what the window held back was never sent (#167). Whatever
+            # arrives meanwhile is held too and goes out in the same digest.
             state = None
 
         window_started_at = state.window_started_at if state is not None else now
@@ -336,7 +431,7 @@ class Publisher:
                 window_started_at = now  # restart right here, not at expiry
 
         await self._repo.set_flood_state(
-            tg_id,
+            person_id,
             chat.chat_id,
             window_started_at=window_started_at,
             count_in_window=count,
@@ -394,7 +489,7 @@ class Publisher:
         return result
 
     async def publish_flood_digest(
-        self, tg_id: int, chat_id: int, achievements: list[AchievementRow]
+        self, person_id: int, chat_id: int, achievements: list[AchievementRow]
     ) -> None:
         """The flush side of `_apply_flood_filter` above — called by
         poller/flood_flush.py once a throttled window closes. Unlike every
@@ -413,8 +508,8 @@ class Publisher:
         # subscription walk), and one lookup per flushed window is nothing.
         locale = await self._repo.chat_locale(chat_id)
         achievements = await localize_descriptions(self._repo, achievements, locale)
-        user = await self._repo.get_user(tg_id)
-        links = await self._repo.platform_links_of(tg_id)
+        user = await self._repo.get_user(person_id)
+        links = await self._repo.platform_links_of(person_id)
         platforms = {account_platform_of(item.platform) for item in achievements}
         accounts = {(account_platform_of(item.platform), item.xuid) for item in achievements}
         name: str | None = None
@@ -458,7 +553,7 @@ class Publisher:
                         external_id=link.external_id,
                     )
         if not name or name == NO_NICKNAME:
-            name = person_name_of(user, links) if user else f"id{tg_id}"
+            name = person_name_of(user, links) if user else f"id{person_id}"
 
         missing = [a.title_id for a in achievements if not getattr(a, "game_platforms", None)]
         if missing:
@@ -499,7 +594,7 @@ class Publisher:
             if len(titles) == 1:
                 game_ref = next(iter(titles))
 
-        markup = await self._markup_for(chat_id, locale, person_id=tg_id, game=game_ref)
+        markup = await self._markup_for(chat_id, locale, person_id=person_id, game=game_ref)
         await self._queue.put(
             PublishJob(
                 chat_id=chat_id,
@@ -511,6 +606,7 @@ class Publisher:
                     if item.xuid
                 ],
                 reply_markup=markup,
+                backups=await self._backups(achievements[0]),
             )
         )
 
@@ -591,15 +687,27 @@ class Publisher:
                         job.chat_id,
                     )
 
+            # A post always goes out, and with a picture whenever one can be
+            # found at all (owner, 2026-10-07): the achievement's icon by URL
+            # (Telegram fetches it), the same bytes fetched by the bot (Telegram
+            # cannot always reach a platform's CDN), the icon cached on disk,
+            # then the game's cover; text alone only when there is none.
+            candidates: list[Picture] = []
             if job.gallery:
                 url, secret = job.gallery[0]
+                candidates += [Picture("url", url, secret), Picture("fetch", url, secret)]
+            candidates += job.backups
+            for picture in candidates:
+                photo = await _photo_input(picture)
+                if photo is None:
+                    continue
                 try:
                     message = await self._bot.send_photo(
                         job.chat_id,
-                        photo=url,
+                        photo=photo,
                         caption=job.text,
                         parse_mode=ParseMode.HTML,
-                        has_spoiler=secret,
+                        has_spoiler=picture.spoiler,
                         reply_markup=job.reply_markup,
                     )
                     return message.message_id
@@ -608,7 +716,14 @@ class Publisher:
                 except Exception as exc:
                     if chat_is_gone(exc):
                         raise
-                    log.info("icon for chat %s did not go through, sending text", job.chat_id)
+                    log.info(
+                        "a picture for chat %s did not go through (%s): %r",
+                        job.chat_id,
+                        picture.how,
+                        exc,
+                    )
+            if candidates:
+                log.info("sending chat %s the text without a picture", job.chat_id)
 
             message = await self._bot.send_message(
                 job.chat_id,

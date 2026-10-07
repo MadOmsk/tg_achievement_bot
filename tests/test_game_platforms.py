@@ -27,7 +27,7 @@ async def test_upsert_title_and_query_platforms(repo: Repo) -> None:
 
     # Insert achievement and check users_games_achievements
     await repo.ensure_user(1, "player")
-    await repo.link_xbox_account(1, "xuid-1", "Player", 0)
+    await repo.link_xbox_account(await repo.person_id(1), "xuid-1", "Player", 0)
     row = AchievementRow(
         title_id="title-1",
         achievement_id="a1",
@@ -57,7 +57,7 @@ async def test_upsert_title_and_query_platforms(repo: Repo) -> None:
 
 async def test_backfill_leaves_device_null(repo: Repo) -> None:
     await repo.ensure_user(2, "player2")
-    await repo.link_xbox_account(2, "xuid-2", "Player2", 0)
+    await repo.link_xbox_account(await repo.person_id(2), "xuid-2", "Player2", 0)
     row = AchievementRow(
         title_id="title-bf",
         achievement_id="a-bf",
@@ -85,8 +85,8 @@ async def test_backfill_leaves_device_null(repo: Repo) -> None:
 async def test_presence_state_device_and_chat_member_presence(repo: Repo) -> None:
     await repo.upsert_chat(-1001, "Chat", 1)
     await repo.ensure_user(3, "player3")
-    await repo.link_xbox_account(3, "xuid-3", "Player3", 0)
-    await repo.subscribe(-1001, 3)
+    await repo.link_xbox_account(await repo.person_id(3), "xuid-3", "Player3", 0)
+    await repo.subscribe(-1001, await repo.person_id(3))
 
     # Save presence with device
     await repo.save_presence_state(
@@ -107,8 +107,8 @@ async def test_presence_state_device_and_chat_member_presence(repo: Repo) -> Non
 async def test_psn_presence_state_device_and_chat_member_presence(repo: Repo) -> None:
     await repo.upsert_chat(-1002, "Chat", 1)
     await repo.ensure_user(4, "player4")
-    await repo.link_platform_account(4, Platform.PSN, "psn-4", "PSNPlayer")
-    await repo.subscribe(-1002, 4)
+    await repo.link_platform_account(await repo.person_id(4), Platform.PSN, "psn-4", "PSNPlayer")
+    await repo.subscribe(-1002, await repo.person_id(4))
 
     # Save PSN presence with device
     await repo.save_psn_presence_state(
@@ -128,8 +128,8 @@ async def test_psn_presence_state_device_and_chat_member_presence(repo: Repo) ->
 async def test_chat_recent_achievements_includes_device_and_platforms(repo: Repo) -> None:
     await repo.upsert_chat(-1003, "Chat", 1)
     await repo.ensure_user(5, "player5")
-    await repo.link_xbox_account(5, "xuid-5", "Player5", 0)
-    await repo.subscribe(-1003, 5)
+    await repo.link_xbox_account(await repo.person_id(5), "xuid-5", "Player5", 0)
+    await repo.subscribe(-1003, await repo.person_id(5))
 
     platforms_json = json.dumps(["XboxSeriesX"])
     await repo.upsert_title("title-5", "Gears 5", Platform.XBOX_MODERN, platforms=platforms_json)
@@ -308,6 +308,34 @@ async def test_save_title_history_writes_the_game_platforms(repo: Repo) -> None:
     assert title_row_360["t-360-dev"] == '["Xbox360"]'
 
 
+async def test_a_game_moved_to_360_takes_its_catalog_along(repo: Repo) -> None:
+    """#167: history that turns out to be a 360 game moves its earned rows and
+    its catalog (names, descriptions, rarity, listed size) together."""
+    from bot.db.repo import TitleAchievementRow, TitleHistoryRow
+
+    await repo.upsert_title("t-moved", "Fable II", Platform.XBOX_MODERN)
+    await repo.upsert_title_achievements(
+        [TitleAchievementRow("xbox_modern", "t-moved", "a1", name_en="Hero")], complete=True
+    )
+    await repo.save_title_history(
+        "xuid-1",
+        [
+            TitleHistoryRow(
+                title_id="t-moved",
+                name="Fable II",
+                platform=Platform.XBOX_360,
+                current_gamerscore=10,
+                max_gamerscore=1000,
+                achievements_unlocked=1,
+                achievements_total=10,
+                last_played_at="2026-09-20T12:00:00+00:00",
+            )
+        ],
+    )
+    assert await repo.title_achievements_count("xbox_360", "t-moved") == 1
+    assert await repo.title_achievements_count("xbox_modern", "t-moved") == 0
+
+
 # The device an achievement was earned on is a fact or nothing (owner, 2026-09-24).
 
 
@@ -360,7 +388,10 @@ async def test_a_device_presence_reported_is_kept(repo: Repo) -> None:
 async def test_steam_never_gets_a_device(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.insert_new_achievements_steam(
-        1, "76561197960287930", [_row("550", "a", Platform.STEAM)], is_backfill=True
+        await repo.person_id(1),
+        "76561197960287930",
+        [_row("550", "a", Platform.STEAM)],
+        is_backfill=True,
     )
     await repo.upsert_title("550", "L4D2", Platform.STEAM, platforms='["PC"]')
 
@@ -561,8 +592,8 @@ async def test_the_walker_asks_through_an_owner_with_a_live_token(repo: Repo) ->
     from bot.poller.title_platforms import TitlePlatformsRefresh
 
     await repo.ensure_user(7, "igor")
-    await repo.save_refresh_token(7, "encrypted")
-    await repo.link_xbox_account(7, "xuid-7", "Seven", None)
+    await repo.save_refresh_token(await repo.person_id(7), "encrypted")
+    await repo.link_xbox_account(await repo.person_id(7), "xuid-7", "Seven", None)
     await repo.upsert_title("t-walk", "Walked", Platform.XBOX_MODERN)
     await repo.upsert_title("t-orphan", "Nobody holds it", Platform.XBOX_MODERN)
     await repo.insert_new_achievements(
@@ -579,8 +610,8 @@ async def test_the_walker_asks_through_an_owner_with_a_live_token(repo: Repo) ->
 
 async def test_games_nobody_can_be_asked_about_do_not_stall_the_queue(repo: Repo) -> None:
     await repo.ensure_user(7, "igor")
-    await repo.save_refresh_token(7, "encrypted")
-    await repo.link_xbox_account(7, "xuid-7", "Seven", None)
+    await repo.save_refresh_token(await repo.person_id(7), "encrypted")
+    await repo.link_xbox_account(await repo.person_id(7), "xuid-7", "Seven", None)
     for n in range(3):
         await repo.upsert_title(f"t-orphan-{n}", "Nobody holds it", Platform.XBOX_MODERN)
     await repo.upsert_title("t-held", "Held", Platform.XBOX_MODERN)
@@ -588,4 +619,4 @@ async def test_games_nobody_can_be_asked_about_do_not_stall_the_queue(repo: Repo
         "xuid-7", [_row("t-held", "1", Platform.XBOX_MODERN)], is_backfill=True
     )
 
-    assert await repo.titles_needing_platforms(1) == [("t-held", 7)]
+    assert await repo.titles_needing_platforms(1) == [("t-held", await repo.person_id(7))]

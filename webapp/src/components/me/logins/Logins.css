@@ -1,0 +1,111 @@
+.email-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.email-note b {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.email-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.email-links.is-center {
+  justify-content: center;
+}
+
+.email-links .see-all:disabled {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.logins-form {
+  padding: 4px 0 8px;
+}
+
+.logins-form .email-form {
+  max-width: none;
+}
+
+.logins-widget {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 0;
+}
+
+.merge-text {
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.merge-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.merge-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.merge-side small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.merge-side strong {
+  overflow-wrap: anywhere;
+}
+
+.merge-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.merge-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.merge-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.merge-actions .btn {
+  width: 100%;
+  min-height: 48px;
+}
+
+.logins-link {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 10px;
+}

@@ -45,7 +45,7 @@ async def test_the_rarity_mode_is_a_setting_not_a_chat_field(
 
     await repo.ensure_user(user_id, "testuser")
     await repo.upsert_chat(chat_id, "Test Chat", user_id)
-    await repo.subscribe(chat_id, user_id)
+    await repo.subscribe(chat_id, await repo.person_id(user_id))
 
     init_data = _signed_init_data(bot_token, user_id)
     headers = {"X-Telegram-Init-Data": init_data}
@@ -78,7 +78,7 @@ async def test_an_account_switch_turns_its_posts_off(repo: Repo, settings: Setti
     setup_mini_api(app, settings, repo)
     user_id = 42
     await repo.ensure_user(user_id, "testuser")
-    await repo.link_platform_account(user_id, "psn", "acc-1", "Gamer")
+    await repo.link_platform_account(await repo.person_id(user_id), "psn", "acc-1", "Gamer")
     headers = {
         "X-Telegram-Init-Data": _signed_init_data(settings.bot_token.get_secret_value(), user_id)
     }
@@ -91,7 +91,7 @@ async def test_an_account_switch_turns_its_posts_off(repo: Repo, settings: Setti
         )
         assert resp.status == 200
         assert (await resp.json())["psn"]["publishes"] is False
-        assert not await repo.account_publishes(user_id, "psn", "acc-1")
+        assert not await repo.account_publishes(await repo.person_id(user_id), "psn", "acc-1")
 
         resp = await client.patch(
             "/api/mini/accounts/steam", json={"publishes": False}, headers=headers

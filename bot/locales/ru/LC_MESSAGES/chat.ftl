@@ -2,7 +2,7 @@
 chat-subscribe-groups-only = Эта команда для группового чата — там, где нужны публикации.
 chat-subscribe-connect-first = Сначала подключи хотя бы одну платформу — кнопки ниже.
 chat-subscribe-already = Ты уже публикуешься здесь.
-chat-subscribe-done = Готово. Ачивки { $gamertag } будут прилетать сюда.
+chat-subscribe-done = Готово. Достижения { $gamertag } будут прилетать сюда.
     Какие именно публиковать — в настройках, кнопка ниже.
 chat-unsubscribe-not-subscribed = Ты здесь и не публиковался.
 chat-unsubscribe-confirm-button = Да, отписаться

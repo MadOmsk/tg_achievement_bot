@@ -8,6 +8,7 @@ export function Icon({
   name:
     | "home"
     | "people"
+    | "handshake"
     | "search"
     | "gear"
     | "g"
@@ -24,7 +25,19 @@ export function Icon({
     | "sync"
     | "off"
     | "sort"
-    | "guide";
+    | "guide"
+    | "bell"
+    | "send"
+    | "play"
+    | "read-all"
+    | "video"
+    | "sliders"
+    | "chat"
+    | "shield"
+    | "gauge"
+    | "key"
+    | "gift"
+    | "copy";
   size?: number;
   filled?: boolean;
 }) {
@@ -39,6 +52,111 @@ export function Icon({
     strokeLinejoin: "round" as const,
     "aria-hidden": true,
   };
+  if (name === "copy") {
+    return (
+      <svg {...props}>
+        <rect x="8.5" y="8.5" width="11" height="11" rx="2.2" />
+        <path d="M15.5 8.5V6.2a1.7 1.7 0 0 0-1.7-1.7H6.2a1.7 1.7 0 0 0-1.7 1.7v7.6a1.7 1.7 0 0 0 1.7 1.7h2.3" />
+      </svg>
+    );
+  }
+  if (name === "gift") {
+    return (
+      <svg {...props}>
+        <rect x="4" y="9" width="16" height="4" rx="1" />
+        <path d="M5.5 13v6.3a1.2 1.2 0 0 0 1.2 1.2h10.6a1.2 1.2 0 0 0 1.2-1.2V13M12 9v11.5" />
+        <path d="M12 9c-1.5-3.6-5.6-4-5.6-1.6C6.4 9 9.5 9 12 9zM12 9c1.5-3.6 5.6-4 5.6-1.6C17.6 9 14.5 9 12 9z" />
+      </svg>
+    );
+  }
+  if (name === "video") {
+    return (
+      <svg {...props}>
+        <rect x="3" y="5.5" width="18" height="13" rx="3.5" />
+        <path d="M10.2 9.4v5.2l4.4-2.6z" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (name === "read-all") {
+    return (
+      <svg {...props}>
+        <path d="M2.5 12.5l4.2 4.2L15 8.4" />
+        <path d="M11.4 15.6l1.1 1.1 8.9-8.9" />
+      </svg>
+    );
+  }
+  if (name === "play") {
+    return (
+      <svg {...props}>
+        <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+  // Friends: two hands, as the friend mark and a new friend's notice show it.
+  if (name === "handshake") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
+        <path d="M12.22 19.85c-.18.18-.5.21-.71 0a.5.5 0 0 1 0-.71l3.39-3.39-1.41-1.41-3.39 3.39c-.19.2-.51.19-.71 0a.5.5 0 0 1 0-.71l3.39-3.39-1.41-1.41-3.39 3.39c-.18.18-.5.21-.71 0a.51.51 0 0 1 0-.71l3.39-3.39-1.42-1.41-3.39 3.39c-.18.18-.5.21-.71 0a.51.51 0 0 1 0-.71L9.52 8.4l1.87 1.86c.95.95 2.59.94 3.54 0 .98-.98.98-2.56 0-3.54l-1.86-1.86.28-.28c.78-.78 2.05-.78 2.83 0l4.24 4.24c.78.78.78 2.05 0 2.83l-8.2 8.2zm9.61-6.78a4 4 0 0 0 0-5.66l-4.24-4.24a4 4 0 0 0-5.66 0l-.28.28-.28-.28a4 4 0 0 0-5.66 0L2.17 6.71a3.99 3.99 0 0 0-.4 5.19l1.45-1.45a2 2 0 0 1 .37-2.33l3.54-3.54c.78-.78 2.05-.78 2.83 0l3.56 3.56c.18.18.21.5 0 .71-.21.21-.53.18-.71 0L9.52 5.57l-5.8 5.79c-.98.97-.98 2.56 0 3.54.39.39.89.63 1.42.7a2.46 2.46 0 0 0 2.12 2.12 2.46 2.46 0 0 0 2.12 2.12c.07.54.31 1.03.7 1.42.47.47 1.1.73 1.77.73.67 0 1.3-.26 1.77-.73l8.21-8.19z" fill="currentColor" stroke="currentColor" strokeWidth={1.1} strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (name === "send") {
+    return (
+      <svg {...props}>
+        <path d="M20.5 3.5 10.6 13.4" />
+        <path d="M20.5 3.5 14.2 20.4l-3.6-7-7-3.6z" />
+      </svg>
+    );
+  }
+  if (name === "sliders") {
+    return (
+      <svg {...props}>
+        <path d="M4 7.5h9.5M18.5 7.5H20M4 16.5h3.5M12.5 16.5H20" />
+        <circle cx="16" cy="7.5" r="2.5" />
+        <circle cx="10" cy="16.5" r="2.5" />
+      </svg>
+    );
+  }
+  if (name === "chat") {
+    return (
+      <svg {...props}>
+        <path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4.5 19.5l1.3-4.3A7.5 7.5 0 1 1 20 11.5z" />
+      </svg>
+    );
+  }
+  if (name === "shield") {
+    return (
+      <svg {...props}>
+        <path d="M12 3.5 19 6v5.6c0 4.3-2.9 7.7-7 8.9-4.1-1.2-7-4.6-7-8.9V6z" />
+        <path d="m9 12 2.2 2.2L15.2 10" />
+      </svg>
+    );
+  }
+  if (name === "gauge") {
+    return (
+      <svg {...props}>
+        <path d="M4.6 17.5a8.5 8.5 0 1 1 14.8 0" />
+        <path d="m12 13.5 3.6-4.3" />
+        <circle cx="12" cy="14" r="1.2" />
+      </svg>
+    );
+  }
+  if (name === "key") {
+    return (
+      <svg {...props}>
+        <circle cx="8" cy="15.5" r="4" />
+        <path d="m10.9 12.6 8.6-8.6M16.6 6.9l2.4 2.4M14.3 9.2l1.9 1.9" />
+      </svg>
+    );
+  }
+  if (name === "bell") {
+    return (
+      <svg {...props}>
+        <path d="M6 16.4V11a6 6 0 0 1 12 0v5.4l1.6 2.1H4.4z" />
+        <path d="M10 20.6a2 2 0 0 0 4 0" />
+      </svg>
+    );
+  }
   if (name === "home") {
     return (
       <svg {...props}>
@@ -148,6 +266,14 @@ export function Icon({
     );
   }
   if (name === "gear") {
+    if (filled) {
+      // One shape with the middle cut out: two filled paths would cover the hole.
+      return (
+        <svg {...props} fillRule="evenodd">
+          <path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2zM19.2 13.1c.05-.36.08-.73.08-1.1s-.03-.74-.08-1.1l2.05-1.6-1.95-3.38-2.42.78a7.7 7.7 0 0 0-1.9-1.1L14.6 3.5h-5.2l-.38 2.1a7.7 7.7 0 0 0-1.9 1.1l-2.42-.78-1.95 3.38 2.05 1.6a7.4 7.4 0 0 0 0 2.2l-2.05 1.6 1.95 3.38 2.42-.78c.57.45 1.2.82 1.9 1.1l.38 2.1h5.2l.38-2.1c.7-.28 1.33-.65 1.9-1.1l2.42.78 1.95-3.38z" />
+        </svg>
+      );
+    }
     return (
       <svg {...props}>
         <path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2z" />

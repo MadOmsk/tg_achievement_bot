@@ -89,7 +89,7 @@ class TitleWork:
     platform: str
     title_id: str
     achievement_ids: set[str] = field(default_factory=set)
-    owners: list[tuple[int, str]] = field(default_factory=list)  # (tg_id, external id)
+    owners: list[tuple[int, str]] = field(default_factory=list)  # (person_id, external id)
 
 
 @dataclass(slots=True)
@@ -110,7 +110,7 @@ async def gather_work(repo: Repo, platforms: set[str]) -> list[TitleWork]:
         platform,
         title_id,
         achievement_id,
-        tg_id,
+        person_id,
         external_id,
     ) in await repo.uncached_descriptions():
         if platform not in platforms:
@@ -120,7 +120,7 @@ async def gather_work(repo: Repo, platforms: set[str]) -> list[TitleWork]:
         if work is None:
             work = grouped[key] = TitleWork(platform=platform, title_id=title_id)
         work.achievement_ids.add(achievement_id)
-        owner = (tg_id, external_id)
+        owner = (person_id, external_id)
         if owner not in work.owners:
             work.owners.append(owner)
     return sorted(grouped.values(), key=lambda w: (w.platform, w.title_id))
@@ -182,7 +182,7 @@ async def run_xbox(
         repo,
         anthropic_auth,
         client,
-        owners=[tg_id for tg_id, _external in work.owners],
+        owners=[person_id for person_id, _external in work.owners],
         title_id=work.title_id,
         platform=work.platform,
     )

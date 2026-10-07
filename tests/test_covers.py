@@ -119,8 +119,8 @@ async def test_an_xbox_cover_is_looked_up_through_an_owner(
     repo: Repo, cipher, monkeypatch, tmp_path
 ) -> None:
     await repo.ensure_user(7, "igor")
-    await repo.save_refresh_token(7, cipher.encrypt("refresh"))
-    await repo.link_xbox_account(7, "xuid-1", "Mad Omsk", None)
+    await repo.save_refresh_token(await repo.person_id(7), cipher.encrypt("refresh"))
+    await repo.link_xbox_account(await repo.person_id(7), "xuid-1", "Mad Omsk", None)
     await repo.upsert_title(XBOX_TITLE, "Gears of War 3", Platform.XBOX_360)
     await repo.insert_new_achievements(
         "xuid-1",
@@ -145,7 +145,7 @@ async def test_an_xbox_cover_is_looked_up_through_an_owner(
 
     await CoverRefresh(repo, client).tick()  # type: ignore[arg-type]
 
-    assert client.asked == [(7, XBOX_TITLE)]
+    assert client.asked == [(await repo.person_id(7), XBOX_TITLE)]
     assert await repo.title_icon_url(XBOX_TITLE) == "https://xbox.test/art.jpg"
 
 
@@ -182,23 +182,10 @@ async def test_a_failed_download_still_keeps_the_url(repo: Repo, monkeypatch, tm
     assert [t.title_id for t in await repo.titles_needing_cover(10)] == [STEAM_APPID]
 
 
-async def test_coverage_counts_what_is_left(repo: Repo, monkeypatch, tmp_path) -> None:
-    await repo.upsert_title(STEAM_APPID, "Team Fortress 2", Platform.STEAM)
-    await repo.upsert_title(PSN_TITLE, "Marvel's Spider-Man", Platform.PSN)
-    assert await repo.cover_coverage() == (0, 0, 2)
-
-    _downloads_to(monkeypatch, tmp_path)
-    await CoverRefresh(repo, _FakeXbox()).tick()  # type: ignore[arg-type]
-
-    files, urls, total = await repo.cover_coverage()
-    assert (files, total) == (1, 2)
-    assert urls == 1
-
-
 async def _xbox_owner_with(repo: Repo, cipher, *, tg_id: int = 7) -> None:
     await repo.ensure_user(tg_id, "igor")
-    await repo.save_refresh_token(tg_id, cipher.encrypt("refresh"))
-    await repo.link_xbox_account(tg_id, f"xuid-{tg_id}", "Mad Omsk", None)
+    await repo.save_refresh_token(await repo.person_id(tg_id), cipher.encrypt("refresh"))
+    await repo.link_xbox_account(await repo.person_id(tg_id), f"xuid-{tg_id}", "Mad Omsk", None)
     await repo.upsert_title(XBOX_TITLE, "Gears of War 3", Platform.XBOX_360)
     await repo.insert_new_achievements(
         f"xuid-{tg_id}",
@@ -233,7 +220,7 @@ async def test_a_dead_login_is_never_asked_through(repo: Repo, cipher, monkeypat
     grant expired, and picking them as the owner would buy a refusal from
     Microsoft plus a doomed token refresh on every visit."""
     await _xbox_owner_with(repo, cipher)
-    await repo.set_token_status(7, "invalid")
+    await repo.set_token_status(await repo.person_id(7), "invalid")
     _downloads_to(monkeypatch, tmp_path)
     client = _FakeXbox()
 

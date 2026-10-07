@@ -41,9 +41,9 @@ def _row(achievement_id: str, *, rarity: float | None) -> AchievementRow:
 
 async def _person_with_uncached_history(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Gamer", 0)
     await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
     # As a contract-2 backfill leaves them: no percentage at all.
     await repo.insert_new_achievements(
         XUID, [_row("a1", rarity=None), _row("a2", rarity=None)], is_backfill=True
@@ -107,12 +107,16 @@ async def test_the_cache_answers_where_the_row_is_silent(repo: Repo) -> None:
     await _person_with_uncached_history(repo)
     since = month_cutoff_utc(180)
 
-    rare_before, _tiers = await repo.achievement_value_breakdown(TG_ID, since, 10.0)
+    rare_before, _tiers = await repo.achievement_value_breakdown(
+        await repo.person_id(TG_ID), since, 10.0
+    )
     assert rare_before == 0  # nothing ever said how rare these are
 
     await repo.cache_rarity(Platform.XBOX_MODERN, TITLE, {"a1": 2.0, "a2": 80.0})
 
-    rare_after, _tiers = await repo.achievement_value_breakdown(TG_ID, since, 10.0)
+    rare_after, _tiers = await repo.achievement_value_breakdown(
+        await repo.person_id(TG_ID), since, 10.0
+    )
     assert rare_after == 1  # a1 at 2% clears a 10% threshold, a2 at 80% does not
 
 
@@ -120,10 +124,12 @@ async def test_the_row_still_answers_when_the_cache_has_nothing(repo: Repo) -> N
     """The cache is preferred, not required — a Steam or PSN row has carried
     its own percentage all along."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Gamer", 0)
     await repo.insert_new_achievements(XUID, [_row("a1", rarity=1.5)], is_backfill=False)
 
-    rare, _tiers = await repo.achievement_value_breakdown(TG_ID, month_cutoff_utc(180), 10.0)
+    rare, _tiers = await repo.achievement_value_breakdown(
+        await repo.person_id(TG_ID), month_cutoff_utc(180), 10.0
+    )
     assert rare == 1
 
 
@@ -131,11 +137,13 @@ async def test_the_cache_wins_over_a_stale_row(repo: Repo) -> None:
     """A row keeps whatever the platform said the first time somebody here
     earned the achievement, and is never updated; the cache is refreshed."""
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Gamer", 0)
     await repo.insert_new_achievements(XUID, [_row("a1", rarity=1.0)], is_backfill=False)
     await repo.cache_rarity(Platform.XBOX_MODERN, TITLE, {"a1": 60.0})
 
-    rare, _tiers = await repo.achievement_value_breakdown(TG_ID, month_cutoff_utc(180), 10.0)
+    rare, _tiers = await repo.achievement_value_breakdown(
+        await repo.person_id(TG_ID), month_cutoff_utc(180), 10.0
+    )
     assert rare == 0  # no longer rare, and the row cannot say otherwise
 
 
@@ -179,7 +187,9 @@ async def test_the_walker_caches_percentages_for_achievements_nobody_here_earned
     await RarityBackfill(repo, FakeClient()).tick()  # type: ignore[arg-type]
 
     await repo.insert_new_achievements(XUID, [_row("a3", rarity=None)], is_backfill=False)
-    rare, _tiers = await repo.achievement_value_breakdown(TG_ID, month_cutoff_utc(180), 10.0)
+    rare, _tiers = await repo.achievement_value_breakdown(
+        await repo.person_id(TG_ID), month_cutoff_utc(180), 10.0
+    )
     assert rare == 2  # a1 at 2% and the brand-new a3 at 0.5%
 
 
@@ -215,7 +225,9 @@ async def test_an_old_cache_entry_is_still_used(repo: Repo) -> None:
     )
     await repo._conn.commit()
 
-    rare, _tiers = await repo.achievement_value_breakdown(TG_ID, month_cutoff_utc(180), 10.0)
+    rare, _tiers = await repo.achievement_value_breakdown(
+        await repo.person_id(TG_ID), month_cutoff_utc(180), 10.0
+    )
     assert rare == 1
 
 
@@ -233,7 +245,7 @@ async def test_the_walker_heals_titles_missing_from_catalogue(repo: Repo) -> Non
     await _person_with_uncached_history(repo)
     await repo.cache_rarity(Platform.XBOX_MODERN, TITLE, {"a1": 2.0})
 
-    await repo.save_refresh_token(TG_ID, b"mock-token")
+    await repo.save_refresh_token(await repo.person_id(TG_ID), b"mock-token")
 
     assert await repo.title_name(TITLE) is None
     missing = await repo.titles_missing_from_catalogue(10)
@@ -249,9 +261,9 @@ async def test_the_walker_heals_titles_missing_from_catalogue(repo: Repo) -> Non
 
 async def test_the_walker_fills_xbox_360_title_and_views_pick_up_cache(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Gamer", 0)
     await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
 
     row_360 = AchievementRow(
         title_id="t-360",
@@ -274,11 +286,7 @@ async def test_the_walker_fills_xbox_360_title_and_views_pick_up_cache(repo: Rep
     assert (TG_ID, "t-360") in client.asked
 
     # Verify cached rarity is picked up in queries
-    recent = await repo.recent_achievements(XUID, limit=5)
-    assert len(recent) == 1
-    assert recent[0].rarity_percent == 8.5
-
-    person_rec = await repo.person_recent(TG_ID, limit=5)
+    person_rec = await repo.person_recent(await repo.person_id(TG_ID), limit=5)
     assert len(person_rec) == 1
     assert person_rec[0].rarity_percent == 8.5
 
@@ -289,9 +297,9 @@ async def test_the_walker_fills_xbox_360_title_and_views_pick_up_cache(repo: Rep
 
 async def test_unpublished_achievements_reads_rarity_cache(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "someone")
-    await repo.link_xbox_account(TG_ID, XUID, "Gamer", 0)
+    await repo.link_xbox_account(await repo.person_id(TG_ID), XUID, "Gamer", 0)
     await repo.upsert_chat(CHAT_ID, "Chat", TG_ID)
-    await repo.subscribe(CHAT_ID, TG_ID)
+    await repo.subscribe(CHAT_ID, await repo.person_id(TG_ID))
 
     row_360 = AchievementRow(
         title_id="t-360",
@@ -308,6 +316,25 @@ async def test_unpublished_achievements_reads_rarity_cache(repo: Repo) -> None:
     await repo.insert_new_achievements(XUID, [row_360], is_backfill=False)
     await repo.cache_rarity(Platform.XBOX_360, "t-360", {"ach-2": 4.2})
 
-    pending = await repo.unpublished_achievements(TG_ID, CHAT_ID)
+    pending = await repo.unpublished_achievements(
+        await repo.person_id(TG_ID), CHAT_ID, seen_since="2000-01-01"
+    )
     assert len(pending) == 1
     assert pending[0].rarity_percent == 4.2
+
+
+async def test_an_empty_catalogue_search_is_not_repeated_every_minute(repo: Repo) -> None:
+    """#167: the search for games with no `titles` row walks every stored
+    achievement; after an empty answer it waits an hour."""
+    calls: list[int] = []
+    original = repo.titles_missing_from_catalogue
+
+    async def counted(limit: int):
+        calls.append(limit)
+        return await original(limit)
+
+    repo.titles_missing_from_catalogue = counted  # type: ignore[method-assign]
+    walker = RarityBackfill(repo, FakeClient())  # type: ignore[arg-type]
+    await walker.tick()
+    await walker.tick()
+    assert len(calls) == 1

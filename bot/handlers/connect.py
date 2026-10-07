@@ -26,6 +26,7 @@ from bot.handlers.panel import send_panel
 from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
+from bot.services.merge import PeopleMerge
 from bot.services.naming import xbox_nickname
 from bot.services.notify import AdminNotifier
 from bot.services.psn.auth import PsnAuth
@@ -83,25 +84,29 @@ async def start_with_payload(
     steam_auth: SteamAuth,
     bot: Bot,
     i18n: I18nContext,
+    merge: PeopleMerge,
 ) -> None:
     """Deep link from a group chat: its buttons send people here (SPEC 6.3)."""
-    person_id = _person_id(message)
-    if person_id is None:
+    tg_id = _sender_tg_id(message)
+    if tg_id is None:
         return
-    await repo.ensure_user(person_id, _username(message))
+    here = await repo.ensure_user(tg_id, _username(message))
+    if (command.args or "").startswith("link_"):
+        await _link_telegram(message, repo, merge, i18n, tg_id, here, command.args or "")
+        return
     if command.args == "panel":
-        await send_panel(bot, repo, person_id, i18n)
+        await send_panel(bot, repo, tg_id, i18n)
         return
     if command.args == "connectsteam":
         # Same prompt-and-wait as every other door into this flow
         # (steam.py's prompt_for_link, 2026-09-05 follow-up) — a deep link
         # can't carry the profile URL itself, but landing here now arms the
         # wait too, so there's nothing left to type but the link itself.
-        await prompt_for_link(bot, repo, steam_auth, person_id, i18n)
+        await prompt_for_link(bot, repo, steam_auth, tg_id, i18n)
         return
     if command.args == "connectpsn":
         # Same treatment as connectsteam above, for PSN (SPEC 9, M-PSN-1).
-        await prompt_for_psn_link(bot, repo, psn_auth, person_id, i18n)
+        await prompt_for_psn_link(bot, repo, psn_auth, tg_id, i18n)
         return
     is_connect, origin_chat_id = _parse_connect_payload(command.args or "")
     if is_connect:
@@ -109,7 +114,7 @@ async def start_with_payload(
         # group and does not need the whole greeting again. If the button
         # carried which group it was pressed in, we auto-subscribe him there
         # once the login actually succeeds (see on_linked in bot/main.py).
-        user = await repo.get_user(person_id)
+        user = await repo.get_user(await repo.person_id(tg_id))
         if user is not None and user.xuid:
             await message.answer(
                 i18n.get("connect-xbox-already-connected", name=_xbox_name(user)),
@@ -124,7 +129,7 @@ async def start_with_payload(
             return
         await _send_login_link(message, connect, repo, i18n, origin_chat_id=origin_chat_id)
         return
-    await _greet(message, repo, connect, bot, i18n, settings, person_id)
+    await _greet(message, repo, connect, bot, i18n, settings, tg_id)
 
 
 @router.message(CommandStart(), F.chat.type != ChatType.PRIVATE)
@@ -141,11 +146,11 @@ async def start(
     i18n: I18nContext,
     settings: Settings,
 ) -> None:
-    person_id = _person_id(message)
-    if person_id is None:
+    tg_id = _sender_tg_id(message)
+    if tg_id is None:
         return
-    await repo.ensure_user(person_id, _username(message))
-    await _greet(message, repo, connect, bot, i18n, settings, person_id)
+    await repo.ensure_user(tg_id, _username(message))
+    await _greet(message, repo, connect, bot, i18n, settings, tg_id)
 
 
 @router.message(Command("connect_xbox"), F.chat.type != ChatType.PRIVATE)
@@ -164,11 +169,11 @@ async def disconnect_xbox_in_group(message: Message, bot: Bot, i18n: I18nContext
 async def connect_command(
     message: Message, repo: Repo, connect: ConnectService, i18n: I18nContext
 ) -> None:
-    person_id = _person_id(message)
-    if person_id is None:
+    tg_id = _sender_tg_id(message)
+    if tg_id is None:
         return
-    await repo.ensure_user(person_id, _username(message))
-    user = await repo.get_user(person_id)
+    await repo.ensure_user(tg_id, _username(message))
+    user = await repo.get_user(await repo.person_id(tg_id))
     if user is not None and user.xuid:
         await message.answer(
             i18n.get("connect-xbox-already-connected-relogin", name=_xbox_name(user)),
@@ -186,10 +191,10 @@ async def connect_command(
 
 @router.message(Command("disconnect_xbox"), F.chat.type == ChatType.PRIVATE)
 async def disconnect_command(message: Message, repo: Repo, i18n: I18nContext) -> None:
-    person_id = _person_id(message)
-    if person_id is None:
+    tg_id = _sender_tg_id(message)
+    if tg_id is None:
         return
-    user = await repo.get_user(person_id)
+    user = await repo.get_user(await repo.person_id(tg_id))
     if user is None or not user.xuid:
         await message.answer(i18n.get("connect-xbox-not-connected"))
         return
@@ -230,14 +235,15 @@ async def disconnect_confirm(
     callback: CallbackQuery, repo: Repo, notifier: AdminNotifier, i18n: I18nContext
 ) -> None:
     tg_id = callback.from_user.id
-    user = await repo.get_user(tg_id)
+    person = await repo.person_id(tg_id)
+    user = await repo.get_user(person)
     gamertag = (user.gamertag if user else None) or f"id{tg_id}"
     if user is not None and user.xuid:
         await repo.delete_presence_state(user.xuid)
-    await repo.delete_token(tg_id)
-    await repo.delete_subscriptions_of_user(tg_id)
-    await repo.unlink_xbox_account(tg_id)
-    await notifier.user_disconnected(tg_id, gamertag, "disconnect-command")
+    await repo.delete_token(person)
+    await repo.delete_subscriptions_of_user(person)
+    await repo.unlink_xbox_account(person)
+    await notifier.user_disconnected(person, gamertag, "disconnect-command")
 
     # Found while refactoring (2026-09-05): none of the edits in this file
     # tolerated a failed edit, unlike panel.py/steam.py's own — now they do.
@@ -254,11 +260,20 @@ async def disconnect_confirm(
 
 
 @router.callback_query(F.data == "relogin")
-async def relogin(callback: CallbackQuery, connect: ConnectService, i18n: I18nContext) -> None:
+async def relogin(
+    callback: CallbackQuery,
+    connect: ConnectService,
+    repo: Repo,
+    i18n: I18nContext,
+) -> None:
     """Button from the "access expired" reminder (SPEC 5.1.1), the panel's
     connect and reconnect buttons, and the steps after unlinking: the login
     link in place, with a way back (owner, 2026-09-30)."""
-    url = connect.start_login(callback.from_user.id)
+    person = await repo.ensure_user(callback.from_user.id, callback.from_user.username)
+    if person is None:
+        await callback.answer()
+        return
+    url = connect.start_login(person, tg_id=callback.from_user.id)
     markup = connect_keyboard(url, i18n)
     markup.inline_keyboard.append([back_to_panel_button(i18n)])
     await safe_edit(callback, i18n.get("connect-relogin-prompt"), markup)
@@ -271,11 +286,12 @@ async def optout(
 ) -> None:
     """Left on purpose: subscriptions go, history stays, reminders stop."""
     tg_id = callback.from_user.id
-    user = await repo.get_user(tg_id)
-    await repo.set_token_status(tg_id, TokenStatus.REVOKED)
-    await repo.delete_subscriptions_of_user(tg_id)
+    person = await repo.person_id(tg_id)
+    user = await repo.get_user(person)
+    await repo.set_token_status(person, TokenStatus.REVOKED)
+    await repo.delete_subscriptions_of_user(person)
     await notifier.user_disconnected(
-        tg_id, (user.gamertag if user else None) or f"id{tg_id}", "disconnect-button"
+        person, (user.gamertag if user else None) or f"id{tg_id}", "disconnect-button"
     )
     await safe_edit(
         callback,
@@ -329,7 +345,9 @@ async def timezone_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -
     assert callback.data is not None
     minutes = int(callback.data.rsplit(":", 1)[1])
     await repo.ensure_user(callback.from_user.id, callback.from_user.username)
-    await repo.update_user_settings(callback.from_user.id, tz_offset_min=minutes)
+    await repo.update_user_settings(
+        await repo.person_id(callback.from_user.id), tz_offset_min=minutes
+    )
     _awaiting_manual_tz.pop(callback.from_user.id, None)
     offset = format_offset(minutes, i18n)
 
@@ -386,7 +404,9 @@ async def timezone_manual_input(message: Message, repo: Repo, bot: Bot, i18n: I1
         return
 
     await repo.ensure_user(message.from_user.id, message.from_user.username)
-    await repo.update_user_settings(message.from_user.id, tz_offset_min=minutes)
+    await repo.update_user_settings(
+        await repo.person_id(message.from_user.id), tz_offset_min=minutes
+    )
     offset = format_offset(minutes, i18n)
     # The answer lands in the prompt it was asked in (owner, 2026-09-30): the
     # panel again, or the "set" line with its way on.
@@ -415,15 +435,15 @@ async def _greet(
     bot: Bot,
     i18n: I18nContext,
     settings: Settings,
-    person_id: int | None = None,
+    tg_id: int | None = None,
 ) -> None:
     """Already connected on *any* platform -> straight to the panel;
     otherwise greet and offer all three (#53).
     """
-    pid = person_id if person_id is not None else _person_id(message)
+    pid = tg_id if tg_id is not None else _sender_tg_id(message)
     if pid:
-        user = await repo.get_user(pid)
-        links = await repo.platform_links_of(pid)
+        user = await repo.get_user(await repo.person_id(pid))
+        links = await repo.platform_links_of(await repo.person_id(pid))
         if (user is not None and user.xuid) or links:
             await send_panel(bot, repo, pid, i18n)
             return
@@ -432,7 +452,7 @@ async def _greet(
     await message.answer(
         i18n.get("connect-pick-platform"),
         reply_markup=onboarding_keyboard(
-            connect.start_login(pid or 0),
+            connect.start_login((await repo.person_id(pid) if pid else None) or 0, tg_id=pid),
             i18n,
             mini_app_url=(settings.mini_app_url or "") if in_private else "",
         ),
@@ -447,10 +467,10 @@ async def _send_login_link(
     *,
     origin_chat_id: int | None = None,
 ) -> None:
-    person_id = _person_id(message)
-    if person_id is None:
+    tg_id = _sender_tg_id(message)
+    if tg_id is None:
         return
-    cooldown = await repo.check_platform_cooldown(person_id, "xbox")
+    cooldown = await repo.check_platform_cooldown(tg_id, "xbox")
     if cooldown.is_blocked:
         hours = cooldown.remaining_seconds // 3600
         minutes = (cooldown.remaining_seconds % 3600) // 60
@@ -458,11 +478,94 @@ async def _send_login_link(
             i18n.get("platform-cooldown-active", platform="Xbox", hours=hours, minutes=minutes)
         )
         return
-    url = connect.start_login(person_id, origin_chat_id=origin_chat_id)
+    person = await repo.ensure_user(tg_id, _username(message))
+    if person is None:
+        return
+    url = connect.start_login(person, tg_id=tg_id, origin_chat_id=origin_chat_id)
     await message.answer(
         i18n.get("connect-login-button-hint"),
         reply_markup=connect_keyboard(url, i18n),
     )
+
+
+async def _link_telegram(
+    message: Message,
+    repo: Repo,
+    merge: PeopleMerge,
+    i18n: I18nContext,
+    tg_id: int,
+    here: int | None,
+    args: str,
+) -> None:
+    """`?start=link_<token>` from the Mini App's «Вход» (#162): this Telegram
+    account is added to the person who asked for the link. The person this
+    account already is — made a moment ago by its very first message, or a real
+    one — is folded into them: at once when it has nothing to lose, else the
+    merge waits in the app for their choices."""
+    person = merge.redeem(args.removeprefix("link_"))
+    if person is None:
+        await message.answer(i18n.get("connect-link-expired"))
+        return
+    if here == person:
+        await message.answer(i18n.get("connect-link-already"))
+        return
+    target = await repo.get_user(person)
+    if target is None:
+        await message.answer(i18n.get("connect-link-expired"))
+        return
+    if target.tg_id is not None:
+        await message.answer(i18n.get("connect-link-other-telegram"))
+        return
+    if here is None:
+        await repo.set_telegram(person, tg_id, _username(message))
+        await message.answer(i18n.get("connect-link-done"))
+        return
+    if await merge.absorb_if_empty(person, here):
+        await message.answer(i18n.get("connect-link-done"))
+        return
+    # This Telegram already is somebody with something to lose. Whoever sent
+    # the link may not be them: the merge is offered in the app only after they
+    # say yes here, told whose account theirs would be folded into.
+    current = await repo.get_user(here)
+    merge.ask_to_confirm(tg_id, person, here)
+    await message.answer(
+        i18n.get(
+            "connect-link-merge-confirm",
+            current=(current.handle if current else None) or "—",
+            other=target.handle or "—",
+        ),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get("connect-link-merge-yes"), callback_data="lnkm:yes"
+                    ),
+                    InlineKeyboardButton(
+                        text=i18n.get("connect-link-merge-no"), callback_data="lnkm:no"
+                    ),
+                ]
+            ]
+        ),
+    )
+
+
+@router.callback_query(F.data.in_({"lnkm:yes", "lnkm:no"}))
+async def link_merge_answer(
+    callback: CallbackQuery, repo: Repo, merge: PeopleMerge, i18n: I18nContext
+) -> None:
+    """The answer to `connect-link-merge-confirm`: only a yes from the Telegram
+    account being folded in lets the app offer the merge."""
+    asked = merge.confirmed(callback.from_user.id)
+    yes = callback.data == "lnkm:yes"
+    if yes and asked is not None and await repo.person_id(callback.from_user.id) == asked[1]:
+        merge.offer(*asked)
+        text = i18n.get("connect-link-merge-in-app")
+    elif yes:
+        text = i18n.get("connect-link-expired")
+    else:
+        text = i18n.get("connect-link-merge-cancelled")
+    await safe_edit(callback, text, None)
+    await callback.answer()
 
 
 def _parse_connect_payload(args: str) -> tuple[bool, int | None]:
@@ -479,8 +582,8 @@ def _parse_connect_payload(args: str) -> tuple[bool, int | None]:
     return False, None
 
 
-def _person_id(message: Message) -> int | None:
-    """Whose row this is — the person's id, never the chat's (#66).
+def _sender_tg_id(message: Message) -> int | None:
+    """Whose row this is — the sender's Telegram id, never the chat's (#66).
 
     These handlers used to pass `message.chat.id`, which is the same number
     in a DM and a completely different one in a group: `/start` is

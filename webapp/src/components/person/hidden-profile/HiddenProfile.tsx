@@ -1,16 +1,17 @@
 import { t, type Locale } from "../../../i18n";
 import { Avatar, EmptyState, Icon } from "../../shared/lib";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 /** A profile whose owner keeps their activity from this viewer (#157): the same
  * bar as any profile — back, avatar, nickname — and, below it, only the card that
  * says so. Reached like any profile: the friends strip, a feed author, a link. */
 export function HiddenProfile({
-  tgId,
+  personId,
   name,
   locale,
   onBack,
 }: {
-  tgId: number;
+  personId: number;
   name: string;
   locale: Locale;
   onBack: () => void;
@@ -28,10 +29,12 @@ export function HiddenProfile({
             <Icon name="back" size={26} />
           </button>
           <div className="account-who">
-            <Avatar name={name} tgId={tgId} size={48} />
+            <Avatar name={name} personId={personId} size={48} />
             <span className="person-bar-title">
               <span className="account-name-row">
-                <strong>{name}</strong>
+                <strong>
+                  <HandleName text={name} />
+                </strong>
               </span>
             </span>
           </div>

@@ -19,6 +19,8 @@ import {
   type GameAchievement,
   type GameDetails,
   type AchievementTip,
+  type AchievementVideo,
+  type GameGuide,
   type GameHltb,
   type GamePatch,
   type GameRef,
@@ -27,8 +29,11 @@ import { t, type Locale } from "../../../i18n";
 import {
   RowsSkel,
   Icon,
+  Dropdown,
+  DropdownArrow,
   TierMedals,
   asTier,
+  useBackHandler,
   type ScoreCupLine,
   type TierCounts,
 } from "../../shared/lib";
@@ -37,13 +42,22 @@ import { groupLabel, pickLocale, type FilterType } from "../utils";
 import { GameHero } from "../game-hero/GameHero";
 import { HeroPeek } from "../game-hero/HeroPeek";
 import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
+import { AchievementPage } from "../achievement-page/AchievementPage";
 import { GameTabBar } from "../game-tab-bar/GameTabBar";
+import type { PostFilter } from "../patch-notes/PatchNotes";
 import { recall, remember } from "../game-cache";
+import { openUrl } from "../rich-text/RichText";
 
 // The tabs nobody sees at first are their own chunks, fetched when opened.
 const HltbAbout = lazy(() =>
   import("../hltb-about/HltbAbout").then((m) => ({ default: m.HltbAbout })),
 );
+const FILTER_LABEL = {
+  all: "postsAll",
+  news: "postsNews",
+  patch: "postsPatches",
+} as const;
+
 const PatchNotes = lazy(() =>
   import("../patch-notes/PatchNotes").then((m) => ({ default: m.PatchNotes })),
 );
@@ -52,8 +66,6 @@ const GUIDES_WAIT_MS = 8000;
 const GUIDES_RETRY_MS = 20000;
 const GUIDES_TRIES = 4;
 const GUIDES_REFRESH_MS = 30000;
-
-const groupOf = (row: GameAchievement) => row.trophy_group_id ?? "default";
 
 export function TitleSheet({
   game,
@@ -70,15 +82,20 @@ export function TitleSheet({
   meId: number;
   onClose: () => void;
 }) {
+  // The phone's "back" leaves the game page.
+  useBackHandler(true, onClose, `${game.platform}:${game.title_id}`);
   // Whose progress is on the page: the person whose card it was opened from
   // (or yours when it was opened from your own). "Compare" adds yours beside
   // theirs, in the one list.
-  const other = game.person && game.person.tg_id !== meId ? game.person : null;
-  const viewed = other;
+  // Asked for: by person id, or by the Telegram id an old post's button carries.
+  const asked =
+    game.person && (game.person.person_id ?? null) !== meId ? game.person : null;
   // What the page showed the last time this game was open: drawn at once, the
   // fresh answers replace it when they arrive.
   const gameKey = `${game.platform}:${game.title_id}`;
-  const detailsKey = `${gameKey}:${viewed?.tg_id ?? "me"}`;
+  const detailsKey = `${gameKey}:${
+    asked?.person_id ?? (asked?.tg_id != null ? `tg${asked.tg_id}` : "me")
+  }`;
   const seenDetails = recall<GameDetails>("details", detailsKey);
   const [details, setDetails] = useState<GameDetails | null>(
     seenDetails ?? null,
@@ -89,6 +106,7 @@ export function TitleSheet({
   const [myDetails, setMyDetails] = useState<GameDetails | null>(null);
   // Always opens on what was earned; the lock flips to what is still to earn.
   const [showEarned, setShowEarned] = useState(true);
+  const [postFilter, setPostFilter] = useState<PostFilter>("all");
   const showAllSecrets = initialShowSecrets;
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
   // Achievements / "Об игре": one Swiper, endlessly looping, switched by tab
@@ -101,11 +119,19 @@ export function TitleSheet({
   const [guideTips, setGuideTips] = useState<Record<string, AchievementTip>>(
     seenTips ?? {},
   );
+  const [guideVideos, setGuideVideos] = useState<Record<string, AchievementVideo[]>>(
+    recall<Record<string, AchievementVideo[]>>("videos", gameKey) ?? {},
+  );
+  const [gameGuide, setGameGuide] = useState<GameGuide | null>(
+    recall<GameGuide | null>("guide", gameKey) ?? null,
+  );
   const [guidesReady, setGuidesReady] = useState(seenTips !== undefined);
   useEffect(() => {
     let cancelled = false;
     const known = recall<Record<string, AchievementTip>>("tips", gameKey);
     setGuideTips(known ?? {});
+    setGuideVideos(recall<Record<string, AchievementVideo[]>>("videos", gameKey) ?? {});
+    setGameGuide(recall<GameGuide | null>("guide", gameKey) ?? null);
     setGuidesReady(known !== undefined);
     // The first look at a game reads several guides and can take a while: the
     // page waits for it, but not past a limit — the tips still land when they
@@ -123,7 +149,13 @@ export function TitleSheet({
         .then((res) => {
           if (cancelled) return;
           setGuideTips(res.tips ?? {});
-          if (res.complete) remember("tips", gameKey, res.tips ?? {});
+          setGuideVideos(res.videos ?? {});
+          setGameGuide(res.guide ?? null);
+          if (res.complete) {
+            remember("guide", gameKey, res.guide ?? null);
+            remember("tips", gameKey, res.tips ?? {});
+            remember("videos", gameKey, res.videos ?? {});
+          }
           if (!res.complete && tries < GUIDES_TRIES) {
             retry = window.setTimeout(ask, GUIDES_RETRY_MS);
           }
@@ -157,27 +189,15 @@ export function TitleSheet({
     };
   }, [data, game.platform, game.title_id, gameKey]);
 
-  // Which achievement's tip is showing, per group of the list (a PSN game's
-  // DLC is a group of its own): opening one closes the other in its group.
-  const [openTips, setOpenTips] = useState<Record<string, string | null>>({});
-  const toggleTip = useCallback((group: string, id: string) => {
-    setOpenTips((cur) => ({ ...cur, [group]: cur[group] === id ? null : id }));
-  }, []);
+  // The achievement whose own page is open (AchievementPage), if any.
+  const [openAchievement, setOpenAchievement] = useState<string | null>(null);
   const [tabEpoch, setTabEpoch] = useState(0);
   const collapseAll = useCallback(() => {
-    setOpenTips({});
     setTabEpoch((n) => n + 1);
   }, []);
   const refreshTabHeight = useCallback(() => {
     tabSwiper?.updateAutoHeight(0);
   }, [tabSwiper]);
-  // A tip unfolding changes the height the tab swiper sized itself to: once as
-  // it starts, and once more when its animation is done.
-  useEffect(() => {
-    refreshTabHeight();
-    const id = window.setTimeout(refreshTabHeight, 320);
-    return () => window.clearTimeout(id);
-  }, [openTips, refreshTabHeight]);
   // HLTB's own hours/description (#131), fetched on its own request so a
   // game's first-ever match never delays the achievements below —
   // `undefined` while that request is still out, `null` once it has
@@ -193,7 +213,8 @@ export function TitleSheet({
     setBusy(known === undefined);
     setError(null);
     void fetchGame(data, game.platform, game.title_id, {
-      tgId: viewed?.tg_id,
+      personId: asked?.person_id,
+      tgId: asked?.tg_id,
     })
       .then((res) => {
         if (cancelled) return;
@@ -209,7 +230,7 @@ export function TitleSheet({
     return () => {
       cancelled = true;
     };
-  }, [data, game.platform, game.title_id, viewed?.tg_id, detailsKey]);
+  }, [data, game.platform, game.title_id, asked?.person_id, asked?.tg_id, detailsKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -295,6 +316,15 @@ export function TitleSheet({
       ? Math.round((unlocked / total) * 100)
       : (details?.completion_percent ?? 0);
   const isCompleted = total > 0 && unlocked >= total;
+  // The day the last achievement was earned: when the game was finished.
+  const completedAt = useMemo(
+    () =>
+      achievements.reduce<string | null>(
+        (last, a) => (a.is_unlocked && a.unlocked_at && (!last || a.unlocked_at > last) ? a.unlocked_at : last),
+        null,
+      ),
+    [achievements],
+  );
 
   const scoreLines = useMemo<ScoreCupLine[]>(() => {
     const isXbox = game.platform.startsWith(PLATFORMS.XBOX);
@@ -386,6 +416,14 @@ export function TitleSheet({
       ),
     [myDetails],
   );
+  // Whose progress it is, as the answer names them (an old link knew only a
+  // Telegram id, and a link's own name is empty); null when it is one's own.
+  const other: { person_id: number; name: string } | null =
+    details?.viewed ??
+    (asked?.person_id != null && asked.person_id !== meId
+      ? { person_id: asked.person_id, name: asked.name }
+      : null);
+  const viewed = other;
   const comparing = compare && Boolean(myDetails) && Boolean(other);
 
   // With nothing earned (or everything earned) there is only one list to show:
@@ -471,6 +509,18 @@ export function TitleSheet({
               {viewed?.name && <small>{viewed.name}</small>}
             </span>
           </div>
+          {/* The game's video guide in the head, not on the picture — that is
+              the game's own (owner, 2026-10-06). */}
+          {gameGuide && (
+            <button
+              type="button"
+              className="game-guide-btn"
+              aria-label={`${t(locale, gameGuide.video_id ? "gameGuideVideo" : "gameGuideVideos")} · ${gameGuide.channel}`}
+              onClick={() => openUrl(gameGuide.url)}
+            >
+              <Icon name="video" size={22} />
+            </button>
+          )}
           {earnedLine &&
             (game.platform === PLATFORMS.PSN ? (
               <TierMedals counts={tierCounts} discSize={18} numbersInside />
@@ -493,6 +543,8 @@ export function TitleSheet({
             loading={loading}
             locale={locale}
             compact={!open}
+            completedAt={completedAt}
+            celebrateKey={isCompleted && !other ? `${game.platform}:${game.title_id}` : null}
           />
         )}
       </HeroPeek>
@@ -559,7 +611,26 @@ export function TitleSheet({
                     )}
                   </div>
                 ),
-                ...(hasUpdates ? [null] : []),
+                ...(hasUpdates
+                  ? [
+                      <Dropdown<PostFilter>
+                        key="posts-filter"
+                        className="dd-trigger posts-filter"
+                        value={postFilter}
+                        options={(["all", "news", "patch"] as PostFilter[]).map((value) => ({
+                          value,
+                          label: t(locale, FILTER_LABEL[value]),
+                        }))}
+                        onChange={setPostFilter}
+                        trigger={
+                          <>
+                            {t(locale, FILTER_LABEL[postFilter])}
+                            <DropdownArrow />
+                          </>
+                        }
+                      />,
+                    ]
+                  : []),
                 null,
               ]}
             />
@@ -616,8 +687,8 @@ export function TitleSheet({
                             locale={locale}
                             onToggleReveal={toggleReveal}
                             tip={guideTips[row.achievement_id]}
-                            open={openTips[groupOf(row)] === row.achievement_id}
-                            onToggleTip={(id) => toggleTip(groupOf(row), id)}
+                            hasVideo={Boolean(guideVideos[row.achievement_id]?.length)}
+                            onOpen={setOpenAchievement}
                             fallbackIcon={cover}
                             compare={
                               comparing && other
@@ -628,7 +699,7 @@ export function TitleSheet({
                                       has: iHave,
                                     },
                                     them: {
-                                      id: other.tg_id,
+                                      id: other.person_id,
                                       name: other.name,
                                       has: row.is_unlocked,
                                     },
@@ -649,9 +720,11 @@ export function TitleSheet({
                   <Suspense fallback={null}>
                     <PatchNotes
                       patches={patches}
+                      filter={postFilter}
                       locale={locale}
                       collapseKey={tabEpoch}
                       onLayout={refreshTabHeight}
+                      game={{ name: title, icon_url: game.icon_url ?? details?.icon_url ?? null }}
                     />
                   </Suspense>
                 </div>
@@ -693,9 +766,24 @@ export function TitleSheet({
     </>
   );
 
+  const shownAchievement = openAchievement
+    ? achievements.find((ach) => ach.achievement_id === openAchievement)
+    : undefined;
+
   return (
     <div className="game-page" data-no-pull>
       {content}
+      {shownAchievement && (
+        <AchievementPage
+          row={shownAchievement}
+          tip={guideTips[shownAchievement.achievement_id]}
+          videos={guideVideos[shownAchievement.achievement_id]}
+          game={title}
+          fallbackIcon={cover}
+          locale={locale}
+          onClose={() => setOpenAchievement(null)}
+        />
+      )}
     </div>
   );
 }

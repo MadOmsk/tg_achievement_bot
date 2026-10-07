@@ -1,5 +1,6 @@
 import { t, type Locale } from "../../../i18n";
 import { Avatar, isOnline } from "../../shared/lib";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function PeopleHits({
   members,
@@ -7,7 +8,7 @@ export function PeopleHits({
   onOpen,
 }: {
   members: Array<{
-    tg_id: number;
+    person_id: number;
     name: string;
     playing?: boolean;
     state?: string | null;
@@ -16,7 +17,7 @@ export function PeopleHits({
     platform?: string | null;
   }>;
   locale: Locale;
-  onOpen: (tgId: number) => void;
+  onOpen: (personId: number) => void;
 }) {
   if (members.length === 0) return null;
   return (
@@ -25,19 +26,21 @@ export function PeopleHits({
       <div className="friends wrap">
         {members.map((m) => (
           <button
-            key={m.tg_id}
+            key={m.person_id}
             type="button"
             className="friend"
-            onClick={() => onOpen(m.tg_id)}
+            onClick={() => onOpen(m.person_id)}
           >
             <Avatar
               name={m.name}
-              tgId={m.tg_id}
+              personId={m.person_id}
               online={isOnline(m)}
               platform={m.platform}
               size={72}
             />
-            <strong>{m.name}</strong>
+            <strong>
+              <HandleName text={m.name} />
+            </strong>
             <p>{m.playing ? m.title_name : m.status}</p>
           </button>
         ))}

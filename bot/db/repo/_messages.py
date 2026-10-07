@@ -21,6 +21,7 @@ from bot.db.repo._models import (
     _iso,
 )
 from bot.db.repo._sql import (
+    CHAT_MEMBERS,
     HANDLE_SHOWN,
     LOCALIZED_NAME_COLUMNS,
     LOCALIZED_TITLE_COLUMNS,
@@ -34,7 +35,6 @@ from bot.db.repo._sql import (
     earned_since,
     member_source,
     pick_name,
-    publishes,
     rarity,
     rarity_cache_join,
 )
@@ -85,7 +85,10 @@ class _MessagesRepo:
         await self._conn.commit()
 
     async def chat_subscribers(self, chat_id: int) -> list[ChatSubscriber]:
-        """Who publishes here, with everything the person chain needs (#51).
+        """Who is subscribed here, with everything the person chain needs (#51).
+        A person whose rarity mode publishes nothing is still one (#167): the
+        mode is about notifications, and leaving a chat's statistics is
+        unsubscribing.
 
         Returns the fields, not a rendered label: this used to select
         `u.gamertag` alone and sort by it — so a member without an Xbox
@@ -95,21 +98,21 @@ class _MessagesRepo:
         renders and sorts.
         """
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, " + XBOX_COLUMNS + ","
             "       steam.display_name AS steam_name,"
             "       psn.display_name AS psn_name "
             "FROM subscriptions s "
-            "JOIN users u ON u.tg_id = s.tg_id "
+            "JOIN users u ON u.id = s.person_id "
             + XBOX_ACCOUNT
             + active_account("steam", "steam")
             + active_account("psn", "psn")
-            + "WHERE s.chat_id = ? AND u.is_excluded = 0 AND "
-            + publishes(),
+            + "WHERE s.chat_id = ? AND u.is_excluded = 0",
             (chat_id,),
         )
         return [
             ChatSubscriber(
+                person_id=row["person_id"],
                 tg_id=row["tg_id"],
                 gamertag=row["gamertag"],
                 gamertag_modern=row["gamertag_modern"],
@@ -135,51 +138,12 @@ class _MessagesRepo:
     ) -> list[RecentAchievement]:
         where = f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
         params: list[object] = [chat_id]
-        if since is not None:
-            where += f"AND {earned_at()} >= ? "
-            params.append(_iso(since))
-        if until is not None:
-            where += f"AND {earned_at()} < ? "
-            params.append(_iso(until))
+        where = _window(where, params, since, until)
         params.append(limit)
         cursor = await self._conn.execute(
-            # Every field the person chain needs (#51) — this used to select
-            # `u.gamertag` alone, so a member with no Xbox account was
-            # rendered as the literal word "кто-то".
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
-            "       u.last_name, " + XBOX_COLUMNS + ","
-            "       steam.display_name AS steam_name,"
-            "       psn.display_name AS psn_name,"
-            "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
-            "       " + LOCALIZED_TITLE_COLUMNS + ","
-            # Aliased, and it matters: XBOX_COLUMNS above already selects
-            # `xb.gamerscore` — the person's lifetime profile score — under
-            # that same bare name, and sqlite3.Row resolves a duplicate to
-            # the *first* one. Every /recent row was showing the player's
-            # career total (249 504 G) in place of what the achievement was
-            # actually worth (15 G). Found by rendering the screen.
-            f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
-            "       s.platform, " + earned_at() + " AS unlocked_at,"
-            "       s.is_secret, s.trophy_type,"
-            "       s.title_id, s.achievement_id, s.icon_url,"
-            "       t.icon_url AS game_icon_url, s.description,"
-            "       s.xuid AS achievement_xuid, s.trophy_group_id,"
-            "       s.device, t.platforms AS game_platforms "
-            "FROM " + member_source(members) + " sub "
-            "JOIN users u ON u.tg_id = sub.tg_id "
-            + XBOX_ACCOUNT
-            + active_account("steam", "steam")
-            + active_account("psn", "psn")
-            # Through the accounts this person holds right now (#52, _sql.py).
-            # The old join was `s.tg_id = u.tg_id`, which is the column that
-            # made an account's history follow the person rather than the
-            # account.
-            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
-            "JOIN seen_achievements s ON s.account_platform = al.platform"
-            "   AND s.xuid = al.external_id "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            + NAME_CACHE_JOIN
-            + rarity_cache_join()
+            _RECENT_COLUMNS + "FROM " + member_source(members) + " sub "
+            "JOIN users u ON u.id = sub.person_id "
+            + _RECENT_JOINS
             # An undated backfill row is not "recent" (#69): its created_at is
             # when the import ran, so right after somebody connects their whole
             # imported history would sort to the top of this list — in the one
@@ -188,37 +152,7 @@ class _MessagesRepo:
             + f"ORDER BY {earned_at()} DESC LIMIT ?",
             params,
         )
-        return [
-            RecentAchievement(
-                tg_id=row["tg_id"],
-                gamertag=row["gamertag"],
-                gamertag_modern=row["gamertag_modern"],
-                username=row["username"],
-                first_name=row["first_name"],
-                handle=row["handle"],
-                last_name=row["last_name"],
-                steam_name=row["steam_name"],
-                psn_name=row["psn_name"],
-                name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
-                game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
-                gamerscore=int(row["achievement_gamerscore"] or 0),
-                rarity_percent=row["rarity_percent"],
-                platform=row["platform"],
-                unlocked_at=row["unlocked_at"],
-                is_secret=bool(row["is_secret"]),
-                trophy_type=row["trophy_type"],
-                title_id=row["title_id"] or "",
-                achievement_id=row["achievement_id"] or "",
-                icon_url=row["icon_url"],
-                game_icon_url=row["game_icon_url"],
-                description=row["description"],
-                xuid=row["achievement_xuid"] or "",
-                trophy_group_id=row["trophy_group_id"],
-                device=row["device"],
-                game_platforms=row["game_platforms"],
-            )
-            for row in await cursor.fetchall()
-        ]
+        return [_recent(row, locale) for row in await cursor.fetchall()]
 
     async def chat_ultra_rares(
         self,
@@ -239,71 +173,19 @@ class _MessagesRepo:
         where = (
             f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
             f"AND {rarity()} IS NOT NULL AND {rarity()} < ? "
-            f"AND {earned_at()} >= ? "
         )
-        params: list[object] = [chat_id, max_percent, _iso(since)]
-        if until is not None:
-            where += f"AND {earned_at()} < ? "
-            params.append(_iso(until))
+        params: list[object] = [chat_id, max_percent]
+        where = _window(where, params, since, until)
         params.append(limit)
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
-            "       u.last_name, " + XBOX_COLUMNS + ","
-            "       steam.display_name AS steam_name,"
-            "       psn.display_name AS psn_name,"
-            "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
-            "       " + LOCALIZED_TITLE_COLUMNS + ","
-            "       s.gamerscore AS achievement_gamerscore,"
-            f"       {rarity()} AS rarity_percent,"
-            "       s.platform, " + earned_at() + " AS unlocked_at,"
-            "       s.is_secret, s.trophy_type,"
-            "       s.title_id, s.achievement_id, s.icon_url,"
-            "       t.icon_url AS game_icon_url, s.description,"
-            "       s.xuid AS achievement_xuid, s.trophy_group_id "
-            "FROM " + member_source(members) + " sub "
-            "JOIN users u ON u.tg_id = sub.tg_id "
-            + XBOX_ACCOUNT
-            + active_account("steam", "steam")
-            + active_account("psn", "psn")
-            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
-            "JOIN seen_achievements s ON s.account_platform = al.platform"
-            "   AND s.xuid = al.external_id "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            + NAME_CACHE_JOIN
-            + rarity_cache_join()
+            _RECENT_COLUMNS + "FROM " + member_source(members) + " sub "
+            "JOIN users u ON u.id = sub.person_id "
+            + _RECENT_JOINS
             + where
             + f"ORDER BY {rarity()} ASC, {earned_at()} DESC LIMIT ?",
             params,
         )
-        return [
-            RecentAchievement(
-                tg_id=row["tg_id"],
-                gamertag=row["gamertag"],
-                gamertag_modern=row["gamertag_modern"],
-                username=row["username"],
-                first_name=row["first_name"],
-                handle=row["handle"],
-                last_name=row["last_name"],
-                steam_name=row["steam_name"],
-                psn_name=row["psn_name"],
-                name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
-                game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
-                gamerscore=int(row["achievement_gamerscore"] or 0),
-                rarity_percent=row["rarity_percent"],
-                platform=row["platform"],
-                unlocked_at=row["unlocked_at"],
-                is_secret=bool(row["is_secret"]),
-                trophy_type=row["trophy_type"],
-                title_id=row["title_id"] or "",
-                achievement_id=row["achievement_id"] or "",
-                icon_url=row["icon_url"],
-                game_icon_url=row["game_icon_url"],
-                description=row["description"],
-                xuid=row["achievement_xuid"] or "",
-                trophy_group_id=row["trophy_group_id"],
-            )
-            for row in await cursor.fetchall()
-        ]
+        return [_recent(row, locale) for row in await cursor.fetchall()]
 
     async def chat_unlock_months(
         self, chat_id: int, limit: int = 24, *, members: Sequence[int] | None = None
@@ -317,8 +199,8 @@ class _MessagesRepo:
         cursor = await self._conn.execute(
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
             "FROM " + member_source(members) + " sub "
-            "JOIN users u ON u.tg_id = sub.tg_id "
-            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN users u ON u.id = sub.person_id "
+            "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
             f"WHERE sub.chat_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
@@ -327,23 +209,23 @@ class _MessagesRepo:
         )
         return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
 
-    async def person_unlock_months(self, tg_id: int, limit: int = 24) -> list[str]:
+    async def person_unlock_months(self, person_id: int, limit: int = 24) -> list[str]:
         """Distinct `YYYY-MM` of this person's unlocks (not scoped to a chat)."""
         cursor = await self._conn.execute(
             "SELECT DISTINCT substr(" + earned_at() + ", 1, 7) AS ym "
             "FROM users u "
-            "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
+            "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
             "JOIN seen_achievements s ON s.account_platform = al.platform"
             "   AND s.xuid = al.external_id "
-            f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+            f"WHERE u.id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
             "ORDER BY ym DESC LIMIT ?",
-            (tg_id, limit),
+            (person_id, limit),
         )
         return [row["ym"] for row in await cursor.fetchall() if row["ym"]]
 
     async def person_recent(
         self,
-        tg_id: int,
+        person_id: int,
         limit: int,
         *,
         locale: str = "ru",
@@ -353,78 +235,23 @@ class _MessagesRepo:
         """One person's unlocks, newest first — the Mini App person card's
         feed. Same columns as `chat_recent`, scoped to the account they hold
         right now rather than to a chat's subscribers."""
-        where = f"WHERE u.tg_id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
-        params: list[object] = [tg_id]
-        if since is not None:
-            where += f"AND {earned_at()} >= ? "
-            params.append(_iso(since))
-        if until is not None:
-            where += f"AND {earned_at()} < ? "
-            params.append(_iso(until))
+        where = f"WHERE u.id = ? AND u.is_excluded = 0 AND {earned_date_is_real()} "
+        params: list[object] = [person_id]
+        where = _window(where, params, since, until)
         params.append(limit)
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
-            "       u.last_name, " + XBOX_COLUMNS + ","
-            "       steam.display_name AS steam_name,"
-            "       psn.display_name AS psn_name,"
-            "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
-            "       " + LOCALIZED_TITLE_COLUMNS + ","
-            f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
-            "       s.platform, " + earned_at() + " AS unlocked_at,"
-            "       s.is_secret, s.trophy_type,"
-            "       s.title_id, s.achievement_id, s.icon_url,"
-            "       t.icon_url AS game_icon_url, s.description,"
-            "       s.xuid AS achievement_xuid, s.trophy_group_id,"
-            "       s.device, t.platforms AS game_platforms "
-            "FROM users u "
-            + XBOX_ACCOUNT
-            + active_account("steam", "steam")
-            + active_account("psn", "psn")
-            + "JOIN account_links al ON al.tg_id = u.tg_id AND al.is_active = 1 "
-            "JOIN seen_achievements s ON s.account_platform = al.platform"
-            "   AND s.xuid = al.external_id "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            + NAME_CACHE_JOIN
-            + rarity_cache_join()
+            _RECENT_COLUMNS
+            + "FROM users u "
+            + _RECENT_JOINS
             + where
             + f"ORDER BY {earned_at()} DESC LIMIT ?",
             params,
         )
-        return [
-            RecentAchievement(
-                tg_id=row["tg_id"],
-                gamertag=row["gamertag"],
-                gamertag_modern=row["gamertag_modern"],
-                username=row["username"],
-                first_name=row["first_name"],
-                handle=row["handle"],
-                last_name=row["last_name"],
-                steam_name=row["steam_name"],
-                psn_name=row["psn_name"],
-                name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
-                game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
-                gamerscore=int(row["achievement_gamerscore"] or 0),
-                rarity_percent=row["rarity_percent"],
-                platform=row["platform"],
-                unlocked_at=row["unlocked_at"],
-                is_secret=bool(row["is_secret"]),
-                trophy_type=row["trophy_type"],
-                title_id=row["title_id"] or "",
-                achievement_id=row["achievement_id"] or "",
-                icon_url=row["icon_url"],
-                game_icon_url=row["game_icon_url"],
-                description=row["description"],
-                xuid=row["achievement_xuid"] or "",
-                trophy_group_id=row["trophy_group_id"],
-                device=row["device"],
-                game_platforms=row["game_platforms"],
-            )
-            for row in await cursor.fetchall()
-        ]
+        return [_recent(row, locale) for row in await cursor.fetchall()]
 
     async def users_games_achievements(
         self,
-        tg_ids: Sequence[int],
+        person_ids: Sequence[int],
         since: datetime,
         *,
         rare_threshold: float,
@@ -473,9 +300,9 @@ class _MessagesRepo:
         `limit == 0` means "no cap" (admin-configurable, SPEC 6.4) — passed to
         SQLite as -1, its own documented spelling of "unbounded LIMIT".
         """
-        if not tg_ids:
+        if not person_ids:
             return []
-        owners = ",".join("?" * len(tg_ids))
+        owners = ",".join("?" * len(person_ids))
         date_bound = f"AND {earned_since()}"
         date_params: list[object] = [_iso(since)]
         if until is not None:
@@ -502,10 +329,10 @@ class _MessagesRepo:
             + OWNED_BY_PERSON
             + "LEFT JOIN titles t ON t.title_id = s.title_id "
             + rarity_cache_join()
-            + f"WHERE al.tg_id IN ({owners}) {date_bound} "
+            + f"WHERE al.person_id IN ({owners}) {date_bound} "
             "GROUP BY s.title_id, s.platform "
             f"{order_sql} LIMIT ?",
-            (rare_threshold, *tg_ids, *date_params, limit or -1),
+            (rare_threshold, *person_ids, *date_params, limit or -1),
         )
         return [
             GameAchievements(
@@ -542,21 +369,19 @@ class _MessagesRepo:
             "WHERE th.xuid IN ("
             "  SELECT xb.external_id FROM users u "
             + XBOX_ACCOUNT
-            + "  WHERE xb.external_id IS NOT NULL AND u.tg_id IN ("
-            "    SELECT tg_id FROM subscriptions WHERE chat_id = ? "
-            "    UNION "
-            "    SELECT tg_id FROM chat_seen WHERE chat_id = ?"
+            + "  WHERE xb.external_id IS NOT NULL AND u.id IN ("
+            "    SELECT person_id FROM " + CHAT_MEMBERS + " WHERE chat_id = ?"
             "  )"
             ") AND th.last_played_at IS NOT NULL "
             "GROUP BY t.name "
             "ORDER BY last_played DESC LIMIT ?",
-            (chat_id, chat_id, limit),
+            (chat_id, limit),
         )
         return [row["name"] for row in await cursor.fetchall() if row["name"]]
 
     async def find_user_by_username(self, username: str) -> User | None:
         cursor = await self._conn.execute(
-            "SELECT * FROM users WHERE lower(username) = lower(?)", (username.lstrip("@"),)
+            self._USER_COLUMNS + "WHERE lower(u.username) = lower(?)", (username.lstrip("@"),)
         )
         row = await cursor.fetchone()
         return _as_user(row) if row else None
@@ -657,17 +482,6 @@ class _MessagesRepo:
         )
         return [(row[0], row[1]) for row in await cursor.fetchall()]
 
-    async def last_bot_message(self, chat_id: int) -> int | None:
-        """For the admin panel's unconditional 24h wipe — deliberately not
-        filtered at all, unlike `last_deletable_bot_message` below."""
-        cursor = await self._conn.execute(
-            "SELECT message_id FROM bot_messages WHERE chat_id = ? "
-            "ORDER BY message_id DESC LIMIT 1",
-            (chat_id,),
-        )
-        row = await cursor.fetchone()
-        return row[0] if row else None
-
     async def last_deletable_bot_message(self, chat_id: int) -> DeletableMessage | None:
         """For /delete_last and the admin panel's / Mini App's own "delete
         last" (#101, owner): the bot's newest message in the chat whatever it
@@ -704,3 +518,83 @@ class _MessagesRepo:
             [(chat_id, message_id) for message_id in message_ids],
         )
         await self._conn.commit()
+
+
+# One recent-achievement row, shared by /recent, the Mini App's feed, its
+# «Находки» and a person's card (#167: three hand copies had drifted apart —
+# «Находки» lost the device and the game's platforms). Every field the person
+# chain needs (#51).
+_RECENT_COLUMNS = (
+    "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+    "       u.last_name, " + XBOX_COLUMNS + ","
+    "       steam.display_name AS steam_name,"
+    "       psn.display_name AS psn_name,"
+    "       s.name, t.name AS game, " + LOCALIZED_NAME_COLUMNS + ","
+    "       " + LOCALIZED_TITLE_COLUMNS + ","
+    # Aliased, and it matters: XBOX_COLUMNS above already selects
+    # `xb.gamerscore` — the person's lifetime profile score — under that same
+    # bare name, and sqlite3.Row resolves a duplicate to the *first* one.
+    f"       s.gamerscore AS achievement_gamerscore, {rarity()} AS rarity_percent,"
+    "       s.platform, " + earned_at() + " AS unlocked_at,"
+    "       s.is_secret, s.trophy_type,"
+    "       s.title_id, s.achievement_id, s.icon_url,"
+    "       t.icon_url AS game_icon_url, s.description,"
+    "       s.xuid AS achievement_xuid, s.trophy_group_id,"
+    "       s.device, t.platforms AS game_platforms "
+)
+
+# From the person `u` to their achievements, through the accounts they hold
+# right now (#52, _sql.py), with the game and its catalog.
+_RECENT_JOINS = (
+    XBOX_ACCOUNT
+    + active_account("steam", "steam")
+    + active_account("psn", "psn")
+    + "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
+    "JOIN seen_achievements s ON s.account_platform = al.platform"
+    "   AND s.xuid = al.external_id "
+    "LEFT JOIN titles t ON t.title_id = s.title_id " + NAME_CACHE_JOIN + rarity_cache_join()
+)
+
+
+def _window(
+    where: str, params: list[object], since: datetime | None, until: datetime | None
+) -> str:
+    if since is not None:
+        where += f"AND {earned_at()} >= ? "
+        params.append(_iso(since))
+    if until is not None:
+        where += f"AND {earned_at()} < ? "
+        params.append(_iso(until))
+    return where
+
+
+def _recent(row, locale: str) -> RecentAchievement:
+    return RecentAchievement(
+        person_id=row["person_id"],
+        tg_id=row["tg_id"],
+        gamertag=row["gamertag"],
+        gamertag_modern=row["gamertag_modern"],
+        username=row["username"],
+        first_name=row["first_name"],
+        handle=row["handle"],
+        last_name=row["last_name"],
+        steam_name=row["steam_name"],
+        psn_name=row["psn_name"],
+        name=pick_name(locale, row["name_ru"], row["name_en"], row["name"]),
+        game=pick_name(locale, row["game_ru"], row["game_en"], row["game"]),
+        gamerscore=int(row["achievement_gamerscore"] or 0),
+        rarity_percent=row["rarity_percent"],
+        platform=row["platform"],
+        unlocked_at=row["unlocked_at"],
+        is_secret=bool(row["is_secret"]),
+        trophy_type=row["trophy_type"],
+        title_id=row["title_id"] or "",
+        achievement_id=row["achievement_id"] or "",
+        icon_url=row["icon_url"],
+        game_icon_url=row["game_icon_url"],
+        description=row["description"],
+        xuid=row["achievement_xuid"] or "",
+        trophy_group_id=row["trophy_group_id"],
+        device=row["device"],
+        game_platforms=row["game_platforms"],
+    )

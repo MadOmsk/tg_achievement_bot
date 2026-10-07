@@ -44,7 +44,7 @@ class FakePublisher:
 
 async def _linked_user(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "steam", STEAM_ID, "Mad Omsk")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "steam", STEAM_ID, "Mad Omsk")
 
 
 async def test_poll_title_publishes_only_new_achievements(
@@ -62,13 +62,22 @@ async def test_poll_title_publishes_only_new_achievements(
     publisher = FakePublisher()
     fetcher = SteamFetcher(repo, steam_auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    assert await fetcher.poll_title(TG_ID, STEAM_ID, "Mad Omsk", "550", "L4D2") == 2
+    assert (
+        await fetcher.poll_title(await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "L4D2")
+        == 2
+    )
     # Same answer a tick later: nothing new, nothing published.
-    assert await fetcher.poll_title(TG_ID, STEAM_ID, "Mad Omsk", "550", "L4D2") == 0
+    assert (
+        await fetcher.poll_title(await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "L4D2")
+        == 0
+    )
     assert len(publisher.published) == 1
 
     by_appid["550"].append(parsed("a3"))
-    assert await fetcher.poll_title(TG_ID, STEAM_ID, "Mad Omsk", "550", "L4D2") == 1
+    assert (
+        await fetcher.poll_title(await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "L4D2")
+        == 1
+    )
     assert [a.achievement_id for a in publisher.published[1]] == ["a3"]
 
 
@@ -98,7 +107,7 @@ async def test_refresh_user_polls_the_current_game(repo: Repo, steam_auth, monke
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk", "ru")
+    summary = await fetcher.refresh_user(await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "ru")
 
     assert "Left 4 Dead 2" in summary
     assert "1" in summary
@@ -125,7 +134,7 @@ async def test_refresh_user_reports_offline_with_no_game(
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
     fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk", "ru")
+    summary = await fetcher.refresh_user(await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "ru")
 
     assert "не в сети" in summary
 
@@ -139,7 +148,7 @@ async def test_refresh_user_handles_a_missing_profile(repo: Repo, steam_auth, mo
     monkeypatch.setattr(steam_fetcher_module, "get_presence_batch", fake_batch)
     fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    summary = await fetcher.refresh_user(TG_ID, STEAM_ID, "Mad Omsk", "ru")
+    summary = await fetcher.refresh_user(await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "ru")
 
     assert "не" in summary.lower()
 
@@ -161,7 +170,7 @@ async def test_backfill_publishes_nothing(repo: Repo, steam_auth, monkeypatch) -
     publisher = FakePublisher()
     fetcher = SteamFetcher(repo, steam_auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    stored = await fetcher.backfill(TG_ID, STEAM_ID)
+    stored = await fetcher.backfill(await repo.person_id(TG_ID), STEAM_ID)
 
     assert stored == 2
     assert publisher.published == []
@@ -192,7 +201,7 @@ async def test_backfill_caches_each_games_name(repo: Repo, steam_auth, monkeypat
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    await fetcher.backfill(TG_ID, STEAM_ID)
+    await fetcher.backfill(await repo.person_id(TG_ID), STEAM_ID)
 
     assert await repo.title_name("550") == "Left 4 Dead 2"
 
@@ -211,7 +220,9 @@ async def test_poll_title_caches_the_games_name(repo: Repo, steam_auth, monkeypa
     monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
     fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
 
-    await fetcher.poll_title(TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+    await fetcher.poll_title(
+        await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2"
+    )
 
     assert await repo.title_name("550") == "Left 4 Dead 2"
 
@@ -240,7 +251,7 @@ async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypa
     publisher = FakePublisher()
     fetcher = SteamFetcher(repo, steam_auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
 
-    stored = await fetcher.backfill(TG_ID, STEAM_ID)
+    stored = await fetcher.backfill(await repo.person_id(TG_ID), STEAM_ID)
 
     assert stored == 1  # only the fine game's achievement made it in
 
@@ -253,7 +264,7 @@ async def test_library_gaps_are_filled_once_and_silently(
     about, nothing is published, and it runs once per database."""
     await _linked_user(repo)
     await repo.insert_new_achievements_steam(
-        TG_ID, STEAM_ID, [_row_for("550", "a1")], is_backfill=True
+        await repo.person_id(TG_ID), STEAM_ID, [_row_for("550", "a1")], is_backfill=True
     )
     asked: list[str] = []
 

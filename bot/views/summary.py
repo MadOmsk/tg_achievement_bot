@@ -111,7 +111,7 @@ async def build_summary(
     ]
 
     games = await repo.users_games_achievements(
-        [row.tg_id for row in rows],
+        [row.person_id for row in rows],
         cutoff,
         until=until,
         rare_threshold=threshold,

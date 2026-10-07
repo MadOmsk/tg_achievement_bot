@@ -12,7 +12,7 @@ export type FeedProgress = {
 };
 
 export type FeedItem = {
-  tg_id: number;
+  person_id: number;
   person: string;
   name: string;
   game: string | null;
@@ -32,7 +32,7 @@ export type FeedItem = {
 };
 
 export type OnlineMember = {
-  tg_id: number;
+  person_id: number;
   name: string;
   state: string | null;
   platform: string;
@@ -43,7 +43,7 @@ export type OnlineMember = {
 };
 
 export type SummaryMember = {
-  tg_id: number;
+  person_id: number;
   name: string;
   count: number;
   score: number;
@@ -63,7 +63,7 @@ export type SummaryGame = {
 };
 
 export type PersonPayload = {
-  tg_id: number;
+  person_id: number;
   name: string;
   /** The owner keeps their activity private: only the name is real (#157). */
   hidden?: boolean;
@@ -115,5 +115,32 @@ export type SummaryResponse = {
   month_label: string;
   day: SummaryMember[];
   month: SummaryMember[];
+  /** The year of the month shown, up to that month's end. */
+  year?: SummaryMember[];
+  year_key?: number;
   games: SummaryGame[];
+};
+
+/** A post of a game's developer on Steam (owner, 2026-10-05), untranslated. */
+export type NewsItem = {
+  gid: string;
+  appid: number;
+  kind: "patch" | "news";
+  title: string;
+  /** ISO date. */
+  date: string;
+  excerpt: string;
+  /** The whole post: pictures and videos on lines of their own. */
+  text: string;
+  image: string | null;
+  /** The post on Steam. */
+  url: string;
+  game: { platform: string; title_id: string; name: string; icon_url: string | null };
+};
+
+export type NewsResponse = {
+  items: NewsItem[];
+  month: string;
+  current_month: string;
+  months: string[];
 };

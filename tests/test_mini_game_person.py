@@ -39,8 +39,8 @@ async def test_game_details_for_another_member(repo: Repo, settings: Settings) -
     for tg_id, name in ((me, "me"), (friend, "friend"), (stranger, "stranger")):
         await repo.ensure_user(tg_id, name)
     await repo.upsert_chat(chat_id, "Club", me)
-    await repo.subscribe(chat_id, me)
-    await repo.subscribe(chat_id, friend)
+    await repo.subscribe(chat_id, await repo.person_id(me))
+    await repo.subscribe(chat_id, await repo.person_id(friend))
 
     headers = {"X-Telegram-Init-Data": _signed_init_data(bot_token, me)}
     url = "/api/mini/games/steam/12345"

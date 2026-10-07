@@ -48,9 +48,9 @@ async def test_header_shows_nickname_username_and_tg_id_not_the_real_name(repo: 
     everything at once: nickname, username, and tg_id together. The real
     Telegram name is not shown (#157)."""
     await repo.ensure_user(7, "igorp", "Igor", "Petrov")
-    await repo.link_xbox_account(7, XUID, "GamerTag", 0)
+    await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
 
-    text, _markup = await render_user_card(repo, 7, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
 
     header = text.split("\n")[0]
     assert "igorp" in header.replace("@igorp", "")  # the nickname made from the username
@@ -63,9 +63,9 @@ async def test_header_tgid_is_never_at_prefixed(repo: Repo) -> None:
     """A bare tg_id is not a real, resolvable username — only a genuine
     `user.username` earns the "@" (2026-09-08 user request)."""
     await repo.ensure_user(7, None, None, None)
-    await repo.link_xbox_account(7, XUID, "GamerTag", 0)
+    await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
 
-    text, _markup = await render_user_card(repo, 7, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
 
     header = text.split("\n")[0]
     assert "tg_id 7" in header
@@ -78,19 +78,19 @@ async def test_header_tgid_has_no_thousands_separators(repo: Repo) -> None:
     wrong about what the value is (found 2026-09-13 by capturing the real
     screens). It is passed as a string now."""
     await repo.ensure_user(127383366, "whalerider84", None, None)
-    await repo.link_xbox_account(127383366, XUID, "GamerTag", 0)
+    await repo.link_xbox_account(await repo.person_id(127383366), XUID, "GamerTag", 0)
 
-    text, _markup = await render_user_card(repo, 127383366, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(127383366), locale="ru")
 
     assert "tg_id 127383366" in text.splitlines()[0]
 
 
 async def test_xbox_block_shows_id_count_today_and_gamerscore(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_xbox_account(1, XUID, "GamerTag", 500)
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 500)
     await repo.insert_new_achievements(XUID, [_achievement("1", "xbox_modern")], is_backfill=False)
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     block = _block(text, "XBOX:")
     assert "GamerTag" in block[0]
@@ -103,12 +103,17 @@ async def test_xbox_block_shows_id_count_today_and_gamerscore(repo: Repo) -> Non
 
 async def test_steam_block_shows_id_and_count(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamPerson"
+    )
     await repo.insert_new_achievements_steam(
-        1, "76561197960287930", [_achievement("550", "steam", gamerscore=0)], is_backfill=False
+        await repo.person_id(1),
+        "76561197960287930",
+        [_achievement("550", "steam", gamerscore=0)],
+        is_backfill=False,
     )
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     block = _block(text, "Steam:")
     assert "SteamPerson" in block[0]
@@ -123,28 +128,30 @@ async def test_steam_status_line_shows_visibility_not_nickname(repo: Repo) -> No
     worded like /panel — and does not repeat the nickname already on the
     header line above it (2026-09-08 user request)."""
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
-    await repo.set_achievements_visible(1, "steam", True)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamPerson"
+    )
+    await repo.set_achievements_visible(await repo.person_id(1), "steam", True)
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     status_line = _block(text, "Steam:")[2]
-    assert "ачивки видны" in status_line
+    assert "достижения видны" in status_line
     assert "SteamPerson" not in status_line
 
 
 async def test_psn_block_shows_trophies_wording_and_level(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
-    await repo.set_psn_trophy_level(1, 42)
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
+    await repo.set_psn_trophy_level(await repo.person_id(1), 42)
     await repo.insert_new_achievements_psn(
-        1,
+        await repo.person_id(1),
         "acc-1",
         [_achievement("NPWR00001_00", "psn", gamerscore=0)],
         is_backfill=False,
     )
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     block = _block(text, "PSN:")
     assert "PsnPerson" in block[0]
@@ -160,10 +167,10 @@ async def test_psn_block_shows_last_online_from_the_presence_poller(repo: Repo) 
     """(issue #1) The presence poller (poller/psn_presence.py) now feeds
     this line the same way it already does for Xbox/Steam."""
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
     await repo.save_psn_presence_state("acc-1", "Online", "CUSA14296_00", "Rust", changed=True)
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     online_line = _block(text, "PSN:")[4]
     assert "Rust" in online_line
@@ -171,13 +178,13 @@ async def test_psn_block_shows_last_online_from_the_presence_poller(repo: Repo) 
 
 async def test_psn_status_line_shows_visibility_not_nickname(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
-    await repo.set_achievements_visible(1, "psn", False)
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
+    await repo.set_achievements_visible(await repo.person_id(1), "psn", False)
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     status_line = _block(text, "PSN:")[2]
-    assert "ачивки скрыты" in status_line
+    assert "достижения скрыты" in status_line
     assert "PsnPerson" not in status_line
 
 
@@ -185,11 +192,13 @@ async def test_blocks_appear_in_the_one_display_order(repo: Repo) -> None:
     """Xbox, PlayStation, Steam — the same order /panel and /stats use
     (constants.platform_display_rank, owner decision 2026-09-13)."""
     await repo.ensure_user(1, "someone")
-    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
-    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamPerson"
+    )
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
 
-    text, _markup = await render_user_card(repo, 1, locale="ru")
+    text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     assert text.index("XBOX:") < text.index("PSN:") < text.index("Steam:")
 
@@ -198,24 +207,26 @@ async def test_reset_button_appears_next_to_each_connected_platforms_refresh_but
     repo: Repo,
 ) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
-    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamPerson"
+    )
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
 
-    _text, markup = await render_user_card(repo, 1, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     datas = _callback_datas(markup)
-    assert "a:sync:xbox:1" in datas and "a:reset:xbox:1" in datas
-    assert "a:sync:steam:1" in datas and "a:reset:steam:1" in datas
+    assert "a:sync:xbox:p1" in datas and "a:reset:xbox:p1" in datas
+    assert "a:sync:steam:p1" in datas and "a:reset:steam:p1" in datas
     # PSN names its account (#10): a person may hold several.
-    assert "a:sync:psn:1:acc-1" in datas and "a:reset:psn:1:acc-1" in datas
+    assert "a:sync:psn:p1:acc-1" in datas and "a:reset:psn:p1:acc-1" in datas
 
 
 async def test_no_reset_buttons_for_platforms_never_connected(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 0)
 
-    _text, markup = await render_user_card(repo, 1, locale="ru")
+    _text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     datas = _callback_datas(markup)
     assert not any(d.startswith("a:reset:steam") or d.startswith("a:reset:psn") for d in datas)
@@ -223,7 +234,7 @@ async def test_no_reset_buttons_for_platforms_never_connected(repo: Repo) -> Non
 
 async def test_reset_xbox_data_clears_achievements_and_title_history(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
-    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 0)
     await repo.insert_new_achievements(
         XUID,
         [_achievement("1", "xbox_modern"), _achievement("2", "xbox_360")],
@@ -237,10 +248,10 @@ async def test_reset_xbox_data_clears_achievements_and_title_history(repo: Repo)
     )
     await repo._conn.commit()
 
-    deleted = await repo.reset_xbox_data(1, XUID)
+    deleted = await repo.reset_xbox_data(await repo.person_id(1), XUID)
 
     assert deleted == 2
-    assert await repo.xbox_achievement_count(1) == 0
+    assert await repo.xbox_achievement_count(await repo.person_id(1)) == 0
     cursor = await repo._conn.execute("SELECT COUNT(*) FROM title_history WHERE xuid = ?", (XUID,))
     row = await cursor.fetchone()
     assert row[0] == 0
@@ -249,13 +260,19 @@ async def test_reset_xbox_data_clears_achievements_and_title_history(repo: Repo)
 async def test_reset_steam_data_clears_only_that_persons_steam_rows(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.ensure_user(2, "other")
-    await repo.link_platform_account(1, "steam", "111", "Someone")
-    await repo.link_platform_account(2, "steam", "222", "Other")
+    await repo.link_platform_account(await repo.person_id(1), "steam", "111", "Someone")
+    await repo.link_platform_account(await repo.person_id(2), "steam", "222", "Other")
     await repo.insert_new_achievements_steam(
-        1, "111", [_achievement("550", "steam", gamerscore=0)], is_backfill=False
+        await repo.person_id(1),
+        "111",
+        [_achievement("550", "steam", gamerscore=0)],
+        is_backfill=False,
     )
     await repo.insert_new_achievements_steam(
-        2, "222", [_achievement("550", "steam", gamerscore=0)], is_backfill=False
+        await repo.person_id(2),
+        "222",
+        [_achievement("550", "steam", gamerscore=0)],
+        is_backfill=False,
     )
 
     # By account, not by person (#52): the rows belong to the account, so
@@ -263,22 +280,25 @@ async def test_reset_steam_data_clears_only_that_persons_steam_rows(repo: Repo) 
     deleted = await repo.reset_steam_data("111")
 
     assert deleted == 1
-    assert await repo.platform_achievement_count(1, "steam") == 0
-    assert await repo.platform_achievement_count(2, "steam") == 1
+    assert await repo.platform_achievement_count(await repo.person_id(1), "steam") == 0
+    assert await repo.platform_achievement_count(await repo.person_id(2), "steam") == 1
 
 
 async def test_reset_psn_data_clears_achievements_progress_and_backfill_flag(repo: Repo) -> None:
     await repo.ensure_user(1, "someone")
     await repo.insert_new_achievements_psn(
-        1, "acc-1", [_achievement("NPWR00001_00", "psn", gamerscore=0)], is_backfill=True
+        await repo.person_id(1),
+        "acc-1",
+        [_achievement("NPWR00001_00", "psn", gamerscore=0)],
+        is_backfill=True,
     )
     await repo.mark_psn_backfill_done("acc-1")
     await repo.set_psn_title_progress("acc-1", "NPWR00001_00", 100)
 
-    deleted = await repo.reset_psn_data(1, "acc-1")
+    deleted = await repo.reset_psn_data(await repo.person_id(1), "acc-1")
 
     assert deleted == 1
-    assert await repo.platform_achievement_count(1, "psn") == 0
+    assert await repo.platform_achievement_count(await repo.person_id(1), "psn") == 0
     assert await repo.get_psn_title_progress("acc-1", "NPWR00001_00") is None
     assert await repo.psn_backfill_done("acc-1") is False
 
@@ -313,7 +333,7 @@ async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatc
     from bot.handlers import admin as admin_handlers
 
     await repo.ensure_user(1, "someone")
-    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
 
     drawn: list[tuple[str, object]] = []
 
@@ -328,7 +348,7 @@ async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatc
     assert drawn, "the prompt never rendered"
     text, markup = drawn[0]
     assert "PSN: PsnPerson" in text
-    assert "a:resetok:psn:1:acc-1" in _callback_datas(markup)
+    assert "a:resetok:psn:p1:acc-1" in _callback_datas(markup)
 
 
 async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> None:
@@ -336,9 +356,11 @@ async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> Non
     linked account has no presence row either, and a stale "last seen" beside
     an empty achievement list is the half-reset state this avoids."""
     await repo.ensure_user(1, "someone")
-    await repo.link_xbox_account(1, XUID, "GamerTag", 0)
-    await repo.link_platform_account(1, "steam", "76561197960287930", "SteamPerson")
-    await repo.link_platform_account(1, "psn", "acc-1", "PsnPerson")
+    await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 0)
+    await repo.link_platform_account(
+        await repo.person_id(1), "steam", "76561197960287930", "SteamPerson"
+    )
+    await repo.link_platform_account(await repo.person_id(1), "psn", "acc-1", "PsnPerson")
     await repo.save_presence_state(XUID, "Online", "550", "Left 4 Dead 2", changed=True)
     await repo.save_steam_presence_state("76561197960287930", 1, "550", "L4D2", changed=True)
     await repo.save_psn_presence_state("acc-1", "Online", "NPWR1", "Spider-Man", changed=True)
@@ -354,9 +376,9 @@ async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> Non
     assert await rows("steam_presence_state", "steam_id", "76561197960287930") == 1
     assert await rows("psn_presence_state", "account_id", "acc-1") == 1
 
-    await repo.reset_xbox_data(1, XUID)
+    await repo.reset_xbox_data(await repo.person_id(1), XUID)
     await repo.reset_steam_data("76561197960287930")
-    await repo.reset_psn_data(1, "acc-1")
+    await repo.reset_psn_data(await repo.person_id(1), "acc-1")
 
     assert await rows("presence_state", "xuid", XUID) == 0
     assert await rows("steam_presence_state", "steam_id", "76561197960287930") == 0
@@ -365,11 +387,11 @@ async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> Non
 
 async def test_admin_card_has_delete_user_button(repo: Repo) -> None:
     await repo.ensure_user(7, "someone")
-    await repo.link_xbox_account(7, XUID, "GamerTag", 0)
-    _text, markup = await render_user_card(repo, 7, locale="ru")
+    await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
+    _text, markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
     datas = _callback_datas(markup)
-    assert "a:udel:7" in datas
-    assert datas[-2] == "a:udel:7"
+    assert "a:udel:p1" in datas
+    assert datas[-2] == "a:udel:p1"
     assert datas[-1] == "a:users:0"
 
 
@@ -377,7 +399,7 @@ async def test_admin_delete_user_flow(repo: Repo, i18n, monkeypatch) -> None:
     from bot.handlers import admin as admin_handlers
 
     await repo.ensure_user(7, "someone")
-    await repo.link_xbox_account(7, XUID, "GamerTag", 0)
+    await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
     drawn: list[tuple[str, object]] = []
 
     async def record(callback, text, markup):
@@ -390,20 +412,20 @@ async def test_admin_delete_user_flow(repo: Repo, i18n, monkeypatch) -> None:
     await admin_handlers.admin_delete_user_step1(cb1, repo, i18n)  # type: ignore[arg-type]
     assert len(drawn) == 1
     _text1, markup1 = drawn[-1]
-    assert "a:udel1:7" in _callback_datas(markup1)
-    assert "a:u:7" in _callback_datas(markup1)
+    assert "a:udel1:p1" in _callback_datas(markup1)
+    assert "a:u:p1" in _callback_datas(markup1)
 
     # Step 2
-    cb2 = _FakeCallback("a:udel1:7")
+    cb2 = _FakeCallback("a:udel1:p1")
     await admin_handlers.admin_delete_user_step2(cb2, repo, i18n)  # type: ignore[arg-type]
     assert len(drawn) == 2
     _text2, markup2 = drawn[-1]
-    assert "a:udel2:7" in _callback_datas(markup2)
-    assert "a:u:7" in _callback_datas(markup2)
+    assert "a:udel2:p1" in _callback_datas(markup2)
+    assert "a:u:p1" in _callback_datas(markup2)
 
     # Confirm
-    cb3 = _FakeCallback("a:udel2:7")
+    cb3 = _FakeCallback("a:udel2:p1")
     await admin_handlers.admin_delete_user_confirmed(cb3, repo, i18n)  # type: ignore[arg-type]
     assert len(drawn) == 3
     assert cb3.answers
-    assert await repo.get_user(7) is None
+    assert await repo.get_user(await repo.person_id(7)) is None

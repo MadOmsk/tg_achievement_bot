@@ -18,12 +18,15 @@ from bot.db.repo._models import (
     TitleCoverRow,
     TitleHltbRow,
 )
+from bot.db.repo._refresh import ADMIN_PANEL
 from bot.db.repo._sql import (
     GLOBAL_RARE_THRESHOLD,
     HANDLE_SHOWN,
     XBOX_ACCOUNT,
     XBOX_COLUMNS,
     active_account,
+    earned_at,
+    earned_date_is_real,
 )
 from bot.util import utcnow_iso
 
@@ -31,64 +34,25 @@ from bot.util import utcnow_iso
 class _AdminRepo:
     # ----------------------------------------------- admin panel auto-refresh
 
+    # One admin's live-updating /admin (Follow-up 2026-09-06,
+    # poller/admin_refresh.py); the statements are `_refresh.py`'s. A fresh
+    # /admin supersedes the last: the caller deletes the old *message* itself
+    # (`get_admin_panel_refresh` gives it the id), `start_` points the row at
+    # the new one.
     async def get_admin_panel_refresh(self, admin_id: int) -> AdminPanelRefreshRow | None:
-        cursor = await self._conn.execute(
-            "SELECT admin_id, message_id, created_at, last_updated_at "
-            "FROM admin_panel_refresh WHERE admin_id = ?",
-            (admin_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return AdminPanelRefreshRow(
-            admin_id=row["admin_id"],
-            message_id=row["message_id"],
-            created_at=row["created_at"],
-            last_updated_at=row["last_updated_at"],
-        )
+        return await ADMIN_PANEL.get(self._conn, admin_id)
 
     async def start_admin_panel_refresh(self, admin_id: int, message_id: int) -> None:
-        """A fresh /admin supersedes whatever was auto-refreshing for this
-        admin before (Follow-up 2026-09-06, poller/admin_refresh.py) — the
-        caller deletes the old *message* itself (get_admin_panel_refresh
-        above gives it the id to delete); this just points the one row at
-        the new one, same reset-both-timestamps shape as
-        start_online_auto_refresh."""
-        now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO admin_panel_refresh (admin_id, message_id, created_at, last_updated_at) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(admin_id) DO UPDATE SET"
-            " message_id = excluded.message_id, created_at = excluded.created_at,"
-            " last_updated_at = excluded.last_updated_at",
-            (admin_id, message_id, now, now),
-        )
-        await self._conn.commit()
+        await ADMIN_PANEL.start(self._conn, admin_id, message_id)
 
     async def touch_admin_panel_refresh(self, admin_id: int) -> None:
-        await self._conn.execute(
-            "UPDATE admin_panel_refresh SET last_updated_at = ? WHERE admin_id = ?",
-            (utcnow_iso(), admin_id),
-        )
-        await self._conn.commit()
+        await ADMIN_PANEL.touch(self._conn, admin_id)
 
     async def delete_admin_panel_refresh(self, admin_id: int) -> None:
-        await self._conn.execute("DELETE FROM admin_panel_refresh WHERE admin_id = ?", (admin_id,))
-        await self._conn.commit()
+        await ADMIN_PANEL.delete(self._conn, admin_id)
 
     async def all_admin_panel_refreshes(self) -> list[AdminPanelRefreshRow]:
-        cursor = await self._conn.execute(
-            "SELECT admin_id, message_id, created_at, last_updated_at FROM admin_panel_refresh"
-        )
-        return [
-            AdminPanelRefreshRow(
-                admin_id=row["admin_id"],
-                message_id=row["message_id"],
-                created_at=row["created_at"],
-                last_updated_at=row["last_updated_at"],
-            )
-            for row in await cursor.fetchall()
-        ]
+        return await ADMIN_PANEL.all(self._conn)
 
     # ----------------------------------------------------------------- admin
 
@@ -98,7 +62,7 @@ class _AdminRepo:
         `WHERE u.xuid IS NOT NULL`, which hid every Steam-only person from
         the admin panel entirely."""
         cursor = await self._conn.execute(
-            "SELECT u.tg_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
+            "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
@@ -107,7 +71,7 @@ class _AdminRepo:
             "       pp.achievements_visible AS psn_achievements_visible "
             "FROM users u "
             + XBOX_ACCOUNT
-            + "LEFT JOIN tokens t ON t.tg_id = u.tg_id "
+            + "LEFT JOIN tokens t ON t.person_id = u.id "
             + active_account("ps", "steam")
             + active_account("pp", "psn")
             + "WHERE xb.external_id IS NOT NULL OR ps.external_id IS NOT NULL"
@@ -117,6 +81,7 @@ class _AdminRepo:
         return [
             AdminUserRow(
                 tg_id=row["tg_id"],
+                person_id=row["person_id"],
                 gamertag=row["gamertag"],
                 username=row["username"],
                 xuid=row["xuid"],
@@ -152,27 +117,28 @@ class _AdminRepo:
         people list filters by chat, so the list endpoint needs this in
         one round-trip rather than N chats_of_user calls."""
         cursor = await self._conn.execute(
-            "SELECT s.tg_id, s.chat_id FROM subscriptions s "
+            "SELECT u.tg_id, s.chat_id FROM subscriptions s "
+            "JOIN users u ON u.id = s.person_id "
             "JOIN chats c ON c.chat_id = s.chat_id "
-            "WHERE c.is_active = 1 "
-            "ORDER BY s.tg_id, c.title"
+            "WHERE c.is_active = 1 AND u.tg_id IS NOT NULL "
+            "ORDER BY u.tg_id, c.title"
         )
         by_user: dict[int, list[int]] = {}
         for row in await cursor.fetchall():
             by_user.setdefault(int(row["tg_id"]), []).append(int(row["chat_id"]))
         return by_user
 
-    async def set_excluded(self, tg_id: int, excluded: bool, by: int | None) -> None:
+    async def set_excluded(self, person_id: int, excluded: bool, by: int | None) -> None:
         """Exclusion is never silent: the person sees it in his panel (SPEC 6.4)."""
         await self._conn.execute(
             "UPDATE users SET is_excluded = ?, excluded_by = ?, excluded_at = ?, updated_at = ? "
-            "WHERE tg_id = ?",
+            "WHERE id = ?",
             (
                 1 if excluded else 0,
                 by if excluded else None,
                 utcnow_iso() if excluded else None,
                 utcnow_iso(),
-                tg_id,
+                person_id,
             ),
         )
         await self._conn.commit()
@@ -336,27 +302,27 @@ class _AdminRepo:
         return await cursor.fetchone() is not None
 
     async def titles_needing_platforms(self, limit: int) -> list[tuple[str, int]]:
-        """`(title_id, owner_tg_id)` for Xbox games whose platforms are still
+        """`(title_id, owner)` — a person id — for Xbox games whose platforms are still
         unknown — the same "somebody here with a live token" owner the cover
         walker asks through, since titlehub answers only through a person's."""
         cursor = await self._conn.execute(
             "SELECT t.title_id,"
-            "       (SELECT MIN(al.tg_id) FROM seen_achievements s "
+            "       (SELECT MIN(al.person_id) FROM seen_achievements s "
             "        JOIN account_links al ON al.platform = s.account_platform"
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
-            "        JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
-            "        JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
-            "        WHERE s.title_id = t.title_id) AS owner_tg_id "
+            "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
+            "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
+            "        WHERE s.title_id = t.title_id) AS owner "
             f"FROM titles t WHERE {self._PLATFORMS_DUE} "
             # Filtered before the LIMIT: a game nobody here can be asked about
             # must not take a place in the batch, or a head of such games
             # would stall the queue for good.
-            "AND owner_tg_id IS NOT NULL "
+            "AND owner IS NOT NULL "
             "ORDER BY t.platforms_checked_at IS NOT NULL, t.platforms_checked_at "
             "LIMIT ?",
             (limit,),
         )
-        return [(row["title_id"], row["owner_tg_id"]) for row in await cursor.fetchall()]
+        return [(row["title_id"], row["owner"]) for row in await cursor.fetchall()]
 
     async def record_platforms_lookup(self, title_id: str, platforms_json: str | None) -> None:
         """What one titlehub lookup found. None counts as a failed attempt; the
@@ -401,8 +367,11 @@ class _AdminRepo:
         match yet) skips the attempt entirely on `None`."""
         cursor = await self._conn.execute(
             "SELECT t.title_id, t.platform, t.name, t.name_en, t.name_ru, t.platforms,"
-            "  (SELECT MIN(CAST(substr(COALESCE(s.unlocked_at, s.created_at), 1, 4) AS INTEGER))"
-            "   FROM seen_achievements s WHERE s.title_id = t.title_id) AS first_played_year "
+            # Only dates worth believing (#69): an undated import's created_at
+            # is the day it was imported, not a year anybody played it.
+            f"  (SELECT MIN(CAST(substr({earned_at()}, 1, 4) AS INTEGER))"
+            "   FROM seen_achievements s WHERE s.title_id = t.title_id"
+            f"   AND {earned_date_is_real()}) AS first_played_year "
             f"FROM titles t WHERE t.title_id = ? AND {self._HLTB_MATCH_DUE}",
             (title_id,),
         )
@@ -513,6 +482,14 @@ class _AdminRepo:
         row = await cursor.fetchone()
         return row["name"] if row else None
 
+    async def title_cover(self, title_id: str) -> tuple[str | None, str | None]:
+        """`(cover_path, icon_url)` — a game's cover on disk and its URL."""
+        cursor = await self._conn.execute(
+            "SELECT cover_path, icon_url FROM titles WHERE title_id = ?", (title_id,)
+        )
+        row = await cursor.fetchone()
+        return (row["cover_path"], row["icon_url"]) if row else (None, None)
+
     async def title_icon_url(self, title_id: str) -> str | None:
         cursor = await self._conn.execute(
             "SELECT icon_url FROM titles WHERE title_id = ?", (title_id,)
@@ -535,18 +512,18 @@ class _AdminRepo:
         the same condition `pollable_users` applies.
         """
         cursor = await self._conn.execute(
-            "SELECT s.title_id, MIN(al.tg_id) AS tg_id "
+            "SELECT s.title_id, MIN(al.person_id) AS person_id "
             "FROM seen_achievements s "
             "JOIN account_links al ON al.platform = s.account_platform"
             "   AND al.external_id = s.xuid AND al.is_active = 1 "
-            "JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
-            "JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
+            "JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
+            "JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
             "LEFT JOIN titles t ON t.title_id = s.title_id "
             "WHERE t.title_id IS NULL "
             "GROUP BY s.title_id LIMIT ?",
             (limit,),
         )
-        return [(row["title_id"], int(row["tg_id"])) for row in await cursor.fetchall()]
+        return [(row["title_id"], int(row["person_id"])) for row in await cursor.fetchall()]
 
     async def titles_without_platform(self) -> list[tuple[str, str]]:
         """`(title_id, platform)` for rows whose own platform is NULL while
@@ -590,7 +567,7 @@ class _AdminRepo:
         of the queue forever; it is stamped on every visit, found or not.
         """
         cursor = await self._conn.execute(
-            # `owner_tg_id` is somebody who has earned something in this game,
+            # `owner` is a person who has earned something in this game,
             # because Xbox answers about a title only through a *person's*
             # token (unlike Steam's one shared key, or PSN's). Any owner will
             # do — the art is a fact about the game, not about them.
@@ -601,12 +578,12 @@ class _AdminRepo:
             # NULL when nobody here can be asked, which is exactly the title
             # the walker should stamp and leave alone.
             "SELECT t.title_id, t.name, t.platform, t.icon_url, t.cover_path, t.cover_hash,"
-            "       (SELECT MIN(al.tg_id) FROM seen_achievements s "
+            "       (SELECT MIN(al.person_id) FROM seen_achievements s "
             "        JOIN account_links al ON al.platform = s.account_platform"
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
-            "        JOIN tokens tok ON tok.tg_id = al.tg_id AND tok.status = 'active' "
-            "        JOIN users u ON u.tg_id = al.tg_id AND u.is_excluded = 0 "
-            "        WHERE s.title_id = t.title_id) AS owner_tg_id "
+            "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
+            "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
+            "        WHERE s.title_id = t.title_id) AS owner "
             "FROM titles t "
             "WHERE t.cover_path IS NULL "
             "ORDER BY t.cover_checked_at IS NOT NULL, t.cover_checked_at, t.updated_at DESC "
@@ -621,7 +598,7 @@ class _AdminRepo:
                 icon_url=row["icon_url"],
                 cover_path=row["cover_path"],
                 cover_hash=row["cover_hash"],
-                owner_tg_id=row["owner_tg_id"],
+                owner=row["owner"],
             )
             for row in await cursor.fetchall()
         ]
@@ -652,20 +629,6 @@ class _AdminRepo:
         )
         await self._conn.commit()
 
-    async def cover_coverage(self) -> tuple[int, int, int]:
-        """(with a file, with a URL, total) — what the admin panel and the
-        one-off script both report progress against."""
-        cursor = await self._conn.execute(
-            "SELECT COUNT(*),"
-            "       SUM(CASE WHEN icon_url IS NOT NULL AND icon_url != '' THEN 1 ELSE 0 END),"
-            "       SUM(CASE WHEN cover_path IS NOT NULL THEN 1 ELSE 0 END) "
-            "FROM titles"
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return 0, 0, 0
-        return int(row[2] or 0), int(row[1] or 0), int(row[0] or 0)
-
     async def hltb_all_ids(self) -> list[int]:
         """For the one-off platforms backfill (scripts/backfill_hltb_platforms.py)
         — every id already cached, so it can be re-resolved with the field
@@ -677,7 +640,7 @@ class _AdminRepo:
         cursor = await self._conn.execute(
             "SELECT hltb_id, name, release_year, main_hours, extra_hours,"
             " completionist_hours, platforms, game_url, image_url, genre,"
-            " description_en, description_ru, details "
+            " description_en, description_ru, details, cached_at "
             "FROM hltb_cache WHERE hltb_id = ?",
             (hltb_id,),
         )
@@ -698,11 +661,13 @@ class _AdminRepo:
             description_en=row["description_en"],
             description_ru=row["description_ru"],
             details=json.loads(row["details"]) if row["details"] else None,
+            cached_at=row["cached_at"],
         )
 
     async def hltb_cache_result(self, entry: HltbCacheRow) -> None:
-        """Cached forever (SPEC 6.6) — only called once someone actually
-        picks a search result, never for the rest of the candidate list."""
+        """Stored once someone picks a search result (or a game is matched),
+        never for the rest of the candidate list; read again when it goes stale
+        (services/hltb.py::is_stale)."""
         await self._conn.execute(
             "INSERT OR REPLACE INTO hltb_cache "
             "(hltb_id, name, release_year, main_hours, extra_hours, completionist_hours,"

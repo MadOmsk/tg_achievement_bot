@@ -1,8 +1,9 @@
 import type { FeedItem } from "../../../api";
-import { CoverImg, Icon } from "../../shared/lib";
+import { Avatar, CoverImg, Icon } from "../../shared/lib";
 import { HeroMarks } from "../hero-marks/HeroMarks";
 import { ProgressBar } from "../progress-bar/ProgressBar";
 import { feedKey } from "../utils";
+import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 /**
  * One achievement as a compact plate: icon, name, game with its progress
@@ -14,6 +15,7 @@ export function FeedRow({
   detailed = false,
   onOpen,
   onToggleReveal,
+  people,
 }: {
   row: FeedItem;
   secret: boolean;
@@ -23,6 +25,9 @@ export function FeedRow({
   /** A tap on a secret row reveals it in place instead of opening it — the
    * same first tap the game page's list uses. Omit it to open right away. */
   onToggleReveal?: (key: string) => void;
+  /** Who earned it, as a game page's compare shows them: the faces take the
+   * place of the game line, its game being the page's own. */
+  people?: { id: number; name: string }[];
 }) {
   // The frame marks the "platinum" of a game: a platinum trophy, or any
   // achievement of a game its owner has completed (100%).
@@ -77,6 +82,17 @@ export function FeedRow({
             }
           />
         </span>
+        {people ? (
+          <span className="feed-copy-foot is-people">
+            <span className="compare-marks">
+              {people.map((who) => (
+                <span key={who.id} className="compare-mark is-has" title={who.name}>
+                  <Avatar name={who.name} personId={who.id} size={22} />
+                </span>
+              ))}
+            </span>
+          </span>
+        ) : (
         <span className="feed-copy-foot">
           {row.game && (
             <p className="unlock-game">
@@ -92,7 +108,9 @@ export function FeedRow({
           )}
           {detailed && row.person && (
             <p className="unlock-game unlock-person">
-              <span className="unlock-game-name">{row.person}</span>
+              <span className="unlock-game-name">
+                <HandleName text={row.person} />
+              </span>
             </p>
           )}
           {!detailed && row.progress && row.progress.total > 0 && (
@@ -101,6 +119,7 @@ export function FeedRow({
             </span>
           )}
         </span>
+        )}
       </span>
     </button>
   );

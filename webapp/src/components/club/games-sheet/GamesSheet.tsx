@@ -13,9 +13,8 @@ export function GamesSheet({
 }) {
   const openGame = useOpenGame();
   return (
-    <Sheet onClose={onClose} mid>
+    <Sheet onClose={onClose} mid title={t(locale, "monthGames")}>
       <div className="sheet-content score-sheet picker-sheet games-sheet">
-        <h2>{t(locale, "monthGames")}</h2>
         <div className="picker-list games-sheet-list">
           {games.map((g) => {
             const meta = [

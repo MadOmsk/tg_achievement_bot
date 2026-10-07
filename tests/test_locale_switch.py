@@ -83,17 +83,17 @@ async def test_the_panel_toggle_flips_the_persons_own_locale(repo: Repo, i18n: I
 
     await panel_toggle_locale(callback, repo, i18n)  # type: ignore[arg-type]
 
-    assert await repo.user_locale(TG_ID) == "en"
+    assert await repo.user_locale(await repo.person_id(TG_ID)) == "en"
     assert callback.answers == ["English"]
 
 
 async def test_the_panel_toggle_comes_back(repo: Repo, i18n: I18nContext) -> None:
     await repo.ensure_user(TG_ID)
-    await repo.update_user_settings(TG_ID, locale="en")
+    await repo.update_user_settings(await repo.person_id(TG_ID), locale="en")
 
     await panel_toggle_locale(_FakeCallback("panel:locale"), repo, i18n)  # type: ignore[arg-type]
 
-    assert await repo.user_locale(TG_ID) == "ru"
+    assert await repo.user_locale(await repo.person_id(TG_ID)) == "ru"
 
 
 async def test_the_panel_toggle_leaves_every_chat_alone(repo: Repo, i18n: I18nContext) -> None:
@@ -104,7 +104,7 @@ async def test_the_panel_toggle_leaves_every_chat_alone(repo: Repo, i18n: I18nCo
 
     await panel_toggle_locale(_FakeCallback("panel:locale"), repo, i18n)  # type: ignore[arg-type]
 
-    assert await repo.user_locale(TG_ID) == "en"
+    assert await repo.user_locale(await repo.person_id(TG_ID)) == "en"
     assert await repo.chat_locale(CHAT_ID) == "ru"
 
 
@@ -142,7 +142,7 @@ async def test_the_chat_toggle_leaves_the_super_admin_alone(repo: Repo, i18n: I1
     await chat_locale_toggle(_FakeCallback(f"a:cloc:{CHAT_ID}"), repo, i18n)  # type: ignore[arg-type]
 
     assert await repo.chat_locale(CHAT_ID) == "en"
-    assert await repo.user_locale(TG_ID) == "ru"
+    assert await repo.user_locale(await repo.person_id(TG_ID)) == "ru"
 
 
 async def test_the_chat_toggle_survives_a_missing_chat(repo: Repo, i18n: I18nContext) -> None:

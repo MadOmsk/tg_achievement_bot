@@ -32,6 +32,7 @@ wants it finished in one sitting, and it requires the bot stopped.
 from __future__ import annotations
 
 import logging
+import time
 
 from bot.constants import Platform
 from bot.db.repo import Repo
@@ -52,6 +53,10 @@ log = logging.getLogger(__name__)
 TITLES_PER_TICK = 5
 
 
+#: How long an empty search for games with no `titles` row is believed.
+CATALOGUE_RECHECK_SECONDS = 3600
+
+
 class RarityBackfill:
     def __init__(
         self, repo: Repo, client: XboxClient, *, titles_per_tick: int = TITLES_PER_TICK
@@ -66,17 +71,21 @@ class RarityBackfill:
         # lifetime only: a restart tries again, which is the right cadence
         # for something that may have been a bad afternoon at Microsoft.
         self._unanswerable: set[str] = set()
+        # When the search for games with no `titles` row last came back empty
+        # (#167): it walks every stored achievement — the dearest query any
+        # walker runs each minute — and new such games are rare.
+        self._catalogue_clear_at: float | None = None
 
     async def tick(self) -> None:
         needed = self._titles_per_tick + len(self._unanswerable)
         titles_modern = await self._repo.titles_missing_rarity(Platform.XBOX_MODERN, needed)
         titles_360 = await self._repo.titles_missing_rarity(Platform.XBOX_360, needed)
         titles: list[tuple[str, int, Platform]] = [
-            (t_id, tg_id, Platform.XBOX_MODERN) for t_id, tg_id in titles_modern
-        ] + [(t_id, tg_id, Platform.XBOX_360) for t_id, tg_id in titles_360]
+            (t_id, person_id, Platform.XBOX_MODERN) for t_id, person_id in titles_modern
+        ] + [(t_id, person_id, Platform.XBOX_360) for t_id, person_id in titles_360]
 
         remaining = self._titles_per_tick
-        for title_id, tg_id, platform in titles:
+        for title_id, person_id, platform in titles:
             if remaining <= 0:
                 break
             if title_id in self._unanswerable:
@@ -84,9 +93,11 @@ class RarityBackfill:
             remaining -= 1
             try:
                 if hasattr(self._client, "title_rarity_with_name"):
-                    rarity, title_name = await self._client.title_rarity_with_name(tg_id, title_id)
+                    rarity, title_name = await self._client.title_rarity_with_name(
+                        person_id, title_id
+                    )
                 else:
-                    rarity = await self._client.title_rarity(tg_id, title_id)
+                    rarity = await self._client.title_rarity(person_id, title_id)
                     title_name = None
             except XboxApiError as exc:
                 log.info("rarity backfill: title %s unanswerable (%s)", title_id, exc)
@@ -109,11 +120,13 @@ class RarityBackfill:
 
         # Also heal titles that exist in seen_achievements but are missing
         # from `titles` catalog (#77).
-        if remaining > 0:
+        if remaining > 0 and not self._catalogue_recently_clear():
             missing = await self._repo.titles_missing_from_catalogue(
                 remaining + len(self._unanswerable)
             )
-            for title_id, tg_id in missing:
+            fresh = [m for m in missing if m[0] not in self._unanswerable]
+            self._catalogue_clear_at = None if fresh else time.monotonic()
+            for title_id, person_id in missing:
                 if remaining <= 0:
                     break
                 if title_id in self._unanswerable:
@@ -127,7 +140,7 @@ class RarityBackfill:
                 if hasattr(self._client, "title_rarity_with_name"):
                     try:
                         rarity, title_name = await self._client.title_rarity_with_name(
-                            tg_id, title_id
+                            person_id, title_id
                         )
                     except XboxApiError:
                         pass
@@ -139,7 +152,7 @@ class RarityBackfill:
 
                 if hasattr(self._client, "resolve_title"):
                     try:
-                        entry = await self._client.resolve_title(tg_id, title_id)
+                        entry = await self._client.resolve_title(person_id, title_id)
                     except XboxApiError as exc:
                         log.info("rarity backfill: title %s unresolvable (%s)", title_id, exc)
                         self._unanswerable.add(title_id)
@@ -154,3 +167,9 @@ class RarityBackfill:
                         await self._repo.cache_rarity(entry.platform, title_id, rarity)
                 else:
                     self._unanswerable.add(title_id)
+
+    def _catalogue_recently_clear(self) -> bool:
+        return (
+            self._catalogue_clear_at is not None
+            and time.monotonic() - self._catalogue_clear_at < CATALOGUE_RECHECK_SECONDS
+        )

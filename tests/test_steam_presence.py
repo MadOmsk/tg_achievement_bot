@@ -31,7 +31,7 @@ class FakeFetcher:
 
 async def _linked_user(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    await repo.link_platform_account(TG_ID, "steam", STEAM_ID, "Mad Omsk")
+    await repo.link_platform_account(await repo.person_id(TG_ID), "steam", STEAM_ID, "Mad Omsk")
 
 
 def _steam_settings(settings: Settings) -> Settings:
@@ -81,7 +81,9 @@ async def test_tick_polls_a_freshly_started_game(
 
     await poller.tick()
 
-    assert fetcher.calls == [(TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")]
+    assert fetcher.calls == [
+        (await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+    ]
     presence = await repo.steam_pollable_users()
     assert presence[0].gameid == "550"
 
@@ -111,7 +113,7 @@ async def test_tick_touches_last_online_while_online(
 
     await poller.tick()
 
-    user = await repo.get_user(TG_ID)
+    user = await repo.get_user(await repo.person_id(TG_ID))
     assert user is not None and user.last_online_at is not None
 
 
@@ -137,7 +139,7 @@ async def test_tick_does_not_touch_last_online_while_offline(
 
     await poller.tick()
 
-    user = await repo.get_user(TG_ID)
+    user = await repo.get_user(await repo.person_id(TG_ID))
     assert user is not None and user.last_online_at is None
 
 
@@ -178,7 +180,9 @@ async def test_tick_does_a_final_poll_of_the_old_game_when_it_changes(
     await poller.tick()
 
     # Polled the game that just ended, not a new one.
-    assert fetcher.calls == [(TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")]
+    assert fetcher.calls == [
+        (await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+    ]
 
 
 async def test_grace_period_keeps_polling_a_game_that_briefly_vanished(
@@ -222,7 +226,9 @@ async def test_grace_period_keeps_polling_a_game_that_briefly_vanished(
 
     await poller.tick()
 
-    assert fetcher.calls == [(TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")]
+    assert fetcher.calls == [
+        (await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+    ]
 
 
 async def test_grace_period_does_not_apply_once_reported_fully_offline(
@@ -386,7 +392,13 @@ async def test_leaving_game_queues_delayed_exit_poll_and_flushes_after_delay(
 
     # Immediate exit poll ran:
     assert len(fetcher.calls) == 2
-    assert fetcher.calls[1] == (TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+    assert fetcher.calls[1] == (
+        await repo.person_id(TG_ID),
+        STEAM_ID,
+        "Mad Omsk",
+        "550",
+        "Left 4 Dead 2",
+    )
     # And delayed exit poll is queued for now + 180s:
     assert (STEAM_ID, "550") in poller._exit_queue
     due_at = poller._exit_queue[(STEAM_ID, "550")][2]
@@ -402,5 +414,11 @@ async def test_leaving_game_queues_delayed_exit_poll_and_flushes_after_delay(
     now = 2200.0  # 2000 + 200 > 2180
     await poller.tick()
     assert len(fetcher.calls) == 3
-    assert fetcher.calls[2] == (TG_ID, STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2")
+    assert fetcher.calls[2] == (
+        await repo.person_id(TG_ID),
+        STEAM_ID,
+        "Mad Omsk",
+        "550",
+        "Left 4 Dead 2",
+    )
     assert poller._exit_queue == {}
