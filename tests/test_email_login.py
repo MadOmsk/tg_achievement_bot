@@ -8,9 +8,10 @@ import re
 import smtplib
 import time
 from datetime import timedelta
+from typing import Any
 
 import pytest
-from aiohttp import web
+from aiohttp import ClientResponse, web
 from aiohttp.test_utils import TestClient, TestServer
 
 from bot.db.repo import Repo
@@ -192,9 +193,18 @@ async def _invite(repo: Repo) -> str:
     return code
 
 
+async def _start(client: TestClient, email: str, **extra: Any) -> ClientResponse:
+    """Ask for a sign-in code; a new address brings its invite (owner, 2026-10-07)."""
+    repo: Repo = client.server.app["mini_repo"]
+    return await client.post(
+        "/api/mini/auth/email/start",
+        json={"email": email, "invite": await _invite(repo), **extra},
+    )
+
+
 async def _sign_in(client: TestClient, sender: FakeSender, email: str) -> None:
     repo: Repo = client.server.app["mini_repo"]
-    start = await client.post("/api/mini/auth/email/start", json={"email": email, "locale": "en"})
+    start = await _start(client, email, locale="en")
     assert start.status == 200
     ok = await client.post(
         "/api/mini/auth/email/verify",
@@ -211,8 +221,12 @@ async def _sign_in(client: TestClient, sender: FakeSender, email: str) -> None:
 async def test_without_a_mail_server_email_is_not_offered(repo: Repo, settings) -> None:
     client = await _client(repo, settings, None)
     try:
-        assert (await (await client.get("/api/mini/auth/config")).json())["email"] is False
-        start = await client.post("/api/mini/auth/email/start", json={"email": "a@b.co"})
+        config = await (await client.get("/api/mini/auth/config")).json()
+        assert config["email"] is False
+        # The bot's public id, for Telegram's sign-in page — never the token.
+        assert config["bot_id"] == int(settings.bot_token.get_secret_value().split(":")[0])
+        assert settings.bot_token.get_secret_value() not in str(config)
+        start = await _start(client, "a@b.co")
         assert (start.status, (await start.json())["error"]) == (503, "unavailable")
     finally:
         await client.close()
@@ -262,7 +276,7 @@ async def test_a_wrong_code_says_how_many_tries_are_left(repo: Repo, settings) -
     sender = FakeSender()
     client = await _client(repo, settings, sender)
     try:
-        await client.post("/api/mini/auth/email/start", json={"email": "ada@example.com"})
+        await _start(client, "ada@example.com")
         wrong = await client.post(
             "/api/mini/auth/email/verify",
             json={"email": "ada@example.com", "code": _wrong(sender.last_code())},
@@ -270,7 +284,7 @@ async def test_a_wrong_code_says_how_many_tries_are_left(repo: Repo, settings) -
         body = await wrong.json()
         assert (wrong.status, body["error"]) == (400, "wrong_code")
         assert body["attempts_left"] == email_login.MAX_ATTEMPTS - 1
-        again = await client.post("/api/mini/auth/email/start", json={"email": "ada@example.com"})
+        again = await _start(client, "ada@example.com")
         assert (again.status, (await again.json())["error"]) == (429, "too_soon")
         assert (await client.get("/api/mini/me")).status == 401
     finally:
@@ -280,7 +294,7 @@ async def test_a_wrong_code_says_how_many_tries_are_left(repo: Repo, settings) -
 async def test_a_mail_failure_is_said_plainly(repo: Repo, settings) -> None:
     client = await _client(repo, settings, FakeSender(fail=True))
     try:
-        start = await client.post("/api/mini/auth/email/start", json={"email": "a@b.co"})
+        start = await _start(client, "a@b.co")
         assert (start.status, (await start.json())["error"]) == (502, "send_failed")
     finally:
         await client.close()
@@ -471,9 +485,7 @@ async def test_the_no_code_mode_takes_the_address_as_proved(repo: Repo, settings
     client = TestClient(TestServer(app))
     await client.start_server()
     try:
-        start = await (
-            await client.post("/api/mini/auth/email/start", json={"email": "Dev@Example.com"})
-        ).json()
+        start = await (await _start(client, "Dev@Example.com")).json()
         assert start["skip_code"] is True
         signed = await client.post(
             "/api/mini/auth/email/verify",
@@ -503,7 +515,7 @@ async def test_somebody_new_needs_an_invite(repo: Repo, settings) -> None:
     sender = FakeSender()
     client = await _client(repo, settings, sender)
     try:
-        await client.post("/api/mini/auth/email/start", json={"email": "new@example.com"})
+        await _start(client, "new@example.com")
         asked = await client.post(
             "/api/mini/auth/email/verify",
             json={"email": "new@example.com", "code": sender.last_code()},
@@ -551,7 +563,7 @@ async def test_an_invite_spent_meanwhile_leaves_nobody_behind(repo: Repo, settin
         return False
 
     try:
-        await client.post("/api/mini/auth/email/start", json={"email": "late@example.com"})
+        await _start(client, "late@example.com")
         repo.redeem_invite = gone  # type: ignore[method-assign]
         late = await client.post(
             "/api/mini/auth/email/verify",
@@ -656,12 +668,10 @@ async def test_one_client_cannot_go_through_many_addresses(repo: Repo, settings)
     try:
         statuses = []
         for i in range(limit):
-            response = await client.post(
-                "/api/mini/auth/email/start", json={"email": f"p{i}@example.com"}
-            )
+            response = await _start(client, f"p{i}@example.com")
             statuses.append(response.status)
         assert statuses == [200] * limit
-        last = await client.post("/api/mini/auth/email/start", json={"email": "z@example.com"})
+        last = await _start(client, "z@example.com")
         assert (last.status, (await last.json())["error"]) == (429, "too_soon")
         assert len(sender.sent) == limit
     finally:
@@ -715,3 +725,55 @@ async def test_the_admins_mail_login_is_checked_stored_and_used(repo: Repo, sett
 
     await auth.clear(1)
     assert await auth.credentials() is None
+
+
+async def test_somebody_known_signs_in_with_no_invite(repo: Repo, settings) -> None:
+    """An invite is for somebody new only: an address or a Telegram account the
+    app already knows opens its session straight away (owner, 2026-10-07)."""
+    sender = FakeSender()
+    client = await _client(repo, settings, sender)
+    try:
+        known = await repo.ensure_user(5151, "known")
+        assert known is not None
+        await repo.set_email(known, "known@example.com")
+
+        await client.post("/api/mini/auth/email/start", json={"email": "known@example.com"})
+        again = await client.post(
+            "/api/mini/auth/email/verify",
+            json={"email": "known@example.com", "code": sender.last_code()},
+        )
+        assert again.status == 200
+        assert (await (await client.get("/api/mini/me")).json())["person_id"] == known
+        await client.post("/api/mini/auth/logout")
+
+        await repo.ensure_user(4242, "tguser")
+        widget = await client.post(
+            "/api/mini/auth/telegram", json=_widget(settings.bot_token.get_secret_value(), 4242)
+        )
+        assert widget.status == 200
+        me = await (await client.get("/api/mini/me")).json()
+        assert me["person_id"] == await repo.person_id(4242)
+    finally:
+        await client.close()
+
+
+async def test_a_new_address_is_asked_for_its_invite_before_any_mail(repo: Repo, settings) -> None:
+    """The invite of somebody new is checked when the code is asked for, so no
+    mail goes to an address that could never sign up (owner, 2026-10-07)."""
+    sender = FakeSender()
+    client = await _client(repo, settings, sender)
+    try:
+        bare = await client.post("/api/mini/auth/email/start", json={"email": "fresh@example.com"})
+        assert (bare.status, (await bare.json())["error"]) == (403, "invite_required")
+        wrong = await client.post(
+            "/api/mini/auth/email/start",
+            json={"email": "fresh@example.com", "invite": "AAAA-BBBB-CCCC-DDDD"},
+        )
+        assert (wrong.status, (await wrong.json())["error"]) == (400, "invite_invalid")
+        assert sender.sent == []
+
+        ok = await _start(client, "fresh@example.com")
+        assert ok.status == 200
+        assert len(sender.sent) == 1
+    finally:
+        await client.close()

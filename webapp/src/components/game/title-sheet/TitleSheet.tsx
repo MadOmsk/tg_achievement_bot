@@ -563,7 +563,7 @@ export function TitleSheet({
             </div>
           </div>
           <div className="game-tab-panel feed">
-            <RowsSkel count={6} />
+            <RowsSkel count={6} lines={2} />
           </div>
         </>
       ) : (

@@ -10,6 +10,7 @@ import {
   disconnectXbox,
   fetchMe,
   logout,
+  ApiError,
   WEB_SESSION,
   patchChat,
   patchSettings,
@@ -38,6 +39,7 @@ import { FOLLOWS_CHANGED } from "./components/people/follow-button/FollowButton"
 import { Login } from "./screens/login";
 import { AddEmailScreen } from "./components/me/logins/AddEmailScreen";
 import { peopleApi } from "./api/people/peopleApi";
+import { cachedMe, forgetHome, rememberMe } from "./components/shared/lib/home-cache/homeCache";
 import { AppSkel, GameSkel, Icon, ImageViewerHost, tick, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
@@ -242,20 +244,7 @@ export function App() {
     };
   }, []);
 
-  const reload = useCallback(async () => {
-    let data = initData();
-    if (!data) {
-      // Not inside Telegram: a browser, signed in or not.
-      try {
-        await fetchMe(WEB_SESSION);
-        webSession = true;
-        data = WEB_SESSION;
-      } catch {
-        setState({ status: "login" });
-        return;
-      }
-    }
-    const me = await fetchMe(data);
+  const show = useCallback((me: MeResponse) => {
     setOwnAvatarCustom(Boolean(me.avatar_custom));
     setState({ status: "ok", me });
     setChatId((current) => {
@@ -264,12 +253,43 @@ export function App() {
     });
   }, []);
 
+  /** `fromCache`: open on the viewer last seen on this device first, and let
+   * `/me` replace it — the first open waits for nothing (owner, 2026-10-07). */
+  const reload = useCallback(async (fromCache = false) => {
+    const inTelegram = Boolean(window.Telegram?.WebApp?.initData);
+    const cached = fromCache ? cachedMe() : null;
+    if (cached) {
+      if (!inTelegram) webSession = true;
+      show(cached);
+    }
+    let me: MeResponse;
+    try {
+      // A browser is signed in when its cookie answers: that answer is `/me`.
+      me = await fetchMe(inTelegram ? initData() : WEB_SESSION);
+    } catch (err) {
+      const refused = err instanceof ApiError && (err.status === 401 || err.status === 403);
+      if (!inTelegram && (refused || !cached)) {
+        webSession = false;
+        forgetHome();
+        setState({ status: "login" });
+        return;
+      }
+      if (refused) forgetHome();
+      // Offline with a page to show: keep showing it.
+      if (cached && !refused) return;
+      throw err;
+    }
+    if (!inTelegram) webSession = true;
+    rememberMe(me);
+    show(me);
+  }, [show]);
+
   useEffect(() => {
     window.Telegram?.WebApp?.setHeaderColor?.("#0a0c12");
     window.Telegram?.WebApp?.setBackgroundColor?.("#0a0c12");
     if (launchContext().game) preloadTitleSheet();
     let cancelled = false;
-    void reload().catch((err: unknown) => {
+    void reload(true).catch((err: unknown) => {
       if (!cancelled) setState({ status: "error", message: String(err) });
     });
     return () => {
@@ -579,6 +599,7 @@ export function App() {
               ? () => {
                   void logout().finally(() => {
                     webSession = false;
+                    forgetHome();
                     setState({ status: "login" });
                   });
                 }
@@ -636,6 +657,7 @@ export function App() {
           }
           onDeleteAccount={async () => {
             await deleteAccount(data);
+            forgetHome();
           }}
           onLoginsChanged={() => void reload().catch(() => undefined)}
         />

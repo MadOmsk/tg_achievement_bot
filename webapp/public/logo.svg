@@ -1,1 +1,53 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none"><defs><linearGradient id="bg" x1="80" y1="0" x2="432" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3a4c9c"/><stop offset=".55" stop-color="#1a2147"/><stop offset="1" stop-color="#0b0e18"/></linearGradient><radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(160 90) rotate(50) scale(400)"><stop offset="0" stop-color="#9bb6ff" stop-opacity=".45"/><stop offset="1" stop-color="#9bb6ff" stop-opacity="0"/></radialGradient><linearGradient id="ink" x1="140" y1="120" x2="380" y2="440" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#b9c9ff"/></linearGradient><linearGradient id="gold" x1="200" y1="270" x2="320" y2="400" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffe7a3"/><stop offset="1" stop-color="#ffb84d"/></linearGradient></defs><rect width="512" height="512" rx="116" fill="url(#bg)"/><rect width="512" height="512" rx="116" fill="url(#glow)"/><defs><linearGradient id="navy" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3d4fa8"/><stop offset="1" stop-color="#1c2452"/></linearGradient><linearGradient id="amber" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd36a"/><stop offset="1" stop-color="#f29a2e"/></linearGradient><linearGradient id="ring" x1="120" y1="120" x2="400" y2="400" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9bb6ff"/></linearGradient></defs><rect x="86" y="196" width="340" height="120" rx="60" fill="url(#ink)"/><circle cx="146" cy="256" r="46" fill="url(#amber)"/><g transform="translate(146 253) scale(.54)" fill="#1c2452" stroke="#1c2452"><path d="M-30 -34h60v26a30 30 0 0 1-60 0z"/><path d="M-30 -26h-9c-13 0-13 27 0 27h11M30 -26h9c13 0 13 27 0 27h-11" fill="none" stroke-width="8" stroke-linecap="round"/><rect x="-6" y="20" width="12" height="16"/><rect x="-22" y="34" width="44" height="11" rx="5.5"/></g><rect x="214" y="226" width="150" height="22" rx="11" fill="#2a336b"/><rect x="214" y="264" width="104" height="18" rx="9" fill="#7f93d6"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs>
+  <linearGradient id="ground" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#1a2032"/>
+    <stop offset=".5" stop-color="#0d1019"/>
+    <stop offset="1" stop-color="#07080c"/>
+  </linearGradient>
+  <radialGradient id="cool" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+    gradientTransform="translate(40 -30) scale(420 330)">
+    <stop offset="0" stop-color="#7896e6" stop-opacity=".55"/>
+    <stop offset="1" stop-color="#7896e6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="warm" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+    gradientTransform="translate(470 560) scale(400 320)">
+    <stop offset="0" stop-color="#8d6fe0" stop-opacity=".32"/>
+    <stop offset="1" stop-color="#8d6fe0" stop-opacity="0"/>
+  </radialGradient>
+  <!-- The platinum medal's rim: ice, lilac, a blush of pink. -->
+  <linearGradient id="platinum" x1="140" y1="90" x2="380" y2="420" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#ffffff"/>
+    <stop offset=".35" stop-color="#cfeaff"/>
+    <stop offset=".65" stop-color="#d9c9ff"/>
+    <stop offset="1" stop-color="#ffd9ec"/>
+  </linearGradient>
+  <radialGradient id="tipGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+    gradientTransform="translate(356 150) scale(70)">
+    <stop offset="0" stop-color="#ffffff" stop-opacity=".9"/>
+    <stop offset=".35" stop-color="#bfe6ff" stop-opacity=".45"/>
+    <stop offset="1" stop-color="#bfe6ff" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="disc" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+    gradientTransform="translate(220 200) scale(260)">
+    <stop offset="0" stop-color="#2a3142"/>
+    <stop offset="1" stop-color="#11141d"/>
+  </radialGradient>
+  <filter id="soft" x="-60%" y="-60%" width="220%" height="220%" filterUnits="objectBoundingBox">
+    <feGaussianBlur stdDeviation="14"/>
+  </filter>
+</defs>
+
+<defs>
+  <radialGradient id="tipGlow2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+    gradientTransform="translate(362 112) scale(60)">
+    <stop offset="0" stop-color="#ffffff" stop-opacity=".9"/>
+    <stop offset=".35" stop-color="#bfe6ff" stop-opacity=".45"/>
+    <stop offset="1" stop-color="#bfe6ff" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="gold" x1="0" y1="226" x2="0" y2="314" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#ffe7a3"/>
+    <stop offset="1" stop-color="#f0a030"/>
+  </linearGradient>
+</defs>
+<rect width="512" height="512" rx="116" fill="url(#ground)"/><rect width="512" height="512" rx="116" fill="url(#cool)"/><rect width="512" height="512" rx="116" fill="url(#warm)"/><path d="M156 112 V268 a100 100 0 0 0 200 0 V150" stroke="#9bb6ff" stroke-width="70" stroke-linecap="round" fill="none" opacity=".35" filter="url(#soft)"/><path d="M156 112 V268 a100 100 0 0 0 200 0 V150" stroke="url(#platinum)" stroke-width="64" stroke-linecap="round" fill="none"/><circle cx="356" cy="150" r="70" fill="url(#tipGlow)"/><circle cx="356" cy="150" r="14" fill="#ffffff"/><path d="M410 66 C415.2 86.8 415.2 86.8 436 92 C415.2 97.2 415.2 97.2 410 118 C404.8 97.2 404.8 97.2 384 92 C404.8 86.8 404.8 86.8 410 66Z" fill="#ffffff" opacity="1"/><path d="M442 129 C444.2 137.8 444.2 137.8 453 140 C444.2 142.2 444.2 142.2 442 151 C439.8 142.2 439.8 142.2 431 140 C439.8 137.8 439.8 137.8 442 129Z" fill="#d9c9ff" opacity="0.9"/></svg>
