@@ -84,36 +84,18 @@ def test_render_online_table_shows_the_updated_stamp_in_italics() -> None:
     assert "Igor" in text
 
 
-def test_row_name_uses_the_gamertag_while_online_on_xbox() -> None:
-    row = presence("Online", "123", "Halo Infinite", platform="xbox_modern")
-    assert _row_name(row) == "Igor"
-
-
-def test_row_name_uses_the_steam_display_name_while_online_on_steam() -> None:
-    row = presence("Online", "550", "L4D2", platform="steam", steam_display_name="IgorSteam")
-    assert _row_name(row) == "IgorSteam"
-
-
-def test_row_name_uses_the_psn_display_name_while_online_on_psn() -> None:
-    row = presence("Online", platform="psn", psn_display_name="IgorPSN")
-    assert _row_name(row) == "IgorPSN"
-
-
-def test_row_name_switches_to_the_person_chain_once_offline() -> None:
-    """2026-09-12, user request: the platform nickname earns its place by
-    saying where someone is. An offline row has no "where" left to answer,
-    so it names the person like every other screen — otherwise the same
-    member reads as two different people between this table and the summary
-    right above it."""
-    playing = presence(
-        "Online", "550", "L4D2", platform="steam", steam_display_name="IgorSteam", first_name="Igor"
-    )
-    assert _row_name(playing) == "IgorSteam"
-
-    same_person_offline = presence(
-        "Offline", platform="steam", steam_display_name="IgorSteam", first_name="Igor"
-    )
-    assert _row_name(same_person_offline) == "Igor"
+def test_row_name_is_the_nickname_online_and_offline() -> None:
+    """Owner, 2026-10-07: a person is called by their nickname in the app
+    everywhere — online too, whatever platform they are on; the platform is
+    the mark beside the name."""
+    for platform, extra in (
+        ("xbox_modern", {}),
+        ("steam", {"steam_display_name": "IgorSteam"}),
+        ("psn", {"psn_display_name": "IgorPSN"}),
+    ):
+        online = presence("Online", "550", "Game", platform=platform, handle="IgorP", **extra)
+        offline = presence("Offline", platform=platform, handle="IgorP", **extra)
+        assert _row_name(online) == _row_name(offline) == "IgorP"
 
 
 def test_row_name_treats_no_presence_data_as_offline() -> None:

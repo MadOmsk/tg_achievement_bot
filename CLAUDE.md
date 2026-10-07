@@ -777,7 +777,7 @@ isn't muted there; it wasn't already published there.
   set by an admin, never a global default.
 - **The throttled backlog** goes out as one combined digest when its window closes
   (`poller/flood_flush.py`, `Publisher.publish_flood_digest` — it can mix platforms,
-  so its header names the person, not a platform nickname). Forced sweeps right after
+  its header names the person, as every post does). Forced sweeps right after
   startup and five minutes before each chat's daily summary keep a window from
   swallowing anything.
 
@@ -1161,9 +1161,12 @@ keyboard.
    and last names are not in the chain. Everybody has a nickname, so the steps after
    it are a net for a row read before one was given.
 2. **Which account is this?** That platform's own chain — used *only* where a line is
-   genuinely about one platform: per-platform rows in `/stats`, `/panel` and the
-   admin's user card, connect/disconnect notices, the achievement announcement, and
-   `/online` rows **while the person is online** (an offline row names the person).
+   genuinely about one account: per-platform rows in `/stats`, `/panel` and the
+   admin's user card, connect/disconnect notices, and the account blocks of a
+   digest mixing two PSN accounts. **A post, a digest and `/online` name the
+   person** by chain 1 (owner, 2026-10-07): one name everywhere, in the app and
+   in Telegram; the platform is the mark beside it. `User.handle` is the shown
+   form, digits included (`_accounts._USER_COLUMNS` reads `HANDLE_SHOWN`).
 
 | Platform | Chain | Notes |
 |---|---|---|
@@ -1343,8 +1346,8 @@ upper-case. `/panel`'s "now" row names only the family, as its header lines do.
   descriptions in italics (owner, 2026-09-25) and the block's version named by
   whichever item knows its device. A
   `sendMediaGroup`, caption on the first image, images deduped.
-- **The anti-flood digest is the same form**; only its header names the person
-  instead of a platform nickname, because it can mix platforms.
+- **The anti-flood digest is the same form**, named by the person like every post;
+  two accounts of one platform name their blocks.
 - **A digest never names a trophy group** — one block is one game.
 - `plural_achievements()` is never platform-specific: combined counts are
   "достижения" even when some came from PSN.
