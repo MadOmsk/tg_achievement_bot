@@ -1199,7 +1199,7 @@ keyboard.
   not exist yet.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
   set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys (#17) — a key is
-  **never shown back**, and entering one is a single-message state with only a way
+  **never shown back** and the message carrying it is deleted at once, and entering one is a single-message state with only a way
   out; API usage; global limits, each on its own row with its value and its own
   input, `0` rendered as "без ограничения", and the rarity threshold on top; defaults
   for new users; the user list;
