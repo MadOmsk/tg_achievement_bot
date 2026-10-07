@@ -151,7 +151,7 @@ async def test_cooldown_first_reset_allows_immediate_relink(repo: Repo) -> None:
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
 
     # 1st deletion by user
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     # Check cooldown
     check = await repo.check_platform_cooldown(ALICE, "xbox", XBOX_XUID)
@@ -165,14 +165,14 @@ async def test_cooldown_second_reset_blocks_relink(repo: Repo) -> None:
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
 
     # 1st deletion
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     # ALICE returns and links again
     await repo.ensure_user(ALICE, "alice")
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
 
     # 2nd deletion within window
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     # Now blocked!
     check = await repo.check_platform_cooldown(ALICE, "xbox", XBOX_XUID)
@@ -186,7 +186,7 @@ async def test_a_malformed_cooldown_setting_falls_back_to_the_default(repo: Repo
     await repo.set_app_setting(SettingKey.ACCOUNT_RESET_COOLDOWN_HOURS, "abc")
     await repo.ensure_user(ALICE, "alice")
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
-    await repo.delete_user(ALICE, is_admin=False)  # no ValueError
+    await repo.delete_user(ALICE, is_superadmin=False)  # no ValueError
     check = await repo.check_platform_cooldown(ALICE, "xbox", XBOX_XUID)
     assert check.is_blocked is False
 
@@ -201,11 +201,11 @@ async def test_cooldown_per_platform_isolation(repo: Repo) -> None:
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
 
     # 1st reset Xbox
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
     # 2nd reset Xbox
     await repo.ensure_user(ALICE, "alice")
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     # Xbox is blocked
     check_xbox = await repo.check_platform_cooldown(ALICE, "xbox", XBOX_XUID)
@@ -228,12 +228,12 @@ async def test_cooldown_blocks_by_external_id_across_different_tg_ids(repo: Repo
     )
 
     # 2 resets for ALICE
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
     await repo.ensure_user(ALICE, "alice")
     await repo.link_platform_account(
         await repo.person_id(ALICE), Platform.STEAM, STEAM_ID, "AliceSteam"
     )
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     # BOB tries to link the same STEAM_ID
     check_bob = await repo.check_platform_cooldown(BOB, Platform.STEAM, STEAM_ID)
@@ -246,27 +246,27 @@ async def test_cooldown_setting_zero_disables_cooldown(repo: Repo) -> None:
 
     await repo.ensure_user(ALICE, "alice")
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     await repo.ensure_user(ALICE, "alice")
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     check = await repo.check_platform_cooldown(ALICE, "xbox", XBOX_XUID)
     assert check.is_blocked is False
 
 
 async def test_admin_deletion_exempt_from_cooldown(repo: Repo) -> None:
-    """Admin operations (is_admin=True) do not impose cooldowns and clear existing ones."""
+    """Admin operations (is_superadmin=True) do not impose cooldowns and clear existing ones."""
     await repo.ensure_user(ALICE, "alice")
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
 
     # User deletion creates 1 reset
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
     # Admin deletion clears cooldown
     await repo.ensure_user(ALICE, "alice")
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
-    await repo.delete_user(ALICE, is_admin=True)
+    await repo.delete_user(ALICE, is_superadmin=True)
 
     check = await repo.check_platform_cooldown(ALICE, "xbox", XBOX_XUID)
     assert check.is_blocked is False
@@ -277,7 +277,7 @@ async def test_expired_cooldown_allows_relink(repo: Repo) -> None:
     """After the cooldown period has elapsed, linking is permitted."""
     await repo.ensure_user(ALICE, "alice")
     await repo.link_xbox_account(await repo.person_id(ALICE), XBOX_XUID, "AliceXbox", 50)
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     # Manually backdate the reset timestamp to 25 hours ago
     past_iso = (utcnow() - timedelta(hours=25)).isoformat(timespec="seconds")
@@ -300,7 +300,7 @@ async def test_one_deletion_is_one_reset_with_several_psn_accounts(repo: Repo) -
     await repo.link_platform_account(await repo.person_id(ALICE), Platform.STEAM, "1", "A")
     await repo.link_platform_account(await repo.person_id(ALICE), Platform.STEAM, "2", "B")
 
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     for platform, external_id in ((Platform.PSN, "psn-2"), (Platform.STEAM, "2")):
         check = await repo.check_platform_cooldown(ALICE, platform, external_id)
@@ -314,7 +314,7 @@ async def test_psn_free_relinks_match_the_accounts_held(repo: Repo) -> None:
     await repo.ensure_user(ALICE, "alice")
     await repo.link_platform_account(await repo.person_id(ALICE), Platform.PSN, "psn-1", "One")
     await repo.link_platform_account(await repo.person_id(ALICE), Platform.PSN, "psn-2", "Two")
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
     await repo.ensure_user(ALICE, "alice")
 
     for external_id in ("psn-1", "psn-2"):
@@ -329,10 +329,10 @@ async def test_psn_free_relinks_match_the_accounts_held(repo: Repo) -> None:
 async def test_a_second_deletion_adds_no_psn_relinks(repo: Repo) -> None:
     await repo.ensure_user(ALICE, "alice")
     await repo.link_platform_account(await repo.person_id(ALICE), Platform.PSN, "psn-1", "One")
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
     await repo.ensure_user(ALICE, "alice")
     await repo.link_platform_account(await repo.person_id(ALICE), Platform.PSN, "psn-1", "One")
-    await repo.delete_user(ALICE, is_admin=False)
+    await repo.delete_user(ALICE, is_superadmin=False)
 
     assert (await repo.check_platform_cooldown(ALICE, Platform.PSN, "psn-9")).is_blocked is True
 
@@ -347,7 +347,7 @@ async def test_every_psn_account_is_protected_on_its_own_from_another_telegram(
         await repo.ensure_user(ALICE, "alice")
         await repo.link_platform_account(await repo.person_id(ALICE), Platform.PSN, "psn-1", "One")
         await repo.link_platform_account(await repo.person_id(ALICE), Platform.PSN, "psn-2", "Two")
-        await repo.delete_user(ALICE, is_admin=False)
+        await repo.delete_user(ALICE, is_superadmin=False)
 
     for external_id in ("psn-1", "psn-2"):
         assert (await repo.check_platform_cooldown(BOB, Platform.PSN, external_id)).is_blocked

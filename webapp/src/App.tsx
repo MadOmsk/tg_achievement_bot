@@ -295,12 +295,12 @@ export function App() {
     // Once, for the link the app was opened with.
   }, [signedIn]);
 
-  const isAdminUser = state.status === "ok" && state.me.is_admin;
+  const isSuperadmin = state.status === "ok" && state.me.is_superadmin;
   useEffect(() => {
-    if (!isAdminUser) return;
+    if (!isSuperadmin) return;
     const id = window.setTimeout(() => void loadAdmin(), PRELOAD_AFTER_MS);
     return () => window.clearTimeout(id);
-  }, [isAdminUser]);
+  }, [isSuperadmin]);
 
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
@@ -552,7 +552,7 @@ export function App() {
           data={data}
           onFlash={setFlash}
           onAdmin={
-            me.is_admin
+            me.is_superadmin
               ? (next) => {
                   setAdminScreen(next);
                   setScreen(SCREENS.admin);

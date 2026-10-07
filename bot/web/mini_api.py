@@ -34,7 +34,7 @@ from bot.services.hltb import resolve as hltb_resolve
 from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
 from bot.services.notifier import Notifier, channel_token_valid
-from bot.services.notify import AdminNotifier
+from bot.services.notify import SuperadminNotifier
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
@@ -91,7 +91,7 @@ def setup_mini_api(
     psn_auth: PsnAuth | None = None,
     psn_fetcher: PsnFetcher | None = None,
     xbox_fetcher: Fetcher | None = None,
-    notifier: AdminNotifier | None = None,
+    notifier: SuperadminNotifier | None = None,
     anthropic_auth: Any = None,
     bot: Any = None,
     title_catalog: TitleCatalogService | None = None,
@@ -125,10 +125,10 @@ def setup_mini_api(
         )
     app["mini_title_catalog"] = title_catalog
     app["mini_email_login"] = email_login or mini_logins.build_email_login(settings, repo)
-    # The app's own notifications (#164); AdminNotifier above is the operator's.
+    # The app's own notifications (#164); SuperadminNotifier above is the operator's.
     app["mini_notifications"] = notifications or _default_notifier(settings, repo, bot)
     # Merging two people (#162): main.py's, shared with the bot's /start link_….
-    app["mini_merge"] = merge or PeopleMerge(repo, settings.is_admin)
+    app["mini_merge"] = merge or PeopleMerge(repo, settings.is_superadmin)
 
     app.router.add_get("/api/mini/health", handle_health)
     mini_people.register(app, _require_user)
@@ -213,7 +213,7 @@ async def handle_me(request: web.Request) -> web.Response:
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name,
-        is_admin=settings.is_admin(user.tg_id),
+        is_superadmin=settings.is_superadmin(user.tg_id),
     )
     # Ask once for an email, the main way in (owner, 2026-10-05) — only where
     # one can be added at all.
@@ -313,7 +313,7 @@ async def handle_connect_xbox(request: web.Request) -> web.Response:
 async def handle_disconnect_xbox(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
-    notifier: AdminNotifier | None = request.app["mini_notifier"]
+    notifier: SuperadminNotifier | None = request.app["mini_notifier"]
     db_user = await repo.get_user(user.person_id)
     if db_user is None or not db_user.xuid:
         return web.json_response({"ok": True, "already": True, "revoke_url": REVOKE_URL})

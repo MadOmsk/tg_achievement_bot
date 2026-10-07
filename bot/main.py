@@ -73,7 +73,7 @@ from bot.services.merge import PeopleMerge
 from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notifier import Notifier
-from bot.services.notify import AdminNotifier
+from bot.services.notify import SuperadminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.release_notify import announce_release_if_needed
 from bot.services.smtp_auth import SmtpAuth
@@ -158,7 +158,7 @@ async def run(settings: Settings) -> None:
     bot.session.middleware(MessageLimitMiddleware())
     bot.session.middleware(MessageLogMiddleware(repo))
 
-    notifier = AdminNotifier(bot, repo, settings.admin_tg_ids)
+    notifier = SuperadminNotifier(bot, repo, settings.superadmin_tg_ids)
 
     # One service-wide PSN client, not per-user OAuth (SPEC 9, M-PSN-1) —
     # on_dead mirrors XboxAuthService.on_token_dead above, just for the one
@@ -343,7 +343,7 @@ async def run(settings: Settings) -> None:
         auth.forget(absorb)
 
     merge = PeopleMerge(
-        repo, settings.is_admin, on_merged=on_people_merged, forget_picture=forget_file
+        repo, settings.is_superadmin, on_merged=on_people_merged, forget_picture=forget_file
     )
 
     web_server = OAuthServer(

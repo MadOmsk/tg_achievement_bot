@@ -23,7 +23,7 @@ from bot.i18n import translator
 log = logging.getLogger(__name__)
 
 
-class AdminNotifier:
+class SuperadminNotifier:
     def __init__(self, bot: Bot, repo: Repo, admin_ids: Sequence[int]) -> None:
         self._bot = bot
         self._repo = repo

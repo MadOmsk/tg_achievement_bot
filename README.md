@@ -33,7 +33,7 @@ what changed in each release is in [changelog/](changelog/).
 **Mini App** (`webapp/`) — a feed, profiles, the club, and a page per game:
 achievements with progress, HowLongToBeat hours and description.
 
-**For the operator** — `/admin`: health of the shared keys, the keys themselves,
+**For the super-admin** — `/admin`: health of the shared keys, the keys themselves,
 limits, chats and their settings, users, exclusions, message cleanup.
 
 The bot speaks Russian and English: a group follows its own setting, a private chat
@@ -48,7 +48,7 @@ the person's.
 | **PSN** | sends an Online ID | trophies visible to "Everyone" |
 
 Steam and PSN use one shared credential for the whole bot: a Steam Web API key
-and the NPSSO of one PlayStation account. The operator sets both in `/admin`.
+and the NPSSO of one PlayStation account. The super-admin sets both in `/admin`.
 
 ## Before you start
 
@@ -68,7 +68,7 @@ and the NPSSO of one PlayStation account. The operator sets both in `/admin`.
 
 | Variable | |
 |---|---|
-| `BOT_TOKEN`, `ADMIN_TG_IDS` | required; `ADMIN_TG_IDS` — Telegram ids of the operators, comma-separated |
+| `BOT_TOKEN`, `SUPERADMIN_TG_IDS` | required; `SUPERADMIN_TG_IDS` — Telegram ids of the super-admins (the operators), comma-separated; the old name `ADMIN_TG_IDS` is still read |
 | `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL` | required, for Xbox login |
 | `FERNET_KEY` | required; encrypts every stored token and key — back it up |
 | `STEAM_API_KEY`, `ANTHROPIC_API_KEY` | optional, a first-run seed: after that the key lives in the database and is changed in `/admin` |
@@ -163,7 +163,7 @@ migration — and is shown at the end of `/help`.
    like.
 2. **Propose the result as a pull request into `prerelease`** — never into `main`.
 3. Once merged, it is built and deployed to the test server. The repository's
-   admin tests it and releases it to production (`prerelease` → `main`).
+   super-admin tests it and releases it to production (`prerelease` → `main`).
 
 What a pull request should bring:
 - what changed for players, in the notes of the **next** version
@@ -171,8 +171,8 @@ What a pull request should bring:
 - user-facing text only in `bot/locales/` (Russian and English, kept in parity by
   a test); code, comments, commits and issues in English;
 - green tests and ruff; a new screen agreed first (`scripts/render_screen.py` draws
-  any screen from real data and can send it to the admin's DM);
-- new migrations, which the admin rehearses on a copy of production before the
+  any screen from real data and can send it to the super-admin's DM);
+- new migrations, which the super-admin rehearses on a copy of production before the
   release.
 
 Everything else — data model, platform quirks, publication rules — is in

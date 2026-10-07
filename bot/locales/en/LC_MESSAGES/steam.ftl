@@ -1,5 +1,5 @@
 # Connection and profile access
-steam-not-configured = Steam linking isn't set up yet — ask the administrator.
+steam-not-configured = Steam linking isn't set up yet — ask the super-admin.
 steam-connect-group-redirect = Message me privately — we'll connect Steam there.
 steam-private-only = This command works in a DM.
 steam-already-connected =

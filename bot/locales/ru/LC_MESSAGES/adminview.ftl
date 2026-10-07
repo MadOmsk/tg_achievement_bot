@@ -15,7 +15,7 @@ adminview-steam-not-configured = ⚠️ не настроен — задай в 
 
 # Admin home
 adminview-home =
-    ⚙️ Администрирование  ·  обновлено { $updated }
+    ⚙️ Панель суперадмина  ·  обновлено { $updated }
 
     Пользователей: { $users } (исключено: { $excluded })
       XBOX:  { $xbox_linked } (вход активен: { $xbox_active }, без входа: { $xbox_broken })

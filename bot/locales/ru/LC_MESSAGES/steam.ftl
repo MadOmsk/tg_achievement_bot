@@ -1,5 +1,5 @@
 # Connection and profile access
-steam-not-configured = Подключение Steam пока не настроено — обратитесь к администратору.
+steam-not-configured = Подключение Steam пока не настроено — обратитесь к суперадмину.
 steam-connect-group-redirect = Напиши мне в личку — подключим Steam там.
 steam-private-only = Эта команда — в личке.
 steam-already-connected =

@@ -13,7 +13,7 @@ all.
     python scripts/render_screen.py achievement --locale en --send
 
 Nothing here writes: it reads the database the .env points at and, with
---send, posts to the first id in ADMIN_TG_IDS. Point DB_PATH at a copy when
+--send, posts to the first id in SUPERADMIN_TG_IDS. Point DB_PATH at a copy when
 rendering against production data — and keep that copy in backups/, which is
 the one place a database copy may live (see CLAUDE.md's Operations).
 
@@ -413,7 +413,7 @@ async def main() -> int:
     database = await Database(Path(settings.db_path)).connect()
     try:
         repo = Repo(database)
-        admin_id = settings.admin_tg_ids[0]
+        admin_id = settings.superadmin_tg_ids[0]
         chats = await repo.admin_chats()
         ctx = Context(
             repo=repo,

@@ -252,7 +252,7 @@ Code comments and log lines stay English.
 
 ## Configuration
 
-Required environment variables: `BOT_TOKEN`, `ADMIN_TG_IDS` (comma-separated
+Required environment variables: `BOT_TOKEN`, `SUPERADMIN_TG_IDS` (comma-separated
 super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
@@ -366,7 +366,7 @@ every column. History: #106.
   in without asking. Offers and `link_` tokens live in memory for ten minutes. The
   merge defers foreign keys to commit (`chat_seen` points at `users.tg_id`, which
   moves between the two rows).
-  **A super-admin stays an ordinary person named by `ADMIN_TG_IDS`** (owner,
+  **A super-admin stays an ordinary person named by `SUPERADMIN_TG_IDS`** (owner,
   2026-10-02): no role field. So a super-admin must always keep a Telegram id —
   nothing (removing Telegram, a merge) may leave them without one; both refuse
   with `admin`.
@@ -946,7 +946,7 @@ elsewhere in this file still describe the bot.
   `p<person id>` (`services/mini_app.py`); a button posted before carries
   `u<tg id>`, which the app still reads: a profile is looked up by it
   (`/api/mini/people/tg/{tg_id}`), and a game page asks by it (`?tg_id=`) and learns
-  the person from the answer's `viewed` (person id and nickname). **The admin is named by Telegram id** (`ADMIN_TG_IDS`);
+  the person from the answer's `viewed` (person id and nickname). **The super-admin is named by Telegram id** (`SUPERADMIN_TG_IDS`);
   **the people the admin manages, by person id** — somebody who signed in by email
   has no Telegram id: `/admin`'s buttons carry `p<person id>` (`a:u:p12`, a bare
   number from a button drawn before is a Telegram id and still works), the Mini
@@ -1232,9 +1232,12 @@ keyboard.
 
 ### Admin
 
-- **Two roles, named distinctly**: the **суперадмин** is the global operator
-  (`ADMIN_TG_IDS`); the **админ чата** is the per-chat role #15 proposes, which does
-  not exist yet.
+- **Two roles, named distinctly** (owner, 2026-10-07): the **суперадмин**
+  (super-admin) is the global operator — `SUPERADMIN_TG_IDS`, any number of them,
+  `Settings.is_superadmin`; the old name `ADMIN_TG_IDS` is still read. **«Админ»
+  is reserved for a narrower role to come** (the per-chat one #15 proposes), so
+  code, text and docs never call the super-admin an admin. `/admin`, the
+  `/api/mini/admin` routes and `handlers/admin.py` name the panel, not the role.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
   set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way

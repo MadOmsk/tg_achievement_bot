@@ -90,9 +90,7 @@ async def test_prompt_replies_not_configured_without_arming(repo: Repo, cipher) 
 
     await prompt_for_link(bot, repo, unconfigured, TG_ID)  # type: ignore[arg-type]
 
-    assert bot.sent == [
-        (TG_ID, "Подключение Steam пока не настроено — обратитесь к администратору.")
-    ]
+    assert bot.sent == [(TG_ID, "Подключение Steam пока не настроено — обратитесь к суперадмину.")]
     assert awaiting.is_expecting(TG_ID, "steam") is False
 
 

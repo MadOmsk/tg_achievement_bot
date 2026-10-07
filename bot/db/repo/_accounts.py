@@ -138,21 +138,21 @@ class _AccountsRepo:
         row = await cursor.fetchone()
         return (row["photo_unique_id"], row["photo_path"]) if row else (None, None)
 
-    async def delete_user(self, tg_id: int, *, is_admin: bool = False) -> bool:
+    async def delete_user(self, tg_id: int, *, is_superadmin: bool = False) -> bool:
         """`delete_person` for the person behind a Telegram id (the admin's card
         and the bot's own commands name people that way)."""
         person = await self.person_id(tg_id)  # type: ignore[attr-defined]
         if person is None:
             return False
-        return await self.delete_person(person, is_admin=is_admin)
+        return await self.delete_person(person, is_superadmin=is_superadmin)
 
-    async def delete_person(self, person_id: int, *, is_admin: bool = False) -> bool:
+    async def delete_person(self, person_id: int, *, is_superadmin: bool = False) -> bool:
         """Completely remove a user, their linked platform accounts, and all related
         rows (tokens, subscriptions, settings, seen achievements, publications,
         presence/poll state, cached history, avatars).
 
-        If not is_admin: records platform reset in `platform_cooldowns` for anti-abuse.
-        If is_admin: clears cooldown for this user.
+        If not is_superadmin: records platform reset in `platform_cooldowns` for anti-abuse.
+        If is_superadmin: clears cooldown for this user.
 
         Returns True if a user was deleted, False if no such user existed.
         """
@@ -262,7 +262,7 @@ class _AccountsRepo:
             # each account it held: several PSN accounts (#10) each keep their own
             # count and their own free re-link, and a single deletion never counts
             # twice against anything.
-            if not is_admin:
+            if not is_superadmin:
                 reset: dict[str, list[str]] = {}
                 for platform, external_id in linked_accounts:
                     reset.setdefault(platform, []).append(external_id)
@@ -271,7 +271,7 @@ class _AccountsRepo:
                         tg_id, platform, *external_ids, held=held.get(platform, 1)
                     )
 
-            if is_admin and tg_id is not None:
+            if is_superadmin and tg_id is not None:
                 await self.clear_platform_cooldown(tg_id)
 
             # Step 3: Remove user, tokens, and related records

@@ -107,7 +107,7 @@ export type MeResponse = {
   username: string | null;
   first_name: string | null;
   last_name: string | null;
-  is_admin: boolean;
+  is_superadmin: boolean;
   is_excluded: boolean;
   settings: {
     locale: string;

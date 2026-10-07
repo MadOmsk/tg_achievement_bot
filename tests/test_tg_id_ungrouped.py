@@ -5,7 +5,7 @@ string. This pins the places that used to pass the int."""
 from __future__ import annotations
 
 from bot.db.repo import Repo
-from bot.services.notify import AdminNotifier
+from bot.services.notify import SuperadminNotifier
 from bot.views.admin import (
     render_admin_user_delete_confirm_1,
     render_admin_user_delete_confirm_2,
@@ -23,6 +23,6 @@ def test_delete_confirmations_show_the_id_in_one_piece() -> None:
 
 async def test_admin_notice_shows_the_id_in_one_piece(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
-    notifier = AdminNotifier(bot=None, repo=repo, admin_ids=[])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot=None, repo=repo, admin_ids=[])  # type: ignore[arg-type]
     for locale in ("ru", "en"):
         assert str(TG_ID) in await notifier._who(await repo.person_id(TG_ID), locale)

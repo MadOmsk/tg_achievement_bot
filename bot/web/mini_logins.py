@@ -422,7 +422,7 @@ def _telegram_blocked(request: web.Request, user: User | None) -> str | None:
         return None
     if not user.email:
         return "last_login"
-    if settings.is_admin(user.tg_id):
+    if settings.is_superadmin(user.tg_id):
         return "admin"
     if request.headers.get("X-Telegram-Init-Data"):
         return "in_telegram"

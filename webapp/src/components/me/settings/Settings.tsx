@@ -509,7 +509,7 @@ export function Settings({
         />
       </Group>
 
-      {me.is_admin && onAdmin && (
+      {me.is_superadmin && onAdmin && (
         <AdminSection locale={locale} onNavigate={onAdmin} />
       )}
 

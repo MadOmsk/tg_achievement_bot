@@ -298,7 +298,7 @@ def setup_admin_routes(app: web.Application) -> None:
 
 
 async def handle_admin_home(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     xbox = request.app.get("mini_xbox_fetcher")
     steam = request.app.get("mini_steam_fetcher")
@@ -315,12 +315,12 @@ async def handle_admin_home(request: web.Request) -> web.Response:
 
 
 async def handle_admin_keys(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     return web.json_response(await _keys_payload(request))
 
 
 async def handle_admin_key_put(request: web.Request) -> web.Response:
-    admin = await _require_admin(request)
+    admin = await _require_superadmin(request)
     name = request.match_info["name"]
     if name not in _KEY_NAMES:
         raise web.HTTPNotFound()
@@ -358,7 +358,7 @@ async def handle_admin_key_put(request: web.Request) -> web.Response:
 
 
 async def handle_admin_key_delete(request: web.Request) -> web.Response:
-    admin = await _require_admin(request)
+    admin = await _require_superadmin(request)
     name = request.match_info["name"]
     if name not in _KEY_NAMES:
         raise web.HTTPNotFound()
@@ -375,14 +375,14 @@ async def handle_admin_key_delete(request: web.Request) -> web.Response:
 
 
 async def handle_admin_limits(request: web.Request) -> web.Response:
-    admin = await _require_admin(request)
+    admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_limits(repo, locale=locale))
 
 
 async def handle_admin_limits_patch(request: web.Request) -> web.Response:
-    admin = await _require_admin(request)
+    admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     body = await request.json()
     key = str(body.get("key") or "")
@@ -401,13 +401,13 @@ async def handle_admin_limits_patch(request: web.Request) -> web.Response:
 
 
 async def handle_admin_defaults(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     return web.json_response(await build_admin_defaults(repo))
 
 
 async def handle_admin_defaults_patch(request: web.Request) -> web.Response:
-    admin = await _require_admin(request)
+    admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     body = await request.json()
     if "rarity_mode" in body:
@@ -436,7 +436,7 @@ async def handle_admin_defaults_patch(request: web.Request) -> web.Response:
 
 
 async def handle_admin_users(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     return web.json_response(await build_admin_users(repo))
 
@@ -456,7 +456,7 @@ async def _person_of(request: web.Request) -> int:
 
 
 async def handle_admin_user(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     payload = await build_admin_user(repo, await _person_of(request))
     if payload is None:
@@ -465,7 +465,7 @@ async def handle_admin_user(request: web.Request) -> web.Response:
 
 
 async def handle_admin_user_patch(request: web.Request) -> web.Response:
-    admin = await _require_admin(request)
+    admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     person = await _person_of(request)
     body = await request.json()
@@ -483,23 +483,23 @@ async def handle_admin_user_patch(request: web.Request) -> web.Response:
 
 
 async def handle_admin_user_delete(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
-    deleted = await repo.delete_person(await _person_of(request), is_admin=True)
+    deleted = await repo.delete_person(await _person_of(request), is_superadmin=True)
     if not deleted:
         raise web.HTTPNotFound()
     return web.json_response({"ok": True})
 
 
 async def handle_admin_chats(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     chats = await repo.admin_chats()
     return web.json_response({"chats": [serialize_admin_chat(c) for c in chats]})
 
 
 async def handle_admin_chat_patch(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     chat_id = int(request.match_info["chat_id"])
     body = await request.json()
@@ -548,7 +548,7 @@ async def handle_admin_chat_patch(request: web.Request) -> web.Response:
 
 
 async def handle_admin_chat_action(request: web.Request) -> web.Response:
-    await _require_admin(request)
+    await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     bot = request.app.get("mini_bot")
     if bot is None:
@@ -635,11 +635,11 @@ async def _keys_payload(request: web.Request) -> dict[str, bool]:
     )
 
 
-async def _require_admin(request: web.Request):
+async def _require_superadmin(request: web.Request):
     from bot.web.mini_api import _require_user
 
     user = await _require_user(request)
     settings = request.app["mini_settings"]
-    if not settings.is_admin(user.tg_id):
+    if not settings.is_superadmin(user.tg_id):
         raise web.HTTPForbidden(text="admin only")
     return user

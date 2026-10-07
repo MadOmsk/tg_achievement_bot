@@ -150,7 +150,7 @@ async def test_the_admin_manages_somebody_without_telegram(repo: Repo, settings)
     ada = await _email_player(repo)
     admin = await repo.ensure_user(500, "boss")
     assert admin is not None
-    settings.admin_tg_ids = [500]
+    settings.superadmin_tg_ids = [500]
     client = await _client(repo, settings)
     try:
         await _sign_in_as(client, repo, admin)

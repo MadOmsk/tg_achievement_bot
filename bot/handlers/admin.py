@@ -1,7 +1,7 @@
 """/admin — the operator's screen (SPEC 6.4). UI only: all data comes from services.
 
 One message that redraws itself, like the user panel. Access is the
-ADMIN_TG_IDS list from the config, checked on the router so that no single
+SUPERADMIN_TG_IDS list from the config, checked on the router so that no single
 handler can forget it.
 """
 
@@ -111,14 +111,14 @@ log = logging.getLogger(__name__)
 router = Router(name="admin")
 
 
-class IsAdmin(BaseFilter):
+class IsSuperadmin(BaseFilter):
     async def __call__(self, event: TelegramObject, settings: Settings) -> bool:
         user = getattr(event, "from_user", None)
-        return user is not None and settings.is_admin(user.id)
+        return user is not None and settings.is_superadmin(user.id)
 
 
-router.message.filter(IsAdmin())
-router.callback_query.filter(IsAdmin())
+router.message.filter(IsSuperadmin())
+router.callback_query.filter(IsSuperadmin())
 
 
 async def _replace_admin_home(
@@ -1461,7 +1461,7 @@ async def admin_delete_user_confirmed(
     _ = translator("admin", i18n.locale)
     _prefix, _action, raw = callback.data.split(":")
     person = await _subject(repo, raw)
-    deleted = person is not None and await repo.delete_person(person, is_admin=True)
+    deleted = person is not None and await repo.delete_person(person, is_superadmin=True)
     if deleted:
         await callback.answer(_("admin-delete-toast"))
     else:

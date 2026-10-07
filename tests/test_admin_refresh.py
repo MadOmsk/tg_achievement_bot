@@ -82,7 +82,7 @@ async def test_tick_refreshes_a_screen_past_its_interval(repo: Repo, cipher: Tok
     assert len(bot.edits) == 1
     chat_id, message_id, text = bot.edits[0]
     assert (chat_id, message_id) == (ADMIN_ID, 42)
-    assert "Администрирование" in text
+    assert "Панель суперадмина" in text
     rows = await repo.all_admin_panel_refreshes()
     assert rows[0].last_updated_at != rows[0].created_at
 

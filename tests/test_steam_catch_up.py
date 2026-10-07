@@ -47,7 +47,7 @@ async def _linked_steam_user(
 def _settings(**kwargs) -> Settings:
     base = {
         "bot_token": SecretStr("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"),
-        "admin_tg_ids": "1",
+        "superadmin_tg_ids": "1",
         "azure_client_id": "fake",
         "azure_client_secret": SecretStr("fake"),
         "oauth_redirect_url": "https://example.com",
