@@ -32,14 +32,19 @@ admin-setting-patch-refresh = Обновление патчей игр (часы
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
-admin-keys-screen =
-    🔑 Ключи платформ
-
-    PSN: { $psn }
-    Steam: { $steam }
-    Anthropic: { $anthropic }
-    YouTube: { $youtube }
-    Почта: { $smtp }
+admin-keys-title = 🔑 Ключи платформ
+admin-keys-line = { $label }: { $state }
+admin-keys-psn-label = PSN
+admin-keys-steam-label = Steam
+admin-keys-anthropic-label = Anthropic
+admin-keys-youtube-label = YouTube
+admin-keys-smtp-label = Почта (SMTP)
+# One line under the field in the Mini App, where the long prompt does not fit.
+admin-keys-psn-hint = Значение npsso с ca.account.sony.com/api/v1/ssocookie, войдя на my.playstation.com.
+admin-keys-steam-hint = Ключ Steam Web API: steamcommunity.com/dev/apikey.
+admin-keys-anthropic-hint = Ключ API: console.anthropic.com → Settings → API Keys.
+admin-keys-youtube-hint = Ключ YouTube Data API v3 из console.cloud.google.com.
+admin-keys-smtp-hint = Логин и SMTP-ключ через пробел: «логин ключ».
 admin-keys-set = ✅ настроен
 admin-keys-unset = ⚠️ не настроен
 admin-keys-steam-add = Задать ключ Steam
@@ -106,8 +111,8 @@ admin-keys-smtp-saved =
     { $text }
 
 # PSN status and one-line messages
-admin-psn-npsso-invalid = NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз.
-admin-psn-client-error = Не получилось создать клиент PSN — техническая ошибка на сервере ({ $error }). NPSSO тут, скорее всего, ни при чём — посмотри логи бота.
+admin-keys-psn-invalid = NPSSO не подошёл — Sony его не приняла. Проверь и пришли ещё раз.
+admin-keys-setup-error = Не получилось создать клиент PSN — техническая ошибка на сервере ({ $error }). NPSSO тут, скорее всего, ни при чём — посмотри логи бота.
 
 # Limits and input prompts
 admin-limits-screen =

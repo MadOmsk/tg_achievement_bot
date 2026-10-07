@@ -126,7 +126,10 @@ name, or when the tree goes stale.
 │   │
 │   ├── services/                business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py       whether an achievement may be published
-│   │   ├── admin_settings.py     what the admin settings *are*: bounds, labels, defaults
+│   │   ├── admin_settings.py     what the admin settings *are*: bounds, labels, defaults,
+│   │   │                         and the one way either panel changes a number (#176)
+│   │   ├── admin_status.py       what the super-admin's home shows, for both panels (#176)
+│   │   ├── admin_credentials.py  every shared credential, one registry for both panels (#176)
 │   │   ├── connect.py            one-time OAuth state, finishing a login
 │   │   ├── relink.py             linking an account somebody else may already hold (#52)
 │   │   ├── stats.py              aggregates for panels, /stats, summaries
@@ -270,11 +273,12 @@ setting it up: `docs/mail-setup.md`).
   with an error in the log, whenever `SMTP_HOST` is set). Another way to send mail is one more class
   behind `services/email.py::EmailSender`.
 - **The mail server's login is set from /admin** (owner, 2026-10-07;
-  `services/smtp_auth.py`): «🔑 Ключи платформ» → «Почта (SMTP)», "login key" in
-  one message, checked by logging in to the server, kept encrypted, read by the
-  sender on every message (no restart). `SMTP_USERNAME` / `SMTP_PASSWORD` are a
+  `services/smtp_auth.py`): «🔑 Ключи платформ» → «Почта (SMTP)», or the Mini
+  App's admin → «Ключи», "login key" in one message, checked by logging in to the
+  server, kept encrypted, read by the sender on every message (no restart; the
+  sender and both panels share one `SmtpAuth`). `SMTP_USERNAME` / `SMTP_PASSWORD` are a
   first-run seed like the keys below; `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`
-  and `SMTP_FROM` stay in `.env`. The /admin home shows sign-in emails sent in the
+  and `SMTP_FROM` stay in `.env`. Both admin homes show sign-in emails sent in the
   last hour and day against the app's hourly cap and the mail service's daily one
   (`email_provider_daily_limit`, 300 — Brevo's free plan).
 
@@ -1238,8 +1242,21 @@ keyboard.
   is reserved for a narrower role to come** (the per-chat one #15 proposes), so
   code, text and docs never call the super-admin an admin. `/admin`, the
   `/api/mini/admin` routes and `handlers/admin.py` name the panel, not the role.
+- **One source for both admin panels** (#176): the bot's `/admin` and the Mini
+  App's admin only render what three services answer — `services/admin_status.py`
+  (`AdminStatus`: counts, API usage, sign-in emails against their caps, every
+  credential's state), `services/admin_credentials.py` (`AdminCredentials`, the
+  registry of shared credentials: `set` raising `CredentialInvalid` /
+  `CredentialSetupError`, `clear`) and `services/admin_settings.py`
+  (`set_numeric_setting`, `set_rare_threshold`, `NumericSetting.zero_means`). A new
+  credential is one registry entry plus its `admin-keys-<name>-*` strings (label,
+  hint, add/change/clear, prompt, saved, invalid); a new numeric setting is one
+  `NUMERIC_SETTINGS` row; a new counter is one `AdminStatus` field. The Mini App
+  draws the keys and limits the server lists, labels included — never a list of
+  its own. Neither panel parses, bounds or stores a value itself.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
-  set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys (#17) — a key is
+  set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys and the
+  mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; global limits, each on its own row with its value and its own
   input, `0` rendered as "без ограничения", and the rarity threshold on top; defaults

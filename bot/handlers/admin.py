@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import Callable
 from datetime import timedelta
 
 from aiogram import Bot, F, Router
@@ -37,6 +38,11 @@ from bot.poller.service_health import (
 )
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import custom_avatars
+from bot.services.admin_credentials import (
+    AdminCredentials,
+    CredentialInvalid,
+    CredentialSetupError,
+)
 from bot.services.admin_settings import (
     CHAT_SCOPED_KEYS,
     DEFAULT_RARITY_MODE_DEFAULT,
@@ -48,28 +54,14 @@ from bot.services.admin_settings import (
     FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
     RARE_THRESHOLD_KEY,
-    RARE_THRESHOLD_MAX,
-    RARE_THRESHOLD_MIN,
     SHOW_LINKS_DEFAULT,
     SHOW_LINKS_KEY,
+    SettingValueError,
+    set_numeric_setting,
+    set_rare_threshold,
 )
 from bot.services.message_log import stats_category
 from bot.services.naming import link_nickname, person_name, xbox_nickname
-from bot.services.psn.auth import PsnAuth
-from bot.services.psn.client import (
-    PsnClientSetupError,
-    PsnTokenDeadError,
-)
-from bot.services.smtp_auth import SmtpAuth, SmtpLoginInvalidError
-from bot.services.steam.auth import (
-    SteamAuth,
-    SteamKeyInvalidError,
-)
-from bot.services.translate.auth import (
-    AnthropicAuth,
-    AnthropicKeyInvalidError,
-)
-from bot.services.youtube.auth import YouTubeAuth, YouTubeKeyInvalidError
 from bot.util import parse_iso, parse_utc_offset, utcnow
 from bot.views.admin import (
     _cancel_input_keyboard,
@@ -126,8 +118,7 @@ async def _replace_admin_home(
     repo: Repo,
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
-    psn_auth: PsnAuth,
-    steam_auth: SteamAuth,
+    admin_credentials: AdminCredentials,
     admin_id: int,
     prefix: str = "",
 ) -> None:
@@ -141,7 +132,7 @@ async def _replace_admin_home(
     # itself rather than making every caller carry it (#48).
     locale = await repo.user_locale(await repo.person_id(admin_id))
     text, markup = await render_admin_home(
-        repo, fetcher, steam_fetcher, psn_auth, steam_auth, locale=locale
+        repo, fetcher, steam_fetcher, admin_credentials, locale=locale
     )
     if prefix:
         text = f"{prefix}\n\n{text}"
@@ -161,14 +152,11 @@ async def admin_command(
     repo: Repo,
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
-    psn_auth: PsnAuth,
-    steam_auth: SteamAuth,
+    admin_credentials: AdminCredentials,
     bot: Bot,
 ) -> None:
     _awaiting_input.pop(message.from_user.id, None)  # a fresh /admin cancels any pending flow
-    await _replace_admin_home(
-        bot, repo, fetcher, steam_fetcher, psn_auth, steam_auth, message.chat.id
-    )
+    await _replace_admin_home(bot, repo, fetcher, steam_fetcher, admin_credentials, message.chat.id)
 
 
 @router.callback_query(F.data == "a:noop")
@@ -185,44 +173,29 @@ async def admin_home(
     repo: Repo,
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
-    psn_auth: PsnAuth,
-    steam_auth: SteamAuth,
+    admin_credentials: AdminCredentials,
     i18n: I18nContext,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
         callback,
         *await render_admin_home(
-            repo, fetcher, steam_fetcher, psn_auth, steam_auth, locale=i18n.locale
+            repo, fetcher, steam_fetcher, admin_credentials, locale=i18n.locale
         ),
     )
 
 
 # --------------------------------------------------------- Platform keys (#17)
 
-# The "Ключи платформ" screen, where an admin sets/changes/clears the shared
-# Steam key and PSN NPSSO — both take free-text answers, and the message
-# handler for them is registered before the free-text numeric/timezone
-# handlers below on purpose: aiogram tries message handlers in registration
-# order and stops at the first whose filter matches, so an admin's answer
-# here (a key or an NPSSO) must be claimed by this filter before the generic
-# ones get a chance at it.
-#
-# This used to also host a PSN trophy-lookup test screen (a live, uncached
-# carve-out of SPEC 1.5's cache-only rule, from before any of this was wired
-# into /stats) — removed once this Keys screen covered NPSSO management on
-# its own and the test screen had nothing left to justify a live API call
-# outside a background job.
+# The "Ключи платформ" screen: every shared credential from one registry
+# (services/admin_credentials.py, #176), the Mini App's keys screen walks the
+# same one. Its text answer is claimed by AwaitingAdminTextInput, registered
+# before the free-text numeric/timezone handlers below on purpose: aiogram
+# tries message handlers in registration order and stops at the first whose
+# filter matches, so a key that happens to be all digits is never taken for
+# a number.
 
-STEAM_KEY_KEY = "steam_api_key"
-PSN_NPSSO_KEY = "psn_npsso"
-# Anthropic (2026-09-09 user request) — achievement-description translation
-# only, same admin-settable-shared-credential shape as the two above (#17).
-ANTHROPIC_KEY_KEY = "anthropic_api_key"
-# YouTube (2026-10-06) — video guides on an achievement's page.
-YOUTUBE_KEY_KEY = "youtube_api_key"
-# The mail server's login (services/smtp_auth.py): "login key" in one message.
-SMTP_LOGIN_KEY = "smtp_login"
+_KEY_PENDING = "key:"
 
 
 class AwaitingAdminTextInput(BaseFilter):
@@ -231,104 +204,43 @@ class AwaitingAdminTextInput(BaseFilter):
         if user is None:
             return False
         pending = _awaiting_input.get(user.id)
-        return pending is not None and pending[0] in (
-            STEAM_KEY_KEY,
-            PSN_NPSSO_KEY,
-            ANTHROPIC_KEY_KEY,
-            YOUTUBE_KEY_KEY,
-            SMTP_LOGIN_KEY,
-        )
+        return pending is not None and pending[0].startswith(_KEY_PENDING)
 
 
 @router.callback_query(F.data == "a:keys")
 async def keys_menu(
-    callback: CallbackQuery,
-    steam_auth: SteamAuth,
-    psn_auth: PsnAuth,
-    anthropic_auth: AnthropicAuth,
-    youtube_auth: YouTubeAuth,
-    smtp_auth: SmtpAuth,
-    i18n: I18nContext,
+    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(
-        callback,
-        *await render_keys(
-            steam_auth,
-            psn_auth,
-            anthropic_auth,
-            youtube_auth,
-            smtp_auth=smtp_auth,
-            locale=i18n.locale,
-        ),
-    )
-
-
-# One parameterized handler per action instead of a Steam/PSN pair each
-# (2026-09-09 refactor, same shape reset_platform_confirm/_confirmed below
-# already used for all three platforms) — callback_data's own trailing
-# segment says which key, same "()" wiring on either platform's button.
-# Anthropic (2026-09-09) slotted into the same dicts rather than a third
-# handler pair — exactly the duplication this refactor exists to avoid.
-
-_KEYSET_APP_SETTING_KEY = {
-    "steam": STEAM_KEY_KEY,
-    "psn": PSN_NPSSO_KEY,
-    "anthropic": ANTHROPIC_KEY_KEY,
-    "youtube": YOUTUBE_KEY_KEY,
-    "smtp": SMTP_LOGIN_KEY,
-}
-_KEYSET_PROMPT = {
-    STEAM_KEY_KEY: "admin-keys-steam-prompt",
-    PSN_NPSSO_KEY: "admin-keys-psn-prompt",
-    ANTHROPIC_KEY_KEY: "admin-keys-anthropic-prompt",
-    YOUTUBE_KEY_KEY: "admin-keys-youtube-prompt",
-    SMTP_LOGIN_KEY: "admin-keys-smtp-prompt",
-}
+    await _redraw(callback, *await render_keys(admin_credentials, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:keyset:"))
-async def keys_set(callback: CallbackQuery, i18n: I18nContext) -> None:
+async def keys_set(
+    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext
+) -> None:
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
-    platform = callback.data.rsplit(":", 1)[1]
-    key = _KEYSET_APP_SETTING_KEY[platform]
-    _awaiting_input[callback.from_user.id] = (key, None)
-    await _redraw(callback, _(_KEYSET_PROMPT[key]), _cancel_input_keyboard(locale=i18n.locale))
+    name = callback.data.rsplit(":", 1)[1]
+    if name not in admin_credentials:
+        await callback.answer()
+        return
+    _awaiting_input[callback.from_user.id] = (f"{_KEY_PENDING}{name}", None)
+    await _redraw(
+        callback, _(f"admin-keys-{name}-prompt"), _cancel_input_keyboard(locale=i18n.locale)
+    )
 
 
 @router.callback_query(F.data.startswith("a:keyclr:"))
 async def keys_clear(
-    callback: CallbackQuery,
-    steam_auth: SteamAuth,
-    psn_auth: PsnAuth,
-    anthropic_auth: AnthropicAuth,
-    youtube_auth: YouTubeAuth,
-    smtp_auth: SmtpAuth,
-    i18n: I18nContext,
+    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext
 ) -> None:
     assert callback.data is not None
-    platform = callback.data.rsplit(":", 1)[1]
-    auth: SteamAuth | PsnAuth | AnthropicAuth | YouTubeAuth | SmtpAuth = {
-        "steam": steam_auth,
-        "psn": psn_auth,
-        "anthropic": anthropic_auth,
-        "youtube": youtube_auth,
-        "smtp": smtp_auth,
-    }[platform]
-    await auth.clear(callback.from_user.id)
+    name = callback.data.rsplit(":", 1)[1]
+    if name in admin_credentials:
+        await admin_credentials.clear(name, callback.from_user.id)
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(
-        callback,
-        *await render_keys(
-            steam_auth,
-            psn_auth,
-            anthropic_auth,
-            youtube_auth,
-            smtp_auth=smtp_auth,
-            locale=i18n.locale,
-        ),
-    )
+    await _redraw(callback, *await render_keys(admin_credentials, locale=i18n.locale))
 
 
 @router.callback_query(F.data == "a:psncancel")
@@ -337,8 +249,7 @@ async def admin_text_input_cancel(
     repo: Repo,
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
-    psn_auth: PsnAuth,
-    steam_auth: SteamAuth,
+    admin_credentials: AdminCredentials,
     i18n: I18nContext,
 ) -> None:
     """The way out of a still-armed key/NPSSO retry (Follow-up 2026-09-06,
@@ -348,152 +259,43 @@ async def admin_text_input_cancel(
     await _redraw(
         callback,
         *await render_admin_home(
-            repo, fetcher, steam_fetcher, psn_auth, steam_auth, locale=i18n.locale
+            repo, fetcher, steam_fetcher, admin_credentials, locale=i18n.locale
         ),
     )
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingAdminTextInput())
 async def admin_text_input(
-    message: Message,
-    psn_auth: PsnAuth,
-    steam_auth: SteamAuth,
-    anthropic_auth: AnthropicAuth,
-    youtube_auth: YouTubeAuth,
-    smtp_auth: SmtpAuth,
-    i18n: I18nContext,
+    message: Message, admin_credentials: AdminCredentials, i18n: I18nContext
 ) -> None:
     _ = translator("admin", i18n.locale)
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
     assert pending is not None
-    key = pending[0]
-    raw = message.text.strip()
-
-    if key == STEAM_KEY_KEY:
-        try:
-            await steam_auth.set_key(raw, message.from_user.id)
-        except SteamKeyInvalidError:
-            # Stays armed — a typo is worth just retrying — but the explicit
-            # cancel is there for a stray later paste, same as PSN below.
-            await message.answer(
-                _("admin-keys-steam-invalid"),
-                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
-            )
-            return
-        _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await render_keys(
-            steam_auth,
-            psn_auth,
-            anthropic_auth,
-            youtube_auth,
-            smtp_auth=smtp_auth,
-            locale=i18n.locale,
+    name = pending[0].removeprefix(_KEY_PENDING)
+    try:
+        await admin_credentials.set(name, message.text, message.from_user.id)
+    except CredentialInvalid:
+        # Stays armed — a typo is worth just retrying — with an explicit way
+        # out: a stray later message (found live 2026-09-06) must not be
+        # taken for the next answer.
+        await message.answer(
+            _(f"admin-keys-{name}-invalid"),
+            reply_markup=_cancel_input_keyboard(locale=i18n.locale),
         )
-        await message.answer(_("admin-keys-steam-saved", text=text), reply_markup=markup)
         return
-
-    if key == PSN_NPSSO_KEY:
-        try:
-            await psn_auth.set_npsso(raw, message.from_user.id)
-        except PsnTokenDeadError:
-            # Stays armed on purpose — a typo is worth just retrying,
-            # not a trip back through /admin — but a stray later message
-            # (found live 2026-09-06: a repeated paste while debugging got
-            # misread as a PSN Online ID once the state moved on) needs an
-            # explicit way out too, not just "send something else".
-            await message.answer(
-                _("admin-psn-npsso-invalid"),
-                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
-            )
-            return
-        except PsnClientSetupError as exc:
-            # Found live 2026-09-06: psnawp couldn't even construct its own
-            # client (a sandboxed temp dir) and the admin got no reply at
-            # all — this is deliberately a different message from the one
-            # above, so a real bug doesn't get blamed on the NPSSO itself.
-            log.exception("admin_text_input: could not set up the PSN client")
-            await message.answer(
-                _("admin-psn-client-error", error=exc),
-                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
-            )
-            return
-        _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await render_keys(
-            steam_auth,
-            psn_auth,
-            anthropic_auth,
-            youtube_auth,
-            smtp_auth=smtp_auth,
-            locale=i18n.locale,
+    except CredentialSetupError as exc:
+        # psnawp could not even build its client (found live 2026-09-06): a
+        # fault on our side, worded so it is not blamed on the value.
+        log.exception("admin_text_input: could not set up the %s client", name)
+        await message.answer(
+            _("admin-keys-setup-error", error=str(exc)),
+            reply_markup=_cancel_input_keyboard(locale=i18n.locale),
         )
-        await message.answer(_("admin-keys-psn-saved", text=text), reply_markup=markup)
         return
-
-    if key == ANTHROPIC_KEY_KEY:
-        try:
-            await anthropic_auth.set_key(raw, message.from_user.id)
-        except AnthropicKeyInvalidError:
-            # Same "stays armed, typo is worth just retrying" shape as
-            # Steam/PSN above.
-            await message.answer(
-                _("admin-keys-anthropic-invalid"),
-                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
-            )
-            return
-        _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await render_keys(
-            steam_auth,
-            psn_auth,
-            anthropic_auth,
-            youtube_auth,
-            smtp_auth=smtp_auth,
-            locale=i18n.locale,
-        )
-        await message.answer(_("admin-keys-anthropic-saved", text=text), reply_markup=markup)
-        return
-
-    if key == YOUTUBE_KEY_KEY:
-        try:
-            await youtube_auth.set_key(raw, message.from_user.id)
-        except YouTubeKeyInvalidError:
-            await message.answer(
-                _("admin-keys-youtube-invalid"),
-                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
-            )
-            return
-        _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await render_keys(
-            steam_auth,
-            psn_auth,
-            anthropic_auth,
-            youtube_auth,
-            smtp_auth=smtp_auth,
-            locale=i18n.locale,
-        )
-        await message.answer(_("admin-keys-youtube-saved", text=text), reply_markup=markup)
-        return
-
-    if key == SMTP_LOGIN_KEY:
-        try:
-            await smtp_auth.set_login(raw, message.from_user.id)
-        except SmtpLoginInvalidError:
-            await message.answer(
-                _("admin-keys-smtp-invalid"),
-                reply_markup=_cancel_input_keyboard(locale=i18n.locale),
-            )
-            return
-        _awaiting_input.pop(message.from_user.id, None)
-        text, markup = await render_keys(
-            steam_auth,
-            psn_auth,
-            anthropic_auth,
-            youtube_auth,
-            smtp_auth=smtp_auth,
-            locale=i18n.locale,
-        )
-        await message.answer(_("admin-keys-smtp-saved", text=text), reply_markup=markup)
-        return
+    _awaiting_input.pop(message.from_user.id, None)
+    text, markup = await render_keys(admin_credentials, locale=i18n.locale)
+    await message.answer(_(f"admin-keys-{name}-saved", text=text), reply_markup=markup)
 
 
 @router.callback_query(F.data == "a:newusers")
@@ -549,8 +351,7 @@ async def numeric_setting_input(
     repo: Repo,
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
-    psn_auth: PsnAuth,
-    steam_auth: SteamAuth,
+    admin_credentials: AdminCredentials,
     bot: Bot,
     i18n: I18nContext,
 ) -> None:
@@ -568,18 +369,12 @@ async def numeric_setting_input(
 
     if key == RARE_THRESHOLD_KEY:
         # One for every chat (owner, 2026-10-01).
-        value = float(message.text.replace(",", "."))
-        if not (RARE_THRESHOLD_MIN <= value <= RARE_THRESHOLD_MAX):
-            await message.answer(
-                _(
-                    "admin-number-range-retry",
-                    minimum=RARE_THRESHOLD_MIN,
-                    maximum=RARE_THRESHOLD_MAX,
-                )
-            )
+        try:
+            value = await set_rare_threshold(repo, message.text, message.from_user.id)
+        except SettingValueError as exc:
+            await message.answer(_retry_text(exc, _))
             return
         del _awaiting_input[message.from_user.id]
-        await repo.set_app_setting(RARE_THRESHOLD_KEY, f"{value:g}", message.from_user.id)
         reply_text, markup = (await render_limits(repo, locale=i18n.locale)).as_pair()
         await message.answer(
             _("admin-threshold-saved", value=f"{value:g}", text=reply_text),
@@ -610,32 +405,32 @@ async def numeric_setting_input(
 
     # The row-cap settings below are always global — chat_id is always None
     # here, there is no per-chat meaning for them.
-    if "." in message.text or "," in message.text:
-        await message.answer(_("admin-integer-retry"))
+    try:
+        value_int = await set_numeric_setting(repo, key, message.text, message.from_user.id)
+    except SettingValueError as exc:
+        await message.answer(_retry_text(exc, _))
         return
-    value_int = int(message.text)
     spec = NUMERIC_SETTINGS[key]
-    if not (spec.min <= value_int <= spec.max):
-        await message.answer(_("admin-number-range-retry", minimum=spec.min, maximum=spec.max))
-        return
-    stored = str(value_int)
     confirm = (
         f"{_setting_label(spec, locale=i18n.locale)}: "
-        f"{_format_limit(key, stored, locale=i18n.locale)}"
+        f"{_format_limit(key, value_int, locale=i18n.locale)}"
     )
-
     del _awaiting_input[message.from_user.id]
-    await repo.set_app_setting(key, stored, message.from_user.id)
     await _replace_admin_home(
         bot,
         repo,
         fetcher,
         steam_fetcher,
-        psn_auth,
-        steam_auth,
+        admin_credentials,
         message.from_user.id,
         prefix=confirm,
     )
+
+
+def _retry_text(exc: SettingValueError, _: Callable[..., str]) -> str:
+    if exc.reason == "integer":
+        return _("admin-integer-retry")
+    return _("admin-number-range-retry", minimum=f"{exc.minimum:g}", maximum=f"{exc.maximum:g}")
 
 
 # ------------------------------------------------------- per-chat settings

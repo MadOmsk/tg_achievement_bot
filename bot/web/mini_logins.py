@@ -88,7 +88,9 @@ def forget_file(relative: str) -> None:
 RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
 
 
-def build_email_login(settings: Settings, repo: Repo) -> EmailLogin | None:
+def build_email_login(
+    settings: Settings, repo: Repo, *, smtp_auth: SmtpAuth | None = None
+) -> EmailLogin | None:
     """The email sign-in, or None when there is no way to send mail. The codes'
     HMAC key is derived from FERNET_KEY, the one secret every install has."""
     if settings.email_skip_code:
@@ -100,9 +102,11 @@ def build_email_login(settings: Settings, repo: Repo) -> EmailLogin | None:
                 "Development only — never on a server."
             )
             return TrustingEmailLogin(repo)
-    # The login the admin set in /admin, read on every message (a separate
-    # SmtpAuth from the bot's: both read the same row, neither caches it).
-    smtp_auth = SmtpAuth(repo, TokenCipher(settings.fernet_key.get_secret_value()), settings)
+    # The login the super-admin set in /admin, read on every message — the
+    # bot's own SmtpAuth when there is one, so a clear in the panel is seen
+    # here too (a second instance would seed the env login back in).
+    if smtp_auth is None:
+        smtp_auth = SmtpAuth(repo, TokenCipher(settings.fernet_key.get_secret_value()), settings)
     sender = build_sender(settings, smtp_auth.credentials)
     if sender is None:
         return None

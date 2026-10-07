@@ -44,6 +44,7 @@ from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Database, Repo, TitleProgress
 from bot.i18n import i18n_for
+from bot.services.admin_credentials import AdminCredentials
 from bot.services.admin_settings import TOP_LIMIT_KEY
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
@@ -288,37 +289,31 @@ class _NoUsage:
         return []
 
 
-@screen("admin-home")
-async def _admin_home(ctx: Context) -> Screen:
+def _credentials(ctx: Context) -> AdminCredentials:
     cipher = TokenCipher(ctx.settings.fernet_key.get_secret_value())
     steam_key = ctx.settings.steam_api_key
+    return AdminCredentials(
+        psn=PsnAuth(ctx.repo, cipher),
+        steam=SteamAuth(
+            ctx.repo, cipher, env_key=steam_key.get_secret_value() if steam_key else None
+        ),
+        anthropic=AnthropicAuth(ctx.repo, cipher),
+        youtube=YouTubeAuth(ctx.repo, cipher),
+        smtp=SmtpAuth(ctx.repo, cipher, ctx.settings),
+    )
+
+
+@screen("admin-home")
+async def _admin_home(ctx: Context) -> Screen:
     text, markup = await render_admin_home(
-        ctx.repo,
-        _NoUsage(),
-        _NoUsage(),
-        PsnAuth(ctx.repo, cipher),
-        SteamAuth(ctx.repo, cipher, env_key=steam_key.get_secret_value() if steam_key else None),
-        locale=ctx.locale,
+        ctx.repo, _NoUsage(), _NoUsage(), _credentials(ctx), locale=ctx.locale
     )
     return Screen(text, markup)
 
 
 @screen("admin-keys")
 async def _admin_keys(ctx: Context) -> Screen:
-    cipher = TokenCipher(ctx.settings.fernet_key.get_secret_value())
-    steam_key = ctx.settings.steam_api_key
-    return Screen(
-        *await render_keys(
-            SteamAuth(
-                ctx.repo, cipher, env_key=steam_key.get_secret_value() if steam_key else None
-            ),
-            PsnAuth(ctx.repo, cipher),
-            AnthropicAuth(ctx.repo, cipher),
-            YouTubeAuth(ctx.repo, cipher),
-            smtp_auth=SmtpAuth(ctx.repo, cipher, ctx.settings),
-            locale=ctx.locale,
-        )
-    )
+    return Screen(*await render_keys(_credentials(ctx), locale=ctx.locale))
 
 
 @screen("admin-users")

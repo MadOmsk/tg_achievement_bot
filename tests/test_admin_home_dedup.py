@@ -10,6 +10,7 @@ from __future__ import annotations
 from bot.db.repo import Repo
 from bot.handlers.admin import _replace_admin_home
 from bot.poller.service_health import KEY_CHECK_INTERVAL_KEY
+from bot.services.admin_credentials import AdminCredentials
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
@@ -51,8 +52,7 @@ async def test_first_call_has_nothing_to_delete_and_arms_refresh(
         repo,
         _FakeUsageFetcher(),
         _FakeUsageFetcher(),
-        PsnAuth(repo, cipher),
-        SteamAuth(repo, cipher),
+        AdminCredentials(psn=PsnAuth(repo, cipher), steam=SteamAuth(repo, cipher)),
         ADMIN_ID,
     )  # type: ignore[arg-type]
 
@@ -65,15 +65,13 @@ async def test_first_call_has_nothing_to_delete_and_arms_refresh(
 
 async def test_second_call_replaces_the_first(repo: Repo, cipher: TokenCipher) -> None:
     bot = FakeBot()
-    psn_auth = PsnAuth(repo, cipher)
 
     await _replace_admin_home(
         bot,
         repo,
         _FakeUsageFetcher(),
         _FakeUsageFetcher(),
-        psn_auth,
-        SteamAuth(repo, cipher),
+        AdminCredentials(psn=PsnAuth(repo, cipher), steam=SteamAuth(repo, cipher)),
         ADMIN_ID,
     )  # type: ignore[arg-type]
     await _replace_admin_home(
@@ -81,8 +79,7 @@ async def test_second_call_replaces_the_first(repo: Repo, cipher: TokenCipher) -
         repo,
         _FakeUsageFetcher(),
         _FakeUsageFetcher(),
-        psn_auth,
-        SteamAuth(repo, cipher),
+        AdminCredentials(psn=PsnAuth(repo, cipher), steam=SteamAuth(repo, cipher)),
         ADMIN_ID,
     )  # type: ignore[arg-type]
 
@@ -100,8 +97,7 @@ async def test_prefix_is_prepended_to_the_home_text(repo: Repo, cipher: TokenCip
         repo,
         _FakeUsageFetcher(),
         _FakeUsageFetcher(),
-        PsnAuth(repo, cipher),
-        SteamAuth(repo, cipher),
+        AdminCredentials(psn=PsnAuth(repo, cipher), steam=SteamAuth(repo, cipher)),
         ADMIN_ID,
         prefix="Строк в /summary: 10",
     )  # type: ignore[arg-type]
@@ -120,8 +116,7 @@ async def test_interval_zero_sends_but_does_not_arm_refresh(
         repo,
         _FakeUsageFetcher(),
         _FakeUsageFetcher(),
-        PsnAuth(repo, cipher),
-        SteamAuth(repo, cipher),
+        AdminCredentials(psn=PsnAuth(repo, cipher), steam=SteamAuth(repo, cipher)),
         ADMIN_ID,
     )  # type: ignore[arg-type]
 

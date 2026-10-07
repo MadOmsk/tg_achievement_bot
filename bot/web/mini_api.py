@@ -26,6 +26,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services import achievement_icons, avatars, custom_avatars
+from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.email_login import EmailLogin
@@ -100,6 +101,7 @@ def setup_mini_api(
     notifications: Notifier | None = None,
     merge: PeopleMerge | None = None,
     youtube_auth: Any = None,
+    admin_credentials: AdminCredentials | None = None,
 ) -> None:
     app["mini_settings"] = settings
     app["mini_repo"] = repo
@@ -124,7 +126,15 @@ def setup_mini_api(
             anthropic_auth=anthropic_auth,
         )
     app["mini_title_catalog"] = title_catalog
-    app["mini_email_login"] = email_login or mini_logins.build_email_login(settings, repo)
+    # Every shared credential, the same registry /admin walks (#176).
+    if admin_credentials is None:
+        admin_credentials = AdminCredentials(
+            psn=psn_auth, steam=steam_auth, anthropic=anthropic_auth, youtube=youtube_auth
+        )
+    app["mini_admin_credentials"] = admin_credentials
+    app["mini_email_login"] = email_login or mini_logins.build_email_login(
+        settings, repo, smtp_auth=admin_credentials.smtp
+    )
     # The app's own notifications (#164); SuperadminNotifier above is the operator's.
     app["mini_notifications"] = notifications or _default_notifier(settings, repo, bot)
     # Merging two people (#162): main.py's, shared with the bot's /start link_….

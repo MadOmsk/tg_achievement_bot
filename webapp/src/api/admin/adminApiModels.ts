@@ -12,14 +12,24 @@ export type AdminHome = {
   steam_key: string;
   psn_key: string;
   psn_requests: number;
+  /** Sign-in emails sent, against the app's hourly cap and the mail service's daily one. */
+  mail: { hour: number; hour_limit: number; day: number; day_limit: number };
+  credentials: AdminCredential[];
 };
 
-export type AdminKeys = {
-  steam: boolean;
-  psn: boolean;
-  anthropic: boolean;
-  youtube: boolean;
+/** One shared credential, from the server's registry (#176): the app draws
+ * whatever it lists, labels and hints included. */
+export type AdminCredential = {
+  name: string;
+  label: string;
+  hint: string;
+  configured: boolean;
+  /** "active" / "invalid" where a health check watches it, else null. */
+  status: string | null;
+  checked_at: string | null;
 };
+
+export type AdminKeys = { keys: AdminCredential[] };
 
 export type AdminLimit = {
   key: string;
@@ -27,7 +37,7 @@ export type AdminLimit = {
   value: number;
   min: number;
   max: number;
-  zero_means: "unlimited" | "off" | null;
+  zero_means: "unlimited" | "off" | "no_delay" | null;
 };
 
 export type AdminDefaults = {

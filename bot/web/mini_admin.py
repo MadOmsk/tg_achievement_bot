@@ -1,4 +1,8 @@
-"""Super-admin JSON for the Mini App. Secrets never leave this module."""
+"""Super-admin JSON for the Mini App. Secrets never leave this module.
+
+What it shows and changes comes from the same services as the bot's /admin
+(#176): `admin_status` for the home, `admin_credentials` for the keys,
+`admin_settings` for the numbers — this module only serializes them."""
 
 from __future__ import annotations
 
@@ -12,115 +16,109 @@ from bot.constants import Platform, RarityMode, TokenStatus
 from bot.db.repo import Repo
 from bot.handlers.admin import WIPE_WINDOW_HOURS
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale, translator
+from bot.services.admin_credentials import (
+    AdminCredentials,
+    CredentialInvalid,
+    CredentialSetupError,
+    CredentialState,
+)
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
     FLOOD_WINDOW_MAX,
     FLOOD_WINDOW_MIN,
     NUMERIC_SETTINGS,
-    RARE_THRESHOLD_KEY,
-    RARE_THRESHOLD_MAX,
-    RARE_THRESHOLD_MIN,
     SHOW_LINKS_DEFAULT,
     SHOW_LINKS_KEY,
+    SettingValueError,
+    numeric_values,
     rare_threshold,
+    set_numeric_setting,
+    set_rare_threshold,
 )
+from bot.services.admin_status import admin_status
 from bot.services.naming import person_name, xbox_nickname
-from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
-from bot.services.psn.auth import PsnAuth
-from bot.services.psn.client import request_count_today
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
-from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED
-from bot.services.steam.auth import SteamAuth, SteamKeyInvalidError
-from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED
-from bot.services.translate.auth import AnthropicAuth, AnthropicKeyInvalidError
-from bot.services.youtube.auth import YouTubeAuth, YouTubeKeyInvalidError
 from bot.util import utcnow
+from bot.views.admin_home import format_api_usage
 from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 
 log = logging.getLogger(__name__)
 
-_KEY_NAMES = ("steam", "psn", "anthropic", "youtube")
-
-
-def _usage_text(windows: list[tuple[int, int, float]]) -> str:
-    if not windows:
-        return "—"
-    return " · ".join(f"{used}/{limit}" for used, limit, _span in windows)
-
 
 async def build_admin_home(
-    repo: Repo,
-    *,
-    xbox_usage: list[tuple[int, int, float]],
-    steam_usage: list[tuple[int, int, float]],
-    steam_status: str,
-    psn_status: str,
+    repo: Repo, credentials: AdminCredentials, *, xbox: Any, steam: Any, locale: str
 ) -> dict[str, Any]:
-    users = await repo.admin_users()
-    chats = await repo.admin_chats()
-    xbox_linked = [u for u in users if u.xuid]
+    """`services/admin_status.py`'s AdminStatus as JSON — what the bot's
+    /admin home words as text (#176)."""
+    status = await admin_status(
+        repo,
+        credentials=credentials,
+        xbox_usage=xbox.api_usage() if xbox is not None else [],
+        steam_usage=steam.api_usage() if steam is not None else [],
+    )
     return {
-        "users": len(users),
-        "excluded": sum(1 for u in users if u.is_excluded),
-        "xbox_linked": len(xbox_linked),
-        "xbox_active": sum(
-            1 for u in xbox_linked if u.token_status == TokenStatus.ACTIVE and not u.is_excluded
-        ),
-        "xbox_broken": sum(1 for u in xbox_linked if u.token_status != TokenStatus.ACTIVE),
-        "steam_linked": sum(1 for u in users if u.steam_id),
-        "psn_linked": sum(1 for u in users if u.psn_account_id),
-        "chats": sum(1 for c in chats if c.is_active),
-        "xbox_usage": _usage_text(xbox_usage),
-        "steam_usage": _usage_text(steam_usage),
-        "steam_key": steam_status,
-        "psn_key": psn_status,
-        "psn_requests": request_count_today(),
+        "users": status.users,
+        "excluded": status.excluded,
+        "xbox_linked": status.xbox_linked,
+        "xbox_active": status.xbox_active,
+        "xbox_broken": status.xbox_broken,
+        "steam_linked": status.steam_linked,
+        "psn_linked": status.psn_linked,
+        "chats": status.chats,
+        "xbox_usage": format_api_usage(status.xbox_usage, locale=locale),
+        "steam_usage": format_api_usage(status.steam_usage, locale=locale),
+        "steam_key": _key_word(status.credential("steam")),
+        "psn_key": _key_word(status.credential("psn")),
+        "psn_requests": status.psn_requests,
+        "mail": {
+            "hour": status.mail.hour,
+            "hour_limit": status.mail.hour_limit,
+            "day": status.mail.day,
+            "day_limit": status.mail.day_limit,
+        },
+        "credentials": _credentials_json(status.credentials, locale=locale),
     }
 
 
-async def build_admin_keys(
-    steam_auth: SteamAuth | None,
-    psn_auth: PsnAuth | None,
-    anthropic_auth: AnthropicAuth | None,
-    youtube_auth: YouTubeAuth | None = None,
-) -> dict[str, bool]:
-    steam = False
-    psn = False
-    anthropic = False
-    if steam_auth is not None:
-        steam = await steam_auth.status() != STEAM_NOT_CONFIGURED
-    if psn_auth is not None:
-        psn = await psn_auth.status() != PSN_NOT_CONFIGURED
-    if anthropic_auth is not None:
-        anthropic = await anthropic_auth.status() != ANTHROPIC_NOT_CONFIGURED
-    youtube = youtube_auth is not None and await youtube_auth.configured()
-    return {"steam": steam, "psn": psn, "anthropic": anthropic, "youtube": youtube}
+def _key_word(state: CredentialState | None) -> str:
+    if state is None or not state.configured:
+        return "not_configured"
+    return state.status or TokenStatus.ACTIVE
+
+
+def _credentials_json(states: list[CredentialState], *, locale: str) -> list[dict[str, Any]]:
+    """Each credential with its label and a one-line hint in the reader's
+    language — the Mini App draws whatever the registry holds."""
+    _ = translator("admin", locale)
+    return [
+        {
+            "name": state.name,
+            "label": _(f"admin-keys-{state.name}-label"),
+            "hint": _(f"admin-keys-{state.name}-hint"),
+            "configured": state.configured,
+            "status": state.status,
+            "checked_at": state.checked_at,
+        }
+        for state in states
+    ]
 
 
 async def build_admin_limits(repo: Repo, *, locale: str) -> dict[str, Any]:
     _ = translator("admin", locale)
-    items = []
-    for key, spec in NUMERIC_SETTINGS.items():
-        raw = await repo.get_app_setting(key, str(spec.default))
-        try:
-            value = int(raw or spec.default)
-        except ValueError:
-            value = spec.default
-        zero: str | None = None
-        if spec.min == 0:
-            zero = "off" if spec.zero_label == "admin-disabled" else "unlimited"
-        items.append(
+    return {
+        "items": [
             {
                 "key": key,
                 "label": _(spec.label),
                 "value": value,
                 "min": spec.min,
                 "max": spec.max,
-                "zero_means": zero,
+                "zero_means": spec.zero_means,
             }
-        )
-    return {"items": items}
+            for key, spec, value in await numeric_values(repo)
+        ]
+    }
 
 
 async def build_admin_defaults(repo: Repo) -> dict[str, Any]:
@@ -298,80 +296,51 @@ def setup_admin_routes(app: web.Application) -> None:
 
 
 async def handle_admin_home(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
+    admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
-    xbox = request.app.get("mini_xbox_fetcher")
-    steam = request.app.get("mini_steam_fetcher")
-    steam_auth: SteamAuth | None = request.app.get("mini_steam_auth")
-    psn_auth: PsnAuth | None = request.app.get("mini_psn_auth")
     payload = await build_admin_home(
         repo,
-        xbox_usage=xbox.api_usage() if xbox is not None else [],
-        steam_usage=steam.api_usage() if steam is not None else [],
-        steam_status=await steam_auth.status() if steam_auth else STEAM_NOT_CONFIGURED,
-        psn_status=await psn_auth.status() if psn_auth else PSN_NOT_CONFIGURED,
+        request.app["mini_admin_credentials"],
+        xbox=request.app.get("mini_xbox_fetcher"),
+        steam=request.app.get("mini_steam_fetcher"),
+        locale=await repo.user_locale(admin.person_id),
     )
     return web.json_response(payload)
 
 
 async def handle_admin_keys(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
-    return web.json_response(await _keys_payload(request))
+    admin = await _require_superadmin(request)
+    return web.json_response(await _keys_payload(request, admin))
 
 
 async def handle_admin_key_put(request: web.Request) -> web.Response:
     admin = await _require_superadmin(request)
+    credentials: AdminCredentials = request.app["mini_admin_credentials"]
     name = request.match_info["name"]
-    if name not in _KEY_NAMES:
+    if name not in credentials:
         raise web.HTTPNotFound()
     body = await request.json()
     value = str(body.get("value") or "").strip()
     if not value:
         raise web.HTTPBadRequest(text="missing value")
-    steam_auth: SteamAuth | None = request.app.get("mini_steam_auth")
-    psn_auth: PsnAuth | None = request.app.get("mini_psn_auth")
-    anthropic_auth: AnthropicAuth | None = request.app.get("mini_anthropic_auth")
-    youtube_auth: YouTubeAuth | None = request.app.get("mini_youtube_auth")
     try:
-        if name == "steam":
-            if steam_auth is None:
-                raise web.HTTPServiceUnavailable(text="steam unavailable")
-            await steam_auth.set_key(value, admin.tg_id)
-        elif name == "psn":
-            if psn_auth is None:
-                raise web.HTTPServiceUnavailable(text="psn unavailable")
-            await psn_auth.set_npsso(value, admin.tg_id)
-        elif name == "youtube":
-            if youtube_auth is None:
-                raise web.HTTPServiceUnavailable(text="youtube unavailable")
-            await youtube_auth.set_key(value, admin.tg_id)
-        else:
-            if anthropic_auth is None:
-                raise web.HTTPServiceUnavailable(text="anthropic unavailable")
-            await anthropic_auth.set_key(value, admin.tg_id)
-    except (SteamKeyInvalidError, AnthropicKeyInvalidError, YouTubeKeyInvalidError):
+        await credentials.set(name, value, admin.tg_id)
+    except CredentialInvalid:
         return web.json_response({"ok": False, "error": "invalid"}, status=400)
-    except Exception:
-        log.exception("mini admin set key %s failed", name)
-        return web.json_response({"ok": False, "error": "invalid"}, status=400)
-    return web.json_response(await _keys_payload(request))
+    except CredentialSetupError:
+        log.exception("mini admin set key %s: could not set up the client", name)
+        return web.json_response({"ok": False, "error": "setup"}, status=400)
+    return web.json_response(await _keys_payload(request, admin))
 
 
 async def handle_admin_key_delete(request: web.Request) -> web.Response:
     admin = await _require_superadmin(request)
+    credentials: AdminCredentials = request.app["mini_admin_credentials"]
     name = request.match_info["name"]
-    if name not in _KEY_NAMES:
+    if name not in credentials:
         raise web.HTTPNotFound()
-    auth = {
-        "steam": request.app.get("mini_steam_auth"),
-        "psn": request.app.get("mini_psn_auth"),
-        "anthropic": request.app.get("mini_anthropic_auth"),
-        "youtube": request.app.get("mini_youtube_auth"),
-    }[name]
-    if auth is None:
-        raise web.HTTPServiceUnavailable()
-    await auth.clear(admin.tg_id)
-    return web.json_response(await _keys_payload(request))
+    await credentials.clear(name, admin.tg_id)
+    return web.json_response(await _keys_payload(request, admin))
 
 
 async def handle_admin_limits(request: web.Request) -> web.Response:
@@ -388,14 +357,10 @@ async def handle_admin_limits_patch(request: web.Request) -> web.Response:
     key = str(body.get("key") or "")
     if key not in NUMERIC_SETTINGS:
         raise web.HTTPBadRequest(text="unknown limit")
-    spec = NUMERIC_SETTINGS[key]
     try:
-        value = int(body["value"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise web.HTTPBadRequest(text="bad value") from exc
-    if not (spec.min <= value <= spec.max):
-        raise web.HTTPBadRequest(text="out of range")
-    await repo.set_app_setting(key, str(value), admin.tg_id)
+        await set_numeric_setting(repo, key, body.get("value"), admin.tg_id)
+    except SettingValueError as exc:
+        raise web.HTTPBadRequest(text=f"bad value: {exc.reason}") from exc
     locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_limits(repo, locale=locale))
 
@@ -420,12 +385,9 @@ async def handle_admin_defaults_patch(request: web.Request) -> web.Response:
         await repo.set_app_setting(DEFAULT_RARITY_MODE_KEY, mode, admin.tg_id)
     if "rare_threshold_percent" in body:
         try:
-            value = float(body["rare_threshold_percent"])
-        except (TypeError, ValueError) as exc:
+            await set_rare_threshold(repo, body["rare_threshold_percent"], admin.tg_id)
+        except SettingValueError as exc:
             raise web.HTTPBadRequest(text="bad threshold") from exc
-        if not (RARE_THRESHOLD_MIN <= value <= RARE_THRESHOLD_MAX):
-            raise web.HTTPBadRequest(text="bad threshold")
-        await repo.set_app_setting(RARE_THRESHOLD_KEY, f"{value:g}", admin.tg_id)
     if "show_profile_links" in body:
         await repo.set_app_setting(
             SHOW_LINKS_KEY,
@@ -499,18 +461,18 @@ async def handle_admin_chats(request: web.Request) -> web.Response:
 
 
 async def handle_admin_chat_patch(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
+    admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     chat_id = int(request.match_info["chat_id"])
     body = await request.json()
     fields: dict[str, Any] = {}
     if "rare_threshold_percent" in body:
-        value = float(body["rare_threshold_percent"])
-        if not (RARE_THRESHOLD_MIN <= value <= RARE_THRESHOLD_MAX):
-            raise web.HTTPBadRequest(text="bad threshold")
         # One for every chat (owner, 2026-10-01): a chat card that still sends
         # it sets the global value.
-        await repo.set_app_setting(RARE_THRESHOLD_KEY, f"{value:g}")
+        try:
+            await set_rare_threshold(repo, body["rare_threshold_percent"], admin.tg_id)
+        except SettingValueError as exc:
+            raise web.HTTPBadRequest(text="bad threshold") from exc
     if "flood_limit" in body:
         fields["flood_limit"] = int(body["flood_limit"])
     if "flood_window_minutes" in body:
@@ -626,13 +588,14 @@ async def _admin_platform_action(
         )
 
 
-async def _keys_payload(request: web.Request) -> dict[str, bool]:
-    return await build_admin_keys(
-        request.app.get("mini_steam_auth"),
-        request.app.get("mini_psn_auth"),
-        request.app.get("mini_anthropic_auth"),
-        request.app.get("mini_youtube_auth"),
-    )
+async def _keys_payload(request: web.Request, admin: Any) -> dict[str, Any]:
+    repo: Repo = request.app["mini_repo"]
+    credentials: AdminCredentials = request.app["mini_admin_credentials"]
+    return {
+        "keys": _credentials_json(
+            await credentials.states(), locale=await repo.user_locale(admin.person_id)
+        )
+    }
 
 
 async def _require_superadmin(request: web.Request):

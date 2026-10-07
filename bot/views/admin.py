@@ -25,6 +25,7 @@ from bot.constants import (
 )
 from bot.db.repo import AdminUserRow, ChatTarget, PlatformLink, Repo, User
 from bot.i18n import translator
+from bot.services.admin_credentials import AdminCredentials
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
@@ -40,6 +41,8 @@ from bot.services.admin_settings import (
     TOAST_PREVIEW_MAX_CHARS,
     VISIBILITY_ICON,
     NumericSetting,
+    numeric_value,
+    numeric_values,
     rare_threshold,
 )
 from bot.services.naming import (
@@ -49,15 +52,7 @@ from bot.services.naming import (
     subscriber_names,
     xbox_nickname,
 )
-from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
-from bot.services.psn.auth import PsnAuth
-from bot.services.smtp_auth import SmtpAuth
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
-from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED
-from bot.services.steam.auth import SteamAuth
-from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED
-from bot.services.translate.auth import AnthropicAuth
-from bot.services.youtube.auth import YouTubeAuth
 from bot.util import humanize_ago
 from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
@@ -97,96 +92,44 @@ def _cancel_input_keyboard(*, locale: str) -> InlineKeyboardMarkup:
 
 
 async def render_keys(
-    steam_auth: SteamAuth,
-    psn_auth: PsnAuth,
-    anthropic_auth: AnthropicAuth,
-    youtube_auth: YouTubeAuth,
-    *,
-    smtp_auth: SmtpAuth | None = None,
-    locale: str,
+    credentials: AdminCredentials, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
+    """One line and one set of buttons per credential, from the registry the
+    Mini App walks too (#176)."""
     _ = translator("admin", locale)
-    steam_configured = await steam_auth.status() != STEAM_NOT_CONFIGURED
-    psn_configured = await psn_auth.status() != PSN_NOT_CONFIGURED
-    anthropic_configured = await anthropic_auth.status() != ANTHROPIC_NOT_CONFIGURED
-    youtube_configured = await youtube_auth.configured()
-    smtp_configured = smtp_auth is not None and await smtp_auth.configured()
-    text = _(
-        "admin-keys-screen",
-        steam=_("admin-keys-set") if steam_configured else _("admin-keys-unset"),
-        psn=_("admin-keys-set") if psn_configured else _("admin-keys-unset"),
-        anthropic=_("admin-keys-set") if anthropic_configured else _("admin-keys-unset"),
-        youtube=_("admin-keys-set") if youtube_configured else _("admin-keys-unset"),
-        smtp=_("admin-keys-set") if smtp_configured else _("admin-keys-unset"),
-    )
+    states = await credentials.states()
+    lines = [_("admin-keys-title"), ""]
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-keys-psn-change") if psn_configured else _("admin-keys-psn-add"),
-            callback_data="a:keyset:psn",
-        )
-    )
-    if psn_configured:
-        builder.row(
-            InlineKeyboardButton(text=_("admin-keys-psn-clear"), callback_data="a:keyclr:psn")
-        )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-keys-steam-change") if steam_configured else _("admin-keys-steam-add"),
-            callback_data="a:keyset:steam",
-        )
-    )
-    if steam_configured:
-        builder.row(
-            InlineKeyboardButton(text=_("admin-keys-steam-clear"), callback_data="a:keyclr:steam")
-        )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-keys-anthropic-change")
-            if anthropic_configured
-            else _("admin-keys-anthropic-add"),
-            callback_data="a:keyset:anthropic",
-        )
-    )
-    if anthropic_configured:
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-keys-anthropic-clear"), callback_data="a:keyclr:anthropic"
+    for state in states:
+        lines.append(
+            _(
+                "admin-keys-line",
+                label=_(f"admin-keys-{state.name}-label"),
+                state=_("admin-keys-set") if state.configured else _("admin-keys-unset"),
             )
         )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-keys-youtube-change")
-            if youtube_configured
-            else _("admin-keys-youtube-add"),
-            callback_data="a:keyset:youtube",
-        )
-    )
-    if youtube_configured:
+        action = "change" if state.configured else "add"
         builder.row(
             InlineKeyboardButton(
-                text=_("admin-keys-youtube-clear"), callback_data="a:keyclr:youtube"
+                text=_(f"admin-keys-{state.name}-{action}"),
+                callback_data=f"a:keyset:{state.name}",
             )
         )
-    if smtp_auth is not None:
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-keys-smtp-change") if smtp_configured else _("admin-keys-smtp-add"),
-                callback_data="a:keyset:smtp",
-            )
-        )
-        if smtp_configured:
+        if state.configured:
             builder.row(
-                InlineKeyboardButton(text=_("admin-keys-smtp-clear"), callback_data="a:keyclr:smtp")
+                InlineKeyboardButton(
+                    text=_(f"admin-keys-{state.name}-clear"),
+                    callback_data=f"a:keyclr:{state.name}",
+                )
             )
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-    return text, builder.as_markup()
+    return "\n".join(lines), builder.as_markup()
 
 
-def _format_limit(key: str, value: str, *, locale: str) -> str:
+def _format_limit(key: str, value: str | int, *, locale: str) -> str:
     _ = translator("admin", locale)
     spec = NUMERIC_SETTINGS[key]
-    return _(spec.zero_label) if value == "0" else value
+    return _(spec.zero_label) if str(value) == "0" else str(value)
 
 
 def _setting_label(spec: NumericSetting, *, locale: str) -> str:
@@ -913,10 +856,7 @@ async def render_limits(repo: Repo, *, locale: str) -> Screen:
     # The value is read before the rows are built, not inside the loop that
     # builds them: a label here is a setting *and* what it is currently set
     # to, and only this screen's own rows know how to say that.
-    settings = [
-        (key, spec, await repo.get_app_setting(key, str(spec.default)))
-        for key, spec in NUMERIC_SETTINGS.items()
-    ]
+    settings = await numeric_values(repo)
     show_links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
     rows = [
         [
@@ -947,7 +887,7 @@ async def render_limits(repo: Repo, *, locale: str) -> Screen:
 async def render_limit(repo: Repo, key: str, *, locale: str) -> Screen:
     _ = translator("admin", locale)
     spec = NUMERIC_SETTINGS[key]
-    current = await repo.get_app_setting(key, str(spec.default))
+    current = await numeric_value(repo, key)
     # What a 0 means for *this* setting, spelled out only where 0 is allowed
     # at all. This line raised TypeError from 2026-09-11 until #63's own
     # audit found it: the locale ended up inside the f-string instead of in

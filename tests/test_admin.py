@@ -23,16 +23,16 @@ from bot.views.admin import (
     render_new_user_defaults,
     render_user_list,
 )
-from bot.views.admin_home import _format_api_usage
+from bot.views.admin_home import format_api_usage
 
 
 def test_api_usage_formats_seconds_and_minutes() -> None:
-    text = _format_api_usage([(3, 100, 15.0), (12, 300, 300.0)], locale="ru")
+    text = format_api_usage([(3, 100, 15.0), (12, 300, 300.0)], locale="ru")
     assert text == "3/100 за 15с · 12/300 за 5 мин"
 
 
 def test_api_usage_with_no_windows() -> None:
-    assert _format_api_usage([], locale="ru") == "нет данных"
+    assert format_api_usage([], locale="ru") == "нет данных"
 
 
 def test_threshold_bounds_reject_zero_and_over_a_hundred() -> None:

@@ -32,14 +32,19 @@ admin-setting-patch-refresh = Game patch refresh (hours)
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
-admin-keys-screen =
-    🔑 Platform keys
-
-    PSN: { $psn }
-    Steam: { $steam }
-    Anthropic: { $anthropic }
-    YouTube: { $youtube }
-    Mail: { $smtp }
+admin-keys-title = 🔑 Platform keys
+admin-keys-line = { $label }: { $state }
+admin-keys-psn-label = PSN
+admin-keys-steam-label = Steam
+admin-keys-anthropic-label = Anthropic
+admin-keys-youtube-label = YouTube
+admin-keys-smtp-label = Mail (SMTP)
+# One line under the field in the Mini App, where the long prompt does not fit.
+admin-keys-psn-hint = The npsso value from ca.account.sony.com/api/v1/ssocookie, signed in at my.playstation.com.
+admin-keys-steam-hint = A Steam Web API key: steamcommunity.com/dev/apikey.
+admin-keys-anthropic-hint = An API key: console.anthropic.com → Settings → API Keys.
+admin-keys-youtube-hint = A YouTube Data API v3 key from console.cloud.google.com.
+admin-keys-smtp-hint = The login and SMTP key, space-separated: "login key".
 admin-keys-set = ✅ configured
 admin-keys-unset = ⚠️ not configured
 admin-keys-steam-add = Set the Steam key
@@ -106,8 +111,8 @@ admin-keys-smtp-saved =
     { $text }
 
 # PSN status and one-line messages
-admin-psn-npsso-invalid = That NPSSO didn't work — Sony rejected it. Check it and send it again.
-admin-psn-client-error = Couldn't build a PSN client — a technical error on the server ({ $error }). The NPSSO is probably not the problem — check the bot's logs.
+admin-keys-psn-invalid = That NPSSO didn't work — Sony rejected it. Check it and send it again.
+admin-keys-setup-error = Couldn't build a PSN client — a technical error on the server ({ $error }). The NPSSO is probably not the problem — check the bot's logs.
 
 # Limits and input prompts
 admin-limits-screen =

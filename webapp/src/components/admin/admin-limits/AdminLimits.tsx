@@ -3,7 +3,8 @@ import { fetchAdminLimits, patchAdminLimit, type AdminLimit } from "../../../api
 import { t, type Locale } from "../../../i18n";
 import { BackHead, Group, NumberRow, SettingsSkel } from "../../shared/lib";
 
-// Which group each limit belongs to; anything new and unlisted lands in "Other".
+// Which group each limit belongs to; anything new and unlisted lands in "Other",
+// so a setting added on the server shows up here with no change.
 const GROUPS: Array<{ title: "limitsLists" | "limitsHltb" | "limitsTimers" | "limitsOther"; keys: string[] }> = [
   { title: "limitsLists", keys: ["summary_top_limit", "stats_games_limit", "recent_limit"] },
   { title: "limitsHltb", keys: ["hltb_results_limit", "hltb_page_size"] },
@@ -48,7 +49,9 @@ export function AdminLimits({
           ? t(locale, "limitZeroUnlimited")
           : item.zero_means === "off"
             ? t(locale, "limitZeroOff")
-            : undefined
+            : item.zero_means === "no_delay"
+              ? t(locale, "limitZeroNoDelay")
+              : undefined
       }
       value={item.value}
       min={item.min}

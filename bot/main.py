@@ -67,6 +67,7 @@ from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
+from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.merge import PeopleMerge
@@ -195,6 +196,14 @@ async def run(settings: Settings) -> None:
 
     # The mail server's login, set from /admin like the keys above.
     smtp_auth = SmtpAuth(repo, cipher, settings)
+    # Every shared credential, for both admin panels (#176).
+    admin_credentials = AdminCredentials(
+        psn=psn_auth,
+        steam=steam_auth,
+        anthropic=anthropic_auth,
+        youtube=youtube_auth,
+        smtp=smtp_auth,
+    )
 
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
@@ -246,7 +255,7 @@ async def run(settings: Settings) -> None:
         MessageCleanup(bot, repo),
         OnlineAutoRefresh(bot, repo),
         ServiceHealth(repo, psn_auth, steam_auth, anthropic_auth),
-        AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, psn_auth, steam_auth),
+        AdminPanelRefresh(bot, repo, fetcher, steam_fetcher, admin_credentials),
         psn_fetcher,
         psn_presence,
         flood_flush,
@@ -363,6 +372,7 @@ async def run(settings: Settings) -> None:
         notifications=notifications,
         merge=merge,
         youtube_auth=youtube_auth,
+        admin_credentials=admin_credentials,
     )
     await web_server.start()
 
@@ -379,7 +389,7 @@ async def run(settings: Settings) -> None:
     dispatcher["steam_auth"] = steam_auth
     dispatcher["anthropic_auth"] = anthropic_auth
     dispatcher["youtube_auth"] = youtube_auth
-    dispatcher["smtp_auth"] = smtp_auth
+    dispatcher["admin_credentials"] = admin_credentials
     dispatcher.message.outer_middleware(UsernameMiddleware(repo))
     # After the username one, so a person it just refreshed is found.
     dispatcher.message.outer_middleware(PersonMiddleware(repo))
