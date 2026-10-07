@@ -122,16 +122,14 @@ async def render_chat_card(repo: Repo, tg_id: int, chat_id: int, *, locale: str)
     return Screen(text, builder.as_markup())
 
 
-def _panel_identity(user: User, links: list[PlatformLink], locale: str) -> str:
+def _panel_identity(user: User, locale: str) -> str:
     """The person's own name for the /panel header (#18) — the one shared
-    person chain (#51). This used to be the third hand-written copy of it,
-    and the only one whose last resort was a bare `tg_id` with no `id`
-    prefix at all."""
+    person chain (#51)."""
     return gettext(
         "panel",
         "panel-header-identity",
         locale=locale,
-        name=html_escape(person_name_of(user, links)),
+        name=html_escape(person_name_of(user)),
     )
 
 
@@ -153,7 +151,7 @@ async def _panel_header_lines(
     (CLAUDE.md: "always visible regardless of the privacy toggle" is about
     those buttons, not a second, redundant link inside the header text)."""
     platform_links = [*psn_links, *([steam_link] if steam_link else [])]
-    return [_panel_identity(user, platform_links, i18n.locale)] + await platform_header_lines(
+    return [_panel_identity(user, i18n.locale)] + await platform_header_lines(
         repo,
         tg_id=user.tg_id,
         xuid=user.xuid,

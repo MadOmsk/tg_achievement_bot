@@ -177,6 +177,9 @@ class _PlatformLinksRepo:
                 "  is_active = 1, linked_at = excluded.linked_at, unlinked_at = NULL",
                 (person_id, platform, external_id, now),
             )
+        # Somebody with no nickname yet (no Telegram username, say) takes one
+        # from this account at once (owner, 2026-10-07), not at the next start.
+        await self.give_handle(person_id)  # type: ignore[attr-defined]
         return taken_from
 
     async def update_platform_names(

@@ -203,12 +203,8 @@ async def subscribe(message: Message, repo: Repo, i18n: I18nContext, settings: S
     await message.answer(
         i18n.get(
             "chat-subscribe-done",
-            # The person, not their Xbox account (#51) — this read
-            # `user.gamertag`, so anyone without Xbox got the generic
-            # "твои достижения" instead of their own name.
-            gamertag=person_name_of(
-                user, await repo.platform_links_of(await repo.person_id(message.from_user.id))
-            ),
+            # The person, not their Xbox account (#51).
+            gamertag=person_name_of(user),
         ),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[[settings_button(me.username or "", i18n)]]

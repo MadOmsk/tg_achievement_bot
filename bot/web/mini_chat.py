@@ -59,24 +59,8 @@ async def chat_of_user(repo: Repo, tg_id: int, chat_id: int) -> UserChatRow | No
     return next((c for c in chats if c.chat_id == chat_id), None)
 
 
-def person_label(
-    *,
-    tg_id: int,
-    handle: str | None = None,
-    username: str | None = None,
-    gamertag: str | None = None,
-    gamertag_modern: str | None = None,
-    steam_name: str | None = None,
-    psn_name: str | None = None,
-) -> str:
-    return person_name(
-        tg_id=tg_id,
-        handle=handle,
-        username=username,
-        xbox=xbox_nickname(gamertag_modern=gamertag_modern, gamertag=gamertag),
-        steam=steam_name,
-        psn=psn_name,
-    )
+def person_label(*, person_id: int | None, handle: str | None = None) -> str:
+    return person_name(person_id=person_id, handle=handle)
 
 
 def parse_month_key(value: str) -> tuple[int, int] | None:
@@ -404,19 +388,7 @@ async def build_person_payload(
     return {
         "person_id": target.id,
         "tg_id": target.tg_id,
-        "name": person_label(
-            tg_id=target.tg_id,
-            handle=target.handle,
-            username=target.username,
-            gamertag=target.gamertag,
-            gamertag_modern=target.gamertag_modern,
-            steam_name=next(
-                (link.display_name for link in links if link.platform == Platform.STEAM), None
-            ),
-            psn_name=next(
-                (link.display_name for link in links if link.platform == Platform.PSN), None
-            ),
-        ),
+        "name": person_label(person_id=target.id, handle=target.handle),
         "presence": presence_json,
         "platforms": platforms,
         "today": {
@@ -457,15 +429,7 @@ def _feed_item_json(
     return {
         "person_id": row.person_id,
         "tg_id": row.tg_id,
-        "person": person_label(
-            tg_id=row.tg_id,
-            handle=row.handle,
-            username=row.username,
-            gamertag=row.gamertag,
-            gamertag_modern=row.gamertag_modern,
-            steam_name=row.steam_name,
-            psn_name=row.psn_name,
-        ),
+        "person": person_label(person_id=row.person_id, handle=row.handle),
         "name": row.name,
         "game": row.game,
         "gamerscore": row.gamerscore,
@@ -577,15 +541,7 @@ def _stat_json(row: ChatMemberStat) -> dict[str, Any]:
     return {
         "person_id": row.person_id,
         "tg_id": row.tg_id,
-        "name": person_label(
-            tg_id=row.tg_id,
-            handle=row.handle,
-            username=row.username,
-            gamertag=row.gamertag,
-            gamertag_modern=row.gamertag_modern,
-            steam_name=row.steam_name,
-            psn_name=row.psn_name,
-        ),
+        "name": person_label(person_id=row.person_id, handle=row.handle),
         "count": row.count,
         "score": row.score,
         "rare": row.rare,

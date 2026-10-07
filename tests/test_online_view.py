@@ -17,8 +17,10 @@ def presence(
     platform: str = "xbox_modern",
     **extra: str | None,
 ):
+    extra.setdefault("handle", "IgorP")
     return ChatPresenceRow(
         tg_id=1,
+        person_id=7,
         gamertag="Igor",
         xuid=XUID_A,
         state=state,
@@ -81,7 +83,7 @@ def test_render_online_table_shows_the_updated_stamp_in_italics() -> None:
     is about to go stale."""
     text = render_online_table([presence("Online", "123", "Halo Infinite")], "14:32", "ru")
     assert "<i>Обновлено: 14:32</i>" in text
-    assert "Igor" in text
+    assert "IgorP" in text
 
 
 def test_row_name_is_the_nickname_online_and_offline() -> None:
@@ -102,7 +104,7 @@ def test_row_name_treats_no_presence_data_as_offline() -> None:
     """`state is None` is "never polled", which is not "online" — same
     branch as an explicit Offline."""
     row = presence(None, platform="psn", psn_display_name="IgorPSN", first_name="Igor")
-    assert _row_name(row) == "Igor"
+    assert _row_name(row) == "IgorP"
 
 
 def test_row_name_is_the_nickname_when_nothing_tracked() -> None:
@@ -113,24 +115,9 @@ def test_row_name_is_the_nickname_when_nothing_tracked() -> None:
     assert _row_name(row) == "IgorP"
 
 
-def test_row_name_falls_back_to_plain_username_without_at_sign() -> None:
-    """Deliberately not "@username" — this table auto-refreshes every few
-    minutes, and a live mention would ping that person every time (the
-    reason #38's Telegram-identity attempt got reverted)."""
-    row = presence(None, platform="none", username="igor")
-    name = _row_name(row)
-    assert name == "igor"
-    assert "@" not in name
-
-
-def test_row_name_falls_back_to_bare_id_when_nothing_is_known_at_all() -> None:
-    row = ChatPresenceRow(
-        tg_id=42,
-        gamertag=None,
-        xuid=None,
-        state=None,
-        title_id=None,
-        title_name=None,
-        platform="none",
-    )
-    assert _row_name(row) == "id42"
+def test_row_name_without_a_nickname_is_the_persons_id() -> None:
+    """Owner, 2026-10-07: no username, no platform nickname, no Telegram id —
+    a person with no nickname yet is `id<person id>`."""
+    row = presence(None, platform="none", username="igor", handle=None)
+    assert _row_name(row) == "id7"
+    assert "@" not in _row_name(row)

@@ -31,6 +31,7 @@ from bot.services.message_log import achievement_category
 from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import (
     link_nickname,
+    person_name,
     person_name_of,
 )
 from bot.util import parse_iso, utcnow
@@ -183,12 +184,11 @@ class Publisher:
             in_group=in_group,
         )
 
-    async def _person_label(self, person_id: int) -> str | None:
-        """The person as the app names them: their nickname first (#157)."""
+    async def _person_label(self, person_id: int) -> str:
+        """The person as the app names them: their nickname, else their id
+        (owner, 2026-10-07) — never a platform's nickname."""
         user = await self._repo.get_user(person_id)
-        if user is None:
-            return None
-        return person_name_of(user, await self._repo.platform_links_of(person_id))
+        return person_name_of(user) if user else person_name(person_id=person_id, handle=None)
 
     async def start(self) -> None:
         self._worker = asyncio.create_task(self._run())
@@ -242,10 +242,10 @@ class Publisher:
             if not achievements:
                 return
         self._tell_followers(person_id, achievements, title_name)
-        # A post names the person by their nickname in the app (owner,
-        # 2026-10-07), as the app does everywhere — not the platform's own
-        # nickname, which `gamertag` still carries as the fallback.
-        name = await self._person_label(person_id) or gamertag
+        # A post names the person as the app does everywhere (owner,
+        # 2026-10-07): the nickname, else the id — not the platform's own
+        # nickname `gamertag` carries.
+        name = await self._person_label(person_id)
 
         for chat in await self._repo.publication_targets(person_id):
             allowed = [
@@ -503,11 +503,7 @@ class Publisher:
         poller/flood_flush.py once a throttled window closes. Unlike every
         other digest in the codebase, this one can genuinely mix platforms
         (that's the whole point: the filter counts across all of a person's
-        platforms together), so the header uses the person's own Telegram
-        identity rather than one platform's own nickname — there is no
-        single "gamertag" that's obviously right here the way there is for
-        format_single/format_digest's other callers, each already scoped to
-        one platform by construction.
+        platforms together); its header names the person as every post does.
         """
         if not achievements:
             return
@@ -516,7 +512,6 @@ class Publisher:
         # subscription walk), and one lookup per flushed window is nothing.
         locale = await self._repo.chat_locale(chat_id)
         achievements = await localize_descriptions(self._repo, achievements, locale)
-        user = await self._repo.get_user(person_id)
         links = await self._repo.platform_links_of(person_id)
         platforms = {account_platform_of(item.platform) for item in achievements}
         accounts = {(account_platform_of(item.platform), item.xuid) for item in achievements}
@@ -530,7 +525,7 @@ class Publisher:
                     account_names[link.external_id] = (
                         f"{platform_label(link.platform, locale)}: {link_nickname(link)}"
                     )
-        name = person_name_of(user, links) if user else f"id{person_id}"
+        name = await self._person_label(person_id)
 
         missing = [a.title_id for a in achievements if not getattr(a, "game_platforms", None)]
         if missing:
