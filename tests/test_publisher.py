@@ -254,3 +254,45 @@ async def test_publisher_deliver_passes_reply_markup_to_bot(repo) -> None:
     )
     msg_id4 = await pub._deliver(job4)
     assert msg_id4 == 201
+
+
+async def test_a_picture_telegram_cannot_fetch_is_uploaded(repo, monkeypatch) -> None:
+    """Telegram fetches a URL itself and sometimes cannot reach a platform's CDN:
+    the bot fetches it and uploads the bytes, and only without them sends text."""
+    from types import SimpleNamespace
+
+    from aiogram.types import BufferedInputFile
+
+    from bot.poller import publisher as publisher_module
+    from bot.poller.publisher import Publisher, PublishJob
+
+    class _Bot:
+        def __init__(self) -> None:
+            self.photos: list[object] = []
+            self.texts: list[str] = []
+
+        async def send_photo(self, chat_id, photo, **kwargs):
+            if isinstance(photo, str):
+                raise RuntimeError("Bad Request: failed to get HTTP URL content")
+            self.photos.append(photo)
+            return SimpleNamespace(message_id=7)
+
+        async def send_message(self, chat_id, text, **kwargs):
+            self.texts.append(text)
+            return SimpleNamespace(message_id=8)
+
+    async def fetched(url: str) -> bytes:
+        return b"\xff\xd8\xffjpeg"
+
+    bot = _Bot()
+    monkeypatch.setattr(publisher_module.images, "fetch", fetched)
+    job = PublishJob(chat_id=-1, text="card", gallery=[("https://cdn/x.png", False)])
+    assert await Publisher(bot=bot, repo=repo)._deliver(job) == 7
+    assert isinstance(bot.photos[0], BufferedInputFile) and not bot.texts
+
+    async def nothing(url: str) -> None:
+        return None
+
+    monkeypatch.setattr(publisher_module.images, "fetch", nothing)
+    assert await Publisher(bot=bot, repo=repo)._deliver(job) == 8
+    assert bot.texts == ["card"]

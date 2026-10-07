@@ -27,6 +27,22 @@ MAX_BYTES = 4 * 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 20
 
 
+async def fetch(url: str) -> bytes | None:
+    """One picture's bytes, or None when the fetch failed or brought nothing
+    that could be a picture — bounded like `download`."""
+    try:
+        async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as c:
+            response = await c.get(url)
+            response.raise_for_status()
+            payload = response.content
+    except Exception as exc:
+        log.info("image fetch failed: %r", exc)
+        return None
+    if not payload or len(payload) > MAX_BYTES:
+        return None
+    return payload
+
+
 async def download(url: str, name: str, directory: Path) -> tuple[str, str] | None:
     """Fetch one picture and write it as `name` inside `directory`.
 

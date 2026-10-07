@@ -16,12 +16,13 @@ from datetime import timedelta
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import InlineKeyboardMarkup, InputMediaPhoto
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InputMediaPhoto
 
 from bot.config import Settings
 from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.i18n import gettext
+from bot.services import images
 from bot.services.achievements import passes_filters
 from bot.services.chat_gone import chat_is_gone
 from bot.services.descriptions_view import localize_descriptions
@@ -653,7 +654,35 @@ class Publisher:
                 except Exception as exc:
                     if chat_is_gone(exc):
                         raise
-                    log.info("icon for chat %s did not go through, sending text", job.chat_id)
+                    # Telegram fetches a URL itself and sometimes cannot reach a
+                    # platform's CDN; the bot can, so it uploads the bytes (#167
+                    # review: a post went out with no picture).
+                    log.info(
+                        "icon for chat %s by URL did not go through (%r), uploading it",
+                        job.chat_id,
+                        exc,
+                    )
+                    payload = await images.fetch(url)
+                    if payload is not None:
+                        try:
+                            message = await self._bot.send_photo(
+                                job.chat_id,
+                                photo=BufferedInputFile(payload, filename="achievement.jpg"),
+                                caption=job.text,
+                                parse_mode=ParseMode.HTML,
+                                has_spoiler=secret,
+                                reply_markup=job.reply_markup,
+                            )
+                            return message.message_id
+                        except (TelegramForbiddenError, TelegramRetryAfter):
+                            raise
+                        except Exception as upload_exc:
+                            if chat_is_gone(upload_exc):
+                                raise
+                            log.info(
+                                "icon upload for chat %s failed too: %r", job.chat_id, upload_exc
+                            )
+                    log.info("sending chat %s the text without its picture", job.chat_id)
 
             message = await self._bot.send_message(
                 job.chat_id,
