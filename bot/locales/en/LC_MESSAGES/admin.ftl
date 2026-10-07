@@ -224,10 +224,15 @@ admin-users-header = 👥 Users
 admin-users-columns = Columns: last seen · achievements today / this month
 admin-users-row = { $icon } { $name } · { $ago } · { $today} / { $month }{ $note }
 admin-user-not-found = User not found.
-admin-user-header = 👤 { $identity }
-# $tg_id arrives as a string on purpose — as a number Fluent groups the
-# digits, and an identifier is not a quantity.
-admin-user-tgid = tg_id { $tg_id }
+admin-user-header = 👤 { $name } · id { $person_id }
+# $tg_id and $person_id arrive as strings on purpose — as a number Fluent
+# groups the digits, and an identifier is not a quantity.
+admin-logins-title = Ways to sign in:
+admin-logins-row = { "  " }{ $label }: { $value }
+admin-logins-telegram = Telegram
+admin-logins-email = Email
+admin-logins-tg-id = id { $tg_id }
+admin-logins-none = — none
 admin-login-not-connected = not connected
 admin-login-active = ✅ active, refreshed { $ago }
 admin-login-invalid = ⚠️ expired

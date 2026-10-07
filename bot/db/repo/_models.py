@@ -755,7 +755,8 @@ def _as_user(row: aiosqlite.Row) -> User:
         is_excluded=bool(row["is_excluded"]),
         last_online_at=row["last_online_at"],
         first_name=row["first_name"],
-        handle=row["handle"],
+        # The shown form, digits included, where the query gives it.
+        handle=row["handle_shown"] if "handle_shown" in row.keys() else row["handle"],
         last_name=row["last_name"],
         gamertag_modern=row["gamertag_modern"],
         photo_file_id=row["photo_file_id"],

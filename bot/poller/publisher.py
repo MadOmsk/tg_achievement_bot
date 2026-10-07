@@ -20,7 +20,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, Teleg
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InputMediaPhoto
 
 from bot.config import Settings
-from bot.constants import AccountPlatform, account_platform_of
+from bot.constants import account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.i18n import gettext
 from bot.services import achievement_icons, covers, images
@@ -30,11 +30,9 @@ from bot.services.descriptions_view import localize_descriptions
 from bot.services.message_log import achievement_category
 from bot.services.mini_app import mini_app_open_markup
 from bot.services.naming import (
-    NO_NICKNAME,
-    account_nickname,
     link_nickname,
+    person_name,
     person_name_of,
-    xbox_nickname,
 )
 from bot.util import parse_iso, utcnow
 from bot.version import is_test
@@ -186,6 +184,12 @@ class Publisher:
             in_group=in_group,
         )
 
+    async def _person_label(self, person_id: int) -> str:
+        """The person as the app names them: their nickname, else their id
+        (owner, 2026-10-07) — never a platform's nickname."""
+        user = await self._repo.get_user(person_id)
+        return person_name_of(user) if user else person_name(person_id=person_id, handle=None)
+
     async def start(self) -> None:
         self._worker = asyncio.create_task(self._run())
 
@@ -238,6 +242,10 @@ class Publisher:
             if not achievements:
                 return
         self._tell_followers(person_id, achievements, title_name)
+        # A post names the person as the app does everywhere (owner,
+        # 2026-10-07): the nickname, else the id — not the platform's own
+        # nickname `gamertag` carries.
+        name = await self._person_label(person_id)
 
         for chat in await self._repo.publication_targets(person_id):
             allowed = [
@@ -292,7 +300,7 @@ class Publisher:
                     PublishJob(
                         chat_id=chat.chat_id,
                         text=format_digest(
-                            gamertag, title_name, allowed, locale=chat.locale, progress=progress
+                            name, title_name, allowed, locale=chat.locale, progress=progress
                         ),
                         gallery=_gallery(allowed),
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
@@ -311,7 +319,7 @@ class Publisher:
                     PublishJob(
                         chat_id=chat.chat_id,
                         text=format_single(
-                            gamertag,
+                            name,
                             item,
                             # The row's own name wins when it has one: the
                             # localization pass above put the chat's language
@@ -495,11 +503,7 @@ class Publisher:
         poller/flood_flush.py once a throttled window closes. Unlike every
         other digest in the codebase, this one can genuinely mix platforms
         (that's the whole point: the filter counts across all of a person's
-        platforms together), so the header uses the person's own Telegram
-        identity rather than one platform's own nickname — there is no
-        single "gamertag" that's obviously right here the way there is for
-        format_single/format_digest's other callers, each already scoped to
-        one platform by construction.
+        platforms together); its header names the person as every post does.
         """
         if not achievements:
             return
@@ -508,13 +512,12 @@ class Publisher:
         # subscription walk), and one lookup per flushed window is nothing.
         locale = await self._repo.chat_locale(chat_id)
         achievements = await localize_descriptions(self._repo, achievements, locale)
-        user = await self._repo.get_user(person_id)
         links = await self._repo.platform_links_of(person_id)
         platforms = {account_platform_of(item.platform) for item in achievements}
         accounts = {(account_platform_of(item.platform), item.xuid) for item in achievements}
-        name: str | None = None
-        # Two PSN accounts are one platform but not one account (#10): the
-        # header then names the person, and every block its account.
+        # Two PSN accounts are one platform but not one account (#10): every
+        # block names its account. The header names the person, by their
+        # nickname in the app, as every post does.
         account_names: dict[str, str] = {}
         if len(accounts) > 1 and len(platforms) < len(accounts):
             for link in links:
@@ -522,38 +525,7 @@ class Publisher:
                     account_names[link.external_id] = (
                         f"{platform_label(link.platform, locale)}: {link_nickname(link)}"
                     )
-        if len(platforms) == 1 and len(accounts) == 1:
-            single_plat = next(iter(platforms))
-            if single_plat == AccountPlatform.XBOX:
-                name = (
-                    xbox_nickname(
-                        gamertag_modern=user.gamertag_modern,
-                        gamertag=user.gamertag,
-                        xuid=user.xuid,
-                    )
-                    if user
-                    else None
-                )
-            else:
-                single_xuid = next(iter(accounts))[1]
-                link = next(
-                    (
-                        lnk
-                        for lnk in links
-                        if lnk.platform == single_plat
-                        and (single_xuid is None or lnk.external_id == single_xuid)
-                    ),
-                    None,
-                )
-                if link is not None:
-                    name = account_nickname(
-                        link.platform,
-                        display_name=link.display_name,
-                        secondary_name=link.secondary_name,
-                        external_id=link.external_id,
-                    )
-        if not name or name == NO_NICKNAME:
-            name = person_name_of(user, links) if user else f"id{person_id}"
+        name = await self._person_label(person_id)
 
         missing = [a.title_id for a in achievements if not getattr(a, "game_platforms", None)]
         if missing:

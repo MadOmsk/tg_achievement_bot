@@ -148,9 +148,9 @@ async def test_header_ignores_a_first_name_with_no_nickname_yet(repo: Repo) -> N
     assert "GamerTag" in header
 
 
-async def test_header_falls_back_to_gamertag_with_nothing_from_telegram_yet(repo: Repo) -> None:
-    """A brand-new /start before this person's own message middleware has
-    ever run — same defensive last resort this function already had."""
+async def test_linking_a_platform_names_somebody_who_had_no_nickname(repo: Repo) -> None:
+    """No Telegram username, so no nickname at /start: linking Xbox gives one
+    from the gamertag at once (owner, 2026-10-07), not at the next start."""
     await repo.ensure_user(1, None, None, None)
     await repo.link_xbox_account(await repo.person_id(1), XUID, "GamerTag", 0)
 
@@ -1081,40 +1081,24 @@ def _presence_row(**over) -> ChatPresenceRow:
     return ChatPresenceRow(**base)  # type: ignore[arg-type]
 
 
-def test_who_label_prefers_the_name_then_username_then_gamertag() -> None:
-    """The one person chain (#51, #157): the nickname first, then a bare
-    username, then a platform nickname. Telegram's own name is never used."""
+def test_who_label_is_the_nickname_else_the_persons_id() -> None:
+    """The one person chain (owner, 2026-10-07): the nickname in the app, else
+    `id<person id>` — never Telegram's names, never a platform nickname."""
     assert (
         who_label(
-            _presence_row(first_name="Igor", last_name="Petrov", username="mad", handle="IgorP")
+            _presence_row(first_name="Igor", username="mad", gamertag="MadXbox", handle="IgorP")
         )
         == "IgorP"
     )
-    assert who_label(_presence_row(first_name="Igor")) != "Igor"
-    assert who_label(_presence_row(username="mad", gamertag="MadXbox")) == "mad"
-    assert who_label(_presence_row(gamertag="MadXbox")) == "MadXbox"
-
-
-def test_who_label_prefers_the_modern_gamertag_over_the_classic_one() -> None:
-    row = _presence_row(gamertag="MadOmsk", gamertag_modern="Mad Omsk")
-    assert who_label(row) == "Mad Omsk"
-
-
-def test_who_label_falls_back_to_a_platform_name_not_a_bare_id() -> None:
-    # A Steam/PSN-only member with no Telegram identity — used to render "idNNNN".
-    assert who_label(_presence_row(steam_display_name="SteamNick")) == "SteamNick"
-    assert who_label(_presence_row(psn_display_name="PsnNick")) == "PsnNick"
-
-
-def test_who_label_never_stops_at_the_empty_xbox_dash() -> None:
-    """The account chains end at a dash so their own line renders something;
-    inside the person chain that dash is an absence, and stopping on it
-    would show "—" while a real PSN nickname sat one step further down."""
-    assert who_label(_presence_row(psn_display_name="PsnNick")) != "—"
-
-
-def test_who_label_last_resort_is_the_id_when_nothing_else_exists() -> None:
-    assert "1" in who_label(_presence_row(tg_id=1))
+    nameless = _presence_row(
+        person_id=9,
+        first_name="Igor",
+        username="mad",
+        gamertag="MadXbox",
+        steam_display_name="SteamNick",
+        psn_display_name="PsnNick",
+    )
+    assert who_label(nameless) == "id9"
 
 
 async def test_who_stats_button_sends_card_with_reply_markup(repo: Repo) -> None:

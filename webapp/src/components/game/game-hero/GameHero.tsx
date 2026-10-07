@@ -141,7 +141,10 @@ export function GameHero({
               {!loading && pct > 0 && <i className="game-medal-tip" />}
             </span>
             {loading ? (
-              <span className="skel game-medal-pct-skel" aria-hidden />
+              <>
+                <span className="skel game-medal-pct-skel" aria-hidden />
+                <span className="skel game-medal-date-skel" aria-hidden />
+              </>
             ) : (
               // The percentage under the rim, and the day of the last
               // achievement as on the platinum; how many is in the tab's title.

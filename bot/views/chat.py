@@ -17,7 +17,6 @@ from bot.constants import SettingKey
 from bot.db.repo import (
     ChatPresenceRow,
     GameAchievements,
-    PlatformLink,
     RecentAchievement,
     Repo,
     User,
@@ -29,7 +28,6 @@ from bot.services.naming import (
     person_name,
     person_name_of,
     subscriber_names,
-    xbox_nickname,
 )
 from bot.services.platform_format import played_version
 from bot.services.stats import counters_for, local_now, month_cutoff_utc
@@ -80,20 +78,10 @@ def _games_list(games: list[GameAchievements], i18n: I18nContext | None = None) 
     return games_listing(games, _hub_text(i18n, "chat-untitled"), locale).render()
 
 
-def display_name(target: User, links: list[PlatformLink]) -> str:
-    """The Telegram identity, not a platform gamertag (Follow-up
-    2026-09-06, user request) — the card already lists every connected
-    platform's own name on its own line below (XBOX/Steam/PSN), so the
-    header identifying *the person* rather than defaulting to whichever
-    platform happened to be Xbox reads better once someone has more than
-    one. first_name/last_name only exist once UsernameMiddleware (below)
-    has seen at least one message from them — a brand-new /start with
-    nothing yet falls through to a platform name as a last resort.
-
-    One of four hand-rolled versions of this chain until #51; now just the
-    shared one, handed whichever platform links this person happens to
-    have."""
-    return person_name_of(target, links)
+def display_name(target: User) -> str:
+    """The person, not a platform gamertag: the card lists every connected
+    platform's own name on its own line below (XBOX/Steam/PSN)."""
+    return person_name_of(target)
 
 
 def who_label(row: ChatPresenceRow) -> str:
@@ -101,14 +89,7 @@ def who_label(row: ChatPresenceRow) -> str:
     /stats' header uses, never a bare "idNNNN" for someone who has anything
     else. `chat_member_presence` already carries every field it needs (the
     #38 /online work joined them in), so no extra lookup per row."""
-    return person_name(
-        tg_id=row.tg_id,
-        handle=row.handle,
-        username=row.username,
-        xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
-        steam=row.steam_display_name,
-        psn=row.psn_display_name,
-    )
+    return person_name(person_id=row.person_id, handle=row.handle)
 
 
 async def build_stats_text(
@@ -140,7 +121,7 @@ async def build_stats_text(
         target_year=target_year,
         target_month=target_month,
     )
-    lines = [f"👤 <b>{html_escape(display_name(target, platform_links))}</b>"]
+    lines = [f"👤 <b>{html_escape(display_name(target))}</b>"]
     lines += await platform_header_lines(
         repo,
         tg_id=target.tg_id,
@@ -253,18 +234,7 @@ def _recent_row(row: RecentAchievement, i18n: I18nContext | None = None) -> str:
     # rare" on Sony's scale, and a platinum trophy and an "ordinary" rarity
     # badge are the same 🏆 — so every PSN row here read as ordinary.
     badge = trophy_tier_badge(row.trophy_type) or rarity_badge(row.rarity_percent)
-    gamertag = html_escape(
-        truncate_name(
-            person_name(
-                tg_id=row.tg_id,
-                handle=row.handle,
-                username=row.username,
-                xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
-                steam=row.steam_name,
-                psn=row.psn_name,
-            )
-        )
-    )
+    gamertag = html_escape(truncate_name(person_name(person_id=row.person_id, handle=row.handle)))
     game = html_escape(truncate_name(row.game or _hub_text(i18n, "chat-untitled")))
     icon = PLATFORM_ICON.get(row.platform, PLATFORM_ICON_UNKNOWN)
     plat = played_version(row.game_platforms, row.platform, device=row.device, short=True)

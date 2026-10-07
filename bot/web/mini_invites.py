@@ -25,6 +25,7 @@ from bot.config import Settings
 from bot.db.repo import Repo
 from bot.i18n import normalize_locale
 from bot.services import invites
+from bot.services.naming import person_name
 from bot.web.mini_auth import MiniAppUser
 from bot.web.mini_session import start_session
 
@@ -146,7 +147,10 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                         "created_at": row.created_at,
                         "used_at": row.used_at,
                         "used_by": (
-                            {"person_id": row.used_by, "name": row.used_handle}
+                            {
+                                "person_id": row.used_by,
+                                "name": person_name(person_id=row.used_by, handle=row.used_handle),
+                            }
                             if row.used_by is not None
                             else None
                         ),

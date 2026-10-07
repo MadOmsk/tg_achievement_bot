@@ -27,6 +27,10 @@ function describe(err: unknown, locale: Locale): string {
   return `${t(locale, "error")}: ${String(err)}`;
 }
 
+/** A send the person stepped back from (the invite asked for before a new
+ * address's code, then «Назад»): nothing went wrong, nothing to say. */
+export class SendCancelled extends Error {}
+
 function clock(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -39,6 +43,7 @@ export function EmailCodeForm({
   initialEmail = "",
   placeholder,
   submitLabel,
+  sendLabel,
   onSend,
   onVerify,
   onStep,
@@ -48,6 +53,8 @@ export function EmailCodeForm({
   /** What the empty field suggests; the app's own example by default. */
   placeholder?: string;
   submitLabel: string;
+  /** The address step's button: «Войти» on the sign-in screen, else «Получить код». */
+  sendLabel?: string;
   /** Sends a code; resolves with how many seconds until another may be sent,
    * and whether no code is needed at all (the dev server's no-code mode). */
   onSend: (email: string) => Promise<{ resendAfter: number; skipCode?: boolean }>;
@@ -88,7 +95,9 @@ export function EmailCodeForm({
       setSentTo(address);
       setCode("");
     } catch (err) {
-      if (err instanceof ApiError && err.code === "too_soon") {
+      if (err instanceof SendCancelled) {
+        // Back on the address step, as it was.
+      } else if (err instanceof ApiError && err.code === "too_soon") {
         const after = Number(err.body.retry_after) || 60;
         setWait(after);
         // A code already went to this address: let it be typed.
@@ -139,7 +148,7 @@ export function EmailCodeForm({
         </label>
         {error && <p className="field-note is-error">{error}</p>}
         <button type="submit" className="btn is-wide" disabled={busy || !email.trim()}>
-          {t(locale, "emailGetCode")}
+          {sendLabel ?? t(locale, "emailGetCode")}
         </button>
       </form>
     );

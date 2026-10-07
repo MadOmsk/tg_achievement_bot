@@ -32,7 +32,7 @@
 
 .login-text,
 .login-error {
-  max-width: 28ch;
+  max-width: 34ch;
   margin: 0;
   color: var(--muted);
   font-size: 0.9rem;
@@ -63,4 +63,25 @@
 .add-email-later {
   margin-top: 6px;
   color: var(--muted);
+}
+
+/* Telegram's own blue, as wide as the email form above it. */
+.btn.is-wide.login-telegram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(100%, 340px);
+  background: #2aabee;
+  color: #fff;
+}
+
+.login-email {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.login-email[hidden] {
+  display: none;
 }

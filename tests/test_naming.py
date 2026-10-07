@@ -51,61 +51,28 @@ def _link(platform: str, **over) -> PlatformLink:
 # ------------------------------------------------------------- person chain
 
 
-def test_person_chain_order() -> None:
-    """Nickname → username → platform → id (#157). Digits last."""
-    everything = dict(tg_id=TG_ID, handle="IgorP", username="mad", xbox="MadXbox")
-    assert person_name(**everything) == "IgorP"
-    assert person_name(**{**everything, "handle": None}) == "mad"
-    assert person_name(tg_id=TG_ID, username=None, xbox="MadXbox") == "MadXbox"
+def test_a_person_is_their_nickname_else_their_id() -> None:
+    """Owner, 2026-10-07: the nickname in the app, else `id<person id>` —
+    nothing in between."""
+    assert person_name(person_id=42, handle="RideTheSun#4821") == "RideTheSun#4821"
+    assert person_name(person_id=42, handle=None) == "id42"
+    assert person_name(person_id=42, handle="") == "id42"
 
 
-def test_person_chain_prefers_xbox_then_psn_then_steam() -> None:
-    """The same order platform lists use (constants.platform_display_rank,
-    owner decision 2026-09-13 — it was Xbox → Steam → PSN when the chain was
-    first agreed)."""
-    assert person_name(tg_id=TG_ID, xbox="X", steam="S", psn="P") == "X"
-    assert person_name(tg_id=TG_ID, steam="S", psn="P") == "P"
-    assert person_name(tg_id=TG_ID, steam="S") == "S"
-
-
-def test_person_chain_never_renders_an_at_sign() -> None:
-    """No live mentions anywhere (#51, user request) — /online redraws every
-    few minutes, and one rule beats remembering which screen is safe."""
-    assert person_name(tg_id=TG_ID, username="mad") == "mad"
-
-
-def test_person_chain_last_resort_is_the_id() -> None:
-    assert person_name(tg_id=TG_ID) == f"id{TG_ID}"
-
-
-def test_person_chain_steps_over_an_empty_platform_nickname() -> None:
-    """An account chain ends at a dash because its own line has to render
-    something; inside the person chain that dash is an absence. Stopping on
-    it would print "—" while a real nickname sat one step further down —
-    which is the shape of the bug this whole issue is about."""
-    empty_xbox = xbox_nickname(gamertag_modern=None, gamertag=None)
-    assert empty_xbox == NO_NICKNAME
-    assert person_name(tg_id=TG_ID, xbox=empty_xbox, psn="PsnNick") == "PsnNick"
-
-
-def test_person_name_of_reads_a_user_and_their_links() -> None:
-    """The real shape behind the screenshot that started #51: no Xbox at
-    all, a Telegram first name, a username and a PSN nickname — and the
-    summary rendered a bare id."""
-    user = _user(username="keimaks", first_name="k_maks", handle="Maks")
-    links = [_link("psn", display_name="kmaks90")]
-    assert person_name_of(user, links) == "Maks"
-    # Telegram's own name is not a step of the chain.
-    assert person_name_of(_user(first_name="k_maks"), links) == "kmaks90"
-
-    nameless = _user()
-    assert person_name_of(nameless, links) == "kmaks90"
-    assert person_name_of(nameless) == f"id{TG_ID}"
-
-
-def test_person_name_of_prefers_the_modern_gamertag() -> None:
-    user = _user(xuid="xuid-1", gamertag="MadOmsk", gamertag_modern="Mad Omsk")
-    assert person_name_of(user) == "Mad Omsk"
+def test_person_name_of_reads_only_the_nickname_and_the_id() -> None:
+    """Telegram's username and a platform nickname are not steps any more:
+    a person is called one name in the app and in Telegram."""
+    user = _user(
+        id=7,
+        username="keimaks",
+        first_name="k_maks",
+        xuid="xuid-1",
+        gamertag="MadOmsk",
+        gamertag_modern="Mad Omsk",
+        handle="Maks",
+    )
+    assert person_name_of(user) == "Maks"
+    assert person_name_of(_user(id=7, username="keimaks", gamertag="MadOmsk")) == "id7"
 
 
 # ------------------------------------------------------------ account chains

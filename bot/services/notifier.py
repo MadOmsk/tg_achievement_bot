@@ -31,6 +31,7 @@ from bot.db.repo import Repo, StoredPatch
 from bot.i18n import gettext
 from bot.services import webpush
 from bot.services.crypto import TokenCipher
+from bot.services.naming import person_name
 from bot.services.webpush import VapidKeys
 from bot.util import thousands, utcnow
 
@@ -262,7 +263,7 @@ class Notifier:
                     "new_post",
                     friend=friend,
                     person_id=author,
-                    name=person.handle,
+                    name=person_name(person_id=person.id, handle=person.handle),
                     platform=platform,
                     title_id=title_id,
                     game=game,

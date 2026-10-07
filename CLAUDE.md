@@ -9,10 +9,15 @@ filters, personal stats, an admin panel, daily summaries, HowLongToBeat lookup,
 and a Telegram Mini App.
 
 **The app is called Unlocked** (owner, 2026-10-05): it is no longer only a bot.
-The name and the logo (an "achievement unlocked" toast with a cup,
-`webapp/public/logo.svg`; the PNGs and `apple-touch-icon.png` are rendered from
-it) are what the Mini App, the installed app, pushes, sign-in emails and the
-Xbox sign-in page show. The bots keep their Telegram names until changed in
+The name and the logo (owner, 2026-10-07: the "U" of Unlocked as an open
+shackle, in the platinum medal's colours, its tip glowing like the end of a
+progress arc, on the app's own dark ground with a cool glow above and a lilac one below;
+`webapp/public/logo.svg`, a rounded tile; `logo-192/512.png` are rendered from
+it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
+as a full-bleed square — iOS and Android round it themselves — with the mark
+inside the safe zone; `badge-96.png` is the white U for a push's one-colour
+badge) are what the Mini App,
+the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
 
 This file is the single source of truth for current behavior, invariants, and open
@@ -133,6 +138,7 @@ name, or when the tree goes stale.
 │   │   ├── models.py, rows.py    ParsedAchievement and its AchievementRow, shared by all platforms
 │   │   ├── naming.py             the naming chains (#51) — the only answer to "what is X called"
 │   │   ├── handles.py            nickname rules: valid, normalized, shown, first one, digits (#157)
+│   │   ├── logins.py             the ways a person signs in, as the admin's cards list them
 │   │   ├── people.py             who may see whom: the relation between two people, `can_view` (#157)
 │   │   ├── profile_links.py      one profile-URL builder per platform
 │   │   ├── presence_view.py      "where is this person right now" — /online's rule, for one person
@@ -772,7 +778,7 @@ isn't muted there; it wasn't already published there.
   set by an admin, never a global default.
 - **The throttled backlog** goes out as one combined digest when its window closes
   (`poller/flood_flush.py`, `Publisher.publish_flood_digest` — it can mix platforms,
-  so its header names the person, not a platform nickname). Forced sweeps right after
+  its header names the person, as every post does). Forced sweeps right after
   startup and five minutes before each chat's daily summary keep a window from
   swallowing anything.
 
@@ -797,10 +803,14 @@ elsewhere in this file still describe the bot.
   `services/handles.py`, the storage `db/repo/_handles.py` (`users.handle`,
   `handle_norm`, `handle_number` — 0 means no digits —, `handle_confirmed_at`,
   `handle_changed_at`; migration 072).
-  - **Where a first nickname comes from**: a new person gets one from their Telegram
-    username at `ensure_user`; everybody else at start-up and on their first Mini App
-    visit (`give_handle`: username, then an Xbox/PSN nickname, else `Player`). Until
-    then the naming chain falls through to those same names. The Mini App shows
+  - **Where a first nickname comes from** (`give_handle`): the Telegram username,
+    then the Xbox, PSN, Steam nickname, then the part of an email before the @,
+    else `Player` (and its digits) — the first that keeps three Latin letters or
+    digits. Given at `ensure_user` from a username; on linking a platform account
+    (owner, 2026-10-07: somebody who skipped everything in Telegram is named by
+    their account at once); at an email sign-up; and, for anybody still without
+    one, at start-up and on their first Mini App visit. Until then the person is
+    `id<person id>`. The Mini App shows
     "Твой ник" once (`handle.confirmed` false) to keep or change it; later it is
     Settings → Никнейм.
   - **An avatar of one's own** (owner, 2026-10-03; migration 077,
@@ -872,6 +882,14 @@ elsewhere in this file still describe the bot.
   dev tunnel) or the widget refuses to render. A session resolves to the person
   (`repo.session_person`), who may have no Telegram id (`MiniAppUser.tg_id` is then
   None and the Telegram corners — chats, publishing — are empty).
+  **The sign-in screen signs in with Telegram in the same tab** (owner,
+  2026-10-07): «Войти через Telegram» goes to `oauth.telegram.org/auth` (the
+  bot's public id from `/api/mini/auth/config`'s `bot_id`) and comes back with
+  `#tgAuthResult=` — the same signed fields the widget gives, checked the same
+  way; the Login Widget's popup opened as another tab on phones and its answer
+  was lost. The widget stays where no `bot_id` is known, and in Settings →
+  «Вход», where a phone links through the bot instead. Somebody the app already
+  knows — by address or by Telegram — never meets the invite step.
   - **Email** (#162, `services/email_login.py`, `web/mini_logins.py`): `POST
     /api/mini/auth/email/start` sends a six-digit code, `/verify` checks it and opens
     a session — for the person with that address, or a new person without Telegram,
@@ -884,8 +902,13 @@ elsewhere in this file still describe the bot.
     twenty checked in ten minutes, and a hundred sent an hour by the whole app —
     the mail server's reputation is everybody's. All three are the admin's global
     settings (`email_codes_per_client_hour`, `email_checks_per_client_10min`,
-    `email_codes_total_hour`), read on every request. The answer never says whether an
-    address is known. Errors are codes the Mini App words: `invalid`, `too_soon`,
+    `email_codes_total_hour`), read on every request. **An address nobody has
+    brings its invite to `/start`** (owner, 2026-10-07): without a usable one the
+    answer is `invite_required` / `invite_invalid` and no mail goes out — a
+    stranger costs the mail service nothing. So the answer does tell a known
+    address from an unknown one; the owner chose that over mailing codes nobody
+    could use. The sign-in screen asks for the invite at that moment and then
+    sends the code. Errors are codes the Mini App words: `invalid`, `too_soon`,
     `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
     `last_login`, `admin`, `in_telegram`, `not_linked`; a `taken` that a merge can
     answer carries a `merge` preview (`GET|POST|DELETE /api/mini/me/merge`).
@@ -900,7 +923,8 @@ elsewhere in this file still describe the bot.
     from the community's chats. Any member makes codes in Settings → «Пригласить
     друга» (`XXXX-XXXX-XXXX-XXXX`, no look-alike symbols): one code lets one
     person in, never expires, no limit, and who came by it is kept and shown. A
-    sign-in that proved somebody new without a usable code answers
+    sign-in that proved somebody new without a usable code (a Telegram one, or an
+    invite spent between an email's code and its check) answers
     `invite_required` (403) with a `signup` token, kept in memory 15 minutes;
     the app asks for the code and `POST /api/mini/auth/signup` finishes it. A
     shared link (`?invite=`; a code's copy icon puts the code and its link in
@@ -1137,14 +1161,20 @@ hand-rolled versions of "who is this" once coexisted and disagreed. A screen tha
 seems to need a third chain is a question for the owner, not a decision at the
 keyboard.
 
-1. **Who is this person?** Their nickname (#157) → `username` → a connected
-   platform's nickname (Xbox → PlayStation → Steam) → `id<tg_id>`. Telegram's first
-   and last names are not in the chain. Everybody has a nickname, so the steps after
-   it are a net for a row read before one was given.
-2. **Which account is this?** That platform's own chain — used *only* where a line is
-   genuinely about one platform: per-platform rows in `/stats`, `/panel` and the
-   admin's user card, connect/disconnect notices, the achievement announcement, and
-   `/online` rows **while the person is online** (an offline row names the person).
+1. **Who is this person?** Their nickname in the app, as shown (`Name#1234`) →
+   `id<person id>` (`users.id`) — nothing else (owner, 2026-10-07;
+   `naming.person_name(person_id=, handle=)`). Not Telegram's username or names,
+   not a platform nickname, not a Telegram id. One name everywhere — posts,
+   digests, `/online`, summaries, `/stats`, notices, the Mini App, the admin's
+   lists; the platform is the mark beside it. Everybody is given a nickname (see
+   People: where a first nickname comes from), and the Mini App makes a person
+   without one choose, so the id is a net. `User.handle` is the shown form, digits
+   included (`_accounts._USER_COLUMNS` reads `HANDLE_SHOWN`).
+2. **Which account is this?** That platform's own chain — used *only* where a line
+   names one platform account: per-platform rows in `/stats`, `/panel` and the
+   admin's user card, connect/disconnect notices, the account blocks of a digest
+   mixing two PSN accounts, and the account blocks on a person's page in the Mini
+   App.
 
 | Platform | Chain | Notes |
 |---|---|---|
@@ -1246,9 +1276,11 @@ keyboard.
   anti-flood, message cleanup — each redrawing in place with the card's text above.
   Settings: digest size (#126), summary time, timezone, mutes,
   minimum gamerscore, summary switch, anti-flood, language (#48).
-- **The per-user card**: the Telegram identity in full (`tg_id` passed to Fluent as a
-  string, never `@N`) — or the email of somebody who has no Telegram — then one block
-  per platform in the display order — nickname,
+- **The per-user card**: the person (chain 1) and their id, then **every way they
+  sign in** (owner, 2026-10-07; `services/logins.py`, the same list the Mini App's
+  admin card shows): Telegram (`@username`, its id passed to Fluent as a string,
+  never `@N`), email — each linked or "— нет"; a new way in is one more entry
+  there. Then one block per platform in the display order — nickname,
   lifetime count with completions (🌀/👾/💠) and level, today's count, diagnostics.
 - **"🔄 Обновить"** is the only UI path besides `/panel`'s sync that calls a platform
   outside a background job: presence, the current game, then a catch-up since the
@@ -1324,8 +1356,8 @@ upper-case. `/panel`'s "now" row names only the family, as its header lines do.
   descriptions in italics (owner, 2026-09-25) and the block's version named by
   whichever item knows its device. A
   `sendMediaGroup`, caption on the first image, images deduped.
-- **The anti-flood digest is the same form**; only its header names the person
-  instead of a platform nickname, because it can mix platforms.
+- **The anti-flood digest is the same form**, named by the person like every post;
+  two accounts of one platform name their blocks.
 - **A digest never names a trophy group** — one block is one game.
 - `plural_achievements()` is never platform-specific: combined counts are
   "достижения" even when some came from PSN.

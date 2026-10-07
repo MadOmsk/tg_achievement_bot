@@ -19,7 +19,8 @@ self.addEventListener("push", (event) => {
       body: message.body || "",
       tag: message.tag || undefined,
       icon: `${scope}logo-192.png`,
-      badge: `${scope}logo-192.png`,
+      // Android draws the badge as a one-colour shape: the white U, not the tile.
+      badge: `${scope}badge-96.png`,
       data: { url: message.url || scope },
     }),
   );

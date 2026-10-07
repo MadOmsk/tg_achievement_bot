@@ -102,10 +102,24 @@ export function NotificationsBell({
         >
           <div className="sheet-content notices-sheet">
             {items === null ? (
-              <div className="notices-list" aria-busy>
-                {[0, 1, 2].map((n) => (
-                  <span key={n} className="skel notice-skel" />
-                ))}
+              // The list's own rows, in their own classes: a day, then faces,
+              // a line and the post under it, the time at the right.
+              <div className="notices-days" aria-busy>
+                <section className="notices-day">
+                  <span className="skel line notice-skel-day" />
+                  <div className="notices-list">
+                    {[0, 1, 2, 3, 4].map((n) => (
+                      <div key={n} className="notice-row is-skel">
+                        <span className="skel notice-skel-face" />
+                        <span className="notice-copy">
+                          <span className="skel line notice-skel-line" style={{ width: `${78 - (n % 3) * 12}%` }} />
+                          <span className="skel line notice-skel-detail" style={{ width: `${46 - (n % 2) * 10}%` }} />
+                        </span>
+                        <span className="skel line notice-skel-time" />
+                      </div>
+                    ))}
+                  </div>
+                </section>
               </div>
             ) : items.length === 0 ? (
               <p className="empty">{t(locale, "notificationsEmpty")}</p>

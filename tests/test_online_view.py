@@ -17,8 +17,10 @@ def presence(
     platform: str = "xbox_modern",
     **extra: str | None,
 ):
+    extra.setdefault("handle", "IgorP")
     return ChatPresenceRow(
         tg_id=1,
+        person_id=7,
         gamertag="Igor",
         xuid=XUID_A,
         state=state,
@@ -81,46 +83,28 @@ def test_render_online_table_shows_the_updated_stamp_in_italics() -> None:
     is about to go stale."""
     text = render_online_table([presence("Online", "123", "Halo Infinite")], "14:32", "ru")
     assert "<i>Обновлено: 14:32</i>" in text
-    assert "Igor" in text
+    assert "IgorP" in text
 
 
-def test_row_name_uses_the_gamertag_while_online_on_xbox() -> None:
-    row = presence("Online", "123", "Halo Infinite", platform="xbox_modern")
-    assert _row_name(row) == "Igor"
-
-
-def test_row_name_uses_the_steam_display_name_while_online_on_steam() -> None:
-    row = presence("Online", "550", "L4D2", platform="steam", steam_display_name="IgorSteam")
-    assert _row_name(row) == "IgorSteam"
-
-
-def test_row_name_uses_the_psn_display_name_while_online_on_psn() -> None:
-    row = presence("Online", platform="psn", psn_display_name="IgorPSN")
-    assert _row_name(row) == "IgorPSN"
-
-
-def test_row_name_switches_to_the_person_chain_once_offline() -> None:
-    """2026-09-12, user request: the platform nickname earns its place by
-    saying where someone is. An offline row has no "where" left to answer,
-    so it names the person like every other screen — otherwise the same
-    member reads as two different people between this table and the summary
-    right above it."""
-    playing = presence(
-        "Online", "550", "L4D2", platform="steam", steam_display_name="IgorSteam", first_name="Igor"
-    )
-    assert _row_name(playing) == "IgorSteam"
-
-    same_person_offline = presence(
-        "Offline", platform="steam", steam_display_name="IgorSteam", first_name="Igor"
-    )
-    assert _row_name(same_person_offline) == "Igor"
+def test_row_name_is_the_nickname_online_and_offline() -> None:
+    """Owner, 2026-10-07: a person is called by their nickname in the app
+    everywhere — online too, whatever platform they are on; the platform is
+    the mark beside the name."""
+    for platform, extra in (
+        ("xbox_modern", {}),
+        ("steam", {"steam_display_name": "IgorSteam"}),
+        ("psn", {"psn_display_name": "IgorPSN"}),
+    ):
+        online = presence("Online", "550", "Game", platform=platform, handle="IgorP", **extra)
+        offline = presence("Offline", platform=platform, handle="IgorP", **extra)
+        assert _row_name(online) == _row_name(offline) == "IgorP"
 
 
 def test_row_name_treats_no_presence_data_as_offline() -> None:
     """`state is None` is "never polled", which is not "online" — same
     branch as an explicit Offline."""
     row = presence(None, platform="psn", psn_display_name="IgorPSN", first_name="Igor")
-    assert _row_name(row) == "Igor"
+    assert _row_name(row) == "IgorP"
 
 
 def test_row_name_is_the_nickname_when_nothing_tracked() -> None:
@@ -131,24 +115,9 @@ def test_row_name_is_the_nickname_when_nothing_tracked() -> None:
     assert _row_name(row) == "IgorP"
 
 
-def test_row_name_falls_back_to_plain_username_without_at_sign() -> None:
-    """Deliberately not "@username" — this table auto-refreshes every few
-    minutes, and a live mention would ping that person every time (the
-    reason #38's Telegram-identity attempt got reverted)."""
-    row = presence(None, platform="none", username="igor")
-    name = _row_name(row)
-    assert name == "igor"
-    assert "@" not in name
-
-
-def test_row_name_falls_back_to_bare_id_when_nothing_is_known_at_all() -> None:
-    row = ChatPresenceRow(
-        tg_id=42,
-        gamertag=None,
-        xuid=None,
-        state=None,
-        title_id=None,
-        title_name=None,
-        platform="none",
-    )
-    assert _row_name(row) == "id42"
+def test_row_name_without_a_nickname_is_the_persons_id() -> None:
+    """Owner, 2026-10-07: no username, no platform nickname, no Telegram id —
+    a person with no nickname yet is `id<person id>`."""
+    row = presence(None, platform="none", username="igor", handle=None)
+    assert _row_name(row) == "id7"
+    assert "@" not in _row_name(row)

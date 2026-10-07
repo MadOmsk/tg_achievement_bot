@@ -16,6 +16,7 @@ from aiohttp import web
 
 from bot.db.repo import Repo
 from bot.db.repo._follows import FollowTooSoon, PersonRow
+from bot.services.naming import person_name
 from bot.services.people import ACTIVITY_CHOICES, Relation
 
 log = logging.getLogger(__name__)
@@ -295,7 +296,12 @@ async def _tell_new_follower(request: web.Request, repo: Repo, me: int, other: i
     relation = await repo.relation(other, me)
     kind = "new_friend" if relation.friends else "new_follower"
     try:
-        await notifier.notify(other, kind, person_id=me, name=follower.handle)
+        await notifier.notify(
+            other,
+            kind,
+            person_id=me,
+            name=person_name(person_id=follower.id, handle=follower.handle),
+        )
     except Exception:
         # A notice must never undo the follow that caused it.
         log.exception("new-follower notice to person_id=%s failed", other)

@@ -4,19 +4,41 @@ import "../../../person/feed-post/FeedPost.css";
 
 /**
  * A list of rows drawn as the app's own achievement rows: the same glass card,
- * the same 56px picture and two lines of text, so what loads in replaces it
- * without anything moving.
+ * the same 56px picture, the name and `lines` lines under it (a game page's
+ * rows carry two of description), so what loads in replaces it without
+ * anything moving.
  */
-export function RowsSkel({ count = 5 }: { count?: number }) {
+export function RowsSkel({ count = 5, lines = 1 }: { count?: number; lines?: number }) {
   return (
     <div className="skel-rows" aria-busy="true" aria-live="polite">
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="feed-row skel-feed-row">
           <span className="skel skel-pic" />
-          <span className="skel-copy">
-            <span className="skel line" style={{ width: `${62 - (i % 3) * 9}%` }} />
-            <span className="skel line is-thin" style={{ width: `${84 - (i % 2) * 22}%` }} />
-          </span>
+          {lines === 1 ? (
+            <span className="skel-copy">
+              <span className="skel line" style={{ width: `${62 - (i % 3) * 9}%` }} />
+              <span className="skel line is-thin" style={{ width: `${84 - (i % 2) * 22}%` }} />
+            </span>
+          ) : (
+            // The bars sit in the boxes of the row's own lines: the name
+            // (18px), then each line of the description (19.5px).
+            <span className="skel-copy" style={{ gap: 6 }}>
+              <span className="skel line" style={{ width: `${62 - (i % 3) * 9}%`, height: 14, margin: "2px 0" }} />
+              <span style={{ display: "flex", flexDirection: "column" }}>
+                {Array.from({ length: lines }, (_, j) => (
+                  <span
+                    key={j}
+                    className="skel line is-thin"
+                    style={{
+                      width: j === lines - 1 ? `${70 - (i % 2) * 22}%` : "92%",
+                      height: 11,
+                      margin: "4.25px 0",
+                    }}
+                  />
+                ))}
+              </span>
+            </span>
+          )}
         </div>
       ))}
     </div>
@@ -242,28 +264,65 @@ export function StatsSkel({ head = true }: { head?: boolean }) {
   return (
     <div aria-busy="true" aria-live="polite">
       {head && <HeadSkel />}
-      <div className="stats-skel-tiles">
-        <span className="skel stats-skel-tile" />
-        <span className="skel stats-skel-tile" />
-      </div>
-      <span className="skel line skel-title is-small" />
-      <div className="stats-skel-strip">
+      {/* The day, the month and the year: the ranking's own table. */}
+      <section className="stat-hero">
         {[0, 1, 2].map((i) => (
-          <span key={i} className="stats-skel-cover">
-            <span className="skel stats-skel-art" />
-            <span className="skel line" style={{ width: "80%" }} />
-            <span className="skel line is-thin" style={{ width: 22 }} />
-          </span>
+          <div key={i} className="stat-tile">
+            <span className="skel line stats-skel-label" />
+            <span className="skel line stats-skel-number" />
+            <span className="skel line stats-skel-share" />
+          </div>
         ))}
-      </div>
-      <span className="skel line skel-title is-small" style={{ marginTop: 28 }} />
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="stats-skel-row">
-          <span className="skel skel-avatar is-row" />
-          <span className="skel line" style={{ width: `${44 - i * 8}%` }} />
-          <span className="skel line stats-skel-count" />
+      </section>
+      {/* The sections in their own classes, a bar inside each line of text,
+          so every box is the loaded page's own height. */}
+      <section className="rows-section stat-games-block">
+        <div className="rows-head">
+          <h3 className="rows-title">
+            <span className="skel line skel-inline" style={{ width: 132 }} />
+          </h3>
         </div>
-      ))}
+        <div className="stat-games">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="stat-game-tile">
+              <span className="skel stats-skel-art" />
+              <strong>
+                <span className="skel line skel-inline" style={{ width: "80%" }} />
+              </strong>
+              <p>
+                <span className="skel line skel-inline" style={{ width: 22 }} />
+              </p>
+            </span>
+          ))}
+        </div>
+      </section>
+      <section className="rows-section is-stat">
+        <div className="rows-head">
+          <h3 className="rows-title">
+            <span className="skel line skel-inline" style={{ width: 70 }} />
+          </h3>
+        </div>
+        <div className="rows">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rows-row is-stat">
+              <span className="rows-lead">
+                <span className="rows-rank">
+                  <span className="skel line skel-inline" style={{ width: 8 }} />
+                </span>
+                <span className="skel skel-avatar" style={{ width: 40, height: 40 }} />
+              </span>
+              <span className="rows-copy">
+                <strong>
+                  <span className="skel line skel-inline" style={{ width: `${54 - i * 10}%` }} />
+                </strong>
+              </span>
+              <span className="rows-trail">
+                <span className="skel line skel-inline" style={{ width: 14 }} />
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
