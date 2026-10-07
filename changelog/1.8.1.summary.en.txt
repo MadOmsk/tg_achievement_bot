@@ -3,4 +3,5 @@
 • Telegram sign-in on phones no longer lands back on the sign-in screen
 • Somebody new gives their invite before the email; everybody else signs in as before
 • Pages load in the shape of the pages themselves
+• Chat posts and /online show your nickname in the app
 • The back button no longer leaves the app

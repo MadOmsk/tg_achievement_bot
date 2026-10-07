@@ -222,12 +222,12 @@ def test_format_digest_still_says_trophies_when_everything_is_psn() -> None:
     assert "трофе" in text.lower()
 
 
-async def test_flood_flush_single_psn_trophy_uses_single_format_and_platform_nickname(
+async def test_flood_flush_single_psn_trophy_uses_single_format_and_the_nickname(
     repo: Repo,
 ) -> None:
     """When only 1 trophy is flushed from an anti-flood buffer, it should use
-    format_single with the platform's nickname and include the description,
-    not a bare 'получает 1 трофей' digest with Telegram first_name."""
+    format_single with the person's nickname in the app and include the
+    description, not a bare 'получает 1 трофей' digest with Telegram first_name."""
     await repo.upsert_chat(CHAT_ID, "Test chat", 1)
     await repo.ensure_user(TG_ID, "igortg", first_name="Igor", last_name="Petrov")
     await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-psn", "Justdrunkzero")
@@ -264,18 +264,20 @@ async def test_flood_flush_single_psn_trophy_uses_single_format_and_platform_nic
 
     assert publisher._queue.qsize() == 1
     job = publisher._queue.get_nowait()
-    assert "Justdrunkzero" in job.text
+    assert job.text.startswith("<b>igortg</b>")
+    assert "Justdrunkzero" not in job.text
     assert "Igor" not in job.text
     assert "получает трофей" in job.text
     assert "получает 1 трофей" not in job.text
     assert "Пройти главу 3" in job.text
 
 
-async def test_flood_flush_multiple_psn_trophies_uses_platform_nickname(
+async def test_flood_flush_multiple_psn_trophies_uses_the_nickname(
     repo: Repo,
 ) -> None:
-    """Multiple flushed trophies on a single platform use format_digest, but still
-    with the platform's nickname rather than Telegram identity."""
+    """Multiple flushed trophies on a single platform use format_digest, named
+    by the person's nickname in the app (owner, 2026-10-07) — never the
+    platform's nickname, never Telegram's names."""
     await repo.upsert_chat(CHAT_ID, "Test chat", 1)
     await repo.ensure_user(TG_ID, "igortg", first_name="Igor", last_name="Petrov")
     await repo.link_platform_account(await repo.person_id(TG_ID), "psn", "acc-psn", "Justdrunkzero")
@@ -315,7 +317,8 @@ async def test_flood_flush_multiple_psn_trophies_uses_platform_nickname(
 
     assert publisher._queue.qsize() == 1
     job = publisher._queue.get_nowait()
-    assert "Justdrunkzero" in job.text
+    assert job.text.startswith("<b>igortg</b>")
+    assert "Justdrunkzero" not in job.text
     assert "Igor" not in job.text
     assert "получает 2 трофея" in job.text
 
@@ -401,3 +404,28 @@ async def test_an_ended_throttled_window_is_not_written_over_before_its_sweep(
     await FloodFlush(repo, publisher).tick()
     job = publisher._queue.get_nowait()
     assert "held" in job.text and "late" in job.text
+
+
+async def test_a_post_names_the_person_by_their_nickname(repo: Repo) -> None:
+    """A post and a digest say who earned it by the nickname in the app (owner,
+    2026-10-07), digits and all — not the Xbox gamertag the poll hands in."""
+    await _setup_chat(repo, flood_limit=0)
+    person = await repo.person_id(TG_ID)
+    assert person is not None
+    # A taken nickname gets its digits, and the post shows them.
+    other = await repo.ensure_user(77, "someone")
+    assert other is not None
+    await repo.change_handle(other, "RideTheSun")
+    shown = (await repo.change_handle(person, "RideTheSun")).display
+    assert shown.startswith("RideTheSun#")
+    publisher = Publisher(bot=None, repo=repo)  # type: ignore[arg-type]
+
+    await publisher.publish(person, XUID, "Gamer", [achievement("n1")])
+    single = publisher._queue.get_nowait()
+    assert single.text.startswith(f"<b>{shown}</b>")
+    assert "Gamer" not in single.text.split("\n")[0]
+
+    await repo.update_chat_settings(CHAT_ID, digest_threshold=2)
+    await publisher.publish(person, XUID, "Gamer", [achievement("n2"), achievement("n3")])
+    digest = publisher._queue.get_nowait()
+    assert digest.text.startswith(f"<b>{shown}</b>")
