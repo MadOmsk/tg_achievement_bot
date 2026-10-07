@@ -4,5 +4,5 @@
 • "News": what the developers of your games post on Steam
 • Pages of their own for posts and achievements — guide tips and YouTube video guides
 • A platinum medal for finished games, a round progress for the rest
-• New settings: your profile on top, with accounts, sign-in and privacy inside
-• The phone's back button no longer closes the app
+• The ranking by day, month and year; a calendar in the feed
+• Pages instead of drawers, and the phone's back button no longer closes the app
