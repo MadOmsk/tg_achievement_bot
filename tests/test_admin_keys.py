@@ -78,13 +78,9 @@ class _FakeMessage:
         self.from_user = SimpleNamespace(id=ADMIN_ID)
         self.chat = SimpleNamespace(id=ADMIN_ID)
         self.answers: list[str] = []
-        self.deleted = False
 
     async def answer(self, text: str, **kwargs) -> None:
         self.answers.append(text)
-
-    async def delete(self) -> None:
-        self.deleted = True
 
 
 async def test_admin_text_input_saves_a_valid_steam_key(
@@ -107,7 +103,6 @@ async def test_admin_text_input_saves_a_valid_steam_key(
     assert await steam_auth.get_key() == KEY
     assert ADMIN_ID not in _awaiting_input  # flow finished
     assert msg.answers and "🔑" in msg.answers[0]
-    assert msg.deleted  # the key does not stay on display in the chat
 
 
 async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
@@ -131,7 +126,6 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
     )
 
     assert await steam_auth.get_key() is None
-    assert msg.deleted  # a wrong key is a secret too
     assert _awaiting_input.get(ADMIN_ID) == (STEAM_KEY_KEY, None)  # still armed for a retry
     _awaiting_input.pop(ADMIN_ID, None)
 

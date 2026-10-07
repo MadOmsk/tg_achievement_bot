@@ -345,10 +345,6 @@ async def admin_text_input(
     assert pending is not None
     key = pending[0]
     raw = message.text.strip()
-    # Every input here is a secret: it leaves the chat before anything else,
-    # right or wrong — a key is never shown back, nor left on display (#17).
-    with contextlib.suppress(Exception):
-        await message.delete()
 
     if key == STEAM_KEY_KEY:
         try:
