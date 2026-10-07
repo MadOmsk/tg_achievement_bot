@@ -18,6 +18,9 @@ def row(
 ) -> RecentAchievement:
     return RecentAchievement(
         gamertag=gamertag,
+        # A row is named by the person's nickname (owner, 2026-10-07); these
+        # tests give the gamertag's spelling to it.
+        handle=gamertag,
         name=name,
         game=game,
         gamerscore=gamerscore,

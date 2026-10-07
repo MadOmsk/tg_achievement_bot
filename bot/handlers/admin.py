@@ -61,7 +61,7 @@ from bot.services.admin_settings import (
     set_rare_threshold,
 )
 from bot.services.message_log import stats_category
-from bot.services.naming import link_nickname, person_name, xbox_nickname
+from bot.services.naming import link_nickname, person_name
 from bot.util import parse_iso, parse_utc_offset, utcnow
 from bot.views.admin import (
     _cancel_input_keyboard,
@@ -1220,12 +1220,7 @@ async def admin_delete_user_step1(callback: CallbackQuery, repo: Repo, i18n: I18
         _ = translator("admin", i18n.locale)
         await callback.answer(_("admin-user-not-found"), show_alert=True)
         return
-    name = person_name(
-        tg_id=user.tg_id,
-        handle=user.handle,
-        username=user.username,
-        xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
-    )
+    name = person_name(person_id=user.id, handle=user.handle)
     screen = render_admin_user_delete_confirm_1(name, person, user.tg_id, locale=i18n.locale)
     await _redraw(callback, *screen.as_pair())
 
@@ -1239,12 +1234,7 @@ async def admin_delete_user_step2(callback: CallbackQuery, repo: Repo, i18n: I18
         _ = translator("admin", i18n.locale)
         await callback.answer(_("admin-user-not-found"), show_alert=True)
         return
-    name = person_name(
-        tg_id=user.tg_id,
-        handle=user.handle,
-        username=user.username,
-        xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
-    )
+    name = person_name(person_id=user.id, handle=user.handle)
     screen = render_admin_user_delete_confirm_2(name, person, user.tg_id, locale=i18n.locale)
     await _redraw(callback, *screen.as_pair())
 

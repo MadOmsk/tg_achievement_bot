@@ -37,9 +37,11 @@ from bot.services.admin_settings import (
     set_rare_threshold,
 )
 from bot.services.admin_status import admin_status
+from bot.services.logins import logins_of
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.util import utcnow
+from bot.views.admin import login_value
 from bot.views.admin_home import format_api_usage
 from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 
@@ -144,16 +146,7 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
             {
                 "person_id": user.person_id,
                 "tg_id": user.tg_id,
-                "name": person_name(
-                    tg_id=user.tg_id,
-                    handle=user.handle,
-                    username=user.username,
-                    xbox=xbox_nickname(
-                        gamertag_modern=user.gamertag_modern, gamertag=user.gamertag
-                    ),
-                    steam=user.steam_name,
-                    psn=user.psn_online_id,
-                ),
+                "name": person_name(person_id=user.person_id, handle=user.handle),
                 "username": user.username,
                 "first_name": user.first_name,
                 "last_name": user.last_name,
@@ -173,7 +166,7 @@ async def build_admin_users(repo: Repo) -> dict[str, Any]:
     }
 
 
-async def build_admin_user(repo: Repo, person: int) -> dict[str, Any] | None:
+async def build_admin_user(repo: Repo, person: int, *, locale: str = "ru") -> dict[str, Any] | None:
     user = await repo.get_user(person)
     if user is None:
         return None
@@ -228,14 +221,10 @@ async def build_admin_user(repo: Repo, person: int) -> dict[str, Any] | None:
         "person_id": person,
         "tg_id": user.tg_id,
         "email": user.email,
-        "name": person_name(
-            tg_id=user.tg_id,
-            handle=user.handle,
-            username=user.username,
-            xbox=xbox_nickname(gamertag_modern=user.gamertag_modern, gamertag=user.gamertag),
-            steam=steam.display_name if steam else None,
-            psn=psn.display_name if psn else None,
-        ),
+        "name": person_name(person_id=person, handle=user.handle),
+        # Every way in, linked or not (owner, 2026-10-07) — the list the bot's
+        # card shows too (`services/logins.py`).
+        "logins": _logins_json(user, locale=locale),
         "username": user.username,
         "first_name": user.first_name,
         "last_name": user.last_name,
@@ -245,6 +234,19 @@ async def build_admin_user(repo: Repo, person: int) -> dict[str, Any] | None:
         "steam": steam_block,
         "psn": psn_block,
     }
+
+
+def _logins_json(user: Any, *, locale: str) -> list[dict[str, Any]]:
+    _ = translator("admin", locale)
+    return [
+        {
+            "kind": login.kind,
+            "label": _(f"admin-logins-{login.kind}"),
+            "linked": login.linked,
+            "value": login_value(login, locale=locale) if login.linked else None,
+        }
+        for login in logins_of(user)
+    ]
 
 
 def serialize_admin_chat(chat: Any) -> dict[str, Any]:
@@ -418,9 +420,11 @@ async def _person_of(request: web.Request) -> int:
 
 
 async def handle_admin_user(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
+    admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
-    payload = await build_admin_user(repo, await _person_of(request))
+    payload = await build_admin_user(
+        repo, await _person_of(request), locale=await repo.user_locale(admin.person_id)
+    )
     if payload is None:
         raise web.HTTPNotFound()
     return web.json_response(payload)
@@ -438,7 +442,7 @@ async def handle_admin_user_patch(request: web.Request) -> web.Response:
     if action in ("sync", "reset") and platform in ("xbox", "steam", "psn"):
         account_id = str(body.get("account_id") or "").strip() or None
         await _admin_platform_action(request, person, platform, action, account_id)
-    payload = await build_admin_user(repo, person)
+    payload = await build_admin_user(repo, person, locale=await repo.user_locale(admin.person_id))
     if payload is None:
         raise web.HTTPNotFound()
     return web.json_response(payload)

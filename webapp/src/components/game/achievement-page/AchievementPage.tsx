@@ -46,7 +46,7 @@ function GuideVideo({ video, game, locale }: { video: AchievementVideo; game: st
       <span className="guide-video-pic">
         <img src={`https://i.ytimg.com/vi/${video.id}/mqdefault.jpg`} alt="" loading="lazy" />
         <span className="guide-video-play" aria-hidden>
-          <Icon name="play" size={18} />
+          <Icon name="forward" size={20} />
         </span>
         {from && <span className="guide-video-from">{from}</span>}
       </span>

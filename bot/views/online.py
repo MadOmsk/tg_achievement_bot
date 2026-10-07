@@ -8,10 +8,10 @@ can build the same text.
 
 from __future__ import annotations
 
-from bot.constants import Platform, PresenceState
+from bot.constants import PresenceState
 from bot.db.repo import ChatPresenceRow
 from bot.i18n import translator
-from bot.services.naming import person_name, xbox_nickname
+from bot.services.naming import person_name
 from bot.services.platform_format import device_label
 from bot.views.lists import Listing
 from bot.views.parts import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
@@ -54,38 +54,17 @@ def presence_display_name(row: ChatPresenceRow) -> str:
 
 
 def _row_name(row: ChatPresenceRow) -> str:
-    """**Online**: the nickname of the platform they are on right now
-    (#51, user decision) — the row answers "where is this person", and the
-    nickname belongs to that answer, matching the platform-coloured icon
-    beside it.
-
-    **Offline, or no data at all**: the person chain, like every other
-    screen (2026-09-12, user request). The platform nickname earns its place
-    by saying something the icon does not; once the row reads "offline"
-    there is no "where" left for it to answer, and showing a stale
-    last-active platform's nickname just makes the same person look
-    different here than in the summary right above it.
+    """The person by their nickname in the app (owner, 2026-10-07), online or
+    not — the platform is the coloured mark beside it, and the person is called
+    one name everywhere. (It used to be the platform's own nickname while
+    online, #51.)
 
     No "@" here or anywhere else — this table auto-refreshes every few
     minutes, and a live mention would ping that person's Telegram client on
     every single refresh (Follow-up 2026-09-08, reverting an earlier attempt
     that did exactly that).
     """
-    if row.state == PresenceState.ONLINE:
-        if row.platform == Platform.XBOX_MODERN and (row.gamertag_modern or row.gamertag):
-            return xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag)
-        if row.platform == Platform.STEAM and row.steam_display_name:
-            return row.steam_display_name
-        if row.platform == Platform.PSN and row.psn_display_name:
-            return row.psn_display_name
-    return person_name(
-        tg_id=row.tg_id,
-        handle=row.handle,
-        username=row.username,
-        xbox=xbox_nickname(gamertag_modern=row.gamertag_modern, gamertag=row.gamertag),
-        steam=row.steam_display_name,
-        psn=row.psn_display_name,
-    )
+    return person_name(person_id=row.person_id, handle=row.handle)
 
 
 def render_online_table(rows: list[ChatPresenceRow], updated_label: str, locale: str) -> str:

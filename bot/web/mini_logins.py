@@ -45,7 +45,7 @@ from aiohttp import web
 from bot.config import Settings
 from bot.db.repo import LoginTaken, Repo, User
 from bot.i18n import normalize_locale
-from bot.services import email_login
+from bot.services import email_login, invites
 from bot.services.admin_settings import (
     DEFAULT_EMAIL_CHECKS_PER_CLIENT,
     DEFAULT_EMAIL_SENDS_PER_CLIENT,
@@ -241,9 +241,27 @@ def register(app: web.Application, require_user: RequireUser) -> None:
     }
 
     async def sign_in_start(request: web.Request) -> web.Response:
+        repo: Repo = request.app["mini_repo"]
         body = await _body(request)
         locale = normalize_locale(str(body.get("locale") or "ru"))
-        return await _send(request, email_login.SIGN_IN, str(body.get("email", "")), locale)
+        raw = str(body.get("email", ""))
+        try:
+            address = email_login.normalize_email(raw)
+        except EmailInvalid:
+            address = None
+        mail_ready = request.app.get("mini_email_login") is not None
+        if mail_ready and address is not None and await repo.person_by_email(address) is None:
+            # An address nobody has is a sign-up: its invite is checked before
+            # any mail goes out (owner, 2026-10-07), so a stranger costs the
+            # mail service nothing. This tells a known address from an unknown
+            # one — the owner's choice over a code mailed to somebody who
+            # could never use it.
+            code = invites.normalize(body.get("invite"))
+            if code is None:
+                return _error("invite_required", 403)
+            if not await repo.invite_usable(code):
+                return _error("invite_invalid", 400)
+        return await _send(request, email_login.SIGN_IN, raw, locale)
 
     async def sign_in_verify(request: web.Request) -> web.Response:
         repo: Repo = request.app["mini_repo"]

@@ -69,6 +69,8 @@ export type AdminUserCard = {
   tg_id: number | null;
   email: string | null;
   name: string;
+  /** Every way in, linked or not, labelled by the server (services/logins.py). */
+  logins: Array<{ kind: string; label: string; linked: boolean; value: string | null }>;
   username: string | null;
   first_name: string | null;
   last_name: string | null;

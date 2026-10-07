@@ -38,19 +38,17 @@ export function AdminUserDetail({
         onBack={onBack}
       />
       {user == null ? (
-        <SettingsSkel groups={[4, 2, 2]} />
+        <SettingsSkel groups={[2, 4, 2, 2]} />
       ) : (
         <>
+          <Group title={t(locale, "adminLoginsGroup")}>
+            {user.logins.map((login) => (
+              <InfoRow key={login.kind} label={login.label} value={login.value ?? "—"} />
+            ))}
+          </Group>
+
           <Group title={t(locale, "groupInfo")}>
-            <InfoRow
-              label="Telegram"
-              value={
-                // An email-only person has no Telegram id: the address instead.
-                user.tg_id != null
-                  ? `${user.username ? `${user.username} · ` : ""}id${user.tg_id}`
-                  : (user.email ?? "—")
-              }
-            />
+            <InfoRow label="ID" value={String(user.person_id)} />
             {linked.map((p) => (
               <InfoRow
                 key={p}

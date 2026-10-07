@@ -71,9 +71,14 @@ def register(app: web.Application) -> None:
             except Exception:
                 log.warning("could not read the bot's username for the sign-in screen")
             request.app["mini_bot_username"] = username
+        settings: Settings = request.app["mini_settings"]
+        # The bot's id is public (the part of its token before the colon):
+        # Telegram's own sign-in page takes it, for a sign-in in the same tab.
+        bot_id = settings.bot_token.get_secret_value().split(":", 1)[0]
         return web.json_response(
             {
                 "bot_username": username,
+                "bot_id": int(bot_id) if bot_id.isdigit() else None,
                 # Whether a mail server is set up (#162): without one the
                 # sign-in screen offers Telegram only.
                 "email": request.app.get("mini_email_login") is not None,

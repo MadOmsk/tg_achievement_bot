@@ -147,7 +147,13 @@ export function PersonSheet({
 
   return (
     <>
-      <Sheet onClose={onClose} mid head={head} aside={follow}>
+      <Sheet
+        onClose={onClose}
+        mid
+        head={head}
+        // Whether one follows them is not known until the card loads.
+        aside={loading && !self ? <span className="skel line ps-skel-follow" aria-hidden /> : follow}
+      >
         <div className="person-sheet">
           {loading ? (
             // The card opens at its loaded height and shape; nothing jumps when it fills.
@@ -158,14 +164,35 @@ export function PersonSheet({
                   <span className="skel ps-skel-tile" />
                 </div>
               )}
+              {/* One account, open — most people have one platform — in the
+                  account row's own classes. */}
               <div className="ps-section" aria-hidden>
                 <span className="skel ps-skel-label" />
-                {[0].map((i) => (
-                  <div key={i} className="ps-row">
-                    <span className="skel ps-skel-icon" />
-                    <span className="skel ps-skel-text" />
+                <div className="ps-account is-open">
+                  <div className="ps-row">
+                    <span className="ps-mark">
+                      <span className="skel ps-skel-mark" />
+                    </span>
+                    <span className="ps-row-main">
+                      <span className="skel line ps-skel-name-line" />
+                    </span>
+                    <span className="skel line ps-skel-value" />
                   </div>
-                ))}
+                  <div className="ps-details">
+                    <dl className="ps-facts">
+                      {[46, 30, 54, 34, 38, 62].map((width, i) => (
+                        <div key={i} className="ps-fact">
+                          <dt>
+                            <span className="skel line ps-skel-fact" style={{ width: `${width}%` }} />
+                          </dt>
+                          <dd>
+                            <span className="skel line ps-skel-fact" style={{ width: 44 }} />
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                </div>
               </div>
               <div className="ps-section" aria-hidden>
                 <span className="skel ps-skel-label" />

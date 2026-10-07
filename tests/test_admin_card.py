@@ -43,46 +43,48 @@ def _achievement(title_id: str, platform: str, **overrides: object) -> Achieveme
     return AchievementRow(**base)  # type: ignore[arg-type]
 
 
-async def test_header_shows_nickname_username_and_tg_id_not_the_real_name(repo: Repo) -> None:
-    """Unlike /stats' header (one best name), the admin card shows
-    everything at once: nickname, username, and tg_id together. The real
-    Telegram name is not shown (#157)."""
-    await repo.ensure_user(7, "igorp", "Igor", "Petrov")
+def _logins(text: str) -> list[str]:
+    lines = text.split("\n")
+    start = lines.index("Способы входа:") + 1
+    return lines[start : start + 2]
+
+
+async def test_header_is_the_person_and_their_id_then_every_login(repo: Repo) -> None:
+    """The card names the person (chain 1) with their id, then lists every
+    way they sign in (owner, 2026-10-07). The real Telegram name is never
+    shown (#157)."""
+    person = await repo.ensure_user(7, "igorp", "Igor", "Petrov")
     await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
 
     text, _markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
 
-    header = text.split("\n")[0]
-    assert "igorp" in header.replace("@igorp", "")  # the nickname made from the username
-    assert "Petrov" not in header
-    assert "@igorp" in header
-    assert "tg_id 7" in header
+    assert text.split("\n")[0] == f"👤 igorp · id {person}"
+    assert "Petrov" not in text
+    assert _logins(text) == ["  Telegram: @igorp, id 7", "  Почта: — нет"]
 
 
-async def test_header_tgid_is_never_at_prefixed(repo: Repo) -> None:
-    """A bare tg_id is not a real, resolvable username — only a genuine
+async def test_a_telegram_id_is_never_at_prefixed(repo: Repo) -> None:
+    """A bare Telegram id is not a real, resolvable username — only a genuine
     `user.username` earns the "@" (2026-09-08 user request)."""
     await repo.ensure_user(7, None, None, None)
     await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
 
     text, _markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
 
-    header = text.split("\n")[0]
-    assert "tg_id 7" in header
-    assert "@7" not in header
+    assert _logins(text)[0] == "  Telegram: id 7"
+    assert "@7" not in text
 
 
-async def test_header_tgid_has_no_thousands_separators(repo: Repo) -> None:
+async def test_a_telegram_id_has_no_thousands_separators(repo: Repo) -> None:
     """An identifier is not a quantity. Fluent formats a number for the
-    locale, so a real id came out as "tg_id 127 383 366" — unsearchable, and
-    wrong about what the value is (found 2026-09-13 by capturing the real
-    screens). It is passed as a string now."""
+    locale, so a real id came out as "127 383 366" — unsearchable, and wrong
+    about what the value is (found 2026-09-13). It is passed as a string."""
     await repo.ensure_user(127383366, "whalerider84", None, None)
     await repo.link_xbox_account(await repo.person_id(127383366), XUID, "GamerTag", 0)
 
     text, _markup = await render_user_card(repo, await repo.person_id(127383366), locale="ru")
 
-    assert "tg_id 127383366" in text.splitlines()[0]
+    assert "id 127383366" in _logins(text)[0]
 
 
 async def test_xbox_block_shows_id_count_today_and_gamerscore(repo: Repo) -> None:

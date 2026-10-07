@@ -27,7 +27,7 @@ from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
 from bot.services.merge import PeopleMerge
-from bot.services.naming import xbox_nickname
+from bot.services.naming import person_name_of, xbox_nickname
 from bot.services.notify import SuperadminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
@@ -531,8 +531,8 @@ async def _link_telegram(
     await message.answer(
         i18n.get(
             "connect-link-merge-confirm",
-            current=(current.handle if current else None) or "—",
-            other=target.handle or "—",
+            current=person_name_of(current) if current else "—",
+            other=person_name_of(target),
         ),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[

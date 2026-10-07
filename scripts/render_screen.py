@@ -323,7 +323,8 @@ async def _admin_users(ctx: Context) -> Screen:
 
 @screen("admin-user-card")
 async def _admin_user_card(ctx: Context) -> Screen:
-    return Screen(*await render_user_card(ctx.repo, ctx.tg_id, locale=ctx.locale))
+    person = await ctx.repo.person_id(ctx.tg_id)
+    return Screen(*await render_user_card(ctx.repo, person, locale=ctx.locale))
 
 
 @screen("admin-chats")

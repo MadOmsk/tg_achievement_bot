@@ -19,7 +19,7 @@ from bot.db.repo._models import (
     _as_user,
     _as_user_settings,
 )
-from bot.db.repo._sql import PERSON_BY_TG, XBOX_ACCOUNT, XBOX_COLUMNS
+from bot.db.repo._sql import HANDLE_SHOWN, PERSON_BY_TG, XBOX_ACCOUNT, XBOX_COLUMNS
 from bot.i18n import DEFAULT_LOCALE
 from bot.services.handles import FALLBACK_HANDLE, from_text
 from bot.util import utcnow, utcnow_iso
@@ -567,7 +567,16 @@ class _AccountsRepo:
     # used to sit beside it are an `accounts` row reached through the active
     # link, and are aliased back to their old names so every caller of
     # `User` keeps reading `user.xuid` / `user.gamertag` unchanged.
-    _USER_COLUMNS = "SELECT u.*, " + XBOX_COLUMNS + "FROM users u " + XBOX_ACCOUNT
+    # `handle_shown` is the nickname with its digits (#157): what a person is
+    # called everywhere — `u.handle` alone dropped them in posts and /stats.
+    _USER_COLUMNS = (
+        "SELECT u.*, "
+        + HANDLE_SHOWN.replace(" AS handle", " AS handle_shown")
+        + ", "
+        + XBOX_COLUMNS
+        + "FROM users u "
+        + XBOX_ACCOUNT
+    )
 
     async def get_user(self, person_id: int) -> User | None:
         cursor = await self._conn.execute(self._USER_COLUMNS + "WHERE u.id = ?", (person_id,))

@@ -1,0 +1,7 @@
+• Hotfixes after 1.8.0
+• Telegram sign-in on phones no longer lands back on the sign-in screen
+• Your nickname in the app everywhere: chat posts, digests, /online, the ranking
+• The back button no longer leaves the app
+• A new icon: a platinum "U" — an open shackle
+• Home opens at once — the phone remembers it from last time
+• Somebody new gives their invite before the email; everybody else signs in as before

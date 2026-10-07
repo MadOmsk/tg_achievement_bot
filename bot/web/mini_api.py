@@ -947,7 +947,7 @@ async def _may_see_activity(repo: Repo, viewer: int | None, target: int) -> bool
 
 
 async def _public_name(repo: Repo, target: User) -> str:
-    return person_name_of(target, await repo.platform_links_of(target.id))
+    return person_name_of(target)
 
 
 async def _require_chat_member(request: web.Request) -> tuple[MiniAppUser, int, Repo]:
