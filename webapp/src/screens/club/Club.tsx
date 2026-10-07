@@ -13,7 +13,7 @@ import {
 } from "../../api";
 import { t, type Locale } from "../../i18n";
 import { FeedPosts, HiddenProfile, PersonProfile, PlayedGames, RecentPosts } from "../person";
-import { AccountBar, Avatar, EmptyState, MonthChipSkel, FeedSkel, FriendsSkel, HomeBodySkel, HomeSkel, PersonSkel, RowsSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, EmptyState, MonthChipSkel, FeedSkel, FriendsSkel, HomeBodySkel, HomeSkel, PersonSkel, PlayedGamesSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -80,6 +80,7 @@ export function Club({
   const [online, setOnline] = useState<OnlineMember[]>([]);
   const [day, setDay] = useState<SummaryMember[]>([]);
   const [monthBoard, setMonthBoard] = useState<SummaryMember[]>([]);
+  const [yearBoard, setYearBoard] = useState<{ year: number; rows: SummaryMember[] } | null>(null);
   const [games, setGames] = useState<SummaryGame[]>([]);
   const [monthLabel, setMonthLabel] = useState("");
   const [person, setPerson] = useState<PersonPayload | null>(null);
@@ -157,6 +158,7 @@ export function Club({
       if (s.status === "fulfilled") {
         setDay(s.value.day);
         setMonthBoard(s.value.month);
+        setYearBoard(s.value.year_key ? { year: s.value.year_key, rows: s.value.year ?? [] } : null);
         setGames(s.value.games);
         setMonthLabel(s.value.month_label);
       }
@@ -351,6 +353,8 @@ export function Club({
         if (s.status === "fulfilled") {
           setDay(s.value.day);
           setMonthBoard(s.value.month);
+          setYearBoard(s.value.year_key ? { year: s.value.year_key, rows: s.value.year ?? [] } : null);
+        setYearBoard(s.value.year_key ? { year: s.value.year_key, rows: s.value.year ?? [] } : null);
           setGames(s.value.games);
           setMonthLabel(s.value.month_label);
         }
@@ -654,7 +658,7 @@ export function Club({
                         </button>
                       )}
                     </div>
-                    {monthBusy && <RowsSkel count={3} />}
+                    {monthBusy && <PlayedGamesSkel />}
                     {!monthBusy && mine.length > 0 && (
                       <PlayedGames items={mine} locale={locale} sort={gameSort} />
                     )}
@@ -729,6 +733,7 @@ export function Club({
               locale={locale}
               day={day}
               month={monthBoard}
+              year={yearBoard}
               games={games}
               monthLabel={monthLabel}
               feed={statsFeed}

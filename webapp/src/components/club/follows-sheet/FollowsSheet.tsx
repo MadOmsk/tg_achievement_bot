@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { peopleApi, type PersonRow, type Relation } from "../../../api/people/peopleApi";
 import { t, type Locale, type TranslationKey } from "../../../i18n";
-import { Avatar, Dropdown, DropdownArrow, EmptyState, Sheet } from "../../shared/lib";
+import { Avatar, Dropdown, DropdownArrow, EmptyState, SearchBar, Sheet } from "../../shared/lib";
 import { FollowButton } from "../../people/follow-button/FollowButton";
 import { FriendMark } from "../../people/friend-mark/FriendMark";
 import "./FollowsSheet.css";
@@ -74,7 +74,10 @@ export function FollowsSheet({
   const theirs = owner != null;
   // Every list at once, so each count is known before switching to it.
   const [lists, setLists] = useState<Record<Kind, PersonRow[]> | null>(null);
-  const rows = lists ? lists[kind] : null;
+  const [query, setQuery] = useState("");
+  const all = lists ? lists[kind] : null;
+  const needle = query.trim().toLowerCase();
+  const rows = all && needle ? all.filter((row) => row.handle.toLowerCase().includes(needle)) : all;
   // The friend marks show friends of either: the owner's of these lists, and the viewer's.
   const [ownerFriends, setOwnerFriends] = useState<Set<number>>(new Set());
 
@@ -174,31 +177,39 @@ export function FollowsSheet({
   };
 
   return (
-    <Sheet onClose={onClose} mid>
+    <Sheet
+      onClose={onClose}
+      mid
+      title={t(locale, "people")}
+      aside={
+        // Which list, picked at the head's right with how many in each (owner, 2026-10-07).
+        <Dropdown
+          className="dd-trigger follows-switch"
+          value={kind}
+          options={(theirs
+            ? (["following", "friends", "followers"] as Kind[])
+            : (["following", "friends", "followers", "blocked"] as Kind[])
+          ).map((value) => ({
+            value,
+            label: t(locale, TITLE[value]),
+            hint: lists ? String(lists[value].length) : undefined,
+          }))}
+          onChange={(next) => {
+            setKind(next);
+            setQuery("");
+          }}
+          trigger={
+            <>
+              {t(locale, TITLE[kind])}
+              <DropdownArrow />
+            </>
+          }
+        />
+      }
+    >
       <div className="sheet-content score-sheet picker-sheet follows-sheet">
-        <h2 className="follows-head">
-          <Dropdown
-            className="dd-trigger follows-switch"
-            align="start"
-            value={kind}
-            options={(theirs
-              ? (["following", "friends", "followers"] as Kind[])
-              : (["following", "friends", "followers", "blocked"] as Kind[])
-            ).map((value) => ({
-              value,
-              label: t(locale, TITLE[value]),
-              hint: lists ? String(lists[value].length) : undefined,
-            }))}
-            onChange={setKind}
-            trigger={
-              <>
-                {t(locale, TITLE[kind])}
-                {rows && <span className="follows-count">{rows.length}</span>}
-                <DropdownArrow />
-              </>
-            }
-          />
-        </h2>
+        {/* Searches the list shown, by nickname. */}
+        <SearchBar locale={locale} value={query} onChange={setQuery} placeholder={t(locale, "searchPeople")} />
         {rows === null ? (
           <div className="picker-list" aria-busy="true">
             {[0, 1, 2].map((i) => (
@@ -208,6 +219,8 @@ export function FollowsSheet({
               </div>
             ))}
           </div>
+        ) : rows.length === 0 && needle ? (
+          <p className="empty">{t(locale, "noResults")}</p>
         ) : rows.length === 0 ? (
           <EmptyState
             title={t(locale, theirs ? THEIR_EMPTY[kind] : EMPTY_TITLE[kind])}

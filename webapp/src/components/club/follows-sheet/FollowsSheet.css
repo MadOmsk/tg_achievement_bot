@@ -93,3 +93,17 @@
 .follows-sheet .empty-state.is-slide {
   margin-bottom: 8px;
 }
+
+/* The search under the page's head, a little apart from it and from the list. */
+.follows-sheet > :first-child {
+  margin: 0 0 8px;
+}
+
+/* In the page's head: a pick, as the head's month is. */
+.page-head .dd-trigger.follows-switch {
+  gap: 4px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0;
+}

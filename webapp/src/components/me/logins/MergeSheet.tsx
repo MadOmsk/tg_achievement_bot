@@ -108,9 +108,8 @@ export function MergeSheet({
   const psnOk = !conflicts.psn || (psnPicked.size > 0 && psnPicked.size <= conflicts.psn.max);
 
   return (
-    <Sheet tall onClose={onClose}>
+    <Sheet tall onClose={onClose} title={t(locale, "mergeTitle")}>
       <div className="sheet-content merge-sheet">
-        <h2>{t(locale, "mergeTitle")}</h2>
         <p className="merge-text">{t(locale, "mergeText")}</p>
         <div className="merge-sides">
           <SideCard side={preview.keep} title={t(locale, "mergeThis")} locale={locale} />

@@ -29,6 +29,7 @@ export function Icon({
     | "bell"
     | "send"
     | "play"
+    | "read-all"
     | "video"
     | "sliders"
     | "chat"
@@ -73,6 +74,14 @@ export function Icon({
       <svg {...props}>
         <rect x="3" y="5.5" width="18" height="13" rx="3.5" />
         <path d="M10.2 9.4v5.2l4.4-2.6z" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (name === "read-all") {
+    return (
+      <svg {...props}>
+        <path d="M2.5 12.5l4.2 4.2L15 8.4" />
+        <path d="M11.4 15.6l1.1 1.1 8.9-8.9" />
       </svg>
     );
   }

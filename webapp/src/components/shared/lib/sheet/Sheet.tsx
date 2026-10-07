@@ -2,11 +2,21 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CoverImg } from "../cover-img/CoverImg";
 import { useBackHandler } from "../back-stack/backStack";
+import { Icon } from "../icon/Icon";
+import { t } from "../../../../i18n";
 import "./Sheet.css";
 
+/** What used to rise from the bottom as a drawer is a page of its own (owner,
+ * 2026-10-07): over everything, its own scroll, the app's background, and a
+ * head with the way back — the arrow, and the phone's back. A page names
+ * itself by `title` (with `aside` at the head's right), or keeps the heading
+ * of its own content. */
 export function Sheet({
   children,
   onClose,
+  title,
+  head,
+  aside,
   photo,
   tall,
   mid,
@@ -14,6 +24,10 @@ export function Sheet({
 }: {
   children: ReactNode;
   onClose: () => void;
+  title?: string;
+  /** In place of a title: whatever names the page (a person's face and name). */
+  head?: ReactNode;
+  aside?: ReactNode;
   photo?: boolean;
   tall?: boolean;
   mid?: boolean;
@@ -21,82 +35,67 @@ export function Sheet({
 }) {
   const [leaving, setLeaving] = useState(false);
   const closed = useRef(false);
-  const armed = useRef(false);
   const finish = () => {
     if (closed.current) return;
     closed.current = true;
     onClose();
   };
   const close = () => setLeaving(true);
-  // The phone's "back" closes the sheet, as a tap outside it does.
+  const backLabel = t(document.documentElement.lang === "en" ? "en" : "ru", "back");
   useBackHandler(true, close);
-  useEffect(() => {
-    armed.current = false;
-    const id = window.setTimeout(() => {
-      armed.current = true;
-    }, 400);
-    return () => window.clearTimeout(id);
-  }, []);
   useEffect(() => {
     const html = document.documentElement;
     const y = window.scrollY;
     html.classList.add("is-sheet-open");
     window.Telegram?.WebApp?.expand?.();
-    const freeze = () => {
-      if (window.scrollY !== y) window.scrollTo(0, y);
-    };
-    const block = (event: TouchEvent) => {
-      const node = event.target;
-      if (!(node instanceof Element)) return;
-      // The game page is a scroll layer of its own; when it is opened over a
-      // sheet (a game tapped inside a drawer) it must still scroll.
-      if (node.closest(".sheet-body, .game-page, .dd-menu")) return;
-      event.preventDefault();
-    };
-    window.addEventListener("scroll", freeze, { passive: true });
-    document.addEventListener("touchmove", block, { passive: false });
     return () => {
       html.classList.remove("is-sheet-open");
-      window.removeEventListener("scroll", freeze);
-      document.removeEventListener("touchmove", block);
       window.scrollTo(0, y);
     };
   }, []);
   useEffect(() => {
     if (!leaving) return;
-    const id = window.setTimeout(finish, 340);
+    const id = window.setTimeout(finish, 260);
     return () => window.clearTimeout(id);
   }, [leaving]);
   return createPortal(
     <div
-      className={["sheet", compact ? "is-compact" : "", leaving ? "is-leave" : ""]
-        .filter(Boolean)
-        .join(" ")}
-      onClick={() => {
-        if (!armed.current) return;
-        close();
-      }}
-      onAnimationEnd={(e) => {
-        if (leaving && e.target === e.currentTarget) finish();
-      }}
-      role="presentation"
+      className={["sheet-page", leaving ? "is-leave" : ""].filter(Boolean).join(" ")}
+      role="dialog"
+      data-no-pull
     >
-      <div className="sheet-stack">
-        <div
-          className={[
-            "sheet-body glass",
-            photo ? "is-photo" : "",
-            tall ? "is-tall" : "",
-            mid ? "is-mid" : "",
-            compact ? "is-compact" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-        >
-          {children}
-        </div>
+      {head ? (
+        // Somebody's page: the same bar a profile and Home have.
+        <header className="account-bar person-bar">
+          <div className="account-top">
+            <button type="button" className="person-back" onClick={close} aria-label={backLabel}>
+              <Icon name="back" size={26} />
+            </button>
+            {head}
+            {aside}
+          </div>
+        </header>
+      ) : (
+        <header className="page-head">
+          <button type="button" className="icon-btn" onClick={close} aria-label={backLabel}>
+            <Icon name="back" size={26} />
+          </button>
+          {title && <h1>{title}</h1>}
+          {aside && <span className="page-head-aside">{aside}</span>}
+        </header>
+      )}
+      <div
+        className={[
+          "sheet-body",
+          photo ? "is-photo" : "",
+          tall ? "is-tall" : "",
+          mid ? "is-mid" : "",
+          compact ? "is-compact" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {children}
       </div>
     </div>,
     document.body,

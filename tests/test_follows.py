@@ -303,6 +303,11 @@ async def test_the_following_scope_feeds_and_ranks_only_followed_people(
             await client.get("/api/mini/club/summary?scope=following", headers=headers)
         ).json()
         assert len(summary["month"]) == 2
+        # The year of the month shown, its board the same people's.
+        assert summary["year_key"] == int(summary["month_key"][:4])
+        assert sorted(row["person_id"] for row in summary["year"]) == sorted(
+            row["person_id"] for row in summary["month"]
+        )
         assert stranger  # followed by nobody, so absent from both
 
         # A followed person who hides their activity drops out.

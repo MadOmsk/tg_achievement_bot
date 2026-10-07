@@ -346,6 +346,8 @@ export function App() {
 
   const { me } = state;
   const locale = localeOf(me);
+  // Read by what renders outside the tree (a page's back arrow): the page's language.
+  document.documentElement.lang = locale;
   const data = initData();
 
   const run = async (fn: () => Promise<void>) => {

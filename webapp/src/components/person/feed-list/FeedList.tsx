@@ -44,15 +44,7 @@ export function FeedList({
           className="feed-day"
           ref={jump.register(group.key)}
         >
-          {group.label && (
-            <button
-              type="button"
-              className="feed-day-label"
-              onClick={() => jump.open(group.items[0].unlocked_at)}
-            >
-              {group.label}
-            </button>
-          )}
+          {group.label && jump.label(group.key, group.label)}
           {group.items.map((row) => {
             const key = feedKey(row);
             const secret = veiled(row, key, revealed, showSecrets);
@@ -68,12 +60,8 @@ export function FeedList({
           })}
         </section>
       ))}
-      {jump.picker}
       {item && (
-        <Sheet
-          mid
-          onClose={() => setItem(null)}
-        >
+        <Sheet mid onClose={() => setItem(null)} title={item.game ?? undefined}>
           <div className="sheet-unlock">
             <UnlockCard
               item={item}

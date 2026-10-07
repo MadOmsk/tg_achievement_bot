@@ -103,19 +103,28 @@ function GamesSkel() {
       <div className="section-head achievements-head" style={{ minHeight: 22 }}>
         <span className="skel line" style={{ width: 70, height: 18 }} />
       </div>
-      <div className="played-games">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="played-game skel-played-game">
-            <span className="skel skel-game-cover" />
-            <span className="played-game-body skel-copy">
-              <span className="skel line" style={{ width: `${62 - i * 9}%` }} />
-              <span className="skel line" style={{ height: 6 }} />
-              <span className="skel line is-thin" style={{ width: 70 }} />
-            </span>
-          </div>
-        ))}
-      </div>
+      <PlayedGamesSkel />
     </>
+  );
+}
+
+/** The played-games rows alone: a cover, the name, the progress bar, the count. */
+export function PlayedGamesSkel({ count = 3 }: { count?: number }) {
+  return (
+    <div className="played-games" aria-busy="true">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="played-game skel-played-game">
+          <span className="skel skel-game-cover" />
+          <span className="played-game-body skel-copy">
+            {/* Each bar centred in the box of the line it stands for: the
+                name (22px), the progress bar (6px), the date (17px). */}
+            <span className="skel line" style={{ width: `${62 - (i % 3) * 9}%`, height: 14, margin: "4px 0" }} />
+            <span className="skel line" style={{ height: 6, margin: 0 }} />
+            <span className="skel line" style={{ width: 70, height: 11, margin: "3px 0" }} />
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 

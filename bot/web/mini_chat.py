@@ -208,6 +208,13 @@ async def build_summary_payload(
     month_rows = await repo.chat_member_stats(
         chat_id, since, threshold, until=until, members=members
     )
+    # The year of the month shown, from its first day in the same timezone up
+    # to that month's end (owner, 2026-10-07).
+    year = int(key[:4])
+    year_since, _ = month_window_utc(year, 1, tz)
+    year_rows = await repo.chat_member_stats(
+        chat_id, year_since, threshold, until=until, members=members
+    )
     if members is None:
         subscribers = await repo.chat_subscribers(chat_id)
         people = [s.person_id for s in subscribers]
@@ -240,6 +247,8 @@ async def build_summary_payload(
         "month_label": label,
         "day": [_stat_json(row) for row in day_rows],
         "month": [_stat_json(row) for row in month_rows],
+        "year": [_stat_json(row) for row in year_rows],
+        "year_key": year,
         "games": [
             {
                 "title_id": g.title_id,

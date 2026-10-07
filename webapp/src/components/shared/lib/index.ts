@@ -14,7 +14,6 @@ export * from "./pull-to-refresh";
 export * from "./fit-img";
 export * from "./rows";
 export * from "./game-open";
-export * from "./day-picker";
 export * from "./img-fade";
 export * from "./tier-medals";
 export * from "./empty-state";

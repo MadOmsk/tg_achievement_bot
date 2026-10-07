@@ -82,16 +82,25 @@ export function NotificationsBell({
         {count > 0 && <span className="bell-count">{count > 9 ? "9+" : count}</span>}
       </button>
       {open && (
-        <Sheet mid onClose={() => setOpen(false)}>
+        <Sheet
+          mid
+          onClose={() => setOpen(false)}
+          title={t(locale, "notificationsTitle")}
+          aside={
+            count > 0 && (
+              <button
+                type="button"
+                className="icon-btn notices-read-all"
+                onClick={() => markRead()}
+                aria-label={t(locale, "notificationsReadAll")}
+                title={t(locale, "notificationsReadAll")}
+              >
+                <Icon name="read-all" size={24} />
+              </button>
+            )
+          }
+        >
           <div className="sheet-content notices-sheet">
-            <div className="notices-head">
-              <h2>{t(locale, "notificationsTitle")}</h2>
-              {count > 0 && (
-                <button type="button" className="see-all" onClick={() => markRead()}>
-                  {t(locale, "notificationsReadAll")}
-                </button>
-              )}
-            </div>
             {items === null ? (
               <div className="notices-list" aria-busy>
                 {[0, 1, 2].map((n) => (

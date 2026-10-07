@@ -54,8 +54,9 @@ export function PersonSheet({
   self?: boolean;
 }) {
   const [follows, setFollows] = useState<"following" | "followers" | null>(null);
-  // One account's table open at a time, as with a game's updates.
-  const [openAccount, setOpenAccount] = useState<string | null>(null);
+  // One account's table open at a time, as with a game's updates; the first
+  // is open until one is picked (owner, 2026-10-07).
+  const [openAccount, setOpenAccount] = useState<string | null | undefined>(undefined);
   const [profile, setProfile] = useState<PersonProfile | null>(null);
   const [own, setOwn] = useState<Relation | null>(person.relation ?? null);
   const openGame = useOpenGame();
@@ -82,6 +83,12 @@ export function PersonSheet({
   };
 
   const activity = profile?.activity ?? null;
+  const shownAccount =
+    openAccount === undefined
+      ? activity?.platforms.length === 1
+        ? activity.platforms[0].platform
+        : null
+      : openAccount;
   const presence = activity?.presence ?? null;
   const online = Boolean(presence && (presence.playing || presence.state === "Online"));
   const status = presence?.playing
@@ -98,186 +105,179 @@ export function PersonSheet({
 
   const toProfile = personId != null && onOpenProfile ? () => onOpenProfile(personId) : undefined;
 
-  // The lists take the card's place; closing them brings the card back as it was.
-  if (follows && personId != null) {
-    return (
-      <FollowsSheet
+  // The page's head is the person (owner, 2026-10-07): face, nickname and
+  // where they are on the left, the follow control on the right.
+  const head = (
+    <button type="button" className="account-who" onClick={toProfile} disabled={!toProfile}>
+      <FriendMark friend={relation.friends && !self} label={t(locale, "friends")}>
+        <Avatar
+          name={handle}
+          personId={personId ?? undefined}
+          online={online}
+          playing={Boolean(presence?.playing)}
+          platform={presence?.platform}
+          size={48}
+        />
+      </FriendMark>
+      <span className="person-bar-title">
+        <span className="account-name-row">
+          <strong>
+            <HandleName text={handle} />
+          </strong>
+        </span>
+        {loading ? (
+          <span className="skel ps-skel-line" aria-hidden />
+        ) : (
+          (status || tie) && <small>{[tie, status].filter(Boolean).join(" · ")}</small>
+        )}
+      </span>
+    </button>
+  );
+  const follow =
+    personId != null && !self ? (
+      <FollowButton
         locale={locale}
         data={data}
-        owner={personId}
-        initial={follows}
-        onClose={() => setFollows(null)}
-        onOpen={(id) => onOpenProfile?.(id)}
-        onFind={() => undefined}
+        personId={personId}
+        relation={relation}
+        onChange={changed}
         onFlash={onFlash}
       />
-    );
-  }
+    ) : undefined;
 
   return (
-    <Sheet onClose={onClose} mid>
-      <div className="person-sheet">
-        <div className="ps-head">
-          <button type="button" className="ps-avatar" onClick={toProfile} disabled={!toProfile}>
-          <FriendMark friend={relation.friends && !self} label={t(locale, "friends")}>
-            <Avatar
-              name={handle}
-              personId={personId ?? undefined}
-              online={online}
-              playing={Boolean(presence?.playing)}
-              platform={presence?.platform}
-              size={56}
-            />
-          </FriendMark>
-          </button>
-          <div className="ps-head-copy">
-            <h2>
-              {toProfile ? (
-                <button type="button" className="ps-name" onClick={toProfile}>
-                  <HandleName text={handle} />
-                </button>
-              ) : (
-                <HandleName text={handle} />
-              )}
-            </h2>
-            {loading ? (
-              <span className="skel ps-skel-line" aria-hidden />
-            ) : (
-              (status || tie) && (
-                <p className="ps-sub">{[tie, status].filter(Boolean).join(" · ")}</p>
-              )
-            )}
-          </div>
-          {personId != null && !self && (
+    <>
+      <Sheet onClose={onClose} mid head={head} aside={follow}>
+        <div className="person-sheet">
+          {loading ? (
+            // The card opens at its loaded height and shape; nothing jumps when it fills.
             <>
-              <FollowButton
-                locale={locale}
-                data={data}
-                personId={personId}
-                relation={relation}
-                onChange={changed}
-                onFlash={onFlash}
-              />
-            </>
-          )}
-        </div>
-
-        {loading ? (
-          // The card opens at its loaded height and shape; nothing jumps when it fills.
-          <>
-            {!self && (
-              <div className="ps-stats" aria-hidden>
-                <span className="skel ps-skel-tile" />
-                <span className="skel ps-skel-tile" />
-              </div>
-            )}
-            <div className="ps-section" aria-hidden>
-              <span className="skel ps-skel-label" />
-              {[0].map((i) => (
-                <div key={i} className="ps-row">
-                  <span className="skel ps-skel-icon" />
-                  <span className="skel ps-skel-text" />
+              {!self && (
+                <div className="ps-stats" aria-hidden>
+                  <span className="skel ps-skel-tile" />
+                  <span className="skel ps-skel-tile" />
                 </div>
-              ))}
-            </div>
-            <div className="ps-section" aria-hidden>
-              <span className="skel ps-skel-label" />
-              <div className="ps-games">
-                {[0, 1, 2].map((i) => (
-                  <span key={i} className="ps-game">
-                    <span className="skel ps-skel-cover" />
-                    <span className="skel ps-skel-name" />
-                    <span className="skel ps-skel-count" />
-                  </span>
+              )}
+              <div className="ps-section" aria-hidden>
+                <span className="skel ps-skel-label" />
+                {[0].map((i) => (
+                  <div key={i} className="ps-row">
+                    <span className="skel ps-skel-icon" />
+                    <span className="skel ps-skel-text" />
+                  </div>
                 ))}
               </div>
-            </div>
-          </>
-        ) : (
-          <>
-            {!self && (
-              <div className="ps-stats">
-                <button
-                  type="button"
-                  disabled={!profile.can_view}
-                  onClick={() => setFollows("followers")}
-                >
-                  <strong>{profile.followers}</strong>
-                  <span>{t(locale, "followersCount")}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!profile.can_view}
-                  onClick={() => setFollows("following")}
-                >
-                  <strong>{profile.following}</strong>
-                  <span>{t(locale, "followingCount")}</span>
-                </button>
-              </div>
-            )}
-
-            {!profile.can_view && (
-              <EmptyState
-                title={t(locale, "activityHidden")}
-                hint={t(locale, "activityHiddenHint")}
-                icon="lock"
-                slide
-              />
-            )}
-
-            {activity && activity.platforms.length > 0 && (
-              <div className="ps-section">
-                <p className="ps-label">{t(locale, "accounts")}</p>
-                {activity.platforms.map((p) => (
-                  <AccountRow
-                    key={p.platform}
-                    p={p}
-                    locale={locale}
-                    open={openAccount === p.platform}
-                    onToggle={() =>
-                      setOpenAccount((cur) => (cur === p.platform ? null : p.platform))
-                    }
-                  />
-                ))}
-              </div>
-            )}
-
-            {games.length > 0 && (
-              <div className="ps-section">
-                <p className="ps-label">
-                  {t(locale, "personMonthGames")}
-                  <span className="ps-count">{games.length}</span>
-                </p>
+              <div className="ps-section" aria-hidden>
+                <span className="skel ps-skel-label" />
                 <div className="ps-games">
-                  {games.map((game) => (
-                    <button
-                      key={`${game.platform}:${game.title_id}`}
-                      type="button"
-                      className="ps-game"
-                      onClick={() =>
-                        openGame?.({
-                          platform: game.platform,
-                          title_id: game.title_id,
-                          name: game.name,
-                          icon_url: game.cover,
-                          person:
-                            personId != null ? { person_id: personId, name: handle } : null,
-                        })
-                      }
-                    >
-                      <CoverImg src={game.cover} className="ps-game-cover" />
-                      <strong>{game.name}</strong>
-                      <small>+{game.count}</small>
-                    </button>
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} className="ps-game">
+                      <span className="skel ps-skel-cover" />
+                      <span className="skel ps-skel-name" />
+                      <span className="skel ps-skel-count" />
+                    </span>
                   ))}
                 </div>
               </div>
-            )}
-          </>
-        )}
+            </>
+          ) : (
+            <>
+              {!self && (
+                <div className="ps-stats">
+                  <button
+                    type="button"
+                    disabled={!profile.can_view || profile.followers === 0}
+                    onClick={() => setFollows("followers")}
+                  >
+                    <strong>{profile.followers}</strong>
+                    <span>{t(locale, "followersCount")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!profile.can_view || profile.following === 0}
+                    onClick={() => setFollows("following")}
+                  >
+                    <strong>{profile.following}</strong>
+                    <span>{t(locale, "followingCount")}</span>
+                  </button>
+                </div>
+              )}
 
-      </div>
-    </Sheet>
+              {!profile.can_view && (
+                <EmptyState
+                  title={t(locale, "activityHidden")}
+                  hint={t(locale, "activityHiddenHint")}
+                  icon="lock"
+                  slide
+                />
+              )}
+
+              {activity && activity.platforms.length > 0 && (
+                <div className="ps-section">
+                  <p className="ps-label">{t(locale, "accounts")}</p>
+                  {activity.platforms.map((p) => (
+                    <AccountRow
+                      key={p.platform}
+                      p={p}
+                      locale={locale}
+                      open={shownAccount === p.platform}
+                      onToggle={() => setOpenAccount(shownAccount === p.platform ? null : p.platform)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {games.length > 0 && (
+                <div className="ps-section">
+                  <p className="ps-label">
+                    {t(locale, "personMonthGames")}
+                    <span className="ps-count">{games.length}</span>
+                  </p>
+                  <div className="ps-games">
+                    {games.map((game) => (
+                      <button
+                        key={`${game.platform}:${game.title_id}`}
+                        type="button"
+                        className="ps-game"
+                        onClick={() =>
+                          openGame?.({
+                            platform: game.platform,
+                            title_id: game.title_id,
+                            name: game.name,
+                            icon_url: game.cover,
+                            person:
+                              personId != null ? { person_id: personId, name: handle } : null,
+                          })
+                        }
+                      >
+                        <CoverImg src={game.cover} className="ps-game-cover" />
+                        <strong>{game.name}</strong>
+                        <small>+{game.count}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+        </div>
+      </Sheet>
+      {/* Over the card, not in its place: each is a step of its own for the
+          phone's back. */}
+      {follows && personId != null && (
+        <FollowsSheet
+          locale={locale}
+          data={data}
+          owner={personId}
+          initial={follows}
+          onClose={() => setFollows(null)}
+          onOpen={(id) => onOpenProfile?.(id)}
+          onFind={() => undefined}
+          onFlash={onFlash}
+        />
+      )}
+    </>
   );
 }
 
