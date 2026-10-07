@@ -237,6 +237,25 @@ async def test_check_alive_false_for_any_unexpected_failure_not_just_auth() -> N
             raise UnicodeEncodeError("latin-1", "тест", 0, 1, "boom")
 
     assert await check_alive(_BrokenClient()) is False  # type: ignore[arg-type]
+    # Not a network failure: the health check does not excuse it either.
+    assert await check_alive(_BrokenClient(), unreachable_is_alive=True) is False  # type: ignore[arg-type]
+
+
+async def test_an_unreachable_psn_is_not_a_dead_npsso_to_the_health_check() -> None:
+    """A home PC's DNS outage once reported the shared NPSSO dead. Verifying a
+    new NPSSO still says no: it was never checked."""
+    import socket
+
+    class _Offline:
+        def me(self) -> _Offline:
+            return self
+
+        @property
+        def online_id(self) -> str:
+            raise socket.gaierror(11001, "getaddrinfo failed")
+
+    assert await check_alive(_Offline(), unreachable_is_alive=True) is True  # type: ignore[arg-type]
+    assert await check_alive(_Offline()) is False  # type: ignore[arg-type]
 
 
 async def test_resolve_profile_returns_account_id_and_online_id() -> None:

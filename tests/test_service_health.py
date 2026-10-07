@@ -160,7 +160,7 @@ async def test_psn_check_is_skipped_before_the_interval_elapses(
 
     calls = 0
 
-    async def _counting_check_alive(client: object) -> bool:
+    async def _counting_check_alive(client: object, **_kwargs: object) -> bool:
         nonlocal calls
         calls += 1
         return True
