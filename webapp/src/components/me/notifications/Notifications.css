@@ -225,7 +225,39 @@
   color: rgba(226, 232, 244, 0.72);
 }
 
-.notice-skel {
-  height: 52px;
-  border-radius: 14px;
+.notice-row.is-skel {
+  cursor: default;
+}
+
+.skel.notice-skel-day {
+  width: 64px;
+  height: 11px;
+  margin: 2.5px 2px;
+}
+
+.notice-skel-face {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+/* Each bar in the box of the line it stands for: the line (19px), the
+ * detail under it (16px), the time (16px, on the line's height). */
+.skel.notice-skel-line {
+  height: 12px;
+  margin: 3.5px 0;
+}
+
+.skel.notice-skel-detail {
+  height: 10px;
+  margin: 3px 0;
+}
+
+.skel.notice-skel-time {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  width: 52px;
+  height: 10px;
+  margin: 3px 0;
 }

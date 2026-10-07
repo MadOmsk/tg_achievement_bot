@@ -9,10 +9,15 @@ filters, personal stats, an admin panel, daily summaries, HowLongToBeat lookup,
 and a Telegram Mini App.
 
 **The app is called Unlocked** (owner, 2026-10-05): it is no longer only a bot.
-The name and the logo (an "achievement unlocked" toast with a cup,
-`webapp/public/logo.svg`; the PNGs and `apple-touch-icon.png` are rendered from
-it) are what the Mini App, the installed app, pushes, sign-in emails and the
-Xbox sign-in page show. The bots keep their Telegram names until changed in
+The name and the logo (owner, 2026-10-07: the "U" of Unlocked as an open
+shackle, in the platinum medal's colours, its tip glowing like the end of a
+progress arc, on the app's own dark ground with a cool glow above and a lilac one below;
+`webapp/public/logo.svg`, a rounded tile; `logo-192/512.png` are rendered from
+it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
+as a full-bleed square — iOS and Android round it themselves — with the mark
+inside the safe zone; `badge-96.png` is the white U for a push's one-colour
+badge) are what the Mini App,
+the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
 
 This file is the single source of truth for current behavior, invariants, and open
@@ -872,6 +877,14 @@ elsewhere in this file still describe the bot.
   dev tunnel) or the widget refuses to render. A session resolves to the person
   (`repo.session_person`), who may have no Telegram id (`MiniAppUser.tg_id` is then
   None and the Telegram corners — chats, publishing — are empty).
+  **The sign-in screen signs in with Telegram in the same tab** (owner,
+  2026-10-07): «Войти через Telegram» goes to `oauth.telegram.org/auth` (the
+  bot's public id from `/api/mini/auth/config`'s `bot_id`) and comes back with
+  `#tgAuthResult=` — the same signed fields the widget gives, checked the same
+  way; the Login Widget's popup opened as another tab on phones and its answer
+  was lost. The widget stays where no `bot_id` is known, and in Settings →
+  «Вход», where a phone links through the bot instead. Somebody the app already
+  knows — by address or by Telegram — never meets the invite step.
   - **Email** (#162, `services/email_login.py`, `web/mini_logins.py`): `POST
     /api/mini/auth/email/start` sends a six-digit code, `/verify` checks it and opens
     a session — for the person with that address, or a new person without Telegram,
@@ -884,8 +897,13 @@ elsewhere in this file still describe the bot.
     twenty checked in ten minutes, and a hundred sent an hour by the whole app —
     the mail server's reputation is everybody's. All three are the admin's global
     settings (`email_codes_per_client_hour`, `email_checks_per_client_10min`,
-    `email_codes_total_hour`), read on every request. The answer never says whether an
-    address is known. Errors are codes the Mini App words: `invalid`, `too_soon`,
+    `email_codes_total_hour`), read on every request. **An address nobody has
+    brings its invite to `/start`** (owner, 2026-10-07): without a usable one the
+    answer is `invite_required` / `invite_invalid` and no mail goes out — a
+    stranger costs the mail service nothing. So the answer does tell a known
+    address from an unknown one; the owner chose that over mailing codes nobody
+    could use. The sign-in screen asks for the invite at that moment and then
+    sends the code. Errors are codes the Mini App words: `invalid`, `too_soon`,
     `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
     `last_login`, `admin`, `in_telegram`, `not_linked`; a `taken` that a merge can
     answer carries a `merge` preview (`GET|POST|DELETE /api/mini/me/merge`).
@@ -900,7 +918,8 @@ elsewhere in this file still describe the bot.
     from the community's chats. Any member makes codes in Settings → «Пригласить
     друга» (`XXXX-XXXX-XXXX-XXXX`, no look-alike symbols): one code lets one
     person in, never expires, no limit, and who came by it is kept and shown. A
-    sign-in that proved somebody new without a usable code answers
+    sign-in that proved somebody new without a usable code (a Telegram one, or an
+    invite spent between an email's code and its check) answers
     `invite_required` (403) with a `signup` token, kept in memory 15 minutes;
     the app asks for the code and `POST /api/mini/auth/signup` finishes it. A
     shared link (`?invite=`; a code's copy icon puts the code and its link in

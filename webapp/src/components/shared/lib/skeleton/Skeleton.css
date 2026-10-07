@@ -182,16 +182,30 @@
   height: 15px;
 }
 
-.stats-skel-tiles {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 0 0 26px;
+/* A bar inside a real line of text: the line keeps its own height. */
+.skel.line.skel-inline {
+  display: inline-block;
+  height: 0.72em;
+  vertical-align: middle;
 }
 
-.stats-skel-tile {
-  height: 104px;
-  border-radius: 22px;
+/* Bars in the boxes of the table's own lines: the label, the number, the share. */
+.skel.stats-skel-label {
+  width: 58%;
+  height: 9px;
+  margin: 2px 0;
+}
+
+.skel.stats-skel-number {
+  width: 44%;
+  height: 22px;
+  margin: 10px 0 8px;
+}
+
+.skel.stats-skel-share {
+  width: 76%;
+  height: 10px;
+  margin: 3px 0;
 }
 
 .app-skel .skel-title.is-small,
@@ -201,18 +215,6 @@
   margin: 0 0 16px;
 }
 
-.stats-skel-strip {
-  display: flex;
-  gap: 10px;
-}
-
-.stats-skel-cover {
-  display: flex;
-  flex: 0 0 108px;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .stats-skel-art {
   width: 108px;
   height: 108px;
@@ -220,22 +222,9 @@
   border-radius: 16px;
 }
 
-.stats-skel-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--hair);
-}
-
 .skel-avatar.is-row {
   width: 44px;
   height: 44px;
-}
-
-.stats-skel-count {
-  width: 18px;
-  margin-left: auto;
 }
 
 @keyframes sheen {

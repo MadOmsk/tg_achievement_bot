@@ -322,16 +322,42 @@
   margin: 3px 0 9px;
 }
 
-.ps-skel-icon {
-  flex: none;
-  width: 40px;
-  height: 40px;
+.ps-skel-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
 }
 
-.ps-skel-text {
-  flex: 1;
+.skel.ps-skel-name-line {
+  width: 46%;
   height: 14px;
-  max-width: 60%;
+}
+
+.skel.ps-skel-value {
+  flex: none;
+  width: 76px;
+  height: 14px;
+  margin-right: 24px;
+}
+
+.skel.ps-skel-fact {
+  display: block;
+  height: 11px;
+}
+
+.ps-fact dt:has(.ps-skel-fact) {
+  flex: 1;
+}
+
+.ps-fact dd .skel.ps-skel-fact {
+  margin-left: auto;
+}
+
+.skel.ps-skel-follow {
+  flex: none;
+  width: 92px;
+  height: 14px;
+  margin-left: auto;
 }
 
 .ps-skel-cover {

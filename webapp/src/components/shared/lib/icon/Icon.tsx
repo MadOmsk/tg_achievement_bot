@@ -30,6 +30,7 @@ export function Icon({
     | "send"
     | "play"
     | "read-all"
+    | "telegram"
     | "video"
     | "sliders"
     | "chat"
@@ -77,11 +78,21 @@ export function Icon({
       </svg>
     );
   }
+  if (name === "telegram") {
+    return (
+      <svg {...props}>
+        <path d="M21.5 4.5L2.8 11.7c-.9.4-.9 1.6.1 1.9l4.6 1.4 1.8 5.6c.3.8 1.3 1 1.9.4l2.6-2.5 4.9 3.6c.7.5 1.7.1 1.9-.7l3.1-14.6c.2-1-.8-1.8-1.7-1.3z" />
+        <path d="M9.3 15l9-7.3" />
+      </svg>
+    );
+  }
   if (name === "read-all") {
     return (
       <svg {...props}>
-        <path d="M2.5 12.5l4.2 4.2L15 8.4" />
-        <path d="M11.4 15.6l1.1 1.1 8.9-8.9" />
+        {/* The bell with a tick in it: "these are all seen". */}
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        <path d="M9.4 11.4l1.8 1.8 3.4-3.6" />
       </svg>
     );
   }

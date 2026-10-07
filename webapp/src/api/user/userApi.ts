@@ -32,7 +32,7 @@ export class UserApi extends BaseApi {
 
   /** The bot a browser's Telegram Login Widget belongs to (#157), and whether
    * a mail server is set up for email sign-in (#162). */
-  authConfig(): Promise<{ bot_username: string | null; email?: boolean }> {
+  authConfig(): Promise<{ bot_username: string | null; bot_id?: number | null; email?: boolean }> {
     return this.get(WEB_SESSION, "/auth/config");
   }
 
@@ -59,11 +59,13 @@ export class UserApi extends BaseApi {
   }
 
   /** Email sign-in (#162): a code to the address, then the code back. */
+  /** A new address brings its invite: the server checks it before mailing. */
   emailSignInStart(
     email: string,
     locale: string,
+    invite?: string | null,
   ): Promise<{ ok: boolean; resend_after: number; skip_code?: boolean }> {
-    return this.post(WEB_SESSION, "/auth/email/start", { email, locale });
+    return this.post(WEB_SESSION, "/auth/email/start", invite ? { email, locale, invite } : { email, locale });
   }
 
   emailSignInVerify(

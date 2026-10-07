@@ -22,7 +22,7 @@ type TelegramWebApp = {
   };
   initDataUnsafe?: {
     start_param?: string;
-    user?: { photo_url?: string; first_name?: string; username?: string };
+    user?: { id?: number; photo_url?: string; first_name?: string; username?: string };
   };
 };
 

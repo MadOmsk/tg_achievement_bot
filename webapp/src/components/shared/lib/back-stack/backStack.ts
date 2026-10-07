@@ -22,6 +22,15 @@ let depth = 0;
 let stepping = false;
 let listening = false;
 
+// The dev server's checks read how many layers are open and how many history
+// entries hold them; a build leaves this out.
+if (import.meta.env.DEV) {
+  (window as unknown as { __backStack?: () => { layers: number; entries: number } }).__backStack = () => ({
+    layers: stack.length,
+    entries: depth,
+  });
+}
+
 function telegramButton() {
   return window.Telegram?.WebApp?.BackButton;
 }

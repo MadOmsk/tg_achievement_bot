@@ -29,6 +29,7 @@ import { PersonSheet, type SheetPerson } from "../../components/people/person-sh
 import { peopleApi, type PersonRow } from "../../api/people/peopleApi";
 import "./Club.css";
 import { NotificationsBell } from "../../components/me/notifications/NotificationsBell";
+import { cachedHome, rememberHome } from "../../components/shared/lib/home-cache/homeCache";
 
 const FRIENDS_PREVIEW = 6;
 
@@ -68,24 +69,31 @@ export function Club({
   /** Open the People tab with its search focused. */
   onFind: () => void;
 }) {
-  const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [homeFeed, setHomeFeed] = useState<FeedItem[]>([]);
-  const [statsFeed, setStatsFeed] = useState<FeedItem[]>([]);
+  // Home as this device last saw it: shown at once, replaced by the answers.
+  const [cache] = useState(() => cachedHome(me.person_id));
+  const cachedReady = Boolean(cache?.feed && cache.summary && cache.mine);
+  const [feed, setFeed] = useState<FeedItem[]>(cache?.feed?.items ?? []);
+  const [homeFeed, setHomeFeed] = useState<FeedItem[]>(cache?.feed?.items ?? []);
+  const [statsFeed, setStatsFeed] = useState<FeedItem[]>(cache?.feed?.items ?? []);
   // One month for every pane (Home, Feed, Stats, a person's profile) — picking
   // it anywhere moves all of them together instead of each keeping its own.
-  const [selectedMonth, setSelectedMonth] = useState("");
-  const [months, setMonths] = useState<string[]>([]);
-  const [liveMonth, setLiveMonth] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(cache?.feed?.month ?? "");
+  const [months, setMonths] = useState<string[]>(cache?.feed?.months ?? []);
+  const [liveMonth, setLiveMonth] = useState(cache?.feed?.month ?? "");
   const [monthBusy, setMonthBusy] = useState(false);
-  const [online, setOnline] = useState<OnlineMember[]>([]);
-  const [day, setDay] = useState<SummaryMember[]>([]);
-  const [monthBoard, setMonthBoard] = useState<SummaryMember[]>([]);
-  const [yearBoard, setYearBoard] = useState<{ year: number; rows: SummaryMember[] } | null>(null);
-  const [games, setGames] = useState<SummaryGame[]>([]);
-  const [monthLabel, setMonthLabel] = useState("");
+  const [online, setOnline] = useState<OnlineMember[]>(cache?.online?.members ?? []);
+  const [day, setDay] = useState<SummaryMember[]>(cache?.summary?.day ?? []);
+  const [monthBoard, setMonthBoard] = useState<SummaryMember[]>(cache?.summary?.month ?? []);
+  const [yearBoard, setYearBoard] = useState<{ year: number; rows: SummaryMember[] } | null>(
+    cache?.summary?.year_key ? { year: cache.summary.year_key, rows: cache.summary.year ?? [] } : null,
+  );
+  const [games, setGames] = useState<SummaryGame[]>(cache?.summary?.games ?? []);
+  const [monthLabel, setMonthLabel] = useState(cache?.summary?.month_label ?? "");
   const [person, setPerson] = useState<PersonPayload | null>(null);
-  const [myPerson, setMyPerson] = useState<PersonPayload | null>(null);
-  const [clubReady, setClubReady] = useState(false);
+  const [myPerson, setMyPerson] = useState<PersonPayload | null>(cache?.mine ?? null);
+  const [clubReady, setClubReady] = useState(cachedReady);
+  // The first load over a remembered Home keeps it on screen, as a refresh does.
+  const keepShown = useRef(cachedReady);
   const [personBusy, setPersonBusy] = useState(false);
   // The profile that could not be loaded: no skeleton is held for it.
   const [personFailed, setPersonFailed] = useState<number | null>(null);
@@ -128,6 +136,7 @@ export function Club({
 
   useEffect(() => {
     // Blank only when the chat/account changes — pull-to-refresh keeps the UI.
+    if (keepShown.current) return;
     setClubReady(false);
   }, [activeId, data, me.person_id, scopeRef]);
 
@@ -163,11 +172,17 @@ export function Club({
         setMonthLabel(s.value.month_label);
       }
       if (mine.status === "fulfilled") setMyPerson(mine.value);
+      rememberHome(me.person_id, {
+        ...(f.status === "fulfilled" ? { feed: f.value } : {}),
+        ...(o.status === "fulfilled" ? { online: o.value } : {}),
+        ...(s.status === "fulfilled" ? { summary: s.value } : {}),
+        ...(mine.status === "fulfilled" ? { mine: mine.value } : {}),
+      });
       // The same "mine" games list the page renders below — preloaded before
       // the skeleton lifts, so the header, the gallery and the games appear
       // together instead of the gallery (and every game's cover) popping in
       // a beat after the text around them.
-      if (refreshKey === 0) {
+      if (refreshKey === 0 && !keepShown.current) {
         const myItems =
           mine.status === "fulfilled" && mine.value.feed?.length
             ? mine.value.feed
@@ -180,6 +195,7 @@ export function Club({
         );
       }
       if (cancelled) return;
+      keepShown.current = false;
       setClubReady(true);
     };
     void load();
@@ -322,9 +338,11 @@ export function Club({
       self={author.id === me.person_id}
       onOpenProfile={(id) => {
         setAuthor(null);
-        // After the drawer has let the page go: it gives the old scroll back as
-        // it closes, which would fight the profile's own scroll to the top.
-        if (id !== openPersonId) requestAnimationFrame(() => openPerson(id));
+        // In the same turn as the card closes: the profile takes the card's
+        // place in the history. A frame later the page was pushed apart from
+        // the tap, and a phone's back skips such an entry and leaves the app.
+        // The card's scroll is given back before the profile scrolls to its top.
+        if (id !== openPersonId) openPerson(id);
       }}
     />
   );
@@ -524,7 +542,7 @@ export function Club({
             onClose={() => setTheirSheet(null)}
             onOpen={(id) => {
               setTheirSheet(null);
-              if (id !== openPersonId) requestAnimationFrame(() => openPerson(id));
+              if (id !== openPersonId) openPerson(id);
             }}
             onFind={() => {
               setTheirSheet(null);
@@ -758,7 +776,7 @@ export function Club({
           onClose={() => setRosterOpen(false)}
           onOpen={(id) => {
             setRosterOpen(false);
-            requestAnimationFrame(() => openPerson(id));
+            openPerson(id);
           }}
           onFind={() => {
             setRosterOpen(false);
