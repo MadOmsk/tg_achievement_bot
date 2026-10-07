@@ -9,6 +9,8 @@ import { t, type Locale } from "../../../i18n";
 import {
   Avatar,
   CoverImg,
+  Dropdown,
+  DropdownArrow,
   Icon,
   Row,
   RowsSection,
@@ -18,7 +20,7 @@ import {
   useOpenGame,
 } from "../../shared/lib";
 import { UI_CONFIG } from "../../shared/constants";
-import { UnlockCard, feedKey } from "../../person";
+import { FeedRow, UnlockCard, feedKey, veiled } from "../../person";
 import { AchievementRows } from "../achievement-rows/AchievementRows";
 import { GamesSheet } from "../games-sheet/GamesSheet";
 import {
@@ -33,7 +35,27 @@ import "./ClubStats.css";
 
 const { GAMES_PREVIEW, RARE_FIND_PERCENT, DAY_MS } = UI_CONFIG.STATS;
 
-type Period = "day" | "month";
+type Period = "day" | "month" | "year";
+
+/** One row per achievement of a hunt, with everybody who earned it (owner,
+ * 2026-10-07: the same achievement once, its people on it), the most shared
+ * first, then the newest. */
+function huntRows(items: FeedItem[]): { row: FeedItem; people: { id: number; name: string }[] }[] {
+  const byAchievement = new Map<string, { row: FeedItem; people: { id: number; name: string }[] }>();
+  for (const row of items) {
+    const key = `${row.platform}:${row.title_id}:${row.achievement_id}`;
+    const entry = byAchievement.get(key) ?? { row, people: [] };
+    if (!entry.people.some((who) => who.id === row.person_id)) {
+      entry.people.push({ id: row.person_id, name: row.person });
+    }
+    byAchievement.set(key, entry);
+  }
+  return [...byAchievement.values()].sort(
+    (a, b) =>
+      b.people.length - a.people.length ||
+      (b.row.unlocked_at ?? "").localeCompare(a.row.unlocked_at ?? ""),
+  );
+}
 
 interface Hunt {
   key: string;
@@ -49,8 +71,8 @@ export function ClubStats({
   locale,
   day,
   month,
+  year,
   games,
-  monthLabel,
   feed,
   online,
   monthChip,
@@ -65,6 +87,8 @@ export function ClubStats({
   locale: Locale;
   day: SummaryMember[];
   month: SummaryMember[];
+  /** The year of the month shown, up to that month's end. */
+  year?: { year: number; rows: SummaryMember[] } | null;
   games: SummaryGame[];
   monthLabel: string;
   feed: FeedItem[];
@@ -144,27 +168,33 @@ export function ClubStats({
         b.people.size - a.people.size || b.items.length - a.items.length,
     );
   const finders = rareFinders(feed, RARE_FIND_PERCENT);
-  const boardRows = board === "day" ? day : month;
+  const yearRows = year?.rows ?? [];
+  const boardRows = board === "day" ? day : board === "month" ? month : yearRows;
+  const periodLabel = (period: Period) =>
+    period === "day" ? t(locale, "boardDay") : period === "month" ? t(locale, "boardMonth") : t(locale, "boardYear");
 
   const periodSwitch = (
     value: Period,
     onChange: (next: Period) => void,
     label: string,
   ) => (
-    <div className="segment" role="tablist" aria-label={label}>
-      {(["day", "month"] as const).map((period) => (
-        <button
-          key={period}
-          type="button"
-          role="tab"
-          aria-selected={value === period}
-          className={value === period ? "is-on" : undefined}
-          onClick={() => onChange(period)}
-        >
-          {t(locale, period === "day" ? "boardDay" : "boardMonth")}
-        </button>
-      ))}
-    </div>
+    // A dropdown, as every pick in the app (owner, 2026-10-07), not a toggle.
+    <Dropdown
+      className="dd-trigger period-pick"
+      value={value}
+      options={((year ? ["day", "month", "year"] : ["day", "month"]) as Period[]).map((period) => ({
+        value: period,
+        label: periodLabel(period),
+      }))}
+      onChange={onChange}
+      label={label}
+      trigger={
+        <>
+          {periodLabel(value)}
+          <DropdownArrow />
+        </>
+      }
+    />
   );
 
   const faceOf = (personId: number, name: string, size: number) => (
@@ -193,11 +223,19 @@ export function ClubStats({
           hint={t(locale, "youShare")}
         />
         <StatTile
-          label={monthLabel || t(locale, "thisMonth")}
+          label={t(locale, "thisMonth")}
           club={clubMonth}
           mine={mineMonth}
           hint={t(locale, "youShare")}
         />
+        {year && yearRows.length > 0 && (
+          <StatTile
+            label={t(locale, "thisYear")}
+            club={sumCounts(yearRows)}
+            mine={pickCount(yearRows, me, new Map())}
+            hint={t(locale, "youShare")}
+          />
+        )}
       </section>
 
       {games.length > 0 && (
@@ -263,7 +301,7 @@ export function ClubStats({
                 }
                 title={row.name}
                 trailing={
-                  board === "month" && row.rare
+                  board !== "day" && row.rare
                     ? `${row.count} · 💎${row.rare}`
                     : row.count
                 }
@@ -303,7 +341,7 @@ export function ClubStats({
                 <CoverImg src={hunt.cover} kind="game" className="rows-art" />
               }
               title={hunt.name}
-              subtitle={`${hunt.items.length} ${t(locale, "achievements")}`}
+              subtitle={`${huntRows(hunt.items).length} ${t(locale, "achievements")}`}
               trailing={hunt.people.size}
               onClick={() => setHuntOpen(hunt)}
             />
@@ -312,12 +350,8 @@ export function ClubStats({
       )}
 
       {rareOpen && (
-        <Sheet
-          mid
-          onClose={() => setRareOpen(null)}
-        >
+        <Sheet mid onClose={() => setRareOpen(null)} title={`${t(locale, "rareFinds")} · ${rareOpen.name}`}>
           <div className="sheet-content score-sheet picker-sheet stats-sheet">
-            <h2>{`${t(locale, "rareFinds")} - ${rareOpen.name}`}</h2>
             <div className="stats-sheet-list">
               <AchievementRows
                 items={rareOpen.items}
@@ -333,31 +367,27 @@ export function ClubStats({
       )}
 
       {huntOpen && (
-        <Sheet
-          mid
-          onClose={() => setHuntOpen(null)}
-        >
-          <div className="sheet-content score-sheet picker-sheet stats-sheet">
-            <h2>{`${t(locale, "huntTogether")} - ${huntOpen.name}`}</h2>
-            <div className="stats-sheet-list">
-              <AchievementRows
-                items={huntOpen.items}
-                revealed={revealed}
-                showSecrets={showSecrets}
-                detailed
-                onOpen={setItem}
-                onReveal={onReveal}
-              />
+        <Sheet mid onClose={() => setHuntOpen(null)} title={t(locale, "huntTogether")}>
+          <div className="sheet-content stats-sheet hunt-page">
+            <p className="hunt-page-lead">{huntOpen.name}</p>
+            <div className="feed-day hunt-list">
+              {huntRows(huntOpen.items).map(({ row, people }) => (
+                <FeedRow
+                  key={feedKey(row)}
+                  row={row}
+                  secret={veiled(row, feedKey(row), revealed, showSecrets)}
+                  people={people}
+                  onOpen={setItem}
+                  onToggleReveal={onReveal}
+                />
+              ))}
             </div>
           </div>
         </Sheet>
       )}
 
       {item && (
-        <Sheet
-          mid
-          onClose={() => setItem(null)}
-        >
+        <Sheet mid onClose={() => setItem(null)} title={item.game ?? undefined}>
           <div className="sheet-unlock">
             <UnlockCard
               item={item}
@@ -394,7 +424,7 @@ function StatTile({
       <p>{label}</p>
       <strong>{club}</strong>
       <small>
-        {mine} · {pct}% {hint}
+        {pct}% <span>{hint}</span>
       </small>
     </div>
   );

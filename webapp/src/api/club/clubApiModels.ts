@@ -115,6 +115,9 @@ export type SummaryResponse = {
   month_label: string;
   day: SummaryMember[];
   month: SummaryMember[];
+  /** The year of the month shown, up to that month's end. */
+  year?: SummaryMember[];
+  year_key?: number;
   games: SummaryGame[];
 };
 

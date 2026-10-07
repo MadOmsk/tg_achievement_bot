@@ -1048,7 +1048,7 @@ elsewhere in this file still describe the bot.
   screens, the API load on «Ключи» beside the keys; «Пригласить друга» last. Inside a screen, a row
   shows its current choice on the right where there is one. Back from a
   profile screen is the profile; back from connecting an account opens it too
-  (its notes are there). The follows drawer also lists the people one blocked.
+  (its notes are there). The follows page also lists the people one blocked.
 - **The phone's "back" steps back inside the app** (owner, 2026-10-05;
   `shared/lib/back-stack`): Android's back in the installed app, and Telegram's
   header button (`BackButton`) inside Telegram, close the topmost open layer —
@@ -1102,6 +1102,31 @@ elsewhere in this file still describe the bot.
   the percentage and the day of the last achievement under it (how many is in the tab's title) — the bar plate it replaced is gone. Its own effects, not
   the platinum's: the rim fills from nothing as the page opens (`@property --p`),
   a bright point pulses at the arc's end, and the picture dims round it.
+- **The ranking** (owner, 2026-10-07): one table, no frames, a column each — the last day, the month shown
+  and its year (`/club/summary`'s `year`, from 1 January to the month's end, in
+  the same timezone), and the leaders by day / month / year from a dropdown.
+  «Охотятся вместе» lists each achievement once, with the faces of everybody
+  who earned it (as the game page's compare), the most shared first; its page is
+  titled «Охотятся вместе», the game under the head.
+- **No drawers: pages** (owner, 2026-10-07; `shared/lib/sheet/Sheet`): what rose
+  from the bottom as a drawer — notifications, a person's card, follows, the
+  month's games, a ranking's lists, an achievement, an HLTB game, the merge — is
+  a page over everything, sliding in from the side, with its own scroll and a
+  head with the way back (the arrow, the phone's back); `title` (or `head`) and
+  `aside` name it in the head. A person's page has the person in its head — face,
+  nickname, where they are — and the follow control at its right; a lone
+  game account is open, several start closed. The follows page names its list in the head and picks it at the
+  right (following / friends / followers / blocked, each with its count), and
+  searches the list shown by nickname under the head. A pick from a short list is the `Dropdown`, never a page: the
+  month, the ranking's day / month. The day to jump to in a feed is the month's
+  calendar unfolding under the day's label, the screen's width
+  (`person/day-jump/DayCalendar`: days with posts enabled, with their counts).
+  The feed's posts are built as the reader nears the end (`FeedPosts`, eight
+  at a time, 2000px ahead), never a whole month at once — a phone's browser
+  dropped the page; a jump to a day builds up to it first. An HLTB game from
+  search is laid out as a post's page (`hltb/game-sheet/GameSheet`): the
+  picture edge to edge, year and platform, the name, the three times as one
+  table, the story, «Открыть на HowLongToBeat».
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 

@@ -168,7 +168,9 @@ export function People({
   const section = (key: string, rows: Array<PersonRow & { mutual?: number }>) =>
     rows.length > 0 && (
       <>
-        <p className="kicker">{t(locale, key as never)}</p>
+        <div className="rows-head people-head">
+          <h3 className="rows-title">{t(locale, key as never)}</h3>
+        </div>
         <div className="people-list">{rows.map(line)}</div>
       </>
     );
@@ -193,7 +195,9 @@ export function People({
         <div className="search-pane">
           {hits && hits.length > 0 && (
             <>
-              <p className="kicker">{t(locale, "people")}</p>
+              <div className="rows-head people-head">
+                <h3 className="rows-title">{t(locale, "people")}</h3>
+              </div>
               <div className="people-list">{hits.map(line)}</div>
             </>
           )}

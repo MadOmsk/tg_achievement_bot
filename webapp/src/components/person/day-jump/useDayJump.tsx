@@ -1,22 +1,31 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef } from "react";
 import type { FeedItem } from "../../../api";
 import { dayKey, type Locale } from "../../../i18n";
-import { DayPicker } from "../../shared/lib";
+import { DropdownArrow } from "../../shared/lib";
+import { DayCalendar } from "./DayCalendar";
 
 /**
- * Day labels that open a calendar and scroll to the chosen day. A list
- * registers each day's section with `register`, puts a `DayLabel` on it and
- * renders `picker` once.
+ * Day labels that open the month's calendar under them (owner, 2026-10-07: no
+ * drawer, no long list) and scroll to the chosen day. A list registers each
+ * day's section with `register` and draws its label with `label`.
  */
-export function useDayJump(items: FeedItem[], locale: Locale) {
-  const [from, setFrom] = useState<Date | null>(null);
+export function useDayJump(
+  items: FeedItem[],
+  locale: Locale,
+  /** Called before a jump: a list that builds lazily builds up to that day. */
+  ensure?: (key: string) => void,
+) {
   const nodes = useRef(new Map<string, HTMLElement>());
 
-  const counts = new Map<string, number>();
+  const byKey = new Map<string, { key: string; iso: string; count: number }>();
   for (const row of items) {
     const key = dayKey(row.unlocked_at);
-    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (!key || !row.unlocked_at) continue;
+    const day = byKey.get(key);
+    if (day) day.count += 1;
+    else byKey.set(key, { key, iso: row.unlocked_at, count: 1 });
   }
+  const counts = new Map([...byKey.values()].map((day) => [day.key, day.count]));
 
   const register = (key: string) => (node: HTMLElement | null) => {
     if (node) nodes.current.set(key, node);
@@ -24,9 +33,8 @@ export function useDayJump(items: FeedItem[], locale: Locale) {
   };
 
   const jumpTo = (key: string) => {
-    setFrom(null);
-    // Let the sheet start closing first, so the scroll is not fighting it;
-    // retry briefly in case the day has not mounted yet.
+    ensure?.(key);
+    // Retry briefly in case the day has not mounted yet.
     let tries = 0;
     const go = () => {
       const node = nodes.current.get(key);
@@ -36,27 +44,28 @@ export function useDayJump(items: FeedItem[], locale: Locale) {
         // (content-visibility): once the scroll has passed them, settle exactly.
         window.setTimeout(() => node.scrollIntoView({ block: "start" }), 900);
         window.setTimeout(() => node.scrollIntoView({ block: "start" }), 1500);
-      } else if (tries++ < 12) {
+      } else if (tries++ < 30) {
         window.setTimeout(go, 100);
       }
     };
-    window.setTimeout(go, 120);
+    window.setTimeout(go, 60);
   };
 
-  const picker: ReactNode =
-    from && counts.size > 0 ? (
-      <DayPicker
-        locale={locale}
-        days={counts}
-        start={from}
-        onPick={jumpTo}
-        onClose={() => setFrom(null)}
-      />
-    ) : null;
+  const label = (key: string, text: string) => (
+    <DayCalendar
+      className="dd-trigger feed-day-label"
+      locale={locale}
+      days={counts}
+      current={key}
+      onPick={jumpTo}
+      trigger={
+        <>
+          {text}
+          <DropdownArrow />
+        </>
+      }
+    />
+  );
 
-  return {
-    register,
-    open: (iso: string | null) => setFrom(new Date(iso ?? Date.now())),
-    picker,
-  };
+  return { register, label };
 }

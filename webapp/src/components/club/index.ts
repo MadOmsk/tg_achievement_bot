@@ -1,5 +1,4 @@
 export * from "./utils";
-export { MonthSheet } from "./month-sheet/MonthSheet";
 export { FriendsStrip } from "./friends-strip/FriendsStrip";
 export { RosterSheet } from "./roster-sheet/RosterSheet";
 export { GamesSheet } from "./games-sheet/GamesSheet";

@@ -42,8 +42,12 @@
   padding-left: 3px;
 }
 
-.people-list + .kicker {
-  margin-top: 20px;
+.people-head {
+  margin-top: 8px;
+}
+
+.people-list + .people-head {
+  margin-top: 24px;
 }
 
 /* A suggestion just followed folds away. */
