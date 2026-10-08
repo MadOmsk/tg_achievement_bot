@@ -101,3 +101,72 @@ async def test_a_wipe_goes_in_chunks_of_a_hundred_and_forgets_every_row(repo: Re
 async def test_delete_last_with_nothing_to_delete(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Чат", 1)
     assert await admin_cleanup.delete_last(_FakeBot(), repo, CHAT_ID) is None
+
+
+# ------------------------------------------------- the registry of actions
+
+
+async def test_both_panels_list_the_same_actions(repo: Repo, settings) -> None:
+    """The bot's card buttons and the Mini App's list come from one registry."""
+    from bot.services.admin_actions import AdminContext, Target, available
+    from bot.views.admin import render_user_card
+
+    person = await repo.ensure_user(1, "someone")
+    assert person is not None
+    await repo.link_xbox_account(person, XUID, "GamerTag", 0)
+    views = await available(
+        AdminContext(repo, settings), "user", Target(person=person), locale="ru"
+    )
+    _text, markup = await render_user_card(repo, person, locale="ru")
+    bot_buttons = [b.text for row in markup.inline_keyboard for b in row][:-1]  # minus «back»
+
+    assert [v.label for v in views] == bot_buttons
+    assert [v.id for v in views] == ["exclude", "sync", "reset", "delete"]
+
+
+async def test_a_wipe_counts_what_it_would_take_and_refuses_an_empty_one(
+    repo: Repo, settings
+) -> None:
+    from bot.services.admin_actions import AdminContext, Confirm, Done, Target, perform
+
+    await repo.upsert_chat(CHAT_ID, "Чат", 1)
+    ctx = AdminContext(repo, settings, bot=_FakeBot())
+    chat = Target(chat_id=CHAT_ID)
+
+    empty = await perform(ctx, "chat", chat, "wipe_system_all", 0, locale="ru")
+    assert isinstance(empty, Done) and not empty.ok
+
+    for message_id in (1, 2, 3):
+        await repo.log_bot_message(CHAT_ID, message_id, is_system=True)
+    asked = await perform(ctx, "chat", chat, "wipe_system_all", 0, locale="ru")
+    assert isinstance(asked, Confirm) and "3" in asked.text and asked.step == 1
+    done = await perform(ctx, "chat", chat, "wipe_system_all", 1, locale="ru")
+    assert isinstance(done, Done) and done.ok
+
+
+async def test_the_promo_asks_first_then_sends(repo: Repo, settings) -> None:
+    from bot.services.admin_actions import AdminContext, Confirm, Done, Target, perform
+
+    await repo.upsert_chat(CHAT_ID, "Чат", 1)
+    sent: list[int] = []
+
+    async def promo(chat) -> None:
+        sent.append(chat.chat_id)
+
+    ctx = AdminContext(repo, settings, send_promo=promo)
+    asked = await perform(ctx, "chat", Target(chat_id=CHAT_ID), "promo", 0, locale="ru")
+    assert isinstance(asked, Confirm) and "Чат" in asked.text and sent == []
+    done = await perform(ctx, "chat", Target(chat_id=CHAT_ID), "promo", 1, locale="ru")
+    assert isinstance(done, Done) and done.ok and sent == [CHAT_ID]
+
+
+def test_targets_round_trip() -> None:
+    from bot.services.admin_actions import Target
+
+    for scope, target in (
+        ("user", Target(person=12)),
+        ("account", Target(person=12, platform="xbox")),
+        ("account", Target(person=12, platform="psn", account="2130000000000000000")),
+        ("chat", Target(chat_id=-1001234567890)),
+    ):
+        assert Target.decode(scope, target.encode()) == target  # type: ignore[arg-type]

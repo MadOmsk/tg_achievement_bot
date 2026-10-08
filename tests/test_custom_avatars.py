@@ -131,12 +131,12 @@ async def test_the_super_admin_can_take_a_picture_down(
     await repo.link_xbox_account(await repo.person_id(7), "x7", "Tag7", 100)
     _text, markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
     data = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert "a:avclr:p1" not in data
+    assert "a:x:u:p1:avatar_reset:0" not in data
 
     await custom_avatars.store(repo, await repo.person_id(7), _photo())
     _text, markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
     data = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert "a:avclr:p1" in data
+    assert "a:x:u:p1:avatar_reset:0" in data
 
     answered: list[str] = []
     redrawn: list[object] = []
@@ -148,7 +148,11 @@ async def test_the_super_admin_can_take_a_picture_down(
         redrawn.append(args)
 
     monkeypatch.setattr(admin_handlers, "_redraw", fake_redraw)
-    callback = SimpleNamespace(data="a:avclr:7", answer=answer)
-    await admin_handlers.user_avatar_reset(callback, repo, SimpleNamespace(locale="ru"))
+    callback = SimpleNamespace(
+        data="a:x:u:p1:avatar_reset:0", answer=answer, from_user=SimpleNamespace(id=1)
+    )
+    await admin_handlers.admin_action(  # type: ignore[arg-type]
+        callback, repo, None, None, None, None, SimpleNamespace(), SimpleNamespace(locale="ru")
+    )
     assert await repo.custom_avatar_path(await repo.person_id(7)) is None
     assert answered and redrawn

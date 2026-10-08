@@ -76,9 +76,10 @@ export const patchAdminChatSetting = (...args: Parameters<typeof adminApi.patchC
   adminApi.patchChatSetting(...args);
 export const fetchAdminUsers = (initData: string) => adminApi.fetchUsers(initData);
 export const fetchAdminUser = (...args: Parameters<typeof adminApi.fetchUser>) => adminApi.fetchUser(...args);
-export const patchAdminUser = (...args: Parameters<typeof adminApi.patchUser>) => adminApi.patchUser(...args);
+export const fetchAdminActions = (...args: Parameters<typeof adminApi.fetchActions>) =>
+  adminApi.fetchActions(...args);
+export const postAdminAction = (...args: Parameters<typeof adminApi.postAction>) => adminApi.postAction(...args);
 export const fetchAdminChats = (initData: string) => adminApi.fetchChats(initData);
-export const postAdminChatAction = (...args: Parameters<typeof adminApi.postChatAction>) => adminApi.postChatAction(...args);
 
 export const searchHltb = (...args: Parameters<typeof hltbApi.search>) => hltbApi.search(...args);
 export const resolveHltb = (...args: Parameters<typeof hltbApi.resolve>) => hltbApi.resolve(...args);

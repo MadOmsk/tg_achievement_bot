@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from aiogram import Bot, F, Router
-from aiogram.enums import ChatType, ParseMode
+from aiogram.enums import ChatType
 from aiogram.filters import BaseFilter, Command
 from aiogram.types import (
     CallbackQuery,
@@ -25,6 +25,7 @@ from aiogram_i18n import I18nContext
 
 from bot.config import Settings
 from bot.db.repo import Repo
+from bot.handlers.delivery import send_promo
 from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
@@ -33,9 +34,8 @@ from bot.poller.service_health import (
     KEY_CHECK_INTERVAL_KEY,
 )
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import admin_cleanup, custom_avatars
-from bot.services.admin_accounts import AdminAccounts
-from bot.services.admin_cleanup import WIPE_WINDOW_HOURS, Wipe
+from bot.services.admin_actions import AdminContext, Confirm, Target, perform
+from bot.services.admin_actions import Scope as ActionScope
 from bot.services.admin_credentials import (
     AdminCredentials,
     CredentialInvalid,
@@ -49,22 +49,15 @@ from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
     SettingValueError,
 )
-from bot.services.message_log import stats_category
-from bot.services.naming import link_nickname, person_name
 from bot.views.admin import (
     _cancel_input_keyboard,
-    _toast_preview,
     find_chat,
-    render_admin_user_delete_confirm_1,
-    render_admin_user_delete_confirm_2,
+    render_action_confirm,
     render_chat_card,
     render_chat_list,
     render_keys,
-    render_reset_confirm,
-    render_system_wipe_prompt,
     render_user_card,
     render_user_list,
-    render_wipe_prompt,
 )
 from bot.views.admin_home import render_admin_home
 from bot.views.admin_settings import (
@@ -74,7 +67,6 @@ from bot.views.admin_settings import (
     render_settings_group,
     render_settings_home,
 )
-from bot.views.promo import promo_keyboard, promo_text
 
 log = logging.getLogger(__name__)
 
@@ -510,94 +502,6 @@ async def user_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> N
     await _redraw(callback, *await render_user_card(repo, person, locale=i18n.locale))
 
 
-@router.callback_query(F.data.startswith("a:excl:"))
-async def user_exclude(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    _, _, raw_id, raw_flag = callback.data.split(":")
-    person, excluded = await _subject(repo, raw_id), raw_flag == "1"
-    if person is None:
-        await _not_found(callback, i18n.locale)
-        return
-    await repo.set_excluded(person, excluded, callback.from_user.id)
-    await callback.answer(_("admin-user-excluded") if excluded else _("admin-user-restored"))
-    await _redraw(callback, *await render_user_card(repo, person, locale=i18n.locale))
-
-
-@router.callback_query(F.data.startswith("a:avclr:"))
-async def user_avatar_reset(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """Take down a picture somebody chose in the Mini App (#157)."""
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    person = await _subject(repo, callback.data.rsplit(":", 1)[1])
-    if person is None:
-        await _not_found(callback, i18n.locale)
-        return
-    await custom_avatars.clear(repo, person)
-    await callback.answer(_("admin-avatar-reset"))
-    await _redraw(callback, *await render_user_card(repo, person, locale=i18n.locale))
-
-
-_SYNC_NOT_CONNECTED_KEY = {
-    "xbox": "admin-user-not-connected",
-    "steam": "admin-steam-not-connected",
-    "psn": "admin-psn-not-connected",
-}
-
-
-async def _parse_account(repo: Repo, data: str) -> tuple[str, int | None, str | None]:
-    """`a:<action>:<platform>:<person>[:<account_id>]` → the platform, the person
-    (`_subject`) and the account."""
-    parts = data.split(":")
-    return parts[2], await _subject(repo, parts[3]), parts[4] if len(parts) > 4 else None
-
-
-def _accounts(
-    repo: Repo,
-    settings: Settings,
-    fetcher: Fetcher,
-    steam_fetcher: SteamFetcher,
-    psn_fetcher: PsnFetcher,
-) -> AdminAccounts:
-    return AdminAccounts(repo, settings, xbox=fetcher, steam=steam_fetcher, psn=psn_fetcher)
-
-
-@router.callback_query(F.data.startswith("a:sync:"))
-async def user_refresh(
-    callback: CallbackQuery,
-    repo: Repo,
-    fetcher: Fetcher,
-    steam_fetcher: SteamFetcher,
-    psn_fetcher: PsnFetcher,
-    settings: Settings,
-    i18n: I18nContext,
-) -> None:
-    """ "🔄 Обновить" — the one place in the bot that calls a platform on
-    demand (SPEC 1.5); the work is `services/admin_accounts.py`'s, shared with
-    the Mini App's admin card."""
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    platform, person, account_id = await _parse_account(repo, callback.data)
-    if person is None:
-        await _not_found(callback, i18n.locale)
-        return
-    accounts = _accounts(repo, settings, fetcher, steam_fetcher, psn_fetcher)
-    if await accounts.target(platform, person, locale=i18n.locale, account_id=account_id) is None:
-        await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
-        return
-    await callback.answer(_("admin-refreshing"))
-    try:
-        summary = await accounts.refresh(
-            platform, person, locale=i18n.locale, account_id=account_id
-        )
-    except Exception:
-        log.exception("admin %s refresh of person_id=%s failed", platform, person)
-        await callback.answer(_("admin-refresh-failed"), show_alert=True)
-        return
-    text, markup = await render_user_card(repo, person, locale=i18n.locale)
-    await _redraw(callback, f"{text}\n\n{summary}" if summary else text, markup)
-
-
 # --------------------------------------------------------------------- chats
 
 
@@ -613,201 +517,21 @@ async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> N
     await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
 
 
-@router.callback_query(F.data.startswith("a:cpromo:"))
-async def chat_send_promo(
+# ------------------------------------------------------------------- actions
+
+# Every super-admin action — on a person, a game account, a chat — comes from
+# one registry (#176, services/admin_actions.py), which the Mini App takes
+# too. `a:x:<scope>:<target>:<action>:<step>`: step 0 is the tap, each
+# confirmation asks for the next, the last one runs it.
+
+_SCOPES: dict[str, ActionScope] = {"u": "user", "a": "account", "c": "chat"}
+
+
+@router.callback_query(F.data.startswith("a:x:"))
+async def admin_action(
     callback: CallbackQuery,
     repo: Repo,
     bot: Bot,
-    i18n: I18nContext,
-    settings: Settings,
-) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    me = await bot.me()
-    bot_username = me.username or ""
-    markup = promo_keyboard(
-        bot_username,
-        chat_id,
-        mini_app_url=settings.mini_app_url or "",
-        is_group=True,
-        locale=chat.locale,
-    )
-    try:
-        with stats_category():
-            await bot.send_message(
-                chat_id,
-                promo_text(locale=chat.locale),
-                parse_mode=ParseMode.HTML,
-                reply_markup=markup,
-            )
-        await callback.answer(_("admin-promo-sent"))
-    except Exception as exc:
-        await callback.answer(f"Failed: {exc}", show_alert=True)
-
-
-# Telegram caps an answerCallbackQuery's own text at 200 characters total
-# (2026-09-09) — `bot_messages.preview` can itself be up to 200 chars, which
-# would leave nothing for the "🗑 Удалено: «…»" wrapper around it and get
-# silently cut off by Telegram mid-word. Trim further, specifically for the
-# toast; the group-chat confirmation (chat.py's own /delete_last, a real
-# message with no such cap) uses the stored preview untouched.
-
-
-@router.callback_query(F.data.startswith("a:cdellast:"))
-async def chat_delete_last(
-    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
-) -> None:
-    """The admin panel's own way in to /delete_last's logic (chat.py) —
-    found live: an admin looking to undo the bot's last message in a chat
-    went looking for it here first, not the group chat itself. Same target
-    (the last *non-system* message, 2026-09-05) and same "expected failure,
-    forget the row either way" handling, just reached from the chat card
-    instead of typed into the chat.
-
-    The toast itself now names what got deleted (2026-09-09 user request,
-    `bot_messages.preview`) instead of a bare "Удалил последнее сообщение."
-    — the card underneath is redrawn unchanged, the preview lives only in
-    the toast (user feedback: baking it into the card body reads as
-    permanent clutter, the toast is the right place for something
-    transient).
-    """
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    result = await admin_cleanup.delete_last(bot, repo, chat_id)
-    if result is None:
-        await callback.answer(_("admin-no-bot-messages"), show_alert=True)
-        return
-    if not result.deleted:
-        await callback.answer(_("admin-delete-old-failed"), show_alert=True)
-        return
-    feedback = (
-        _("admin-deleted-last-preview", preview=_toast_preview(result.preview))
-        if result.preview
-        else _("admin-deleted-last")
-    )
-    await callback.answer(feedback)
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="messages")
-    )
-
-
-@router.callback_query(F.data.startswith("a:cwipe:"))
-async def chat_wipe_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.ALL_24H)
-    if not ids:
-        await callback.answer(_("admin-no-bot-messages-24h"), show_alert=True)
-        return
-    screen = render_wipe_prompt(chat, len(ids), WIPE_WINDOW_HOURS, locale=i18n.locale)
-    await _redraw(callback, *screen.as_pair())
-
-
-@router.callback_query(F.data.startswith("a:cwipey:"))
-async def chat_wipe_confirm(
-    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
-) -> None:
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.ALL_24H)
-    await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
-
-
-# A narrower sibling of the unconditional wipe above (2026-09-05 follow-up,
-# "system message" auto-delete): these two leave published achievements,
-# stats and summaries untouched, so they're safe as a routine cleanup, not
-# just a "just in case" tool — one bounded to 24h, one with no time limit
-# at all for whenever that isn't enough.
-
-
-@router.callback_query(F.data.startswith("a:cswipe:"))
-async def chat_system_wipe_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.SYSTEM_24H)
-    await _system_wipe_prompt(
-        callback, repo, chat_id, ids, f"a:cswipey:{chat_id}", locale=i18n.locale
-    )
-
-
-@router.callback_query(F.data.startswith("a:cswipey:"))
-async def chat_system_wipe_confirm(
-    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
-) -> None:
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.SYSTEM_24H)
-    await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
-
-
-@router.callback_query(F.data.startswith("a:cswipeall:"))
-async def chat_system_wipe_all_prompt(
-    callback: CallbackQuery, repo: Repo, i18n: I18nContext
-) -> None:
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.SYSTEM_ALL)
-    await _system_wipe_prompt(
-        callback, repo, chat_id, ids, f"a:cswipeally:{chat_id}", locale=i18n.locale
-    )
-
-
-@router.callback_query(F.data.startswith("a:cswipeally:"))
-async def chat_system_wipe_all_confirm(
-    callback: CallbackQuery, repo: Repo, bot: Bot, i18n: I18nContext
-) -> None:
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.SYSTEM_ALL)
-    await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
-
-
-# ------------------------------------------------------------------- screens
-
-
-@router.callback_query(F.data.startswith("a:reset:"))
-async def reset_platform_confirm(
-    callback: CallbackQuery, repo: Repo, settings: Settings, i18n: I18nContext
-) -> None:
-    """ "Сброс базы" is destructive and not undoable (user request 2026-09-08)
-    — same one-tap-confirm shape as /disconnect_steam's own prompt, not an
-    instant action behind a single tap."""
-    assert callback.data is not None
-    platform, person, account_id = await _parse_account(repo, callback.data)
-    if person is None:
-        await _not_found(callback, i18n.locale)
-        return
-    account_name = None
-    if account_id is not None:
-        link = await AdminAccounts(repo, settings, xbox=None, steam=None, psn=None).link(
-            platform, person, account_id
-        )
-        account_name = link_nickname(link) if link else account_id
-    screen = render_reset_confirm(
-        platform,
-        f"p{person}",
-        locale=i18n.locale,
-        account_id=account_id,
-        account_name=account_name,
-    )
-    await _redraw(callback, *screen.as_pair())
-
-
-@router.callback_query(F.data.startswith("a:resetok:"))
-async def reset_platform_confirmed(
-    callback: CallbackQuery,
-    repo: Repo,
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_fetcher: PsnFetcher,
@@ -816,100 +540,58 @@ async def reset_platform_confirmed(
 ) -> None:
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
-    platform, person, account_id = await _parse_account(repo, callback.data)
-    if person is None:
-        await _not_found(callback, i18n.locale)
-        return
-    await callback.answer(_("admin-refreshing"))
-    accounts = _accounts(repo, settings, fetcher, steam_fetcher, psn_fetcher)
     try:
-        if not await accounts.reset(platform, person, account_id):
-            await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
-    except Exception:
-        log.exception("admin reset+resync of person_id=%s platform=%s failed", person, platform)
-        await callback.answer(_("admin-refresh-failed"), show_alert=True)
-    text, markup = await render_user_card(repo, person, locale=i18n.locale)
-    await _redraw(callback, text, markup)
-
-
-@router.callback_query(F.data.startswith("a:udel:"))
-async def admin_delete_user_step1(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _prefix, _action, raw = callback.data.split(":")
-    person = await _subject(repo, raw)
-    user = await repo.get_user(person) if person is not None else None
-    if person is None or user is None:
-        _ = translator("admin", i18n.locale)
-        await callback.answer(_("admin-user-not-found"), show_alert=True)
+        _prefix, _x, short, raw_target, action_id, raw_step = callback.data.split(":")
+        scope = _SCOPES[short]
+        target = Target.decode(scope, raw_target)
+        step = int(raw_step)
+    except (KeyError, ValueError):
+        await callback.answer(_("admin-action-unknown"), show_alert=True)
         return
-    name = person_name(person_id=user.id, handle=user.handle)
-    screen = render_admin_user_delete_confirm_1(name, person, user.tg_id, locale=i18n.locale)
-    await _redraw(callback, *screen.as_pair())
 
+    async def promo(chat: Any) -> None:
+        await send_promo(bot, chat.chat_id, chat.locale, settings.mini_app_url)
 
-@router.callback_query(F.data.startswith("a:udel1:"))
-async def admin_delete_user_step2(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _prefix, _action, raw = callback.data.split(":")
-    person = await _subject(repo, raw)
-    user = await repo.get_user(person) if person is not None else None
-    if person is None or user is None:
-        _ = translator("admin", i18n.locale)
-        await callback.answer(_("admin-user-not-found"), show_alert=True)
-        return
-    name = person_name(person_id=user.id, handle=user.handle)
-    screen = render_admin_user_delete_confirm_2(name, person, user.tg_id, locale=i18n.locale)
-    await _redraw(callback, *screen.as_pair())
-
-
-@router.callback_query(F.data.startswith("a:udel2:"))
-async def admin_delete_user_confirmed(
-    callback: CallbackQuery, repo: Repo, i18n: I18nContext
-) -> None:
-    _ = translator("admin", i18n.locale)
-    _prefix, _action, raw = callback.data.split(":")
-    person = await _subject(repo, raw)
-    deleted = person is not None and await repo.delete_person(person, is_superadmin=True)
-    if deleted:
-        await callback.answer(_("admin-delete-toast"))
-    else:
-        await callback.answer(_("admin-delete-not-found"), show_alert=True)
-    text, markup = await render_user_list(repo, 0, locale=i18n.locale)
-    await _redraw(callback, text, markup)
-
-
-async def _wipe_confirm(
-    callback: CallbackQuery, repo: Repo, bot: Bot, chat_id: int, ids: list[int], *, locale: str
-) -> None:
-    """Shared tail of every wipe variant below: delete what the caller
-    already decided on, forget the log rows either way (Telegram silently
-    skips ids it can no longer delete — too old, already gone — and
-    retrying those later would not help), report, redraw the chat card."""
-    _ = translator("admin", locale)
-    ok = await admin_cleanup.wipe(bot, repo, chat_id, ids)
-    await callback.answer(_("admin-wipe-done") if ok else _("admin-wipe-partial"))
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=locale, section="messages")
+    ctx = AdminContext(
+        repo,
+        settings,
+        bot=bot,
+        xbox=fetcher,
+        steam=steam_fetcher,
+        psn=psn_fetcher,
+        admin_id=callback.from_user.id,
+        send_promo=promo,
     )
-
-
-async def _system_wipe_prompt(
-    callback: CallbackQuery,
-    repo: Repo,
-    chat_id: int,
-    ids: list[int],
-    confirm_callback: str,
-    *,
-    locale: str,
-) -> None:
-    _ = translator("admin", locale)
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
+    section = "messages" if action_id != "promo" and scope == "chat" else None
+    back = (
+        f"a:u:p{target.person}"
+        if scope != "chat"
+        else (f"a:mdel:{target.chat_id}" if section else f"a:chat:{target.chat_id}")
+    )
+    result = await perform(ctx, scope, target, action_id, step, locale=i18n.locale)
+    if isinstance(result, Confirm):
+        yes = f"a:x:{short}:{raw_target}:{action_id}:{result.step}"
+        screen = render_action_confirm(result, yes=yes, back=back, locale=i18n.locale)
+        await _redraw(callback, *screen.as_pair())
         return
-    if not ids:
-        await callback.answer(_("admin-no-system-messages"), show_alert=True)
+
+    if result.text and result.show == "toast":
+        await callback.answer(result.text, show_alert=not result.ok)
+    if result.gone:
+        await _redraw(callback, *await render_user_list(repo, 0, locale=i18n.locale))
         return
-    screen = render_system_wipe_prompt(chat, len(ids), confirm_callback, locale=locale)
-    await _redraw(callback, *screen.as_pair())
+    if scope == "chat":
+        text, markup = await render_chat_card(
+            repo,
+            target.chat_id,
+            locale=i18n.locale,
+            section=section,  # type: ignore[arg-type]
+        )
+    else:
+        text, markup = await render_user_card(repo, target.person, locale=i18n.locale)  # type: ignore[arg-type]
+    if result.text and result.show == "card":
+        text = f"{text}\n\n{result.text}"
+    await _redraw(callback, text, markup)
 
 
 async def _redraw(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup) -> None:

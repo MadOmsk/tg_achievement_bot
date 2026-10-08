@@ -198,8 +198,6 @@ admin-sync-delta =
        *[other] Просмотрено игр: { $titles }, опубликовано: { $published }.
     }
 admin-sync-delta-steam = Опубликовано с прошлого раза: { $published }.
-admin-steam-not-connected = Steam не подключён
-admin-psn-not-connected = PSN не подключён
 
 # Chat and cleanup actions
 admin-no-bot-messages = Не нашёл сообщений бота в этом чате.
@@ -225,6 +223,11 @@ admin-system-wipe-prompt =
     промежуточные сообщения (подсказки, подтверждения, /help и т.п.).
 admin-send-promo-to-chat = 📢 Отправить промо в чат
 admin-promo-sent = Промо-сообщение отправлено в чат
+admin-promo-confirm = Отправить промо-сообщение в «{ $title }»?
+admin-promo-confirm-yes = 📢 Да, отправить
+admin-promo-failed = Не получилось отправить промо — бот, возможно, не в чате.
+admin-action-unknown = Это действие сейчас недоступно.
+admin-action-section-messages = Сообщения бота
 
 # New users and user cards
 admin-users-empty = 👥 Пока никто не подключился.

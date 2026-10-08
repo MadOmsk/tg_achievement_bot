@@ -13,6 +13,7 @@ reason: poller/admin_refresh.py redraws it on a timer.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Literal
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -25,19 +26,19 @@ from bot.constants import (
 )
 from bot.db.repo import AdminUserRow, ChatTarget, PlatformLink, Repo, User
 from bot.i18n import translator
+from bot.services.admin_actions import ActionView, AdminContext, Confirm, Target
+from bot.services.admin_actions import available as available_actions
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.admin_registry import GROUPS, group_label
 from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
     PAGE_SIZE,
     STATUS_ICON,
-    TOAST_PREVIEW_MAX_CHARS,
     VISIBILITY_ICON,
 )
 from bot.services.logins import Login, logins_of
 from bot.services.naming import (
     account_nickname,
-    link_nickname,
     person_name,
     person_name_of,
     subscriber_names,
@@ -112,13 +113,6 @@ async def render_keys(
             )
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
     return "\n".join(lines), builder.as_markup()
-
-
-def _toast_preview(preview: str) -> str:
-    collapsed = " ".join(preview.splitlines())
-    if len(collapsed) <= TOAST_PREVIEW_MAX_CHARS:
-        return collapsed
-    return collapsed[: TOAST_PREVIEW_MAX_CHARS - 1] + "…"
 
 
 async def render_user_list(
@@ -404,9 +398,6 @@ async def _psn_admin_block(
 async def render_user_card(
     repo: Repo, person: int, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
-    # The buttons name the person by their own id (#156): somebody who signed
-    # in by email has no Telegram id to name them by.
-    ref = f"p{person}"
     _ = translator("admin", locale)
     user = await repo.get_user(person)
     steam_link = await repo.get_platform_link(person, Platform.STEAM)
@@ -454,48 +445,39 @@ async def render_user_card(
     if user.is_excluded:
         text += "\n\n" + _("admin-excluded")
 
+    # The actions come from the registry (#176), the Mini App's card lists the
+    # same ones.
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-restore") if user.is_excluded else _("admin-exclude"),
-            callback_data=f"a:excl:{ref}:{0 if user.is_excluded else 1}",
-        )
-    )
-    if user.xuid:
-        builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-xbox"), callback_data=f"a:sync:xbox:{ref}"),
-            InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{ref}"),
-        )
-    for link in psn_links:
-        # Each account has its own pair (#10), named when there are several
-        # — "PSN: nick", never a bare nickname (owner).
-        account = f"{ref}:{link.external_id}"
-        if len(psn_links) > 1:
-            name = link_nickname(link)
-            refresh = _("admin-refresh-psn-account", name=name)
-            reset = _("admin-reset-psn-account", name=name)
-        else:
-            refresh, reset = _("admin-refresh-psn"), _("admin-reset-psn")
-        builder.row(
-            InlineKeyboardButton(text=refresh, callback_data=f"a:sync:psn:{account}"),
-            InlineKeyboardButton(text=reset, callback_data=f"a:reset:psn:{account}"),
-        )
-    if steam_link is not None:
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-refresh-steam"), callback_data=f"a:sync:steam:{ref}"
-            ),
-            InlineKeyboardButton(text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{ref}"),
-        )
-    if await repo.custom_avatar_path(person):
-        # A picture chosen in the Mini App is seen by everybody (#157): the
-        # super-admin can take it down, back to the Telegram photo.
-        builder.row(
-            InlineKeyboardButton(text=_("admin-reset-avatar"), callback_data=f"a:avclr:{ref}")
-        )
-    builder.row(InlineKeyboardButton(text=_("admin-delete-user"), callback_data=f"a:udel:{ref}"))
+    for row in action_rows(await _actions(repo, "user", Target(person=person), locale)):
+        builder.row(*row)
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
+
+
+async def _actions(repo: Repo, scope: Literal["user", "chat"], target: Target, locale: str):
+    # Listing needs only the database; running one is the handler's.
+    return await available_actions(AdminContext(repo, None), scope, target, locale=locale)  # type: ignore[arg-type]
+
+
+def action_rows(
+    views: list[ActionView], section: str | None = None
+) -> list[list[InlineKeyboardButton]]:
+    """An action registry's buttons: one row each, an account's side by side."""
+    rows: list[list[InlineKeyboardButton]] = []
+    last_row: str | None = None
+    for view in views:
+        if view.section != section:
+            continue
+        short = {"user": "u", "account": "a", "chat": "c"}[view.scope]
+        button = InlineKeyboardButton(
+            text=view.label, callback_data=f"a:x:{short}:{view.target}:{view.id}:0"
+        )
+        if rows and view.row == last_row:
+            rows[-1].append(button)
+        else:
+            rows.append([button])
+        last_row = view.row
+    return rows
 
 
 # Plain platform names for the confirm prompt's own sentence — distinct
@@ -581,25 +563,11 @@ async def render_chat_card(
         return text, builder.as_markup()
 
     if section == "messages":
-        # One wipe action per row here: these are the destructive ones, and a
-        # cramped row of four 🗑 buttons was exactly what made them easy to
-        # mistap (2026-09-11, user request).
-        builder.row(
-            InlineKeyboardButton(text=_("admin-delete-last"), callback_data=f"a:cdellast:{chat_id}")
-        )
-        builder.row(
-            InlineKeyboardButton(text=_("admin-wipe-bot-24h"), callback_data=f"a:cwipe:{chat_id}")
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-wipe-system-24h"), callback_data=f"a:cswipe:{chat_id}"
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-wipe-system-all"), callback_data=f"a:cswipeall:{chat_id}"
-            )
-        )
+        # One action per row: the wipes are the destructive ones, and a
+        # cramped row of four 🗑 buttons made them easy to mistap (2026-09-11).
+        views = await _actions(repo, "chat", Target(chat_id=chat_id), locale)
+        for row in action_rows(views, "messages"):
+            builder.row(*row)
         builder.row(back_to_card)
         return text, builder.as_markup()
 
@@ -617,11 +585,8 @@ async def render_chat_card(
             text=_("admin-chat-messages-menu-button"), callback_data=f"a:mdel:{chat_id}"
         )
     )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-send-promo-to-chat"), callback_data=f"a:cpromo:{chat_id}"
-        )
-    )
+    for row in action_rows(await _actions(repo, "chat", Target(chat_id=chat_id), locale)):
+        builder.row(*row)
     builder.row(InlineKeyboardButton(text=_("admin-back-to-chats"), callback_data="a:chats"))
     return text, builder.as_markup()
 
@@ -665,111 +630,13 @@ def _note(user: AdminUserRow, *, locale: str) -> str:
     return ""
 
 
-# ---- the screens that ask for one typed value, and the confirmations ----
-#
-# Each of these used to be built inside its own handler (#63's last
-# leftovers). They are one shape: a prompt saying what is set now and what
-# is allowed, and a single way back — the flow's state ("who is typing
-# what") stays with the handler, because it is not layout.
-
-
-def render_wipe_prompt(chat: ChatTarget, count: int, hours: int, *, locale: str) -> Screen:
-    """The prompt says how many messages it is about to take — a destructive
-    action states its own size before it happens."""
+def render_action_confirm(confirm: Confirm, *, yes: str, back: str, locale: str) -> Screen:
+    """One confirmation of a super-admin action (`services/admin_actions.py`):
+    its words, its "yes", and the way back."""
     _ = translator("admin", locale)
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(
-            text=_("admin-confirm-delete"), callback_data=f"a:cwipey:{chat.chat_id}"
-        )
+        InlineKeyboardButton(text=confirm.yes, callback_data=yes),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=back),
     )
-    builder.row(
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat.chat_id}")
-    )
-    return Screen(
-        _("admin-wipe-prompt", count=count, title=chat.title or chat.chat_id, hours=hours),
-        builder.as_markup(),
-    )
-
-
-RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
-
-
-def render_reset_confirm(
-    platform: str,
-    ref: str,
-    *,
-    locale: str,
-    account_id: str | None = None,
-    account_name: str | None = None,
-) -> Screen:
-    """ "Сброс базы" is destructive and not undoable (2026-09-08 user
-    request) — same one-tap-confirm shape as /disconnect_steam's own
-    prompt, not an instant action behind a single tap. `account_id` picks
-    one of several PSN accounts (#10)."""
-    _ = translator("admin", locale)
-    target = f"{ref}:{account_id}" if account_id else ref
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{target}"
-        ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{ref}"),
-    )
-    name = RESET_PLATFORM_NAMES[platform]
-    if account_name:
-        name = f"{name}: {account_name}"
-    return Screen(_("admin-reset-confirm-prompt", platform=name), builder.as_markup())
-
-
-def render_system_wipe_prompt(
-    chat: ChatTarget, count: int, confirm_callback: str, *, locale: str
-) -> Screen:
-    """Same shape as the 24-hour wipe above, for the "system messages only"
-    pair — the confirm target differs, the prompt does not."""
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text=_("admin-confirm-delete"), callback_data=confirm_callback)
-    )
-    builder.row(
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat.chat_id}")
-    )
-    return Screen(
-        _("admin-system-wipe-prompt", count=count, title=chat.title or chat.chat_id),
-        builder.as_markup(),
-    )
-
-
-def render_admin_user_delete_confirm_1(
-    name: str, person: int, tg_id: int | None, *, locale: str
-) -> Screen:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-delete-confirm-1-yes"), callback_data=f"a:udel1:p{person}"
-        ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:p{person}"),
-    )
-    return Screen(
-        _("admin-delete-confirm-1", name=name, tg_id=str(tg_id) if tg_id else "—"),
-        builder.as_markup(),
-    )
-
-
-def render_admin_user_delete_confirm_2(
-    name: str, person: int, tg_id: int | None, *, locale: str
-) -> Screen:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-delete-confirm-2-yes"), callback_data=f"a:udel2:p{person}"
-        ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:p{person}"),
-    )
-    return Screen(
-        _("admin-delete-confirm-2", name=name, tg_id=str(tg_id) if tg_id else "—"),
-        builder.as_markup(),
-    )
+    return Screen(confirm.text, builder.as_markup())

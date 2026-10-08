@@ -64,8 +64,6 @@ export type AdminUserCard = {
   xbox: Record<string, unknown> | null;
   steam: Record<string, unknown> | null;
   psn: Record<string, unknown> | null;
-  /** After a refresh: what it found, worded as the bot's card words it. */
-  message?: string | null;
 };
 
 export type AdminChatRow = {
@@ -91,3 +89,22 @@ export type AdminSetting = {
 
 export type AdminSettingsGroup = { id: string; title: string; items: AdminSetting[] };
 export type AdminSettings = { groups: AdminSettingsGroup[] };
+
+/** One super-admin action of a card, from the server's registry (#176). */
+export type AdminAction = {
+  id: string;
+  scope: "user" | "account" | "chat";
+  target: string;
+  label: string;
+  danger: boolean;
+  section: string | null;
+  section_title: string | null;
+};
+
+export type AdminActionDone = { ok: boolean; text: string | null; gone: boolean };
+
+/** One step of an action: the next confirmation to ask, or what it did. */
+export type AdminActionStep = {
+  confirm?: { text: string; yes: string; step: number };
+  done?: AdminActionDone;
+};

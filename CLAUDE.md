@@ -135,8 +135,9 @@ name, or when the tree goes stale.
 │   │   ├── admin_registry.py     every admin setting, described once, for both panels (#176)
 │   │   ├── admin_status.py       what the super-admin's home shows, for both panels (#176)
 │   │   ├── admin_credentials.py  every shared credential, one registry for both panels (#176)
-│   │   ├── admin_accounts.py     refresh / reset one person's game account, for both panels
-│   │   ├── admin_cleanup.py      wiping the bot's messages from a chat, for both panels
+│   │   ├── admin_actions.py      every super-admin action, described once, for both panels (#176)
+│   │   ├── admin_accounts.py     refresh / reset one person's game account (an action's work)
+│   │   ├── admin_cleanup.py      wiping the bot's messages from a chat (an action's work)
 │   │   ├── connect.py            one-time OAuth state, finishing a login
 │   │   ├── relink.py             linking an account somebody else may already hold (#52)
 │   │   ├── stats.py              aggregates for panels, /stats, summaries
@@ -1294,20 +1295,34 @@ keyboard.
     sign-in emails against their caps, every credential's state).
   - `services/admin_credentials.py` — the shared credentials (`set` raising
     `CredentialInvalid` / `CredentialSetupError`, `clear`).
-  - `services/admin_accounts.py` — refresh («🔄 Обновить»: presence, then the
-    delta since the newest unlock) and reset of one game account.
-  - `services/admin_cleanup.py` — which bot messages each wipe takes, deleting
-    them, «delete the last one».
+  - `services/admin_actions.py` — **every action**, one class each: what it
+    is about (a person, one game account, a chat), its label, whether it is
+    dangerous, how many confirmations it takes and their words, what it does.
+    `available` lists a card's actions; `perform` takes one a step at a time —
+    `Confirm` (the words, the "yes", the next step) until the last step, then
+    `Done`. The bot draws a confirmation as a screen («Да / Отмена»,
+    `a:x:<scope>:<target>:<action>:<step>`), the Mini App as a dialog
+    (`GET|POST /api/mini/admin/actions`, `components/admin/admin-actions`); the
+    steps and the words are the server's. Today: exclude / restore, refresh and
+    reset an account (reset asks once, naming it), take a chosen picture down,
+    delete a person (asks twice); on a chat, the promo (asks once), delete the
+    last message, the three wipes (each asks once with the count). Under them,
+    `services/admin_accounts.py` (refresh: presence, then the delta since the
+    newest unlock; reset) and `services/admin_cleanup.py` (which messages a wipe
+    takes, deleting them).
 
   A new setting is a registry row and its `admin-setting-*` label; a new
-  credential a registry entry and its `admin-keys-<name>-*` strings; a new
-  counter an `AdminStatus` field. The bot draws a setting as "Label: value ▸"
+  action a class in `admin_actions.py` and its strings; a new credential a
+  registry entry and its `admin-keys-<name>-*` strings; a new counter an
+  `AdminStatus` field. The bot draws a setting as "Label: value ▸"
   (on/off flips, a pick opens its values, a number is typed); the Mini App as
   a row of the same kind. Neither panel parses, bounds or stores a value itself.
 
   **The rule for whatever comes next** (owner, 2026-10-08): a super-admin
-  setting is added to the registry and nowhere else — never as a screen, a
-  button or a field of one panel only. A setting of a kind the registry does
+  setting or action is added to its registry and nowhere else — never as a
+  screen, a button or a field of one panel only. A new way to confirm or a new
+  kind of input for an action is added once, for both panels, like a new kind
+  of setting. A setting of a kind the registry does
   not know yet (a list of games, free text, a date, …) is not drawn ad hoc
   either: the kind is added **once, for both** — a `Kind` with its parsing in
   `admin_registry.py`, its drawing in `views/admin_settings.py` and in

@@ -100,22 +100,29 @@ async def test_mini_admin_delete_user(repo: Repo, settings: Settings) -> None:
 
     client = TestClient(TestServer(app))
     await client.start_server()
+    target = f"p{await repo.person_id(target_id)}"
+
+    async def step(headers, n: int, who: str = target):
+        body = {"scope": "user", "target": who, "action": "delete", "step": n}
+        return await client.post("/api/mini/admin/actions", json=body, headers=headers)
+
     try:
-        # 1. Non-admin forbidden
-        resp_forbidden = await client.delete(
-            f"/api/mini/admin/users/{target_id}", headers=non_admin_headers
-        )
-        assert resp_forbidden.status == 403
+        # 1. Not a super-admin: forbidden, nothing asked
+        assert (await step(non_admin_headers, 0)).status == 403
         assert await repo.get_user(await repo.person_id(target_id)) is not None
 
-        # 2. Admin deletes non-existent -> 404
-        resp_not_found = await client.delete("/api/mini/admin/users/99999", headers=admin_headers)
-        assert resp_not_found.status == 404
+        # 2. Somebody who is not there: the action is not offered
+        gone = await (await step(admin_headers, 0, "p99999")).json()
+        assert gone["done"]["ok"] is False
 
-        # 3. Admin deletes target user -> 200 ok
-        resp_ok = await client.delete(f"/api/mini/admin/users/{target_id}", headers=admin_headers)
-        assert resp_ok.status == 200
-        assert await resp_ok.json() == {"ok": True}
-        assert await repo.get_user(await repo.person_id(target_id)) is None
+        # 3. Two confirmations, the bot's own words, then deleted
+        first = await (await step(admin_headers, 0)).json()
+        assert first["confirm"]["step"] == 1 and "target" in first["confirm"]["text"]
+        second = await (await step(admin_headers, 1)).json()
+        assert second["confirm"]["step"] == 2
+        assert await repo.get_user(await repo.person_id(target_id)) is not None  # not yet
+        done = await (await step(admin_headers, 2)).json()
+        assert done["done"] == {"ok": True, "text": "Пользователь удалён", "gone": True}
+        assert await repo.person_id(target_id) is None
     finally:
         await client.close()

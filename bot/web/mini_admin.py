@@ -6,18 +6,20 @@ What it shows and changes comes from the same services as the bot's /admin
 
 from __future__ import annotations
 
+import html
 import json
 import logging
+import re
 from typing import Any
 
 from aiohttp import web
 
 from bot.constants import Platform, TokenStatus
 from bot.db.repo import Repo
+from bot.handlers.delivery import send_promo
 from bot.i18n import translator
-from bot.services import admin_cleanup
-from bot.services.admin_accounts import AdminAccounts
-from bot.services.admin_cleanup import Wipe
+from bot.services.admin_actions import AdminContext, Confirm, Target, perform
+from bot.services.admin_actions import available as available_actions
 from bot.services.admin_credentials import (
     AdminCredentials,
     CredentialInvalid,
@@ -275,15 +277,13 @@ def setup_admin_routes(app: web.Application) -> None:
     app.router.add_patch("/api/mini/admin/settings", handle_admin_settings_patch)
     app.router.add_get("/api/mini/admin/users", handle_admin_users)
     app.router.add_get("/api/mini/admin/users/{ref}", handle_admin_user)
-    app.router.add_patch("/api/mini/admin/users/{ref}", handle_admin_user_patch)
-    app.router.add_delete("/api/mini/admin/users/{ref}", handle_admin_user_delete)
-    app.router.add_post("/api/mini/admin/users/{ref}/delete", handle_admin_user_delete)
     app.router.add_get("/api/mini/admin/chats", handle_admin_chats)
     app.router.add_get("/api/mini/admin/chats/{chat_id}/settings", handle_admin_chat_settings)
     app.router.add_patch(
         "/api/mini/admin/chats/{chat_id}/settings", handle_admin_chat_settings_patch
     )
-    app.router.add_post("/api/mini/admin/chats/{chat_id}/actions", handle_admin_chat_action)
+    app.router.add_get("/api/mini/admin/actions", handle_admin_actions)
+    app.router.add_post("/api/mini/admin/actions", handle_admin_action)
 
 
 async def handle_admin_home(request: web.Request) -> web.Response:
@@ -398,36 +398,6 @@ async def handle_admin_user(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
-async def handle_admin_user_patch(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
-    repo: Repo = request.app["mini_repo"]
-    person = await _person_of(request)
-    body = await request.json()
-    if "excluded" in body:
-        await repo.set_excluded(person, bool(body["excluded"]), admin.tg_id)
-    action = body.get("action")
-    platform = str(body.get("platform") or "")
-    message = None
-    if action in ("sync", "reset") and platform in ("xbox", "steam", "psn"):
-        account_id = str(body.get("account_id") or "").strip() or None
-        message = await _admin_platform_action(request, person, platform, action, account_id)
-    payload = await build_admin_user(repo, person, locale=await repo.user_locale(admin.person_id))
-    if payload is None:
-        raise web.HTTPNotFound()
-    # What a refresh found, worded as the bot's card words it.
-    payload["message"] = message
-    return web.json_response(payload)
-
-
-async def handle_admin_user_delete(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
-    repo: Repo = request.app["mini_repo"]
-    deleted = await repo.delete_person(await _person_of(request), is_superadmin=True)
-    if not deleted:
-        raise web.HTTPNotFound()
-    return web.json_response({"ok": True})
-
-
 async def handle_admin_chats(request: web.Request) -> web.Response:
     await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
@@ -465,54 +435,111 @@ async def handle_admin_chat_settings_patch(request: web.Request) -> web.Response
     return web.json_response(await build_admin_settings(repo, "chat", locale=locale, chat=chat))
 
 
-async def handle_admin_chat_action(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
-    repo: Repo = request.app["mini_repo"]
+def _action_context(request: web.Request, admin: Any) -> AdminContext:
+    settings = request.app["mini_settings"]
     bot = request.app.get("mini_bot")
-    if bot is None:
-        raise web.HTTPServiceUnavailable(text="bot unavailable")
-    chat_id = int(request.match_info["chat_id"])
-    body = await request.json()
-    action = str(body.get("action") or "")
-    # The bot's chat card does the same (`services/admin_cleanup.py`).
-    if action == "delete_last":
-        result = await admin_cleanup.delete_last(bot, repo, chat_id)
-        if result is None:
-            return web.json_response({"ok": True, "deleted": 0})
-        if not result.deleted:
-            return web.json_response({"ok": False, "deleted": 0}, status=400)
-        return web.json_response({"ok": True, "deleted": 1, "preview": result.preview})
-    try:
-        kind = Wipe(action)
-    except ValueError as exc:
-        raise web.HTTPBadRequest(text="unknown action") from exc
-    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, kind)
-    ok = await admin_cleanup.wipe(bot, repo, chat_id, ids)
-    return web.json_response({"ok": ok, "deleted": len(ids)})
 
+    async def promo(chat: Any) -> None:
+        if bot is None:
+            raise RuntimeError("bot unavailable")
+        await send_promo(bot, chat.chat_id, chat.locale, settings.mini_app_url)
 
-async def _admin_platform_action(
-    request: web.Request, person: int, platform: str, action: str, account_id: str | None = None
-) -> str | None:
-    """The bot's "🔄 Обновить" / "🗑 Сброс", the same code
-    (`services/admin_accounts.py`). The words a refresh ends with, if any."""
-    repo: Repo = request.app["mini_repo"]
-    accounts = AdminAccounts(
-        repo,
-        request.app["mini_settings"],
+    return AdminContext(
+        request.app["mini_repo"],
+        settings,
+        bot=bot,
         xbox=request.app.get("mini_xbox_fetcher"),
         steam=request.app.get("mini_steam_fetcher"),
         psn=request.app.get("mini_psn_fetcher"),
+        admin_id=admin.tg_id,
+        send_promo=promo,
     )
-    locale = await repo.user_locale(person)
-    if action == "reset":
-        if not await accounts.reset(platform, person, account_id):
-            raise web.HTTPBadRequest(text=f"{platform} not linked")
-        return None
-    summary = await accounts.refresh(platform, person, locale=locale, account_id=account_id)
-    if summary is None:
-        raise web.HTTPBadRequest(text=f"{platform} not linked")
-    return summary
+
+
+def _action_target(scope: str, raw: str) -> Target:
+    try:
+        return Target.decode(scope, raw)  # type: ignore[arg-type]
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad target") from exc
+
+
+async def handle_admin_actions(request: web.Request) -> web.Response:
+    """A card's actions, from the registry the bot's card draws
+    (`services/admin_actions.py`)."""
+    admin = await _require_superadmin(request)
+    scope = request.query.get("scope", "")
+    if scope not in ("user", "chat"):
+        raise web.HTTPBadRequest(text="bad scope")
+    target = _action_target(scope, request.query.get("target", ""))
+    repo: Repo = request.app["mini_repo"]
+    locale = await repo.user_locale(admin.person_id)
+    _ = translator("admin", locale)
+    views = await available_actions(
+        _action_context(request, admin),
+        scope,  # type: ignore[arg-type]
+        target,
+        locale=locale,
+    )
+    return web.json_response(
+        {
+            "actions": [
+                {
+                    "id": v.id,
+                    "scope": v.scope,
+                    "target": v.target,
+                    "label": v.label,
+                    "danger": v.danger,
+                    "section": v.section,
+                    "section_title": (
+                        _(f"admin-action-section-{v.section}") if v.section else None
+                    ),
+                }
+                for v in views
+            ]
+        }
+    )
+
+
+async def handle_admin_action(request: web.Request) -> web.Response:
+    """One step of an action: the next confirmation to ask, or what it did —
+    the same steps and words as the bot's."""
+    admin = await _require_superadmin(request)
+    body = await request.json()
+    scope = str(body.get("scope") or "")
+    if scope not in ("user", "account", "chat"):
+        raise web.HTTPBadRequest(text="bad scope")
+    target = _action_target(scope, str(body.get("target") or ""))
+    try:
+        step = int(body.get("step") or 0)
+    except (TypeError, ValueError) as exc:
+        raise web.HTTPBadRequest(text="bad step") from exc
+    repo: Repo = request.app["mini_repo"]
+    result = await perform(
+        _action_context(request, admin),
+        scope,  # type: ignore[arg-type]
+        target,
+        str(body.get("action") or ""),
+        step,
+        locale=await repo.user_locale(admin.person_id),
+    )
+    if isinstance(result, Confirm):
+        return web.json_response(
+            {"confirm": {"text": _plain(result.text), "yes": result.yes, "step": result.step}}
+        )
+    return web.json_response(
+        {
+            "done": {
+                "ok": result.ok,
+                "text": _plain(result.text) if result.text else None,
+                "gone": result.gone,
+            }
+        }
+    )
+
+
+def _plain(text: str) -> str:
+    """The bot's words without its HTML: the Mini App shows plain text."""
+    return html.unescape(re.sub(r"<[^>]+>", "", text))
 
 
 async def _keys_payload(request: web.Request, admin: Any) -> dict[str, Any]:

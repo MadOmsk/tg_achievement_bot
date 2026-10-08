@@ -194,7 +194,7 @@ async def test_promo_command_in_group(i18n) -> None:
 
 
 async def test_admin_chat_send_promo_sets_stats_category(i18n, repo) -> None:
-    from bot.handlers.admin import chat_send_promo
+    from bot.handlers.delivery import send_promo
     from bot.services.message_log import _stats_category
 
     await repo.upsert_chat(CHAT_ID, "Test Chat", 1)
@@ -209,18 +209,7 @@ async def test_admin_chat_send_promo_sets_stats_category(i18n, repo) -> None:
         async def send_message(self, chat_id: int, text: str, **kwargs):
             self.sent_categories.append(_stats_category.get())
 
-    callback = SimpleNamespace(
-        data=f"a:csendpromo:{CHAT_ID}",
-        answer=lambda *a, **kw: None,
-    )
-
-    async def _async_answer(*args, **kwargs):
-        pass
-
-    callback.answer = _async_answer
-
     admin_bot = _AdminBot()
-    settings = SimpleNamespace(mini_app_url=APP_URL)
 
-    await chat_send_promo(callback, repo, admin_bot, i18n, settings)
+    await send_promo(admin_bot, CHAT_ID, "ru", APP_URL)  # type: ignore[arg-type]
     assert admin_bot.sent_categories == [True]

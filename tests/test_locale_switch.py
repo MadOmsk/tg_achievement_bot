@@ -164,7 +164,8 @@ async def test_the_card_opens_its_groups_and_the_messages(repo: Repo) -> None:
     assert f"a:mdel:{CHAT_ID}" in datas
     # and none of what they contain is on the card itself
     assert f"a:cs:{CHAT_ID}:daily_summary_time" not in datas
-    assert f"a:cdellast:{CHAT_ID}" not in datas
+    assert f"a:x:c:{CHAT_ID}:delete_last:0" not in datas
+    assert f"a:x:c:{CHAT_ID}:promo:0" in datas  # the one action on the card itself
 
 
 async def test_every_group_leads_back_to_the_card(repo: Repo) -> None:
@@ -185,5 +186,5 @@ async def test_the_messages_submenu_holds_every_wipe_action(repo: Repo) -> None:
     _text, markup = await render_chat_card(repo, CHAT_ID, locale="ru", section="messages")
     datas = [button.callback_data for row in markup.inline_keyboard for button in row]
 
-    for action in ("cdellast", "cwipe", "cswipe", "cswipeall"):
-        assert f"a:{action}:{CHAT_ID}" in datas
+    for action in ("delete_last", "wipe_24h", "wipe_system_24h", "wipe_system_all"):
+        assert f"a:x:c:{CHAT_ID}:{action}:0" in datas

@@ -1,8 +1,7 @@
-"""The two things bot/views/keyboards.py could not take with it (#63).
-
-Both *deliver* rather than render: one edits the message a callback came
-from, the other sends a private notice to somebody who is not the person
-being answered. A view returns a screen and stops there, so these live on
+"""What delivers rather than renders (#63): editing the message a callback
+came from, a private notice to somebody who is not the person being
+answered, and the app's promo posted to a chat (the super-admin's action,
+for both admin panels). A view returns a screen and stops there, so these live on
 the handler side of the line.
 """
 
@@ -14,7 +13,9 @@ from aiogram import Bot
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.i18n import gettext
+from bot.services.message_log import stats_category
 from bot.views.parts import platform_label
+from bot.views.promo import promo_keyboard, promo_text
 
 
 async def safe_edit(
@@ -52,4 +53,19 @@ async def notify_previous_owner(
                 platform=platform_label(platform, locale),
                 name=name,
             ),
+        )
+
+
+async def send_promo(bot: Bot, chat_id: int, locale: str, mini_app_url: str | None) -> None:
+    """The app's promo, in the chat's language, with its open buttons. Raises
+    what Telegram raises — the caller words it."""
+    from aiogram.enums import ParseMode
+
+    me = await bot.me()
+    markup = promo_keyboard(
+        me.username or "", chat_id, mini_app_url=mini_app_url or "", is_group=True, locale=locale
+    )
+    with stats_category():
+        await bot.send_message(
+            chat_id, promo_text(locale=locale), parse_mode=ParseMode.HTML, reply_markup=markup
         )

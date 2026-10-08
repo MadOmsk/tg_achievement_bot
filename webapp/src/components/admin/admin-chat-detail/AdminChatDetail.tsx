@@ -3,17 +3,16 @@ import {
   fetchAdminChats,
   fetchAdminChatSettings,
   patchAdminChatSetting,
-  postAdminChatAction,
   type AdminChatRow,
   type AdminSettingsGroup,
 } from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import { BackHead, Group, NavRow, SettingsSkel } from "../../shared/lib";
-import { ADMIN_CHAT_ACTIONS, type AdminChatAction } from "../../shared/constants";
+import { BackHead, SettingsSkel } from "../../shared/lib";
+import { AdminActions } from "../admin-actions/AdminActions";
 import { AdminSettingsForm } from "../admin-settings-form/AdminSettingsForm";
 
-/** One chat: its settings as the server's registry lists them (the bot's chat
- * card shows the same groups), then the actions on its messages. */
+/** One chat: its settings and its actions, as the server's registries list
+ * them — the bot's chat card shows the same. */
 export function AdminChatDetail({
   data,
   chatId,
@@ -41,13 +40,6 @@ export function AdminChatDetail({
       .catch(onFail);
   }, [chatId, data, onFail]);
 
-  const onAction = (action: AdminChatAction) => {
-    if (action.startsWith("wipe") && !window.confirm(t(locale, "confirmWipe"))) return;
-    void postAdminChatAction(data, chatId, action)
-      .then((r) => onFlash(r.preview || `${t(locale, "deleteLast")}: ${r.deleted ?? 0}`))
-      .catch(onFail);
-  };
-
   return (
     <>
       <BackHead
@@ -69,27 +61,14 @@ export function AdminChatDetail({
             }
           />
 
-          <Group title={t(locale, "chatGroupMessages")}>
-            <NavRow
-              label={t(locale, "deleteLast")}
-              onClick={() => onAction(ADMIN_CHAT_ACTIONS.DELETE_LAST)}
-            />
-            <NavRow
-              danger
-              label={t(locale, "wipe24h")}
-              onClick={() => onAction(ADMIN_CHAT_ACTIONS.WIPE_24H)}
-            />
-            <NavRow
-              danger
-              label={t(locale, "wipeSystem24h")}
-              onClick={() => onAction(ADMIN_CHAT_ACTIONS.WIPE_SYSTEM_24H)}
-            />
-            <NavRow
-              danger
-              label={t(locale, "wipeSystemAll")}
-              onClick={() => onAction(ADMIN_CHAT_ACTIONS.WIPE_SYSTEM_ALL)}
-            />
-          </Group>
+          <AdminActions
+            data={data}
+            scope="chat"
+            target={String(chatId)}
+            onFlash={onFlash}
+            onFail={onFail}
+            onDone={() => undefined}
+          />
         </>
       )}
     </>

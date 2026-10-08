@@ -198,8 +198,6 @@ admin-sync-delta =
        *[other] Checked { $titles } game(s), posted { $published }.
     }
 admin-sync-delta-steam = Posted since last time: { $published }.
-admin-steam-not-connected = Steam isn't connected
-admin-psn-not-connected = PSN isn't connected
 
 # Chat and cleanup actions
 admin-no-bot-messages = I found no messages of mine in this chat.
@@ -225,6 +223,11 @@ admin-system-wipe-prompt =
     the in-between messages (hints, confirmations, /help and the like).
 admin-send-promo-to-chat = 📢 Send promo to chat
 admin-promo-sent = Promo message sent to chat
+admin-promo-confirm = Send the promo message to «{ $title }»?
+admin-promo-confirm-yes = 📢 Yes, send it
+admin-promo-failed = Couldn't send the promo — the bot may not be in the chat.
+admin-action-unknown = That action isn't available now.
+admin-action-section-messages = Bot messages
 
 # New users and user cards
 admin-users-empty = 👥 Nobody has connected yet.

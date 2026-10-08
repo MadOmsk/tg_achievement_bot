@@ -1,6 +1,8 @@
 import { BaseApi } from "../base/baseApi";
 import { ADMIN_ROUTES, API_BASE_ROUTES } from "../../components/shared/constants/routes";
 import type {
+  AdminAction,
+  AdminActionStep,
   AdminChatRow,
   AdminHome,
   AdminKeys,
@@ -49,8 +51,20 @@ export class AdminApi extends BaseApi {
     return this.get<AdminUserCard>(initData, ADMIN_ROUTES.USER(personId));
   }
 
-  patchUser(initData: string, personId: number, body: Record<string, unknown>): Promise<AdminUserCard> {
-    return this.patch<AdminUserCard>(initData, ADMIN_ROUTES.USER(personId), body);
+  fetchActions(
+    initData: string,
+    scope: "user" | "chat",
+    target: string,
+  ): Promise<{ actions: AdminAction[] }> {
+    const query = `?scope=${scope}&target=${encodeURIComponent(target)}`;
+    return this.get<{ actions: AdminAction[] }>(initData, `${ADMIN_ROUTES.ACTIONS}${query}`);
+  }
+
+  postAction(
+    initData: string,
+    body: { scope: AdminAction["scope"]; target: string; action: string; step: number },
+  ): Promise<AdminActionStep> {
+    return this.post<AdminActionStep>(initData, ADMIN_ROUTES.ACTIONS, body);
   }
 
   fetchChats(initData: string): Promise<{ chats: AdminChatRow[] }> {
@@ -70,13 +84,6 @@ export class AdminApi extends BaseApi {
     return this.patch<AdminSettings>(initData, ADMIN_ROUTES.CHAT_SETTINGS(chatId), { key, value });
   }
 
-  postChatAction(
-    initData: string,
-    chatId: number,
-    action: string,
-  ): Promise<{ ok: boolean; deleted?: number; preview?: string | null }> {
-    return this.post(initData, ADMIN_ROUTES.CHAT_ACTIONS(chatId), { action });
-  }
 }
 
 export const adminApi = new AdminApi();

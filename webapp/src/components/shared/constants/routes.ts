@@ -54,7 +54,7 @@ export const ADMIN_ROUTES = {
   USER: (personId: number) => `/users/p${personId}`,
   CHATS: "/chats",
   CHAT_SETTINGS: (chatId: number) => `/chats/${chatId}/settings`,
-  CHAT_ACTIONS: (chatId: number) => `/chats/${chatId}/actions`,
+  ACTIONS: "/actions",
 } as const;
 
 export const HLTB_ROUTES = {
