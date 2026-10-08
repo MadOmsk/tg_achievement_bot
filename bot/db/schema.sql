@@ -191,6 +191,8 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     -- This many achievements of one person at once make one digest instead
     -- of separate cards; 99 = never (#126 — it was the person's, per
     -- subscription, before).
+    -- No longer read: the digest size is one for every chat (owner,
+    -- 2026-10-08), app_settings['digest_threshold'].
     digest_threshold        INTEGER NOT NULL DEFAULT 3,
     daily_summary_time      TEXT    NOT NULL DEFAULT '20:00',
     -- Offset, not a zone name — same reasoning as user_settings.tz_offset_min:

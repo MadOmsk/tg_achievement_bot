@@ -38,19 +38,19 @@ admin-setting-show-links = Profile links
 admin-setting-chat-active = Chat on
 admin-setting-chat-locale = Language
 admin-setting-chat-tz = Time zone
-admin-setting-chat-digest = Digest from
+admin-setting-digest = Digest from
 admin-setting-chat-summary = Daily summary
 admin-setting-chat-summary-time = Summary time
 admin-setting-chat-flood-limit = Anti-flood: posts per window
 admin-setting-chat-flood-window = Anti-flood: window (min)
 admin-group-global-rules = Rules
+admin-group-global-newcomers = New people
 admin-group-global-lists = Lists
 admin-group-global-hltb = HLTB
 admin-group-global-timers = Timers
 admin-group-global-mail = Mail
 admin-group-global-other = Other
 admin-group-chat-main = General
-admin-group-chat-publishing = Publishing
 admin-group-chat-summary = Daily summary
 admin-group-chat-flood = Anti-flood
 admin-settings-title = ⚙️ Settings
@@ -65,6 +65,24 @@ admin-settings-type =
 admin-settings-zero-hint = { " " }0 — { $meaning }.
 admin-settings-saved = ✅ { $label }: { $value }
 admin-settings-choice-retry = No such value — pick one with a button.
+
+# A place in each of the zones people here live in — the Mini App's
+# admin shows it beside the offset; the bot shows the offset alone.
+admin-tz-place-m480 = Los Angeles
+admin-tz-place-m300 = New York
+admin-tz-place-p0 = London
+admin-tz-place-p60 = Berlin
+admin-tz-place-p120 = Kaliningrad
+admin-tz-place-p180 = Moscow
+admin-tz-place-p240 = Samara
+admin-tz-place-p300 = Yekaterinburg
+admin-tz-place-p360 = Omsk
+admin-tz-place-p420 = Novosibirsk
+admin-tz-place-p480 = Irkutsk
+admin-tz-place-p540 = Yakutsk
+admin-tz-place-p600 = Vladivostok
+admin-tz-place-p660 = Magadan
+admin-tz-place-p720 = Kamchatka
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
@@ -295,7 +313,6 @@ admin-chat-card =
 
     State:         { $state }
     Publishing:    { $subscribers } people
-    Digest:        { $digest }
     Daily summary: { $summary }, at { $time }
     Timezone:      { $offset }
     Anti-flood:    { $flood }
@@ -306,7 +323,6 @@ admin-chat-flood-value = { $limit } ach. / { $window } min
 admin-chat-flood-off = off
 admin-no-subscribers = No subscribers yet.
 admin-subscribers-list = Subscribed: { $names }
-admin-digest-from = from { $value } ach.
 admin-digest-never = never
 admin-chat-messages-menu-button = 🗑 Messages ▸
 admin-delete-last = 🗑 Last one

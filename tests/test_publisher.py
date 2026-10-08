@@ -137,7 +137,7 @@ async def test_publisher_attaches_mini_app_markup_to_digest(repo) -> None:
     await repo.ensure_user(tg_id)
     await repo.upsert_chat(chat_id, "Test Chat", tg_id)
     await repo.subscribe(chat_id, await repo.person_id(tg_id))
-    await repo.update_chat_settings(chat_id, digest_threshold=2)  # the chat's since #126
+    await repo.set_app_setting("digest_threshold", "2")  # one for every chat
 
     settings = SimpleNamespace(mini_app_url="https://app.example.com")
     pub = Publisher(bot=None, repo=repo, settings=settings, bot_username="testbot")

@@ -267,3 +267,9 @@ GLOBAL_RARE_THRESHOLD = (
     "COALESCE((SELECT CAST(value AS REAL) FROM app_settings"
     " WHERE key = 'rare_threshold_percent'), 10.0)"
 )
+
+# The digest size, one for every chat too (owner, 2026-10-08), the same way:
+# chat_settings.digest_threshold is left unread.
+GLOBAL_DIGEST_THRESHOLD = (
+    "COALESCE((SELECT CAST(value AS INTEGER) FROM app_settings WHERE key = 'digest_threshold'), 3)"
+)

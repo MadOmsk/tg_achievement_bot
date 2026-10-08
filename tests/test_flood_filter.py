@@ -46,10 +46,10 @@ async def _setup_chat(
     await repo.update_chat_settings(
         CHAT_ID, flood_limit=flood_limit, flood_window_minutes=flood_window_minutes
     )
-    # digest_threshold is a separate, unrelated mechanism (the chat's since
-    # #126) — pushed out of reach so these tests aren't accidentally
+    # The digest is a separate, unrelated mechanism (one size for every chat
+    # since 2026-10-08) — pushed out of reach so these tests aren't accidentally
     # exercising it too when several achievements land in one publish() call.
-    await repo.update_chat_settings(CHAT_ID, digest_threshold=99)
+    await repo.set_app_setting("digest_threshold", "99")
 
 
 async def test_flood_filter_allows_the_limit_then_buffers_the_rest(repo: Repo) -> None:
@@ -425,7 +425,7 @@ async def test_a_post_names_the_person_by_their_nickname(repo: Repo) -> None:
     assert single.text.startswith(f"<b>{shown}</b>")
     assert "Gamer" not in single.text.split("\n")[0]
 
-    await repo.update_chat_settings(CHAT_ID, digest_threshold=2)
+    await repo.set_app_setting("digest_threshold", "2")
     await publisher.publish(person, XUID, "Gamer", [achievement("n2"), achievement("n3")])
     digest = publisher._queue.get_nowait()
     assert digest.text.startswith(f"<b>{shown}</b>")

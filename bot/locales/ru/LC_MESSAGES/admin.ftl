@@ -38,19 +38,19 @@ admin-setting-show-links = Ссылки на профили
 admin-setting-chat-active = Чат включён
 admin-setting-chat-locale = Язык
 admin-setting-chat-tz = Часовой пояс
-admin-setting-chat-digest = Дайджест с
+admin-setting-digest = Дайджест с
 admin-setting-chat-summary = Итоги дня
 admin-setting-chat-summary-time = Время итогов
 admin-setting-chat-flood-limit = Антифлуд: постов за окно
 admin-setting-chat-flood-window = Антифлуд: окно (мин)
 admin-group-global-rules = Правила
+admin-group-global-newcomers = Новые пользователи
 admin-group-global-lists = Списки
 admin-group-global-hltb = HLTB
 admin-group-global-timers = Таймеры
 admin-group-global-mail = Почта
 admin-group-global-other = Прочее
 admin-group-chat-main = Основное
-admin-group-chat-publishing = Публикация
 admin-group-chat-summary = Итоги дня
 admin-group-chat-flood = Антифлуд
 admin-settings-title = ⚙️ Настройки
@@ -65,6 +65,24 @@ admin-settings-type =
 admin-settings-zero-hint = { " " }0 — { $meaning }.
 admin-settings-saved = ✅ { $label }: { $value }
 admin-settings-choice-retry = Такого значения нет — выбери кнопкой.
+
+# A place in each of the zones people here live in — the Mini App's
+# admin shows it beside the offset; the bot shows the offset alone.
+admin-tz-place-m480 = Лос-Анджелес
+admin-tz-place-m300 = Нью-Йорк
+admin-tz-place-p0 = Лондон
+admin-tz-place-p60 = Берлин
+admin-tz-place-p120 = Калининград
+admin-tz-place-p180 = Москва
+admin-tz-place-p240 = Самара
+admin-tz-place-p300 = Екатеринбург
+admin-tz-place-p360 = Омск
+admin-tz-place-p420 = Новосибирск
+admin-tz-place-p480 = Иркутск
+admin-tz-place-p540 = Якутск
+admin-tz-place-p600 = Владивосток
+admin-tz-place-p660 = Магадан
+admin-tz-place-p720 = Камчатка
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
@@ -295,7 +313,6 @@ admin-chat-card =
 
     Состояние:    { $state }
     Публикуется:  { $subscribers } чел.
-    Дайджест:     { $digest }
     Итог дня:     { $summary }, в { $time }
     Часовой пояс: { $offset }
     Антифлуд:     { $flood }
@@ -306,7 +323,6 @@ admin-chat-flood-value = { $limit } ач. / { $window } мин
 admin-chat-flood-off = выключен
 admin-no-subscribers = Подписанных пока нет.
 admin-subscribers-list = Подписаны: { $names }
-admin-digest-from = от { $value } ач.
 admin-digest-never = никогда
 admin-chat-messages-menu-button = 🗑 Сообщения ▸
 admin-delete-last = 🗑 Последнее

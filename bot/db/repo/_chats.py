@@ -8,7 +8,12 @@ from __future__ import annotations
 import json
 
 from bot.db.repo._models import ChatDailySettings, ChatTarget, UserChatRow
-from bot.db.repo._sql import CHAT_MEMBERS, GLOBAL_RARE_THRESHOLD, PERSON_BY_TG
+from bot.db.repo._sql import (
+    CHAT_MEMBERS,
+    GLOBAL_DIGEST_THRESHOLD,
+    GLOBAL_RARE_THRESHOLD,
+    PERSON_BY_TG,
+)
 from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.util import utcnow_iso
 
@@ -129,7 +134,8 @@ class _ChatsRepo:
             "SELECT c.chat_id, c.title, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min,"
-            "       s.flood_limit, s.flood_window_minutes, s.locale, s.digest_threshold,"
+            "       s.flood_limit, s.flood_window_minutes, s.locale,"
+            f"       {GLOBAL_DIGEST_THRESHOLD} AS digest_threshold,"
             "       COALESCE(us.rarity_mode, 'all') AS rarity_mode "
             "FROM subscriptions sub "
             "JOIN chats c ON c.chat_id = sub.chat_id "

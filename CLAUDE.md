@@ -455,11 +455,11 @@ every column. History: #106.
 ### Chats and settings
 
 - `chats` + `subscriptions` (who publishes where — nothing else: #126 moved the
-  per-subscription settings out). `chat_settings`: **digest size**
-  (`digest_threshold`, 99 = never), summary time, timezone, muted games,
-  daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
-  `locale` (its `rare_threshold_percent` column is no longer read — the threshold
-  is global, see Publication rules). `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
+  per-subscription settings out). `chat_settings`: summary time, timezone, muted
+  games, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
+  `locale` (its `rare_threshold_percent`, `digest_threshold` and `min_gamerscore`
+  columns are no longer read — the threshold and the digest size are global, see
+  Publication rules). `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
   new people start from `app_settings['default_rarity_mode']`), timezone, muted games,
   `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
   profile links are one admin switch, `app_settings['show_profile_links']`, on by
@@ -759,7 +759,9 @@ isn't muted there; it wasn't already published there.
   chat's settings are read (`_sql.py::GLOBAL_RARE_THRESHOLD`), so callers still
   take `chat.rare_threshold_percent`. Never hardcode a percentage; a person picks
   only a mode.
-- **Digests**: at the chat's `digest_threshold` items (set by an admin, #126) a batch
+- **Digests**: at `digest_threshold` items — one size for every chat (owner,
+  2026-10-08; `app_settings['digest_threshold']`, 3 until changed, 99 = never;
+  read as `chat.digest_threshold` through `_sql.GLOBAL_DIGEST_THRESHOLD`) — a batch
   becomes one grouped message, grouped by platform and title. Every item is listed, never "и ещё N". The
   gallery dedupes by image URL.
 - **Nothing may fail for being too long** (#68): `services/message_limits.py` is a
@@ -1285,7 +1287,9 @@ keyboard.
     an hour, a UTC offset), bounds or choices, group, label, hint. `set_value` is
     the one way either panel changes one — parsed, bounded, stored; a bad value
     is refused the same from a typed message and from JSON. Time zones are the
-    38 real UTC offsets (`REAL_UTC_OFFSETS_MIN`), summaries go out on the hour.
+    38 real UTC offsets (`REAL_UTC_OFFSETS_MIN`), summaries go out on the hour;
+    the Mini App names a city beside an offset where one is known («Москва ·
+    UTC+3», `value_label(place=True)`), the bot shows the offset alone.
   - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
     sign-in emails against their caps, every credential's state).
   - `services/admin_credentials.py` — the shared credentials (`set` raising
@@ -1305,12 +1309,12 @@ keyboard.
   mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
-  rarity threshold, newcomers' mode, profile links · Списки · HLTB · Таймеры ·
-  Почта · Прочее), `0` worded by what it means; the user list; the chat list and
+  rarity threshold, the digest size, profile links · Новые пользователи: the
+  mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
+  by what it means; the user list; the chat list and
   per-chat cards; exclusion; bot-message cleanup.
 - **The per-chat card** opens the registry's chat groups — Основное (on, language,
-  time zone) · Публикация (digest size, #126) · Итоги дня (on, the hour) ·
-  Антифлуд (limit, window) — and «Сообщения» (the wipes), each redrawing in place
+  time zone) · Итоги дня (on, the hour) · Антифлуд (limit, window) — and «Сообщения» (the wipes), each redrawing in place
   with the card's text above. There is no minimum gamerscore
   (owner, 2026-10-08: it held back every Steam and PSN achievement; the column
   `chat_settings.min_gamerscore` is left unread).

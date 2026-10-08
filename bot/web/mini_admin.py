@@ -120,7 +120,10 @@ async def build_admin_settings(
                 "max": setting.max,
                 "zero_means": setting.zero_means,
                 "options": [
-                    {"value": option, "label": value_label(setting, option, locale=locale)}
+                    {
+                        "value": option,
+                        "label": value_label(setting, option, locale=locale, place=True),
+                    }
                     for option in setting.options()
                     if setting.kind is not Kind.BOOL
                 ],

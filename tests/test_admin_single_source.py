@@ -174,7 +174,6 @@ async def test_a_chat_setting_takes_only_its_own_values(repo: Repo) -> None:
         ("tz_offset_min", 15 * 60),  # +15 is past the last real one
         ("daily_summary_time", "абв"),
         ("daily_summary_time", "20:30"),  # the summary goes out on the hour
-        ("digest_threshold", 7),
         ("flood_limit", -5),
         ("flood_limit", 100000),
         ("locale", "de"),
@@ -295,3 +294,30 @@ async def test_the_mini_app_draws_and_changes_what_the_bot_does(
     [zone] = [i for g in tz["groups"] for i in g["items"] if i["key"] == "tz_offset_min"]
     assert zone["value"] == 330 and len(zone["options"]) == 38
     assert {"value": 330, "label": "UTC+5:30"} in zone["options"]
+
+
+def test_a_time_zone_names_a_place_in_the_mini_app_only() -> None:
+    """Owner, 2026-10-08: the Mini App's picker says "Москва · UTC+3", the
+    bot's buttons the offset alone."""
+    from bot.services.admin_registry import find, value_label
+    from bot.views.admin_settings import render_setting_choices
+
+    zone = find("chat", "tz_offset_min")
+    assert value_label(zone, 180, locale="ru", place=True) == "Москва · UTC+3"
+    assert value_label(zone, 330, locale="ru", place=True) == "UTC+5:30"  # no place known
+    buttons = [
+        b.text
+        for row in render_setting_choices(
+            zone, 180, locale="ru", back="x", chat_id=1
+        ).keyboard.inline_keyboard
+        for b in row
+    ]
+    assert "• UTC+3" in buttons and not any("Москва" in text for text in buttons)
+
+
+def test_the_digest_is_a_global_setting() -> None:
+    from bot.services.admin_registry import find
+
+    assert find("global", "digest_threshold").group == "rules"
+    with pytest.raises(KeyError):
+        find("chat", "digest_threshold")

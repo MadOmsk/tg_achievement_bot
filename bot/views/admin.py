@@ -49,7 +49,6 @@ from bot.views import Screen
 from bot.views.admin_settings import setting_rows
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
-    DIGEST_NEVER,
     format_offset,
     locale_name,
 )
@@ -530,12 +529,6 @@ async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeybo
     return _("admin-chats-header"), keyboard
 
 
-def _digest_label(threshold: int, _: Callable[..., str]) -> str:
-    if threshold >= DIGEST_NEVER:
-        return _("admin-digest-never")
-    return _("admin-digest-from", value=threshold)
-
-
 async def render_chat_card(
     repo: Repo, chat_id: int, *, locale: str, section: str | None = None
 ) -> tuple[str, InlineKeyboardMarkup]:
@@ -567,7 +560,6 @@ async def render_chat_card(
         time=chat.daily_summary_time,
         offset=zone_label,
         flood=flood_label,
-        digest=_digest_label(chat.digest_threshold, _),
         locale_name=locale_name(chat.locale),
         names=(
             _("admin-subscribers-list", names=", ".join(names))

@@ -159,7 +159,7 @@ async def test_the_card_opens_its_groups_and_the_messages(repo: Repo) -> None:
     _text, markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     datas = [button.callback_data for row in markup.inline_keyboard for button in row]
 
-    for group in ("main", "publishing", "summary", "flood"):
+    for group in ("main", "summary", "flood"):
         assert f"a:cg:{CHAT_ID}:{group}" in datas
     assert f"a:mdel:{CHAT_ID}" in datas
     # and none of what they contain is on the card itself
@@ -170,7 +170,7 @@ async def test_the_card_opens_its_groups_and_the_messages(repo: Repo) -> None:
 async def test_every_group_leads_back_to_the_card(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
 
-    for section in ("main", "publishing", "summary", "flood", "messages"):
+    for section in ("main", "summary", "flood", "messages"):
         text, markup = await render_chat_card(repo, CHAT_ID, locale="ru", section=section)
         datas = [button.callback_data for row in markup.inline_keyboard for button in row]
         assert f"a:chat:{CHAT_ID}" in datas, section

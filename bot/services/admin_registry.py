@@ -122,8 +122,8 @@ _NUMERIC_GROUPS = {
 }
 
 GROUPS: dict[Scope, tuple[str, ...]] = {
-    "global": ("rules", "lists", "hltb", "timers", "mail", "other"),
-    "chat": ("main", "publishing", "summary", "flood"),
+    "global": ("rules", "newcomers", "lists", "hltb", "timers", "mail", "other"),
+    "chat": ("main", "summary", "flood"),
 }
 
 SETTINGS: tuple[Setting, ...] = (
@@ -142,12 +142,23 @@ SETTINGS: tuple[Setting, ...] = (
     Setting(
         DEFAULT_RARITY_MODE_KEY,
         "global",
-        "rules",
+        "newcomers",
         Kind.CHOICE,
         "admin-setting-default-rarity",
         hint="admin-setting-default-rarity-hint",
         default=DEFAULT_RARITY_MODE_DEFAULT,
         choices=(RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN),
+    ),
+    # How many of one person's achievements at once make one digest — one
+    # for every chat (owner, 2026-10-08).
+    Setting(
+        "digest_threshold",
+        "global",
+        "rules",
+        Kind.CHOICE,
+        "admin-setting-digest",
+        default=3,
+        choices=DIGEST_CHOICES,
     ),
     Setting(
         SHOW_LINKS_KEY,
@@ -183,14 +194,6 @@ SETTINGS: tuple[Setting, ...] = (
         choices=AVAILABLE_LOCALES,
     ),
     Setting("tz_offset_min", "chat", "main", Kind.TZ, "admin-setting-chat-tz"),
-    Setting(
-        "digest_threshold",
-        "chat",
-        "publishing",
-        Kind.CHOICE,
-        "admin-setting-chat-digest",
-        choices=DIGEST_CHOICES,
-    ),
     Setting("daily_summary", "chat", "summary", Kind.BOOL, "admin-setting-chat-summary"),
     Setting("daily_summary_time", "chat", "summary", Kind.HOUR, "admin-setting-chat-summary-time"),
     Setting(
@@ -357,8 +360,14 @@ async def set_value(
 # ------------------------------------------------------------------ words
 
 
-def value_label(setting: Setting, value: Any, *, locale: str) -> str:
-    """A value as both panels show it."""
+# The offsets with a place named beside them where there is room for one —
+# the Mini App's pickers; the bot's buttons show the offset alone.
+_TZ_PLACES = (-480, -300, 0, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720)
+
+
+def value_label(setting: Setting, value: Any, *, locale: str, place: bool = False) -> str:
+    """A value as both panels show it. `place` adds a city to a time zone
+    ("Москва · UTC+3") where one is known — the Mini App asks for it."""
 
     def _(key: str, **kwargs: Any) -> str:
         return gettext("admin", key, locale=locale, **kwargs)
@@ -372,7 +381,11 @@ def value_label(setting: Setting, value: Any, *, locale: str) -> str:
     if setting.kind is Kind.HOUR:
         return f"{value:02d}:00"
     if setting.kind is Kind.TZ:
-        return utc_offset_label(int(value))
+        offset = utc_offset_label(int(value))
+        if place and int(value) in _TZ_PLACES:
+            sign = "m" if int(value) < 0 else "p"
+            return f"{_(f'admin-tz-place-{sign}{abs(int(value))}')} · {offset}"
+        return offset
     if setting.key == DEFAULT_RARITY_MODE_KEY:
         return gettext("keyboards", f"kb-rarity-{value}", locale=locale)
     if setting.key == "locale":
