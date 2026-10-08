@@ -54,8 +54,8 @@ button.person-back:focus-visible {
   margin: calc(-1 * (14px + var(--safe-top))) -18px 0;
 }
 
-/* Plain glyph, no ring around it — only a tap presses it visibly (see
- * :active). The same shape every "back" button in the app now uses. */
+/* A bare glyph, no ring even on tap — a press only shrinks it (see
+ * :active). The same shape every "back" button in the app uses. */
 .person-back {
   width: 44px;
   height: 44px;
@@ -83,7 +83,6 @@ button.person-back:focus-visible {
 }
 
 .person-back:active {
-  background: rgba(255, 255, 255, 0.16);
   transform: scale(0.92);
 }
 
