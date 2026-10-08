@@ -1045,7 +1045,14 @@ elsewhere in this file still describe the bot.
     `Notifier.tell_about_game_news`) is told to everybody who earned something in
     that game in the last 60 days (`repo.game_news_readers`): in the list always,
     on a channel by its choice (all, patches, news). Only posts of the last two days, two at most a
-    read, and none from an app's first read (its history). A tap opens the game.
+    read, and none from an app's first read (its history). **A tap opens the
+    post itself** (owner, 2026-10-08): the notice keeps its `appid` and `gid`,
+    the list hands them on as `news`, a push's link carries `n=appid:gid`, and
+    `GET /api/mini/club/news/post?appid=&gid=[&title_id=]` gives the post (and
+    the game's name and picture for its head); the post's page opens on its own
+    (`NewsPostLoader`), its game a tap on its head — never the game page under
+    it, which a phone's back would close first. A notice from before keeps
+    opening the game.
   - **Web Push without a new dependency**: `services/webpush.py` seals a message
     (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
     with `httpx`; `tests/test_webpush.py` checks it against the RFC's own example.

@@ -19,7 +19,7 @@ from aiohttp import web
 from bot.config import Settings
 from bot.constants import MAX_PSN_ACCOUNTS, AccountPlatform, Platform, RarityMode
 from bot.db.repo import HandleInvalid, HandleTooSoon, Repo, User
-from bot.db.repo._sql import MEMBERS_CHAT
+from bot.db.repo._sql import MEMBERS_CHAT, pick_name
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
@@ -184,6 +184,7 @@ def setup_mini_api(
     # segment starting with `-` 404s on some aiohttp/proxy stacks.
     app.router.add_get("/api/mini/club/feed", handle_chat_feed)
     app.router.add_get("/api/mini/club/news", handle_club_news)
+    app.router.add_get("/api/mini/club/news/post", handle_news_post)
     app.router.add_get("/api/mini/club/online", handle_chat_online)
     app.router.add_get("/api/mini/club/summary", handle_chat_summary)
     app.router.add_get("/api/mini/club/people", handle_chat_person)
@@ -708,6 +709,45 @@ async def handle_club_news(request: web.Request) -> web.Response:
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad month") from exc
     return web.json_response(payload)
+
+
+async def handle_news_post(request: web.Request) -> web.Response:
+    """One developer's post (`?appid=&gid=`), as a notice about it opens it
+    (owner, 2026-10-08): the same fields the news feed gives a post. A post is
+    public on Steam; only a signed-in person asks."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    try:
+        appid = int(request.query.get("appid", ""))
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad appid") from exc
+    gid = request.query.get("gid", "")
+    post = await repo.game_patch(appid, gid) if gid else None
+    if post is None:
+        raise web.HTTPNotFound(text="no such post")
+    # The game it is about, when the link names one (`?title_id=`): its name
+    # in the reader's language and its picture, for the post's head.
+    game = None
+    title_id = request.query.get("title_id")
+    if title_id:
+        names = (await repo.title_names([title_id])).get(title_id, (None, None))
+        locale = await _user_locale(repo, user.person_id)
+        name = pick_name(locale, names[0], names[1], await repo.title_name(title_id))
+        if name:
+            game = {"name": name, "icon_url": _https_url(await repo.title_icon_url(title_id))}
+    return web.json_response(
+        {
+            "game": game,
+            "appid": appid,
+            "gid": post.gid,
+            "kind": post.kind,
+            "title": post.title,
+            "date": post.published_at,
+            "text": post.text_en or "",
+            "image": _https_url(post.image_url),
+            "url": f"https://store.steampowered.com/news/app/{appid}/view/{post.gid}",
+        }
+    )
 
 
 async def handle_chat_online(request: web.Request) -> web.Response:

@@ -315,6 +315,9 @@ class Notifier:
                         game=game,
                         title=post.title,
                         post=post.kind,
+                        # Which post: a tap opens it, not only its game.
+                        appid=appid,
+                        gid=post.gid,
                         **({"icon": post.image_url} if post.image_url else {}),
                     )
                 except Exception:
@@ -370,14 +373,17 @@ class Notifier:
             log.info("notification DM to person_id=%s not sent: %r", person_id, exc)
 
     def _url_for(self, kind: str, data: dict[str, Any]) -> str:
-        """Where a tap opens: the game the notice is about, on that person's
-        progress; else the person; else the app."""
+        """Where a tap opens: a game's post, over its game; the game the notice
+        is about, on that person's progress; else the person; else the app."""
         spec = KINDS.get(kind, UNKNOWN)
         query: dict[str, str] = {}
         if spec.person_field and data.get(spec.person_field) is not None:
             query["p"] = str(data[spec.person_field])
         if spec.game and data.get("platform") and data.get("title_id"):
             query["g"] = f"{data['platform']}:{data['title_id']}"
+        if kind == "game_news" and data.get("appid") and data.get("gid"):
+            # The post itself opens, over its game (owner, 2026-10-08).
+            query["n"] = f"{data['appid']}:{data['gid']}"
         if not query:
             return self._app_url
         separator = "&" if "?" in self._app_url else "?"
