@@ -9,19 +9,24 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from bot.db.repo import Repo
-from bot.services import admin_settings
 from bot.services.admin_credentials import (
     AdminCredentials,
     CredentialInvalid,
     CredentialSetupError,
+)
+from bot.services.admin_registry import (
+    GROUPS,
+    REAL_UTC_OFFSETS_MIN,
+    SETTINGS,
+    parse,
+    set_value,
+    settings_of,
 )
 from bot.services.admin_settings import (
     EMAIL_PROVIDER_DAILY_KEY,
     RARE_THRESHOLD_KEY,
     TOP_LIMIT_KEY,
     SettingValueError,
-    set_numeric_setting,
-    set_rare_threshold,
 )
 from bot.services.crypto import TokenCipher
 from bot.services.psn import auth as psn_auth_module
@@ -37,6 +42,7 @@ from bot.views.admin_home import render_admin_home
 from bot.web.mini_api import cors_middleware, setup_mini_api
 
 ADMIN_TG = 500
+CHAT_ID = -100777
 
 
 class _NoUsage:
@@ -137,34 +143,63 @@ async def test_set_and_clear_go_through_the_credentials_own_class(
     assert not (await credentials.state("steam")).configured
 
 
-# ------------------------------------------------------------ numeric settings
+# ------------------------------------------------------------ the registry
 
 
-async def test_a_numeric_setting_is_checked_the_same_from_text_or_json(repo: Repo) -> None:
-    assert await set_numeric_setting(repo, TOP_LIMIT_KEY, "12", 1) == 12
-    assert await set_numeric_setting(repo, TOP_LIMIT_KEY, 7.0, 1) == 7  # JSON's number
+async def test_a_number_is_checked_the_same_from_text_or_json(repo: Repo) -> None:
+    assert await set_value(repo, "global", TOP_LIMIT_KEY, "12", 1) == 12
+    assert await set_value(repo, "global", TOP_LIMIT_KEY, 7.0, 1) == 7  # JSON's number
     for raw in ("1.5", "1,5", 2.5, True, "x"):
         with pytest.raises(SettingValueError) as caught:
-            await set_numeric_setting(repo, TOP_LIMIT_KEY, raw, 1)
+            await set_value(repo, "global", TOP_LIMIT_KEY, raw, 1)
         assert caught.value.reason == "integer"
     with pytest.raises(SettingValueError) as caught:
-        await set_numeric_setting(repo, TOP_LIMIT_KEY, "51", 1)
+        await set_value(repo, "global", TOP_LIMIT_KEY, "51", 1)
     assert (caught.value.reason, caught.value.maximum) == ("range", 50)
     assert await repo.get_app_setting(TOP_LIMIT_KEY) == "7"
 
 
 async def test_the_rarity_threshold_takes_a_comma_and_refuses_the_rest(repo: Repo) -> None:
-    assert await set_rare_threshold(repo, "2,5", 1) == 2.5
+    assert await set_value(repo, "global", RARE_THRESHOLD_KEY, "2,5", 1) == 2.5
     assert await repo.get_app_setting(RARE_THRESHOLD_KEY) == "2.5"
     for raw in ("0", "101", "nan", "x", True):
         with pytest.raises(SettingValueError):
-            await set_rare_threshold(repo, raw, 1)
+            await set_value(repo, "global", RARE_THRESHOLD_KEY, raw, 1)
 
 
-def test_every_zero_label_has_a_meaning_for_the_mini_app() -> None:
-    for spec in admin_settings.NUMERIC_SETTINGS.values():
-        if spec.min == 0:
-            assert spec.zero_means is not None
+async def test_a_chat_setting_takes_only_its_own_values(repo: Repo) -> None:
+    await repo.upsert_chat(CHAT_ID, "Чат", 1)
+    for key, bad in (
+        ("tz_offset_min", 7),  # 7 minutes is nobody's offset
+        ("tz_offset_min", 15 * 60),  # +15 is past the last real one
+        ("daily_summary_time", "абв"),
+        ("daily_summary_time", "20:30"),  # the summary goes out on the hour
+        ("digest_threshold", 7),
+        ("flood_limit", -5),
+        ("flood_limit", 100000),
+        ("locale", "de"),
+    ):
+        with pytest.raises(SettingValueError):
+            await set_value(repo, "chat", key, bad, 1, chat_id=CHAT_ID)
+
+    await set_value(repo, "chat", "tz_offset_min", 5 * 60 + 45, 1, chat_id=CHAT_ID)
+    await set_value(repo, "chat", "daily_summary_time", "21:00", 1, chat_id=CHAT_ID)
+    await set_value(repo, "chat", "is_active", False, 1, chat_id=CHAT_ID)
+    [chat] = [c for c in await repo.admin_chats() if c.chat_id == CHAT_ID]
+    assert (chat.tz_offset_min, chat.daily_summary_time, chat.is_active) == (345, "21:00", False)
+
+
+def test_the_real_offsets_are_hours_and_the_few_that_are_not() -> None:
+    assert len(REAL_UTC_OFFSETS_MIN) == 38
+    assert REAL_UTC_OFFSETS_MIN[0] == -12 * 60 and REAL_UTC_OFFSETS_MIN[-1] == 14 * 60
+    assert {5 * 60 + 45, 9 * 60 + 30, -(3 * 60 + 30)} <= set(REAL_UTC_OFFSETS_MIN)
+    assert 15 not in REAL_UTC_OFFSETS_MIN
+
+
+def test_every_default_is_a_value_its_setting_takes() -> None:
+    for setting in SETTINGS:
+        if setting.default is not None:
+            assert parse(setting, setting.default) == setting.default, setting.key
 
 
 # ------------------------------------------------- the two surfaces, one answer
@@ -221,20 +256,42 @@ async def test_the_mini_app_lists_and_sets_every_key_the_bot_does(
     assert unknown.status == 404
 
 
-async def test_a_limit_out_of_range_is_refused_by_the_mini_app_as_by_the_bot(
+async def test_the_mini_app_draws_and_changes_what_the_bot_does(
     repo: Repo, cipher: TokenCipher, settings
 ) -> None:
+    """The same rows, groups and bounds; a value the bot refuses is refused."""
+    await repo.upsert_chat(CHAT_ID, "Чат", 1)
     client = await _client(repo, settings, _credentials(repo, cipher, settings))
     try:
-        bad = await client.patch("/api/mini/admin/limits", json={"key": TOP_LIMIT_KEY, "value": 51})
-        half = await client.patch(
-            "/api/mini/admin/limits", json={"key": TOP_LIMIT_KEY, "value": 2.5}
+        listed = await (await client.get("/api/mini/admin/settings")).json()
+        bad = await client.patch(
+            "/api/mini/admin/settings", json={"key": TOP_LIMIT_KEY, "value": 51}
         )
-        good = await client.patch("/api/mini/admin/limits", json={"key": TOP_LIMIT_KEY, "value": 9})
-        items = (await good.json())["items"]
+        half = await client.patch(
+            "/api/mini/admin/settings", json={"key": TOP_LIMIT_KEY, "value": 2.5}
+        )
+        unknown = await client.patch("/api/mini/admin/settings", json={"key": "nope", "value": 1})
+        good = await (
+            await client.patch("/api/mini/admin/settings", json={"key": TOP_LIMIT_KEY, "value": 9})
+        ).json()
+        chat_url = f"/api/mini/admin/chats/{CHAT_ID}/settings"
+        chat = await (await client.get(chat_url)).json()
+        bad_tz = await client.patch(chat_url, json={"key": "tz_offset_min", "value": 7})
+        tz = await (
+            await client.patch(chat_url, json={"key": "tz_offset_min", "value": 330})
+        ).json()
     finally:
         await client.close()
 
-    assert bad.status == half.status == 400
-    [row] = [item for item in items if item["key"] == TOP_LIMIT_KEY]
-    assert (row["value"], row["zero_means"]) == (9, "unlimited")
+    assert [g["id"] for g in listed["groups"]] == list(GROUPS["global"])
+    keys = [i["key"] for g in listed["groups"] for i in g["items"]]
+    assert keys == [str(s.key) for s in settings_of("global")]
+    assert bad.status == half.status == unknown.status == 400
+    [row] = [i for g in good["groups"] for i in g["items"] if i["key"] == TOP_LIMIT_KEY]
+    assert (row["value"], row["zero_means"], row["min"], row["max"]) == (9, "unlimited", 0, 50)
+
+    assert [g["id"] for g in chat["groups"]] == list(GROUPS["chat"])
+    assert bad_tz.status == 400
+    [zone] = [i for g in tz["groups"] for i in g["items"] if i["key"] == "tz_offset_min"]
+    assert zone["value"] == 330 and len(zone["options"]) == 38
+    assert {"value": 330, "label": "UTC+5:30"} in zone["options"]

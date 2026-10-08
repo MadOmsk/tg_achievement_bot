@@ -5,6 +5,8 @@ from __future__ import annotations
 from bot.db.repo import Repo
 from bot.poller.message_cleanup import TTL_SETTING_KEY as SYSTEM_MESSAGE_TTL_KEY
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
+from bot.services.admin_registry import find, value_label
+from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
     ACCOUNT_RESET_COOLDOWN_HOURS_KEY,
     LIMIT_MAX,
@@ -17,13 +19,9 @@ from bot.services.admin_settings import (
     TOP_LIMIT_KEY,
     unlimited_label,
 )
-from bot.views.admin import (
-    _format_limit,
-    render_limit,
-    render_new_user_defaults,
-    render_user_list,
-)
+from bot.views.admin import render_user_list
 from bot.views.admin_home import format_api_usage
+from bot.views.admin_settings import render_setting_prompt, render_settings_group
 
 
 def test_api_usage_formats_seconds_and_minutes() -> None:
@@ -48,24 +46,22 @@ def test_row_limit_bounds_reject_zero_and_absurdly_large() -> None:
     assert LIMIT_MIN <= 15 <= LIMIT_MAX
 
 
+def _row(screen, key: str):
+    return next(
+        b for row in screen.keyboard.inline_keyboard for b in row if b.callback_data == f"a:s:{key}"
+    )
+
+
 async def test_profile_links_are_a_global_switch_on_by_default(repo: Repo) -> None:
-    """The admin's one switch for everybody (owner, 2026-09-29), on the
-    global settings screen, not a default for new people."""
-    from bot.views.admin import render_limits
+    """The admin's one switch for everybody (owner, 2026-09-29), in the
+    settings' «Правила» group."""
 
-    def links_button(screen):
-        return next(
-            b
-            for row in screen.keyboard.inline_keyboard
-            for b in row
-            if b.callback_data == "a:showlinks"
-        )
+    async def rules():
+        return render_settings_group("rules", await registry_values(repo, "global"), locale="ru")
 
-    assert "да" in links_button(await render_limits(repo, locale="ru")).text
+    assert "да" in _row(await rules(), SHOW_LINKS_KEY).text
     await repo.set_app_setting(SHOW_LINKS_KEY, "0")
-    assert "нет" in links_button(await render_limits(repo, locale="ru")).text
-    _text, markup = await render_new_user_defaults(repo, locale="ru")
-    assert all(b.callback_data != "a:defaultlinks" for row in markup.inline_keyboard for b in row)
+    assert "нет" in _row(await rules(), SHOW_LINKS_KEY).text
 
 
 def test_only_summary_stats_and_ttl_limits_allow_zero() -> None:
@@ -86,14 +82,15 @@ def test_only_summary_stats_and_ttl_limits_allow_zero() -> None:
     }
 
 
-def test_format_limit_shows_no_delay_for_zero_monthly_delay() -> None:
-    assert _format_limit(MONTHLY_DELAY_KEY, "0", locale="ru") == "без задержки"
-    assert _format_limit(MONTHLY_DELAY_KEY, "0", locale="en") == "no delay"
-
-
-def test_format_limit_shows_unlimited_for_zero() -> None:
-    assert _format_limit("summary_top_limit", "0", locale="ru") == unlimited_label("ru")
-    assert _format_limit("summary_top_limit", "15", locale="ru") == "15"
+def test_a_zero_is_worded_by_what_it_means() -> None:
+    delay = find("global", MONTHLY_DELAY_KEY)
+    assert value_label(delay, 0, locale="ru") == "без задержки"
+    assert value_label(delay, 0, locale="en") == "no delay"
+    top = find("global", "summary_top_limit")
+    assert value_label(top, 0, locale="ru") == unlimited_label("ru")
+    assert value_label(top, 15, locale="ru") == "15"
+    # system_message_ttl_min's 0 disables the auto-delete, it is not unlimited.
+    assert value_label(find("global", SYSTEM_MESSAGE_TTL_KEY), 0, locale="ru") == "выключено"
 
 
 def test_every_numeric_setting_default_is_within_its_own_bounds() -> None:
@@ -104,30 +101,21 @@ def test_every_numeric_setting_default_is_within_its_own_bounds() -> None:
         assert spec.min <= spec.default <= spec.max, key
 
 
-def test_format_limit_shows_off_for_zero_ttl() -> None:
-    """system_message_ttl_min's own zero reads as "выключено", not
-    "без ограничения" — 0 minutes isn't an unlimited TTL, it disables
-    the auto-delete entirely (2026-09-05 follow-up)."""
-    assert _format_limit(SYSTEM_MESSAGE_TTL_KEY, "0", locale="ru") == "выключено"
-
-
-async def test_a_limit_whose_minimum_is_zero_renders_its_own_zero_hint(repo: Repo) -> None:
-    """This screen raised `TypeError: _format_limit() missing 1 required
-    keyword-only argument: 'locale'` from 2026-09-11 until #63's audit found
-    it — the locale had ended up *inside* the f-string instead of in the
-    call. Both list caps allow 0, so both were unopenable, and no test
-    touched the screen: they all stopped at the keyboard.
-    """
-    screen = await render_limit(repo, TOP_LIMIT_KEY, locale="ru")
-
+def test_a_number_whose_minimum_is_zero_says_what_its_zero_means() -> None:
+    """The prompt once raised for every setting allowing 0 (#63's audit) — no
+    test went past the keyboard."""
+    screen = render_setting_prompt(
+        find("global", TOP_LIMIT_KEY), 15, locale="ru", back="a:sg:lists"
+    )
     assert "без ограничения" in screen.text
     assert screen.keyboard is not None
 
 
-async def test_a_limit_with_a_real_minimum_has_no_zero_hint(repo: Repo) -> None:
-    screen = await render_limit(repo, SYSTEM_MESSAGE_TTL_KEY, locale="ru")
-
-    assert "без ограничения" not in screen.text
+def test_a_number_with_a_real_minimum_has_no_zero_hint() -> None:
+    screen = render_setting_prompt(
+        find("global", "hltb_page_size"), 5, locale="ru", back="a:sg:hltb"
+    )
+    assert "0 —" not in screen.text
 
 
 async def test_render_user_list_shows_visibility_icons_on_body_and_buttons(
@@ -160,20 +148,22 @@ async def test_render_user_list_shows_visibility_icons_on_body_and_buttons(
 
 
 async def test_the_rarity_threshold_is_a_global_setting(repo: Repo) -> None:
-    """One threshold for every chat (owner, 2026-10-01): a row on the global
-    settings screen, gone from the chat card."""
-    from bot.views.admin import render_chat_card, render_limits, render_rare_prompt
+    """One threshold for every chat (owner, 2026-10-01): the first row of the
+    settings' «Правила», never on a chat's card."""
+    from bot.views.admin import render_chat_card
 
     await repo.upsert_chat(-100, "Гейминг-чат", 1)
-    limits = await render_limits(repo, locale="ru")
-    first = limits.keyboard.inline_keyboard[0][0]
-    assert first.callback_data == "a:rare" and "10%" in first.text
+
+    async def rules():
+        return render_settings_group("rules", await registry_values(repo, "global"), locale="ru")
+
+    first = (await rules()).keyboard.inline_keyboard[0][0]
+    assert first.callback_data == "a:s:rare_threshold_percent" and ": 10 " in first.text
 
     await repo.set_app_setting("rare_threshold_percent", "7.5")
-    assert "7.5%" in (await render_limits(repo, locale="ru")).keyboard.inline_keyboard[0][0].text
-    assert "7.5%" in (await render_rare_prompt(repo, locale="ru")).text
+    assert ": 7.5 " in (await rules()).keyboard.inline_keyboard[0][0].text
 
     text, markup = await render_chat_card(repo, -100, locale="ru")
     callbacks = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert not any(cb and cb.startswith("a:crt:") for cb in callbacks)
+    assert not any(cb and "rare_threshold" in cb for cb in callbacks)
     assert "Порог" not in text

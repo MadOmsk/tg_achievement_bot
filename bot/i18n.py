@@ -52,6 +52,8 @@ LOCALES_DIR = Path(__file__).parent / "locales"
 #: locale removed in a later version) is coerced back to DEFAULT_LOCALE by
 #: `normalize_locale` rather than crashing a render.
 AVAILABLE_LOCALES = ("ru", "en")
+# Each language in its own words, wherever one is picked.
+LOCALE_NAMES = {"ru": "Русский", "en": "English"}
 
 #: Per-key fallback for the core: a key present in ru but not yet in en
 #: resolves to the Russian one instead of raising KeyNotFoundError. This is

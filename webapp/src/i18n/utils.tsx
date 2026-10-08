@@ -36,12 +36,6 @@ export function rarityLabel(mode: string | null, locale: string): string {
   return t(locale, "rarityAll");
 }
 
-export function digestLabel(threshold: number | null, locale: string): string {
-  if (threshold == null) return "—";
-  if (threshold >= 99) return t(locale, "never");
-  return String(threshold);
-}
-
 export function dayKey(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);

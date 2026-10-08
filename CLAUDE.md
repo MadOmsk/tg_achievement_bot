@@ -131,10 +131,12 @@ name, or when the tree goes stale.
 │   │
 │   ├── services/                business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py       whether an achievement may be published
-│   │   ├── admin_settings.py     what the admin settings *are*: bounds, labels, defaults,
-│   │   │                         and the one way either panel changes a number (#176)
+│   │   ├── admin_settings.py     the admin settings' keys, bounds, labels and defaults
+│   │   ├── admin_registry.py     every admin setting, described once, for both panels (#176)
 │   │   ├── admin_status.py       what the super-admin's home shows, for both panels (#176)
 │   │   ├── admin_credentials.py  every shared credential, one registry for both panels (#176)
+│   │   ├── admin_accounts.py     refresh / reset one person's game account, for both panels
+│   │   ├── admin_cleanup.py      wiping the bot's messages from a chat, for both panels
 │   │   ├── connect.py            one-time OAuth state, finishing a login
 │   │   ├── relink.py             linking an account somebody else may already hold (#52)
 │   │   ├── stats.py              aggregates for panels, /stats, summaries
@@ -295,9 +297,10 @@ setting it up: `docs/mail-setup.md`).
   the seed, so a stale env var cannot resurrect it. No Steam key: `/connect_steam`
   says "not configured". No Anthropic key: translation is skipped. No YouTube key:
   no video guides. None is fatal.
-- **Everything else tunable lives in `app_settings`**, editable live from `/admin`:
-  display limits, summary caps, HLTB limits, `account_reset_cooldown_hours` (see
-  Data model, default 24h, 0 = off).
+- **Everything else tunable lives in `app_settings`**, editable live from `/admin`
+  and the Mini App's admin (both from `services/admin_registry.py`): display
+  limits, summary caps, HLTB limits, `account_reset_cooldown_hours` (see Data
+  model, default 24h, 0 = off).
 
 ## Data model
 
@@ -752,7 +755,7 @@ isn't muted there; it wasn't already published there.
 
 - **The rarity threshold is one for every chat** (owner, 2026-10-01):
   `app_settings['rare_threshold_percent']`, 10% until an admin changes it in
-  /admin → global settings; no chat overrides it. The repo reads it wherever a
+  /admin → «⚙️ Настройки» → Правила; no chat overrides it. The repo reads it wherever a
   chat's settings are read (`_sql.py::GLOBAL_RARE_THRESHOLD`), so callers still
   take `chat.rare_threshold_percent`. Never hardcode a percentage; a person picks
   only a mode.
@@ -1099,8 +1102,10 @@ elsewhere in this file still describe the bot.
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
   `NumberRow`, `CheckRow`, `RowLink`, and `SettingsSkel` while loading. A screen
   composes these and never styles a row of its own; destructive actions are red rows in
-  a last group of their own. The Mini App's admin sets the global rarity threshold under
-  «Общие правила» (`/api/mini/admin/defaults`), not on a chat's card.
+  a last group of their own. The Mini App's admin draws its settings from the
+  server (`/api/mini/admin/settings`, `/api/mini/admin/chats/{id}/settings`;
+  `components/admin/admin-settings-form`): a number with its bounds, a switch,
+  a pick from a list — never a list of settings of its own.
 - **Actions look one way each** (owner, 2026-10-02; `components/shared/styles/base.css`):
   `.btn` is a pill without an outline — the action ("Подписаться", "Подключить");
   `.btn.is-quiet` is the paler pill of a state that opens choices ("Друзья ⌄");
@@ -1246,7 +1251,7 @@ keyboard.
   platform on its own line. **`/who`** picks a known member and opens their `/stats`;
   its buttons name the person (#40).
 - **Profile links** on cards follow the admin's one switch (`app_settings
-  ['show_profile_links']`, on by default, /admin → global settings; owner,
+  ['show_profile_links']`, on by default, /admin → «⚙️ Настройки» → Правила; owner,
   2026-09-29) — no longer each person's own setting.
 - **`chat_seen`** tracks anyone who wrote in the group; `/online` and `/who` use it,
   not just subscribers.
@@ -1272,30 +1277,41 @@ keyboard.
   is reserved for a narrower role to come** (the per-chat one #15 proposes), so
   code, text and docs never call the super-admin an admin. `/admin`, the
   `/api/mini/admin` routes and `handlers/admin.py` name the panel, not the role.
-- **One source for both admin panels** (#176): the bot's `/admin` and the Mini
-  App's admin only render what three services answer — `services/admin_status.py`
-  (`AdminStatus`: counts, API usage, sign-in emails against their caps, every
-  credential's state), `services/admin_credentials.py` (`AdminCredentials`, the
-  registry of shared credentials: `set` raising `CredentialInvalid` /
-  `CredentialSetupError`, `clear`) and `services/admin_settings.py`
-  (`set_numeric_setting`, `set_rare_threshold`, `NumericSetting.zero_means`). A new
-  credential is one registry entry plus its `admin-keys-<name>-*` strings (label,
-  hint, add/change/clear, prompt, saved, invalid); a new numeric setting is one
-  `NUMERIC_SETTINGS` row; a new counter is one `AdminStatus` field. The Mini App
-  draws the keys and limits the server lists, labels included — never a list of
-  its own. Neither panel parses, bounds or stores a value itself.
+- **One source for both admin panels** (#176; owner, 2026-10-08: a new admin
+  setting appears in the bot and the Mini App at once). Both only render what
+  these services answer:
+  - `services/admin_registry.py` — **every setting**, global and per chat, one
+    row each: where it lives, its kind (number, decimal, on/off, one of a list,
+    an hour, a UTC offset), bounds or choices, group, label, hint. `set_value` is
+    the one way either panel changes one — parsed, bounded, stored; a bad value
+    is refused the same from a typed message and from JSON. Time zones are the
+    38 real UTC offsets (`REAL_UTC_OFFSETS_MIN`), summaries go out on the hour.
+  - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
+    sign-in emails against their caps, every credential's state).
+  - `services/admin_credentials.py` — the shared credentials (`set` raising
+    `CredentialInvalid` / `CredentialSetupError`, `clear`).
+  - `services/admin_accounts.py` — refresh («🔄 Обновить»: presence, then the
+    delta since the newest unlock) and reset of one game account.
+  - `services/admin_cleanup.py` — which bot messages each wipe takes, deleting
+    them, «delete the last one».
+
+  A new setting is a registry row and its `admin-setting-*` label; a new
+  credential a registry entry and its `admin-keys-<name>-*` strings; a new
+  counter an `AdminStatus` field. The bot draws a setting as "Label: value ▸"
+  (on/off flips, a pick opens its values, a number is typed); the Mini App as
+  a row of the same kind. Neither panel parses, bounds or stores a value itself.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
   set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys and the
   mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
-  out; API usage; global limits, each on its own row with its value and its own
-  input, `0` rendered as "без ограничения", and the rarity threshold on top; defaults
-  for new users; the user list;
-  the chat list and per-chat cards; exclusion; bot-message cleanup.
-- **The per-chat card** keeps its settings in three sub-screens — daily summary,
-  anti-flood, message cleanup — each redrawing in place with the card's text above.
-  Settings: digest size (#126), summary time, timezone, mutes,
-  summary switch, anti-flood, language (#48). There is no minimum gamerscore
+  out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
+  rarity threshold, newcomers' mode, profile links · Списки · HLTB · Таймеры ·
+  Почта · Прочее), `0` worded by what it means; the user list; the chat list and
+  per-chat cards; exclusion; bot-message cleanup.
+- **The per-chat card** opens the registry's chat groups — Основное (on, language,
+  time zone) · Публикация (digest size, #126) · Итоги дня (on, the hour) ·
+  Антифлуд (limit, window) — and «Сообщения» (the wipes), each redrawing in place
+  with the card's text above. There is no minimum gamerscore
   (owner, 2026-10-08: it held back every Steam and PSN achievement; the column
   `chat_settings.min_gamerscore` is left unread).
 - **The per-user card**: the person (chain 1) and their id, then **every way they
@@ -1440,7 +1456,7 @@ History: #111.
 | the admin's chat list | inline | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
 | `/who`'s picker | inline | `repo.chat_member_presence()` | as `/online` | as `/online` | — (three per row) |
 | `/panel`'s "Мои чаты" | inline | `repo.user_chats()` | active chats this person subscribed to or wrote in | title ↑ | — |
-| the admin's limits | inline | `NUMERIC_SETTINGS` | the numeric settings | their own order | — |
+| the admin's settings | inline | `admin_registry.SETTINGS` | one group's settings | the registry's order | — |
 | `/hltb` suggestions | inline | `repo.chat_recent_games()` | games | last played ↓ | `hltb_results_limit` |
 | `/hltb` results | inline | the HLTB API | games | HLTB's relevance | `hltb_results_limit`, `hltb_page_size` |
 | a chat's subscribers | one joined line | `repo.chat_subscribers()` | subscribers | rendered name ↑ | — |

@@ -68,15 +68,16 @@ export const fetchAdminHome = (initData: string) => adminApi.fetchHome(initData)
 export const fetchAdminKeys = (initData: string) => adminApi.fetchKeys(initData);
 export const putAdminKey = (...args: Parameters<typeof adminApi.putKey>) => adminApi.putKey(...args);
 export const deleteAdminKey = (...args: Parameters<typeof adminApi.deleteKey>) => adminApi.deleteKey(...args);
-export const fetchAdminLimits = (initData: string) => adminApi.fetchLimits(initData);
-export const patchAdminLimit = (...args: Parameters<typeof adminApi.patchLimit>) => adminApi.patchLimit(...args);
-export const fetchAdminDefaults = (initData: string) => adminApi.fetchDefaults(initData);
-export const patchAdminDefaults = (...args: Parameters<typeof adminApi.patchDefaults>) => adminApi.patchDefaults(...args);
+export const fetchAdminSettings = (initData: string) => adminApi.fetchSettings(initData);
+export const patchAdminSetting = (...args: Parameters<typeof adminApi.patchSetting>) => adminApi.patchSetting(...args);
+export const fetchAdminChatSettings = (...args: Parameters<typeof adminApi.fetchChatSettings>) =>
+  adminApi.fetchChatSettings(...args);
+export const patchAdminChatSetting = (...args: Parameters<typeof adminApi.patchChatSetting>) =>
+  adminApi.patchChatSetting(...args);
 export const fetchAdminUsers = (initData: string) => adminApi.fetchUsers(initData);
 export const fetchAdminUser = (...args: Parameters<typeof adminApi.fetchUser>) => adminApi.fetchUser(...args);
 export const patchAdminUser = (...args: Parameters<typeof adminApi.patchUser>) => adminApi.patchUser(...args);
 export const fetchAdminChats = (initData: string) => adminApi.fetchChats(initData);
-export const patchAdminChat = (...args: Parameters<typeof adminApi.patchChat>) => adminApi.patchChat(...args);
 export const postAdminChatAction = (...args: Parameters<typeof adminApi.postChatAction>) => adminApi.postChatAction(...args);
 
 export const searchHltb = (...args: Parameters<typeof hltbApi.search>) => hltbApi.search(...args);

@@ -4,9 +4,8 @@ import { ADMIN_SCREENS, type AdminScreen } from "../../components/shared/constan
 import {
   AdminChatDetail,
   AdminChats,
-  AdminDefaults,
   AdminKeys,
-  AdminLimits,
+  AdminSettings,
   AdminUserDetail,
   AdminUsers,
 } from "../../components/admin";
@@ -39,18 +38,9 @@ export function Admin({
       return (
         <AdminKeys data={data} locale={locale} onBack={onBack} onFail={fail} />
       );
-    case ADMIN_SCREENS.LIMITS:
+    case ADMIN_SCREENS.SETTINGS:
       return (
-        <AdminLimits data={data} locale={locale} onBack={onBack} onFail={fail} />
-      );
-    case ADMIN_SCREENS.DEFAULTS:
-      return (
-        <AdminDefaults
-          data={data}
-          locale={locale}
-          onBack={onBack}
-          onFail={fail}
-        />
+        <AdminSettings data={data} locale={locale} onBack={onBack} onFail={fail} />
       );
     case ADMIN_SCREENS.USERS:
       return (

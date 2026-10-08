@@ -179,4 +179,4 @@ async def test_the_same_super_admin_screen_in_russian(repo: Repo) -> None:
     text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
 
     assert "Итог дня:" in text
-    assert "Антиспам:" in text
+    assert "Антифлуд:" in text

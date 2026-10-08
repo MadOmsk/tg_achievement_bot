@@ -17,10 +17,16 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_i18n import I18nContext
 
-from bot.constants import Platform, RarityMode
-from bot.i18n import AVAILABLE_LOCALES, StaticI18nContext, gettext, static_i18n
+from bot.constants import (  # noqa: F401 — re-exported
+    DIGEST_CHOICES,
+    DIGEST_NEVER,
+    Platform,
+    RarityMode,
+)
+from bot.i18n import AVAILABLE_LOCALES, LOCALE_NAMES, StaticI18nContext, gettext, static_i18n
 from bot.services.naming import link_nickname
 from bot.services.relink import LinkPreview
+from bot.util import utc_offset_label
 from bot.views.parts import PLATFORM_ICON
 
 # Re-exported (not redefined) — services/profile_links.py is the one place
@@ -99,9 +105,7 @@ def _text(i18n: I18nContext | None, key: str, **kwargs: object) -> str:
 def format_offset(minutes: int | None, i18n: I18nContext | None = None) -> str:
     if minutes is None:
         return _text(i18n, "kb-default")
-    hours, rest = divmod(abs(minutes), 60)
-    sign = "+" if minutes >= 0 else "−"
-    return f"UTC{sign}{hours}" if rest == 0 else f"UTC{sign}{hours}:{rest:02d}"
+    return utc_offset_label(minutes)
 
 
 def _offset_button(hours: int, i18n: I18nContext, *, prefix: str = "tz") -> InlineKeyboardButton:
@@ -204,12 +208,6 @@ def onboarding_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# "Never digest" is stored as a number rather than NULL so the publisher stays
-# a single comparison: any real session is smaller than this.
-DIGEST_NEVER = 99
-DIGEST_CHOICES = (2, 3, 4, 5, 6, 8, 10, DIGEST_NEVER)
-
-
 def format_digest(threshold: int, i18n: I18nContext) -> str:
     if threshold >= DIGEST_NEVER:
         return i18n.get("kb-digest-never")
@@ -242,7 +240,6 @@ def format_rarity(mode: str, i18n: I18nContext | None = None) -> str:
 #  someone who cannot read the current interface can still find their own
 #  language in it. Same reasoning as platform brand names, so these live
 #  here rather than in a .ftl.
-LOCALE_NAMES = {"ru": "Русский", "en": "English"}
 
 
 def next_locale(current: str) -> str:

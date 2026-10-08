@@ -48,13 +48,12 @@ export const ADMIN_ROUTES = {
   HOME: "",
   KEYS: "/keys",
   KEY: (name: string) => `/keys/${encodeURIComponent(name)}`,
-  LIMITS: "/limits",
-  DEFAULTS: "/defaults",
+  SETTINGS: "/settings",
   USERS: "/users",
   /** A person by their own id (#156): somebody who signed in by email has no Telegram id. */
   USER: (personId: number) => `/users/p${personId}`,
   CHATS: "/chats",
-  CHAT: (chatId: number) => `/chats/${chatId}`,
+  CHAT_SETTINGS: (chatId: number) => `/chats/${chatId}/settings`,
   CHAT_ACTIONS: (chatId: number) => `/chats/${chatId}/actions`,
 } as const;
 

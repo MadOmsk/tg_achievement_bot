@@ -14,8 +14,7 @@ export type AdminChatAction =
 /** The admin sub-screens' names — never re-typed as string literals. */
 export const ADMIN_SCREENS = {
   KEYS: "keys",
-  LIMITS: "limits",
-  DEFAULTS: "defaults",
+  SETTINGS: "settings",
   USERS: "users",
   USER: "user",
   CHATS: "chats",
@@ -26,8 +25,7 @@ const A = ADMIN_SCREENS;
 
 export type AdminScreen =
   | { name: typeof A.KEYS }
-  | { name: typeof A.LIMITS }
-  | { name: typeof A.DEFAULTS }
+  | { name: typeof A.SETTINGS }
   | { name: typeof A.USERS }
   | { name: typeof A.USER; personId: number }
   | { name: typeof A.CHATS }

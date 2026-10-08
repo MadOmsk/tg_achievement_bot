@@ -98,10 +98,6 @@ FLOOD_WINDOW_MAX = 1440  # 24h — a longer buffer than that stops being "soon"
 # the same starting point.
 FLOOD_LIMIT_DEFAULT = 3
 
-# Chat-scoped keys sharing numeric_setting_input()'s "type a number" flow
-# with the always-global NUMERIC_SETTINGS above.
-CHAT_SCOPED_KEYS = ("flood_limit", "flood_window_minutes")
-
 # What a brand-new subscription starts at (Repo.subscribe) — used to be a
 # flat DEFAULT 'all' baked into the subscriptions table (schema.sql), now an
 # admin-configurable app_settings row instead, same cycling button/helpers
@@ -138,21 +134,6 @@ class NumericSetting:
     min: int = LIMIT_MIN
     max: int = LIMIT_MAX
     zero_label: str = "admin-unlimited"
-
-    @property
-    def zero_means(self) -> Literal["unlimited", "off", "no_delay"] | None:
-        """What a 0 is, in words both panels word for themselves; None where
-        0 is not allowed."""
-        if self.min != 0:
-            return None
-        return _ZERO_MEANS[self.zero_label]
-
-
-_ZERO_MEANS: dict[str, Literal["unlimited", "off", "no_delay"]] = {
-    "admin-unlimited": "unlimited",
-    "admin-disabled": "off",
-    "admin-no-delay": "no_delay",
-}
 
 
 # Every admin-configurable count/limit/interval in the bot, one place —
@@ -268,72 +249,15 @@ class SettingValueError(ValueError):
     whole number where one is needed, or outside its bounds."""
 
     def __init__(
-        self, reason: Literal["integer", "number", "range"], minimum: float, maximum: float
+        self,
+        reason: Literal["integer", "number", "range", "choice"],
+        minimum: float,
+        maximum: float,
     ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.minimum = minimum
         self.maximum = maximum
-
-
-def _whole_number(raw: object, spec_min: float, spec_max: float) -> int:
-    if isinstance(raw, bool):
-        raise SettingValueError("integer", spec_min, spec_max)
-    if isinstance(raw, int):
-        return raw
-    if isinstance(raw, float):
-        if not raw.is_integer():
-            raise SettingValueError("integer", spec_min, spec_max)
-        return int(raw)
-    text = str(raw).strip()
-    if "." in text or "," in text:
-        raise SettingValueError("integer", spec_min, spec_max)
-    try:
-        return int(text)
-    except ValueError as exc:
-        raise SettingValueError("integer", spec_min, spec_max) from exc
-
-
-async def numeric_value(repo: Repo, key: str) -> int:
-    """A numeric setting's current value; a malformed stored one reads as
-    its default."""
-    spec = NUMERIC_SETTINGS[key]
-    raw = await repo.get_app_setting(key, str(spec.default))
-    try:
-        return int(raw or spec.default)
-    except ValueError:
-        return spec.default
-
-
-async def numeric_values(repo: Repo) -> list[tuple[str, NumericSetting, int]]:
-    """Every numeric setting with its value, in the panels' order."""
-    return [(key, spec, await numeric_value(repo, key)) for key, spec in NUMERIC_SETTINGS.items()]
-
-
-async def set_numeric_setting(repo: Repo, key: str, raw: object, admin_id: int | None) -> int:
-    """The one way either panel changes a numeric setting (#176): parsed,
-    bounded, stored. Raises KeyError for an unknown key, SettingValueError
-    for a value the setting refuses."""
-    spec = NUMERIC_SETTINGS[key]
-    value = _whole_number(raw, spec.min, spec.max)
-    if not spec.min <= value <= spec.max:
-        raise SettingValueError("range", spec.min, spec.max)
-    await repo.set_app_setting(key, str(value), admin_id)
-    return value
-
-
-async def set_rare_threshold(repo: Repo, raw: object, admin_id: int | None) -> float:
-    """The rarity threshold, from either panel; a comma is a decimal point."""
-    if isinstance(raw, bool):
-        raise SettingValueError("number", RARE_THRESHOLD_MIN, RARE_THRESHOLD_MAX)
-    try:
-        value = float(str(raw).strip().replace(",", "."))
-    except ValueError as exc:
-        raise SettingValueError("number", RARE_THRESHOLD_MIN, RARE_THRESHOLD_MAX) from exc
-    if not RARE_THRESHOLD_MIN <= value <= RARE_THRESHOLD_MAX:
-        raise SettingValueError("range", RARE_THRESHOLD_MIN, RARE_THRESHOLD_MAX)
-    await repo.set_app_setting(RARE_THRESHOLD_KEY, f"{value:g}", admin_id)
-    return value
 
 
 async def rare_threshold(repo: Repo) -> float:

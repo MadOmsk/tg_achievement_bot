@@ -31,21 +31,6 @@ export type AdminCredential = {
 
 export type AdminKeys = { keys: AdminCredential[] };
 
-export type AdminLimit = {
-  key: string;
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  zero_means: "unlimited" | "off" | "no_delay" | null;
-};
-
-export type AdminDefaults = {
-  rarity_mode: string;
-  show_profile_links: boolean;
-  rare_threshold_percent: number;
-};
-
 export type AdminUserRow = {
   person_id: number;
   /** None for somebody who signed in by email (#162). */
@@ -88,13 +73,21 @@ export type AdminChatRow = {
   title: string | null;
   is_active: boolean;
   subscribers: number;
-  rare_threshold_percent: number;
-  daily_summary: boolean;
-  daily_summary_time: string;
-  tz_offset_min: number;
-  flood_limit: number;
-  flood_window_minutes: number;
-  /** One person's achievements at once that make one digest; 99 = never (#126). */
-  digest_threshold: number;
-  locale: string;
 };
+
+/** One setting of the server's registry (#176), as both admin panels draw it. */
+export type AdminSetting = {
+  key: string;
+  label: string;
+  hint: string | null;
+  kind: "int" | "float" | "bool" | "choice" | "hour" | "tz";
+  value: number | string | boolean;
+  min: number | null;
+  max: number | null;
+  zero_means: "unlimited" | "off" | "no_delay" | null;
+  /** The values a pick-one setting takes; empty for a number or a switch. */
+  options: Array<{ value: number | string; label: string }>;
+};
+
+export type AdminSettingsGroup = { id: string; title: string; items: AdminSetting[] };
+export type AdminSettings = { groups: AdminSettingsGroup[] };

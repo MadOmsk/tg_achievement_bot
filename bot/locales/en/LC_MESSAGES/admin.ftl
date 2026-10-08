@@ -7,8 +7,6 @@ admin-back = ‹ Back
 admin-cancel = Cancel
 admin-yes = yes
 admin-no = no
-admin-enabled = on
-admin-disabled-state = off
 admin-active = active
 admin-inactive = disabled
 
@@ -29,6 +27,44 @@ admin-setting-email-provider-daily = The mail service's daily limit
 admin-setting-email-sends-total = Email codes in total an hour
 admin-setting-email-checks-client = Code checks per IP in 10 minutes
 admin-setting-patch-refresh = Game patch refresh (hours)
+
+# The settings registry (#176, services/admin_registry.py): one label per
+# setting, one title per group — the bot and the Mini App show the same ones.
+admin-setting-rare-threshold = Rarity threshold, %
+admin-setting-default-rarity = Newcomers' mode
+admin-setting-rare-threshold-hint = Rare is what at most this share of players have. One threshold for every chat.
+admin-setting-default-rarity-hint = The mode new people start with.
+admin-setting-show-links = Profile links
+admin-setting-chat-active = Chat on
+admin-setting-chat-locale = Language
+admin-setting-chat-tz = Time zone
+admin-setting-chat-digest = Digest from
+admin-setting-chat-summary = Daily summary
+admin-setting-chat-summary-time = Summary time
+admin-setting-chat-flood-limit = Anti-flood: posts per window
+admin-setting-chat-flood-window = Anti-flood: window (min)
+admin-group-global-rules = Rules
+admin-group-global-lists = Lists
+admin-group-global-hltb = HLTB
+admin-group-global-timers = Timers
+admin-group-global-mail = Mail
+admin-group-global-other = Other
+admin-group-chat-main = General
+admin-group-chat-publishing = Publishing
+admin-group-chat-summary = Daily summary
+admin-group-chat-flood = Anti-flood
+admin-settings-title = ⚙️ Settings
+admin-settings-button = ⚙️ Settings ▸
+admin-settings-group-title = ⚙️ Settings · { $group }
+admin-settings-row = { $label }: { $value } ▸
+admin-settings-pick = { $label }: pick a value.
+admin-settings-type =
+    { $label }
+    Now: { $current }
+    Send a number from { $minimum } to { $maximum }.{ $zero_hint }
+admin-settings-zero-hint = { " " }0 — { $meaning }.
+admin-settings-saved = ✅ { $label }: { $value }
+admin-settings-choice-retry = No such value — pick one with a button.
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
@@ -115,59 +151,18 @@ admin-keys-psn-invalid = That NPSSO didn't work — Sony rejected it. Check it a
 admin-keys-setup-error = Couldn't build a PSN client — a technical error on the server ({ $error }). The NPSSO is probably not the problem — check the bot's logs.
 
 # Limits and input prompts
-admin-limits-screen =
-    ⚙️ Global settings
-
-    The /summary and /stats lists can be made unlimited (0) — they already sit
-    inside a collapsible quote, so there's nothing to trim.
-admin-limit-prompt = { $label }: { $current }
-
-    Send a new value as a whole number, from { $minimum } to { $maximum }{ $zero_hint }.
 admin-number-range-retry = The number has to be between { $minimum } and { $maximum }. Again?
-admin-threshold-saved = Rarity threshold: { $value }%
-
 { $text }
 admin-integer-retry = A whole number only here. Again?
-admin-timezone-button = Timezone ▸
-admin-timezone-manual = ✏️ Enter manually
 admin-chat-not-found = Chat not found
 admin-chat-not-found-period = Chat not found.
 
 # Chat settings prompts
-admin-rare-prompt =
-    💎 The "rare" achievement threshold, one for every chat: { $value }%
-
-    Send a new value as one number, for example 12 or 7.5 — from 0 to 100.
-    It applies to this chat only.
-admin-chat-time-prompt = Daily summary time in “{ $title }”: { $time }
-admin-chat-time-saved = Daily summary at { $time }
-admin-chat-zone-prompt = Timezone of “{ $title }”: { $offset }
-admin-chat-zone-manual-prompt =
-    Timezone of “{ $title }”: { $offset }
-
-    Send the offset in a single message, with a sign: for example +3, -5 or +5:30.
-admin-timezone-invalid = That doesn't look like a real timezone. For example: +3 or -5:30.
-admin-timezone-saved = Timezone: { $offset }
-
 # Anti-flood filter (2026-09-09): after N individually-notified achievements
 # for one person land in this chat within the window, further ones stop
 # posting on their own and get grouped into one message once the window
 # closes. 0 = off for this chat.
-admin-chat-flood-prompt =
-    Anti-flood filter in “{ $title }”: { $value } ach.
-
-    Send a new value as a whole number, from { $minimum } to { $maximum } (0 turns it off).
-    It applies to this chat only.
-admin-chat-flood-window-prompt =
-    Anti-flood window in “{ $title }”: { $value } min
-
-    Send a new value as a whole number, from { $minimum } to { $maximum }.
-    It applies to this chat only.
-admin-flood-saved = Anti-flood filter: { $value } ach.
-
 { $text }
-admin-flood-window-saved = Anti-flood window: { $value } min
-
 { $text }
 
 # User and message actions
@@ -189,8 +184,6 @@ admin-steam-not-connected = Steam isn't connected
 admin-psn-not-connected = PSN isn't connected
 
 # Chat and cleanup actions
-admin-chat-disabled = Disabled
-admin-chat-enabled = Enabled
 admin-no-bot-messages = I found no messages of mine in this chat.
 admin-delete-old-failed = Couldn't delete it — the message may be too old.
 admin-deleted-last = 🗑 Deleted the last message.
@@ -216,14 +209,6 @@ admin-send-promo-to-chat = 📢 Send promo to chat
 admin-promo-sent = Promo message sent to chat
 
 # New users and user cards
-admin-new-users-screen =
-    👤 New users — default settings
-
-    Applies only to subscriptions created from now on — existing ones are left
-    alone.
-admin-default-rarity = Default achievements: { $rarity } ▸
-admin-rare-row = 💎 Rarity threshold: { $value }% ▸
-admin-show-links = Profile links on cards: { $visible } ▸
 admin-users-empty = 👥 Nobody has connected yet.
 admin-users-header = 👥 Users
 admin-users-columns = Columns: last seen · achievements today / this month
@@ -321,20 +306,9 @@ admin-chat-flood-value = { $limit } ach. / { $window } min
 admin-chat-flood-off = off
 admin-no-subscribers = No subscribers yet.
 admin-subscribers-list = Subscribed: { $names }
-admin-chat-digest-button = Digest: { $digest } ▸
 admin-digest-from = from { $value } ach.
 admin-digest-never = never
-admin-chat-summary-button = Daily summary: { $state }
-admin-chat-time-button = Summary time: { $time } ({ $offset }) ▸
-admin-chat-flood-toggle-button = Anti-flood filter: { $state }
-admin-chat-flood-button = Anti-flood: { $limit } ach. ▸
-admin-chat-summary-menu-button = Daily summary: { $state } ▸
-admin-chat-flood-menu-button = Anti-flood: { $value } ▸
 admin-chat-messages-menu-button = 🗑 Messages ▸
-admin-chat-locale-button = Language: { $name }
-admin-chat-flood-window-button = Anti-flood window: { $window } min ▸
-admin-disable-chat = ⏸ Disable the chat
-admin-enable-chat = ▶️ Enable the chat
 admin-delete-last = 🗑 Last one
 admin-wipe-bot-24h = 🗑 Bot's (24h)
 admin-wipe-system-24h = 🗑 System (24h)

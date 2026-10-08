@@ -26,24 +26,13 @@ from bot.constants import (
 from bot.db.repo import AdminUserRow, ChatTarget, PlatformLink, Repo, User
 from bot.i18n import translator
 from bot.services.admin_credentials import AdminCredentials
+from bot.services.admin_registry import GROUPS, group_label
+from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
-    DEFAULT_RARITY_MODE_DEFAULT,
-    DEFAULT_RARITY_MODE_KEY,
-    FLOOD_LIMIT_MAX,
-    FLOOD_LIMIT_MIN,
-    FLOOD_WINDOW_MAX,
-    FLOOD_WINDOW_MIN,
-    NUMERIC_SETTINGS,
     PAGE_SIZE,
-    SHOW_LINKS_DEFAULT,
-    SHOW_LINKS_KEY,
     STATUS_ICON,
     TOAST_PREVIEW_MAX_CHARS,
     VISIBILITY_ICON,
-    NumericSetting,
-    numeric_value,
-    numeric_values,
-    rare_threshold,
 )
 from bot.services.logins import Login, logins_of
 from bot.services.naming import (
@@ -57,13 +46,11 @@ from bot.services.naming import (
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.util import humanize_ago
 from bot.views import Screen
+from bot.views.admin_settings import setting_rows
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
-    COMMON_OFFSETS_HOURS,
-    DIGEST_CHOICES,
     DIGEST_NEVER,
     format_offset,
-    format_rarity,
     locale_name,
 )
 from bot.views.lists import Listing, truncate_name
@@ -128,91 +115,11 @@ async def render_keys(
     return "\n".join(lines), builder.as_markup()
 
 
-def _format_limit(key: str, value: str | int, *, locale: str) -> str:
-    _ = translator("admin", locale)
-    spec = NUMERIC_SETTINGS[key]
-    return _(spec.zero_label) if str(value) == "0" else str(value)
-
-
-def _setting_label(spec: NumericSetting, *, locale: str) -> str:
-    _ = translator("admin", locale)
-    return _(spec.label)
-
-
-def _hour_grid_markup(
-    current: str, set_prefix: str, tz_callback: str, back_callback: str, *, locale: str
-) -> InlineKeyboardMarkup:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    for hour in range(24):
-        label = f"{hour:02d}"
-        mark = "• " if current.startswith(label) else ""
-        builder.add(
-            InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"{set_prefix}{hour}")
-        )
-    builder.adjust(6)
-    builder.row(InlineKeyboardButton(text=_("admin-timezone-button"), callback_data=tz_callback))
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=back_callback))
-    return builder.as_markup()
-
-
-def _tz_grid_markup(
-    current_minutes: int, set_prefix: str, manual_callback: str, back_callback: str, *, locale: str
-) -> InlineKeyboardMarkup:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    for hours in COMMON_OFFSETS_HOURS:
-        minutes = hours * 60
-        mark = "• " if minutes == current_minutes else ""
-        builder.add(
-            InlineKeyboardButton(
-                text=f"{mark}{format_offset(minutes)}", callback_data=f"{set_prefix}{minutes}"
-            )
-        )
-    builder.adjust(4)
-    builder.row(
-        InlineKeyboardButton(text=_("admin-timezone-manual"), callback_data=manual_callback)
-    )
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=back_callback))
-    return builder.as_markup()
-
-
 def _toast_preview(preview: str) -> str:
     collapsed = " ".join(preview.splitlines())
     if len(collapsed) <= TOAST_PREVIEW_MAX_CHARS:
         return collapsed
     return collapsed[: TOAST_PREVIEW_MAX_CHARS - 1] + "…"
-
-
-async def render_new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
-    """Settings that only ever apply at the moment someone new subscribes —
-    grouped on their own screen (2026-09-05 follow-up) rather than sitting
-    on the home screen forever, since none of them affect anyone already
-    subscribed. Just default_rarity_mode for now (SPEC 9, M-Steam-2e's own
-    Repo.subscribe reads it) — the natural home for anything else of the
-    same shape added later."""
-    _ = translator("admin", locale)
-    default_rarity_mode = await repo.get_app_setting(
-        DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT
-    )
-    assert default_rarity_mode is not None  # a default was given above
-
-    text = _("admin-new-users-screen")
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=_(
-                        "admin-default-rarity",
-                        rarity=format_rarity(default_rarity_mode),
-                    ),
-                    callback_data="a:defaultrarity",
-                )
-            ],
-            [InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")],
-        ]
-    )
-    return text, keyboard
 
 
 async def render_user_list(
@@ -670,70 +577,14 @@ async def render_chat_card(
     )
     builder = InlineKeyboardBuilder()
     back_to_card = InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}")
-    summary_state = _("admin-enabled") if chat.daily_summary else _("admin-disabled-state")
 
-    if section == "summary":
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-chat-summary-button", state=summary_state),
-                callback_data=f"a:cds:{chat_id}",
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-chat-time-button", time=chat.daily_summary_time, offset=zone_label),
-                callback_data=f"a:ctime:{chat_id}",
-            )
-        )
-        builder.row(back_to_card)
-        return text, builder.as_markup()
-
-    if section == "flood":
-        builder.row(
-            InlineKeyboardButton(
-                text=_(
-                    "admin-chat-flood-toggle-button",
-                    state=_("admin-enabled") if chat.flood_limit > 0 else _("admin-disabled-state"),
-                ),
-                callback_data=f"a:cfltoggle:{chat_id}",
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-chat-flood-button", limit=chat.flood_limit),
-                callback_data=f"a:cfl:{chat_id}",
-            ),
-            InlineKeyboardButton(
-                text=_("admin-chat-flood-window-button", window=chat.flood_window_minutes),
-                callback_data=f"a:cflw:{chat_id}",
-            ),
-        )
-        builder.row(back_to_card)
-        return text, builder.as_markup()
-
-    if section == "digest":
-        # How many achievements of one person at once make one digest —
-        # the chat's, since #126 (it was each person's, per subscription).
-        builder.row(
-            *[
-                InlineKeyboardButton(
-                    text=("✅ " if value == chat.digest_threshold else "")
-                    + (_("admin-digest-never") if value >= DIGEST_NEVER else str(value)),
-                    callback_data=f"a:cdig:{chat_id}:{value}",
-                )
-                for value in DIGEST_CHOICES[:4]
-            ]
-        )
-        builder.row(
-            *[
-                InlineKeyboardButton(
-                    text=("✅ " if value == chat.digest_threshold else "")
-                    + (_("admin-digest-never") if value >= DIGEST_NEVER else str(value)),
-                    callback_data=f"a:cdig:{chat_id}:{value}",
-                )
-                for value in DIGEST_CHOICES[4:]
-            ]
-        )
+    if section in GROUPS["chat"]:
+        # A group of the chat's settings, drawn from the registry (#176) under
+        # the card's text, which stays whole.
+        current = await registry_values(repo, "chat", chat)
+        rows = setting_rows("chat", section, current, locale=locale, chat_id=chat_id)
+        for row in rows:
+            builder.row(*row)
         builder.row(back_to_card)
         return text, builder.as_markup()
 
@@ -760,41 +611,15 @@ async def render_chat_card(
         builder.row(back_to_card)
         return text, builder.as_markup()
 
-    # The root card: one entry per group, each carrying the state a person
-    # would otherwise have to open the submenu to read.
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-digest-button", digest=_digest_label(chat.digest_threshold, _)),
-            callback_data=f"a:mdig:{chat_id}",
+    # The root card: one entry per group of settings (the registry's), then
+    # the actions.
+    for group in GROUPS["chat"]:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{group_label('chat', group, locale=locale)} ▸",
+                callback_data=f"a:cg:{chat_id}:{group}",
+            )
         )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-summary-menu-button", state=summary_state),
-            callback_data=f"a:msum:{chat_id}",
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-flood-menu-button", value=flood_label),
-            callback_data=f"a:mflood:{chat_id}",
-        )
-    )
-    # The chat's own language (#48) — a group cannot be per-viewer, so this
-    # is one shared setting, currently the super-admin's to move (issue #47
-    # is about handing every chat setting to a chat admin, this one too).
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-locale-button", name=locale_name(chat.locale)),
-            callback_data=f"a:cloc:{chat_id}",
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-disable-chat") if chat.is_active else _("admin-enable-chat"),
-            callback_data=f"a:coff:{chat_id}",
-        )
-    )
     builder.row(
         InlineKeyboardButton(
             text=_("admin-chat-messages-menu-button"), callback_data=f"a:mdel:{chat_id}"
@@ -854,123 +679,6 @@ def _note(user: AdminUserRow, *, locale: str) -> str:
 # leftovers). They are one shape: a prompt saying what is set now and what
 # is allowed, and a single way back — the flow's state ("who is typing
 # what") stays with the handler, because it is not layout.
-
-
-async def render_limits(repo: Repo, *, locale: str) -> Screen:
-    """Every global numeric setting with its current value, each row opening
-    its own input — a settings list rather than a menu you have to walk to
-    find out what is set."""
-    _ = translator("admin", locale)
-    # The value is read before the rows are built, not inside the loop that
-    # builds them: a label here is a setting *and* what it is currently set
-    # to, and only this screen's own rows know how to say that.
-    settings = await numeric_values(repo)
-    show_links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
-    rows = [
-        [
-            InlineKeyboardButton(
-                text=_("admin-rare-row", value=f"{await rare_threshold(repo):g}"),
-                callback_data="a:rare",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=_("admin-show-links", visible=_("admin-yes") if show_links else _("admin-no")),
-                callback_data="a:showlinks",
-            )
-        ],
-        *button_rows(
-            settings,
-            lambda item: (
-                f"{_setting_label(item[1], locale=locale)}: "
-                f"{_format_limit(item[0], item[2], locale=locale)} ▸"
-            ),
-            lambda item: f"a:limit:{item[0]}",
-        ),
-    ]
-    keyboard = InlineListing(rows=rows, tail=_back_row(locale=locale)).markup()
-    return Screen(_("admin-limits-screen"), keyboard)
-
-
-async def render_limit(repo: Repo, key: str, *, locale: str) -> Screen:
-    _ = translator("admin", locale)
-    spec = NUMERIC_SETTINGS[key]
-    current = await numeric_value(repo, key)
-    # What a 0 means for *this* setting, spelled out only where 0 is allowed
-    # at all. This line raised TypeError from 2026-09-11 until #63's own
-    # audit found it: the locale ended up inside the f-string instead of in
-    # the call, so every limit whose minimum is 0 — the two list caps — blew
-    # up the moment the screen was opened.
-    zero_hint = f" (0 — {_format_limit(key, '0', locale=locale)})" if spec.min == 0 else ""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
-    return Screen(
-        _(
-            "admin-limit-prompt",
-            label=_setting_label(spec, locale=locale),
-            current=_format_limit(key, current, locale=locale),
-            minimum=spec.min,
-            maximum=spec.max,
-            zero_hint=zero_hint,
-        ),
-        builder.as_markup(),
-    )
-
-
-def _chat_input_screen(key: str, chat_id: int, *, locale: str, **fields: object) -> Screen:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
-    return Screen(_(key, **fields), builder.as_markup())
-
-
-async def render_rare_prompt(repo: Repo, *, locale: str) -> Screen:
-    """The rarity threshold, one for every chat (owner, 2026-10-01)."""
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
-    return Screen(
-        _("admin-rare-prompt", value=f"{await rare_threshold(repo):g}"), builder.as_markup()
-    )
-
-
-def render_flood_limit_prompt(chat: ChatTarget, *, locale: str) -> Screen:
-    return _chat_input_screen(
-        "admin-chat-flood-prompt",
-        chat.chat_id,
-        locale=locale,
-        title=chat.title or chat.chat_id,
-        value=chat.flood_limit,
-        minimum=FLOOD_LIMIT_MIN,
-        maximum=FLOOD_LIMIT_MAX,
-    )
-
-
-def render_flood_window_prompt(chat: ChatTarget, *, locale: str) -> Screen:
-    return _chat_input_screen(
-        "admin-chat-flood-window-prompt",
-        chat.chat_id,
-        locale=locale,
-        title=chat.title or chat.chat_id,
-        value=chat.flood_window_minutes,
-        minimum=FLOOD_WINDOW_MIN,
-        maximum=FLOOD_WINDOW_MAX,
-    )
-
-
-def render_zone_manual_prompt(chat: ChatTarget, *, locale: str) -> Screen:
-    """Back goes to the zone grid this was opened from, not to the card."""
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:ctz:{chat.chat_id}"))
-    return Screen(
-        _(
-            "admin-chat-zone-manual-prompt",
-            title=chat.title or chat.chat_id,
-            offset=format_offset(chat.tz_offset_min),
-        ),
-        builder.as_markup(),
-    )
 
 
 def render_wipe_prompt(chat: ChatTarget, count: int, hours: int, *, locale: str) -> Screen:

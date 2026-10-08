@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType, ParseMode
@@ -40,58 +41,38 @@ from bot.services.admin_credentials import (
     CredentialInvalid,
     CredentialSetupError,
 )
+from bot.services.admin_registry import GROUPS, Kind, Scope, Setting, value_label
+from bot.services.admin_registry import find as find_setting
+from bot.services.admin_registry import label as registry_label
+from bot.services.admin_registry import set_value as set_setting
+from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
-    CHAT_SCOPED_KEYS,
-    DEFAULT_RARITY_MODE_DEFAULT,
-    DEFAULT_RARITY_MODE_KEY,
-    FLOOD_LIMIT_DEFAULT,
-    FLOOD_LIMIT_MAX,
-    FLOOD_LIMIT_MIN,
-    FLOOD_WINDOW_MAX,
-    FLOOD_WINDOW_MIN,
-    NUMERIC_SETTINGS,
-    RARE_THRESHOLD_KEY,
-    SHOW_LINKS_DEFAULT,
-    SHOW_LINKS_KEY,
     SettingValueError,
-    set_numeric_setting,
-    set_rare_threshold,
 )
 from bot.services.message_log import stats_category
 from bot.services.naming import link_nickname, person_name
-from bot.util import parse_utc_offset
 from bot.views.admin import (
     _cancel_input_keyboard,
-    _format_limit,
-    _hour_grid_markup,
-    _setting_label,
     _toast_preview,
-    _tz_grid_markup,
     find_chat,
     render_admin_user_delete_confirm_1,
     render_admin_user_delete_confirm_2,
     render_chat_card,
     render_chat_list,
-    render_flood_limit_prompt,
-    render_flood_window_prompt,
     render_keys,
-    render_limit,
-    render_limits,
-    render_new_user_defaults,
-    render_rare_prompt,
     render_reset_confirm,
     render_system_wipe_prompt,
     render_user_card,
     render_user_list,
     render_wipe_prompt,
-    render_zone_manual_prompt,
 )
 from bot.views.admin_home import render_admin_home
-from bot.views.keyboards import (
-    DIGEST_CHOICES,
-    format_offset,
-    next_locale,
-    next_rarity_mode,
+from bot.views.admin_settings import (
+    back_to_group,
+    render_setting_choices,
+    render_setting_prompt,
+    render_settings_group,
+    render_settings_home,
 )
 from bot.views.promo import promo_keyboard, promo_text
 
@@ -295,202 +276,196 @@ async def admin_text_input(
     await message.answer(_(f"admin-keys-{name}-saved", text=text), reply_markup=markup)
 
 
-@router.callback_query(F.data == "a:newusers")
-async def new_user_defaults_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
+# ----------------------------------------------------------------- settings
 
-
-@router.callback_query(F.data == "a:defaultrarity")
-async def default_rarity_cycle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    current = await repo.get_app_setting(DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT)
-    assert current is not None
-    mode = next_rarity_mode(current)
-    await repo.set_app_setting(DEFAULT_RARITY_MODE_KEY, mode, callback.from_user.id)
-    await _redraw(callback, *await render_new_user_defaults(repo, locale=i18n.locale))
-
-
-@router.callback_query(F.data == "a:showlinks")
-async def show_links_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """Profile links on cards, for everybody (owner, 2026-09-29)."""
-    current = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
-    await repo.set_app_setting(SHOW_LINKS_KEY, "0" if current else "1", callback.from_user.id)
-    await _redraw(callback, *(await render_limits(repo, locale=i18n.locale)).as_pair())
-
-
-# ------------------------------------------------------ free-text numeric settings
-
-# Row-cap settings (always global — no per-chat meaning) and the per-chat
-# rare threshold share one "type a number, not a button" flow — free values
-# a handful of preset buttons could not cover anyway. Keyed by tg_id ->
-# (which setting, which chat — None for a global row-cap), so a stray digit
-# typed by an admin who isn't in this flow is never mistaken for input, and
-# the one regex handler below knows which validation and target apply.
+# Every setting the super-admin changes comes from one registry (#176,
+# services/admin_registry.py), which the Mini App draws too. A setting's
+# button: on/off flips at once, a pick-one opens its values, a number waits
+# for one typed — `_awaiting_input` remembers which, keyed by the admin.
 
 _awaiting_input: dict[int, tuple[str, int | None]] = {}
+_SETTING_PENDING = "set:"
 
 
-@router.callback_query(F.data == "a:limits")
-async def limits_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    await _redraw(callback, *(await render_limits(repo, locale=i18n.locale)).as_pair())
+@router.callback_query(F.data == "a:set")
+async def settings_home(callback: CallbackQuery, i18n: I18nContext) -> None:
+    _awaiting_input.pop(callback.from_user.id, None)
+    await _redraw(callback, *render_settings_home(locale=i18n.locale).as_pair())
 
 
-@router.callback_query(F.data.startswith("a:limit:"))
-async def limit_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+@router.callback_query(F.data.startswith("a:sg:"))
+async def settings_group(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
-    key = callback.data.rsplit(":", 1)[1]
-    _awaiting_input[callback.from_user.id] = (key, None)
-    await _redraw(callback, *(await render_limit(repo, key, locale=i18n.locale)).as_pair())
+    group = callback.data.split(":", 2)[2]
+    if group not in GROUPS["global"]:
+        await callback.answer()
+        return
+    _awaiting_input.pop(callback.from_user.id, None)
+    current = await registry_values(repo, "global")
+    await _redraw(callback, *render_settings_group(group, current, locale=i18n.locale).as_pair())
 
 
-@router.message(F.chat.type == ChatType.PRIVATE, F.text.regexp(r"^\d+([.,]\d+)?$"))
-async def numeric_setting_input(
-    message: Message,
+@router.callback_query(F.data.startswith("a:cg:"))
+async def chat_settings_group(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    _prefix, _action, chat_raw, group = callback.data.split(":")
+    _awaiting_input.pop(callback.from_user.id, None)
+    await _redraw(
+        callback, *await render_chat_card(repo, int(chat_raw), locale=i18n.locale, section=group)
+    )
+
+
+@router.callback_query(F.data.startswith("a:s:"))
+async def setting_open(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    await _open_setting(callback, repo, "global", callback.data.split(":", 2)[2], None, i18n)
+
+
+@router.callback_query(F.data.startswith("a:cs:"))
+async def chat_setting_open(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    _prefix, _action, chat_raw, key = callback.data.split(":")
+    await _open_setting(callback, repo, "chat", key, int(chat_raw), i18n)
+
+
+async def _current(repo: Repo, scope: Scope, chat_id: int | None) -> dict[str, Any] | None:
+    if scope == "global":
+        return await registry_values(repo, "global")
+    chat = await find_chat(repo, chat_id)  # type: ignore[arg-type]
+    return None if chat is None else await registry_values(repo, "chat", chat)
+
+
+async def _open_setting(
+    callback: CallbackQuery,
     repo: Repo,
-    fetcher: Fetcher,
-    steam_fetcher: SteamFetcher,
-    admin_credentials: AdminCredentials,
-    bot: Bot,
+    scope: Scope,
+    key: str,
+    chat_id: int | None,
     i18n: I18nContext,
 ) -> None:
     _ = translator("admin", i18n.locale)
+    try:
+        setting = find_setting(scope, key)
+    except KeyError:
+        await callback.answer()
+        return
+    current = await _current(repo, scope, chat_id)
+    if current is None:
+        await callback.answer(_("admin-chat-not-found"), show_alert=True)
+        return
+    back = back_to_group(setting, chat_id)
+    if setting.kind is Kind.BOOL:
+        await set_setting(
+            repo, scope, key, not current[key], callback.from_user.id, chat_id=chat_id
+        )
+        await _show_group(callback, repo, setting, chat_id, i18n.locale)
+        return
+    if setting.options():
+        screen = render_setting_choices(
+            setting, current[key], locale=i18n.locale, back=back, chat_id=chat_id
+        )
+        await _redraw(callback, *screen.as_pair())
+        return
+    _awaiting_input[callback.from_user.id] = (f"{_SETTING_PENDING}{scope}:{key}", chat_id)
+    screen = render_setting_prompt(setting, current[key], locale=i18n.locale, back=back)
+    await _redraw(callback, *screen.as_pair())
+
+
+@router.callback_query(F.data.startswith("a:sv:"))
+async def setting_pick(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    _prefix, _action, key, index = callback.data.split(":")
+    await _pick(callback, repo, "global", key, int(index), None, i18n)
+
+
+@router.callback_query(F.data.startswith("a:csv:"))
+async def chat_setting_pick(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+    assert callback.data is not None
+    _prefix, _action, chat_raw, key, index = callback.data.split(":")
+    await _pick(callback, repo, "chat", key, int(index), int(chat_raw), i18n)
+
+
+async def _pick(
+    callback: CallbackQuery,
+    repo: Repo,
+    scope: Scope,
+    key: str,
+    index: int,
+    chat_id: int | None,
+    i18n: I18nContext,
+) -> None:
+    _ = translator("admin", i18n.locale)
+    try:
+        setting = find_setting(scope, key)
+        option = setting.options()[index]
+    except (KeyError, IndexError):
+        await callback.answer(_("admin-settings-choice-retry"), show_alert=True)
+        return
+    await set_setting(repo, scope, key, option, callback.from_user.id, chat_id=chat_id)
+    await _show_group(callback, repo, setting, chat_id, i18n.locale)
+
+
+async def _show_group(
+    callback: CallbackQuery, repo: Repo, setting: Setting, chat_id: int | None, locale: str
+) -> None:
+    if setting.scope == "global":
+        current = await registry_values(repo, "global")
+        await _redraw(
+            callback, *render_settings_group(setting.group, current, locale=locale).as_pair()
+        )
+        return
+    assert chat_id is not None
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=locale, section=setting.group)
+    )
+
+
+@router.message(F.chat.type == ChatType.PRIVATE, F.text.regexp(r"^\d+([.,]\d+)?$"))
+async def setting_number_input(message: Message, repo: Repo, i18n: I18nContext) -> None:
+    """A number typed for the setting opened last; anything else stays the
+    business of whatever is waiting for it."""
+    _ = translator("admin", i18n.locale)
     assert message.from_user is not None and message.text is not None
     pending = _awaiting_input.get(message.from_user.id)
-    if pending is None:
+    if pending is None or not pending[0].startswith(_SETTING_PENDING):
         return  # a plain number from an admin who isn't in this flow — ignore
-    key, chat_id = pending
-    if key not in NUMERIC_SETTINGS and key not in CHAT_SCOPED_KEYS and key != RARE_THRESHOLD_KEY:
-        # An all-digit PSN Online ID landing here while _awaiting_psn_lookup
-        # is pending, say (SPEC 9, M-PSN-1) — not this flow's business, its
-        # own handler (below) owns whatever key it registered.
-        return
-
-    if key == RARE_THRESHOLD_KEY:
-        # One for every chat (owner, 2026-10-01).
-        try:
-            value = await set_rare_threshold(repo, message.text, message.from_user.id)
-        except SettingValueError as exc:
-            await message.answer(_retry_text(exc, _))
-            return
-        del _awaiting_input[message.from_user.id]
-        reply_text, markup = (await render_limits(repo, locale=i18n.locale)).as_pair()
-        await message.answer(
-            _("admin-threshold-saved", value=f"{value:g}", text=reply_text),
-            reply_markup=markup,
-        )
-        return
-
-    if key in ("flood_limit", "flood_window_minutes"):
-        assert chat_id is not None  # chat-scoped, same as rare_threshold_percent above
-        if "." in message.text or "," in message.text:
-            await message.answer(_("admin-integer-retry"))
-            return
-        value_int = int(message.text)
-        minimum, maximum = (
-            (FLOOD_LIMIT_MIN, FLOOD_LIMIT_MAX)
-            if key == "flood_limit"
-            else (FLOOD_WINDOW_MIN, FLOOD_WINDOW_MAX)
-        )
-        if not (minimum <= value_int <= maximum):
-            await message.answer(_("admin-number-range-retry", minimum=minimum, maximum=maximum))
-            return
-        del _awaiting_input[message.from_user.id]
-        await repo.update_chat_settings(chat_id, **{key: value_int})
-        reply_text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale)
-        saved_key = "admin-flood-saved" if key == "flood_limit" else "admin-flood-window-saved"
-        await message.answer(_(saved_key, value=value_int, text=reply_text), reply_markup=markup)
-        return
-
-    # The row-cap settings below are always global — chat_id is always None
-    # here, there is no per-chat meaning for them.
+    scope_raw, _sep, key = pending[0].removeprefix(_SETTING_PENDING).partition(":")
+    scope: Scope = "chat" if scope_raw == "chat" else "global"
+    chat_id = pending[1]
+    setting = find_setting(scope, key)
     try:
-        value_int = await set_numeric_setting(repo, key, message.text, message.from_user.id)
+        value = await set_setting(
+            repo, scope, key, message.text, message.from_user.id, chat_id=chat_id
+        )
     except SettingValueError as exc:
         await message.answer(_retry_text(exc, _))
         return
-    spec = NUMERIC_SETTINGS[key]
-    confirm = (
-        f"{_setting_label(spec, locale=i18n.locale)}: "
-        f"{_format_limit(key, value_int, locale=i18n.locale)}"
-    )
     del _awaiting_input[message.from_user.id]
-    await _replace_admin_home(
-        bot,
-        repo,
-        fetcher,
-        steam_fetcher,
-        admin_credentials,
-        message.from_user.id,
-        prefix=confirm,
+    saved = _(
+        "admin-settings-saved",
+        label=registry_label(setting, locale=i18n.locale),
+        value=value_label(setting, value, locale=i18n.locale),
     )
+    if scope == "global":
+        current = await registry_values(repo, "global")
+        text, markup = render_settings_group(
+            setting.group, current, locale=i18n.locale, prefix=saved
+        ).as_pair()
+    else:
+        assert chat_id is not None
+        card, markup = await render_chat_card(
+            repo, chat_id, locale=i18n.locale, section=setting.group
+        )
+        text = f"{saved}\n\n{card}"
+    await message.answer(text, reply_markup=markup)
 
 
 def _retry_text(exc: SettingValueError, _: Callable[..., str]) -> str:
     if exc.reason == "integer":
         return _("admin-integer-retry")
+    if exc.reason == "choice":
+        return _("admin-settings-choice-retry")
     return _("admin-number-range-retry", minimum=f"{exc.minimum:g}", maximum=f"{exc.maximum:g}")
-
-
-# ------------------------------------------------------- per-chat settings
-
-# Rare threshold, daily-summary time and its timezone are always explicit
-# per chat (SPEC 5.5, 5.7) — no global screen any more, editing always
-# happens from a chat's own card.
-
-
-@router.callback_query(F.data == "a:rare")
-async def rare_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """The rarity threshold, one for every chat (owner, 2026-10-01)."""
-    _awaiting_input[callback.from_user.id] = (RARE_THRESHOLD_KEY, None)
-    await _redraw(callback, *(await render_rare_prompt(repo, locale=i18n.locale)).as_pair())
-
-
-@router.callback_query(F.data.startswith("a:cfltoggle:"))
-async def chat_flood_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """On/off for the whole filter (2026-09-09 user request), next to the
-    limit/window buttons below — same one-tap-toggle shape as the daily
-    summary switch above. Off is flood_limit = 0 (the schema's own "off"
-    convention); back on lands on FLOOD_LIMIT_DEFAULT rather than
-    remembering whatever it was set to before — no column exists to
-    remember that, and re-tuning it with the limit button right next to
-    this one costs one more tap, not a real loss."""
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    new_limit = 0 if chat.flood_limit > 0 else FLOOD_LIMIT_DEFAULT
-    await repo.update_chat_settings(chat_id, flood_limit=new_limit)
-    await callback.answer()
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="flood")
-    )
-
-
-# The chat card's three sub-screens (2026-09-11, user request). Each used to
-# be a single row of two to four buttons on the card itself; the card now
-# carries one entry per group and these open the group. The card *text* is
-# unchanged in all of them — only the keyboard differs — so the chat's state
-# stays on screen while its settings are being tuned.
-
-
-@router.callback_query(F.data.startswith("a:msum:"))
-async def chat_summary_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    assert callback.data is not None
-    chat_id = int(callback.data.split(":")[2])
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="summary")
-    )
-
-
-@router.callback_query(F.data.startswith("a:mflood:"))
-async def chat_flood_menu_screen(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    assert callback.data is not None
-    chat_id = int(callback.data.split(":")[2])
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="flood")
-    )
 
 
 @router.callback_query(F.data.startswith("a:mdel:"))
@@ -499,169 +474,6 @@ async def chat_messages_menu(callback: CallbackQuery, repo: Repo, i18n: I18nCont
     chat_id = int(callback.data.split(":")[2])
     await _redraw(
         callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="messages")
-    )
-
-
-@router.callback_query(F.data.startswith("a:cloc:"))
-async def chat_locale_toggle(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """Cycles the chat's own language (#48). One shared value per chat, not
-    per viewer: Telegram cannot show two members of the same group different
-    text, so somebody has to decide for everyone — the super-admin today,
-    a chat admin once #47 exists.
-
-    Only the chat's own broadcasts move; the super-admin's panel keeps
-    rendering in the super-admin's own language, which is why this redraws
-    with the injected context rather than a rebuilt one (unlike /panel's
-    personal toggle, where the two are the same person).
-    """
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.split(":")[2])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    await repo.update_chat_settings(chat_id, locale=next_locale(chat.locale))
-    # No toast of its own: _redraw already acknowledges the press, and the
-    # card it redraws shows the new language on its own line anyway.
-    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
-
-
-@router.callback_query(F.data.startswith("a:cfl:"))
-async def chat_flood_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    _awaiting_input[callback.from_user.id] = ("flood_limit", chat_id)
-    await _redraw(callback, *render_flood_limit_prompt(chat, locale=i18n.locale).as_pair())
-
-
-@router.callback_query(F.data.startswith("a:cflw:"))
-async def chat_flood_window_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    _awaiting_input[callback.from_user.id] = ("flood_window_minutes", chat_id)
-    await _redraw(callback, *render_flood_window_prompt(chat, locale=i18n.locale).as_pair())
-
-
-@router.callback_query(F.data.startswith("a:ctime:"))
-async def chat_time_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    await _redraw(
-        callback,
-        _("admin-chat-time-prompt", title=chat.title or chat_id, time=chat.daily_summary_time),
-        _hour_grid_markup(
-            chat.daily_summary_time,
-            f"a:ctimes:{chat_id}:",
-            f"a:ctz:{chat_id}",
-            f"a:chat:{chat_id}",
-            locale=i18n.locale,
-        ),
-    )
-
-
-@router.callback_query(F.data.startswith("a:ctimes:"))
-async def chat_time_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    _, _, chat_id_raw, hour_raw = callback.data.split(":")
-    chat_id, hour = int(chat_id_raw), int(hour_raw)
-    await repo.update_chat_settings(chat_id, daily_summary_time=f"{hour:02d}:00")
-    await callback.answer(_("admin-chat-time-saved", time=f"{hour:02d}:00"))
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="summary")
-    )
-
-
-@router.callback_query(F.data.startswith("a:ctz:"))
-async def chat_zone_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    await _redraw(
-        callback,
-        _(
-            "admin-chat-zone-prompt",
-            title=chat.title or chat_id,
-            offset=format_offset(chat.tz_offset_min),
-        ),
-        _tz_grid_markup(
-            chat.tz_offset_min,
-            f"a:ctzs:{chat_id}:",
-            f"a:ctzm:{chat_id}",
-            f"a:ctime:{chat_id}",
-            locale=i18n.locale,
-        ),
-    )
-
-
-@router.callback_query(F.data.startswith("a:ctzs:"))
-async def chat_zone_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    assert callback.data is not None
-    _, _, chat_id_raw, minutes_raw = callback.data.split(":")
-    chat_id, minutes = int(chat_id_raw), int(minutes_raw)
-    await repo.update_chat_settings(chat_id, tz_offset_min=minutes)
-    await callback.answer(format_offset(minutes))
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="summary")
-    )
-
-
-@router.callback_query(F.data.startswith("a:ctzm:"))
-async def chat_zone_manual_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    _awaiting_input[callback.from_user.id] = ("tz_offset_min", chat_id)
-    await _redraw(callback, *render_zone_manual_prompt(chat, locale=i18n.locale).as_pair())
-
-
-@router.message(
-    F.chat.type == ChatType.PRIVATE, F.text.regexp(r"(?i)^(?:utc)?\s*[+-]\d{1,2}(?::[0-5]\d)?$")
-)
-async def chat_timezone_input(message: Message, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert message.from_user is not None and message.text is not None
-    pending = _awaiting_input.get(message.from_user.id)
-    if pending is None or pending[0] != "tz_offset_min":
-        return  # a stray signed number from an admin not in this flow — ignore
-    _, chat_id = pending
-    assert chat_id is not None
-
-    minutes = parse_utc_offset(message.text)
-    if minutes is None:  # out of −12..+14 range — the regex alone can't catch that
-        await message.answer(_("admin-timezone-invalid"))
-        return
-
-    del _awaiting_input[message.from_user.id]
-    await repo.update_chat_settings(chat_id, tz_offset_min=minutes)
-    reply_text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale)
-    await message.answer(
-        _("admin-timezone-saved", offset=format_offset(minutes), text=reply_text),
-        reply_markup=markup,
     )
 
 
@@ -798,59 +610,6 @@ async def chats_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> 
 async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
-
-
-@router.callback_query(F.data.startswith("a:mdig:"))
-async def chat_digest_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="digest")
-    )
-
-
-@router.callback_query(F.data.startswith("a:cdig:"))
-async def chat_digest_set(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """The chat's digest size (#126)."""
-    assert callback.data is not None
-    chat_id_raw, value_raw = callback.data.split(":")[2:]
-    chat_id, value = int(chat_id_raw), int(value_raw)
-    if value not in DIGEST_CHOICES:
-        await callback.answer()
-        return
-    await repo.update_chat_settings(chat_id, digest_threshold=value)
-    await callback.answer()
-    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
-
-
-@router.callback_query(F.data.startswith("a:cds:"))
-async def chat_daily(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    await repo.update_chat_settings(chat_id, daily_summary=0 if chat.daily_summary else 1)
-    await callback.answer()
-    await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="summary")
-    )
-
-
-@router.callback_query(F.data.startswith("a:coff:"))
-async def chat_toggle_active(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    _ = translator("admin", i18n.locale)
-    assert callback.data is not None
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    chat = await find_chat(repo, chat_id)
-    if chat is None:
-        await callback.answer(_("admin-chat-not-found"), show_alert=True)
-        return
-    await repo.set_chat_active(chat_id, not chat.is_active)
-    await callback.answer(_("admin-chat-disabled") if chat.is_active else _("admin-chat-enabled"))
     await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
 
 

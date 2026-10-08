@@ -6,14 +6,15 @@ What it shows and changes comes from the same services as the bot's /admin
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from aiohttp import web
 
-from bot.constants import Platform, RarityMode, TokenStatus
+from bot.constants import Platform, TokenStatus
 from bot.db.repo import Repo
-from bot.i18n import AVAILABLE_LOCALES, normalize_locale, translator
+from bot.i18n import translator
 from bot.services import admin_cleanup
 from bot.services.admin_accounts import AdminAccounts
 from bot.services.admin_cleanup import Wipe
@@ -23,19 +24,13 @@ from bot.services.admin_credentials import (
     CredentialSetupError,
     CredentialState,
 )
+from bot.services.admin_registry import GROUPS, Kind, Scope, group_label, settings_of, value_label
+from bot.services.admin_registry import hint as registry_hint
+from bot.services.admin_registry import label as registry_label
+from bot.services.admin_registry import set_value as set_setting
+from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
-    DEFAULT_RARITY_MODE_DEFAULT,
-    DEFAULT_RARITY_MODE_KEY,
-    FLOOD_WINDOW_MAX,
-    FLOOD_WINDOW_MIN,
-    NUMERIC_SETTINGS,
-    SHOW_LINKS_DEFAULT,
-    SHOW_LINKS_KEY,
     SettingValueError,
-    numeric_values,
-    rare_threshold,
-    set_numeric_setting,
-    set_rare_threshold,
 )
 from bot.services.admin_status import admin_status
 from bot.services.logins import logins_of
@@ -43,7 +38,6 @@ from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.views.admin import login_value
 from bot.views.admin_home import format_api_usage
-from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
 
 log = logging.getLogger(__name__)
 
@@ -106,32 +100,42 @@ def _credentials_json(states: list[CredentialState], *, locale: str) -> list[dic
     ]
 
 
-async def build_admin_limits(repo: Repo, *, locale: str) -> dict[str, Any]:
-    _ = translator("admin", locale)
-    return {
-        "items": [
+async def build_admin_settings(
+    repo: Repo, scope: Scope, *, locale: str, chat: Any = None
+) -> dict[str, Any]:
+    """The registry's settings of a scope, grouped, with their values,
+    bounds, choices and labels in the reader's language (#176) — the Mini App
+    draws whatever this lists, so a new setting needs no change there."""
+    current = await registry_values(repo, scope, chat)
+    groups = []
+    for group in GROUPS[scope]:
+        items = [
             {
-                "key": key,
-                "label": _(spec.label),
-                "value": value,
-                "min": spec.min,
-                "max": spec.max,
-                "zero_means": spec.zero_means,
+                "key": str(setting.key),
+                "label": registry_label(setting, locale=locale),
+                "hint": registry_hint(setting, locale=locale),
+                "kind": str(setting.kind),
+                "value": current[setting.key],
+                "min": setting.min,
+                "max": setting.max,
+                "zero_means": setting.zero_means,
+                "options": [
+                    {"value": option, "label": value_label(setting, option, locale=locale)}
+                    for option in setting.options()
+                    if setting.kind is not Kind.BOOL
+                ],
             }
-            for key, spec, value in await numeric_values(repo)
+            for setting in settings_of(scope, group)
         ]
-    }
-
-
-async def build_admin_defaults(repo: Repo) -> dict[str, Any]:
-    rarity = await repo.get_app_setting(DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT)
-    links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
-    return {
-        "rarity_mode": rarity or RarityMode.ALL,
-        "show_profile_links": bool(links),
-        # One for every chat (owner, 2026-10-01) — set here, not on a chat's card.
-        "rare_threshold_percent": await rare_threshold(repo),
-    }
+        if items:
+            groups.append(
+                {
+                    "id": group,
+                    "title": group_label(scope, group, locale=locale),
+                    "items": items,
+                }
+            )
+    return {"groups": groups}
 
 
 async def build_admin_users(repo: Repo) -> dict[str, Any]:
@@ -250,19 +254,12 @@ def _logins_json(user: Any, *, locale: str) -> list[dict[str, Any]]:
 
 
 def serialize_admin_chat(chat: Any) -> dict[str, Any]:
+    """A chat in the list; its settings are `/chats/{id}/settings`."""
     return {
         "chat_id": chat.chat_id,
         "title": chat.title,
         "is_active": chat.is_active,
         "subscribers": chat.subscribers,
-        "rare_threshold_percent": chat.rare_threshold_percent,
-        "daily_summary": chat.daily_summary,
-        "daily_summary_time": chat.daily_summary_time,
-        "tz_offset_min": chat.tz_offset_min,
-        "flood_limit": chat.flood_limit,
-        "flood_window_minutes": chat.flood_window_minutes,
-        "digest_threshold": chat.digest_threshold,
-        "locale": chat.locale,
     }
 
 
@@ -271,17 +268,18 @@ def setup_admin_routes(app: web.Application) -> None:
     app.router.add_get("/api/mini/admin/keys", handle_admin_keys)
     app.router.add_put("/api/mini/admin/keys/{name}", handle_admin_key_put)
     app.router.add_delete("/api/mini/admin/keys/{name}", handle_admin_key_delete)
-    app.router.add_get("/api/mini/admin/limits", handle_admin_limits)
-    app.router.add_patch("/api/mini/admin/limits", handle_admin_limits_patch)
-    app.router.add_get("/api/mini/admin/defaults", handle_admin_defaults)
-    app.router.add_patch("/api/mini/admin/defaults", handle_admin_defaults_patch)
+    app.router.add_get("/api/mini/admin/settings", handle_admin_settings)
+    app.router.add_patch("/api/mini/admin/settings", handle_admin_settings_patch)
     app.router.add_get("/api/mini/admin/users", handle_admin_users)
     app.router.add_get("/api/mini/admin/users/{ref}", handle_admin_user)
     app.router.add_patch("/api/mini/admin/users/{ref}", handle_admin_user_patch)
     app.router.add_delete("/api/mini/admin/users/{ref}", handle_admin_user_delete)
     app.router.add_post("/api/mini/admin/users/{ref}/delete", handle_admin_user_delete)
     app.router.add_get("/api/mini/admin/chats", handle_admin_chats)
-    app.router.add_patch("/api/mini/admin/chats/{chat_id}", handle_admin_chat_patch)
+    app.router.add_get("/api/mini/admin/chats/{chat_id}/settings", handle_admin_chat_settings)
+    app.router.add_patch(
+        "/api/mini/admin/chats/{chat_id}/settings", handle_admin_chat_settings_patch
+    )
     app.router.add_post("/api/mini/admin/chats/{chat_id}/actions", handle_admin_chat_action)
 
 
@@ -333,58 +331,37 @@ async def handle_admin_key_delete(request: web.Request) -> web.Response:
     return web.json_response(await _keys_payload(request, admin))
 
 
-async def handle_admin_limits(request: web.Request) -> web.Response:
+async def handle_admin_settings(request: web.Request) -> web.Response:
     admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     locale = await repo.user_locale(admin.person_id)
-    return web.json_response(await build_admin_limits(repo, locale=locale))
+    return web.json_response(await build_admin_settings(repo, "global", locale=locale))
 
 
-async def handle_admin_limits_patch(request: web.Request) -> web.Response:
+async def handle_admin_settings_patch(request: web.Request) -> web.Response:
     admin = await _require_superadmin(request)
     repo: Repo = request.app["mini_repo"]
     body = await request.json()
+    await _set(repo, "global", body, admin.tg_id)
+    locale = await repo.user_locale(admin.person_id)
+    return web.json_response(await build_admin_settings(repo, "global", locale=locale))
+
+
+async def _set(
+    repo: Repo, scope: Scope, body: dict[str, Any], admin_id: int | None, chat_id: int | None = None
+) -> None:
+    """The bot's own check (`admin_registry.set_value`): an unknown key or a
+    value out of bounds is a 400 that says which."""
     key = str(body.get("key") or "")
-    if key not in NUMERIC_SETTINGS:
-        raise web.HTTPBadRequest(text="unknown limit")
     try:
-        await set_numeric_setting(repo, key, body.get("value"), admin.tg_id)
+        await set_setting(repo, scope, key, body.get("value"), admin_id, chat_id=chat_id)
+    except KeyError as exc:
+        raise web.HTTPBadRequest(text="unknown setting") from exc
     except SettingValueError as exc:
-        raise web.HTTPBadRequest(text=f"bad value: {exc.reason}") from exc
-    locale = await repo.user_locale(admin.person_id)
-    return web.json_response(await build_admin_limits(repo, locale=locale))
-
-
-async def handle_admin_defaults(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
-    repo: Repo = request.app["mini_repo"]
-    return web.json_response(await build_admin_defaults(repo))
-
-
-async def handle_admin_defaults_patch(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
-    repo: Repo = request.app["mini_repo"]
-    body = await request.json()
-    if "rarity_mode" in body:
-        mode = str(body["rarity_mode"])
-        if mode not in (RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN):
-            current = await repo.get_app_setting(
-                DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT
-            )
-            mode = next_rarity_mode(current or RarityMode.ALL)
-        await repo.set_app_setting(DEFAULT_RARITY_MODE_KEY, mode, admin.tg_id)
-    if "rare_threshold_percent" in body:
-        try:
-            await set_rare_threshold(repo, body["rare_threshold_percent"], admin.tg_id)
-        except SettingValueError as exc:
-            raise web.HTTPBadRequest(text="bad threshold") from exc
-    if "show_profile_links" in body:
-        await repo.set_app_setting(
-            SHOW_LINKS_KEY,
-            "1" if body["show_profile_links"] else "0",
-            admin.tg_id,
-        )
-    return web.json_response(await build_admin_defaults(repo))
+        raise web.HTTPBadRequest(
+            text=json.dumps({"error": exc.reason, "min": exc.minimum, "max": exc.maximum}),
+            content_type="application/json",
+        ) from exc
 
 
 async def handle_admin_users(request: web.Request) -> web.Response:
@@ -455,51 +432,34 @@ async def handle_admin_chats(request: web.Request) -> web.Response:
     return web.json_response({"chats": [serialize_admin_chat(c) for c in chats]})
 
 
-async def handle_admin_chat_patch(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+async def _chat_of(request: web.Request) -> Any:
     repo: Repo = request.app["mini_repo"]
-    chat_id = int(request.match_info["chat_id"])
-    body = await request.json()
-    fields: dict[str, Any] = {}
-    if "rare_threshold_percent" in body:
-        # One for every chat (owner, 2026-10-01): a chat card that still sends
-        # it sets the global value.
-        try:
-            await set_rare_threshold(repo, body["rare_threshold_percent"], admin.tg_id)
-        except SettingValueError as exc:
-            raise web.HTTPBadRequest(text="bad threshold") from exc
-    if "flood_limit" in body:
-        fields["flood_limit"] = int(body["flood_limit"])
-    if "flood_window_minutes" in body:
-        window = int(body["flood_window_minutes"])
-        if not (FLOOD_WINDOW_MIN <= window <= FLOOD_WINDOW_MAX):
-            raise web.HTTPBadRequest(text="bad window")
-        fields["flood_window_minutes"] = window
-    if "digest_threshold" in body:
-        digest = int(body["digest_threshold"])
-        if digest not in DIGEST_CHOICES:
-            raise web.HTTPBadRequest(text="bad digest_threshold")
-        fields["digest_threshold"] = digest
-    if "daily_summary" in body:
-        fields["daily_summary"] = 1 if body["daily_summary"] else 0
-    if "daily_summary_time" in body:
-        fields["daily_summary_time"] = str(body["daily_summary_time"])
-    if "tz_offset_min" in body:
-        fields["tz_offset_min"] = int(body["tz_offset_min"])
-    if "locale" in body:
-        locale = normalize_locale(str(body["locale"]))
-        if locale not in AVAILABLE_LOCALES:
-            raise web.HTTPBadRequest(text="bad locale")
-        fields["locale"] = locale
-    if fields:
-        await repo.update_chat_settings(chat_id, **fields)
-    if "is_active" in body:
-        await repo.set_chat_active(chat_id, bool(body["is_active"]))
-    chats = {c.chat_id: c for c in await repo.admin_chats()}
-    chat = chats.get(chat_id)
+    try:
+        chat_id = int(request.match_info["chat_id"])
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad chat") from exc
+    chat = next((c for c in await repo.admin_chats() if c.chat_id == chat_id), None)
     if chat is None:
         raise web.HTTPNotFound()
-    return web.json_response(serialize_admin_chat(chat))
+    return chat
+
+
+async def handle_admin_chat_settings(request: web.Request) -> web.Response:
+    admin = await _require_superadmin(request)
+    repo: Repo = request.app["mini_repo"]
+    chat = await _chat_of(request)
+    locale = await repo.user_locale(admin.person_id)
+    return web.json_response(await build_admin_settings(repo, "chat", locale=locale, chat=chat))
+
+
+async def handle_admin_chat_settings_patch(request: web.Request) -> web.Response:
+    admin = await _require_superadmin(request)
+    repo: Repo = request.app["mini_repo"]
+    chat = await _chat_of(request)
+    await _set(repo, "chat", await request.json(), admin.tg_id, chat_id=chat.chat_id)
+    chat = await _chat_of(request)
+    locale = await repo.user_locale(admin.person_id)
+    return web.json_response(await build_admin_settings(repo, "chat", locale=locale, chat=chat))
 
 
 async def handle_admin_chat_action(request: web.Request) -> web.Response:

@@ -134,3 +134,10 @@ class XboxApiValue(StrEnum):
 
 class SteamCommunityVisibility(IntEnum):
     PUBLIC = 3
+
+
+# How many of one person's achievements at once make one digest (#126). "Never"
+# is stored as a number rather than NULL so the publisher stays a single
+# comparison: any real session is smaller than this.
+DIGEST_NEVER = 99
+DIGEST_CHOICES = (2, 3, 4, 5, 6, 8, 10, DIGEST_NEVER)

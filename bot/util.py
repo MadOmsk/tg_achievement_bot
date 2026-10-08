@@ -75,6 +75,13 @@ def thousands(value: int) -> str:
     return f"{value:,}".replace(",", " ")
 
 
+def utc_offset_label(minutes: int) -> str:
+    """`UTC+3`, `UTC−3:30`, `UTC+5:45` — an offset as every screen shows it."""
+    hours, rest = divmod(abs(minutes), 60)
+    sign = "+" if minutes >= 0 else "−"
+    return f"UTC{sign}{hours}" if rest == 0 else f"UTC{sign}{hours}:{rest:02d}"
+
+
 def parse_utc_offset(text: str) -> int | None:
     """Free-text timezone entry ("+3", "-5", "+5:30", "UTC+3") to minutes
     from UTC, or None if it doesn't parse or falls outside a real offset

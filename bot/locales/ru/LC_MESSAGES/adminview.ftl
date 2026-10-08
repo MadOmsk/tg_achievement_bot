@@ -29,8 +29,6 @@ adminview-home =
     Запросов к PSN за сутки: { $psn_requests }
     Писем с кодами: { $mail_usage }
 adminview-mail-usage = за час { $hour }/{ $hour_limit } · за сутки { $day }/{ $day_limit }
-adminview-btn-newusers = 👤 Новые пользователи ▸
-adminview-btn-limits = ⚙️ Глобальные настройки ▸
 adminview-btn-users = Пользователи ▸
 adminview-btn-chats = Чаты ▸
 adminview-btn-keys = 🔑 Ключи платформ ▸

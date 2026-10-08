@@ -7,8 +7,6 @@ admin-back = ‹ Назад
 admin-cancel = Отмена
 admin-yes = да
 admin-no = нет
-admin-enabled = включён
-admin-disabled-state = выключен
 admin-active = активен
 admin-inactive = отключён
 
@@ -29,6 +27,44 @@ admin-setting-email-provider-daily = Лимит почтового сервис�
 admin-setting-email-sends-total = Кодов на почту всего в час
 admin-setting-email-checks-client = Проверок кода с одного IP за 10 минут
 admin-setting-patch-refresh = Обновление патчей игр (часы)
+
+# The settings registry (#176, services/admin_registry.py): one label per
+# setting, one title per group — the bot and the Mini App show the same ones.
+admin-setting-rare-threshold = Порог редкости, %
+admin-setting-default-rarity = Режим новичков
+admin-setting-rare-threshold-hint = Редкое — то, что есть не больше чем у этой доли игроков. Один порог на все чаты.
+admin-setting-default-rarity-hint = С этим режимом начинают новые люди.
+admin-setting-show-links = Ссылки на профили
+admin-setting-chat-active = Чат включён
+admin-setting-chat-locale = Язык
+admin-setting-chat-tz = Часовой пояс
+admin-setting-chat-digest = Дайджест с
+admin-setting-chat-summary = Итоги дня
+admin-setting-chat-summary-time = Время итогов
+admin-setting-chat-flood-limit = Антифлуд: постов за окно
+admin-setting-chat-flood-window = Антифлуд: окно (мин)
+admin-group-global-rules = Правила
+admin-group-global-lists = Списки
+admin-group-global-hltb = HLTB
+admin-group-global-timers = Таймеры
+admin-group-global-mail = Почта
+admin-group-global-other = Прочее
+admin-group-chat-main = Основное
+admin-group-chat-publishing = Публикация
+admin-group-chat-summary = Итоги дня
+admin-group-chat-flood = Антифлуд
+admin-settings-title = ⚙️ Настройки
+admin-settings-button = ⚙️ Настройки ▸
+admin-settings-group-title = ⚙️ Настройки · { $group }
+admin-settings-row = { $label }: { $value } ▸
+admin-settings-pick = { $label }: выбери значение.
+admin-settings-type =
+    { $label }
+    Сейчас: { $current }
+    Пришли число от { $minimum } до { $maximum }.{ $zero_hint }
+admin-settings-zero-hint = { " " }0 — { $meaning }.
+admin-settings-saved = ✅ { $label }: { $value }
+admin-settings-choice-retry = Такого значения нет — выбери кнопкой.
 
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
@@ -115,59 +151,18 @@ admin-keys-psn-invalid = NPSSO не подошёл — Sony его не прин
 admin-keys-setup-error = Не получилось создать клиент PSN — техническая ошибка на сервере ({ $error }). NPSSO тут, скорее всего, ни при чём — посмотри логи бота.
 
 # Limits and input prompts
-admin-limits-screen =
-    ⚙️ Глобальные настройки
-
-    Списки /summary и /stats можно сделать безлимитными (0) — они и так лежат
-    в сворачиваемой цитате, урезать нечего.
-admin-limit-prompt = { $label }: { $current }
-
-    Пришли новое значение целым числом, от { $minimum } до { $maximum }{ $zero_hint }.
 admin-number-range-retry = Число должно быть от { $minimum } до { $maximum }. Ещё раз?
-admin-threshold-saved = Порог редкости: { $value }%
-
 { $text }
 admin-integer-retry = Здесь только целое число. Ещё раз?
-admin-timezone-button = Часовой пояс ▸
-admin-timezone-manual = ✏️ Ввести вручную
 admin-chat-not-found = Чат не найден
 admin-chat-not-found-period = Чат не найден.
 
 # Chat settings prompts
-admin-rare-prompt =
-    💎 Порог «редкого» достижения, один для всех чатов: { $value }%
-
-    Пришли новое значение одним числом, например 12 или 7.5 — от 0 до 100.
-    Действует только на этот чат.
-admin-chat-time-prompt = Время итога дня в «{ $title }»: { $time }
-admin-chat-time-saved = Итог дня в { $time }
-admin-chat-zone-prompt = Часовой пояс «{ $title }»: { $offset }
-admin-chat-zone-manual-prompt =
-    Часовой пояс «{ $title }»: { $offset }
-
-    Пришли смещение одним сообщением, со знаком: например +3, -5 или +5:30.
-admin-timezone-invalid = Это не похоже на реальный часовой пояс. Например: +3 или -5:30.
-admin-timezone-saved = Часовой пояс: { $offset }
-
 # Anti-flood filter (2026-09-09): after N individually-notified achievements
 # for one person land in this chat within the window, further ones stop
 # posting on their own and get grouped into one message once the window
 # closes. 0 = off for this chat.
-admin-chat-flood-prompt =
-    Антиспам-фильтр в «{ $title }»: { $value } ач.
-
-    Пришли новое значение целым числом, от { $minimum } до { $maximum } (0 — выключить).
-    Действует только на этот чат.
-admin-chat-flood-window-prompt =
-    Окно антиспам-фильтра в «{ $title }»: { $value } мин
-
-    Пришли новое значение целым числом, от { $minimum } до { $maximum }.
-    Действует только на этот чат.
-admin-flood-saved = Антиспам-фильтр: { $value } ач.
-
 { $text }
-admin-flood-window-saved = Окно антиспам-фильтра: { $value } мин
-
 { $text }
 
 # User and message actions
@@ -189,8 +184,6 @@ admin-steam-not-connected = Steam не подключён
 admin-psn-not-connected = PSN не подключён
 
 # Chat and cleanup actions
-admin-chat-disabled = Отключён
-admin-chat-enabled = Включён
 admin-no-bot-messages = Не нашёл сообщений бота в этом чате.
 admin-delete-old-failed = Не смог удалить — возможно, сообщение слишком старое.
 admin-deleted-last = 🗑 Удалил последнее сообщение.
@@ -216,14 +209,6 @@ admin-send-promo-to-chat = 📢 Отправить промо в чат
 admin-promo-sent = Промо-сообщение отправлено в чат
 
 # New users and user cards
-admin-new-users-screen =
-    👤 Новые пользователи — настройки по умолчанию
-
-    Действует только на подписки, оформленные с этого момента — уже существующие
-    не трогает.
-admin-default-rarity = Достижения по умолчанию: { $rarity } ▸
-admin-rare-row = 💎 Порог редкости: { $value }% ▸
-admin-show-links = Ссылки на профили в карточках: { $visible } ▸
 admin-users-empty = 👥 Пока никто не подключился.
 admin-users-header = 👥 Пользователи
 admin-users-columns = Колонки: когда был в сети · достижений сегодня / за месяц
@@ -313,7 +298,7 @@ admin-chat-card =
     Дайджест:     { $digest }
     Итог дня:     { $summary }, в { $time }
     Часовой пояс: { $offset }
-    Антиспам:     { $flood }
+    Антифлуд:     { $flood }
     Язык:         { $locale_name }
 
     { $names }
@@ -321,20 +306,9 @@ admin-chat-flood-value = { $limit } ач. / { $window } мин
 admin-chat-flood-off = выключен
 admin-no-subscribers = Подписанных пока нет.
 admin-subscribers-list = Подписаны: { $names }
-admin-chat-digest-button = Дайджест: { $digest } ▸
 admin-digest-from = от { $value } ач.
 admin-digest-never = никогда
-admin-chat-summary-button = Итог дня: { $state }
-admin-chat-time-button = Время итога: { $time } ({ $offset }) ▸
-admin-chat-flood-toggle-button = Антиспам-фильтр: { $state }
-admin-chat-flood-button = Антиспам: { $limit } ач. ▸
-admin-chat-summary-menu-button = Итог дня: { $state } ▸
-admin-chat-flood-menu-button = Антиспам: { $value } ▸
 admin-chat-messages-menu-button = 🗑 Сообщения ▸
-admin-chat-locale-button = Язык: { $name }
-admin-chat-flood-window-button = Окно антиспама: { $window } мин ▸
-admin-disable-chat = ⏸ Отключить чат
-admin-enable-chat = ▶️ Включить чат
 admin-delete-last = 🗑 Последнее
 admin-wipe-bot-24h = 🗑 Бота (24ч)
 admin-wipe-system-24h = 🗑 Системные (24ч)

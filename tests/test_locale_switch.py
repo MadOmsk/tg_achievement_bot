@@ -12,7 +12,7 @@ from __future__ import annotations
 from aiogram_i18n import I18nContext
 
 from bot.db.repo import Repo
-from bot.handlers.admin import chat_locale_toggle
+from bot.handlers.admin import chat_setting_open, chat_setting_pick
 from bot.handlers.panel import panel_toggle_locale
 from bot.i18n import AVAILABLE_LOCALES, build_i18n_context
 from bot.views.admin import render_chat_card
@@ -108,79 +108,74 @@ async def test_the_panel_toggle_leaves_every_chat_alone(repo: Repo, i18n: I18nCo
     assert await repo.chat_locale(CHAT_ID) == "ru"
 
 
-# ----------------------------------------------------- the chat card toggle
+# ------------------------------------------------- the chat's language
+
+# A setting of the registry (#176), in the chat card's «Основное» group: its
+# button opens the languages, a pick sets the chat's.
 
 
-async def test_the_chat_card_shows_the_language_and_its_button(repo: Repo) -> None:
+async def test_the_chat_card_shows_the_language_in_its_main_group(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
-
-    text, markup = await render_chat_card(repo, CHAT_ID, locale="ru")
-
-    assert "Язык:         Русский" in text
-    labels = [button.text for row in markup.inline_keyboard for button in row]
-    assert "Язык: Русский" in labels
-
-
-async def test_the_chat_toggle_flips_the_chats_locale(repo: Repo, i18n: I18nContext) -> None:
-    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
-    callback = _FakeCallback(f"a:cloc:{CHAT_ID}")
-
-    await chat_locale_toggle(callback, repo, i18n)  # type: ignore[arg-type]
-
-    assert await repo.chat_locale(CHAT_ID) == "en"
 
     text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
-    # The card itself still renders in the super-admin's language; only the
-    # value it reports has changed.
-    assert "Язык:         English" in text
+    _text, group = await render_chat_card(repo, CHAT_ID, locale="ru", section="main")
+
+    assert "Язык:         Русский" in text
+    labels = [button.text for row in group.inline_keyboard for button in row]
+    assert "Язык: Русский ▸" in labels
 
 
-async def test_the_chat_toggle_leaves_the_super_admin_alone(repo: Repo, i18n: I18nContext) -> None:
+async def test_picking_a_language_sets_the_chats_own(repo: Repo, i18n: I18nContext) -> None:
     await repo.ensure_user(TG_ID)
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
+    english = AVAILABLE_LOCALES.index("en")
 
-    await chat_locale_toggle(_FakeCallback(f"a:cloc:{CHAT_ID}"), repo, i18n)  # type: ignore[arg-type]
+    await chat_setting_pick(  # type: ignore[arg-type]
+        _FakeCallback(f"a:csv:{CHAT_ID}:locale:{english}"), repo, i18n
+    )
 
     assert await repo.chat_locale(CHAT_ID) == "en"
+    # The card itself still renders in the super-admin's language; only the
+    # value it reports has changed — and the super-admin's own is untouched.
+    text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
+    assert "Язык:         English" in text
     assert await repo.user_locale(await repo.person_id(TG_ID)) == "ru"
 
 
-async def test_the_chat_toggle_survives_a_missing_chat(repo: Repo, i18n: I18nContext) -> None:
-    callback = _FakeCallback("a:cloc:-1")
+async def test_a_missing_chat_is_said_so(repo: Repo, i18n: I18nContext) -> None:
+    callback = _FakeCallback("a:cs:-1:locale")
 
-    await chat_locale_toggle(callback, repo, i18n)  # type: ignore[arg-type]
+    await chat_setting_open(callback, repo, i18n)  # type: ignore[arg-type]
 
     assert callback.answers == ["Чат не найден"]
 
 
-# ------------------------------------------------- the chat card's submenus
+# ------------------------------------------------- the chat card's groups
 
 
-async def test_the_card_opens_three_submenus_instead_of_crowded_rows(repo: Repo) -> None:
-    """2026-09-11, user request: the rows that used to hold two to four
-    buttons side by side are entries now, each opening its own screen."""
+async def test_the_card_opens_its_groups_and_the_messages(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
 
     _text, markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     datas = [button.callback_data for row in markup.inline_keyboard for button in row]
 
-    assert f"a:msum:{CHAT_ID}" in datas
-    assert f"a:mflood:{CHAT_ID}" in datas
+    for group in ("main", "publishing", "summary", "flood"):
+        assert f"a:cg:{CHAT_ID}:{group}" in datas
     assert f"a:mdel:{CHAT_ID}" in datas
-    # and none of what they now contain is still on the card itself
-    assert f"a:ctime:{CHAT_ID}" not in datas
+    # and none of what they contain is on the card itself
+    assert f"a:cs:{CHAT_ID}:daily_summary_time" not in datas
     assert f"a:cdellast:{CHAT_ID}" not in datas
 
 
-async def test_every_submenu_leads_back_to_the_card(repo: Repo) -> None:
+async def test_every_group_leads_back_to_the_card(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", TG_ID)
 
-    for section in ("summary", "flood", "messages"):
+    for section in ("main", "publishing", "summary", "flood", "messages"):
         text, markup = await render_chat_card(repo, CHAT_ID, locale="ru", section=section)
         datas = [button.callback_data for row in markup.inline_keyboard for button in row]
         assert f"a:chat:{CHAT_ID}" in datas, section
-        # The card's own text stays put on every sub-screen, so the chat's
-        # state is still readable while its settings are being changed.
+        # The card's own text stays put on every group, so the chat's state is
+        # still readable while its settings are being changed.
         assert "Гейминг-чат" in text
 
 

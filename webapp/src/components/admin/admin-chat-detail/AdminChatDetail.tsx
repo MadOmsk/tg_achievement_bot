@@ -1,28 +1,19 @@
 import { useEffect, useState } from "react";
 import {
   fetchAdminChats,
-  patchAdminChat,
+  fetchAdminChatSettings,
+  patchAdminChatSetting,
   postAdminChatAction,
   type AdminChatRow,
+  type AdminSettingsGroup,
 } from "../../../api";
-import { digestLabel, formatOffset, t, timezoneLabel, type Locale } from "../../../i18n";
-import {
-  BackHead,
-  ChoiceRow,
-  Group,
-  NavRow,
-  NumberRow,
-  SelectRow,
-  SettingsSkel,
-  ToggleRow,
-} from "../../shared/lib";
-import {
-  ADMIN_CHAT_ACTIONS,
-  DIGEST_CHOICES,
-  TIMEZONES,
-  type AdminChatAction,
-} from "../../shared/constants";
+import { t, type Locale } from "../../../i18n";
+import { BackHead, Group, NavRow, SettingsSkel } from "../../shared/lib";
+import { ADMIN_CHAT_ACTIONS, type AdminChatAction } from "../../shared/constants";
+import { AdminSettingsForm } from "../admin-settings-form/AdminSettingsForm";
 
+/** One chat: its settings as the server's registry lists them (the bot's chat
+ * card shows the same groups), then the actions on its messages. */
 export function AdminChatDetail({
   data,
   chatId,
@@ -39,30 +30,23 @@ export function AdminChatDetail({
   onFail: (err: unknown) => void;
 }) {
   const [chat, setChat] = useState<AdminChatRow | null>(null);
+  const [groups, setGroups] = useState<AdminSettingsGroup[] | null>(null);
 
   useEffect(() => {
     void fetchAdminChats(data)
       .then((r) => setChat(r.chats.find((c) => c.chat_id === chatId) ?? null))
       .catch(onFail);
+    void fetchAdminChatSettings(data, chatId)
+      .then((r) => setGroups(r.groups))
+      .catch(onFail);
   }, [chatId, data, onFail]);
 
-  const onPatch = (body: Record<string, unknown>) => {
-    if (!chat) return;
-    void patchAdminChat(data, chat.chat_id, body).then(setChat).catch(onFail);
-  };
-
   const onAction = (action: AdminChatAction) => {
-    if (!chat) return;
     if (action.startsWith("wipe") && !window.confirm(t(locale, "confirmWipe"))) return;
-    void postAdminChatAction(data, chat.chat_id, action)
+    void postAdminChatAction(data, chatId, action)
       .then((r) => onFlash(r.preview || `${t(locale, "deleteLast")}: ${r.deleted ?? 0}`))
       .catch(onFail);
   };
-
-  const tz = chat?.tz_offset_min ?? 0;
-  const tzOptions = (
-    !TIMEZONES.some((z) => z.min === tz) ? [{ min: tz, label: formatOffset(tz, locale) }, ...TIMEZONES] : TIMEZONES
-  ).map((z) => ({ value: z.min, label: timezoneLabel(z, locale) }));
 
   return (
     <>
@@ -71,57 +55,19 @@ export function AdminChatDetail({
         backLabel={t(locale, "back")}
         onBack={onBack}
       />
-      {chat == null ? (
-        <SettingsSkel groups={[3, 2, 2, 4]} />
+      {groups == null ? (
+        <SettingsSkel groups={[3, 1, 2, 2, 4]} />
       ) : (
         <>
-          <Group>
-            <ToggleRow
-              label={t(locale, "chatEnabled")}
-              on={chat.is_active}
-              onChange={(on) => onPatch({ is_active: on })}
-            />
-            <ChoiceRow
-              label={t(locale, "language")}
-              value={chat.locale === "en" ? "en" : "ru"}
-              options={[
-                { value: "ru", label: "RU" },
-                { value: "en", label: "EN" },
-              ]}
-              onChange={(v) => onPatch({ locale: v })}
-            />
-            <SelectRow
-              label={t(locale, "timezone")}
-              value={tz}
-              options={tzOptions}
-              onChange={(v) => onPatch({ tz_offset_min: v })}
-            />
-          </Group>
-
-          <Group title={t(locale, "chatGroupPublishing")}>
-            <SelectRow
-              label={t(locale, "digest")}
-              value={chat.digest_threshold}
-              options={DIGEST_CHOICES.map((n) => ({ value: n as number, label: digestLabel(n, locale) }))}
-              onChange={(v) => onPatch({ digest_threshold: v })}
-            />
-          </Group>
-
-          <Group title={t(locale, "chatGroupFlood")}>
-            <NumberRow
-              label={t(locale, "floodLimit")}
-              sub={t(locale, "limitZeroOff")}
-              value={chat.flood_limit}
-              min={0}
-              onChange={(v) => onPatch({ flood_limit: v })}
-            />
-            <NumberRow
-              label={t(locale, "floodWindow")}
-              value={chat.flood_window_minutes}
-              min={1}
-              onChange={(v) => onPatch({ flood_window_minutes: v })}
-            />
-          </Group>
+          <AdminSettingsForm
+            groups={groups}
+            locale={locale}
+            onChange={(key, value) =>
+              void patchAdminChatSetting(data, chatId, key, value)
+                .then((r) => setGroups(r.groups))
+                .catch(onFail)
+            }
+          />
 
           <Group title={t(locale, "chatGroupMessages")}>
             <NavRow
