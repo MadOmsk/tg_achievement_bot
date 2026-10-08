@@ -10,7 +10,6 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import Callable
-from datetime import timedelta
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType, ParseMode
@@ -24,11 +23,7 @@ from aiogram.types import (
 from aiogram_i18n import I18nContext
 
 from bot.config import Settings
-from bot.constants import (
-    Platform,
-    account_platform_of,
-)
-from bot.db.repo import PlatformLink, Repo
+from bot.db.repo import Repo
 from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
@@ -37,7 +32,9 @@ from bot.poller.service_health import (
     KEY_CHECK_INTERVAL_KEY,
 )
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import custom_avatars
+from bot.services import admin_cleanup, custom_avatars
+from bot.services.admin_accounts import AdminAccounts
+from bot.services.admin_cleanup import WIPE_WINDOW_HOURS, Wipe
 from bot.services.admin_credentials import (
     AdminCredentials,
     CredentialInvalid,
@@ -62,7 +59,7 @@ from bot.services.admin_settings import (
 )
 from bot.services.message_log import stats_category
 from bot.services.naming import link_nickname, person_name
-from bot.util import parse_iso, parse_utc_offset, utcnow
+from bot.util import parse_utc_offset
 from bot.views.admin import (
     _cancel_input_keyboard,
     _format_limit,
@@ -736,18 +733,6 @@ _SYNC_NOT_CONNECTED_KEY = {
 }
 
 
-async def _account_link(
-    repo: Repo, platform: str, person: int, account_id: str | None
-) -> PlatformLink | None:
-    """The Steam/PSN link a button is about: the one named by `account_id`
-    (a PSN account among several, #10), else the person's only one."""
-    platform_value = Platform.STEAM if platform == "steam" else Platform.PSN
-    if account_id is None:
-        return await repo.get_platform_link(person, platform_value)
-    links = await repo.platform_links_for(person, platform_value)
-    return next((link for link in links if link.external_id == account_id), None)
-
-
 async def _parse_account(repo: Repo, data: str) -> tuple[str, int | None, str | None]:
     """`a:<action>:<platform>:<person>[:<account_id>]` → the platform, the person
     (`_subject`) and the account."""
@@ -755,23 +740,14 @@ async def _parse_account(repo: Repo, data: str) -> tuple[str, int | None, str | 
     return parts[2], await _subject(repo, parts[3]), parts[4] if len(parts) > 4 else None
 
 
-async def _sync_target(
-    repo: Repo, platform: str, person: int, *, locale: str, account_id: str | None = None
-) -> tuple[str, str] | None:
-    """(external_id, display_name) for user_refresh below, or None if this
-    platform isn't connected for this person — Xbox resolves through
-    `users`, Steam/PSN through `platform_links`, same split every other
-    per-platform lookup in this file already has."""
-    _ = translator("admin", locale)
-    if platform == "xbox":
-        user = await repo.get_user(person)
-        if user is None or not user.xuid:
-            return None
-        return user.xuid, user.gamertag or _("admin-default-player")
-    link = await _account_link(repo, platform, person, account_id)
-    if link is None:
-        return None
-    return link.external_id, link_nickname(link)
+def _accounts(
+    repo: Repo,
+    settings: Settings,
+    fetcher: Fetcher,
+    steam_fetcher: SteamFetcher,
+    psn_fetcher: PsnFetcher,
+) -> AdminAccounts:
+    return AdminAccounts(repo, settings, xbox=fetcher, steam=steam_fetcher, psn=psn_fetcher)
 
 
 @router.callback_query(F.data.startswith("a:sync:"))
@@ -784,102 +760,30 @@ async def user_refresh(
     settings: Settings,
     i18n: I18nContext,
 ) -> None:
-    """The only place in the whole interface that may call the API on demand
-    (SPEC 1.5) — one handler for all three platforms (2026-09-09 refactor,
-    same shape reset_platform_confirm/_confirmed below already used):
-    Fetcher/SteamFetcher/PsnFetcher all expose a compatible
-    refresh_user(tg_id, external_id, name, locale) -> str."""
+    """ "🔄 Обновить" — the one place in the bot that calls a platform on
+    demand (SPEC 1.5); the work is `services/admin_accounts.py`'s, shared with
+    the Mini App's admin card."""
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
-    # Not `_, _prefix, platform, tg_id_s`: that bound `_` — the translator,
-    # two lines up — to the string "a", so the next `_("key")` raised
-    # TypeError and this button had never once worked (found 2026-09-13 by
-    # capturing the real screens; the same slip killed "🗑 Сброс" below).
     platform, person, account_id = await _parse_account(repo, callback.data)
     if person is None:
         await _not_found(callback, i18n.locale)
         return
-
-    target = await _sync_target(repo, platform, person, locale=i18n.locale, account_id=account_id)
-    if target is None:
+    accounts = _accounts(repo, settings, fetcher, steam_fetcher, psn_fetcher)
+    if await accounts.target(platform, person, locale=i18n.locale, account_id=account_id) is None:
         await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
         return
-    external_id, name = target
-
     await callback.answer(_("admin-refreshing"))
-    fetcher_by_platform: dict[str, Fetcher | SteamFetcher | PsnFetcher] = {
-        "xbox": fetcher,
-        "steam": steam_fetcher,
-        "psn": psn_fetcher,
-    }
     try:
-        summary = await fetcher_by_platform[platform].refresh_user(
-            person, external_id, name, i18n.locale
-        )
-        delta = await _sync_delta(
-            repo,
-            fetcher,
-            steam_fetcher,
-            settings,
-            platform=platform,
-            person_id=person,
-            external_id=external_id,
-            name=name,
-            locale=i18n.locale,
+        summary = await accounts.refresh(
+            platform, person, locale=i18n.locale, account_id=account_id
         )
     except Exception:
         log.exception("admin %s refresh of person_id=%s failed", platform, person)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
         return
     text, markup = await render_user_card(repo, person, locale=i18n.locale)
-    if delta:
-        summary = f"{summary}\n{delta}"
-    await _redraw(callback, f"{text}\n\n{summary}", markup)
-
-
-async def _sync_delta(
-    repo: Repo,
-    fetcher: Fetcher,
-    steam_fetcher: SteamFetcher,
-    settings: Settings,
-    *,
-    platform: str,
-    person_id: int,
-    external_id: str,
-    name: str,
-    locale: str,
-) -> str:
-    """Everything earned since the newest unlock already stored — the "pull
-    what is new" half of "🔄 Обновить" (user request, 2026-09-13).
-
-    `refresh_user` on its own is a *right now* look: presence, plus the
-    achievements of the game being played at this moment. For somebody who is
-    offline that finds nothing at all, which is not what the button claims to
-    do. PSN needs nothing extra here — its own `refresh_user` already runs the
-    ordinary trophy scan, which is a delta by construction: it walks the
-    recently-touched titles and fetches detail only where progress grew.
-
-    What it finds is stored in full and *announced* only inside the usual
-    catch-up window. A delta reaching back a month is worth storing; it is
-    never worth posting to a chat all at once.
-    """
-    _ = translator("admin", locale)
-    since = await repo.account_latest_unlock(account_platform_of(platform), external_id)
-    window = settings.catchup_publish_window_hours
-    if platform == "xbox":
-        titles, published = await fetcher.catch_up(
-            person_id,
-            external_id,
-            name,
-            parse_iso(since) if since else None,
-            window,
-            settings.catchup_max_titles,
-        )
-        return _("admin-sync-delta", titles=titles, published=published)
-    if platform == "steam" and since is not None:
-        published = await steam_fetcher.catch_up(person_id, external_id, name, since, window)
-        return _("admin-sync-delta-steam", published=published)
-    return ""
+    await _redraw(callback, f"{text}\n\n{summary}" if summary else text, markup)
 
 
 # --------------------------------------------------------------------- chats
@@ -1016,30 +920,22 @@ async def chat_delete_last(
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    target = await repo.last_deletable_bot_message(chat_id)
-    if target is None:
+    result = await admin_cleanup.delete_last(bot, repo, chat_id)
+    if result is None:
         await callback.answer(_("admin-no-bot-messages"), show_alert=True)
         return
-    try:
-        await bot.delete_message(chat_id, target.message_id)
-    except Exception:
-        log.info("admin delete_last failed for chat %s message %s", chat_id, target.message_id)
-        await repo.forget_bot_messages(chat_id, [target.message_id])
+    if not result.deleted:
         await callback.answer(_("admin-delete-old-failed"), show_alert=True)
         return
-    await repo.forget_bot_messages(chat_id, [target.message_id])
     feedback = (
-        _("admin-deleted-last-preview", preview=_toast_preview(target.preview))
-        if target.preview
+        _("admin-deleted-last-preview", preview=_toast_preview(result.preview))
+        if result.preview
         else _("admin-deleted-last")
     )
     await callback.answer(feedback)
     await _redraw(
         callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="messages")
     )
-
-
-WIPE_WINDOW_HOURS = 24
 
 
 @router.callback_query(F.data.startswith("a:cwipe:"))
@@ -1051,28 +947,12 @@ async def chat_wipe_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContex
     if chat is None:
         await callback.answer(_("admin-chat-not-found"), show_alert=True)
         return
-    ids = await repo.bot_messages_since(chat_id, utcnow() - timedelta(hours=WIPE_WINDOW_HOURS))
+    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.ALL_24H)
     if not ids:
         await callback.answer(_("admin-no-bot-messages-24h"), show_alert=True)
         return
     screen = render_wipe_prompt(chat, len(ids), WIPE_WINDOW_HOURS, locale=i18n.locale)
     await _redraw(callback, *screen.as_pair())
-
-
-async def _bulk_delete_messages(bot: Bot, chat_id: int, ids: list[int]) -> bool:
-    """Deletes in chunks of 100 — the Bot API's own cap on deleteMessages —
-    shared by the unconditional wipe and the "system only" pair below
-    (2026-09-05 refactor: this loop was duplicated verbatim between them).
-    Returns whether every chunk went through; a failed chunk is logged, not
-    raised — same "expected failure" tolerance as everywhere else here."""
-    ok = True
-    for start in range(0, len(ids), 100):
-        try:
-            await bot.delete_messages(chat_id, ids[start : start + 100])
-        except Exception:
-            log.info("bulk delete failed for chat %s, chunk at %s", chat_id, start)
-            ok = False
-    return ok
 
 
 @router.callback_query(F.data.startswith("a:cwipey:"))
@@ -1081,7 +961,7 @@ async def chat_wipe_confirm(
 ) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    ids = await repo.bot_messages_since(chat_id, utcnow() - timedelta(hours=WIPE_WINDOW_HOURS))
+    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.ALL_24H)
     await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
 
 
@@ -1096,8 +976,7 @@ async def chat_wipe_confirm(
 async def chat_system_wipe_prompt(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    since = utcnow() - timedelta(hours=WIPE_WINDOW_HOURS)
-    ids = await repo.system_bot_messages_since(chat_id, since)
+    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.SYSTEM_24H)
     await _system_wipe_prompt(
         callback, repo, chat_id, ids, f"a:cswipey:{chat_id}", locale=i18n.locale
     )
@@ -1109,8 +988,7 @@ async def chat_system_wipe_confirm(
 ) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    since = utcnow() - timedelta(hours=WIPE_WINDOW_HOURS)
-    ids = await repo.system_bot_messages_since(chat_id, since)
+    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.SYSTEM_24H)
     await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
 
 
@@ -1120,7 +998,7 @@ async def chat_system_wipe_all_prompt(
 ) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    ids = await repo.all_system_bot_messages(chat_id)
+    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.SYSTEM_ALL)
     await _system_wipe_prompt(
         callback, repo, chat_id, ids, f"a:cswipeally:{chat_id}", locale=i18n.locale
     )
@@ -1132,7 +1010,7 @@ async def chat_system_wipe_all_confirm(
 ) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    ids = await repo.all_system_bot_messages(chat_id)
+    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, Wipe.SYSTEM_ALL)
     await _wipe_confirm(callback, repo, bot, chat_id, ids, locale=i18n.locale)
 
 
@@ -1140,7 +1018,9 @@ async def chat_system_wipe_all_confirm(
 
 
 @router.callback_query(F.data.startswith("a:reset:"))
-async def reset_platform_confirm(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def reset_platform_confirm(
+    callback: CallbackQuery, repo: Repo, settings: Settings, i18n: I18nContext
+) -> None:
     """ "Сброс базы" is destructive and not undoable (user request 2026-09-08)
     — same one-tap-confirm shape as /disconnect_steam's own prompt, not an
     instant action behind a single tap."""
@@ -1151,7 +1031,9 @@ async def reset_platform_confirm(callback: CallbackQuery, repo: Repo, i18n: I18n
         return
     account_name = None
     if account_id is not None:
-        link = await _account_link(repo, platform, person, account_id)
+        link = await AdminAccounts(repo, settings, xbox=None, steam=None, psn=None).link(
+            platform, person, account_id
+        )
         account_name = link_nickname(link) if link else account_id
     screen = render_reset_confirm(
         platform,
@@ -1170,43 +1052,23 @@ async def reset_platform_confirmed(
     fetcher: Fetcher,
     steam_fetcher: SteamFetcher,
     psn_fetcher: PsnFetcher,
+    settings: Settings,
     i18n: I18nContext,
 ) -> None:
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
-    # Four parts here too, and `_` stays the translator (see user_refresh):
-    # this one unpacked four into three and raised ValueError instead.
     platform, person, account_id = await _parse_account(repo, callback.data)
     if person is None:
         await _not_found(callback, i18n.locale)
         return
     await callback.answer(_("admin-refreshing"))
-
+    accounts = _accounts(repo, settings, fetcher, steam_fetcher, psn_fetcher)
     try:
-        assert person is not None
-        if platform == "xbox":
-            user = await repo.get_user(person)
-            assert user is not None and user.xuid is not None
-            await repo.reset_xbox_data(person, user.xuid)
-            await fetcher.backfill(person, user.xuid)
-        elif platform == "steam":
-            link = await _account_link(repo, platform, person, account_id)
-            assert link is not None
-            # The account's own id, not the person's: since #52 the history
-            # belongs to the account, and this call used to be handed `tg_id`,
-            # which matches no row — so it deleted nothing and "reset" re-ran
-            # backfill over data that was still there.
-            await repo.reset_steam_data(link.external_id)
-            await steam_fetcher.backfill(person, link.external_id)
-        else:
-            link = await _account_link(repo, platform, person, account_id)
-            assert link is not None
-            await repo.reset_psn_data(person, link.external_id)
-            await psn_fetcher.backfill(person, link.external_id)
+        if not await accounts.reset(platform, person, account_id):
+            await callback.answer(_(_SYNC_NOT_CONNECTED_KEY[platform]), show_alert=True)
     except Exception:
         log.exception("admin reset+resync of person_id=%s platform=%s failed", person, platform)
         await callback.answer(_("admin-refresh-failed"), show_alert=True)
-
     text, markup = await render_user_card(repo, person, locale=i18n.locale)
     await _redraw(callback, text, markup)
 
@@ -1263,8 +1125,7 @@ async def _wipe_confirm(
     skips ids it can no longer delete — too old, already gone — and
     retrying those later would not help), report, redraw the chat card."""
     _ = translator("admin", locale)
-    ok = await _bulk_delete_messages(bot, chat_id, ids)
-    await repo.forget_bot_messages(chat_id, ids)
+    ok = await admin_cleanup.wipe(bot, repo, chat_id, ids)
     await callback.answer(_("admin-wipe-done") if ok else _("admin-wipe-partial"))
     await _redraw(
         callback, *await render_chat_card(repo, chat_id, locale=locale, section="messages")

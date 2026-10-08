@@ -69,6 +69,7 @@ export function Admin({
           personId={screen.personId}
           locale={locale}
           onBack={() => setScreen({ name: ADMIN_SCREENS.USERS })}
+          onFlash={onFlash}
           onFail={fail}
         />
       );

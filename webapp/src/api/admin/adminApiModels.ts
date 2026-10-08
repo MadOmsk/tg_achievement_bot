@@ -79,6 +79,8 @@ export type AdminUserCard = {
   xbox: Record<string, unknown> | null;
   steam: Record<string, unknown> | null;
   psn: Record<string, unknown> | null;
+  /** After a refresh: what it found, worded as the bot's card words it. */
+  message?: string | null;
 };
 
 export type AdminChatRow = {

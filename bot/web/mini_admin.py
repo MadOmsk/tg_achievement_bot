@@ -7,15 +7,16 @@ What it shows and changes comes from the same services as the bot's /admin
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 from typing import Any
 
 from aiohttp import web
 
 from bot.constants import Platform, RarityMode, TokenStatus
 from bot.db.repo import Repo
-from bot.handlers.admin import WIPE_WINDOW_HOURS
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale, translator
+from bot.services import admin_cleanup
+from bot.services.admin_accounts import AdminAccounts
+from bot.services.admin_cleanup import Wipe
 from bot.services.admin_credentials import (
     AdminCredentials,
     CredentialInvalid,
@@ -40,7 +41,6 @@ from bot.services.admin_status import admin_status
 from bot.services.logins import logins_of
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
-from bot.util import utcnow
 from bot.views.admin import login_value
 from bot.views.admin_home import format_api_usage
 from bot.views.keyboards import DIGEST_CHOICES, next_rarity_mode
@@ -267,17 +267,6 @@ def serialize_admin_chat(chat: Any) -> dict[str, Any]:
     }
 
 
-async def _bulk_delete(bot: Any, chat_id: int, ids: list[int]) -> bool:
-    ok = True
-    for start in range(0, len(ids), 100):
-        try:
-            await bot.delete_messages(chat_id, ids[start : start + 100])
-        except Exception:
-            log.info("mini admin bulk delete failed chat=%s chunk=%s", chat_id, start)
-            ok = False
-    return ok
-
-
 def setup_admin_routes(app: web.Application) -> None:
     app.router.add_get("/api/mini/admin", handle_admin_home)
     app.router.add_get("/api/mini/admin/keys", handle_admin_keys)
@@ -439,12 +428,15 @@ async def handle_admin_user_patch(request: web.Request) -> web.Response:
         await repo.set_excluded(person, bool(body["excluded"]), admin.tg_id)
     action = body.get("action")
     platform = str(body.get("platform") or "")
+    message = None
     if action in ("sync", "reset") and platform in ("xbox", "steam", "psn"):
         account_id = str(body.get("account_id") or "").strip() or None
-        await _admin_platform_action(request, person, platform, action, account_id)
+        message = await _admin_platform_action(request, person, platform, action, account_id)
     payload = await build_admin_user(repo, person, locale=await repo.user_locale(admin.person_id))
     if payload is None:
         raise web.HTTPNotFound()
+    # What a refresh found, worded as the bot's card words it.
+    payload["message"] = message
     return web.json_response(payload)
 
 
@@ -522,74 +514,45 @@ async def handle_admin_chat_action(request: web.Request) -> web.Response:
     chat_id = int(request.match_info["chat_id"])
     body = await request.json()
     action = str(body.get("action") or "")
-    since = utcnow() - timedelta(hours=WIPE_WINDOW_HOURS)
+    # The bot's chat card does the same (`services/admin_cleanup.py`).
     if action == "delete_last":
-        target = await repo.last_deletable_bot_message(chat_id)
-        if target is None:
+        result = await admin_cleanup.delete_last(bot, repo, chat_id)
+        if result is None:
             return web.json_response({"ok": True, "deleted": 0})
-        try:
-            await bot.delete_message(chat_id, target.message_id)
-        except Exception:
-            await repo.forget_bot_messages(chat_id, [target.message_id])
+        if not result.deleted:
             return web.json_response({"ok": False, "deleted": 0}, status=400)
-        await repo.forget_bot_messages(chat_id, [target.message_id])
-        return web.json_response({"ok": True, "deleted": 1, "preview": target.preview})
-    if action == "wipe_24h":
-        ids = await repo.bot_messages_since(chat_id, since)
-    elif action == "wipe_system_24h":
-        ids = await repo.system_bot_messages_since(chat_id, since)
-    elif action == "wipe_system_all":
-        ids = await repo.system_bot_messages_since(chat_id, utcnow() - timedelta(days=3650))
-    else:
-        raise web.HTTPBadRequest(text="unknown action")
-    ok = await _bulk_delete(bot, chat_id, ids)
-    await repo.forget_bot_messages(chat_id, ids)
+        return web.json_response({"ok": True, "deleted": 1, "preview": result.preview})
+    try:
+        kind = Wipe(action)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="unknown action") from exc
+    ids = await admin_cleanup.messages_to_wipe(repo, chat_id, kind)
+    ok = await admin_cleanup.wipe(bot, repo, chat_id, ids)
     return web.json_response({"ok": ok, "deleted": len(ids)})
 
 
 async def _admin_platform_action(
     request: web.Request, person: int, platform: str, action: str, account_id: str | None = None
-) -> None:
+) -> str | None:
+    """The bot's "🔄 Обновить" / "🗑 Сброс", the same code
+    (`services/admin_accounts.py`). The words a refresh ends with, if any."""
     repo: Repo = request.app["mini_repo"]
-    xbox = request.app.get("mini_xbox_fetcher")
-    steam_fetcher = request.app.get("mini_steam_fetcher")
-    psn_fetcher = request.app.get("mini_psn_fetcher")
+    accounts = AdminAccounts(
+        repo,
+        request.app["mini_settings"],
+        xbox=request.app.get("mini_xbox_fetcher"),
+        steam=request.app.get("mini_steam_fetcher"),
+        psn=request.app.get("mini_psn_fetcher"),
+    )
     locale = await repo.user_locale(person)
-    if platform == "xbox":
-        user = await repo.get_user(person)
-        if user is None or not user.xuid or xbox is None:
-            raise web.HTTPBadRequest(text="xbox not linked")
-        if action == "reset":
-            await repo.reset_xbox_data(person, user.xuid)
-            await xbox.backfill(person, user.xuid)
-        else:
-            await xbox.refresh_user(person, user.xuid, user.gamertag or f"id{person}", locale)
-        return
-    if platform == "steam":
-        link = await repo.get_platform_link(person, Platform.STEAM)
-        if link is None or steam_fetcher is None:
-            raise web.HTTPBadRequest(text="steam not linked")
-        if action == "reset":
-            await repo.reset_steam_data(link.external_id)
-            await steam_fetcher.backfill(person, link.external_id)
-        else:
-            await steam_fetcher.refresh_user(
-                person, link.external_id, link.display_name or link.external_id, locale
-            )
-        return
-    links = await repo.platform_links_for(person, Platform.PSN)
-    if account_id is not None:
-        links = [item for item in links if item.external_id == account_id]
-    link = links[0] if links else None
-    if link is None or psn_fetcher is None:
-        raise web.HTTPBadRequest(text="psn not linked")
     if action == "reset":
-        await repo.reset_psn_data(person, link.external_id)
-        await psn_fetcher.backfill(person, link.external_id)
-    else:
-        await psn_fetcher.refresh_user(
-            person, link.external_id, link.display_name or link.external_id, locale
-        )
+        if not await accounts.reset(platform, person, account_id):
+            raise web.HTTPBadRequest(text=f"{platform} not linked")
+        return None
+    summary = await accounts.refresh(platform, person, locale=locale, account_id=account_id)
+    if summary is None:
+        raise web.HTTPBadRequest(text=f"{platform} not linked")
+    return summary
 
 
 async def _keys_payload(request: web.Request, admin: Any) -> dict[str, Any]:

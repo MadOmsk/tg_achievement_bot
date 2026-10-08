@@ -12,12 +12,14 @@ export function AdminUserDetail({
   personId,
   locale,
   onBack,
+  onFlash,
   onFail,
 }: {
   data: string;
   personId: number;
   locale: Locale;
   onBack: () => void;
+  onFlash: (message: string) => void;
   onFail: (err: unknown) => void;
 }) {
   const [user, setUser] = useState<AdminUserCardType | null>(null);
@@ -28,7 +30,14 @@ export function AdminUserDetail({
 
   const linked = user ? ADMIN_USER_PLATFORMS.filter((p) => user[p]) : [];
   const patch = (body: Parameters<typeof patchAdminUser>[2]) =>
-    user && void patchAdminUser(data, user.person_id, body).then(setUser).catch(onFail);
+    user &&
+    void patchAdminUser(data, user.person_id, body)
+      .then((next) => {
+        setUser(next);
+        // What a refresh found, as the bot's card words it.
+        if (next.message) onFlash(next.message);
+      })
+      .catch(onFail);
 
   return (
     <>

@@ -322,7 +322,9 @@ class _FakeCallback:
         self.answers.append((text, show_alert))
 
 
-async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatch) -> None:
+async def test_the_reset_prompt_builds_instead_of_raising(
+    repo: Repo, settings, monkeypatch
+) -> None:
     """All three of `a:reset:`, `a:resetok:` and `a:sync:` unpacked
     callback.data into `_` — which is the translator, bound two lines above —
     so the next `_("key")` raised TypeError (and a:resetok: unpacked four
@@ -345,7 +347,9 @@ async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatc
     monkeypatch.setattr(admin_handlers, "_redraw", record)
     callback = _FakeCallback("a:reset:psn:1:acc-1")
 
-    await admin_handlers.reset_platform_confirm(callback, repo, static_i18n("admin", "ru"))  # type: ignore[arg-type]
+    await admin_handlers.reset_platform_confirm(
+        callback, repo, settings, static_i18n("admin", "ru")
+    )  # type: ignore[arg-type]
 
     assert drawn, "the prompt never rendered"
     text, markup = drawn[0]
