@@ -19,7 +19,8 @@ inside the safe zone; `badge-96.png` is the white U for a push's one-colour
 badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
 `any` icon that Android draws on its launch splash. The sign-in screens write
 the name as one word — the U, then "nlocked" in Nunito ExtraBold, its seven
-letters kept in `public/fonts` — `shared/lib/wordmark/Wordmark`) are what the Mini App,
+letters kept in `public/fonts` — `shared/lib/wordmark/Wordmark`; its U alone,
+`UMark`, is the install banner's mark) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
 
