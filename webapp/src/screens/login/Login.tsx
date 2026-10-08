@@ -1,16 +1,32 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, userApi } from "../../api";
 import { t, type Locale } from "../../i18n";
-import { Icon, TelegramLogin, type TelegramUser } from "../../components/shared/lib";
+import {
+  Icon,
+  TelegramLogin,
+  Wordmark,
+  getPasskey,
+  passkeyCancelled,
+  passkeysSupported,
+  type TelegramUser,
+} from "../../components/shared/lib";
 import { EmailCodeForm, SendCancelled } from "../../components/me/logins/EmailCodeForm";
 import { InviteCodeForm } from "../../components/me/logins/InviteCodeForm";
 import "./Login.css";
 
-type AuthConfig = { bot: string | null; botId: number | null; email: boolean };
+type AuthConfig = { bot: string | null; botId: number | null; email: boolean; passkey: boolean };
 
 /** A code from a shared link (`?invite=`): it rides along with the sign-in. */
 function linkInvite(): string | null {
   return new URLSearchParams(window.location.search).get("invite");
+}
+
+/** A code went out: how long until another may (a key's answer never gets here). */
+function sentOf(
+  res: Awaited<ReturnType<typeof userApi.emailSignInStart>>,
+): { resendAfter: number; skipCode?: boolean } {
+  if (res.passkey) throw new Error("passkey");
+  return { resendAfter: res.resend_after, skipCode: res.skip_code };
 }
 
 const TG_RESULT = "tgAuthResult=";
@@ -86,7 +102,12 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
       .authConfig()
       .then((res) => {
         if (!cancelled) {
-          setConfig({ bot: res.bot_username, botId: res.bot_id ?? null, email: Boolean(res.email) });
+          setConfig({
+            bot: res.bot_username,
+            botId: res.bot_id ?? null,
+            email: Boolean(res.email),
+            passkey: Boolean(res.passkey),
+          });
         }
       })
       .catch(() => {
@@ -121,6 +142,23 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
     // Once, on arriving.
   }, []);
 
+  // A key on this phone or computer signs in in place of a code (owner,
+  // 2026-10-08): asked for when the address has one, or straight away.
+  const canKey = Boolean(config?.passkey) && passkeysSupported();
+  const signInWithKey = async (token: string, options: Record<string, unknown>) => {
+    const credential = await getPasskey(options);
+    await userApi.passkeySignIn(token, credential);
+    onSignedIn();
+  };
+  const keyFailed = (err: unknown) => {
+    if (passkeyCancelled(err)) return;
+    setError(
+      err instanceof ApiError && err.code === "unknown_key"
+        ? t(locale, "passkeyUnknown")
+        : t(locale, "passkeyFailed"),
+    );
+  };
+
   const email = config?.email ?? false;
   const bot = config?.bot ?? null;
   const botId = config?.botId ?? null;
@@ -128,7 +166,7 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
   if (signup) {
     return (
       <div className="login">
-        <img className="login-mark" src={`${import.meta.env.BASE_URL}logo.svg`} alt="" width={96} height={96} />
+        <Wordmark className="login-brand" />
         <h1>{t(locale, "inviteTitle")}</h1>
         <InviteCodeForm
           locale={locale}
@@ -145,7 +183,8 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
 
   return (
     <div className="login">
-      <img className="login-mark" src={`${import.meta.env.BASE_URL}logo.svg`} alt="" width={96} height={96} />
+      {/* The name on every step; on the first it is the title itself. */}
+      {(askInvite || codeFor) && <Wordmark className="login-brand" />}
       {askInvite ? (
         <>
           <h1>{t(locale, "inviteTitle")}</h1>
@@ -156,7 +195,7 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
               const res = await userApi.emailSignInStart(askInvite.address, locale, code);
               setInvite(code);
               setAskInvite(null);
-              askInvite.done({ resendAfter: res.resend_after, skipCode: res.skip_code });
+              askInvite.done(sentOf(res));
             }}
             onRestart={() => {
               askInvite.cancel();
@@ -168,7 +207,9 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
         <h1>{t(locale, "emailCheckTitle")}</h1>
       ) : (
         <>
-          <h1>{t(locale, "appName")}</h1>
+          <h1 className="login-title">
+            <Wordmark />
+          </h1>
           <p className="login-tagline">{t(locale, "loginTagline")}</p>
           <p className="login-text">{t(locale, email ? "loginTextBoth" : "loginText")}</p>
           {config === null && <p className="login-text">{t(locale, "loginUnavailable")}</p>}
@@ -182,10 +223,23 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
           submitLabel={t(locale, "loginButton")}
           sendLabel={t(locale, "loginButton")}
           onSend={async (address) => {
+            setError(null);
             try {
-              const res = await userApi.emailSignInStart(address, locale, invite);
-              return { resendAfter: res.resend_after, skipCode: res.skip_code };
+              const res = await userApi.emailSignInStart(address, locale, invite, canKey || undefined);
+              if (res.passkey) {
+                try {
+                  await signInWithKey(res.token, res.options);
+                  throw new SendCancelled();
+                } catch (err) {
+                  if (err instanceof SendCancelled) throw err;
+                  // The key not at hand, or refused: the code by email instead.
+                  if (!passkeyCancelled(err)) keyFailed(err);
+                  return sentOf(await userApi.emailSignInStart(address, locale, invite, false));
+                }
+              }
+              return sentOf(res);
             } catch (err) {
+              if (err instanceof SendCancelled) throw err;
               if (!(err instanceof ApiError && (err.code === "invite_required" || err.code === "invite_invalid"))) {
                 throw err;
               }

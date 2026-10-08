@@ -36,6 +36,7 @@ from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
 from bot.services.notifier import Notifier, channel_token_valid
 from bot.services.notify import SuperadminNotifier
+from bot.services.passkeys import Passkeys
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
@@ -56,7 +57,14 @@ from bot.services.title_catalog import TitleCatalogService
 from bot.services.youtube.guides import video_url
 from bot.services.youtube.videos import achievement_videos, game_guide
 from bot.util import parse_iso
-from bot.web import mini_invites, mini_logins, mini_notifications, mini_people, mini_session
+from bot.web import (
+    mini_invites,
+    mini_logins,
+    mini_notifications,
+    mini_passkeys,
+    mini_people,
+    mini_session,
+)
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
@@ -100,6 +108,7 @@ def setup_mini_api(
     email_login: EmailLogin | None = None,
     notifications: Notifier | None = None,
     merge: PeopleMerge | None = None,
+    passkeys: Passkeys | None = None,
     youtube_auth: Any = None,
     admin_credentials: AdminCredentials | None = None,
 ) -> None:
@@ -139,6 +148,8 @@ def setup_mini_api(
     app["mini_notifications"] = notifications or _default_notifier(settings, repo, bot)
     # Merging two people (#162): main.py's, shared with the bot's /start link_….
     app["mini_merge"] = merge or PeopleMerge(repo, settings.is_superadmin)
+    # Passkeys (owner, 2026-10-08): bound to the host the Mini App is served from.
+    app["mini_passkeys"] = passkeys or Passkeys.for_app(settings.mini_app_url)
 
     app.router.add_get("/api/mini/health", handle_health)
     mini_people.register(app, _require_user)
@@ -146,6 +157,7 @@ def setup_mini_api(
     mini_logins.register(app, _require_user)
     mini_notifications.register(app, _require_user)
     mini_invites.register(app, _require_user)
+    mini_passkeys.register(app, _require_user)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)

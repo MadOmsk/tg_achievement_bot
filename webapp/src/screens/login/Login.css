@@ -9,11 +9,21 @@
   text-align: center;
 }
 
-.login-mark {
-  width: 96px;
-  height: 96px;
-  border-radius: 26px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+/* The name as one word, the icon's U its first letter (owner, 2026-10-08). */
+.login h1.login-title {
+  margin: 0 0 4px;
+  font-size: 3rem;
+}
+
+/* The same name on every step, the size the first one has; the step's own
+ * title under it is a step's, smaller. */
+.wordmark.login-brand {
+  margin: 0 0 4px;
+  font-size: 3rem;
+}
+
+.wordmark.login-brand ~ h1 {
+  font-size: 1.5rem;
 }
 
 .login h1 {

@@ -40,6 +40,11 @@ dependencies = [
     # with no EXIF (a phone photo's GPS position) and a bounded size, whatever
     # client sent it.
     "pillow>=10.0",
+    # Passkeys (owner, 2026-10-08): a sign-in by a key kept on the phone or the
+    # computer. Checking one is parsing CBOR and COSE and verifying a signature
+    # over the browser's own data — a mistake there signs somebody else in, so
+    # it is Duo's maintained py_webauthn, not code of our own.
+    "webauthn>=2.2,<3",
 ]
 
 [project.optional-dependencies]

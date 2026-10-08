@@ -27,3 +27,5 @@ export * from "./back-stack";
 export * from "./haptic";
 export * from "./img-ratio";
 export * from "./image-viewer";
+export * from "./passkey";
+export * from "./wordmark";

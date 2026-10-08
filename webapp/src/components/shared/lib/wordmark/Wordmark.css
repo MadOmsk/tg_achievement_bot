@@ -1,0 +1,28 @@
+/* Nunito ExtraBold, the seven letters of "nlocked" only (1.3 KB, SIL OFL):
+ * rounded like the U's own stroke. */
+@font-face {
+  font-family: "Unlocked Wordmark";
+  font-style: normal;
+  font-weight: 800;
+  font-display: block;
+  src: url("/fonts/nunito-800-wordmark.woff2") format("woff2");
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: "Unlocked Wordmark", var(--font);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+/* The U stands taller than the letters after it, a capital set apart; its
+ * box carries the sparkles, which hang over the "n" beside it. */
+.wordmark-u {
+  flex: none;
+  width: 1.02em;
+  height: 1.02em;
+  margin-right: -0.14em;
+  overflow: visible;
+}

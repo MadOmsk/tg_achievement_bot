@@ -16,7 +16,10 @@ progress arc, on the app's own dark ground with a cool glow above and a lilac on
 it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
 as a full-bleed square — iOS and Android round it themselves — with the mark
 inside the safe zone; `badge-96.png` is the white U for a push's one-colour
-badge) are what the Mini App,
+badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
+`any` icon that Android draws on its launch splash. The sign-in screens write
+the name as one word — the U, then "nlocked" in Nunito ExtraBold, its seven
+letters kept in `public/fonts` — `shared/lib/wordmark/Wordmark`) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
 
@@ -163,6 +166,7 @@ name, or when the tree goes stale.
 │   │   ├── email.py              sending mail: one `EmailSender`, SMTP or (dev) the log (#162)
 │   │   ├── email_login.py        sign-in codes by email: rules, rationing, checking (#162)
 │   │   ├── invites.py            invite codes: their form, and sign-ups waiting for one
+│   │   ├── passkeys.py           passkeys: options, challenges, checking (py_webauthn)
 │   │   ├── notifier.py           the app's own notifications: list, push, Telegram DM (#164)
 │   │   ├── webpush.py            Web Push: RFC 8291 encryption and VAPID, on `cryptography` (#164)
 │   │   ├── mini_app.py           Mini App open-button URLs
@@ -211,7 +215,8 @@ name, or when the tree goes stale.
 │   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py,
 │   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept),
 │   │                            mini_notifications.py (the list, push subscriptions),
-│                            mini_invites.py (signing up with an invite, a member's codes)
+│                            mini_invites.py (signing up with an invite, a member's codes),
+│                            mini_passkeys.py (adding, listing, signing in with passkeys)
 │   │
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
@@ -942,6 +947,24 @@ elsewhere in this file still describe the bot.
     unused code is deleted by its trash icon.
     `invite_invalid`, `signup_expired`. The dev server's no-code email mode still
     asks for an invite.
+  - **Passkeys** (owner, 2026-10-08; migration 089, `services/passkeys.py`,
+    `web/mini_passkeys.py`, `db/repo/_passkeys.py`): a key on a phone or a
+    computer signs its person in in place of the email's code. Settings →
+    «Вход» → «Ключи доступа» adds one (named by the device, «iPhone · Safari»),
+    lists them and removes one; only in a browser — inside Telegram the app
+    signs in with Telegram. **There is no separate «sign in with a key»**: the
+    sign-in screen sends `/auth/email/start` with `passkey: true` when the
+    browser can use keys, an address with keys is answered with their options
+    instead of a mail, and the phone asks for the key; refused or not at hand,
+    the screen asks again with `passkey: false` and the code goes out.
+    `POST /api/mini/auth/passkey/verify` checks the answer and opens a session.
+    The checking is py_webauthn's (the one dependency added for it: CBOR, COSE
+    and a signature over the browser's data are no place for code of our own):
+    the challenge given out (in memory, five minutes, spent by any answer), the
+    origin and RP id from `MINI_APP_URL` (no https address, no passkeys —
+    `/auth/config` says `passkey`), the stored public half and its count. A key
+    belongs to its domain: one made on a dev tunnel dies with the tunnel. A
+    merge moves the keys with the person.
   - **Asked once for an email** (owner, 2026-10-05; migration 083): somebody
     with no address meets «Добавь почту» on opening the app, after the nickname,
     wherever they opened it — until they add one or say «Позже»

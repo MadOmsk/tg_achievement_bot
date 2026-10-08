@@ -226,6 +226,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /* The last icon's own edge on the row's: its 34px tap area reaches past it. */
+  margin-right: -9px;
 }
 
 .fr-icons a,
