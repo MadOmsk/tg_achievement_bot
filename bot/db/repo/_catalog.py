@@ -5,6 +5,7 @@ from __future__ import annotations
 import aiosqlite
 
 from bot.db.repo._models import TitleAchievementRow, TitleAchievementWithUnlock
+from bot.db.repo._sql import platform_is
 from bot.util import looks_russian, utcnow_iso
 
 
@@ -213,33 +214,36 @@ class _CatalogRepo:
             for row in rows
         ]
 
-    async def title_achievements_checked_at(self, title_id: str) -> str | None:
+    async def title_achievements_checked_at(self, platform: str, title_id: str) -> str | None:
         """When this title's achievement catalog was last verified against the platform API."""
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "SELECT achievements_checked_at FROM titles WHERE title_id = ?",
-            (title_id,),
+            f"SELECT achievements_checked_at FROM titles WHERE {where} AND title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         return row["achievements_checked_at"] if row else None
 
     async def set_title_achievements_checked_at(
-        self, title_id: str, checked_at: str | None = None
+        self, platform: str, title_id: str, checked_at: str | None = None
     ) -> None:
         """Stamp when this title was checked against the platform API."""
         ts = checked_at or utcnow_iso()
+        where, params = platform_is(platform)
         await self._conn.execute(
-            "UPDATE titles SET achievements_checked_at = ? WHERE title_id = ?",
-            (ts, title_id),
+            f"UPDATE titles SET achievements_checked_at = ? WHERE {where} AND title_id = ?",
+            (ts, *params, title_id),
         )
         await self._conn.commit()
 
-    async def title_record(self, title_id: str) -> dict[str, object] | None:
-        """Fetch title record if it exists."""
+    async def title_record(self, platform: str, title_id: str) -> dict[str, object] | None:
+        """Fetch title record if it exists. `platform` may be `xbox`."""
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
             "SELECT title_id, name, name_ru, name_en, platform, platforms, "
             "       icon_url, achievements_total, cover_path, achievements_checked_at "
-            "FROM titles WHERE title_id = ?",
-            (title_id,),
+            f"FROM titles WHERE {where} AND title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         if not row:
@@ -301,29 +305,72 @@ class _CatalogRepo:
         # The title, its rows and its catalog move together (#167).
         async with self.transaction():
             if new_platform in ("xbox_360", "x360"):
-                new_plat = "xbox_360"
-                old_plat = "xbox_modern"
-                await self._conn.execute(
-                    "UPDATE titles SET platform = 'xbox_360', platforms = '[\"Xbox360\"]' "
-                    "WHERE title_id = ?",
-                    (title_id,),
-                )
+                new_plat, old_plat = "xbox_360", "xbox_modern"
             elif new_platform == "xbox_modern":
-                new_plat = "xbox_modern"
-                old_plat = "xbox_360"
-                await self._conn.execute(
-                    "UPDATE titles SET platform = 'xbox_modern' "
-                    "WHERE title_id = ? AND platform = 'xbox_360'",
-                    (title_id,),
-                )
+                new_plat, old_plat = "xbox_modern", "xbox_360"
             else:
                 return
             await self._move_title_rows(title_id, old_plat, new_plat)
+            if new_plat == "xbox_360":
+                await self._conn.execute(
+                    "UPDATE titles SET platforms = '[\"Xbox360\"]'"
+                    " WHERE platform = 'xbox_360' AND title_id = ?",
+                    (title_id,),
+                )
+
+    # What a game's row keeps when it moves onto a row the other generation
+    # already has: whatever the target has not learned yet.
+    _MERGED_TITLE_COLUMNS = (
+        "name_ru",
+        "name_en",
+        "platforms",
+        "icon_url",
+        "achievements_total",
+        "cover_path",
+        "cover_hash",
+        "cover_checked_at",
+        "achievements_checked_at",
+        "hltb_id",
+        "hltb_match_score",
+        "hltb_checked_at",
+        "steam_appid",
+        "steam_appid_checked_at",
+        "tips_checked_at",
+    )
 
     async def _move_title_rows(self, title_id: str, old_plat: str, new_plat: str) -> None:
-        """A game's earned rows and its catalog move to another Xbox platform
-        together (#167): moving only `seen_achievements` left the names,
-        descriptions, rarity and listed size behind. No commit — the caller's."""
+        """A game, its earned rows and its catalog move to another Xbox
+        platform together (#167): moving only `seen_achievements` left the
+        names, descriptions, rarity and listed size behind. The `titles` row
+        is keyed by its platform (089): it moves too, and onto a row the other
+        generation already has, it fills what that one lacks and goes. No
+        commit — the caller's."""
+        merged = ", ".join(
+            f"{column} = COALESCE(titles.{column}, o.{column})"
+            for column in self._MERGED_TITLE_COLUMNS
+        )
+        await self._conn.execute(
+            f"UPDATE titles SET {merged} FROM titles o "
+            "WHERE titles.platform = ? AND titles.title_id = ?"
+            "  AND o.platform = ? AND o.title_id = titles.title_id",
+            (new_plat, title_id, old_plat),
+        )
+        await self._conn.execute(
+            "UPDATE OR IGNORE titles SET platform = ? WHERE platform = ? AND title_id = ?",
+            (new_plat, old_plat, title_id),
+        )
+        await self._conn.execute(
+            "DELETE FROM titles WHERE platform = ? AND title_id = ?", (old_plat, title_id)
+        )
+        await self._conn.execute(
+            "UPDATE OR IGNORE title_guide_reads SET platform = ?"
+            " WHERE platform = ? AND title_id = ?",
+            (new_plat, old_plat, title_id),
+        )
+        await self._conn.execute(
+            "DELETE FROM title_guide_reads WHERE platform = ? AND title_id = ?",
+            (old_plat, title_id),
+        )
         await self._conn.execute(
             "UPDATE OR IGNORE seen_achievements SET platform = ? "
             "WHERE title_id = ? AND platform = ?",

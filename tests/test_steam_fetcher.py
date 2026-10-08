@@ -203,7 +203,7 @@ async def test_backfill_caches_each_games_name(repo: Repo, steam_auth, monkeypat
 
     await fetcher.backfill(await repo.person_id(TG_ID), STEAM_ID)
 
-    assert await repo.title_name("550") == "Left 4 Dead 2"
+    assert await repo.title_name("steam", "550") == "Left 4 Dead 2"
 
 
 async def test_poll_title_caches_the_games_name(repo: Repo, steam_auth, monkeypatch) -> None:
@@ -224,7 +224,7 @@ async def test_poll_title_caches_the_games_name(repo: Repo, steam_auth, monkeypa
         await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2"
     )
 
-    assert await repo.title_name("550") == "Left 4 Dead 2"
+    assert await repo.title_name("steam", "550") == "Left 4 Dead 2"
 
 
 async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypatch) -> None:

@@ -70,15 +70,15 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         locale = await repo.user_locale(user.person_id)
         rows = await repo.notifications_of(user.person_id)
 
-        async def _cover(title_id: str | None) -> str | None:
-            if not title_id:
+        async def _cover(platform: str | None, title_id: str | None) -> str | None:
+            if not platform or not title_id:
                 return None
-            if title_id not in covers:
-                covers[title_id] = await repo.title_icon_url(title_id)
-            return covers[title_id]
+            if (platform, title_id) not in covers:
+                covers[(platform, title_id)] = await repo.title_icon_url(platform, title_id)
+            return covers[(platform, title_id)]
 
         items = []
-        covers: dict[str, str | None] = {}
+        covers: dict[tuple[str, str], str | None] = {}
         for row in rows:
             spec = KINDS.get(row.kind, UNKNOWN)
             field = spec.person_field
@@ -105,7 +105,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                     # The game a tap opens, on that person's progress.
                     "game": game,
                     # The game's picture, for a notice about a game (its news).
-                    "cover": await _cover(row.data.get("title_id"))
+                    "cover": await _cover(row.data.get("platform"), row.data.get("title_id"))
                     if row.kind == "game_news"
                     else None,
                 }

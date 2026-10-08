@@ -259,7 +259,7 @@ def _init_data(bot_token: str, user_id: int) -> str:
 
 
 class _Extras:
-    async def tips_due(self, title_id: str) -> bool:
+    async def tips_due(self, platform: str, title_id: str) -> bool:
         return False
 
 
@@ -301,7 +301,7 @@ async def test_a_game_with_guide_videos_gets_its_whole_guide(repo: Repo) -> None
     from bot.services.youtube.videos import game_guide
 
     await _game(repo)
-    assert await game_guide(repo, TITLE) is None
+    assert await game_guide(repo, "xbox_modern", TITLE) is None
 
     await repo.save_guide_videos(
         [
@@ -309,7 +309,7 @@ async def test_a_game_with_guide_videos_gets_its_whole_guide(repo: Repo) -> None
             _video("v2", "Gears of War: E-Day - Okay 🏆 Trophy Guide", ""),
         ]
     )
-    guide = await game_guide(repo, TITLE)
+    guide = await game_guide(repo, "xbox_modern", TITLE)
     # No whole-game video: the channel's videos of the game.
     assert guide is not None and guide.video_id is None
     assert guide.url.endswith("/search?query=Gears+of+War%3A+E-Day")
@@ -318,5 +318,5 @@ async def test_a_game_with_guide_videos_gets_its_whole_guide(repo: Repo) -> None
     await repo.save_guide_videos(
         [_video("v3", "Gears of War: E-Day - All Achievements - Full Game Walkthrough", "")]
     )
-    guide = await game_guide(repo, TITLE)
+    guide = await game_guide(repo, "xbox_modern", TITLE)
     assert guide is not None and guide.video_id == "v3"

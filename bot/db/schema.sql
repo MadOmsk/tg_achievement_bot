@@ -396,7 +396,14 @@ CREATE TABLE IF NOT EXISTS title_history (
 );
 
 CREATE TABLE IF NOT EXISTS titles (
-    title_id   TEXT PRIMARY KEY,
+    -- One row per version: one achievement list on one platform (#147),
+    -- keyed by the platform and its own id as seen_achievements and
+    -- title_achievements are — the id spaces overlap (Steam appids run to
+    -- ~3.5M, Xbox title ids start below 1M). An Xbox game found to be the
+    -- other generation moves, row and achievements together
+    -- (`update_title_platform`; migration 089).
+    platform   TEXT NOT NULL,     -- xbox_modern / xbox_360 / steam / psn
+    title_id   TEXT NOT NULL,
     name       TEXT NOT NULL,     -- whatever the platform called it first
     -- Only PlayStation localizes a game's title (#61, verified live:
     -- "Marvel's Wolverine" / "Marvel: Росомаха"), and it arrives in the same
@@ -407,7 +414,6 @@ CREATE TABLE IF NOT EXISTS titles (
     -- another platform ever changes its mind.
     name_ru    TEXT,
     name_en    TEXT,
-    platform   TEXT,               -- xbox_360 / xbox_modern
     platforms  TEXT,               -- JSON array of available platforms from API (#79)
     -- Failed titlehub lookups of `platforms` for an Xbox game, and when the
     -- last one ran (migration 060, #114). After three, `platforms` is '[]'.
@@ -455,7 +461,8 @@ CREATE TABLE IF NOT EXISTS titles (
     -- When the achievements' tips (title_achievements.tip_*) were last worked
     -- out from the Steam app's guides.
     tips_checked_at TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (platform, title_id)
 );
 
 -- HowLongToBeat lookups (SPEC 6.6), keyed by HLTB's own game id — cached
@@ -726,12 +733,13 @@ CREATE TABLE IF NOT EXISTS steam_apps (
 -- fingerprint of what it was asked and the answer, each achievement's line ranges
 -- as JSON. The model is asked again only when the fingerprint changes.
 CREATE TABLE IF NOT EXISTS title_guide_reads (
+    platform    TEXT    NOT NULL,   -- the game's, as `titles` (089)
     title_id    TEXT    NOT NULL,
     guide_id    TEXT    NOT NULL,
     fingerprint TEXT    NOT NULL,
     answer      TEXT    NOT NULL,
     checked_at  TEXT    NOT NULL,
-    PRIMARY KEY (title_id, guide_id)
+    PRIMARY KEY (platform, title_id, guide_id)
 );
 
 -- A Steam app's latest patch notes, from its developer's announcements.

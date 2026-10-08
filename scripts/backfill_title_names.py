@@ -10,11 +10,8 @@ were never going to fill in by themselves. Steam's own version of this was
 #70 and is long closed; this is the Xbox half, and it needs one titlehub
 request per game, through an owner's own token.
 
-**125 rows have a NULL `platform`** while their own achievements know
-exactly what it is. Nothing reads that column on a hot path today, which is
-why it went unnoticed, but anything routing by platform has to guess for
-them — `poller/covers.py` already does. Free to fix: the answer is in the
-rows next door, and this pass does it first, with no network at all.
+(A second gap, 125 rows with a NULL `platform`, was closed for good by
+migration 089: the platform is now part of a game's key.)
 
 **The bot must be stopped**, for the reason every Xbox script here says:
 Microsoft invalidates the previous refresh token when a new one is issued,
@@ -22,7 +19,7 @@ and `XboxAuthService`'s guard is an `asyncio.Lock` — it serializes callers
 inside one process and does nothing across two. This takes the bot's own
 single-instance lock rather than trusting the operator to remember.
 
-Idempotent and resumable: both gap queries exclude what is already filled,
+Idempotent and resumable: the gap query excludes what is already filled,
 so interrupting it and re-running picks up where it stopped.
 
 Usage:
@@ -65,15 +62,7 @@ async def run() -> int:
     database = await Database(settings.db_path).connect()
     repo = Repo(database)
 
-    # ---- free half: a platform its own achievements already know ----------
-    platformless = await repo.titles_without_platform()
-    log.info("%s titles have no platform; their achievements do", len(platformless))
-    if not args.dry_run:
-        for title_id, platform in platformless:
-            await repo.set_title_platform(title_id, platform)
-        log.info("  filled in %s", len(platformless))
-
-    # ---- paid half: one titlehub request per game -------------------------
+    # One titlehub request per game.
     missing = await repo.titles_missing_from_catalogue(args.limit or 10**6)
     log.info("%s games have achievements and no catalogue row (one request each)", len(missing))
     if args.dry_run or not missing:
@@ -86,7 +75,7 @@ async def run() -> int:
     client = XboxClient(auth)
 
     named = unanswered = failed = 0
-    for index, (title_id, person_id) in enumerate(missing, start=1):
+    for index, (title_id, _platform, person_id) in enumerate(missing, start=1):
         try:
             entry = await client.resolve_title(person_id, title_id)
         except XboxApiError as exc:
@@ -105,13 +94,7 @@ async def run() -> int:
         if index % PROGRESS_EVERY == 0:
             log.info("  %s/%s games, %s named", index, len(missing), named)
 
-    log.info(
-        "done: %s games named, %s had no name to give, %s failed; %s platforms filled in",
-        named,
-        unanswered,
-        failed,
-        0 if args.dry_run else len(platformless),
-    )
+    log.info("done: %s games named, %s had no name to give, %s failed", named, unanswered, failed)
     await auth.close()
     await database.close()
     return 0

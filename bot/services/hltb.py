@@ -170,7 +170,7 @@ async def _search_raw(cleaned_query: str, limit: int) -> list[HltbResult]:
     return [_as_result(e) for e in entries[:limit]]
 
 
-async def ensure_title_match(repo: Repo, title_id: str) -> None:
+async def ensure_title_match(repo: Repo, platform: str, title_id: str) -> None:
     """This game's HLTB entry, matched once and kept forever (#131) —
     lazily, not by a walker: called once from each platform's fetcher right
     after it publishes a game's first new achievement, and again from the
@@ -187,7 +187,7 @@ async def ensure_title_match(repo: Repo, title_id: str) -> None:
     """
     from bot.services.hltb_match import GameIdentity, find, usable_name
 
-    row = await repo.title_hltb_match_row(title_id)
+    row = await repo.title_hltb_match_row(platform, title_id)
     if row is None:
         return
     names = tuple(dict.fromkeys(n for n in (row.name_en, row.name, row.name_ru) if n))
@@ -196,7 +196,7 @@ async def ensure_title_match(repo: Repo, title_id: str) -> None:
         # nothing Latin in it — HLTB's English-only search has nothing to
         # go on, and asking three times a game apart would only confirm
         # that. Skips straight past the retries.
-        await repo.give_up_hltb_match(title_id)
+        await repo.give_up_hltb_match(row.platform, title_id)
         return
     identity = GameIdentity(
         names=names,
@@ -209,12 +209,12 @@ async def ensure_title_match(repo: Repo, title_id: str) -> None:
         match = await find(identity, search_candidates, steam_appids)
     except HltbError as exc:
         log.info("HLTB match unanswerable for title %s (%s)", title_id, exc)
-        await repo.record_hltb_match(title_id, None, None)
+        await repo.record_hltb_match(row.platform, title_id, None, None)
         return
     if match is None:
-        await repo.record_hltb_match(title_id, None, None)
+        await repo.record_hltb_match(row.platform, title_id, None, None)
         return
-    await repo.record_hltb_match(title_id, match.hltb_id, match.score)
+    await repo.record_hltb_match(row.platform, title_id, match.hltb_id, match.score)
     log.info("HLTB match for %s (%s): %s (score=%.3f)", title_id, names[0], match.name, match.score)
 
 

@@ -332,7 +332,7 @@ class _AchievementsRepo:
             "       COALESCE(s.unlocked_at, s.created_at) AS seen_at "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
-            + "LEFT JOIN titles t ON t.title_id = s.title_id "
+            + "LEFT JOIN titles t ON t.platform = s.platform AND t.title_id = s.title_id "
             + rarity_cache_join()
             + "LEFT JOIN publications p ON p.chat_id = ? AND p.xuid = s.xuid"
             "   AND p.title_id = s.title_id AND p.achievement_id = s.achievement_id "

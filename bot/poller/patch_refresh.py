@@ -55,8 +55,8 @@ class PatchRefresh:
             stale_before=(now - timedelta(days=TIPS_REFRESH_DAYS)).isoformat(timespec="seconds"),
             limit=1,
         )
-        for title_id in stale_tips:
+        for platform, title_id in stale_tips:
             try:
-                await self._extras.refresh_tips(title_id)
+                await self._extras.refresh_tips(platform, title_id)
             except Exception:
                 log.exception("tips refresh failed for title %s", title_id)

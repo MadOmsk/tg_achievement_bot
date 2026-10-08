@@ -42,11 +42,11 @@ class GameGuide:
     title: str | None = None
 
 
-async def game_guide(repo: Repo, title_id: str) -> GameGuide | None:
+async def game_guide(repo: Repo, platform: str, title_id: str) -> GameGuide | None:
     """The game's guide on a guide channel, when the channel has videos of it:
     a whole-game video when one is titled so, else the channel's search for
     the game — what is matched to one achievement rarely covers them all."""
-    names = await repo.title_names_of(title_id)
+    names = await repo.title_names_of(platform, title_id)
     videos = await repo.guide_videos_of(game_keys(*names))
     if not videos:
         return None
@@ -86,7 +86,7 @@ async def achievement_videos(
             by_label.setdefault(label, []).append(row.achievement_id)
     if not by_label:
         return {}
-    keys = game_keys(*await repo.title_names_of(title_id))
+    keys = game_keys(*await repo.title_names_of(platform, title_id))
     moments = await repo.guide_moments(keys, list(by_label))
     found: dict[str, list[AchievementVideo]] = {}
     for moment in moments:

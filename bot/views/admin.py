@@ -256,7 +256,7 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
         # the poller fills — an id in the card tells the admin nothing.
         game = presence.title_name or ""
         if not game and presence.title_id:
-            game = await repo.title_name(presence.title_id) or presence.title_id
+            game = await repo.title_name("xbox", presence.title_id) or presence.title_id
         game = game or _("admin-no-game")
         online = (
             _(

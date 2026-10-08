@@ -62,6 +62,6 @@ class SteamLocalization:
             if russian is None and english is None:
                 self._unanswerable.add(appid)
                 continue
-            await self._repo.set_title_names(appid, russian, english)
+            await self._repo.set_title_names(Platform.STEAM, appid, russian, english)
             if russian and english and russian != english:
                 log.info("steam: %s is %r in Russian", appid, russian)

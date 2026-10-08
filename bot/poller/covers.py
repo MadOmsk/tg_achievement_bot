@@ -77,7 +77,7 @@ class CoverRefresh:
         if not candidates:
             # Stamped anyway: without this the same unanswerable game comes
             # back at the head of the queue on the very next tick.
-            await self._repo.set_title_cover(title.title_id)
+            await self._repo.set_title_cover(title.platform, title.title_id)
             return
 
         name = covers.cover_name(title.platform, title.title_id)
@@ -91,12 +91,12 @@ class CoverRefresh:
             # The URL is worth keeping even when the download failed — the
             # Mini App can load it straight from the platform's CDN, and the
             # next visit tries the bytes again.
-            await self._repo.set_title_cover(title.title_id, icon_url=url)
+            await self._repo.set_title_cover(title.platform, title.title_id, icon_url=url)
             return
 
         path, digest = saved
         await self._repo.set_title_cover(
-            title.title_id, icon_url=url, cover_path=path, cover_hash=digest
+            title.platform, title.title_id, icon_url=url, cover_path=path, cover_hash=digest
         )
         log.info("cover stored for %s (%s)", title.title_id, title.name)
 

@@ -454,7 +454,9 @@ async def test_the_store_page_supplies_the_russian_game_name_once(
     await fetch_unlocked(repo, auth, "key", STEAM_ID, APPID)
     assert len(calls) == 2, "the store is asked once per game, not once per poll"
 
-    assert await repo.title_names([APPID]) == {APPID: ("Г.О.П.О.Т.А", "G.O.P.O.T.A")}
+    assert await repo.title_names([("steam", APPID)]) == {
+        ("steam", APPID): ("Г.О.П.О.Т.А", "G.O.P.O.T.A")
+    }
 
 
 # ---------------------------------------------------------------- #132

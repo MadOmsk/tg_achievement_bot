@@ -1025,7 +1025,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
     checklist = await catalog_service.get_title_checklist_for_user(
         platform, title_id, person_id=viewed, force=force
     )
-    title_info = await repo.title_record(title_id) or {}
+    title_info = await repo.title_record(platform, title_id) or {}
 
     listed = len(checklist)
     unlocked = sum(1 for item in checklist if item.is_unlocked)
@@ -1093,13 +1093,14 @@ async def handle_game_hltb(request: web.Request) -> web.Response:
     page. The Mini App calls this once the page itself has already
     rendered, and fills the "Об игре" tab in when it answers."""
     user = await _require_user(request)
+    platform = request.match_info.get("platform", "").lower()
     title_id = request.match_info.get("title_id", "")
     repo: Repo = request.app["mini_repo"]
 
     hltb_block: dict[str, Any] | None = None
     try:
-        await ensure_title_match(repo, title_id)
-        match = await repo.title_hltb_match(title_id)
+        await ensure_title_match(repo, platform, title_id)
+        match = await repo.title_hltb_match(platform, title_id)
         if match:
             hltb_id, _score = match
             anthropic = request.app.get("mini_anthropic_auth")
@@ -1147,8 +1148,8 @@ async def handle_game_guides(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     complete = True
     extras = _extras(request)
-    if await extras.tips_due(title_id):
-        extras.ensure_title(title_id)
+    if await extras.tips_due(platform, title_id):
+        extras.ensure_title(platform, title_id)
         complete = False
     locale = await _user_locale(repo, user.person_id)
     tips: dict[str, dict[str, str]] = {}
@@ -1176,7 +1177,7 @@ async def handle_game_guides(request: web.Request) -> web.Response:
         log.exception("guide videos failed for %s/%s", platform, title_id)
     guide: dict[str, Any] | None = None
     try:
-        found_guide = await game_guide(repo, title_id)
+        found_guide = await game_guide(repo, platform, title_id)
         if found_guide is not None:
             guide = {
                 "url": found_guide.url,
@@ -1197,12 +1198,13 @@ async def handle_game_patches(request: web.Request) -> web.Response:
     keeps them fresh. A Steam app never read yet is read now; one with no Steam
     page at all answers an empty list."""
     user = await _require_user(request)
+    platform = request.match_info.get("platform", "").lower()
     title_id = request.match_info.get("title_id", "")
     repo: Repo = request.app["mini_repo"]
     extras = _extras(request)
     patches = []
     try:
-        appid = await extras.appid(title_id)
+        appid = await extras.appid(platform, title_id)
         if appid is not None:
             _guides_at, patches_at = await repo.steam_app_checked(appid)
             if patches_at is None:

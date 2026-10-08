@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bot.db.repo._sql import platform_is
 from bot.util import utcnow_iso
 
 
@@ -171,10 +172,12 @@ class _GuidesRepo:
             for row in await cursor.fetchall()
         ]
 
-    async def title_names_of(self, title_id: str) -> list[str]:
+    async def title_names_of(self, platform: str, title_id: str) -> list[str]:
         """Every name a game goes by here."""
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "SELECT name, name_en, name_ru FROM titles WHERE title_id = ?", (title_id,)
+            f"SELECT name, name_en, name_ru FROM titles WHERE {where} AND title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         if row is None:

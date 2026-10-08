@@ -287,8 +287,8 @@ async def test_save_title_history_writes_the_game_platforms(repo: Repo) -> None:
         devices=["XboxOne", "XboxSeriesX"],
     )
     await repo.save_title_history("xuid-1", [history_row])
-    title_row = await repo.title_platforms(["t-device-1"])
-    assert set(json.loads(title_row["t-device-1"])) == {"XboxOne", "XboxSeriesX"}
+    title_row = await repo.title_platforms([("xbox", "t-device-1")])
+    assert set(json.loads(title_row[("xbox", "t-device-1")])) == {"XboxOne", "XboxSeriesX"}
 
     # Xbox 360 titles: saved as ["Xbox360"] regardless of backward-compat devices
     await repo.upsert_title("t-360-dev", "Fable II", Platform.XBOX_360)
@@ -304,8 +304,8 @@ async def test_save_title_history_writes_the_game_platforms(repo: Repo) -> None:
         devices=["Xbox360", "XboxOne", "XboxSeries"],
     )
     await repo.save_title_history("xuid-1", [history_row_360])
-    title_row_360 = await repo.title_platforms(["t-360-dev"])
-    assert title_row_360["t-360-dev"] == '["Xbox360"]'
+    title_row_360 = await repo.title_platforms([("xbox", "t-360-dev")])
+    assert title_row_360[("xbox", "t-360-dev")] == '["Xbox360"]'
 
 
 async def test_a_game_moved_to_360_takes_its_catalog_along(repo: Repo) -> None:
@@ -556,7 +556,9 @@ async def test_publishing_looks_the_game_platforms_up_first(repo: Repo) -> None:
     await fetcher.ensure_title_platforms(1, "t-new")  # answered: not asked again
 
     assert titlehub.calls == ["t-new"]
-    assert (await repo.title_platforms(["t-new"]))["t-new"] == '["PC", "XboxSeries"]'
+    assert (await repo.title_platforms([("xbox", "t-new")]))[
+        ("xbox", "t-new")
+    ] == '["PC", "XboxSeries"]'
 
 
 async def test_three_failed_lookups_store_known_unknown(repo: Repo) -> None:
@@ -574,7 +576,7 @@ async def test_three_failed_lookups_store_known_unknown(repo: Repo) -> None:
         await fetcher.ensure_title_platforms(1, "t-dark")
 
     assert len(titlehub.calls) == 3
-    assert (await repo.title_platforms(["t-dark"]))["t-dark"] == "[]"
+    assert (await repo.title_platforms([("xbox", "t-dark")]))[("xbox", "t-dark")] == "[]"
     await _age_last_lookup(repo, "t-dark")
     assert not await repo.platforms_lookup_due("t-dark")
 
@@ -604,8 +606,8 @@ async def test_the_walker_asks_through_an_owner_with_a_live_token(repo: Repo) ->
     await TitlePlatformsRefresh(repo, titlehub).tick()  # type: ignore[arg-type]
 
     assert titlehub.calls == ["t-walk"]
-    platforms = await repo.title_platforms(["t-walk", "t-orphan"])
-    assert platforms == {"t-walk": '["XboxOne", "XboxSeries"]'}
+    platforms = await repo.title_platforms([("xbox", "t-walk"), ("xbox", "t-orphan")])
+    assert platforms == {("xbox", "t-walk"): '["XboxOne", "XboxSeries"]'}
 
 
 async def test_games_nobody_can_be_asked_about_do_not_stall_the_queue(repo: Repo) -> None:

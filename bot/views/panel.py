@@ -313,7 +313,11 @@ async def _now_playing(
         return f"{tag}  ·  " + i18n.get("panel-online-idle")
     # Presence gives no name for PC titles — fall back to the cache the
     # poller fills (SPEC 4), same as the admin card.
-    game = presence.game or await repo.title_name(presence.title_id) or presence.title_id
+    game = (
+        presence.game
+        or await repo.title_name(presence.platform, presence.title_id)
+        or presence.title_id
+    )
     return f"{tag}  ·  " + i18n.get("panel-playing", game=html_escape(str(game)))
 
 

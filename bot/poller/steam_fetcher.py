@@ -114,11 +114,11 @@ class SteamFetcher:
         """Which HowLongToBeat entry this game is (#131) — after publishing,
         never before, same reasoning as Fetcher._ensure_hltb_match."""
         try:
-            await ensure_title_match(self._repo, title_id)
+            await ensure_title_match(self._repo, Platform.STEAM, title_id)
         except Exception:
             log.exception("HLTB match failed for title %s", title_id)
         if self._steam_extras is not None:
-            self._steam_extras.ensure_title(title_id)
+            self._steam_extras.ensure_title(Platform.STEAM, title_id)
 
     async def refresh_user(
         self, person_id: int, steam_id: str, persona_name: str, locale: str

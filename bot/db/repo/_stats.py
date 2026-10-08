@@ -74,25 +74,25 @@ class _StatsRepo:
                     platforms_json = None
                     effective_entry_plat = plat_val or None
 
+                # A 360 game stays 360, and one now known to be 360 moves
+                # there with its rows (089: the platform is the row's key).
+                if effective_entry_plat == "xbox_360":
+                    await self._move_title_rows(entry.title_id, "xbox_modern", "xbox_360")
+                stored_plat = await self.stored_xbox_generation(
+                    effective_entry_plat or "xbox_modern", entry.title_id
+                )
                 await self._conn.execute(
-                    "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
+                    "INSERT INTO titles (platform, title_id, name, platforms, updated_at) "
                     "VALUES (?, ?, ?, ?, ?) "
-                    "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
-                    " platform = CASE "
-                    "   WHEN titles.platform = 'xbox_360' THEN 'xbox_360' "
-                    "   WHEN excluded.platform = 'xbox_360' THEN 'xbox_360' "
-                    "   ELSE COALESCE(excluded.platform, titles.platform) "
-                    " END,"
+                    "ON CONFLICT(platform, title_id) DO UPDATE SET name = excluded.name,"
                     " platforms = CASE "
                     "   WHEN titles.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
                     "   WHEN excluded.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
                     "   ELSE COALESCE(excluded.platforms, titles.platforms) "
                     " END,"
                     " updated_at = excluded.updated_at",
-                    (entry.title_id, entry.name, effective_entry_plat, platforms_json, now),
+                    (stored_plat, entry.title_id, entry.name, platforms_json, now),
                 )
-                if effective_entry_plat == "xbox_360":
-                    await self._move_title_rows(entry.title_id, "xbox_modern", "xbox_360")
 
     async def update_gamerscore(self, person_id: int, gamerscore: int) -> None:
         """On the account, not the person (#52) — a gamerscore is a fact
@@ -388,7 +388,7 @@ class _StatsRepo:
             completed_from_titles AS (
                 SELECT s.title_id
                 FROM seen_achievements s
-                JOIN titles t ON s.title_id = t.title_id
+                JOIN titles t ON t.platform = s.platform AND t.title_id = s.title_id
                 WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
                   AND t.achievements_total > 0
                 GROUP BY s.title_id, t.achievements_total

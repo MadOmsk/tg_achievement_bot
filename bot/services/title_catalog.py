@@ -78,7 +78,7 @@ class TitleCatalogService:
         plat = platform.value if isinstance(platform, Platform) else platform
 
         if not force:
-            checked_at_str = await self._repo.title_achievements_checked_at(title_id)
+            checked_at_str = await self._repo.title_achievements_checked_at(plat, title_id)
             if checked_at_str:
                 checked_at = parse_iso(checked_at_str)
                 if checked_at and (utcnow() - checked_at) < timedelta(hours=debounce_hours):
@@ -146,7 +146,7 @@ class TitleCatalogService:
 
         stored_count = await self._repo.title_achievements_count(Platform.STEAM.value, appid)
         if not force and stored_count > 0 and stored_count == api_total:
-            await self._repo.set_title_achievements_checked_at(appid)
+            await self._repo.set_title_achievements_checked_at(Platform.STEAM, appid)
             return await self._repo.get_title_achievements(Platform.STEAM.value, appid)
 
         # Count mismatch or empty: update catalog
@@ -156,9 +156,12 @@ class TitleCatalogService:
         await self._repo.cache_rarity(Platform.STEAM, appid, percentages)
 
         # Store localized title name if missing
-        if not await self._repo.has_localized_title(appid):
+        if not await self._repo.has_localized_title(Platform.STEAM, appid):
             await self._repo.set_title_names(
-                appid, await store_name(appid, "russian"), await store_name(appid, "english")
+                Platform.STEAM,
+                appid,
+                await store_name(appid, "russian"),
+                await store_name(appid, "english"),
             )
 
         now = utcnow_iso()
@@ -214,7 +217,7 @@ class TitleCatalogService:
             Platform.STEAM,
             achievements_total=api_total,
         )
-        await self._repo.set_title_achievements_checked_at(appid)
+        await self._repo.set_title_achievements_checked_at(Platform.STEAM, appid)
         return rows
 
     # -------------------------------------------------------------------- PSN
@@ -245,9 +248,8 @@ class TitleCatalogService:
         if not account_id:
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
 
-        stored_platforms = (await self._repo.title_platforms([np_communication_id])).get(
-            np_communication_id
-        )
+        game = (Platform.PSN.value, np_communication_id)
+        stored_platforms = (await self._repo.title_platforms([game])).get(game)
         dummy_title = title_ref(
             np_communication_id,
             json.loads(stored_platforms) if stored_platforms else None,
@@ -264,7 +266,7 @@ class TitleCatalogService:
             Platform.PSN.value, np_communication_id
         )
         if not force and stored_count > 0 and stored_count == api_total:
-            await self._repo.set_title_achievements_checked_at(np_communication_id)
+            await self._repo.set_title_achievements_checked_at(Platform.PSN, np_communication_id)
             return await self._repo.get_title_achievements(Platform.PSN.value, np_communication_id)
 
         if structure.groups:
@@ -274,7 +276,7 @@ class TitleCatalogService:
             )
         if structure.title_name_ru or structure.title_name_en:
             await self._repo.set_title_names(
-                np_communication_id, structure.title_name_ru, structure.title_name_en
+                Platform.PSN, np_communication_id, structure.title_name_ru, structure.title_name_en
             )
 
         # Fetch all trophies (locked and unlocked)
@@ -352,7 +354,7 @@ class TitleCatalogService:
             Platform.PSN,
             achievements_total=len(rows) or api_total,
         )
-        await self._repo.set_title_achievements_checked_at(np_communication_id)
+        await self._repo.set_title_achievements_checked_at(Platform.PSN, np_communication_id)
         return rows
 
     # ------------------------------------------------------------------- Xbox
@@ -408,7 +410,7 @@ class TitleCatalogService:
 
         stored_count = await self._repo.title_achievements_count(platform_str, title_id)
         if not force and stored_count > 0 and stored_count == api_total:
-            await self._repo.set_title_achievements_checked_at(title_id)
+            await self._repo.set_title_achievements_checked_at(platform_str, title_id)
             return await self._repo.get_title_achievements(platform_str, title_id)
 
         # Mismatch or new: fetch ru-RU
@@ -478,5 +480,5 @@ class TitleCatalogService:
             achievements_total=len(rows) or api_total,
             platforms='["Xbox360"]' if platform_enum == Platform.XBOX_360 else None,
         )
-        await self._repo.set_title_achievements_checked_at(title_id)
+        await self._repo.set_title_achievements_checked_at(platform_str, title_id)
         return rows

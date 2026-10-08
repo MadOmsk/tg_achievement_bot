@@ -205,11 +205,11 @@ class PsnFetcher:
         own poll_title, so every distinct title here gets its own check."""
         for title_id in {row.title_id for row in rows}:
             try:
-                await ensure_title_match(self._repo, title_id)
+                await ensure_title_match(self._repo, Platform.PSN, title_id)
             except Exception:
                 log.exception("HLTB match failed for title %s", title_id)
             if self._steam_extras is not None:
-                self._steam_extras.ensure_title(title_id)
+                self._steam_extras.ensure_title(Platform.PSN, title_id)
 
     def expect_relink_catch_up(self, account_id: str, window_hours: int) -> None:
         """Relinking an account the bot already knows needs no backfill at

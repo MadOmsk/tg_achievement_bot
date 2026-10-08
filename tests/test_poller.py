@@ -196,7 +196,7 @@ async def test_backfill_covers_x360_titles_separately(repo: Repo, cipher) -> Non
     await fetcher.backfill(await repo.person_id(TG_ID), XUID)
 
     assert client.title_calls == []  # no game-by-game requests any more
-    assert await repo.title_name("forgotten") == "Old Game"
+    assert await repo.title_name("xbox", "forgotten") == "Old Game"
     # Its total is known, so a finished forgotten game counts as completed.
     assert await repo.xbox_completed_games_count(XUID) == 1
     # Now the same x360 achievement arrives from a real session: already seen.
@@ -286,7 +286,7 @@ async def test_an_x360_title_name_is_resolved_because_contract_1_has_none(
     await fetcher.poll_title(await repo.person_id(TG_ID), XUID, "Mad Omsk", "360", "xbox_360", None)
 
     assert client.resolved, "contract 1 gives no name, so titlehub had to be asked"
-    assert await repo.title_name("360") == "Gears of War 3"
+    assert await repo.title_name("xbox", "360") == "Gears of War 3"
 
 
 async def test_a_modern_title_needs_no_separate_name_lookup(repo: Repo, cipher) -> None:
@@ -304,8 +304,11 @@ async def test_a_modern_title_needs_no_separate_name_lookup(repo: Repo, cipher) 
         await repo.person_id(TG_ID), XUID, "Mad Omsk", "85494077", "xbox_modern", None
     )
 
-    assert client.resolved == []
-    assert await repo.title_name("85494077") == "Gears of War"  # what the response said
+    # Titlehub is asked once — for the game's platforms (#114), which a row
+    # that now always knows it is a modern Xbox game is due (089) — never for
+    # its name: the name is what the response said, not titlehub's.
+    assert client.resolved == ["85494077"]
+    assert await repo.title_name("xbox", "85494077") == "Gears of War"
 
 
 async def test_x360_achievements_get_the_games_box_art_as_their_icon(repo: Repo, cipher) -> None:
@@ -325,7 +328,7 @@ async def test_x360_achievements_get_the_games_box_art_as_their_icon(repo: Repo,
     )
 
     assert publisher.published[0][0].icon_url == "https://example/boxart.jpg"
-    assert await repo.title_icon_url("360") == "https://example/boxart.jpg"
+    assert await repo.title_icon_url("xbox", "360") == "https://example/boxart.jpg"
 
     # Second title, same game: the icon comes from the cache, not another request.
     client.by_title["360"].append(parsed("a2", title_id="360", platform="xbox_360"))
@@ -341,7 +344,7 @@ async def test_upsert_title_does_not_blank_a_cached_icon(repo: Repo) -> None:
     ensure_title_icon() call already cached for the same title."""
     await repo.upsert_title("360", "Gears of War 3", "xbox_360", "https://example/boxart.jpg")
     await repo.upsert_title("360", "Gears of War 3", "xbox_360")
-    assert await repo.title_icon_url("360") == "https://example/boxart.jpg"
+    assert await repo.title_icon_url("xbox", "360") == "https://example/boxart.jpg"
 
 
 def parsed_at(achievement_id: str, when, title_id: str = "1") -> ParsedAchievement:
@@ -499,4 +502,4 @@ async def test_x360_gaps_are_filled_once(repo: Repo, cipher) -> None:
     await fetcher.fill_x360_gaps_once([(TG_ID, XUID)])
 
     assert await repo.has_any_achievements(XUID)
-    assert await repo.title_name("forgotten") == "Old Game"
+    assert await repo.title_name("xbox", "forgotten") == "Old Game"

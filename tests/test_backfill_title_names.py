@@ -1,8 +1,9 @@
-"""The two gaps `scripts/backfill_title_names.py` closes (2026-09-19 audit).
+"""The gap `scripts/backfill_title_names.py` closes (2026-09-19 audit).
 
-Both are queries rather than logic, and both are the kind that look obvious
-and are easy to get subtly wrong — the owner pairing especially, which must
-never hand back somebody whose Xbox login is dead.
+A query rather than logic, and the kind that looks obvious and is easy to get
+subtly wrong — the owner pairing especially, which must never hand back
+somebody whose Xbox login is dead. (The other gap, rows with no platform,
+closed for good with migration 089.)
 """
 
 from __future__ import annotations
@@ -39,7 +40,9 @@ async def test_a_game_with_no_catalogue_row_is_found(repo: Repo, cipher) -> None
     await _owner(repo, cipher)
     await repo.insert_new_achievements(XUID, [_row("111")], is_backfill=True)
 
-    assert await repo.titles_missing_from_catalogue(10) == [("111", await repo.person_id(TG_ID))]
+    assert await repo.titles_missing_from_catalogue(10) == [
+        ("111", Platform.XBOX_MODERN, await repo.person_id(TG_ID))
+    ]
 
     await repo.upsert_title("111", "A Named Game", Platform.XBOX_MODERN)
     assert await repo.titles_missing_from_catalogue(10) == []
@@ -53,29 +56,3 @@ async def test_a_dead_login_is_not_offered_as_the_owner(repo: Repo, cipher) -> N
     await repo.set_token_status(await repo.person_id(TG_ID), "invalid")
 
     assert await repo.titles_missing_from_catalogue(10) == []
-
-
-async def test_a_platform_is_taken_from_the_rows_that_know_it(repo: Repo, cipher) -> None:
-    await _owner(repo, cipher)
-    await repo.insert_new_achievements(XUID, [_row("222")], is_backfill=True)
-    await repo._conn.execute(
-        "INSERT INTO titles (title_id, name, platform, updated_at) VALUES ('222', 'Game', NULL, '')"
-    )
-    await repo._conn.commit()
-
-    assert await repo.titles_without_platform() == [("222", Platform.XBOX_MODERN)]
-
-    await repo.set_title_platform("222", Platform.XBOX_MODERN)
-    assert await repo.titles_without_platform() == []
-
-
-async def test_a_platform_already_recorded_is_never_overwritten(repo: Repo, cipher) -> None:
-    """A stray row must not relabel a game that was seen on its own
-    platform — the update is scoped to rows where it is still unknown."""
-    await _owner(repo, cipher)
-    await repo.upsert_title("333", "Game", Platform.XBOX_360)
-
-    await repo.set_title_platform("333", Platform.XBOX_MODERN)
-
-    cursor = await repo._conn.execute("SELECT platform FROM titles WHERE title_id = '333'")
-    assert (await cursor.fetchone())["platform"] == Platform.XBOX_360

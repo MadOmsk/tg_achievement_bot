@@ -477,7 +477,17 @@ every column. History: #106.
   `psn_poll_state`. Xbox history: `title_history`. Steam: `steam_schema_cache`,
   `steam_rarity_cache`. HLTB: `hltb_cache`. Steam guides and patches: `steam_apps`,
   `game_patches`, `title_guide_reads` (see Steam guides and patches).
-- **`titles`** — one row per game: names (`name`, `name_ru`, `name_en`),
+- **`titles`** — one row per version (one achievement list on one platform),
+  **keyed by `(platform, title_id)`** like `seen_achievements` and
+  `title_achievements` (#147, migration 089): Steam appids and Xbox title ids
+  overlap. Join on both (`_sql.titles_on`). An Xbox id is one game, so a
+  lookup by any Xbox value matches either generation (`_sql.platform_is`,
+  which also takes `xbox` for a caller that only knows the family, as
+  presence does); a game found to be the other generation moves, row,
+  achievements and catalog together (`update_title_platform` /
+  `_move_title_rows`), and a 360 game stays 360 (`stored_xbox_generation`).
+  `title_guide_reads` is keyed the same way; `title_groups` stays by id (PSN
+  only). No foreign keys point at `titles`. Its columns: names (`name`, `name_ru`, `name_en`),
   `achievements_total`, `platform`, `platforms` (#79), cover art (`icon_url` +
   `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at`, and which
   HLTB entry it is (`hltb_id`/`hltb_match_score`/`hltb_attempts`/`hltb_checked_at`,

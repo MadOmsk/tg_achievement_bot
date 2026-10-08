@@ -409,7 +409,7 @@ async def test_a_modern_xbox_total_comes_from_the_achievements_response(repo: Re
 
     assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") is None
 
-    await repo.set_title_total("550", 50)
+    await repo.set_title_total("xbox_modern", "550", 50)
 
     assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == TitleProgress(19, 50)
 
@@ -434,7 +434,7 @@ async def test_a_known_titlehub_total_still_wins(repo: Repo) -> None:
             )
         ],
     )
-    await repo.set_title_total("550", 4)  # a partial page, say
+    await repo.set_title_total("xbox_modern", "550", 4)  # a partial page, say
 
     assert await repo.title_progress(AccountPlatform.XBOX, XUID, "550") == TitleProgress(47, 50)
 

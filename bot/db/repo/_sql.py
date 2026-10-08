@@ -196,6 +196,34 @@ def earned_since(prefix: str = "s.") -> str:
     return f"{earned_date_is_real(prefix)} AND {earned_at(prefix)} >= ?"
 
 
+# --------------------------------------------------------------- games (#147)
+
+
+def titles_on(rows: str = "s", titles: str = "t") -> str:
+    """The join from rows carrying `platform` and `title_id` (a
+    `seen_achievements`, by default) to their game's `titles` row. A game is
+    its platform and its id (migration 089): the id spaces of Steam and Xbox
+    overlap, so the id alone can name two games."""
+    return f"{titles}.platform = {rows}.platform AND {titles}.title_id = {rows}.title_id"
+
+
+# Both Xbox generations, for the places that know a game is Xbox but not
+# which one (presence names only an id): an Xbox title id is one game, never
+# both a 360 and a modern one.
+XBOX_PLATFORMS = "('xbox_modern', 'xbox_360')"
+
+
+def platform_is(platform: str, column: str = "platform") -> tuple[str, list[str]]:
+    """`(sql, params)` matching one game's platform. Any Xbox value (`xbox`,
+    or either generation) matches both generations: an Xbox title id is one
+    game, stored under whichever generation it turned out to be, and a caller
+    often knows only that it is Xbox (presence names an id) or names the
+    contract it polled through."""
+    if platform in ("xbox", "xbox_modern", "xbox_360"):
+        return f"{column} IN {XBOX_PLATFORMS}", []
+    return f"{column} = ?", [platform]
+
+
 # --------------------------------------------------------------- names (#61)
 
 # The catalog row holding an achievement's name in both languages (#61, #119),

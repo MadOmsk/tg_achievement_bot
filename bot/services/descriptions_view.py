@@ -67,7 +67,7 @@ async def localize_descriptions(
     # and the others in the platform's, whatever the chat had chosen.
     names = await repo.cached_names(keys)
     # The game's own name, for the one platform that localizes it (#61).
-    titles = await repo.title_names([row.title_id for row in rows])
+    titles = await repo.title_names([(row.platform, row.title_id) for row in rows])
     if not cached and not names and not titles:
         return rows
 
@@ -78,7 +78,7 @@ async def localize_descriptions(
         text = _for_locale(entry, locale) if entry is not None else None
         name_pair = names.get(key)
         name = _name_for_locale(name_pair, locale) if name_pair is not None else None
-        title_pair = titles.get(row.title_id)
+        title_pair = titles.get((row.platform, row.title_id))
         title = _name_for_locale(title_pair, locale) if title_pair is not None else None
         changes = {}
         if text is not None:

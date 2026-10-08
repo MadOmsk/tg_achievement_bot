@@ -295,7 +295,7 @@ async def _xbox_presence(repo: Repo, xuid: str) -> dict[str, Any] | None:
         return None
     game = None
     if row.state == PresenceState.ONLINE and row.title_id:
-        game = row.title_name or await repo.title_name(row.title_id) or row.title_id
+        game = row.title_name or await repo.title_name("xbox", row.title_id) or row.title_id
     return {
         "state": row.state,
         "title_id": row.title_id,

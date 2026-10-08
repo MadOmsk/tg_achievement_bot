@@ -38,54 +38,55 @@ class SteamExtras:
         self._repo = repo
         self._steam_auth = steam_auth
         self._anthropic_auth = anthropic_auth
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         # Background fills in flight: a reference keeps each alive until done.
-        self._running: dict[str, asyncio.Task[bool]] = {}
+        self._running: dict[tuple[str, str], asyncio.Task[bool]] = {}
         # Told of an app's posts that are new since its last read (main.py:
         # the players' notices).
         self.on_new_posts: Callable[[int, list[StoredPatch]], Awaitable[None]] | None = None
 
-    def ensure_title(self, title_id: str) -> None:
+    def ensure_title(self, platform: str, title_id: str) -> None:
         """Fill the game in the background if it is not filled yet — never on
         the publishing path itself: reading guides takes a while (the site is
         read slowly on purpose). A no-op while a fill of it is running."""
-        if title_id in self._running:
+        key = (platform, title_id)
+        if key in self._running:
             return
-        task = asyncio.create_task(self._fill_logged(title_id))
-        self._running[title_id] = task
-        task.add_done_callback(lambda _t: self._running.pop(title_id, None))
+        task = asyncio.create_task(self._fill_logged(platform, title_id))
+        self._running[key] = task
+        task.add_done_callback(lambda _t: self._running.pop(key, None))
 
-    async def _fill_logged(self, title_id: str) -> bool:
+    async def _fill_logged(self, platform: str, title_id: str) -> bool:
         try:
-            return await self.fill_title(title_id)
+            return await self.fill_title(platform, title_id)
         except Exception:
             log.exception("steam extras failed for title %s", title_id)
             return False
 
-    async def appid(self, title_id: str) -> int | None:
+    async def appid(self, platform: str, title_id: str) -> int | None:
         """The game's Steam app, looked up now if it is time to."""
-        title = await self._repo.title_steam(title_id)
+        title = await self._repo.title_steam(platform, title_id)
         if title is None:
             return None
         if title.steam_appid is not None or not title.appid_due:
             return title.steam_appid
         appid = await find_appid(list(title.names), title.hltb_id)
-        await self._repo.record_steam_appid(title_id, appid)
+        await self._repo.record_steam_appid(title.platform, title_id, appid)
         return appid
 
-    async def fill_title(self, title_id: str) -> bool:
+    async def fill_title(self, platform: str, title_id: str) -> bool:
         """Everything the game's Steam side has that is not stored yet: its app,
         its patches (if the app was never read), its tips (if never worked out
         yet). True once the tips are complete — False while Steam
         still holds some guides back, and a later call picks up the rest."""
-        async with self._locks.setdefault(title_id, asyncio.Lock()):
-            appid = await self.appid(title_id)
+        async with self._locks.setdefault((platform, title_id), asyncio.Lock()):
+            appid = await self.appid(platform, title_id)
             if appid is None:
                 return True
             _guides_at, patches_at = await self._repo.steam_app_checked(appid)
             if patches_at is None:
                 await self.refresh_patches(appid)
-            title = await self._repo.title_steam(title_id)
+            title = await self._repo.title_steam(platform, title_id)
             # A visit only fills tips that were never worked out; a month-old
             # set is the schedule's job (`refresh_tips`), so a crowd opening
             # one game cannot send Steam a read each.
@@ -93,16 +94,16 @@ class SteamExtras:
                 return True
             return await self._fill_tips(title.platform, title_id, appid)
 
-    async def refresh_tips(self, title_id: str) -> None:
+    async def refresh_tips(self, platform: str, title_id: str) -> None:
         """Read the game's guides again, whatever is stored. The scheduled path."""
-        async with self._locks.setdefault(title_id, asyncio.Lock()):
-            title = await self._repo.title_steam(title_id)
+        async with self._locks.setdefault((platform, title_id), asyncio.Lock()):
+            title = await self._repo.title_steam(platform, title_id)
             if title is None or title.steam_appid is None:
                 return
             await self._fill_tips(title.platform, title_id, title.steam_appid)
 
-    async def tips_due(self, title_id: str) -> bool:
-        title = await self._repo.title_steam(title_id)
+    async def tips_due(self, platform: str, title_id: str) -> bool:
+        title = await self._repo.title_steam(platform, title_id)
         if title is None:
             return False
         if title.steam_appid is None:
@@ -171,7 +172,7 @@ class SteamExtras:
         if not api_key:
             return {}
         fingerprint = _fingerprint(guide, catalog)
-        before = await self._repo.guide_read(title_id, guide.file_id)
+        before = await self._repo.guide_read(platform, title_id, guide.file_id)
         if before is not None and before[0] == fingerprint:
             return _tips_of(guide, before[1])
         numbers = {
@@ -191,7 +192,7 @@ class SteamExtras:
         if sections is None:
             return None
         answer = {catalog[index].achievement_id: ranges for index, ranges in sections.items()}
-        await self._repo.save_guide_read(title_id, guide.file_id, fingerprint, answer)
+        await self._repo.save_guide_read(platform, title_id, guide.file_id, fingerprint, answer)
         return _tips_of(guide, answer)
 
     async def refresh_patches(self, appid: int) -> None:

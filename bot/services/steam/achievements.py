@@ -238,9 +238,12 @@ async def _bilingual_descriptions(
     # carry `gameName` ignore `l=` — but the store page does (#61:
     # "G.O.P.O.T.A" / "Г.О.П.О.Т.А"). One storefront request per game, asked
     # only while the Russian side is missing, and a failure changes nothing.
-    if not await repo.has_localized_title(appid):
+    if not await repo.has_localized_title(Platform.STEAM, appid):
         await repo.set_title_names(
-            appid, await store_name(appid, "russian"), await store_name(appid, "english")
+            Platform.STEAM,
+            appid,
+            await store_name(appid, "russian"),
+            await store_name(appid, "english"),
         )
 
     russian_names = {item.apiname: item.name for item in unlocked}
