@@ -145,7 +145,7 @@ class _AdminRepo:
 
     async def admin_chats(self) -> list[ChatTarget]:
         cursor = await self._conn.execute(
-            "SELECT c.chat_id, c.title, c.is_active, s.min_gamerscore,"
+            "SELECT c.chat_id, c.title, c.is_active,"
             "       s.daily_summary, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
@@ -158,7 +158,6 @@ class _AdminRepo:
             ChatTarget(
                 chat_id=row["chat_id"],
                 title=row["title"],
-                min_gamerscore=row["min_gamerscore"],
                 muted_title_ids=json.loads(row["muted_title_ids"] or "[]"),
                 rare_threshold_percent=row["rare_threshold_percent"],
                 daily_summary_time=row["daily_summary_time"],
@@ -176,7 +175,6 @@ class _AdminRepo:
 
     async def update_chat_settings(self, chat_id: int, **fields: Any) -> None:
         allowed = {
-            "min_gamerscore",
             "daily_summary",
             "daily_summary_time",
             "tz_offset_min",

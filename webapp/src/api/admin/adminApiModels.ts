@@ -92,7 +92,6 @@ export type AdminChatRow = {
   daily_summary: boolean;
   daily_summary_time: string;
   tz_offset_min: number;
-  min_gamerscore: number;
   flood_limit: number;
   flood_window_minutes: number;
   /** One person's achievements at once that make one digest; 99 = never (#126). */

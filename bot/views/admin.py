@@ -659,7 +659,6 @@ async def render_chat_card(
         summary=_("admin-yes") if chat.daily_summary else _("admin-no"),
         time=chat.daily_summary_time,
         offset=zone_label,
-        min_score=chat.min_gamerscore,
         flood=flood_label,
         digest=_digest_label(chat.digest_threshold, _),
         locale_name=locale_name(chat.locale),

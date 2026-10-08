@@ -182,6 +182,8 @@ CREATE TABLE IF NOT EXISTS user_settings (
 -- threshold that "rare" means in this chat.
 CREATE TABLE IF NOT EXISTS chat_settings (
     chat_id                INTEGER PRIMARY KEY REFERENCES chats(chat_id) ON DELETE CASCADE,
+    -- No longer read (owner, 2026-10-08): a minimum gamerscore held back
+    -- every Steam and PSN achievement, which have none.
     min_gamerscore          INTEGER NOT NULL DEFAULT 0,
     daily_summary           INTEGER NOT NULL DEFAULT 1,
     muted_title_ids         TEXT    NOT NULL DEFAULT '[]',
@@ -201,7 +203,7 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     -- and accumulate instead, to be flushed as one combined digest once the
     -- window closes (poller/flood_flush.py, notification_throttle below).
     -- `flood_limit = 0` disables the filter for this chat entirely — same
-    -- "0 = off" convention as min_gamerscore/summary_top_limit.
+    -- "0 = off" convention as summary_top_limit.
     flood_limit              INTEGER NOT NULL DEFAULT 3,
     flood_window_minutes     INTEGER NOT NULL DEFAULT 60,
     -- Multi-language (#48). One locale per *chat*, not per viewer: Telegram

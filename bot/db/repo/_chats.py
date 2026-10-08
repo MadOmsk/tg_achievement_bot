@@ -126,7 +126,7 @@ class _ChatsRepo:
 
     async def publication_targets(self, person_id: int) -> list[ChatTarget]:
         cursor = await self._conn.execute(
-            "SELECT c.chat_id, c.title, s.min_gamerscore, s.muted_title_ids,"
+            "SELECT c.chat_id, c.title, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min,"
             "       s.flood_limit, s.flood_window_minutes, s.locale, s.digest_threshold,"
@@ -142,7 +142,6 @@ class _ChatsRepo:
             ChatTarget(
                 chat_id=row["chat_id"],
                 title=row["title"],
-                min_gamerscore=row["min_gamerscore"],
                 muted_title_ids=json.loads(row["muted_title_ids"] or "[]"),
                 rare_threshold_percent=row["rare_threshold_percent"],
                 daily_summary_time=row["daily_summary_time"],

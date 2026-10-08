@@ -453,8 +453,8 @@ every column. History: #106.
 
 - `chats` + `subscriptions` (who publishes where — nothing else: #126 moved the
   per-subscription settings out). `chat_settings`: **digest size**
-  (`digest_threshold`, 99 = never), summary time, timezone, muted games, minimum
-  gamerscore, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
+  (`digest_threshold`, 99 = never), summary time, timezone, muted games,
+  daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
   `locale` (its `rare_threshold_percent` column is no longer read — the threshold
   is global, see Publication rules). `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
   new people start from `app_settings['default_rarity_mode']`), timezone, muted games,
@@ -742,7 +742,7 @@ subscribed there; not admin-excluded; the account's posting switch is on (#20); 
 person's `rarity_mode` isn't `hidden`; in
 `rare` mode a
 known rarity is at or below the rarity threshold (a platform with no rarity at all —
-Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
+Xbox 360 — is exempt, not hidden); the game
 isn't muted there; it wasn't already published there.
 
 - **`hidden` is about notifications only** (owner, 2026-10-06; #167): a person who
@@ -1295,7 +1295,9 @@ keyboard.
 - **The per-chat card** keeps its settings in three sub-screens — daily summary,
   anti-flood, message cleanup — each redrawing in place with the card's text above.
   Settings: digest size (#126), summary time, timezone, mutes,
-  minimum gamerscore, summary switch, anti-flood, language (#48).
+  summary switch, anti-flood, language (#48). There is no minimum gamerscore
+  (owner, 2026-10-08: it held back every Steam and PSN achievement; the column
+  `chat_settings.min_gamerscore` is left unread).
 - **The per-user card**: the person (chain 1) and their id, then **every way they
   sign in** (owner, 2026-10-07; `services/logins.py`, the same list the Mini App's
   admin card shows): Telegram (`@username`, its id passed to Fluent as a string,

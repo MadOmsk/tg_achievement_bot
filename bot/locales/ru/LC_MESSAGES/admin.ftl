@@ -313,7 +313,6 @@ admin-chat-card =
     Дайджест:     { $digest }
     Итог дня:     { $summary }, в { $time }
     Часовой пояс: { $offset }
-    Мин. G:       { $min_score }
     Антиспам:     { $flood }
     Язык:         { $locale_name }
 

@@ -87,7 +87,7 @@ LIMIT_MAX = 50
 
 # Anti-flood filter (2026-09-09 user request) — per-chat, admin-set like the
 # rare threshold above. flood_limit's own 0 means "off for this chat", same
-# convention as min_gamerscore/summary_top_limit.
+# convention as summary_top_limit.
 FLOOD_LIMIT_MIN = 0
 FLOOD_LIMIT_MAX = 50
 FLOOD_WINDOW_MIN = 1

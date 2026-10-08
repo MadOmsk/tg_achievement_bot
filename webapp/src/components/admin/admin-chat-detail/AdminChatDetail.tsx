@@ -105,12 +105,6 @@ export function AdminChatDetail({
               options={DIGEST_CHOICES.map((n) => ({ value: n as number, label: digestLabel(n, locale) }))}
               onChange={(v) => onPatch({ digest_threshold: v })}
             />
-            <NumberRow
-              label={t(locale, "minScore")}
-              value={chat.min_gamerscore}
-              min={0}
-              onChange={(v) => onPatch({ min_gamerscore: v })}
-            />
           </Group>
 
           <Group title={t(locale, "chatGroupFlood")}>

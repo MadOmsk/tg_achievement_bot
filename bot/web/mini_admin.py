@@ -259,7 +259,6 @@ def serialize_admin_chat(chat: Any) -> dict[str, Any]:
         "daily_summary": chat.daily_summary,
         "daily_summary_time": chat.daily_summary_time,
         "tz_offset_min": chat.tz_offset_min,
-        "min_gamerscore": chat.min_gamerscore,
         "flood_limit": chat.flood_limit,
         "flood_window_minutes": chat.flood_window_minutes,
         "digest_threshold": chat.digest_threshold,
@@ -476,8 +475,6 @@ async def handle_admin_chat_patch(request: web.Request) -> web.Response:
         if not (FLOOD_WINDOW_MIN <= window <= FLOOD_WINDOW_MAX):
             raise web.HTTPBadRequest(text="bad window")
         fields["flood_window_minutes"] = window
-    if "min_gamerscore" in body:
-        fields["min_gamerscore"] = int(body["min_gamerscore"])
     if "digest_threshold" in body:
         digest = int(body["digest_threshold"])
         if digest not in DIGEST_CHOICES:

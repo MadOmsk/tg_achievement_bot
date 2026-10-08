@@ -313,7 +313,6 @@ admin-chat-card =
     Digest:        { $digest }
     Daily summary: { $summary }, at { $time }
     Timezone:      { $offset }
-    Min G:         { $min_score }
     Anti-flood:    { $flood }
     Language:      { $locale_name }
 
