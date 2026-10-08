@@ -392,3 +392,32 @@
   transform: none;
   margin-top: 0;
 }
+
+.friend-add-circle {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  border: 2px dashed rgba(155, 182, 255, 0.4);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.friend-add .friend-add-circle {
+  border-color: rgba(155, 182, 255, 0.28);
+  background: rgba(155, 182, 255, 0.05);
+}
+
+.friend-add.is-still .friend-add-circle {
+  color: rgba(155, 182, 255, 0.45);
+}
+
+.friend-add.is-still {
+  cursor: default;
+}
+
+/* As tall as FriendsSkel's strip, so nothing moves when it lands. */
+.friends:has(> .friend-add) {
+  min-height: 141px;
+}

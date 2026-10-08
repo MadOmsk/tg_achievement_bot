@@ -23,9 +23,9 @@
   inset: 0;
   z-index: 1000;
   /* Everything behind the menu steps back, like behind a drawer. */
-  background: rgba(6, 8, 14, 0.36);
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  background: rgba(6, 8, 14, 0.28);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   animation: dd-veil 0.16s ease-out both;
   touch-action: none;
 }

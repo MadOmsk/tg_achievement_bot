@@ -881,7 +881,7 @@ elsewhere in this file still describe the bot.
   strip of people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block is a dashed circle with a plus, the size of a face, that opens it with the field focused (owner, 2026-10-08); no platform marks beside a nickname in Home's head or a profile's — the accounts are a tap away on the card. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Browser sign-in** (shipped; Telegram by migration 074, email by 079): in a plain
@@ -1077,8 +1077,9 @@ elsewhere in this file still describe the bot.
     what it is about (cup, people, a handshake for a friend, news); one line, «**Anastasiafil** получает
     «…» и ещё 2» or «**Gears of War: E-Day** — новый патч»; under it the game or the post; how long ago at the right. Unread rows are in full light with a small
     accent dot left of the face; read ones step back. The list scrolls inside the
-    sheet. A friend's face everywhere carries the same handshake mark
-    (`people/friend-mark`).
+    sheet. A friend's face carries no mark of its own (owner, 2026-10-08:
+    marks on every face cluttered the lists); friends only come first in the
+    strips and lists, and the handshake marks a «new friend» notice.
     Settings → «Уведомления» (owner, 2026-10-06): two blocks with the same rows,
     «Пуши» (this device's switch: subscribed or not) and «Telegram» (its switch;
     the block is there only with Telegram linked); under a switch that is on —

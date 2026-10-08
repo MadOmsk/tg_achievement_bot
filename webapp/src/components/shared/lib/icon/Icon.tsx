@@ -21,6 +21,7 @@ export function Icon({
     | "cup"
     | "back"
     | "forward"
+    | "plus"
     | "link"
     | "sync"
     | "off"
@@ -297,6 +298,14 @@ export function Icon({
       <svg {...props} strokeWidth={filled ? 0 : 2.35}>
         <path d="M14.2 5.2 7.2 12l7 6.8" />
         <path d="M8.1 12h9.7" />
+      </svg>
+    );
+  }
+  if (name === "plus") {
+    return (
+      <svg {...props} strokeWidth={filled ? 0 : 2.2}>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
       </svg>
     );
   }
