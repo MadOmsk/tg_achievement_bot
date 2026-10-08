@@ -1304,6 +1304,15 @@ keyboard.
   counter an `AdminStatus` field. The bot draws a setting as "Label: value ▸"
   (on/off flips, a pick opens its values, a number is typed); the Mini App as
   a row of the same kind. Neither panel parses, bounds or stores a value itself.
+
+  **The rule for whatever comes next** (owner, 2026-10-08): a super-admin
+  setting is added to the registry and nowhere else — never as a screen, a
+  button or a field of one panel only. A setting of a kind the registry does
+  not know yet (a list of games, free text, a date, …) is not drawn ad hoc
+  either: the kind is added **once, for both** — a `Kind` with its parsing in
+  `admin_registry.py`, its drawing in `views/admin_settings.py` and in
+  `components/admin/admin-settings-form` — and from then on every setting of
+  that kind appears in both panels by itself.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
   set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys and the
   mail login (#17) — a key is
