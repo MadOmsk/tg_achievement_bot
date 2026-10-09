@@ -1,7 +1,12 @@
-"""A bare local viewer of the games' store side (#147): achievement lists
+"""A bare viewer of the games' store side (#147): achievement lists
 (`titles`), their versions, DLC, HLTB entries, the sources' raw answers and
-the fetch schedule, every link clickable. Read-only — the database is opened
-`mode=ro`. Meant to grow into the operator's table of the games one day.
+the fetch schedule, every link clickable — and the controls an operator needs
+(collect a game now, ask a source again, fix a version's links, delete a
+version). Pages read through their own read-only connection; the controls
+write through `Repo`. Meant to grow into the operator's table of the games.
+
+**No authentication yet** (owner, 2026-10-09: to be added before it is
+anything but a dev tool) — whoever has the address can press every button.
 
 Usage:
     .venv/Scripts/python.exe -X utf8 -m scripts.catalog_viewer            # the .env database
@@ -21,6 +26,8 @@ from urllib.parse import quote, urlencode
 
 from aiohttp import web
 
+from bot.db.repo import Database, Repo
+
 PAGE_SIZE = 100
 
 
@@ -28,6 +35,34 @@ def _db(request: web.Request) -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{request.app['db_path']}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _repo(request: web.Request) -> Repo:
+    return request.app["repo"]
+
+
+def _back(to: str, message: str) -> web.HTTPFound:
+    return web.HTTPFound(to + ("&" if "?" in to else "?") + urlencode({"msg": message}))
+
+
+def _flash(request: web.Request) -> str:
+    message = request.query.get("msg")
+    return f"<p><b>{escape(message)}</b></p>" if message else ""
+
+
+def _button(
+    action: str, label: str, fields: dict[str, object] | None = None, confirm: str | None = None
+) -> str:
+    """A one-button form posting `fields` to `action`."""
+    hidden = "".join(
+        f'<input type=hidden name="{escape(k)}" value="{escape(str(v))}">'
+        for k, v in (fields or {}).items()
+    )
+    ask = f' onsubmit="return confirm({escape(json.dumps(confirm))})"' if confirm else ""
+    return (
+        f'<form method=post action="{escape(action)}" style="display:inline"{ask}>'
+        f"{hidden}<button>{escape(label)}</button></form> "
+    )
 
 
 def _page(title: str, body: str) -> web.Response:
@@ -200,14 +235,34 @@ async def title(request: web.Request) -> web.Response:
             if subjects
             else []
         )
+    here = f"/title/{quote(platform)}/{quote(title_id)}"
+    controls = (
+        "<p>"
+        + _button(f"{here}/collect", "collect (only what is due)")
+        + _button(f"{here}/collect", "collect now (force)", {"force": 1})
+        + "</p>"
+    )
+    resets = "".join(
+        "<p>"
+        + _button(
+            "/fetch/due",
+            f"ask {r['source']} again",
+            {"subject": r["subject"], "source": r["source"], "back": here},
+        )
+        + f"{escape(r['subject'])}</p>"
+        for r in state
+    )
     body = (
-        _record(row, {"hltb_id": _hltb_href})
+        _flash(request)
+        + controls
+        + _record(row, {"hltb_id": _hltb_href})
         + "<h2>Versions (store products on one console)</h2>"
         + _table(versions, {"version_id": _version_href, "name": _version_href})
         + "<h2>PSN trophy groups</h2>"
         + _table(groups)
         + "<h2>Fetch state</h2>"
         + _table(state, {"subject": _payload_href})
+        + resets
     )
     return _page(f"{platform} {title_id}", body)
 
@@ -267,8 +322,36 @@ async def version(request: web.Request) -> web.Response:
             if row is not None
             else []
         )
+    here = f"/version/{version_id}"
+    controls = ""
+    if row is not None:
+        controls = (
+            '<form method=post action="' + here + '/title">achievement list: '
+            f'<input name=platform value="{escape(row["platform"] or "")}" size=12> '
+            f'<input name=title_id value="{escape(row["title_id"] or "")}" size=16> '
+            "<button>set</button> (empty both to clear)</form>"
+            + '<form method=post action="'
+            + here
+            + '/hltb">link HLTB id: '
+            "<input name=hltb_id size=10> <button>link</button></form>"
+            + "<p>"
+            + _button(
+                f"{here}/delete",
+                "delete this version",
+                confirm="Delete this version, its DLC and links?",
+            )
+            + "</p>"
+        )
+    unlinks = "".join(
+        "<p>"
+        + _button(f"{here}/hltb/{h['hltb_id']}/unlink", f"unlink HLTB {h['hltb_id']}")
+        + "</p>"
+        for h in hltb
+    )
     body = (
-        _record(row, {"title_id": _title_href})
+        _flash(request)
+        + controls
+        + _record(row, {"title_id": _title_href})
         + "<h2>Store ids</h2>"
         + _table(ids)
         + "<h2>Same store group (the store's own grouping)</h2>"
@@ -279,6 +362,7 @@ async def version(request: web.Request) -> web.Response:
         + _table(dlcs)
         + "<h2>HLTB</h2>"
         + _table(hltb, {"hltb_id": _hltb_href, "name": _hltb_href})
+        + unlinks
         + "<h2>Raw answers</h2>"
         + _table(payloads, {"subject": _payload_href})
     )
@@ -351,7 +435,21 @@ async def fetch(request: web.Request) -> web.Response:
             " last_error FROM fetch_state ORDER BY checked_at DESC LIMIT ?",
             (PAGE_SIZE * 3,),
         ).fetchall()
-    return _page("Fetch state", _table(rows, {"subject": _payload_href}))
+    buttons = "".join(
+        "<p>"
+        + _button(
+            "/fetch/due",
+            "ask again",
+            {"subject": r["subject"], "source": r["source"], "back": "/fetch"},
+        )
+        + f"{escape(r['subject'])} · {escape(r['source'])}</p>"
+        for r in rows
+        if r["status"] != "ok" or r["interval_days"] > 7
+    )
+    return _page(
+        "Fetch state",
+        _flash(request) + _table(rows, {"subject": _payload_href}) + "<h2>Ask again</h2>" + buttons,
+    )
 
 
 async def payloads(request: web.Request) -> web.Response:
@@ -381,9 +479,87 @@ async def payload(request: web.Request) -> web.Response:
     )
 
 
+async def collect(request: web.Request) -> web.Response:
+    platform, title_id = request.match_info["platform"], request.match_info["title_id"]
+    form = await request.post()
+    collector = request.app["collector"]
+    report = await collector.collect(platform, title_id, force=bool(form.get("force")))
+    message = (
+        f"asked: {', '.join(report.asked) or 'nothing (not due)'}; versions {report.versions};"
+        f" dlc named {report.dlcs}; hltb {report.hltb_id}"
+        + (f"; errors: {'; '.join(report.errors)}" if report.errors else "")
+    )
+    raise _back(f"/title/{quote(platform)}/{quote(title_id)}", message)
+
+
+async def fetch_due(request: web.Request) -> web.Response:
+    form = await request.post()
+    await _repo(request).make_fetch_due(str(form["subject"]), str(form["source"]))
+    raise _back(str(form.get("back") or "/fetch"), f"{form['subject']} will be asked again")
+
+
+async def version_title(request: web.Request) -> web.Response:
+    version_id = int(request.match_info["version_id"])
+    form = await request.post()
+    platform = str(form.get("platform") or "").strip() or None
+    title_id = str(form.get("title_id") or "").strip() or None
+    await _repo(request).set_version_title(version_id, platform, title_id)
+    raise _back(f"/version/{version_id}", f"achievement list: {platform} {title_id}")
+
+
+async def version_hltb_link(request: web.Request) -> web.Response:
+    version_id = int(request.match_info["version_id"])
+    form = await request.post()
+    raw = str(form.get("hltb_id") or "").strip()
+    if not raw.isdigit():
+        raise _back(f"/version/{version_id}", "an HLTB id is a number")
+    await _repo(request).link_version_hltb(version_id, int(raw), "manual")
+    raise _back(f"/version/{version_id}", f"linked HLTB {raw}")
+
+
+async def version_hltb_unlink(request: web.Request) -> web.Response:
+    version_id = int(request.match_info["version_id"])
+    hltb_id = int(request.match_info["hltb_id"])
+    await _repo(request).unlink_version_hltb(version_id, hltb_id)
+    raise _back(f"/version/{version_id}", f"unlinked HLTB {hltb_id}")
+
+
+async def version_delete(request: web.Request) -> web.Response:
+    version_id = int(request.match_info["version_id"])
+    await _repo(request).delete_version(version_id)
+    raise _back("/versions", f"version {version_id} deleted")
+
+
+async def _open(app: web.Application) -> None:
+    from bot.config import get_settings
+    from bot.services.crypto import TokenCipher
+    from bot.services.psn.auth import PsnAuth
+    from bot.services.store_collect import StoreCollector
+
+    database = await Database(Path(app["db_path"])).connect()
+    repo = Repo(database)
+    app["database"], app["repo"] = database, repo
+    cipher = TokenCipher(get_settings().fernet_key.get_secret_value())
+    app["collector"] = StoreCollector(repo, PsnAuth(repo, cipher))
+
+
+async def _close(app: web.Application) -> None:
+    await app["database"].close()
+
+
 def build(db_path: Path) -> web.Application:
     app = web.Application()
     app["db_path"] = db_path.resolve().as_posix()
+    app.on_startup.append(_open)
+    app.on_cleanup.append(_close)
+    app.router.add_post("/title/{platform}/{title_id}/collect", collect)
+    app.router.add_post("/fetch/due", fetch_due)
+    app.router.add_post("/version/{version_id:\\d+}/title", version_title)
+    app.router.add_post("/version/{version_id:\\d+}/hltb", version_hltb_link)
+    app.router.add_post(
+        "/version/{version_id:\\d+}/hltb/{hltb_id:\\d+}/unlink", version_hltb_unlink
+    )
+    app.router.add_post("/version/{version_id:\\d+}/delete", version_delete)
     app.router.add_get("/", home)
     app.router.add_get("/titles", titles)
     app.router.add_get("/title/{platform}/{title_id}", title)
@@ -409,7 +585,7 @@ def main() -> None:
         from bot.config import get_settings
 
         db_path = Path(get_settings().db_path)
-    print(f"reading {db_path} — http://127.0.0.1:{args.port}/")
+    print(f"{db_path} — http://127.0.0.1:{args.port}/ (no authentication)")
     web.run_app(build(db_path), host="127.0.0.1", port=args.port, print=None)
 
 

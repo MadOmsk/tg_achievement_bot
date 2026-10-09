@@ -363,3 +363,46 @@ class _StoresRepo:
             (appid, since),
         )
         return await cursor.fetchone() is not None
+
+    # ------------------------------------------------------------ by hand (the viewer)
+
+    async def make_fetch_due(self, subject: str, source: str) -> None:
+        """Ask this source again at the next chance, whatever the schedule said."""
+        await self._conn.execute(
+            "UPDATE fetch_state SET next_check_at = ? WHERE subject = ? AND source = ?",
+            (utcnow_iso(), subject, source),
+        )
+        await self._conn.commit()
+
+    async def unlink_version_hltb(self, version_id: int, hltb_id: int) -> None:
+        await self._conn.execute(
+            "DELETE FROM version_hltb WHERE version_id = ? AND hltb_id = ?", (version_id, hltb_id)
+        )
+        await self._conn.commit()
+
+    async def set_version_title(
+        self, version_id: int, platform: str | None, title_id: str | None
+    ) -> None:
+        """Which achievement list a version has, set by hand (or cleared)."""
+        await self._conn.execute(
+            "UPDATE versions SET platform = ?, title_id = ?, updated_at = ? WHERE version_id = ?",
+            (platform, title_id, utcnow_iso(), version_id),
+        )
+        await self._conn.commit()
+
+    async def delete_version(self, version_id: int) -> None:
+        """A version that is not one (a bundle taken for a game, a wrong
+        match): its DLC, store ids and HLTB links go with it."""
+        async with self.transaction():
+            for table in ("dlc_hltb", "dlcs", "version_hltb", "version_store_ids", "versions"):
+                if table == "dlc_hltb":
+                    await self._conn.execute(
+                        "DELETE FROM dlc_hltb WHERE dlc_id IN"
+                        " (SELECT dlc_id FROM dlcs WHERE version_id = ?)",
+                        (version_id,),
+                    )
+                else:
+                    await self._conn.execute(
+                        f"DELETE FROM {table} WHERE version_id = ?",
+                        (version_id,),
+                    )
