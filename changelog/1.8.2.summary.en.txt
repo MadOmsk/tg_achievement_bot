@@ -1,0 +1,5 @@
+• Sign in with a passkey — fingerprint or face, no emailed code
+• Add one in Settings → Profile → Sign-in
+• A new name on the sign-in screen and a neater Android icon
+• A patch notice opens the post itself
+• Post pictures centred on wide screens

@@ -14,7 +14,6 @@ import {
 import { PLATFORMS } from "../../shared/constants";
 import { FollowsSheet } from "../../club/follows-sheet/FollowsSheet";
 import { FollowButton } from "../follow-button/FollowButton";
-import { FriendMark } from "../friend-mark/FriendMark";
 import "./PersonSheet.css";
 import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
@@ -109,7 +108,6 @@ export function PersonSheet({
   // where they are on the left, the follow control on the right.
   const head = (
     <button type="button" className="account-who" onClick={toProfile} disabled={!toProfile}>
-      <FriendMark friend={relation.friends && !self} label={t(locale, "friends")}>
         <Avatar
           name={handle}
           personId={personId ?? undefined}
@@ -118,7 +116,6 @@ export function PersonSheet({
           platform={presence?.platform}
           size={48}
         />
-      </FriendMark>
       <span className="person-bar-title">
         <span className="account-name-row">
           <strong>

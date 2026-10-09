@@ -19,7 +19,7 @@ from aiohttp import web
 from bot.config import Settings
 from bot.constants import MAX_PSN_ACCOUNTS, AccountPlatform, Platform, RarityMode
 from bot.db.repo import HandleInvalid, HandleTooSoon, Repo, User
-from bot.db.repo._sql import MEMBERS_CHAT
+from bot.db.repo._sql import MEMBERS_CHAT, pick_name
 from bot.handlers.connect import REVOKE_URL
 from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
@@ -36,6 +36,7 @@ from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
 from bot.services.notifier import Notifier, channel_token_valid
 from bot.services.notify import SuperadminNotifier
+from bot.services.passkeys import Passkeys
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
@@ -56,7 +57,14 @@ from bot.services.title_catalog import TitleCatalogService
 from bot.services.youtube.guides import video_url
 from bot.services.youtube.videos import achievement_videos, game_guide
 from bot.util import parse_iso
-from bot.web import mini_invites, mini_logins, mini_notifications, mini_people, mini_session
+from bot.web import (
+    mini_invites,
+    mini_logins,
+    mini_notifications,
+    mini_passkeys,
+    mini_people,
+    mini_session,
+)
 from bot.web.mini_admin import setup_admin_routes
 from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
 from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
@@ -100,6 +108,7 @@ def setup_mini_api(
     email_login: EmailLogin | None = None,
     notifications: Notifier | None = None,
     merge: PeopleMerge | None = None,
+    passkeys: Passkeys | None = None,
     youtube_auth: Any = None,
     admin_credentials: AdminCredentials | None = None,
 ) -> None:
@@ -139,6 +148,8 @@ def setup_mini_api(
     app["mini_notifications"] = notifications or _default_notifier(settings, repo, bot)
     # Merging two people (#162): main.py's, shared with the bot's /start link_….
     app["mini_merge"] = merge or PeopleMerge(repo, settings.is_superadmin)
+    # Passkeys (owner, 2026-10-08): bound to the host the Mini App is served from.
+    app["mini_passkeys"] = passkeys or Passkeys.for_app(settings.mini_app_url)
 
     app.router.add_get("/api/mini/health", handle_health)
     mini_people.register(app, _require_user)
@@ -146,6 +157,7 @@ def setup_mini_api(
     mini_logins.register(app, _require_user)
     mini_notifications.register(app, _require_user)
     mini_invites.register(app, _require_user)
+    mini_passkeys.register(app, _require_user)
     app.router.add_get("/api/mini/me", handle_me)
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
@@ -172,6 +184,7 @@ def setup_mini_api(
     # segment starting with `-` 404s on some aiohttp/proxy stacks.
     app.router.add_get("/api/mini/club/feed", handle_chat_feed)
     app.router.add_get("/api/mini/club/news", handle_club_news)
+    app.router.add_get("/api/mini/club/news/post", handle_news_post)
     app.router.add_get("/api/mini/club/online", handle_chat_online)
     app.router.add_get("/api/mini/club/summary", handle_chat_summary)
     app.router.add_get("/api/mini/club/people", handle_chat_person)
@@ -696,6 +709,45 @@ async def handle_club_news(request: web.Request) -> web.Response:
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad month") from exc
     return web.json_response(payload)
+
+
+async def handle_news_post(request: web.Request) -> web.Response:
+    """One developer's post (`?appid=&gid=`), as a notice about it opens it
+    (owner, 2026-10-08): the same fields the news feed gives a post. A post is
+    public on Steam; only a signed-in person asks."""
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    try:
+        appid = int(request.query.get("appid", ""))
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text="bad appid") from exc
+    gid = request.query.get("gid", "")
+    post = await repo.game_patch(appid, gid) if gid else None
+    if post is None:
+        raise web.HTTPNotFound(text="no such post")
+    # The game it is about, when the link names one (`?title_id=`): its name
+    # in the reader's language and its picture, for the post's head.
+    game = None
+    title_id = request.query.get("title_id")
+    if title_id:
+        names = (await repo.title_names([title_id])).get(title_id, (None, None))
+        locale = await _user_locale(repo, user.person_id)
+        name = pick_name(locale, names[0], names[1], await repo.title_name(title_id))
+        if name:
+            game = {"name": name, "icon_url": _https_url(await repo.title_icon_url(title_id))}
+    return web.json_response(
+        {
+            "game": game,
+            "appid": appid,
+            "gid": post.gid,
+            "kind": post.kind,
+            "title": post.title,
+            "date": post.published_at,
+            "text": post.text_en or "",
+            "image": _https_url(post.image_url),
+            "url": f"https://store.steampowered.com/news/app/{appid}/view/{post.gid}",
+        }
+    )
 
 
 async def handle_chat_online(request: web.Request) -> web.Response:

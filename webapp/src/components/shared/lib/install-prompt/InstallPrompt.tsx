@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { t, type Locale } from "../../../../i18n";
+import { UMark } from "../wordmark/Wordmark";
 import { installWay, onInstallChange, promptInstall, type InstallWay } from "./install";
 import "./InstallPrompt.css";
 
@@ -37,7 +38,7 @@ export function InstallPrompt({ locale }: { locale: Locale }) {
 
   return (
     <div className="install-prompt" role="dialog" aria-label={t(locale, "installTitle")}>
-      <img className="install-logo" src={`${import.meta.env.BASE_URL}logo.svg`} alt="" width={40} height={40} />
+      <UMark className="install-logo" />
       <div className="install-text">
         <b>{t(locale, "installTitle")}</b>
         <span>{t(locale, way === "ios" ? "installIos" : "installText")}</span>

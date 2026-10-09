@@ -23,6 +23,8 @@ export type NotificationItem = {
   cover?: string | null;
   /** The game a tap opens, on that person's progress (a new post). */
   game: { platform: string; title_id: string; name: string | null } | null;
+  /** A game's post a tap opens over its game (its news, owner 2026-10-08). */
+  news?: { appid: number; gid: string } | null;
 };
 
 export class NotificationsApi extends BaseApi {

@@ -10,6 +10,7 @@ import type {
   MergePreview,
   MeResponse,
   UserSettingsPatch,
+  PasskeysResponse,
 } from "./userApiModels";
 
 export class UserApi extends BaseApi {
@@ -32,7 +33,12 @@ export class UserApi extends BaseApi {
 
   /** The bot a browser's Telegram Login Widget belongs to (#157), and whether
    * a mail server is set up for email sign-in (#162). */
-  authConfig(): Promise<{ bot_username: string | null; bot_id?: number | null; email?: boolean }> {
+  authConfig(): Promise<{
+    bot_username: string | null;
+    bot_id?: number | null;
+    email?: boolean;
+    passkey?: boolean;
+  }> {
     return this.get(WEB_SESSION, "/auth/config");
   }
 
@@ -59,13 +65,45 @@ export class UserApi extends BaseApi {
   }
 
   /** Email sign-in (#162): a code to the address, then the code back. */
-  /** A new address brings its invite: the server checks it before mailing. */
+  /** A new address brings its invite: the server checks it before mailing.
+   * `passkey`: this browser can use a key — an address with one is answered
+   * with the key's options instead of a mailed code. */
   emailSignInStart(
     email: string,
     locale: string,
     invite?: string | null,
-  ): Promise<{ ok: boolean; resend_after: number; skip_code?: boolean }> {
-    return this.post(WEB_SESSION, "/auth/email/start", invite ? { email, locale, invite } : { email, locale });
+    passkey?: boolean,
+  ): Promise<
+    | { ok: boolean; resend_after: number; skip_code?: boolean; passkey?: undefined }
+    | { passkey: true; token: string; options: Record<string, unknown> }
+  > {
+    return this.post(WEB_SESSION, "/auth/email/start", {
+      email,
+      locale,
+      ...(invite ? { invite } : {}),
+      ...(passkey !== undefined ? { passkey } : {}),
+    });
+  }
+
+  /** Passkeys (owner, 2026-10-08). */
+  passkeys(initData: string): Promise<PasskeysResponse> {
+    return this.get(initData, "/me/passkeys");
+  }
+
+  passkeyOptions(initData: string): Promise<{ token: string; options: Record<string, unknown> }> {
+    return this.post(initData, "/me/passkeys/options", {});
+  }
+
+  addPasskey(initData: string, token: string, credential: Record<string, unknown>): Promise<PasskeysResponse> {
+    return this.post(initData, "/me/passkeys", { token, credential });
+  }
+
+  removePasskey(initData: string, id: string): Promise<PasskeysResponse> {
+    return this.delete(initData, `/me/passkeys/${encodeURIComponent(id)}`);
+  }
+
+  passkeySignIn(token: string, credential: Record<string, unknown>): Promise<{ ok: boolean }> {
+    return this.post(WEB_SESSION, "/auth/passkey/verify", { token, credential });
   }
 
   emailSignInVerify(

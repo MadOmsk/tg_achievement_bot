@@ -898,6 +898,20 @@ CREATE TABLE IF NOT EXISTS web_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_web_sessions_person ON web_sessions (person_id);
 
+-- Passkeys (migration 089): a key kept on a phone or a computer that signs its
+-- person in, in place of an email's code. Only the public half is kept.
+CREATE TABLE IF NOT EXISTS passkeys (
+    id            TEXT PRIMARY KEY,
+    person_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    public_key    BLOB NOT NULL,
+    sign_count    INTEGER NOT NULL DEFAULT 0,
+    transports    TEXT,
+    name          TEXT,
+    created_at    TEXT NOT NULL,
+    last_used_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_passkeys_person ON passkeys (person_id);
+
 
 -- One-time sign-in codes sent by email (#162, migration 079). Only an HMAC of
 -- the code is kept; `person_id` is set when a signed-in person adds the address

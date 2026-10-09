@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { userApi } from "../../../api";
 import { t, type Locale } from "../../../i18n";
+import { Wordmark } from "../../shared/lib";
 import { EmailCodeForm } from "./EmailCodeForm";
 import "../../../screens/login/Login.css";
 
@@ -31,7 +32,7 @@ export function AddEmailScreen({
 
   return (
     <div className="login">
-      <img className="login-mark" src={`${import.meta.env.BASE_URL}logo.svg`} alt="" width={96} height={96} />
+      <Wordmark className="login-brand" />
       <h1>{t(locale, codeFor ? "emailCheckTitle" : "addEmailTitle")}</h1>
       {!codeFor && <p className="login-text">{t(locale, "addEmailText")}</p>}
       <EmailCodeForm

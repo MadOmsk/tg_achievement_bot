@@ -1,13 +1,14 @@
 .install-prompt {
   position: fixed;
-  left: 16px;
-  right: 16px;
+  /* The dock's own width, so the two stack as one column (layout.css .dock). */
+  left: 22px;
+  right: 22px;
   bottom: calc(84px + var(--safe-bottom));
   z-index: 21;
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: calc(28rem - 32px);
+  max-width: calc(28rem - 44px);
   margin: 0 auto;
   padding: 12px 34px 12px 12px;
   background: rgba(16, 20, 32, 0.72);
@@ -18,9 +19,15 @@
   animation: install-in 0.36s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* The bare U, no tile (owner, 2026-10-08). */
+/* The bare U, no tile (owner, 2026-10-08): a little smaller than a tile was,
+ * with air on both sides, so its sparkles never touch the title. */
 .install-logo {
   flex: 0 0 auto;
-  border-radius: 11px;
+  width: 34px;
+  height: 34px;
+  margin: 0 2px 0 6px;
+  overflow: visible;
 }
 
 .install-text {
@@ -38,7 +45,11 @@
 }
 
 .install-text span {
+  overflow: hidden;
   color: var(--muted);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .install-close {
