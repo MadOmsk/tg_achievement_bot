@@ -71,7 +71,7 @@ async def test_the_mini_app_card_lists_the_same_logins(repo: Repo, settings) -> 
     await repo.link_platform_account(ada, "steam", "76561190000000001", "AdaSteam")
     admin = await repo.ensure_user(ADMIN_TG, "boss")
     assert admin is not None
-    settings.admin_tg_ids = [ADMIN_TG]
+    settings.superadmin_tg_ids = [ADMIN_TG]
     app = web.Application(middlewares=[cors_middleware()])
     setup_mini_api(app, settings, repo)
     client = TestClient(TestServer(app))

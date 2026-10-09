@@ -16,7 +16,11 @@ progress arc, on the app's own dark ground with a cool glow above and a lilac on
 it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
 as a full-bleed square — iOS and Android round it themselves — with the mark
 inside the safe zone; `badge-96.png` is the white U for a push's one-colour
-badge) are what the Mini App,
+badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
+`any` icon that Android draws on its launch splash. The sign-in screens write
+the name as one word — the U, then "nlocked" in Nunito ExtraBold, its seven
+letters kept in `public/fonts` — `shared/lib/wordmark/Wordmark`; its U alone,
+`UMark`, is the install banner's mark) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
 
@@ -131,7 +135,13 @@ name, or when the tree goes stale.
 │   │
 │   ├── services/                business logic; knows nothing about Telegram/aiogram
 │   │   ├── achievements.py       whether an achievement may be published
-│   │   ├── admin_settings.py     what the admin settings *are*: bounds, labels, defaults
+│   │   ├── admin_settings.py     the admin settings' keys, bounds, labels and defaults
+│   │   ├── admin_registry.py     every admin setting, described once, for both panels (#176)
+│   │   ├── admin_status.py       what the super-admin's home shows, for both panels (#176)
+│   │   ├── admin_credentials.py  every shared credential, one registry for both panels (#176)
+│   │   ├── admin_actions.py      every super-admin action, described once, for both panels (#176)
+│   │   ├── admin_accounts.py     refresh / reset one person's game account (an action's work)
+│   │   ├── admin_cleanup.py      wiping the bot's messages from a chat (an action's work)
 │   │   ├── connect.py            one-time OAuth state, finishing a login
 │   │   ├── relink.py             linking an account somebody else may already hold (#52)
 │   │   ├── stats.py              aggregates for panels, /stats, summaries
@@ -157,6 +167,7 @@ name, or when the tree goes stale.
 │   │   ├── email.py              sending mail: one `EmailSender`, SMTP or (dev) the log (#162)
 │   │   ├── email_login.py        sign-in codes by email: rules, rationing, checking (#162)
 │   │   ├── invites.py            invite codes: their form, and sign-ups waiting for one
+│   │   ├── passkeys.py           passkeys: options, challenges, checking (py_webauthn)
 │   │   ├── notifier.py           the app's own notifications: list, push, Telegram DM (#164)
 │   │   ├── webpush.py            Web Push: RFC 8291 encryption and VAPID, on `cryptography` (#164)
 │   │   ├── mini_app.py           Mini App open-button URLs
@@ -205,7 +216,8 @@ name, or when the tree goes stale.
 │   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py,
 │   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept),
 │   │                            mini_notifications.py (the list, push subscriptions),
-│                            mini_invites.py (signing up with an invite, a member's codes)
+│                            mini_invites.py (signing up with an invite, a member's codes),
+│                            mini_passkeys.py (adding, listing, signing in with passkeys)
 │   │
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
@@ -258,7 +270,7 @@ Code comments and log lines stay English.
 
 ## Configuration
 
-Required environment variables: `BOT_TOKEN`, `ADMIN_TG_IDS` (comma-separated
+Required environment variables: `BOT_TOKEN`, `SUPERADMIN_TG_IDS` (comma-separated
 super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
@@ -276,11 +288,12 @@ setting it up: `docs/mail-setup.md`).
   with an error in the log, whenever `SMTP_HOST` is set). Another way to send mail is one more class
   behind `services/email.py::EmailSender`.
 - **The mail server's login is set from /admin** (owner, 2026-10-07;
-  `services/smtp_auth.py`): «🔑 Ключи платформ» → «Почта (SMTP)», "login key" in
-  one message, checked by logging in to the server, kept encrypted, read by the
-  sender on every message (no restart). `SMTP_USERNAME` / `SMTP_PASSWORD` are a
+  `services/smtp_auth.py`): «🔑 Ключи платформ» → «Почта (SMTP)», or the Mini
+  App's admin → «Ключи», "login key" in one message, checked by logging in to the
+  server, kept encrypted, read by the sender on every message (no restart; the
+  sender and both panels share one `SmtpAuth`). `SMTP_USERNAME` / `SMTP_PASSWORD` are a
   first-run seed like the keys below; `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`
-  and `SMTP_FROM` stay in `.env`. The /admin home shows sign-in emails sent in the
+  and `SMTP_FROM` stay in `.env`. Both admin homes show sign-in emails sent in the
   last hour and day against the app's hourly cap and the mail service's daily one
   (`email_provider_daily_limit`, 300 — Brevo's free plan).
 
@@ -291,9 +304,10 @@ setting it up: `docs/mail-setup.md`).
   the seed, so a stale env var cannot resurrect it. No Steam key: `/connect_steam`
   says "not configured". No Anthropic key: translation is skipped. No YouTube key:
   no video guides. None is fatal.
-- **Everything else tunable lives in `app_settings`**, editable live from `/admin`:
-  display limits, summary caps, HLTB limits, `account_reset_cooldown_hours` (see
-  Data model, default 24h, 0 = off).
+- **Everything else tunable lives in `app_settings`**, editable live from `/admin`
+  and the Mini App's admin (both from `services/admin_registry.py`): display
+  limits, summary caps, HLTB limits, `account_reset_cooldown_hours` (see Data
+  model, default 24h, 0 = off).
 
 ## Data model
 
@@ -372,7 +386,7 @@ every column. History: #106.
   in without asking. Offers and `link_` tokens live in memory for ten minutes. The
   merge defers foreign keys to commit (`chat_seen` points at `users.tg_id`, which
   moves between the two rows).
-  **A super-admin stays an ordinary person named by `ADMIN_TG_IDS`** (owner,
+  **A super-admin stays an ordinary person named by `SUPERADMIN_TG_IDS`** (owner,
   2026-10-02): no role field. So a super-admin must always keep a Telegram id —
   nothing (removing Telegram, a merge) may leave them without one; both refuse
   with `admin`.
@@ -448,11 +462,11 @@ every column. History: #106.
 ### Chats and settings
 
 - `chats` + `subscriptions` (who publishes where — nothing else: #126 moved the
-  per-subscription settings out). `chat_settings`: **digest size**
-  (`digest_threshold`, 99 = never), summary time, timezone, muted games, minimum
-  gamerscore, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
-  `locale` (its `rare_threshold_percent` column is no longer read — the threshold
-  is global, see Publication rules). `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
+  per-subscription settings out). `chat_settings`: summary time, timezone, muted
+  games, daily-summary switch, anti-flood `flood_limit`/`flood_window_minutes`,
+  `locale` (its `rare_threshold_percent`, `digest_threshold` and `min_gamerscore`
+  columns are no longer read — the threshold and the digest size are global, see
+  Publication rules). `user_settings`: **`rarity_mode`** (all / rare / hidden, one for every chat;
   new people start from `app_settings['default_rarity_mode']`), timezone, muted games,
   `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
   profile links are one admin switch, `app_settings['show_profile_links']`, on by
@@ -738,7 +752,7 @@ subscribed there; not admin-excluded; the account's posting switch is on (#20); 
 person's `rarity_mode` isn't `hidden`; in
 `rare` mode a
 known rarity is at or below the rarity threshold (a platform with no rarity at all —
-Xbox 360 — is exempt, not hidden); its gamerscore meets the chat's minimum; the game
+Xbox 360 — is exempt, not hidden); the game
 isn't muted there; it wasn't already published there.
 
 - **`hidden` is about notifications only** (owner, 2026-10-06; #167): a person who
@@ -748,11 +762,13 @@ isn't muted there; it wasn't already published there.
 
 - **The rarity threshold is one for every chat** (owner, 2026-10-01):
   `app_settings['rare_threshold_percent']`, 10% until an admin changes it in
-  /admin → global settings; no chat overrides it. The repo reads it wherever a
+  /admin → «⚙️ Настройки» → Правила; no chat overrides it. The repo reads it wherever a
   chat's settings are read (`_sql.py::GLOBAL_RARE_THRESHOLD`), so callers still
   take `chat.rare_threshold_percent`. Never hardcode a percentage; a person picks
   only a mode.
-- **Digests**: at the chat's `digest_threshold` items (set by an admin, #126) a batch
+- **Digests**: at `digest_threshold` items — one size for every chat (owner,
+  2026-10-08; `app_settings['digest_threshold']`, 3 until changed, 99 = never;
+  read as `chat.digest_threshold` through `_sql.GLOBAL_DIGEST_THRESHOLD`) — a batch
   becomes one grouped message, grouped by platform and title. Every item is listed, never "и ещё N". The
   gallery dedupes by image URL.
 - **Nothing may fail for being too long** (#68): `services/message_limits.py` is a
@@ -865,7 +881,7 @@ elsewhere in this file still describe the bot.
   strip of people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block is a dashed circle with a plus, the size of a face, that opens it with the field focused (owner, 2026-10-08); no platform marks beside a nickname in Home's head or a profile's — the accounts are a tap away on the card. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Browser sign-in** (shipped; Telegram by migration 074, email by 079): in a plain
@@ -932,6 +948,24 @@ elsewhere in this file still describe the bot.
     unused code is deleted by its trash icon.
     `invite_invalid`, `signup_expired`. The dev server's no-code email mode still
     asks for an invite.
+  - **Passkeys** (owner, 2026-10-08; migration 089, `services/passkeys.py`,
+    `web/mini_passkeys.py`, `db/repo/_passkeys.py`): a key on a phone or a
+    computer signs its person in in place of the email's code. Settings →
+    «Вход» → «Ключи доступа» adds one (named by the device, «iPhone · Safari»),
+    lists them and removes one; only in a browser — inside Telegram the app
+    signs in with Telegram. **There is no separate «sign in with a key»**: the
+    sign-in screen sends `/auth/email/start` with `passkey: true` when the
+    browser can use keys, an address with keys is answered with their options
+    instead of a mail, and the phone asks for the key; refused or not at hand,
+    the screen asks again with `passkey: false` and the code goes out.
+    `POST /api/mini/auth/passkey/verify` checks the answer and opens a session.
+    The checking is py_webauthn's (the one dependency added for it: CBOR, COSE
+    and a signature over the browser's data are no place for code of our own):
+    the challenge given out (in memory, five minutes, spent by any answer), the
+    origin and RP id from `MINI_APP_URL` (no https address, no passkeys —
+    `/auth/config` says `passkey`), the stored public half and its count. A key
+    belongs to its domain: one made on a dev tunnel dies with the tunnel. A
+    merge moves the keys with the person.
   - **Asked once for an email** (owner, 2026-10-05; migration 083): somebody
     with no address meets «Добавь почту» on opening the app, after the nickname,
     wherever they opened it — until they add one or say «Позже»
@@ -970,7 +1004,7 @@ elsewhere in this file still describe the bot.
   `p<person id>` (`services/mini_app.py`); a button posted before carries
   `u<tg id>`, which the app still reads: a profile is looked up by it
   (`/api/mini/people/tg/{tg_id}`), and a game page asks by it (`?tg_id=`) and learns
-  the person from the answer's `viewed` (person id and nickname). **The admin is named by Telegram id** (`ADMIN_TG_IDS`);
+  the person from the answer's `viewed` (person id and nickname). **The super-admin is named by Telegram id** (`SUPERADMIN_TG_IDS`);
   **the people the admin manages, by person id** — somebody who signed in by email
   has no Telegram id: `/admin`'s buttons carry `p<person id>` (`a:u:p12`, a bare
   number from a button drawn before is a Telegram id and still works), the Mini
@@ -1011,7 +1045,14 @@ elsewhere in this file still describe the bot.
     `Notifier.tell_about_game_news`) is told to everybody who earned something in
     that game in the last 60 days (`repo.game_news_readers`): in the list always,
     on a channel by its choice (all, patches, news). Only posts of the last two days, two at most a
-    read, and none from an app's first read (its history). A tap opens the game.
+    read, and none from an app's first read (its history). **A tap opens the
+    post itself** (owner, 2026-10-08): the notice keeps its `appid` and `gid`,
+    the list hands them on as `news`, a push's link carries `n=appid:gid`, and
+    `GET /api/mini/club/news/post?appid=&gid=[&title_id=]` gives the post (and
+    the game's name and picture for its head); the post's page opens on its own
+    (`NewsPostLoader`), its game a tap on its head — never the game page under
+    it, which a phone's back would close first. A notice from before keeps
+    opening the game.
   - **Web Push without a new dependency**: `services/webpush.py` seals a message
     (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
     with `httpx`; `tests/test_webpush.py` checks it against the RFC's own example.
@@ -1036,8 +1077,9 @@ elsewhere in this file still describe the bot.
     what it is about (cup, people, a handshake for a friend, news); one line, «**Anastasiafil** получает
     «…» и ещё 2» or «**Gears of War: E-Day** — новый патч»; under it the game or the post; how long ago at the right. Unread rows are in full light with a small
     accent dot left of the face; read ones step back. The list scrolls inside the
-    sheet. A friend's face everywhere carries the same handshake mark
-    (`people/friend-mark`).
+    sheet. A friend's face carries no mark of its own (owner, 2026-10-08:
+    marks on every face cluttered the lists); friends only come first in the
+    strips and lists, and the handshake marks a «new friend» notice.
     Settings → «Уведомления» (owner, 2026-10-06): two blocks with the same rows,
     «Пуши» (this device's switch: subscribed or not) and «Telegram» (its switch;
     the block is there only with Telegram linked); under a switch that is on —
@@ -1095,8 +1137,10 @@ elsewhere in this file still describe the bot.
   `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
   `NumberRow`, `CheckRow`, `RowLink`, and `SettingsSkel` while loading. A screen
   composes these and never styles a row of its own; destructive actions are red rows in
-  a last group of their own. The Mini App's admin sets the global rarity threshold under
-  «Общие правила» (`/api/mini/admin/defaults`), not on a chat's card.
+  a last group of their own. The Mini App's admin draws its settings from the
+  server (`/api/mini/admin/settings`, `/api/mini/admin/chats/{id}/settings`;
+  `components/admin/admin-settings-form`): a number with its bounds, a switch,
+  a pick from a list — never a list of settings of its own.
 - **Actions look one way each** (owner, 2026-10-02; `components/shared/styles/base.css`):
   `.btn` is a pill without an outline — the action ("Подписаться", "Подключить");
   `.btn.is-quiet` is the paler pill of a state that opens choices ("Друзья ⌄");
@@ -1242,7 +1286,7 @@ keyboard.
   platform on its own line. **`/who`** picks a known member and opens their `/stats`;
   its buttons name the person (#40).
 - **Profile links** on cards follow the admin's one switch (`app_settings
-  ['show_profile_links']`, on by default, /admin → global settings; owner,
+  ['show_profile_links']`, on by default, /admin → «⚙️ Настройки» → Правила; owner,
   2026-09-29) — no longer each person's own setting.
 - **`chat_seen`** tracks anyone who wrote in the group; `/online` and `/who` use it,
   not just subscribers.
@@ -1262,20 +1306,74 @@ keyboard.
 
 ### Admin
 
-- **Two roles, named distinctly**: the **суперадмин** is the global operator
-  (`ADMIN_TG_IDS`); the **админ чата** is the per-chat role #15 proposes, which does
-  not exist yet.
+- **Two roles, named distinctly** (owner, 2026-10-07): the **суперадмин**
+  (super-admin) is the global operator — `SUPERADMIN_TG_IDS`, any number of them,
+  `Settings.is_superadmin`; the old name `ADMIN_TG_IDS` is still read. **«Админ»
+  is reserved for a narrower role to come** (the per-chat one #15 proposes), so
+  code, text and docs never call the super-admin an admin. `/admin`, the
+  `/api/mini/admin` routes and `handlers/admin.py` name the panel, not the role.
+- **One source for both admin panels** (#176; owner, 2026-10-08: a new admin
+  setting appears in the bot and the Mini App at once). Both only render what
+  these services answer:
+  - `services/admin_registry.py` — **every setting**, global and per chat, one
+    row each: where it lives, its kind (number, decimal, on/off, one of a list,
+    an hour, a UTC offset), bounds or choices, group, label, hint. `set_value` is
+    the one way either panel changes one — parsed, bounded, stored; a bad value
+    is refused the same from a typed message and from JSON. Time zones are the
+    38 real UTC offsets (`REAL_UTC_OFFSETS_MIN`), summaries go out on the hour;
+    the Mini App names a city beside an offset where one is known («Москва ·
+    UTC+3», `value_label(place=True)`), the bot shows the offset alone.
+  - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
+    sign-in emails against their caps, every credential's state).
+  - `services/admin_credentials.py` — the shared credentials (`set` raising
+    `CredentialInvalid` / `CredentialSetupError`, `clear`).
+  - `services/admin_actions.py` — **every action**, one class each: what it
+    is about (a person, one game account, a chat), its label, whether it is
+    dangerous, how many confirmations it takes and their words, what it does.
+    `available` lists a card's actions; `perform` takes one a step at a time —
+    `Confirm` (the words, the "yes", the next step) until the last step, then
+    `Done`. The bot draws a confirmation as a screen («Да / Отмена»,
+    `a:x:<scope>:<target>:<action>:<step>`), the Mini App as a dialog
+    (`GET|POST /api/mini/admin/actions`, `components/admin/admin-actions`); the
+    steps and the words are the server's. Today: exclude / restore, refresh and
+    reset an account (reset asks once, naming it), take a chosen picture down,
+    delete a person (asks twice); on a chat, the promo (asks once), delete the
+    last message, the three wipes (each asks once with the count). Under them,
+    `services/admin_accounts.py` (refresh: presence, then the delta since the
+    newest unlock; reset) and `services/admin_cleanup.py` (which messages a wipe
+    takes, deleting them).
+
+  A new setting is a registry row and its `admin-setting-*` label; a new
+  action a class in `admin_actions.py` and its strings; a new credential a
+  registry entry and its `admin-keys-<name>-*` strings; a new counter an
+  `AdminStatus` field. The bot draws a setting as "Label: value ▸"
+  (on/off flips, a pick opens its values, a number is typed); the Mini App as
+  a row of the same kind. Neither panel parses, bounds or stores a value itself.
+
+  **The rule for whatever comes next** (owner, 2026-10-08): a super-admin
+  setting or action is added to its registry and nowhere else — never as a
+  screen, a button or a field of one panel only. A new way to confirm or a new
+  kind of input for an action is added once, for both panels, like a new kind
+  of setting. A setting of a kind the registry does
+  not know yet (a list of games, free text, a date, …) is not drawn ad hoc
+  either: the kind is added **once, for both** — a `Kind` with its parsing in
+  `admin_registry.py`, its drawing in `views/admin_settings.py` and in
+  `components/admin/admin-settings-form` — and from then on every setting of
+  that kind appears in both panels by itself.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
-  set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys (#17) — a key is
+  set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys and the
+  mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
-  out; API usage; global limits, each on its own row with its value and its own
-  input, `0` rendered as "без ограничения", and the rarity threshold on top; defaults
-  for new users; the user list;
-  the chat list and per-chat cards; exclusion; bot-message cleanup.
-- **The per-chat card** keeps its settings in three sub-screens — daily summary,
-  anti-flood, message cleanup — each redrawing in place with the card's text above.
-  Settings: digest size (#126), summary time, timezone, mutes,
-  minimum gamerscore, summary switch, anti-flood, language (#48).
+  out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
+  rarity threshold, the digest size, profile links · Новые пользователи: the
+  mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
+  by what it means; the user list; the chat list and
+  per-chat cards; exclusion; bot-message cleanup.
+- **The per-chat card** opens the registry's chat groups — Основное (on, language,
+  time zone) · Итоги дня (on, the hour) · Антифлуд (limit, window) — and «Сообщения» (the wipes), each redrawing in place
+  with the card's text above. There is no minimum gamerscore
+  (owner, 2026-10-08: it held back every Steam and PSN achievement; the column
+  `chat_settings.min_gamerscore` is left unread).
 - **The per-user card**: the person (chain 1) and their id, then **every way they
   sign in** (owner, 2026-10-07; `services/logins.py`, the same list the Mini App's
   admin card shows): Telegram (`@username`, its id passed to Fluent as a string,
@@ -1418,7 +1516,7 @@ History: #111.
 | the admin's chat list | inline | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
 | `/who`'s picker | inline | `repo.chat_member_presence()` | as `/online` | as `/online` | — (three per row) |
 | `/panel`'s "Мои чаты" | inline | `repo.user_chats()` | active chats this person subscribed to or wrote in | title ↑ | — |
-| the admin's limits | inline | `NUMERIC_SETTINGS` | the numeric settings | their own order | — |
+| the admin's settings | inline | `admin_registry.SETTINGS` | one group's settings | the registry's order | — |
 | `/hltb` suggestions | inline | `repo.chat_recent_games()` | games | last played ↓ | `hltb_results_limit` |
 | `/hltb` results | inline | the HLTB API | games | HLTB's relevance | `hltb_results_limit`, `hltb_page_size` |
 | a chat's subscribers | one joined line | `repo.chat_subscribers()` | subscribers | rendered name ↑ | — |

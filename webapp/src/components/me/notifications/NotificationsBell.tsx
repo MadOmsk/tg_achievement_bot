@@ -2,6 +2,7 @@ import { useEffect, useState, type ComponentProps } from "react";
 import { notificationsApi, type NotificationItem } from "../../../api/notifications/notificationsApi";
 import { dayKey, dayLabel, t, timeAgo, type Locale } from "../../../i18n";
 import { Avatar, Icon, Sheet, useOpenGame } from "../../shared/lib";
+import { NewsPostLoader } from "../../game/news-page/NewsPostLoader";
 import "./Notifications.css";
 
 /** The bell on Home (#164): how many notices are unread, and the list behind
@@ -22,6 +23,8 @@ export function NotificationsBell({
   const [count, setCount] = useState(unread);
   const [items, setItems] = useState<NotificationItem[] | null>(null);
   const [open, setOpen] = useState(false);
+  // A game's post a notice opens, with its game under it (owner, 2026-10-08).
+  const [news, setNews] = useState<NotificationItem | null>(null);
 
   useEffect(() => setCount(unread), [unread]);
 
@@ -58,7 +61,9 @@ export function NotificationsBell({
     // A notice about nothing to open is only read.
     if (item.person_id == null && !item.game) return;
     setOpen(false);
-    if (item.game && openGame) {
+    if (item.news) {
+      setNews(item);
+    } else if (item.game && openGame) {
       openGame({
         platform: item.game.platform,
         title_id: item.game.title_id,
@@ -81,6 +86,30 @@ export function NotificationsBell({
         <Icon name="bell" size={22} />
         {count > 0 && <span className="bell-count">{count > 9 ? "9+" : count}</span>}
       </button>
+      {news?.news && (
+        <NewsPostLoader
+          data={data}
+          locale={locale}
+          appid={news.news.appid}
+          gid={news.news.gid}
+          game={
+            news.game
+              ? {
+                  name: news.game.name ?? "",
+                  icon_url: news.cover ?? null,
+                  onOpen: openGame
+                    ? () => {
+                        const game = news.game;
+                        setNews(null);
+                        if (game) openGame({ platform: game.platform, title_id: game.title_id, name: game.name });
+                      }
+                    : undefined,
+                }
+              : undefined
+          }
+          onClose={() => setNews(null)}
+        />
+      )}
       {open && (
         <Sheet
           mid

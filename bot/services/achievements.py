@@ -40,9 +40,6 @@ def passes_filters(
     if not _passes_rarity(achievement, chat.rarity_mode, rare_threshold):
         return False
 
-    if achievement.gamerscore < chat.min_gamerscore:
-        return False
-
     return achievement.title_id not in chat.muted_title_ids
 
 

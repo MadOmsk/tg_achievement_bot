@@ -15,7 +15,7 @@ adminview-steam-not-configured = ⚠️ не настроен — задай в 
 
 # Admin home
 adminview-home =
-    ⚙️ Администрирование  ·  обновлено { $updated }
+    ⚙️ Панель суперадмина  ·  обновлено { $updated }
 
     Пользователей: { $users } (исключено: { $excluded })
       XBOX:  { $xbox_linked } (вход активен: { $xbox_active }, без входа: { $xbox_broken })
@@ -29,8 +29,6 @@ adminview-home =
     Запросов к PSN за сутки: { $psn_requests }
     Писем с кодами: { $mail_usage }
 adminview-mail-usage = за час { $hour }/{ $hour_limit } · за сутки { $day }/{ $day_limit }
-adminview-btn-newusers = 👤 Новые пользователи ▸
-adminview-btn-limits = ⚙️ Глобальные настройки ▸
 adminview-btn-users = Пользователи ▸
 adminview-btn-chats = Чаты ▸
 adminview-btn-keys = 🔑 Ключи платформ ▸

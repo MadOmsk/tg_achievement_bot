@@ -218,10 +218,13 @@ async def test_reset_button_appears_next_to_each_connected_platforms_refresh_but
     _text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     datas = _callback_datas(markup)
-    assert "a:sync:xbox:p1" in datas and "a:reset:xbox:p1" in datas
-    assert "a:sync:steam:p1" in datas and "a:reset:steam:p1" in datas
+    assert "a:x:a:p1.xbox:sync:0" in datas and "a:x:a:p1.xbox:reset:0" in datas
+    assert "a:x:a:p1.steam:sync:0" in datas and "a:x:a:p1.steam:reset:0" in datas
     # PSN names its account (#10): a person may hold several.
-    assert "a:sync:psn:p1:acc-1" in datas and "a:reset:psn:p1:acc-1" in datas
+    assert "a:x:a:p1.psn.acc-1:sync:0" in datas and "a:x:a:p1.psn.acc-1:reset:0" in datas
+    # An account's two actions share a row.
+    rows = [[b.callback_data for b in row] for row in markup.inline_keyboard]
+    assert ["a:x:a:p1.xbox:sync:0", "a:x:a:p1.xbox:reset:0"] in rows
 
 
 async def test_no_reset_buttons_for_platforms_never_connected(repo: Repo) -> None:
@@ -231,7 +234,7 @@ async def test_no_reset_buttons_for_platforms_never_connected(repo: Repo) -> Non
     _text, markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
     datas = _callback_datas(markup)
-    assert not any(d.startswith("a:reset:steam") or d.startswith("a:reset:psn") for d in datas)
+    assert not any(".steam:" in d or ".psn" in d for d in datas)
 
 
 async def test_reset_xbox_data_clears_achievements_and_title_history(repo: Repo) -> None:
@@ -316,22 +319,17 @@ class _FakeCallback:
     def __init__(self, data: str) -> None:
         self.data = data
         self.message = None
+        self.from_user = type("User", (), {"id": 1})()
         self.answers: list[tuple[str, bool]] = []
 
     async def answer(self, text: str = "", show_alert: bool = False) -> None:
         self.answers.append((text, show_alert))
 
 
-async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatch) -> None:
-    """All three of `a:reset:`, `a:resetok:` and `a:sync:` unpacked
-    callback.data into `_` — which is the translator, bound two lines above —
-    so the next `_("key")` raised TypeError (and a:resetok: unpacked four
-    parts into three). The buttons were drawn and did nothing, from the day
-    they shipped until 2026-09-13.
-
-    The existing test above only checks that they are *drawn*, which is why
-    this went unseen; this one runs the handler.
-    """
+async def test_the_reset_asks_first_naming_the_account(repo: Repo, settings, monkeypatch) -> None:
+    """The buttons were once drawn and did nothing (a handler shadowed its own
+    translator, 2026-09-13) — the test before only checked they were drawn.
+    This one runs the handler."""
     from bot.handlers import admin as admin_handlers
 
     await repo.ensure_user(1, "someone")
@@ -343,14 +341,17 @@ async def test_the_reset_prompt_builds_instead_of_raising(repo: Repo, monkeypatc
         drawn.append((text, markup))
 
     monkeypatch.setattr(admin_handlers, "_redraw", record)
-    callback = _FakeCallback("a:reset:psn:1:acc-1")
+    callback = _FakeCallback("a:x:a:p1.psn.acc-1:reset:0")
 
-    await admin_handlers.reset_platform_confirm(callback, repo, static_i18n("admin", "ru"))  # type: ignore[arg-type]
+    await admin_handlers.admin_action(  # type: ignore[arg-type]
+        callback, repo, None, None, None, None, settings, static_i18n("admin", "ru")
+    )
 
     assert drawn, "the prompt never rendered"
     text, markup = drawn[0]
     assert "PSN: PsnPerson" in text
-    assert "a:resetok:psn:p1:acc-1" in _callback_datas(markup)
+    assert "a:x:a:p1.psn.acc-1:reset:1" in _callback_datas(markup)
+    assert "a:u:p1" in _callback_datas(markup)  # cancel
 
 
 async def test_reset_also_clears_the_accounts_cached_presence(repo: Repo) -> None:
@@ -392,12 +393,12 @@ async def test_admin_card_has_delete_user_button(repo: Repo) -> None:
     await repo.link_xbox_account(await repo.person_id(7), XUID, "GamerTag", 0)
     _text, markup = await render_user_card(repo, await repo.person_id(7), locale="ru")
     datas = _callback_datas(markup)
-    assert "a:udel:p1" in datas
-    assert datas[-2] == "a:udel:p1"
+    assert datas[-2] == "a:x:u:p1:delete:0"
     assert datas[-1] == "a:users:0"
 
 
-async def test_admin_delete_user_flow(repo: Repo, i18n, monkeypatch) -> None:
+async def test_admin_delete_user_flow(repo: Repo, settings, i18n, monkeypatch) -> None:
+    """Two confirmations, then gone — back to the list."""
     from bot.handlers import admin as admin_handlers
 
     await repo.ensure_user(7, "someone")
@@ -409,25 +410,22 @@ async def test_admin_delete_user_flow(repo: Repo, i18n, monkeypatch) -> None:
 
     monkeypatch.setattr(admin_handlers, "_redraw", record)
 
-    # Step 1
-    cb1 = _FakeCallback("a:udel:7")
-    await admin_handlers.admin_delete_user_step1(cb1, repo, i18n)  # type: ignore[arg-type]
-    assert len(drawn) == 1
-    _text1, markup1 = drawn[-1]
-    assert "a:udel1:p1" in _callback_datas(markup1)
-    assert "a:u:p1" in _callback_datas(markup1)
+    async def tap(data: str) -> _FakeCallback:
+        callback = _FakeCallback(data)
+        await admin_handlers.admin_action(  # type: ignore[arg-type]
+            callback, repo, None, None, None, None, settings, i18n
+        )
+        return callback
 
-    # Step 2
-    cb2 = _FakeCallback("a:udel1:p1")
-    await admin_handlers.admin_delete_user_step2(cb2, repo, i18n)  # type: ignore[arg-type]
-    assert len(drawn) == 2
-    _text2, markup2 = drawn[-1]
-    assert "a:udel2:p1" in _callback_datas(markup2)
-    assert "a:u:p1" in _callback_datas(markup2)
+    await tap("a:x:u:p1:delete:0")
+    assert "a:x:u:p1:delete:1" in _callback_datas(drawn[-1][1])
+    assert "a:u:p1" in _callback_datas(drawn[-1][1])
 
-    # Confirm
-    cb3 = _FakeCallback("a:udel2:p1")
-    await admin_handlers.admin_delete_user_confirmed(cb3, repo, i18n)  # type: ignore[arg-type]
-    assert len(drawn) == 3
-    assert cb3.answers
+    await tap("a:x:u:p1:delete:1")
+    assert "a:x:u:p1:delete:2" in _callback_datas(drawn[-1][1])
+    assert await repo.get_user(await repo.person_id(7)) is not None  # not yet
+
+    done = await tap("a:x:u:p1:delete:2")
+    assert done.answers
     assert await repo.get_user(await repo.person_id(7)) is None
+    assert "a:users:0" in _callback_datas(drawn[-1][1]) or drawn[-1][0]

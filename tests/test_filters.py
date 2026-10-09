@@ -53,13 +53,10 @@ def achievement(
     )
 
 
-def chat(
-    min_gamerscore: int = 0, muted: list[str] | None = None, rarity_mode: str = "all"
-) -> ChatTarget:
+def chat(muted: list[str] | None = None, rarity_mode: str = "all") -> ChatTarget:
     return ChatTarget(
         chat_id=-100,
         title="Гейминг-чат",
-        min_gamerscore=min_gamerscore,
         muted_title_ids=muted or [],
         rare_threshold_percent=10.0,
         daily_summary_time="20:00",
@@ -119,9 +116,14 @@ def test_rarity_mode_is_per_chat_now() -> None:
     assert passes_filters(item, chat(rarity_mode="rare"), 10.0) is False  # 30% > 10%
 
 
-def test_min_gamerscore_and_mute() -> None:
-    assert passes_filters(achievement(gamerscore=5), chat(min_gamerscore=10), 10.0) is False
+def test_mute() -> None:
     assert passes_filters(achievement(), chat(muted=["1"]), 10.0) is False
+
+
+def test_gamerscore_never_holds_an_achievement_back() -> None:
+    """There is no minimum gamerscore (owner, 2026-10-08): one held back
+    every Steam and PSN achievement, which have none."""
+    assert passes_filters(achievement(gamerscore=0), chat(), 10.0) is True
 
 
 def test_single_message_is_the_standardized_form() -> None:

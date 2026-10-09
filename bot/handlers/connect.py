@@ -28,7 +28,7 @@ from bot.handlers.steam import prompt_for_link
 from bot.services.connect import ConnectService
 from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of, xbox_nickname
-from bot.services.notify import AdminNotifier
+from bot.services.notify import SuperadminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.util import parse_utc_offset
@@ -232,7 +232,7 @@ async def disconnect_cancel(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "disconnect:yes")
 async def disconnect_confirm(
-    callback: CallbackQuery, repo: Repo, notifier: AdminNotifier, i18n: I18nContext
+    callback: CallbackQuery, repo: Repo, notifier: SuperadminNotifier, i18n: I18nContext
 ) -> None:
     tg_id = callback.from_user.id
     person = await repo.person_id(tg_id)
@@ -282,7 +282,7 @@ async def relogin(
 
 @router.callback_query(F.data == "optout")
 async def optout(
-    callback: CallbackQuery, repo: Repo, notifier: AdminNotifier, i18n: I18nContext
+    callback: CallbackQuery, repo: Repo, notifier: SuperadminNotifier, i18n: I18nContext
 ) -> None:
     """Left on purpose: subscriptions go, history stays, reminders stop."""
     tg_id = callback.from_user.id

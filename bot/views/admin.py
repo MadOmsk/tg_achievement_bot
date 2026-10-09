@@ -13,6 +13,7 @@ reason: poller/admin_refresh.py redraws it on a timer.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Literal
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -25,50 +26,31 @@ from bot.constants import (
 )
 from bot.db.repo import AdminUserRow, ChatTarget, PlatformLink, Repo, User
 from bot.i18n import translator
+from bot.services.admin_actions import ActionView, AdminContext, Confirm, Target
+from bot.services.admin_actions import available as available_actions
+from bot.services.admin_credentials import AdminCredentials
+from bot.services.admin_registry import GROUPS, group_label
+from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
-    DEFAULT_RARITY_MODE_DEFAULT,
-    DEFAULT_RARITY_MODE_KEY,
-    FLOOD_LIMIT_MAX,
-    FLOOD_LIMIT_MIN,
-    FLOOD_WINDOW_MAX,
-    FLOOD_WINDOW_MIN,
-    NUMERIC_SETTINGS,
     PAGE_SIZE,
-    SHOW_LINKS_DEFAULT,
-    SHOW_LINKS_KEY,
     STATUS_ICON,
-    TOAST_PREVIEW_MAX_CHARS,
     VISIBILITY_ICON,
-    NumericSetting,
-    rare_threshold,
 )
 from bot.services.logins import Login, logins_of
 from bot.services.naming import (
     account_nickname,
-    link_nickname,
     person_name,
     person_name_of,
     subscriber_names,
     xbox_nickname,
 )
-from bot.services.psn.auth import STATUS_NOT_CONFIGURED as PSN_NOT_CONFIGURED
-from bot.services.psn.auth import PsnAuth
-from bot.services.smtp_auth import SmtpAuth
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
-from bot.services.steam.auth import STATUS_NOT_CONFIGURED as STEAM_NOT_CONFIGURED
-from bot.services.steam.auth import SteamAuth
-from bot.services.translate.auth import STATUS_NOT_CONFIGURED as ANTHROPIC_NOT_CONFIGURED
-from bot.services.translate.auth import AnthropicAuth
-from bot.services.youtube.auth import YouTubeAuth
 from bot.util import humanize_ago
 from bot.views import Screen
+from bot.views.admin_settings import setting_rows
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
-    COMMON_OFFSETS_HOURS,
-    DIGEST_CHOICES,
-    DIGEST_NEVER,
     format_offset,
-    format_rarity,
     locale_name,
 )
 from bot.views.lists import Listing, truncate_name
@@ -99,177 +81,38 @@ def _cancel_input_keyboard(*, locale: str) -> InlineKeyboardMarkup:
 
 
 async def render_keys(
-    steam_auth: SteamAuth,
-    psn_auth: PsnAuth,
-    anthropic_auth: AnthropicAuth,
-    youtube_auth: YouTubeAuth,
-    *,
-    smtp_auth: SmtpAuth | None = None,
-    locale: str,
+    credentials: AdminCredentials, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
+    """One line and one set of buttons per credential, from the registry the
+    Mini App walks too (#176)."""
     _ = translator("admin", locale)
-    steam_configured = await steam_auth.status() != STEAM_NOT_CONFIGURED
-    psn_configured = await psn_auth.status() != PSN_NOT_CONFIGURED
-    anthropic_configured = await anthropic_auth.status() != ANTHROPIC_NOT_CONFIGURED
-    youtube_configured = await youtube_auth.configured()
-    smtp_configured = smtp_auth is not None and await smtp_auth.configured()
-    text = _(
-        "admin-keys-screen",
-        steam=_("admin-keys-set") if steam_configured else _("admin-keys-unset"),
-        psn=_("admin-keys-set") if psn_configured else _("admin-keys-unset"),
-        anthropic=_("admin-keys-set") if anthropic_configured else _("admin-keys-unset"),
-        youtube=_("admin-keys-set") if youtube_configured else _("admin-keys-unset"),
-        smtp=_("admin-keys-set") if smtp_configured else _("admin-keys-unset"),
-    )
+    states = await credentials.states()
+    lines = [_("admin-keys-title"), ""]
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-keys-psn-change") if psn_configured else _("admin-keys-psn-add"),
-            callback_data="a:keyset:psn",
-        )
-    )
-    if psn_configured:
-        builder.row(
-            InlineKeyboardButton(text=_("admin-keys-psn-clear"), callback_data="a:keyclr:psn")
-        )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-keys-steam-change") if steam_configured else _("admin-keys-steam-add"),
-            callback_data="a:keyset:steam",
-        )
-    )
-    if steam_configured:
-        builder.row(
-            InlineKeyboardButton(text=_("admin-keys-steam-clear"), callback_data="a:keyclr:steam")
-        )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-keys-anthropic-change")
-            if anthropic_configured
-            else _("admin-keys-anthropic-add"),
-            callback_data="a:keyset:anthropic",
-        )
-    )
-    if anthropic_configured:
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-keys-anthropic-clear"), callback_data="a:keyclr:anthropic"
+    for state in states:
+        lines.append(
+            _(
+                "admin-keys-line",
+                label=_(f"admin-keys-{state.name}-label"),
+                state=_("admin-keys-set") if state.configured else _("admin-keys-unset"),
             )
         )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-keys-youtube-change")
-            if youtube_configured
-            else _("admin-keys-youtube-add"),
-            callback_data="a:keyset:youtube",
-        )
-    )
-    if youtube_configured:
+        action = "change" if state.configured else "add"
         builder.row(
             InlineKeyboardButton(
-                text=_("admin-keys-youtube-clear"), callback_data="a:keyclr:youtube"
+                text=_(f"admin-keys-{state.name}-{action}"),
+                callback_data=f"a:keyset:{state.name}",
             )
         )
-    if smtp_auth is not None:
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-keys-smtp-change") if smtp_configured else _("admin-keys-smtp-add"),
-                callback_data="a:keyset:smtp",
-            )
-        )
-        if smtp_configured:
+        if state.configured:
             builder.row(
-                InlineKeyboardButton(text=_("admin-keys-smtp-clear"), callback_data="a:keyclr:smtp")
+                InlineKeyboardButton(
+                    text=_(f"admin-keys-{state.name}-clear"),
+                    callback_data=f"a:keyclr:{state.name}",
+                )
             )
     builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
-    return text, builder.as_markup()
-
-
-def _format_limit(key: str, value: str, *, locale: str) -> str:
-    _ = translator("admin", locale)
-    spec = NUMERIC_SETTINGS[key]
-    return _(spec.zero_label) if value == "0" else value
-
-
-def _setting_label(spec: NumericSetting, *, locale: str) -> str:
-    _ = translator("admin", locale)
-    return _(spec.label)
-
-
-def _hour_grid_markup(
-    current: str, set_prefix: str, tz_callback: str, back_callback: str, *, locale: str
-) -> InlineKeyboardMarkup:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    for hour in range(24):
-        label = f"{hour:02d}"
-        mark = "• " if current.startswith(label) else ""
-        builder.add(
-            InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"{set_prefix}{hour}")
-        )
-    builder.adjust(6)
-    builder.row(InlineKeyboardButton(text=_("admin-timezone-button"), callback_data=tz_callback))
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=back_callback))
-    return builder.as_markup()
-
-
-def _tz_grid_markup(
-    current_minutes: int, set_prefix: str, manual_callback: str, back_callback: str, *, locale: str
-) -> InlineKeyboardMarkup:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    for hours in COMMON_OFFSETS_HOURS:
-        minutes = hours * 60
-        mark = "• " if minutes == current_minutes else ""
-        builder.add(
-            InlineKeyboardButton(
-                text=f"{mark}{format_offset(minutes)}", callback_data=f"{set_prefix}{minutes}"
-            )
-        )
-    builder.adjust(4)
-    builder.row(
-        InlineKeyboardButton(text=_("admin-timezone-manual"), callback_data=manual_callback)
-    )
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=back_callback))
-    return builder.as_markup()
-
-
-def _toast_preview(preview: str) -> str:
-    collapsed = " ".join(preview.splitlines())
-    if len(collapsed) <= TOAST_PREVIEW_MAX_CHARS:
-        return collapsed
-    return collapsed[: TOAST_PREVIEW_MAX_CHARS - 1] + "…"
-
-
-async def render_new_user_defaults(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
-    """Settings that only ever apply at the moment someone new subscribes —
-    grouped on their own screen (2026-09-05 follow-up) rather than sitting
-    on the home screen forever, since none of them affect anyone already
-    subscribed. Just default_rarity_mode for now (SPEC 9, M-Steam-2e's own
-    Repo.subscribe reads it) — the natural home for anything else of the
-    same shape added later."""
-    _ = translator("admin", locale)
-    default_rarity_mode = await repo.get_app_setting(
-        DEFAULT_RARITY_MODE_KEY, DEFAULT_RARITY_MODE_DEFAULT
-    )
-    assert default_rarity_mode is not None  # a default was given above
-
-    text = _("admin-new-users-screen")
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=_(
-                        "admin-default-rarity",
-                        rarity=format_rarity(default_rarity_mode),
-                    ),
-                    callback_data="a:defaultrarity",
-                )
-            ],
-            [InlineKeyboardButton(text=_("admin-back"), callback_data="a:home")],
-        ]
-    )
-    return text, keyboard
+    return "\n".join(lines), builder.as_markup()
 
 
 async def render_user_list(
@@ -555,9 +398,6 @@ async def _psn_admin_block(
 async def render_user_card(
     repo: Repo, person: int, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
-    # The buttons name the person by their own id (#156): somebody who signed
-    # in by email has no Telegram id to name them by.
-    ref = f"p{person}"
     _ = translator("admin", locale)
     user = await repo.get_user(person)
     steam_link = await repo.get_platform_link(person, Platform.STEAM)
@@ -605,48 +445,39 @@ async def render_user_card(
     if user.is_excluded:
         text += "\n\n" + _("admin-excluded")
 
+    # The actions come from the registry (#176), the Mini App's card lists the
+    # same ones.
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-restore") if user.is_excluded else _("admin-exclude"),
-            callback_data=f"a:excl:{ref}:{0 if user.is_excluded else 1}",
-        )
-    )
-    if user.xuid:
-        builder.row(
-            InlineKeyboardButton(text=_("admin-refresh-xbox"), callback_data=f"a:sync:xbox:{ref}"),
-            InlineKeyboardButton(text=_("admin-reset-xbox"), callback_data=f"a:reset:xbox:{ref}"),
-        )
-    for link in psn_links:
-        # Each account has its own pair (#10), named when there are several
-        # — "PSN: nick", never a bare nickname (owner).
-        account = f"{ref}:{link.external_id}"
-        if len(psn_links) > 1:
-            name = link_nickname(link)
-            refresh = _("admin-refresh-psn-account", name=name)
-            reset = _("admin-reset-psn-account", name=name)
-        else:
-            refresh, reset = _("admin-refresh-psn"), _("admin-reset-psn")
-        builder.row(
-            InlineKeyboardButton(text=refresh, callback_data=f"a:sync:psn:{account}"),
-            InlineKeyboardButton(text=reset, callback_data=f"a:reset:psn:{account}"),
-        )
-    if steam_link is not None:
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-refresh-steam"), callback_data=f"a:sync:steam:{ref}"
-            ),
-            InlineKeyboardButton(text=_("admin-reset-steam"), callback_data=f"a:reset:steam:{ref}"),
-        )
-    if await repo.custom_avatar_path(person):
-        # A picture chosen in the Mini App is seen by everybody (#157): the
-        # super-admin can take it down, back to the Telegram photo.
-        builder.row(
-            InlineKeyboardButton(text=_("admin-reset-avatar"), callback_data=f"a:avclr:{ref}")
-        )
-    builder.row(InlineKeyboardButton(text=_("admin-delete-user"), callback_data=f"a:udel:{ref}"))
+    for row in action_rows(await _actions(repo, "user", Target(person=person), locale)):
+        builder.row(*row)
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
+
+
+async def _actions(repo: Repo, scope: Literal["user", "chat"], target: Target, locale: str):
+    # Listing needs only the database; running one is the handler's.
+    return await available_actions(AdminContext(repo, None), scope, target, locale=locale)  # type: ignore[arg-type]
+
+
+def action_rows(
+    views: list[ActionView], section: str | None = None
+) -> list[list[InlineKeyboardButton]]:
+    """An action registry's buttons: one row each, an account's side by side."""
+    rows: list[list[InlineKeyboardButton]] = []
+    last_row: str | None = None
+    for view in views:
+        if view.section != section:
+            continue
+        short = {"user": "u", "account": "a", "chat": "c"}[view.scope]
+        button = InlineKeyboardButton(
+            text=view.label, callback_data=f"a:x:{short}:{view.target}:{view.id}:0"
+        )
+        if rows and view.row == last_row:
+            rows[-1].append(button)
+        else:
+            rows.append([button])
+        last_row = view.row
+    return rows
 
 
 # Plain platform names for the confirm prompt's own sentence — distinct
@@ -680,12 +511,6 @@ async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeybo
     return _("admin-chats-header"), keyboard
 
 
-def _digest_label(threshold: int, _: Callable[..., str]) -> str:
-    if threshold >= DIGEST_NEVER:
-        return _("admin-digest-never")
-    return _("admin-digest-from", value=threshold)
-
-
 async def render_chat_card(
     repo: Repo, chat_id: int, *, locale: str, section: str | None = None
 ) -> tuple[str, InlineKeyboardMarkup]:
@@ -716,9 +541,7 @@ async def render_chat_card(
         summary=_("admin-yes") if chat.daily_summary else _("admin-no"),
         time=chat.daily_summary_time,
         offset=zone_label,
-        min_score=chat.min_gamerscore,
         flood=flood_label,
-        digest=_digest_label(chat.digest_threshold, _),
         locale_name=locale_name(chat.locale),
         names=(
             _("admin-subscribers-list", names=", ".join(names))
@@ -728,141 +551,42 @@ async def render_chat_card(
     )
     builder = InlineKeyboardBuilder()
     back_to_card = InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}")
-    summary_state = _("admin-enabled") if chat.daily_summary else _("admin-disabled-state")
 
-    if section == "summary":
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-chat-summary-button", state=summary_state),
-                callback_data=f"a:cds:{chat_id}",
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-chat-time-button", time=chat.daily_summary_time, offset=zone_label),
-                callback_data=f"a:ctime:{chat_id}",
-            )
-        )
-        builder.row(back_to_card)
-        return text, builder.as_markup()
-
-    if section == "flood":
-        builder.row(
-            InlineKeyboardButton(
-                text=_(
-                    "admin-chat-flood-toggle-button",
-                    state=_("admin-enabled") if chat.flood_limit > 0 else _("admin-disabled-state"),
-                ),
-                callback_data=f"a:cfltoggle:{chat_id}",
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-chat-flood-button", limit=chat.flood_limit),
-                callback_data=f"a:cfl:{chat_id}",
-            ),
-            InlineKeyboardButton(
-                text=_("admin-chat-flood-window-button", window=chat.flood_window_minutes),
-                callback_data=f"a:cflw:{chat_id}",
-            ),
-        )
-        builder.row(back_to_card)
-        return text, builder.as_markup()
-
-    if section == "digest":
-        # How many achievements of one person at once make one digest —
-        # the chat's, since #126 (it was each person's, per subscription).
-        builder.row(
-            *[
-                InlineKeyboardButton(
-                    text=("✅ " if value == chat.digest_threshold else "")
-                    + (_("admin-digest-never") if value >= DIGEST_NEVER else str(value)),
-                    callback_data=f"a:cdig:{chat_id}:{value}",
-                )
-                for value in DIGEST_CHOICES[:4]
-            ]
-        )
-        builder.row(
-            *[
-                InlineKeyboardButton(
-                    text=("✅ " if value == chat.digest_threshold else "")
-                    + (_("admin-digest-never") if value >= DIGEST_NEVER else str(value)),
-                    callback_data=f"a:cdig:{chat_id}:{value}",
-                )
-                for value in DIGEST_CHOICES[4:]
-            ]
-        )
+    if section in GROUPS["chat"]:
+        # A group of the chat's settings, drawn from the registry (#176) under
+        # the card's text, which stays whole.
+        current = await registry_values(repo, "chat", chat)
+        rows = setting_rows("chat", section, current, locale=locale, chat_id=chat_id)
+        for row in rows:
+            builder.row(*row)
         builder.row(back_to_card)
         return text, builder.as_markup()
 
     if section == "messages":
-        # One wipe action per row here: these are the destructive ones, and a
-        # cramped row of four 🗑 buttons was exactly what made them easy to
-        # mistap (2026-09-11, user request).
-        builder.row(
-            InlineKeyboardButton(text=_("admin-delete-last"), callback_data=f"a:cdellast:{chat_id}")
-        )
-        builder.row(
-            InlineKeyboardButton(text=_("admin-wipe-bot-24h"), callback_data=f"a:cwipe:{chat_id}")
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-wipe-system-24h"), callback_data=f"a:cswipe:{chat_id}"
-            )
-        )
-        builder.row(
-            InlineKeyboardButton(
-                text=_("admin-wipe-system-all"), callback_data=f"a:cswipeall:{chat_id}"
-            )
-        )
+        # One action per row: the wipes are the destructive ones, and a
+        # cramped row of four 🗑 buttons made them easy to mistap (2026-09-11).
+        views = await _actions(repo, "chat", Target(chat_id=chat_id), locale)
+        for row in action_rows(views, "messages"):
+            builder.row(*row)
         builder.row(back_to_card)
         return text, builder.as_markup()
 
-    # The root card: one entry per group, each carrying the state a person
-    # would otherwise have to open the submenu to read.
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-digest-button", digest=_digest_label(chat.digest_threshold, _)),
-            callback_data=f"a:mdig:{chat_id}",
+    # The root card: one entry per group of settings (the registry's), then
+    # the actions.
+    for group in GROUPS["chat"]:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{group_label('chat', group, locale=locale)} ▸",
+                callback_data=f"a:cg:{chat_id}:{group}",
+            )
         )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-summary-menu-button", state=summary_state),
-            callback_data=f"a:msum:{chat_id}",
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-flood-menu-button", value=flood_label),
-            callback_data=f"a:mflood:{chat_id}",
-        )
-    )
-    # The chat's own language (#48) — a group cannot be per-viewer, so this
-    # is one shared setting, currently the super-admin's to move (issue #47
-    # is about handing every chat setting to a chat admin, this one too).
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-chat-locale-button", name=locale_name(chat.locale)),
-            callback_data=f"a:cloc:{chat_id}",
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-disable-chat") if chat.is_active else _("admin-enable-chat"),
-            callback_data=f"a:coff:{chat_id}",
-        )
-    )
     builder.row(
         InlineKeyboardButton(
             text=_("admin-chat-messages-menu-button"), callback_data=f"a:mdel:{chat_id}"
         )
     )
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-send-promo-to-chat"), callback_data=f"a:cpromo:{chat_id}"
-        )
-    )
+    for row in action_rows(await _actions(repo, "chat", Target(chat_id=chat_id), locale)):
+        builder.row(*row)
     builder.row(InlineKeyboardButton(text=_("admin-back-to-chats"), callback_data="a:chats"))
     return text, builder.as_markup()
 
@@ -906,231 +630,13 @@ def _note(user: AdminUserRow, *, locale: str) -> str:
     return ""
 
 
-# ---- the screens that ask for one typed value, and the confirmations ----
-#
-# Each of these used to be built inside its own handler (#63's last
-# leftovers). They are one shape: a prompt saying what is set now and what
-# is allowed, and a single way back — the flow's state ("who is typing
-# what") stays with the handler, because it is not layout.
-
-
-async def render_limits(repo: Repo, *, locale: str) -> Screen:
-    """Every global numeric setting with its current value, each row opening
-    its own input — a settings list rather than a menu you have to walk to
-    find out what is set."""
-    _ = translator("admin", locale)
-    # The value is read before the rows are built, not inside the loop that
-    # builds them: a label here is a setting *and* what it is currently set
-    # to, and only this screen's own rows know how to say that.
-    settings = [
-        (key, spec, await repo.get_app_setting(key, str(spec.default)))
-        for key, spec in NUMERIC_SETTINGS.items()
-    ]
-    show_links = await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT))
-    rows = [
-        [
-            InlineKeyboardButton(
-                text=_("admin-rare-row", value=f"{await rare_threshold(repo):g}"),
-                callback_data="a:rare",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=_("admin-show-links", visible=_("admin-yes") if show_links else _("admin-no")),
-                callback_data="a:showlinks",
-            )
-        ],
-        *button_rows(
-            settings,
-            lambda item: (
-                f"{_setting_label(item[1], locale=locale)}: "
-                f"{_format_limit(item[0], item[2], locale=locale)} ▸"
-            ),
-            lambda item: f"a:limit:{item[0]}",
-        ),
-    ]
-    keyboard = InlineListing(rows=rows, tail=_back_row(locale=locale)).markup()
-    return Screen(_("admin-limits-screen"), keyboard)
-
-
-async def render_limit(repo: Repo, key: str, *, locale: str) -> Screen:
-    _ = translator("admin", locale)
-    spec = NUMERIC_SETTINGS[key]
-    current = await repo.get_app_setting(key, str(spec.default))
-    # What a 0 means for *this* setting, spelled out only where 0 is allowed
-    # at all. This line raised TypeError from 2026-09-11 until #63's own
-    # audit found it: the locale ended up inside the f-string instead of in
-    # the call, so every limit whose minimum is 0 — the two list caps — blew
-    # up the moment the screen was opened.
-    zero_hint = f" (0 — {_format_limit(key, '0', locale=locale)})" if spec.min == 0 else ""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
-    return Screen(
-        _(
-            "admin-limit-prompt",
-            label=_setting_label(spec, locale=locale),
-            current=_format_limit(key, current, locale=locale),
-            minimum=spec.min,
-            maximum=spec.max,
-            zero_hint=zero_hint,
-        ),
-        builder.as_markup(),
-    )
-
-
-def _chat_input_screen(key: str, chat_id: int, *, locale: str, **fields: object) -> Screen:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
-    return Screen(_(key, **fields), builder.as_markup())
-
-
-async def render_rare_prompt(repo: Repo, *, locale: str) -> Screen:
-    """The rarity threshold, one for every chat (owner, 2026-10-01)."""
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:limits"))
-    return Screen(
-        _("admin-rare-prompt", value=f"{await rare_threshold(repo):g}"), builder.as_markup()
-    )
-
-
-def render_flood_limit_prompt(chat: ChatTarget, *, locale: str) -> Screen:
-    return _chat_input_screen(
-        "admin-chat-flood-prompt",
-        chat.chat_id,
-        locale=locale,
-        title=chat.title or chat.chat_id,
-        value=chat.flood_limit,
-        minimum=FLOOD_LIMIT_MIN,
-        maximum=FLOOD_LIMIT_MAX,
-    )
-
-
-def render_flood_window_prompt(chat: ChatTarget, *, locale: str) -> Screen:
-    return _chat_input_screen(
-        "admin-chat-flood-window-prompt",
-        chat.chat_id,
-        locale=locale,
-        title=chat.title or chat.chat_id,
-        value=chat.flood_window_minutes,
-        minimum=FLOOD_WINDOW_MIN,
-        maximum=FLOOD_WINDOW_MAX,
-    )
-
-
-def render_zone_manual_prompt(chat: ChatTarget, *, locale: str) -> Screen:
-    """Back goes to the zone grid this was opened from, not to the card."""
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:ctz:{chat.chat_id}"))
-    return Screen(
-        _(
-            "admin-chat-zone-manual-prompt",
-            title=chat.title or chat.chat_id,
-            offset=format_offset(chat.tz_offset_min),
-        ),
-        builder.as_markup(),
-    )
-
-
-def render_wipe_prompt(chat: ChatTarget, count: int, hours: int, *, locale: str) -> Screen:
-    """The prompt says how many messages it is about to take — a destructive
-    action states its own size before it happens."""
+def render_action_confirm(confirm: Confirm, *, yes: str, back: str, locale: str) -> Screen:
+    """One confirmation of a super-admin action (`services/admin_actions.py`):
+    its words, its "yes", and the way back."""
     _ = translator("admin", locale)
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(
-            text=_("admin-confirm-delete"), callback_data=f"a:cwipey:{chat.chat_id}"
-        )
+        InlineKeyboardButton(text=confirm.yes, callback_data=yes),
+        InlineKeyboardButton(text=_("admin-cancel"), callback_data=back),
     )
-    builder.row(
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat.chat_id}")
-    )
-    return Screen(
-        _("admin-wipe-prompt", count=count, title=chat.title or chat.chat_id, hours=hours),
-        builder.as_markup(),
-    )
-
-
-RESET_PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
-
-
-def render_reset_confirm(
-    platform: str,
-    ref: str,
-    *,
-    locale: str,
-    account_id: str | None = None,
-    account_name: str | None = None,
-) -> Screen:
-    """ "Сброс базы" is destructive and not undoable (2026-09-08 user
-    request) — same one-tap-confirm shape as /disconnect_steam's own
-    prompt, not an instant action behind a single tap. `account_id` picks
-    one of several PSN accounts (#10)."""
-    _ = translator("admin", locale)
-    target = f"{ref}:{account_id}" if account_id else ref
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-reset-confirm-yes"), callback_data=f"a:resetok:{platform}:{target}"
-        ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:{ref}"),
-    )
-    name = RESET_PLATFORM_NAMES[platform]
-    if account_name:
-        name = f"{name}: {account_name}"
-    return Screen(_("admin-reset-confirm-prompt", platform=name), builder.as_markup())
-
-
-def render_system_wipe_prompt(
-    chat: ChatTarget, count: int, confirm_callback: str, *, locale: str
-) -> Screen:
-    """Same shape as the 24-hour wipe above, for the "system messages only"
-    pair — the confirm target differs, the prompt does not."""
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text=_("admin-confirm-delete"), callback_data=confirm_callback)
-    )
-    builder.row(
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:chat:{chat.chat_id}")
-    )
-    return Screen(
-        _("admin-system-wipe-prompt", count=count, title=chat.title or chat.chat_id),
-        builder.as_markup(),
-    )
-
-
-def render_admin_user_delete_confirm_1(
-    name: str, person: int, tg_id: int | None, *, locale: str
-) -> Screen:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-delete-confirm-1-yes"), callback_data=f"a:udel1:p{person}"
-        ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:p{person}"),
-    )
-    return Screen(
-        _("admin-delete-confirm-1", name=name, tg_id=str(tg_id) if tg_id else "—"),
-        builder.as_markup(),
-    )
-
-
-def render_admin_user_delete_confirm_2(
-    name: str, person: int, tg_id: int | None, *, locale: str
-) -> Screen:
-    _ = translator("admin", locale)
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=_("admin-delete-confirm-2-yes"), callback_data=f"a:udel2:p{person}"
-        ),
-        InlineKeyboardButton(text=_("admin-cancel"), callback_data=f"a:u:p{person}"),
-    )
-    return Screen(
-        _("admin-delete-confirm-2", name=name, tg_id=str(tg_id) if tg_id else "—"),
-        builder.as_markup(),
-    )
+    return Screen(confirm.text, builder.as_markup())

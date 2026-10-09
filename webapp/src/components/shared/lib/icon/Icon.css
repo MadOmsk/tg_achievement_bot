@@ -1,4 +1,4 @@
-/* Same shape as .person-back — no ring at rest, only on tap. */
+/* Same as .person-back: a bare glyph, no ring even on tap. */
 .icon-btn {
   width: 44px;
   height: 44px;
@@ -24,7 +24,6 @@
 }
 
 .icon-btn:active {
-  background: rgba(255, 255, 255, 0.16);
   transform: scale(0.92);
 }
 
@@ -32,12 +31,10 @@
   flex: 1;
 }
 
-/* The back arrow's own box already carries visual padding (a circle drawn
- * well inside its 44px square) — pulled toward the edge the same amount
- * .person-back is, so every "back" header in the app reads at one distance
- * from the edge. */
+/* The arrow sits well inside its 44px square: pulled out so its tip lines
+ * up with the page's content below, as .person-back's does. */
 .page-head .icon-btn {
-  margin-left: -8px;
+  margin-left: -15px;
 }
 
 .chip .mark {

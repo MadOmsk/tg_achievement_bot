@@ -26,8 +26,7 @@ from bot.db.repo import AdminPanelRefreshRow, Repo
 from bot.poller.fetcher import Fetcher
 from bot.poller.service_health import DEFAULT_KEY_CHECK_INTERVAL_MIN, KEY_CHECK_INTERVAL_KEY
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services.psn.auth import PsnAuth
-from bot.services.steam.auth import SteamAuth
+from bot.services.admin_credentials import AdminCredentials
 from bot.util import parse_iso, utcnow
 from bot.views.admin_home import render_admin_home
 
@@ -41,15 +40,13 @@ class AdminPanelRefresh:
         repo: Repo,
         fetcher: Fetcher,
         steam_fetcher: SteamFetcher,
-        psn_auth: PsnAuth,
-        steam_auth: SteamAuth,
+        credentials: AdminCredentials,
     ) -> None:
         self._bot = bot
         self._repo = repo
         self._fetcher = fetcher
         self._steam_fetcher = steam_fetcher
-        self._psn_auth = psn_auth
-        self._steam_auth = steam_auth
+        self._credentials = credentials
 
     async def tick(self) -> None:
         interval = await self._repo.get_int_setting(
@@ -71,8 +68,7 @@ class AdminPanelRefresh:
             self._repo,
             self._fetcher,
             self._steam_fetcher,
-            self._psn_auth,
-            self._steam_auth,
+            self._credentials,
             locale=await self._repo.user_locale(await self._repo.person_id(row.admin_id)),
         )
         try:

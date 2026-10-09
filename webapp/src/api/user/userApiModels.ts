@@ -107,7 +107,7 @@ export type MeResponse = {
   username: string | null;
   first_name: string | null;
   last_name: string | null;
-  is_admin: boolean;
+  is_superadmin: boolean;
   is_excluded: boolean;
   settings: {
     locale: string;
@@ -224,3 +224,13 @@ export type InvitesResponse = {
   link_base: string | null;
   items: InviteItem[];
 };
+
+/** Passkeys (owner, 2026-10-08): one's keys, and whether keys work on this host. */
+export type PasskeyItem = {
+  id: string;
+  name: string | null;
+  created_at: string;
+  last_used_at: string | null;
+};
+
+export type PasskeysResponse = { available: boolean; keys: PasskeyItem[] };

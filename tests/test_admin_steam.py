@@ -6,6 +6,7 @@ both platforms only ever saw their Xbox achievement count in the list."""
 from __future__ import annotations
 
 from bot.db.repo import AchievementRow, AdminUserRow, Repo
+from bot.services.admin_credentials import AdminCredentials
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
@@ -236,8 +237,7 @@ async def test_home_does_not_count_a_steam_only_person_as_a_broken_xbox_login(
         repo,
         _FakeUsageFetcher(),
         _FakeUsageFetcher(),
-        PsnAuth(repo, cipher),
-        SteamAuth(repo, cipher),
+        AdminCredentials(psn=PsnAuth(repo, cipher), steam=SteamAuth(repo, cipher)),
         locale="ru",
     )  # type: ignore[arg-type]
 

@@ -252,7 +252,6 @@ class TitleProgress:
 class ChatTarget:
     chat_id: int
     title: str | None
-    min_gamerscore: int
     muted_title_ids: list[str]
     # Always explicit per chat, no shared fallback (SPEC 5.5, 5.7) — every
     # chat gets a real value the moment it's created.

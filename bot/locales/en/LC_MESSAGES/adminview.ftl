@@ -15,7 +15,7 @@ adminview-steam-not-configured = ⚠️ not configured — set it in “🔑 Pla
 
 # Admin home
 adminview-home =
-    ⚙️ Administration  ·  updated { $updated }
+    ⚙️ Super-admin panel  ·  updated { $updated }
 
     Users: { $users } (excluded: { $excluded })
       XBOX:  { $xbox_linked } (signed in: { $xbox_active }, signed out: { $xbox_broken })
@@ -29,8 +29,6 @@ adminview-home =
     PSN requests in the last 24h: { $psn_requests }
     Sign-in emails: { $mail_usage }
 adminview-mail-usage = an hour { $hour }/{ $hour_limit } · a day { $day }/{ $day_limit }
-adminview-btn-newusers = 👤 New users ▸
-adminview-btn-limits = ⚙️ Global settings ▸
 adminview-btn-users = Users ▸
 adminview-btn-chats = Chats ▸
 adminview-btn-keys = 🔑 Platform keys ▸

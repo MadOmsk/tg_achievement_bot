@@ -277,11 +277,9 @@ class Publisher:
             # language, so this must not mutate it.
             allowed = await localize_descriptions(self._repo, allowed, chat.locale)
 
-            # The digest decision is per chat and happens after filtering:
-            # what one chat sees as five achievements may be one in another
-            # (digest_threshold lives on the subscription now, not on
-            # user_settings — Follow-up, 2026-09-05, same move as
-            # rarity_mode before it).
+            # The digest decision happens per chat, after filtering: what one
+            # chat sees as five achievements may be one in another. The size
+            # itself is one for every chat (owner, 2026-10-08).
             progress = await self._progress_for(allowed, xuid)
             missing = [a.title_id for a in allowed if not getattr(a, "game_platforms", None)]
             if missing:

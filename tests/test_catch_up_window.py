@@ -113,7 +113,7 @@ class _FakeFetcher:
 def _settings(**kwargs) -> Settings:
     return Settings(
         bot_token="1:x",
-        admin_tg_ids=[1],
+        superadmin_tg_ids=[1],
         azure_client_id="x",
         azure_client_secret="x",
         oauth_redirect_url="https://example.test/auth/callback",

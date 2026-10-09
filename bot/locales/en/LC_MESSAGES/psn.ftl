@@ -1,5 +1,5 @@
 # Connection and access
-psn-not-configured = PSN linking isn't set up yet — ask the administrator.
+psn-not-configured = PSN linking isn't set up yet — ask the super-admin.
 psn-connect-group-redirect = Message me privately — we'll connect PSN there.
 psn-private-only = This command works in a DM.
 # Several PSN accounts per person (#10).
@@ -18,7 +18,7 @@ psn-accounts-button = 🔵 PSN accounts ▸
 psn-link-prompt = Send me your PSN Online ID — I'll link it.
 
     ⚠️ Your trophy privacy has to be open, or I can't read them: in the PS App → Settings → Privacy → “Trophy level and game collection” → “Anyone”.
-psn-service-token-dead = PSN is unavailable right now — the service login has expired, please tell the administrator.
+psn-service-token-dead = PSN is unavailable right now — the service login has expired, please tell the super-admin.
 psn-profile-not-found = I couldn't find that PSN Online ID: { $raw }. Check the spelling and try again.
 psn-profile-private = The profile exists, but its trophies are hidden — I can't read them. Open the privacy setting and try again: PS App → Settings → Privacy → “Trophy level and game collection” → “Anyone”.
 

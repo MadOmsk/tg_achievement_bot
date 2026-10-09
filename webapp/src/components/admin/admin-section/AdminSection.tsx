@@ -14,8 +14,7 @@ export function AdminSection({
   const sections = [
     { screen: { name: ADMIN_SCREENS.USERS }, icon: "people", label: "adminUsers", sub: "adminUsersSub" },
     { screen: { name: ADMIN_SCREENS.CHATS }, icon: "chat", label: "adminChats", sub: "adminChatsSub" },
-    { screen: { name: ADMIN_SCREENS.DEFAULTS }, icon: "shield", label: "adminDefaults", sub: "adminDefaultsSub" },
-    { screen: { name: ADMIN_SCREENS.LIMITS }, icon: "gauge", label: "adminLimits", sub: "adminLimitsSub" },
+    { screen: { name: ADMIN_SCREENS.SETTINGS }, icon: "gauge", label: "adminSettings", sub: "adminSettingsSub" },
     { screen: { name: ADMIN_SCREENS.KEYS }, icon: "key", label: "adminKeys", sub: "adminKeysSub" },
   ] as const;
 

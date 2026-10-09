@@ -134,21 +134,21 @@ async def test_the_mode_is_one_for_every_chat(repo: Repo) -> None:
     assert targets == {CHAT_A: "rare", CHAT_B: "rare"}
 
 
-async def test_the_digest_size_is_the_chats(repo: Repo) -> None:
-    """Set by the chat's admin (#126), the same for everybody publishing there."""
+async def test_the_digest_size_is_one_for_every_chat(repo: Repo) -> None:
+    """One size for every chat (owner, 2026-10-08): the super-admin's global
+    setting, whatever a chat's own old column says."""
     await repo.ensure_user(TG_ID, "igor")
     await render_chat_card(repo, CHAT_A, "Чат А")
     await render_chat_card(repo, CHAT_B, "Чат Б")
     await repo.subscribe(CHAT_A, await repo.person_id(TG_ID))
     await repo.subscribe(CHAT_B, await repo.person_id(TG_ID))
 
-    await repo.update_chat_settings(CHAT_A, digest_threshold=5)
+    targets = await repo.publication_targets(await repo.person_id(TG_ID))
+    assert {t.chat_id: t.digest_threshold for t in targets} == {CHAT_A: 3, CHAT_B: 3}
 
-    targets = {
-        t.chat_id: t.digest_threshold
-        for t in await repo.publication_targets(await repo.person_id(TG_ID))
-    }
-    assert targets == {CHAT_A: 5, CHAT_B: 3}
+    await repo.set_app_setting("digest_threshold", "5")
+    targets = await repo.publication_targets(await repo.person_id(TG_ID))
+    assert {t.chat_id: t.digest_threshold for t in targets} == {CHAT_A: 5, CHAT_B: 5}
 
 
 async def test_migration_063_moves_the_mode_to_the_person_and_the_digest_to_the_chat(

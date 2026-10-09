@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from bot.db.repo import Repo
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.service_health import KEY_CHECK_INTERVAL_KEY
+from bot.services.admin_credentials import AdminCredentials
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
@@ -49,8 +50,7 @@ def _refresh(bot: FakeBot, repo: Repo, cipher: TokenCipher) -> AdminPanelRefresh
         repo,
         _FakeUsageFetcher(),
         _FakeUsageFetcher(),
-        PsnAuth(repo, cipher),
-        SteamAuth(repo, cipher),
+        AdminCredentials(psn=PsnAuth(repo, cipher), steam=SteamAuth(repo, cipher)),
     )  # type: ignore[arg-type]
 
 
@@ -82,7 +82,7 @@ async def test_tick_refreshes_a_screen_past_its_interval(repo: Repo, cipher: Tok
     assert len(bot.edits) == 1
     chat_id, message_id, text = bot.edits[0]
     assert (chat_id, message_id) == (ADMIN_ID, 42)
-    assert "Администрирование" in text
+    assert "Панель суперадмина" in text
     rows = await repo.all_admin_panel_refreshes()
     assert rows[0].last_updated_at != rows[0].created_at
 

@@ -12,29 +12,24 @@ export type AdminHome = {
   steam_key: string;
   psn_key: string;
   psn_requests: number;
+  /** Sign-in emails sent, against the app's hourly cap and the mail service's daily one. */
+  mail: { hour: number; hour_limit: number; day: number; day_limit: number };
+  credentials: AdminCredential[];
 };
 
-export type AdminKeys = {
-  steam: boolean;
-  psn: boolean;
-  anthropic: boolean;
-  youtube: boolean;
-};
-
-export type AdminLimit = {
-  key: string;
+/** One shared credential, from the server's registry (#176): the app draws
+ * whatever it lists, labels and hints included. */
+export type AdminCredential = {
+  name: string;
   label: string;
-  value: number;
-  min: number;
-  max: number;
-  zero_means: "unlimited" | "off" | null;
+  hint: string;
+  configured: boolean;
+  /** "active" / "invalid" where a health check watches it, else null. */
+  status: string | null;
+  checked_at: string | null;
 };
 
-export type AdminDefaults = {
-  rarity_mode: string;
-  show_profile_links: boolean;
-  rare_threshold_percent: number;
-};
+export type AdminKeys = { keys: AdminCredential[] };
 
 export type AdminUserRow = {
   person_id: number;
@@ -76,14 +71,40 @@ export type AdminChatRow = {
   title: string | null;
   is_active: boolean;
   subscribers: number;
-  rare_threshold_percent: number;
-  daily_summary: boolean;
-  daily_summary_time: string;
-  tz_offset_min: number;
-  min_gamerscore: number;
-  flood_limit: number;
-  flood_window_minutes: number;
-  /** One person's achievements at once that make one digest; 99 = never (#126). */
-  digest_threshold: number;
-  locale: string;
+};
+
+/** One setting of the server's registry (#176), as both admin panels draw it. */
+export type AdminSetting = {
+  key: string;
+  label: string;
+  hint: string | null;
+  kind: "int" | "float" | "bool" | "choice" | "hour" | "tz";
+  value: number | string | boolean;
+  min: number | null;
+  max: number | null;
+  zero_means: "unlimited" | "off" | "no_delay" | null;
+  /** The values a pick-one setting takes; empty for a number or a switch. */
+  options: Array<{ value: number | string; label: string }>;
+};
+
+export type AdminSettingsGroup = { id: string; title: string; items: AdminSetting[] };
+export type AdminSettings = { groups: AdminSettingsGroup[] };
+
+/** One super-admin action of a card, from the server's registry (#176). */
+export type AdminAction = {
+  id: string;
+  scope: "user" | "account" | "chat";
+  target: string;
+  label: string;
+  danger: boolean;
+  section: string | null;
+  section_title: string | null;
+};
+
+export type AdminActionDone = { ok: boolean; text: string | null; gone: boolean };
+
+/** One step of an action: the next confirmation to ask, or what it did. */
+export type AdminActionStep = {
+  confirm?: { text: string; yes: string; step: number };
+  done?: AdminActionDone;
 };

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from bot.db.repo import Repo
 from bot.poller.reminders import ReminderJob, keyboard
-from bot.services.notify import AdminNotifier
+from bot.services.notify import SuperadminNotifier
 
 ADMIN_ID = 500
 USER_ID = 501
@@ -65,7 +65,7 @@ async def test_admin_notifications_follow_the_admins_own_language(repo: Repo) ->
     await repo.ensure_user(USER_ID, username="igor")
 
     bot = _FakeBot()
-    await AdminNotifier(bot, repo, [ADMIN_ID]).user_connected(  # type: ignore[arg-type]
+    await SuperadminNotifier(bot, repo, [ADMIN_ID]).user_connected(  # type: ignore[arg-type]
         await repo.person_id(USER_ID), "MadOmsk", is_new=True
     )
 
@@ -83,7 +83,7 @@ async def test_two_admins_each_get_their_own_language(repo: Repo) -> None:
     await repo.update_user_settings(await repo.person_id(second_admin), locale="ru")
 
     bot = _FakeBot()
-    notifier = AdminNotifier(bot, repo, [ADMIN_ID, second_admin])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [ADMIN_ID, second_admin])  # type: ignore[arg-type]
     await notifier.translation_key_dead()
 
     texts = dict(bot.sent)

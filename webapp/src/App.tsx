@@ -32,6 +32,7 @@ import {
   preloadTitleSheet,
 } from "./components/game/game-open-provider/GameOpenProvider";
 import "./components/game/game.css";
+import { NewsPostLoader } from "./components/game/news-page/NewsPostLoader";
 import { t, type Locale } from "./i18n";
 import { ConnectForm, NicknameForm, Settings, type PlatNotes } from "./screens/me";
 import { People } from "./screens/people";
@@ -124,6 +125,9 @@ function launchContext(): {
   legacyTgId: number | null;
   tab: LaunchTab;
   game: GameRef | null;
+  /** A game's post a push opens (`n=appid:gid`, owner 2026-10-08), its game
+   * in its head. */
+  news: { appid: number; gid: string; game: GameRef | null } | null;
   /** The screen a reload comes back to. */
   screen?: string;
 } {
@@ -142,7 +146,8 @@ function launchContext(): {
   // link to a game was silently broken). See bot/services/mini_app.py's
   // `_encode_game`, which this must stay in sync with.
   const parsed = /^c(-?\d+)(?:([pu])(\d+))?(?:t([a-z]+))?(?:g([A-Za-z0-9_-]+))?$/.exec(start);
-  const linked = Boolean(start) || ["c", "p", "u", "t", "g"].some((key) => q.has(key));
+  const linked = Boolean(start) || ["c", "p", "u", "t", "g", "n"].some((key) => q.has(key));
+  const newsMatch = /^(\d+):(.+)$/.exec(q.get("n") ?? "");
   const place = linked ? null : savedPlace();
   if (parsed) {
     chatId ??= parsed[1];
@@ -162,31 +167,36 @@ function launchContext(): {
       legacyTgId: null,
       tab: SCREEN_NAMES.HOME,
       game: place.game,
+      news: null,
       screen: place.screen,
     };
   }
+  // Whose progress the game page opens on: the achievement's own owner, not
+  // necessarily whoever tapped the link — the name is filled in once the game
+  // page's own fetch resolves who that is (see TitleSheet).
+  const gameRef: GameRef | null =
+    game && colon > 0 && colon < game.length - 1
+      ? {
+          platform: game.slice(0, colon),
+          title_id: game.slice(colon + 1),
+          // A post's button from before person ids names a Telegram id: the
+          // game page asks by it and learns the person from the answer.
+          person: personNum
+            ? { person_id: personNum, name: "" }
+            : legacyTg
+              ? { tg_id: Number(legacyTg), name: "" }
+              : null,
+        }
+      : null;
   return {
     chatId: chatId ? Number(chatId) : null,
     personId: personNum,
     legacyTgId: legacyTg ? Number(legacyTg) : null,
     tab: asLaunchTab(tab),
-    // Whose progress the game page opens on: the achievement's own owner,
-    // not necessarily whoever tapped the link — the name is filled in once
-    // the game page's own fetch resolves who that is (see TitleSheet).
-    game:
-      game && colon > 0 && colon < game.length - 1
-        ? {
-            platform: game.slice(0, colon),
-            title_id: game.slice(colon + 1),
-            // A post's button from before person ids names a Telegram id: the
-            // game page asks by it and learns the person from the answer.
-            person: personNum
-              ? { person_id: personNum, name: "" }
-              : legacyTg
-                ? { tg_id: Number(legacyTg), name: "" }
-                : null,
-          }
-        : null,
+    // A push about a game's post opens the post, its game a tap away in its
+    // head — not the game page under it, which took the phone's first back.
+    news: newsMatch ? { appid: Number(newsMatch[1]), gid: newsMatch[2], game: gameRef } : null,
+    game: newsMatch ? null : gameRef,
   };
 }
 
@@ -220,6 +230,8 @@ export function App() {
   // It is built once the game page is left.
   const [homeWanted, setHomeWanted] = useState(launch.game === null);
   const [openGameRef, setOpenGameRef] = useState<GameRef | null>(launch.game);
+  // A push about a game's post opens the post itself over its game.
+  const [launchNews, setLaunchNews] = useState(launch.news);
   const onGameChange = useCallback((game: GameRef | null) => {
     if (!game) setHomeWanted(true);
     setOpenGameRef(game);
@@ -315,12 +327,12 @@ export function App() {
     // Once, for the link the app was opened with.
   }, [signedIn]);
 
-  const isAdminUser = state.status === "ok" && state.me.is_admin;
+  const isSuperadmin = state.status === "ok" && state.me.is_superadmin;
   useEffect(() => {
-    if (!isAdminUser) return;
+    if (!isSuperadmin) return;
     const id = window.setTimeout(() => void loadAdmin(), PRELOAD_AFTER_MS);
     return () => window.clearTimeout(id);
-  }, [isAdminUser]);
+  }, [isSuperadmin]);
 
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
@@ -514,6 +526,16 @@ export function App() {
       {busy && <div className="busy-bar" />}
       <Toaster />
       <ImageViewerHost closeLabel={t(locale, "close")} />
+      {launchNews && (
+        <NewsPostLoader
+          data={data}
+          locale={locale}
+          appid={launchNews.appid}
+          gid={launchNews.gid}
+          gameRef={launchNews.game}
+          onClose={() => setLaunchNews(null)}
+        />
+      )}
 
       {/* Kept mounted (just hidden) off the club pane, not unmounted:
           leaving it and coming back — e.g. through Settings — used to reset
@@ -572,7 +594,7 @@ export function App() {
           data={data}
           onFlash={setFlash}
           onAdmin={
-            me.is_admin
+            me.is_superadmin
               ? (next) => {
                   setAdminScreen(next);
                   setScreen(SCREENS.admin);

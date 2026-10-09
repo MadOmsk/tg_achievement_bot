@@ -20,6 +20,7 @@ from bot.db.repo._models import (
 )
 from bot.db.repo._refresh import ADMIN_PANEL
 from bot.db.repo._sql import (
+    GLOBAL_DIGEST_THRESHOLD,
     GLOBAL_RARE_THRESHOLD,
     HANDLE_SHOWN,
     XBOX_ACCOUNT,
@@ -145,11 +146,11 @@ class _AdminRepo:
 
     async def admin_chats(self) -> list[ChatTarget]:
         cursor = await self._conn.execute(
-            "SELECT c.chat_id, c.title, c.is_active, s.min_gamerscore,"
+            "SELECT c.chat_id, c.title, c.is_active,"
             "       s.daily_summary, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
-            "       s.locale, s.digest_threshold,"
+            f"       s.locale, {GLOBAL_DIGEST_THRESHOLD} AS digest_threshold,"
             "       (SELECT COUNT(*) FROM subscriptions WHERE chat_id = c.chat_id) AS subs "
             "FROM chats c JOIN chat_settings s ON s.chat_id = c.chat_id "
             "ORDER BY c.is_active DESC, c.title"
@@ -158,7 +159,6 @@ class _AdminRepo:
             ChatTarget(
                 chat_id=row["chat_id"],
                 title=row["title"],
-                min_gamerscore=row["min_gamerscore"],
                 muted_title_ids=json.loads(row["muted_title_ids"] or "[]"),
                 rare_threshold_percent=row["rare_threshold_percent"],
                 daily_summary_time=row["daily_summary_time"],
@@ -176,14 +176,12 @@ class _AdminRepo:
 
     async def update_chat_settings(self, chat_id: int, **fields: Any) -> None:
         allowed = {
-            "min_gamerscore",
             "daily_summary",
             "daily_summary_time",
             "tz_offset_min",
             "flood_limit",
             "flood_window_minutes",
             "locale",
-            "digest_threshold",
         }
         unknown = set(fields) - allowed
         if unknown:

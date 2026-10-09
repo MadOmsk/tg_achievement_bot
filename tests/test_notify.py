@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bot.db.repo import Repo
-from bot.services.notify import AdminNotifier
+from bot.services.notify import SuperadminNotifier
 
 TG_ID = 42
 
@@ -22,7 +22,7 @@ class FakeBot:
 async def test_every_admin_is_told(repo: Repo) -> None:
     await repo.ensure_user(TG_ID, "igor")
     bot = FakeBot()
-    notifier = AdminNotifier(bot, repo, [1, 2])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1, 2])  # type: ignore[arg-type]
 
     await notifier.user_connected(await repo.person_id(TG_ID), "Mad Omsk", is_new=True)
 
@@ -34,7 +34,7 @@ async def test_every_admin_is_told(repo: Repo) -> None:
 async def test_reconnect_is_worded_differently(repo: Repo) -> None:
     await repo.ensure_user(TG_ID)
     bot = FakeBot()
-    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1])  # type: ignore[arg-type]
 
     await notifier.user_connected(await repo.person_id(TG_ID), "Mad Omsk", is_new=False)
 
@@ -46,7 +46,7 @@ async def test_one_blocked_admin_does_not_stop_the_rest(repo: Repo) -> None:
     """The notification is a side effect; it must not break what triggered it."""
     await repo.ensure_user(TG_ID)
     bot = FakeBot(failing={1})
-    notifier = AdminNotifier(bot, repo, [1, 2])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1, 2])  # type: ignore[arg-type]
 
     await notifier.token_dead(await repo.person_id(TG_ID))
 
@@ -59,16 +59,16 @@ async def test_service_key_dead_names_the_platform_and_the_fix(repo: Repo) -> No
     above, this is not about one person: the wording must make that clear
     for both shared-credential platforms."""
     bot = FakeBot()
-    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1])  # type: ignore[arg-type]
 
     await notifier.service_key_dead("psn")
     assert "PSN" in bot.sent[0][1]
-    assert "админ-панель" in bot.sent[0][1]
+    assert "панель суперадмина" in bot.sent[0][1]
 
     bot.sent.clear()
     await notifier.service_key_dead("steam")
     assert "Steam" in bot.sent[0][1]
-    assert "админ-панель" in bot.sent[0][1]
+    assert "панель суперадмина" in bot.sent[0][1]
 
 
 async def test_translation_key_dead_names_the_actual_consequence(repo: Repo) -> None:
@@ -76,7 +76,7 @@ async def test_translation_key_dead_names_the_actual_consequence(repo: Repo) -> 
     Anthropic dying just means new descriptions stop picking up a
     translation, nothing else breaks (2026-09-09)."""
     bot = FakeBot()
-    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1])  # type: ignore[arg-type]
 
     await notifier.translation_key_dead()
 

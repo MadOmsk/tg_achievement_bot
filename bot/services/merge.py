@@ -16,7 +16,7 @@ The rules:
   accounts add up to `MAX_PSN_ACCOUNTS`, and past that the person picks which.
 - Chats, follows and blocks, sessions, notifications and push devices move;
   settings come from the side used more recently.
-- A super-admin's Telegram is never the one let go (`ADMIN_TG_IDS` names them).
+- A super-admin's Telegram is never the one let go (`SUPERADMIN_TG_IDS` names them).
 - Somebody the bot made a moment ago — a Telegram account's first message —
   has nothing to lose and is folded in at once (`MergeSide.is_empty`).
 
@@ -61,13 +61,13 @@ class PeopleMerge:
     def __init__(
         self,
         repo: Repo,
-        is_admin: Callable[[int | None], bool],
+        is_superadmin: Callable[[int | None], bool],
         *,
         on_merged: Callable[[int, int], Awaitable[None]] | None = None,
         forget_picture: Callable[[str], None] | None = None,
     ) -> None:
         self._repo = repo
-        self._is_admin = is_admin
+        self._is_superadmin = is_superadmin
         self._on_merged = on_merged
         self._forget_picture = forget_picture
         self._offers: dict[int, _Offer] = {}
@@ -146,8 +146,8 @@ class PeopleMerge:
             }
         if k.tg_id is not None and b.tg_id is not None:
             conflicts["telegram"] = {
-                "keep": {"name": k.username, "admin": self._is_admin(k.tg_id)},
-                "absorb": {"name": b.username, "admin": self._is_admin(b.tg_id)},
+                "keep": {"name": k.username, "admin": self._is_superadmin(k.tg_id)},
+                "absorb": {"name": b.username, "admin": self._is_superadmin(b.tg_id)},
             }
         if k.email and b.email and k.email != b.email:
             conflicts["email"] = {"keep": k.email, "absorb": b.email}
@@ -173,7 +173,7 @@ class PeopleMerge:
         dropped = None
         if k.tg_id is not None and b.tg_id is not None:
             dropped = b.tg_id if choices.telegram == "keep" else k.tg_id
-        if self._is_admin(dropped):
+        if self._is_superadmin(dropped):
             raise MergeRefused("admin")
         gone = await self._repo.merge_people(keep, absorb, choices)
         self.drop(keep)

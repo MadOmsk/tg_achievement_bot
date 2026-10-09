@@ -182,6 +182,8 @@ CREATE TABLE IF NOT EXISTS user_settings (
 -- threshold that "rare" means in this chat.
 CREATE TABLE IF NOT EXISTS chat_settings (
     chat_id                INTEGER PRIMARY KEY REFERENCES chats(chat_id) ON DELETE CASCADE,
+    -- No longer read (owner, 2026-10-08): a minimum gamerscore held back
+    -- every Steam and PSN achievement, which have none.
     min_gamerscore          INTEGER NOT NULL DEFAULT 0,
     daily_summary           INTEGER NOT NULL DEFAULT 1,
     muted_title_ids         TEXT    NOT NULL DEFAULT '[]',
@@ -189,6 +191,8 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     -- This many achievements of one person at once make one digest instead
     -- of separate cards; 99 = never (#126 — it was the person's, per
     -- subscription, before).
+    -- No longer read: the digest size is one for every chat (owner,
+    -- 2026-10-08), app_settings['digest_threshold'].
     digest_threshold        INTEGER NOT NULL DEFAULT 3,
     daily_summary_time      TEXT    NOT NULL DEFAULT '20:00',
     -- Offset, not a zone name — same reasoning as user_settings.tz_offset_min:
@@ -201,7 +205,7 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     -- and accumulate instead, to be flushed as one combined digest once the
     -- window closes (poller/flood_flush.py, notification_throttle below).
     -- `flood_limit = 0` disables the filter for this chat entirely — same
-    -- "0 = off" convention as min_gamerscore/summary_top_limit.
+    -- "0 = off" convention as summary_top_limit.
     flood_limit              INTEGER NOT NULL DEFAULT 3,
     flood_window_minutes     INTEGER NOT NULL DEFAULT 60,
     -- Multi-language (#48). One locale per *chat*, not per viewer: Telegram
@@ -893,6 +897,20 @@ CREATE TABLE IF NOT EXISTS web_sessions (
     user_agent   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_web_sessions_person ON web_sessions (person_id);
+
+-- Passkeys (migration 089): a key kept on a phone or a computer that signs its
+-- person in, in place of an email's code. Only the public half is kept.
+CREATE TABLE IF NOT EXISTS passkeys (
+    id            TEXT PRIMARY KEY,
+    person_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    public_key    BLOB NOT NULL,
+    sign_count    INTEGER NOT NULL DEFAULT 0,
+    transports    TEXT,
+    name          TEXT,
+    created_at    TEXT NOT NULL,
+    last_used_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_passkeys_person ON passkeys (person_id);
 
 
 -- One-time sign-in codes sent by email (#162, migration 079). Only an HMAC of

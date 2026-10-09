@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError } from "../../../api";
 import { t, type Locale } from "../../../i18n";
+import { Icon } from "../../shared/lib";
 import "./Logins.css";
 
 // The code's own alphabet (bot/services/invites.py): no 0/O, 1/I/L look-alikes.
@@ -88,7 +89,8 @@ export function InviteCodeForm({
       {!expired && (
         <div className="email-links is-center">
           <button type="button" className="see-all" onClick={onRestart}>
-            {t(locale, "back")}
+            <Icon name="back" size={16} />
+            <span>{t(locale, "back")}</span>
           </button>
         </div>
       )}

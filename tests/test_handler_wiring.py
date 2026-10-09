@@ -36,7 +36,7 @@ INJECTABLE = {
     "steam_auth",
     "anthropic_auth",
     "youtube_auth",
-    "smtp_auth",
+    "admin_credentials",
     # PersonMiddleware (handlers/chat.py, #156)
     "person_id",
     # merging two people, shared with the Mini App (#162)

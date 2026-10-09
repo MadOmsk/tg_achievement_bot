@@ -54,7 +54,7 @@ async def build_me_payload(
     username: str | None,
     first_name: str | None,
     last_name: str | None,
-    is_admin: bool,
+    is_superadmin: bool,
 ) -> dict[str, Any]:
     if tg_id is not None:
         # The app's first call on opening: keep Telegram's names fresh.
@@ -97,7 +97,7 @@ async def build_me_payload(
         "username": username,
         "first_name": first_name,
         "last_name": last_name,
-        "is_admin": is_admin,
+        "is_superadmin": is_superadmin,
         "is_excluded": bool(user and user.is_excluded),
         "settings": {
             "locale": locale,

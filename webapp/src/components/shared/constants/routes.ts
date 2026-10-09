@@ -28,6 +28,7 @@ export const USER_ROUTES = {
 export const CLUB_ROUTES = {
   FEED: "/feed",
   NEWS: "/news",
+  NEWS_POST: "/news/post",
   ONLINE: "/online",
   SUMMARY: "/summary",
   PEOPLE: "/people",
@@ -48,14 +49,13 @@ export const ADMIN_ROUTES = {
   HOME: "",
   KEYS: "/keys",
   KEY: (name: string) => `/keys/${encodeURIComponent(name)}`,
-  LIMITS: "/limits",
-  DEFAULTS: "/defaults",
+  SETTINGS: "/settings",
   USERS: "/users",
   /** A person by their own id (#156): somebody who signed in by email has no Telegram id. */
   USER: (personId: number) => `/users/p${personId}`,
   CHATS: "/chats",
-  CHAT: (chatId: number) => `/chats/${chatId}`,
-  CHAT_ACTIONS: (chatId: number) => `/chats/${chatId}/actions`,
+  CHAT_SETTINGS: (chatId: number) => `/chats/${chatId}/settings`,
+  ACTIONS: "/actions",
 } as const;
 
 export const HLTB_ROUTES = {

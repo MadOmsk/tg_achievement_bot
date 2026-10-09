@@ -4,6 +4,7 @@ import { t, type Locale, type TranslationKey } from "../../../i18n";
 import { BackHead, Group, InfoRow, NavRow, SettingsSkel, TelegramLogin, type TelegramUser } from "../../shared/lib";
 import { EmailCodeForm } from "./EmailCodeForm";
 import { MergeSheet } from "./MergeSheet";
+import { PasskeysGroup } from "./PasskeysGroup";
 import "./Logins.css";
 
 // Why Telegram cannot be taken away right now, worded (#162).
@@ -178,6 +179,8 @@ export function LoginsPane({
           </>
         )}
       </Group>
+
+      <PasskeysGroup locale={locale} data={data} />
 
       {/* Email is the main way in (owner, 2026-10-05): changed, never removed.
           Telegram may go while an address is left. */}

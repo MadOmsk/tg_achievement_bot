@@ -150,7 +150,7 @@ async def test_the_admin_manages_somebody_without_telegram(repo: Repo, settings)
     ada = await _email_player(repo)
     admin = await repo.ensure_user(500, "boss")
     assert admin is not None
-    settings.admin_tg_ids = [500]
+    settings.superadmin_tg_ids = [500]
     client = await _client(repo, settings)
     try:
         await _sign_in_as(client, repo, admin)
@@ -160,10 +160,20 @@ async def test_the_admin_manages_somebody_without_telegram(repo: Repo, settings)
 
         card = await (await client.get(f"/api/mini/admin/users/p{ada}")).json()
         assert (card["person_id"], card["email"]) == (ada, "ada@example.com")
-        excluded = await client.patch(f"/api/mini/admin/users/p{ada}", json={"excluded": True})
-        assert (await excluded.json())["is_excluded"] is True
+        listed = await (
+            await client.get(f"/api/mini/admin/actions?scope=user&target=p{ada}")
+        ).json()
+        assert {"exclude", "sync", "reset", "delete"} <= {a["id"] for a in listed["actions"]}
+        body = {"scope": "user", "target": f"p{ada}", "action": "exclude", "step": 0}
+        assert (await (await client.post("/api/mini/admin/actions", json=body)).json())["done"][
+            "ok"
+        ]
+        card = await (await client.get(f"/api/mini/admin/users/p{ada}")).json()
+        assert card["is_excluded"] is True
 
-        assert (await client.delete(f"/api/mini/admin/users/p{ada}")).status == 200
+        for n in (0, 1, 2):
+            body = {"scope": "user", "target": f"p{ada}", "action": "delete", "step": n}
+            await client.post("/api/mini/admin/actions", json=body)
         assert await repo.get_user(ada) is None
     finally:
         await client.close()

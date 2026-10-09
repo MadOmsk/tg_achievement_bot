@@ -43,6 +43,9 @@
   cursor: zoom-in;
   overflow: hidden;
   max-height: 60vh;
+  /* The whole width, always: with only its aspect ratio, a wide screen's
+   * height cap narrowed the block and left it at the left edge. */
+  width: calc(100% + 36px);
   margin: 0 -18px;
   background: rgba(255, 255, 255, 0.03);
 }

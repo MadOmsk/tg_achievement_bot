@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -20,13 +20,19 @@ class Settings(BaseSettings):
         env_file=os.getenv("BOT_ENV_FILE", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Telegram
     bot_token: SecretStr
-    # NoDecode: without it pydantic-settings reads the env value as JSON, and
-    # "1,2" is not JSON — a single id would arrive as a bare int instead.
-    admin_tg_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
+    # The super-admins — the global operators (an "admin" is a narrower role
+    # to come). NoDecode: without it pydantic-settings reads the env value as
+    # JSON, and "1,2" is not JSON — a single id would arrive as a bare int
+    # instead. `ADMIN_TG_IDS`, the variable's old name, is still read.
+    superadmin_tg_ids: Annotated[list[int], NoDecode] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("superadmin_tg_ids", "admin_tg_ids"),
+    )
 
     # Microsoft / Azure
     azure_client_id: str
@@ -109,16 +115,16 @@ class Settings(BaseSettings):
     # classic slash commands and chat posts keep working either way.
     mini_app_url: str | None = None
 
-    @field_validator("admin_tg_ids", mode="before")
+    @field_validator("superadmin_tg_ids", mode="before")
     @classmethod
-    def _split_admin_ids(cls, value: object) -> object:
-        """ADMIN_TG_IDS is a comma-separated string in .env."""
+    def _split_superadmin_ids(cls, value: object) -> object:
+        """SUPERADMIN_TG_IDS is a comma-separated string in .env."""
         if isinstance(value, str):
             return [int(part) for part in value.split(",") if part.strip()]
         return value
 
-    def is_admin(self, tg_id: int | None) -> bool:
-        return tg_id is not None and tg_id in self.admin_tg_ids
+    def is_superadmin(self, tg_id: int | None) -> bool:
+        return tg_id is not None and tg_id in self.superadmin_tg_ids
 
 
 @lru_cache

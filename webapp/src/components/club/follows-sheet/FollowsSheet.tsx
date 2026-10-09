@@ -3,7 +3,6 @@ import { peopleApi, type PersonRow, type Relation } from "../../../api/people/pe
 import { t, type Locale, type TranslationKey } from "../../../i18n";
 import { Avatar, Dropdown, DropdownArrow, EmptyState, SearchBar, Sheet } from "../../shared/lib";
 import { FollowButton } from "../../people/follow-button/FollowButton";
-import { FriendMark } from "../../people/friend-mark/FriendMark";
 import "./FollowsSheet.css";
 import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
@@ -78,8 +77,6 @@ export function FollowsSheet({
   const all = lists ? lists[kind] : null;
   const needle = query.trim().toLowerCase();
   const rows = all && needle ? all.filter((row) => row.handle.toLowerCase().includes(needle)) : all;
-  // The friend marks show friends of either: the owner's of these lists, and the viewer's.
-  const [ownerFriends, setOwnerFriends] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -99,7 +96,6 @@ export function FollowsSheet({
             : following.people.filter((row) => row.relation.friends);
         // The list owner's friends (the ones marked) at the top of every list.
         const ids = new Set(friends.map((row) => row.id));
-        setOwnerFriends(ids);
         const first = (rows: PersonRow[]) =>
           [...rows].sort(
             (a, b) =>
@@ -240,12 +236,7 @@ export function FollowsSheet({
                   className="picker-row is-person"
                   onClick={() => onOpen(row.id)}
                 >
-                  <FriendMark
-                    friend={row.relation.friends || ownerFriends.has(row.id)}
-                    label={t(locale, "friends")}
-                  >
                     <Avatar name={row.handle} personId={row.id} size={40} />
-                  </FriendMark>
                   <span className="picker-row-copy">
                     <strong>
                       <HandleName text={row.handle} />

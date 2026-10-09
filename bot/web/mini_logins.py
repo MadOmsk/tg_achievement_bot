@@ -88,7 +88,9 @@ def forget_file(relative: str) -> None:
 RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
 
 
-def build_email_login(settings: Settings, repo: Repo) -> EmailLogin | None:
+def build_email_login(
+    settings: Settings, repo: Repo, *, smtp_auth: SmtpAuth | None = None
+) -> EmailLogin | None:
     """The email sign-in, or None when there is no way to send mail. The codes'
     HMAC key is derived from FERNET_KEY, the one secret every install has."""
     if settings.email_skip_code:
@@ -100,9 +102,11 @@ def build_email_login(settings: Settings, repo: Repo) -> EmailLogin | None:
                 "Development only — never on a server."
             )
             return TrustingEmailLogin(repo)
-    # The login the admin set in /admin, read on every message (a separate
-    # SmtpAuth from the bot's: both read the same row, neither caches it).
-    smtp_auth = SmtpAuth(repo, TokenCipher(settings.fernet_key.get_secret_value()), settings)
+    # The login the super-admin set in /admin, read on every message — the
+    # bot's own SmtpAuth when there is one, so a clear in the panel is seen
+    # here too (a second instance would seed the env login back in).
+    if smtp_auth is None:
+        smtp_auth = SmtpAuth(repo, TokenCipher(settings.fernet_key.get_secret_value()), settings)
     sender = build_sender(settings, smtp_auth.credentials)
     if sender is None:
         return None
@@ -246,7 +250,15 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         except EmailInvalid:
             address = None
         mail_ready = request.app.get("mini_email_login") is not None
-        if mail_ready and address is not None and await repo.person_by_email(address) is None:
+        person = await repo.person_by_email(address) if address is not None else None
+        passkeys = request.app.get("mini_passkeys")
+        if person is not None and passkeys is not None and body.get("passkey") is True:
+            # An address with a key signs in with the key (owner, 2026-10-08):
+            # no mail; the app asks for a code only if the key is not at hand.
+            keys = await repo.passkeys_of(person)
+            if keys:
+                return web.json_response({"passkey": True, **passkeys.sign_in_options(keys)})
+        if mail_ready and address is not None and person is None:
             # An address nobody has is a sign-up: its invite is checked before
             # any mail goes out (owner, 2026-10-07), so a stranger costs the
             # mail service nothing. This tells a known address from an unknown
@@ -440,7 +452,7 @@ def _telegram_blocked(request: web.Request, user: User | None) -> str | None:
         return None
     if not user.email:
         return "last_login"
-    if settings.is_admin(user.tg_id):
+    if settings.is_superadmin(user.tg_id):
         return "admin"
     if request.headers.get("X-Telegram-Init-Data"):
         return "in_telegram"

@@ -34,7 +34,7 @@ from bot.db.repo import (
     Repo,
     User,
 )
-from bot.handlers.admin import IsAdmin
+from bot.handlers.admin import IsSuperadmin
 from bot.poller.online_refresh import refresh_interval_minutes
 from bot.services.admin_settings import DEFAULT_RECENT_LIMIT
 from bot.services.message_log import stats_category
@@ -1039,12 +1039,12 @@ async def hub_summary_month_callback(
     await _run_summary_command(callback.message, repo, bot, i18n, window=MONTH)
 
 
-@router.message(Command("delete_last"), F.chat.type.in_(GROUP_TYPES), IsAdmin())
+@router.message(Command("delete_last"), F.chat.type.in_(GROUP_TYPES), IsSuperadmin())
 async def delete_last(message: Message, repo: Repo, bot: Bot, i18n: I18nContext) -> None:
     """Quick undo, right in the chat — the admin panel's own "стереть
     сообщения бота" (admin.py's a:cwipe) is a 24-hour bulk wipe reached
     through a private-chat menu, overkill for "oops, wrong one just now".
-    IsAdmin (admin.py) is the bot's own admin_tg_ids, same as everywhere
+    IsSuperadmin (admin.py) is the bot's own superadmin_tg_ids, same as everywhere
     else "admin" means in this project — not generic Telegram chat admins.
 
     Targets the bot's newest message whatever it is, except an achievement

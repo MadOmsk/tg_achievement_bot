@@ -243,7 +243,7 @@ async def test_a_new_address_becomes_a_new_person_without_telegram(repo: Repo, s
         await _sign_in(client, sender, "Ada@Example.com")
         me = await (await client.get("/api/mini/me")).json()
         assert me["tg_id"] is None
-        assert me["is_admin"] is False
+        assert me["is_superadmin"] is False
         # Everybody has a nickname: here the part of the address before the @.
         assert me["handle"]["display"].startswith("ada")
         assert me["settings"]["locale"] == "en"
@@ -459,7 +459,7 @@ async def test_telegram_stays_when_it_is_the_last_way_in_or_an_admins(repo: Repo
             "/api/mini/me/email/verify",
             json={"email": "boss@example.com", "code": sender.last_code()},
         )
-        settings.admin_tg_ids = [42]
+        settings.superadmin_tg_ids = [42]
         logins = await (await client.get("/api/mini/me/logins")).json()
         assert logins["telegram"]["blocked"] == "admin"
         admin = await client.delete("/api/mini/me/telegram")

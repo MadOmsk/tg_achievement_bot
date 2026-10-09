@@ -2,7 +2,6 @@ import type { OnlineMember } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, Icon, isOnline } from "../../shared/lib";
 import { rankPeople } from "../utils";
-import { FriendMark } from "../../people/friend-mark/FriendMark";
 import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
 export function FriendsStrip({
@@ -33,18 +32,31 @@ export function FriendsStrip({
   if (pool.length === 0) {
     return (
       <>
-        <div className="section-head">
+        {/* As tall as a head with its count, and as FriendsSkel's. */}
+        <div className="section-head" style={{ minHeight: 25 }}>
           <h1 className="kicker" style={{ margin: 0 }}>
             {t(locale, "peopleFollowing")}
           </h1>
-          {onFind && (
-            <button type="button" className="see-all" onClick={onFind}>
-              <span>{t(locale, "find")}</span>
-              <Icon name="forward" size={16} />
-            </button>
-          )}
         </div>
-        <p className="friends-empty">{emptyText ?? t(locale, "friendsEmpty")}</p>
+        {onFind ? (
+          <div className="friends">
+            <button type="button" className="friend friend-add" onClick={onFind}>
+              <span className="friend-add-circle" aria-hidden>
+                <Icon name="plus" size={28} />
+              </span>
+              <strong>{t(locale, "find")}</strong>
+            </button>
+          </div>
+        ) : (
+          <div className="friends">
+            <span className="friend friend-add is-still">
+              <span className="friend-add-circle" aria-hidden>
+                <Icon name="people" size={28} />
+              </span>
+              <p>{emptyText ?? t(locale, "friendsEmpty")}</p>
+            </span>
+          </div>
+        )}
       </>
     );
   }
@@ -71,7 +83,6 @@ export function FriendsStrip({
             className="friend"
             onClick={() => onOpen(m.person_id)}
           >
-            <FriendMark friend={Boolean(friendIds?.has(m.person_id))} label={t(locale, "friends")} big>
               <Avatar
                 name={m.name}
                 personId={m.person_id}
@@ -79,7 +90,6 @@ export function FriendsStrip({
                 platform={m.platform}
                 size={80}
               />
-            </FriendMark>
             <strong>
               <HandleName text={m.name} />
             </strong>

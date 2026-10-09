@@ -18,7 +18,7 @@ from bot.poller.service_health import (
 )
 from bot.services.credential_health import FAILURES_BEFORE_DEAD
 from bot.services.crypto import TokenCipher
-from bot.services.notify import AdminNotifier
+from bot.services.notify import SuperadminNotifier
 from bot.services.psn.auth import CHECKED_AT_KEY as PSN_CHECKED_AT_KEY
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam import auth as steam_auth_module
@@ -33,7 +33,7 @@ def _unconfigured_anthropic_auth(repo: Repo, cipher: TokenCipher) -> AnthropicAu
 
 
 def _wired_anthropic_auth(
-    repo: Repo, cipher: TokenCipher, notifier: AdminNotifier, *, configured: bool = True
+    repo: Repo, cipher: TokenCipher, notifier: SuperadminNotifier, *, configured: bool = True
 ) -> AnthropicAuth:
     auth = AnthropicAuth(repo, cipher, env_key="fake-key" if configured else None)
     auth.on_dead = notifier.translation_key_dead
@@ -50,7 +50,7 @@ class FakeBot:
 
 
 def _wired_steam_auth(
-    repo: Repo, cipher: TokenCipher, notifier: AdminNotifier, *, configured: bool = True
+    repo: Repo, cipher: TokenCipher, notifier: SuperadminNotifier, *, configured: bool = True
 ) -> SteamAuth:
     auth = SteamAuth(repo, cipher, env_key="fake-key" if configured else None)
     auth.on_dead = lambda: notifier.service_key_dead(Platform.STEAM)
@@ -59,7 +59,7 @@ def _wired_steam_auth(
 
 
 async def test_steam_never_configured_is_skipped_entirely(repo: Repo, cipher: TokenCipher) -> None:
-    notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
     health = ServiceHealth(
         repo, PsnAuth(repo, cipher), steam_auth, _unconfigured_anthropic_auth(repo, cipher)
@@ -74,7 +74,7 @@ async def test_steam_transition_to_dead_notifies_once_confirmed(
     repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
     bot = FakeBot()
-    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier)
     health = ServiceHealth(
         repo, PsnAuth(repo, cipher), steam_auth, _unconfigured_anthropic_auth(repo, cipher)
@@ -104,7 +104,7 @@ async def test_steam_transition_to_dead_notifies_once_confirmed(
 
 async def test_steam_recovery_is_announced(repo: Repo, cipher: TokenCipher, monkeypatch) -> None:
     bot = FakeBot()
-    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier)
     health = ServiceHealth(
         repo, PsnAuth(repo, cipher), steam_auth, _unconfigured_anthropic_auth(repo, cipher)
@@ -128,7 +128,7 @@ async def test_steam_check_is_skipped_before_the_interval_elapses(
 ) -> None:
     """This runs on the 60s tick, gated by KEY_CHECK_INTERVAL_KEY — a second
     tick right after the first must not re-check at all."""
-    notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier)
     health = ServiceHealth(
         repo, PsnAuth(repo, cipher), steam_auth, _unconfigured_anthropic_auth(repo, cipher)
@@ -171,7 +171,7 @@ async def test_psn_check_is_skipped_before_the_interval_elapses(
     calls = 0  # set_npsso's own verification call doesn't count
     stale = (utcnow() - timedelta(minutes=40)).isoformat(timespec="seconds")
     await repo.set_app_setting(PSN_CHECKED_AT_KEY, stale)
-    notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
     health = ServiceHealth(repo, psn_auth, steam_auth, _unconfigured_anthropic_auth(repo, cipher))
 
@@ -195,7 +195,7 @@ async def test_tick_also_runs_the_psn_health_check(
         return True
 
     monkeypatch.setattr(psn_auth, "check_health", _check_health)
-    notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     steam_auth = _wired_steam_auth(repo, cipher, notifier, configured=False)
     health = ServiceHealth(repo, psn_auth, steam_auth, _unconfigured_anthropic_auth(repo, cipher))
 
@@ -207,7 +207,7 @@ async def test_tick_also_runs_the_psn_health_check(
 async def test_anthropic_never_configured_is_skipped_entirely(
     repo: Repo, cipher: TokenCipher
 ) -> None:
-    notifier = AdminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(FakeBot(), repo, [1])  # type: ignore[arg-type]
     anthropic_auth = _wired_anthropic_auth(repo, cipher, notifier, configured=False)
     health = ServiceHealth(
         repo,
@@ -225,7 +225,7 @@ async def test_anthropic_transition_to_dead_notifies_once_confirmed(
     repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
     bot = FakeBot()
-    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1])  # type: ignore[arg-type]
     anthropic_auth = _wired_anthropic_auth(repo, cipher, notifier)
     health = ServiceHealth(
         repo,
@@ -255,7 +255,7 @@ async def test_anthropic_recovery_is_announced(
     repo: Repo, cipher: TokenCipher, monkeypatch
 ) -> None:
     bot = FakeBot()
-    notifier = AdminNotifier(bot, repo, [1])  # type: ignore[arg-type]
+    notifier = SuperadminNotifier(bot, repo, [1])  # type: ignore[arg-type]
     anthropic_auth = _wired_anthropic_auth(repo, cipher, notifier)
     health = ServiceHealth(
         repo,

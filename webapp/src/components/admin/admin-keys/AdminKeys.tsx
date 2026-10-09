@@ -1,25 +1,20 @@
 import { useEffect, useState } from "react";
 import {
+  ApiError,
   deleteAdminKey,
   fetchAdminHome,
   fetchAdminKeys,
   putAdminKey,
+  type AdminCredential,
   type AdminHome,
-  type AdminKeys as AdminKeysType,
 } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { BackHead, Group, InfoRow, NavRow, SettingsSkel } from "../../shared/lib";
-import { ADMIN_KEY_NAMES, type AdminKeyName } from "../../shared/constants";
 import "./AdminKeys.css";
 
-const LABELS: Record<AdminKeyName, "keySteam" | "keyPsn" | "keyAnthropic" | "keyYoutube"> = {
-  steam: "keySteam",
-  psn: "keyPsn",
-  anthropic: "keyAnthropic",
-  youtube: "keyYoutube",
-};
-
-/** The shared keys. A key is never shown back: one can only set, replace or clear it. */
+/** The shared keys, as the server's registry lists them (#176) — a new one
+ * appears here with no change to the app. A key is never shown back: one can
+ * only set, replace or clear it. */
 export function AdminKeys({
   data,
   locale,
@@ -31,10 +26,11 @@ export function AdminKeys({
   onBack: () => void;
   onFail: (err: unknown) => void;
 }) {
-  const [keys, setKeys] = useState<AdminKeysType | null>(null);
-  const [editing, setEditing] = useState<AdminKeyName | null>(null);
+  const [keys, setKeys] = useState<AdminCredential[] | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [secret, setSecret] = useState("");
-  // How hard the bot leans on each platform, beside the keys it uses.
+  const [error, setError] = useState<string | null>(null);
+  // How hard the bot leans on each service, beside the keys it uses.
   const [usage, setUsage] = useState<AdminHome | null>(null);
 
   useEffect(() => {
@@ -42,41 +38,55 @@ export function AdminKeys({
   }, [data, onFail]);
 
   useEffect(() => {
-    void fetchAdminKeys(data).then(setKeys).catch(onFail);
+    void fetchAdminKeys(data)
+      .then((r) => setKeys(r.keys))
+      .catch(onFail);
   }, [data, onFail]);
 
   const close = () => {
     setEditing(null);
     setSecret("");
+    setError(null);
+  };
+
+  const refused = (err: unknown) => {
+    if (err instanceof ApiError && (err.code === "invalid" || err.code === "setup")) {
+      setError(t(locale, err.code === "invalid" ? "keyInvalid" : "keySetupError"));
+      return;
+    }
+    onFail(err);
   };
 
   if (keys == null) {
     return (
       <>
         <BackHead title={t(locale, "adminKeys")} backLabel={t(locale, "back")} onBack={onBack} />
-        <SettingsSkel groups={[4]} />
+        <SettingsSkel groups={[5]} />
       </>
     );
   }
 
-  if (editing) {
+  const current = editing ? keys.find((k) => k.name === editing) : undefined;
+  if (current) {
     return (
       <>
-        <BackHead title={t(locale, LABELS[editing])} backLabel={t(locale, "back")} onBack={close} />
+        <BackHead title={current.label} backLabel={t(locale, "back")} onBack={close} />
         <form
           className="form-stack admin-key-form"
+          noValidate
           onSubmit={(e) => {
             e.preventDefault();
             if (!secret.trim()) return;
-            void putAdminKey(data, editing, secret.trim())
+            setError(null);
+            void putAdminKey(data, current.name, secret.trim())
               .then((next) => {
-                setKeys(next);
+                setKeys(next.keys);
                 close();
               })
-              .catch(onFail);
+              .catch(refused);
           }}
         >
-          <label className="field">
+          <label className={`field${error ? " is-error" : ""}`}>
             <input
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
@@ -87,21 +97,27 @@ export function AdminKeys({
               aria-label={t(locale, "keyNew")}
             />
           </label>
-          <p className="field-note">{t(locale, "pasteKey")}</p>
+          {error ? (
+            <p className="field-note is-error">{error}</p>
+          ) : (
+            <p className="field-note">
+              {current.hint} {t(locale, "pasteKey")}
+            </p>
+          )}
           <button type="submit" className="btn is-wide" disabled={!secret.trim()}>
             {t(locale, "save")}
           </button>
         </form>
-        {keys[editing] && (
+        {current.configured && (
           <Group>
             <NavRow
               danger
               label={t(locale, "clearKey")}
               onClick={() => {
                 if (!window.confirm(t(locale, "confirmClear"))) return;
-                void deleteAdminKey(data, editing)
+                void deleteAdminKey(data, current.name)
                   .then((next) => {
-                    setKeys(next);
+                    setKeys(next.keys);
                     close();
                   })
                   .catch(onFail);
@@ -113,18 +129,26 @@ export function AdminKeys({
     );
   }
 
+  const keyState = (key: AdminCredential) =>
+    !key.configured
+      ? t(locale, "keyUnset")
+      : key.status === "invalid"
+        ? t(locale, "keyDead")
+        : t(locale, "keySet");
+
   return (
     <>
       <BackHead title={t(locale, "adminKeys")} backLabel={t(locale, "back")} onBack={onBack} />
       <Group>
-        {ADMIN_KEY_NAMES.map((name) => (
+        {keys.map((key) => (
           <NavRow
-            key={name}
-            label={t(locale, LABELS[name])}
-            value={keys[name] ? t(locale, "keySet") : t(locale, "keyUnset")}
+            key={key.name}
+            label={key.label}
+            value={keyState(key)}
             onClick={() => {
-              setEditing(name);
+              setEditing(key.name);
               setSecret("");
+              setError(null);
             }}
           />
         ))}
@@ -133,6 +157,14 @@ export function AdminKeys({
         <InfoRow label={t(locale, "xboxUsage")} value={usage?.xbox_usage ?? "…"} />
         <InfoRow label={t(locale, "steamUsage")} value={usage?.steam_usage ?? "…"} />
         <InfoRow label={t(locale, "psnToday")} value={usage?.psn_requests ?? "…"} />
+        <InfoRow
+          label={t(locale, "mailHour")}
+          value={usage ? `${usage.mail.hour}/${usage.mail.hour_limit}` : "…"}
+        />
+        <InfoRow
+          label={t(locale, "mailDay")}
+          value={usage ? `${usage.mail.day}/${usage.mail.day_limit}` : "…"}
+        />
       </Group>
     </>
   );

@@ -92,7 +92,7 @@ def i18n(_shared_fluent_core: FluentRuntimeCore) -> I18nContext:
 def settings(tmp_path: Path) -> Settings:
     return Settings(
         bot_token="123:test",  # type: ignore[arg-type]
-        admin_tg_ids=[1],
+        superadmin_tg_ids=[1],
         azure_client_id="client-id",
         azure_client_secret="client-secret",  # type: ignore[arg-type]
         oauth_redirect_url="http://localhost:8080/auth/callback",

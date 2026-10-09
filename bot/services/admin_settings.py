@@ -10,7 +10,7 @@ layers belongs under both rather than inside one of them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from bot.constants import RarityMode, SettingKey, TokenStatus
 from bot.i18n import gettext
@@ -87,7 +87,7 @@ LIMIT_MAX = 50
 
 # Anti-flood filter (2026-09-09 user request) — per-chat, admin-set like the
 # rare threshold above. flood_limit's own 0 means "off for this chat", same
-# convention as min_gamerscore/summary_top_limit.
+# convention as summary_top_limit.
 FLOOD_LIMIT_MIN = 0
 FLOOD_LIMIT_MAX = 50
 FLOOD_WINDOW_MIN = 1
@@ -97,10 +97,6 @@ FLOOD_WINDOW_MAX = 1440  # 24h — a longer buffer than that stops being "soon"
 # touched this setting and one that was switched off and back on land on
 # the same starting point.
 FLOOD_LIMIT_DEFAULT = 3
-
-# Chat-scoped keys sharing numeric_setting_input()'s "type a number" flow
-# with the always-global NUMERIC_SETTINGS above.
-CHAT_SCOPED_KEYS = ("flood_limit", "flood_window_minutes")
 
 # What a brand-new subscription starts at (Repo.subscribe) — used to be a
 # flat DEFAULT 'all' baked into the subscriptions table (schema.sql), now an
@@ -246,6 +242,22 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
 
 
 TOAST_PREVIEW_MAX_CHARS = 100
+
+
+class SettingValueError(ValueError):
+    """A value one of the panels was given and the setting refuses: not a
+    whole number where one is needed, or outside its bounds."""
+
+    def __init__(
+        self,
+        reason: Literal["integer", "number", "range", "choice"],
+        minimum: float,
+        maximum: float,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.minimum = minimum
+        self.maximum = maximum
 
 
 async def rare_threshold(repo: Repo) -> float:

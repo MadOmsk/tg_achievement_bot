@@ -49,6 +49,8 @@ Layout:
     _invites.py     invite codes members make, and who came by each (082).
     _guides.py      video guides from YouTube channels: their videos and the
                     moments their descriptions mark (086).
+    _passkeys.py    passkeys: the public half of a key that signs a person
+                    in (089).
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -120,6 +122,7 @@ from bot.db.repo._models import (
     UserSettings,
 )
 from bot.db.repo._notifications import NotificationRow, PushSubscription, _NotificationsRepo
+from bot.db.repo._passkeys import PasskeyRow, _PasskeysRepo
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
 from bot.db.repo._sessions import _SessionsRepo
@@ -164,6 +167,7 @@ __all__ = [
     "MergeSide",
     "NotificationRow",
     "OnlineAutoRefreshRow",
+    "PasskeyRow",
     "PersonRow",
     "PlatformLink",
     "PollTarget",
@@ -213,6 +217,7 @@ class Repo(
     _NotificationsRepo,
     _MergeRepo,
     _InvitesRepo,
+    _PasskeysRepo,
     _GuidesRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""

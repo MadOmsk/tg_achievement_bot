@@ -1,30 +1,25 @@
-"""Admin panel side of the anti-flood filter (2026-09-09 user request) —
-the chat card's own settings row, alongside rare_threshold_percent's."""
+"""Admin panel side of the anti-flood filter (2026-09-09 user request): the
+chat card states it, and its two numbers are settings of the registry (#176),
+in the card's «Антифлуд» group."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from bot.db.repo import Repo
-from bot.handlers.admin import chat_flood_toggle
-from bot.i18n import AVAILABLE_LOCALES, gettext
-from bot.services.admin_settings import (
-    FLOOD_LIMIT_DEFAULT,
-    FLOOD_LIMIT_MAX,
-    FLOOD_LIMIT_MIN,
-    FLOOD_WINDOW_MAX,
-    FLOOD_WINDOW_MIN,
-)
+from bot.handlers.admin import _awaiting_input, chat_setting_open, setting_number_input
+from bot.services.admin_registry import find, parse
+from bot.services.admin_settings import SettingValueError
 from bot.views.admin import render_chat_card
 
 CHAT_ID = -100999
 
 
 class _FakeCallback:
-    """A minimal stand-in for aiogram's CallbackQuery — `.message` is
-    deliberately not a real `aiogram.types.Message`, so `_redraw` takes its
-    "can't edit, just acknowledge" branch instead of needing a full
-    Telegram message object."""
+    """`.message` is deliberately not a real Message, so `_redraw` takes its
+    "can't edit, just acknowledge" branch."""
 
     def __init__(self, data: str) -> None:
         self.data = data
@@ -35,21 +30,33 @@ class _FakeCallback:
         pass
 
 
+class _FakeMessage:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.from_user = SimpleNamespace(id=1)
+        self.answers: list[str] = []
+
+    async def answer(self, text: str, **kwargs: object) -> None:
+        self.answers.append(text)
+
+
 def _callback_datas(markup) -> list[str]:
     return [btn.callback_data for row in markup.inline_keyboard for btn in row if btn.callback_data]
 
 
-async def test_bounds_reject_a_negative_limit_and_an_absurd_window(i18n) -> None:
-    assert not (FLOOD_LIMIT_MIN <= -1 <= FLOOD_LIMIT_MAX)
-    assert FLOOD_LIMIT_MIN <= 0 <= FLOOD_LIMIT_MAX  # 0 = off, a valid value
-    assert not (FLOOD_WINDOW_MIN <= 0 <= FLOOD_WINDOW_MAX)  # 0 minutes is not a real window
-    assert FLOOD_WINDOW_MIN <= 60 <= FLOOD_WINDOW_MAX
+def test_bounds_reject_a_negative_limit_and_an_absurd_window() -> None:
+    limit, window = find("chat", "flood_limit"), find("chat", "flood_window_minutes")
+    with pytest.raises(SettingValueError):
+        parse(limit, "-1")
+    assert parse(limit, "0") == 0  # 0 = off, a valid value
+    with pytest.raises(SettingValueError):
+        parse(window, "0")  # 0 minutes is not a real window
+    with pytest.raises(SettingValueError):
+        parse(window, "1441")
+    assert parse(window, "60") == 60
 
 
-async def test_chat_card_shows_the_flood_settings_and_opens_their_submenu(repo: Repo, i18n) -> None:
-    """The two tunables moved onto a sub-screen of their own (2026-09-11,
-    user request) — the card still *states* them, and now carries one entry
-    that opens them instead of three buttons crammed into a row."""
+async def test_chat_card_states_the_flood_settings_and_opens_their_group(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=5, flood_window_minutes=45)
 
@@ -57,16 +64,16 @@ async def test_chat_card_shows_the_flood_settings_and_opens_their_submenu(repo: 
 
     assert "5 ач." in text
     assert "45 мин" in text
-    assert f"a:mflood:{CHAT_ID}" in _callback_datas(markup)
+    assert f"a:cg:{CHAT_ID}:flood" in _callback_datas(markup)
 
-    _text, submenu = await render_chat_card(repo, CHAT_ID, locale="ru", section="flood")
-    datas = _callback_datas(submenu)
-    assert f"a:cfl:{CHAT_ID}" in datas
-    assert f"a:cflw:{CHAT_ID}" in datas
+    _text, group = await render_chat_card(repo, CHAT_ID, locale="ru", section="flood")
+    datas = _callback_datas(group)
+    assert f"a:cs:{CHAT_ID}:flood_limit" in datas
+    assert f"a:cs:{CHAT_ID}:flood_window_minutes" in datas
     assert f"a:chat:{CHAT_ID}" in datas  # back to the card
 
 
-async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo, i18n) -> None:
+async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
     await repo.update_chat_settings(CHAT_ID, flood_limit=0)
 
@@ -75,40 +82,19 @@ async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo, i18n) ->
     assert "выключен" in text
 
 
-async def test_the_flood_submenu_has_the_toggle_button(repo: Repo, i18n) -> None:
+async def test_a_typed_limit_is_saved_and_a_bad_one_refused(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await chat_setting_open(_FakeCallback(f"a:cs:{CHAT_ID}:flood_limit"), repo, i18n)
+    assert _awaiting_input[1] == ("set:chat:flood_limit", CHAT_ID)
 
-    _text, markup = await render_chat_card(repo, CHAT_ID, locale="ru", section="flood")
+    too_many = _FakeMessage("51")
+    await setting_number_input(too_many, repo, i18n)
+    assert "0" in too_many.answers[0] and "50" in too_many.answers[0]
+    assert _awaiting_input[1] == ("set:chat:flood_limit", CHAT_ID)  # still waiting
 
-    assert f"a:cfltoggle:{CHAT_ID}" in _callback_datas(markup)
-
-
-async def test_toggle_turns_a_configured_filter_off(repo: Repo, i18n) -> None:
-    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
-    await repo.update_chat_settings(CHAT_ID, flood_limit=7)
-
-    await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo, i18n)
-
+    ok = _FakeMessage("0")
+    await setting_number_input(ok, repo, i18n)
+    assert 1 not in _awaiting_input
     text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     assert "выключен" in text
-
-
-async def test_toggle_turns_an_off_filter_back_on_at_the_default(repo: Repo, i18n) -> None:
-    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
-    await repo.update_chat_settings(CHAT_ID, flood_limit=0)
-
-    await chat_flood_toggle(_FakeCallback(f"a:cfltoggle:{CHAT_ID}"), repo, i18n)
-
-    text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
-    assert f"{FLOOD_LIMIT_DEFAULT} ач." in text
-    assert "выключен" not in text
-
-
-async def test_saved_confirmations_append_the_chat_card_exactly_once(i18n) -> None:
-    """Found while translating admin.ftl (#48): admin-flood-window-saved
-    carried { $text } twice, so changing the anti-flood window replied with
-    the whole chat card duplicated. Its two siblings always had it once."""
-    for locale in AVAILABLE_LOCALES:
-        for key in ("admin-threshold-saved", "admin-flood-saved", "admin-flood-window-saved"):
-            rendered = gettext("admin", key, locale=locale, value=5, text="THE-CARD")
-            assert rendered.count("THE-CARD") == 1, f"{locale}/{key}"
+    assert ok.answers[0].startswith("✅")

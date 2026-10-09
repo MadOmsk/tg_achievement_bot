@@ -13,7 +13,7 @@ all.
     python scripts/render_screen.py achievement --locale en --send
 
 Nothing here writes: it reads the database the .env points at and, with
---send, posts to the first id in ADMIN_TG_IDS. Point DB_PATH at a copy when
+--send, posts to the first id in SUPERADMIN_TG_IDS. Point DB_PATH at a copy when
 rendering against production data — and keep that copy in backups/, which is
 the one place a database copy may live (see CLAUDE.md's Operations).
 
@@ -44,6 +44,9 @@ from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Database, Repo, TitleProgress
 from bot.i18n import i18n_for
+from bot.services.admin_credentials import AdminCredentials
+from bot.services.admin_registry import find as find_setting
+from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import TOP_LIMIT_KEY
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
@@ -53,20 +56,24 @@ from bot.services.translate.auth import AnthropicAuth
 from bot.services.youtube.auth import YouTubeAuth
 from bot.views import Screen
 from bot.views.admin import (
+    find_chat,
+    render_keys,
+    render_user_card,
+    render_user_list,
+)
+from bot.views.admin import (
     render_chat_card as render_admin_chat_card,
 )
 from bot.views.admin import (
     render_chat_list as render_admin_chat_list,
 )
-from bot.views.admin import (
-    render_keys,
-    render_limit,
-    render_limits,
-    render_new_user_defaults,
-    render_user_card,
-    render_user_list,
-)
 from bot.views.admin_home import render_admin_home
+from bot.views.admin_settings import (
+    render_setting_choices,
+    render_setting_prompt,
+    render_settings_group,
+    render_settings_home,
+)
 from bot.views.chat import (
     build_stats_text,
     help_text,
@@ -288,37 +295,31 @@ class _NoUsage:
         return []
 
 
-@screen("admin-home")
-async def _admin_home(ctx: Context) -> Screen:
+def _credentials(ctx: Context) -> AdminCredentials:
     cipher = TokenCipher(ctx.settings.fernet_key.get_secret_value())
     steam_key = ctx.settings.steam_api_key
+    return AdminCredentials(
+        psn=PsnAuth(ctx.repo, cipher),
+        steam=SteamAuth(
+            ctx.repo, cipher, env_key=steam_key.get_secret_value() if steam_key else None
+        ),
+        anthropic=AnthropicAuth(ctx.repo, cipher),
+        youtube=YouTubeAuth(ctx.repo, cipher),
+        smtp=SmtpAuth(ctx.repo, cipher, ctx.settings),
+    )
+
+
+@screen("admin-home")
+async def _admin_home(ctx: Context) -> Screen:
     text, markup = await render_admin_home(
-        ctx.repo,
-        _NoUsage(),
-        _NoUsage(),
-        PsnAuth(ctx.repo, cipher),
-        SteamAuth(ctx.repo, cipher, env_key=steam_key.get_secret_value() if steam_key else None),
-        locale=ctx.locale,
+        ctx.repo, _NoUsage(), _NoUsage(), _credentials(ctx), locale=ctx.locale
     )
     return Screen(text, markup)
 
 
 @screen("admin-keys")
 async def _admin_keys(ctx: Context) -> Screen:
-    cipher = TokenCipher(ctx.settings.fernet_key.get_secret_value())
-    steam_key = ctx.settings.steam_api_key
-    return Screen(
-        *await render_keys(
-            SteamAuth(
-                ctx.repo, cipher, env_key=steam_key.get_secret_value() if steam_key else None
-            ),
-            PsnAuth(ctx.repo, cipher),
-            AnthropicAuth(ctx.repo, cipher),
-            YouTubeAuth(ctx.repo, cipher),
-            smtp_auth=SmtpAuth(ctx.repo, cipher, ctx.settings),
-            locale=ctx.locale,
-        )
-    )
+    return Screen(*await render_keys(_credentials(ctx), locale=ctx.locale))
 
 
 @screen("admin-users")
@@ -343,21 +344,50 @@ async def _admin_chat_card(ctx: Context) -> Screen | None:
     return Screen(*built) if built else None
 
 
-@screen("admin-limits")
-async def _admin_limits(ctx: Context) -> Screen:
-    return await render_limits(ctx.repo, locale=ctx.locale)
+@screen("admin-settings")
+async def _admin_settings(ctx: Context) -> Screen:
+    return render_settings_home(locale=ctx.locale)
 
 
-@screen("admin-limit")
-async def _admin_limit(ctx: Context) -> Screen:
-    """One setting's own input screen. Any of them would do — this one
-    allows 0, which is the branch that was broken for four days."""
-    return await render_limit(ctx.repo, TOP_LIMIT_KEY, locale=ctx.locale)
+@screen("admin-settings-rules")
+async def _admin_settings_rules(ctx: Context) -> Screen:
+    return render_settings_group(
+        "rules", await registry_values(ctx.repo, "global"), locale=ctx.locale
+    )
 
 
-@screen("admin-defaults")
-async def _admin_defaults(ctx: Context) -> Screen:
-    return Screen(*await render_new_user_defaults(ctx.repo, locale=ctx.locale))
+@screen("admin-settings-lists")
+async def _admin_settings_lists(ctx: Context) -> Screen:
+    return render_settings_group(
+        "lists", await registry_values(ctx.repo, "global"), locale=ctx.locale
+    )
+
+
+@screen("admin-setting-number")
+async def _admin_setting_number(ctx: Context) -> Screen:
+    """One number's input — this one allows 0, the branch once broken."""
+    current = await registry_values(ctx.repo, "global")
+    return render_setting_prompt(
+        find_setting("global", TOP_LIMIT_KEY),
+        current[TOP_LIMIT_KEY],
+        locale=ctx.locale,
+        back="a:sg:lists",
+    )
+
+
+@screen("admin-setting-tz")
+async def _admin_setting_tz(ctx: Context) -> Screen | None:
+    chat = await find_chat(ctx.repo, ctx.chat_id)
+    if chat is None:
+        return None
+    setting = find_setting("chat", "tz_offset_min")
+    return render_setting_choices(
+        setting,
+        chat.tz_offset_min,
+        locale=ctx.locale,
+        back=f"a:cg:{ctx.chat_id}:main",
+        chat_id=ctx.chat_id,
+    )
 
 
 # ---------------------------------------------------------------------- delivery
@@ -414,7 +444,7 @@ async def main() -> int:
     database = await Database(Path(settings.db_path)).connect()
     try:
         repo = Repo(database)
-        admin_id = settings.admin_tg_ids[0]
+        admin_id = settings.superadmin_tg_ids[0]
         chats = await repo.admin_chats()
         ctx = Context(
             repo=repo,

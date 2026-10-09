@@ -82,6 +82,8 @@ def register(app: web.Application) -> None:
                 # Whether a mail server is set up (#162): without one the
                 # sign-in screen offers Telegram only.
                 "email": request.app.get("mini_email_login") is not None,
+                # Whether passkeys work on this host (owner, 2026-10-08).
+                "passkey": request.app.get("mini_passkeys") is not None,
             }
         )
 
