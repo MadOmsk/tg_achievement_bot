@@ -177,3 +177,11 @@ async def test_a_demo_is_linked_to_the_version_on_its_console(repo: Repo) -> Non
         "SELECT of_version_id FROM version_links WHERE version_id = ? AND kind = 'demo_of'", (demo,)
     )
     assert (await cursor.fetchone())["of_version_id"] == game_series
+
+
+def test_a_remasters_release_word_keeps_others_demos_off() -> None:
+    reloaded = _c(1, "Gears of War: Reloaded", store="steam", console="steam", year=2025)
+    beta = _c(2, "Gears of War: E-Day Multiplayer Beta", console="series", year=2026)
+    assert compare(reloaded, beta).state != "linked"
+    eday = _c(3, "Gears of War: E-Day", store="steam", console="steam", year=2026)
+    assert compare(eday, beta).state == "linked"

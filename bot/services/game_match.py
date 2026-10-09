@@ -238,8 +238,10 @@ def _groups_differ(a: Candidate, b: Candidate) -> bool:
 
 def _starts(game: Candidate, demo: Candidate) -> bool:
     """The game's cut name opens the demo's, and what follows is not a number
-    — unless the game has one of its own ("RESIDENT EVIL 2 1-Shot Demo")."""
-    for g in game.cores:
+    — unless the game has one of its own ("RESIDENT EVIL 2 1-Shot Demo"). Its
+    release words kept: "Gears of War: Reloaded" does not open "Gears of War:
+    E-Day Multiplayer Beta"."""
+    for g in dict.fromkeys(normalize(core(n)) for n in game.names if n):
         head = _words(g)
         if not head:
             continue
