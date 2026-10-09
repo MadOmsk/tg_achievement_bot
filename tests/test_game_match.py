@@ -122,3 +122,16 @@ async def test_a_manual_link_is_never_moved(repo: Repo) -> None:
     await repo.drop_auto_links(version_id, game_id, "linked")
     await linker.link_versions([a, b])
     assert await repo.linked_game_of(version_id) == game_id
+
+
+def test_a_demo_is_its_own_games_not_a_namesakes() -> None:
+    re2 = _c(1, "RESIDENT EVIL 2", year=2019)
+    assert compare(re2, _c(2, "RESIDENT EVIL 2 1-Shot Demo", year=2019)).state == "linked"
+    # "Resident Evil" opens "Resident Evil 4 Chainsaw Demo", but 4 is another game.
+    re1 = _c(3, "Resident Evil", year=2015)
+    assert compare(re1, _c(4, "Resident Evil 4 Chainsaw Demo", year=2023)).state != "linked"
+    # Years apart: not this game's beta.
+    gears = _c(5, "Gears of War", year=2006)
+    assert (
+        compare(gears, _c(6, "Gears of War: E-Day Multiplayer Beta", year=2026)).state != "linked"
+    )

@@ -99,8 +99,18 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
 
     # A demo is its game's when the game's name starts the demo's ("RESIDENT
     # EVIL 2" → "RESIDENT EVIL 2 1-Shot Demo"), whatever else the demo says.
+    # A demo of a sequel's base name is not its demo ("Resident Evil" →
+    # "Resident Evil 4 Chainsaw Demo"), and a demo years from the game is
+    # somebody else's ("Gears of War" → "Gears of War: E-Day Beta").
     for demo, game in ((a, b), (b, a)):
-        if kind_of(demo) == "demo" and kind_of(game) != "demo" and _starts(game, demo):
+        if (
+            kind_of(demo) == "demo"
+            and kind_of(game) != "demo"
+            and _starts(game, demo)
+            and demo.year
+            and game.year
+            and abs(demo.year - game.year) <= NEAR_YEARS
+        ):
             return Verdict("linked", 0.9, ["a demo of it"])
 
     # Hard facts: the stores and HLTB grouping them themselves.
@@ -189,12 +199,22 @@ def _contained(a: Candidate, b: Candidate) -> bool:
 
 
 def _starts(game: Candidate, demo: Candidate) -> bool:
-    return any(
-        _words(d)[: len(_words(g))] == _words(g)
-        for g in game.cores
-        for d in (normalize(n) for n in demo.names)
-        if g
-    )
+    """The game's cut name opens the demo's, and what follows is not a number
+    — unless the game has one of its own ("RESIDENT EVIL 2 1-Shot Demo")."""
+    for g in game.cores:
+        head = _words(g)
+        if not head:
+            continue
+        numbered = any(w.isdigit() for w in head)
+        for d in (normalize(n) for n in demo.names):
+            words = _words(d)
+            if words[: len(head)] != head:
+                continue
+            rest = words[len(head) :]
+            if rest and rest[0].isdigit() and not numbered:
+                continue
+            return True
+    return False
 
 
 def game_name(members: list[Candidate]) -> str:
