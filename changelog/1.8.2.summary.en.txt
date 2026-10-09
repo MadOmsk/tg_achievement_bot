@@ -3,3 +3,4 @@
 • A new name on the sign-in screen and a neater Android icon
 • A patch notice opens the post itself
 • Post pictures centred on wide screens
+• One digest size for every chat; no more minimum gamerscore
