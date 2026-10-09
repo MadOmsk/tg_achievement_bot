@@ -171,6 +171,9 @@ name, or when the tree goes stale.
 │   │   ├── hltb_match.py         which HLTB entry a game is, scored automatically (no DB access)
 │   │   ├── steam_extras.py       a game's Steam side: its app, achievement tips, patches — stored
 │   │   ├── steam_guides.py, steam_news.py   Steam community guides / announcements (no DB access)
+│   │   ├── stores/               what each store says about a game (#147), network and parsing only:
+│   │   │                         steam_store.py, xbox_catalog.py, psn_store.py, hltb_page.py
+│   │   ├── store_collect.py      collecting one game from them: versions, DLC, HLTB, when due
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -222,6 +225,8 @@ name, or when the tree goes stale.
 ├── scripts/                     one-off operational helpers, outside the running bot
 │   ├── render_screen.py          draws any screen, prints it or sends it to the owner's DM (#63)
 │   ├── check_integrity.py        stored achievements vs what each platform reports, read-only (#120)
+│   ├── collect_game.py           collect one game from the stores now (#147), beside a running bot
+│   ├── catalog_viewer.py         a bare local, read-only viewer of the games' store side (#147)
 │   ├── xbox-deploy.sh            what CI runs on the server (/usr/local/bin/xbox-deploy)
 │   ├── db_status.py              summary for `manage.ps1 status`
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
@@ -554,6 +559,48 @@ every column. History: #106.
   `header.jpg` for games older than the library view, #117), PSN's
   rides in the trophy listing, Xbox's costs a titlehub call — `poller/covers.py`
   rations three a minute and visits each title **once** (art does not change).
+
+### The store side of a game (#147, stage 2; migration 090)
+
+What the stores and HLTB say about a game, collected but not shown yet
+(games and their links come in stage 3, the page in stage 5).
+
+- **A version is a store product on one console** (owner, 2026-10-08):
+  `versions (store, product_id, console)` — PS4 and PS5, One and Series are two
+  versions even when they share one achievement list; Xbox Play Anywhere's PC is
+  `also_on`, never a version. Consoles are `platform_format`'s names (+ `steam`).
+  A version points at its achievement list (`platform`, `title_id`) once that is
+  proved; `version_store_ids` holds every id naming it (regional CUSAs, the Xbox
+  title id). `origin` is `played` or `store` (found, nobody here owns it).
+- **Kinds of link** (owner, 2026-10-09, for stage 3): a port is just a version
+  of another platform, however late; a remaster is a version with kind
+  `remaster`; a remake is another game linked `remake_of`.
+- **Sources**, one module each in `services/stores/`, network only:
+  - Steam `appdetails` (no key; en + ru), each DLC named by its own request,
+    `DLC_NAMES_PER_PASS` a pass, the rest in the next (due within the hour);
+  - Xbox `displaycatalog`, public, found by our title id (`lookup?alternateId=
+    XboxTitleId`) — no login is spent. A game does not list its add-ons: its
+    editions do (`BundledSkus`); only Durables are kept. An add-on sold only
+    on its own is not found this way. `9998-12-30` is "not on sale", no date;
+  - PSN: the store is searched by name and a concept is accepted **only when
+    Sony's trophy API says one of its title ids has our `NPWR…` list**, asked as
+    an account that played it (`psn/client.trophy_lists_of`); never by name
+    alone. PSN add-ons have no names without the store's GraphQL, so a PSN
+    version's DLC are its trophy groups for now;
+  - the HLTB page (`hltb_games`, with DLC entries and per-platform times),
+    linked to every version of a matched list (`version_hltb`). `hltb_cache`
+    stays for `/hltb`'s search until it is switched off.
+- **When**: `StoreCollector.ensure` — after a game's first new achievement is
+  published (beside the HLTB match) and when its page is opened — in the
+  background, and only what is due (`fetch_state`), so many people in one game
+  cost what one does. An answer is trusted 7 → 14 → 30 → 90 days while it does
+  not change; a change, or a Steam patch in the last 30 days, sets it back to 7
+  (a live-service game keeps being asked). A failure is retried in an hour, given
+  up on for 30 days after three. **No whole-library walk** (owner, 2026-10-09).
+- **Raw answers** are kept in `source_payloads`, zlib JSON, the latest only, not
+  rewritten when the hash is the same — never as columns on `titles`.
+- By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look:
+  `scripts/catalog_viewer.py` (local, bare HTML, read-only).
 
 ### Secrets
 

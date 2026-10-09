@@ -49,6 +49,8 @@ Layout:
     _invites.py     invite codes members make, and who came by each (082).
     _guides.py      video guides from YouTube channels: their videos and the
                     moments their descriptions mark (086).
+    _stores.py      the store side of a game: versions, DLC, the new HLTB
+                    entries, each source's last answer and when to ask again (090).
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -125,6 +127,7 @@ from bot.db.repo._polling import _PollingRepo
 from bot.db.repo._sessions import _SessionsRepo
 from bot.db.repo._stats import _StatsRepo
 from bot.db.repo._steam import GameNewsRow, StoredPatch, TitleSteam, _SteamRepo
+from bot.db.repo._stores import _StoresRepo
 from bot.db.repo._tx import GatedConnection, transaction
 
 __all__ = [
@@ -214,6 +217,7 @@ class Repo(
     _MergeRepo,
     _InvitesRepo,
     _GuidesRepo,
+    _StoresRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

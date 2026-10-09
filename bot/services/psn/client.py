@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from psnawp_api import PSNAWP
 from psnawp_api.core.psnawp_exceptions import (
     PSNAWPAuthenticationError,
+    PSNAWPError,
     PSNAWPForbiddenError,
     PSNAWPNotFoundError,
 )
@@ -795,3 +796,79 @@ async def profile_avatar_url(client: PSNAWP, account_id: str) -> str | None:
         if by_size.get(size):
             return str(by_size[size])
     return next((str(entry["url"]) for entry in avatars if entry.get("url")), None)
+
+
+# ---------------------------------------------------------------- the store (#147)
+
+TROPHY_TITLES_URL = "https://m.np.playstation.com/api/trophy/v1/users/{account}/titles/trophyTitles"
+# How many store title ids one trophy-list lookup asks about.
+TITLE_IDS_PER_LOOKUP = 5
+
+
+async def store_search(client: PSNAWP, name: str, limit: int = 5) -> list[dict]:
+    """The store's full games for a name: each a concept with its default
+    product (whose id carries a CUSA/PPSA title id)."""
+    from psnawp_api.models.search.games_search_datatypes import SearchDomain
+
+    def run() -> list[dict]:
+        return [dict(item) for item in client.search(name, SearchDomain.FULL_GAMES, limit=limit)]
+
+    try:
+        return await _call(run)
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+    except PSNAWPError as exc:
+        raise PsnApiError(f"PSN store search failed: {exc!r}") from None
+
+
+async def store_concept(client: PSNAWP, title_id: str) -> dict | None:
+    """The store's concept (the game, every edition and console) for one
+    CUSA/PPSA title id, or None when the store has none."""
+    platform = PlatformType.PS5 if title_id.startswith("PPSA") else PlatformType.PS4
+
+    def run() -> dict | None:
+        details = client.game_title(title_id, platform).get_details()
+        return details[0] if isinstance(details, list) and details else None
+
+    try:
+        return await _call(run)
+    except PSNAWPNotFoundError:
+        return None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+    except PSNAWPError as exc:
+        raise PsnApiError(f"PSN concept for {title_id} failed: {exc!r}") from None
+
+
+async def trophy_lists_of(
+    client: PSNAWP, account_id: str, title_ids: list[str]
+) -> dict[str, set[str]]:
+    """`{CUSA/PPSA title id: {NPWR…}}` — which trophy lists Sony says these
+    store titles have, asked as an account that played them (Sony answers
+    only about titles that account has). The only proof that a store title is
+    one of our trophy lists: a name match is never taken for one."""
+    found: dict[str, set[str]] = {}
+    for start in range(0, len(title_ids), TITLE_IDS_PER_LOOKUP):
+        batch = title_ids[start : start + TITLE_IDS_PER_LOOKUP]
+
+        def run(batch: list[str] = batch) -> dict:
+            return client.authenticator.get(
+                url=TROPHY_TITLES_URL.format(account=account_id),
+                params={"npTitleIds": ",".join(batch)},
+            ).json()
+
+        try:
+            data = await _call(run)
+        except PSNAWPAuthenticationError as exc:
+            raise PsnTokenDeadError(str(exc)) from None
+        except PSNAWPError as exc:
+            raise PsnApiError(f"PSN trophy lists of {batch} failed: {exc!r}") from None
+        for title in data.get("titles") or []:
+            lists = {
+                str(entry["npCommunicationId"])
+                for entry in title.get("trophyTitles") or []
+                if entry.get("npCommunicationId")
+            }
+            if lists and title.get("npTitleId"):
+                found.setdefault(str(title["npTitleId"]), set()).update(lists)
+    return found

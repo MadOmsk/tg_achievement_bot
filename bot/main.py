@@ -80,6 +80,7 @@ from bot.services.release_notify import announce_release_if_needed
 from bot.services.smtp_auth import SmtpAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam_extras import SteamExtras
+from bot.services.store_collect import StoreCollector
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
@@ -208,6 +209,7 @@ async def run(settings: Settings) -> None:
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
     steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
+    store_collector = StoreCollector(repo, psn_auth)
     fetcher = Fetcher(
         repo,
         client,
@@ -215,6 +217,7 @@ async def run(settings: Settings) -> None:
         settings.backfill_concurrency,
         anthropic_auth=anthropic_auth,
         steam_extras=steam_extras,
+        store_collector=store_collector,
     )
     poller = PresencePoller(settings, repo, client, fetcher)
 
@@ -225,6 +228,7 @@ async def run(settings: Settings) -> None:
         settings.backfill_concurrency,
         anthropic_auth=anthropic_auth,
         steam_extras=steam_extras,
+        store_collector=store_collector,
     )
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
     steam_catch_up = SteamCatchUpPoller(settings, repo, steam_fetcher, steam_auth)
@@ -240,6 +244,7 @@ async def run(settings: Settings) -> None:
         publisher,
         anthropic_auth=anthropic_auth,
         steam_extras=steam_extras,
+        store_collector=store_collector,
     )
     psn_presence = PsnPresencePoller(settings, repo, psn_auth, psn_fetcher=psn_fetcher)
 
@@ -369,6 +374,7 @@ async def run(settings: Settings) -> None:
         anthropic_auth=anthropic_auth,
         bot=bot,
         steam_extras=steam_extras,
+        store_collector=store_collector,
         notifications=notifications,
         merge=merge,
         youtube_auth=youtube_auth,

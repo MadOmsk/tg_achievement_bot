@@ -52,6 +52,7 @@ from bot.services.steam.client import (
 )
 from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
+from bot.services.store_collect import StoreCollector
 from bot.services.title_catalog import TitleCatalogService
 from bot.services.youtube.guides import video_url
 from bot.services.youtube.videos import achievement_videos, game_guide
@@ -97,6 +98,7 @@ def setup_mini_api(
     bot: Any = None,
     title_catalog: TitleCatalogService | None = None,
     steam_extras: SteamExtras | None = None,
+    store_collector: StoreCollector | None = None,
     email_login: EmailLogin | None = None,
     notifications: Notifier | None = None,
     merge: PeopleMerge | None = None,
@@ -116,6 +118,7 @@ def setup_mini_api(
     app["mini_youtube_auth"] = youtube_auth
     app["mini_bot"] = bot
     app["mini_steam_extras"] = steam_extras or SteamExtras(repo, steam_auth, anthropic_auth)
+    app["mini_store_collector"] = store_collector
 
     if title_catalog is None:
         title_catalog = TitleCatalogService(
@@ -1026,6 +1029,10 @@ async def handle_game_details(request: web.Request) -> web.Response:
         platform, title_id, person_id=viewed, force=force
     )
     title_info = await repo.title_record(platform, title_id) or {}
+    # What the stores say about the game (#147), when it is due.
+    collector: StoreCollector | None = request.app.get("mini_store_collector")
+    if collector is not None and title_info:
+        collector.ensure(str(title_info["platform"]), title_id)
 
     listed = len(checklist)
     unlocked = sum(1 for item in checklist if item.is_unlocked)

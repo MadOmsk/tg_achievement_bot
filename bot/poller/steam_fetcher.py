@@ -33,6 +33,7 @@ from bot.services.steam.client import (
     rate_limit_usage,
 )
 from bot.services.steam_extras import SteamExtras
+from bot.services.store_collect import StoreCollector
 from bot.services.translate.auth import AnthropicAuth
 from bot.util import parse_iso, utcnow_iso
 
@@ -64,9 +65,11 @@ class SteamFetcher:
         *,
         anthropic_auth: AnthropicAuth,
         steam_extras: SteamExtras | None = None,
+        store_collector: StoreCollector | None = None,
     ) -> None:
         self._repo = repo
         self._steam_extras = steam_extras
+        self._store_collector = store_collector
         self._steam_auth = steam_auth
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
@@ -119,6 +122,8 @@ class SteamFetcher:
             log.exception("HLTB match failed for title %s", title_id)
         if self._steam_extras is not None:
             self._steam_extras.ensure_title(Platform.STEAM, title_id)
+        if self._store_collector is not None:
+            self._store_collector.ensure(Platform.STEAM, title_id)
 
     async def refresh_user(
         self, person_id: int, steam_id: str, persona_name: str, locale: str

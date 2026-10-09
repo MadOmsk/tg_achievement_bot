@@ -16,6 +16,7 @@ from bot.services.models import Progress
 from bot.services.platform_format import game_platforms_json
 from bot.services.rows import to_achievement_row
 from bot.services.steam_extras import SteamExtras
+from bot.services.store_collect import StoreCollector
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.auth import TokenRefreshError
@@ -49,9 +50,11 @@ class Fetcher:
         *,
         anthropic_auth: AnthropicAuth,
         steam_extras: SteamExtras | None = None,
+        store_collector: StoreCollector | None = None,
     ) -> None:
         self._repo = repo
         self._steam_extras = steam_extras
+        self._store_collector = store_collector
         self._client = client
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
@@ -127,7 +130,7 @@ class Fetcher:
         resolved = await self.ensure_title_name(person_id, title_id, title_name)
         await self.ensure_title_platforms(person_id, title_id)
         await self._publisher.publish(person_id, xuid, gamertag, new_rows, resolved)
-        await self._ensure_hltb_match(title_id)
+        await self._ensure_hltb_match(title_id, platform)
         return len(new_rows)
 
     async def ensure_title_name(
@@ -183,7 +186,7 @@ class Fetcher:
         )
         await self._repo.record_platforms_lookup(title_id, found)
 
-    async def _ensure_hltb_match(self, title_id: str) -> None:
+    async def _ensure_hltb_match(self, title_id: str, platform: str) -> None:
         """Which HowLongToBeat entry this game is (#131) — after publishing,
         never before: unlike the platforms lookup above, nothing in the
         notification itself needs it, so it must not add its latency to an
@@ -197,6 +200,9 @@ class Fetcher:
         # background: its Steam app is read from the HLTB entry just matched.
         if self._steam_extras is not None:
             self._steam_extras.ensure_title(AccountPlatform.XBOX, title_id)
+        # What the stores say about it (#147), in the background as well.
+        if self._store_collector is not None:
+            self._store_collector.ensure(platform, title_id)
 
     async def ensure_title_icon(self, person_id: int, title_id: str) -> str | None:
         """Box art as a stand-in for an Xbox 360 achievement icon (SPEC 7.1)
@@ -561,7 +567,7 @@ class Fetcher:
                 if fresh:
                     await self.ensure_title_platforms(person_id, entry.title_id)
                     await self._publisher.publish(person_id, xuid, gamertag, fresh, entry.name)
-                    await self._ensure_hltb_match(entry.title_id)
+                    await self._ensure_hltb_match(entry.title_id, fresh[0].platform)
                     published += len(fresh)
 
             log.info(
