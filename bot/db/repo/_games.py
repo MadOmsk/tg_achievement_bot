@@ -33,6 +33,14 @@ class _GamesRepo:
             " WHERE platform = ? AND title_id = ?",
             (platform, title_id),
         )
+        names = [str(row[0]) for row in await cursor.fetchall() if row[0]]
+        if names:
+            return names
+        # A list whose catalog was never read: what people here earned in it.
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT name FROM seen_achievements WHERE platform = ? AND title_id = ?",
+            (platform, title_id),
+        )
         return [str(row[0]) for row in await cursor.fetchall() if row[0]]
 
     async def links_of(self, version_ids: list[int]) -> list[dict[str, Any]]:

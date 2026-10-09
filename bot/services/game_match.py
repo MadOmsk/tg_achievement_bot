@@ -40,6 +40,9 @@ FAR_YEARS = 5
 NEAR_YEARS = 1
 ACHIEVEMENTS_MIN = 5  # a list shorter than this says nothing
 ACHIEVEMENTS_SAME = 0.6
+# Partly one list: the same game made again with some of its achievements —
+# a remaster (Gears of War → Ultimate Edition shares 43%).
+ACHIEVEMENTS_REMASTER = 0.3
 ACHIEVEMENTS_OTHER = 0.15
 
 
@@ -64,7 +67,9 @@ class Candidate:
 
     @property
     def cores(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(normalize(core(n)) for n in self.names if n))
+        """The cut names without the words that name a release, not the
+        game ("Gears of War: Reloaded" is Gears of War)."""
+        return tuple(dict.fromkeys(_unmarked(normalize(core(n))) for n in self.names if n))
 
     @property
     def fulls(self) -> tuple[str, ...]:
@@ -116,6 +121,7 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
         if (
             kind_of(demo) == "demo"
             and kind_of(game) != "demo"
+            and not _groups_differ(demo, game)
             and _starts(game, demo)
             and demo.year
             and game.year
@@ -149,11 +155,12 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
         if overlap >= ACHIEVEMENTS_SAME:
             score = max(score, 0.95)
             proof = True
+        elif overlap >= ACHIEVEMENTS_REMASTER and name >= 0.95:
+            # Partly one list under one name: the game made again.
+            return Verdict("linked", 0.9, [*reasons, "a list partly shared"], kind="remaster")
         elif overlap <= ACHIEVEMENTS_OTHER:
-            # Two lists of their own: a remaster, a remake or another game.
-            return Verdict(
-                "review", min(score, 1.0), [*reasons, "different achievements"], kind="remaster"
-            )
+            # Two lists of their own: a remake or another game, or a remaster.
+            return Verdict("review", min(score, 1.0), [*reasons, "different achievements"])
 
     if _same(a.developer, b.developer):
         reasons.append("same developer")
@@ -178,6 +185,11 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
         if gap > NEAR_YEARS:
             score -= 0.05 * (gap - NEAR_YEARS)
         else:
+            proof = True
+        if gap < FAR_YEARS and any(x == y for x in a.fulls for y in b.fulls):
+            # The very same name, a few years apart: a store's own date is not
+            # always the release (Microsoft's "Remastered" is dated 2026).
+            reasons.append("the same full name")
             proof = True
     else:
         reasons.append("a year unknown")
@@ -216,6 +228,14 @@ def _contained(a: Candidate, b: Candidate) -> bool:
     return False
 
 
+def _groups_differ(a: Candidate, b: Candidate) -> bool:
+    """One store filed them under different games of its own (Xbox's
+    product groups): "Gears of War: E-Day Multiplayer Beta" is E-Day's."""
+    return bool(
+        a.store == b.store and a.store_group and b.store_group and a.store_group != b.store_group
+    )
+
+
 def _starts(game: Candidate, demo: Candidate) -> bool:
     """The game's cut name opens the demo's, and what follows is not a number
     — unless the game has one of its own ("RESIDENT EVIL 2 1-Shot Demo")."""
@@ -242,6 +262,32 @@ def game_name(members: list[Candidate]) -> str:
     plain.sort(key=lambda m: (m.year or 9999, len(m.names[0] if m.names else "")))
     first = plain[0]
     return core(first.names[0]) if first.names else first.product_id
+
+
+# Words that name a release of a game, not the game: dropped before names are
+# compared ("Gears of War: Reloaded", "… Ultimate Edition" are Gears of War).
+_RELEASE_WORDS = {
+    "remastered",
+    "remaster",
+    "definitive",
+    "reloaded",
+    "anniversary",
+    "redux",
+    "hd",
+    "enhanced",
+    "ultimate",
+    "goty",
+    "complete",
+    "deluxe",
+    "gold",
+    "premium",
+    "legendary",
+}
+
+
+def _unmarked(name: str) -> str:
+    words = [w for w in name.split() if w not in _RELEASE_WORDS]
+    return " ".join(words) or name
 
 
 def _overlap(a: frozenset[str], b: frozenset[str]) -> float | None:

@@ -21,6 +21,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from bot.services.game_link import GameLinker
+from bot.services.hltb import ensure_title_match
 from bot.services.hltb_match import core, normalize, similarity
 from bot.services.steam.client import get_schema
 from bot.services.steam_news import find_appid
@@ -275,6 +276,9 @@ class StoreCollector:
         steam = await self._repo.title_steam(platform, title_id)
         appid = steam.steam_appid if steam else None
         if appid is None:
+            # The HLTB entry first: its page names the Steam app exactly, where
+            # a name search may find several and rightly answer none.
+            await ensure_title_match(self._repo, platform, title_id)
             hltb_id = await self._repo.title_hltb_id(platform, title_id)
             appid = await find_appid(names, hltb_id)
         if appid is None:

@@ -12,6 +12,7 @@ of that game for good.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -231,10 +232,10 @@ def _kinds(members: list[Candidate]) -> dict[int, str]:
     'edition' with an achievement list of its own, later than the game's
     first list, is a remaster (Gears of War → Ultimate Edition)."""
     kinds = {m.version_id: kind_of(m) for m in members}
-    listed = [m for m in members if len(m.achievements) >= ACHIEVEMENTS_MIN and m.year]
+    listed = [m for m in members if len(m.achievements) >= ACHIEVEMENTS_MIN and _era(m)]
     base = min(
         (m for m in listed if kinds[m.version_id] != "demo"),
-        key=lambda m: m.year or 9999,
+        key=_era,
         default=None,
     )
     if base is None:
@@ -242,14 +243,46 @@ def _kinds(members: list[Candidate]) -> dict[int, str]:
     for m in listed:
         if m is base or kinds[m.version_id] not in ("version", "edition"):
             continue
-        if m.list_key == base.list_key or (m.year or 0) <= (base.year or 0):
+        if m.list_key == base.list_key or _era(m) <= _era(base):
             continue
         shared = len(m.achievements & base.achievements) / min(
             len(m.achievements), len(base.achievements)
         )
         if shared < ACHIEVEMENTS_SAME:
             kinds[m.version_id] = "remaster"
+    # One release under one name is one kind on every store: "Ultimate Edition
+    # for Windows 10" is the remaster its console namesakes are.
+    by_release: dict[str, set[str]] = {}
+    for m in members:
+        for name in m.names:
+            by_release.setdefault(_release_name(name), set()).add(kinds[m.version_id])
+    for m in members:
+        if kinds[m.version_id] in ("version", "edition") and any(
+            "remaster" in by_release.get(_release_name(n), set()) for n in m.names
+        ):
+            kinds[m.version_id] = "remaster"
     return kinds
+
+
+_PLATFORM_TAIL = re.compile(
+    r"[\s:\-–—]*\b(?:for\s+)?(?:windows(?:\s*10|\s*11)?|pc"
+    r"|xbox(?:\s+one|\s+series(?:\s+x\s*s)?)?|ps[345]|playstation\s*[345]?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _release_name(name: str) -> str:
+    """A version's name without the platform it names."""
+    return normalize(_PLATFORM_TAIL.sub("", name).strip())
+
+
+# When a version came out, for ordering only: its year, else its console's era
+# (a 360 game is older than anything on One).
+_CONSOLE_ERA = {"360": 2008, "ps3": 2008, "vita": 2012, "one": 2015, "ps4": 2015}
+
+
+def _era(m: Candidate) -> int:
+    return m.year or _CONSOLE_ERA.get(m.console, 0)
 
 
 def _opens(game: Candidate, demo: Candidate) -> bool:
