@@ -756,10 +756,12 @@ async def game(request: web.Request) -> web.Response:
             (game_id, game_id),
         ).fetchall()
         dlcs = conn.execute(
-            "SELECT v.console, d.name, d.kind, d.release_date FROM dlcs d"
+            "SELECT d.version_id, v.store, v.console, v.name AS version, v.product_id,"
+            " v.stand_in, d.dlc_id, d.name, d.kind, d.release_date, d.store_id,"
+            " d.trophy_group_id FROM dlcs d"
             " JOIN version_games vg ON vg.version_id = d.version_id AND vg.state = 'linked'"
             " JOIN versions v ON v.version_id = d.version_id WHERE vg.game_id = ?"
-            " ORDER BY d.name, v.console",
+            " ORDER BY v.store, v.console, d.version_id, d.release_date, d.name",
             (game_id,),
         ).fetchall()
         hltb = conn.execute(
@@ -817,14 +819,42 @@ async def game(request: web.Request) -> web.Response:
         )
         + "<h2>Related games</h2>"
         + _table(relations, {"game_id": _game_href, "name": _game_href})
-        + "<h2>DLC (of its versions)</h2>"
-        + _table(dlcs)
+        + "<h2>DLC, by version</h2>"
+        + _dlcs_by_version(dlcs)
         + "<h2>HLTB</h2>"
         + _table(hltb, {"hltb_id": _hltb_href, "name": _hltb_href})
         + "<h2>Detach</h2>"
         + detach
     )
     return _page(row["name"] if row else f"Game {game_id}", body)
+
+
+def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
+    """A DLC belongs to a version (owner, 2026-10-09): one block per version,
+    named with its store and console."""
+    if not rows:
+        return "<p>(none)</p>"
+    blocks: dict[int, list[sqlite3.Row]] = {}
+    for row in rows:
+        blocks.setdefault(int(row["version_id"]), []).append(row)
+    parts = []
+    for version_id, items in blocks.items():
+        head = items[0]
+        parts.append(
+            f'<h3><a href="/version/{version_id}">{escape(head["version"] or "")}</a>'
+            f" · {escape(head['store'])} {escape(head['console'])}"
+            f' · <a href="{escape(_store_href(head))}">store</a> · {len(items)} DLC</h3>'
+            + _table(
+                [
+                    {
+                        k: r[k]
+                        for k in ("name", "kind", "release_date", "store_id", "trophy_group_id")
+                    }
+                    for r in items
+                ]
+            )
+        )
+    return "".join(parts)
 
 
 async def review(request: web.Request) -> web.Response:
